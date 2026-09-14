@@ -13,13 +13,13 @@ test service::tests::an_empty_dashboard_is_not_an_error ... ok
 test service::tests::an_empty_log_is_not_an_error ... ok
 test service::tests::an_empty_vocabulary_is_not_an_error ... ok
 test service::tests::book_stats_are_zero_for_an_unread_book_without_erroring ... ok
-test service::tests::dashboard_reads_every_strip_without_errors ... ok
 test service::tests::history_and_lookup_history_return_rows_without_errors ... ok
+test service::tests::dashboard_reads_every_strip_without_errors ... ok
 test service::tests::opening_a_book_with_no_marks_is_not_an_error ... ok
 test service::tests::reading_list_is_empty_without_an_error_when_nothing_is_queued ... ok
 test service::tests::shelves_are_returned_and_an_empty_grid_is_not_an_error ... ok
 test service::tests::there_are_no_quotes_at_all_is_not_an_error ... ok
 test tasks::tests::reporting_after_the_ui_is_gone_is_not_an_error ... ok
 test thumbs::tests::missing_source_is_not_an_error ... ok
-test result: ok. 343 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 15.39s
---- run 34804041424 ---
+test result: ok. 343 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 22.01s
+--- run 34832834702 ---

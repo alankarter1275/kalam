@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=2000 out=ci-shots-2000-windowed settle=60
-binary: 39024312 bytes
+binary: 39025656 bytes
 
 === seeding 2000 books ===
 seed-library: 2000 books, 1882 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5368.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.12510.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -27,4 +27,97 @@ focused: 1
   shot: 03-all-books-settled (82219 bytes)
 navigation: app accepted route 'all-books'
 navigation: grid rendered (grid_build seen, grid_cards=2000)
---- run 34803168446 ---
+  shot: 04-home-for-comparison (68745 bytes)
+navigation: 'all-books' differs from Home -- the page really did change
+navigation: OK -- the images below are 'all-books'
+
+=== timing lines from the app ===
+  [timing] startup_db_open         6.6 ms
+  [timing] covers_queued            11
+  [timing] startup_first_page      6.8 ms
+  [timing] window_shown          197.0 ms
+  [timing] page_cache_miss           1
+  [timing] covers_queued            45
+  [timing] grid_build              7.6 ms
+  [timing] grid_cards               48
+  [timing] grid_cards_total       2000
+  [timing] covers_queued             6
+  [timing] thumbs_backfilled        50
+  [timing] thumbs_backfilled       100
+  [timing] thumbs_backfilled       150
+  [timing] thumbs_backfilled       200
+  [timing] startup_dicts        1811.3 ms
+  [timing] thumbs_backfilled       250
+  [timing] thumbs_backfilled       300
+  [timing] thumbs_backfilled       350
+  [timing] thumbs_backfilled       400
+  [timing] thumbs_backfilled       450
+  [timing] thumbs_backfilled       500
+  [timing] thumbs_backfilled       550
+  [timing] thumbs_backfilled       600
+  [timing] thumbs_backfilled       650
+  [timing] thumbs_backfilled       700
+  [timing] thumbs_backfilled       750
+  [timing] thumbs_backfilled       800
+  [timing] thumbs_backfilled       850
+  [timing] thumbs_backfilled       900
+  [timing] thumbs_backfilled       950
+  [timing] thumbs_backfilled      1000
+  [timing] thumbs_backfilled      1050
+  [timing] thumbs_backfilled      1100
+  [timing] thumbs_backfilled      1150
+  [timing] thumbs_backfilled      1200
+  [timing] thumbs_backfilled      1250
+  [timing] thumbs_backfilled      1300
+  [timing] thumbs_backfilled      1350
+  [timing] thumbs_backfilled      1400
+  [timing] thumbs_backfilled      1450
+  [timing] thumbs_backfilled      1500
+  [timing] thumbs_backfilled      1550
+  [timing] thumbs_backfilled      1600
+  [timing] thumbs_backfilled      1650
+  [timing] thumbs_backfilled      1700
+  [timing] thumbs_backfilled      1750
+  [timing] thumbs_backfilled      1800
+  [timing] thumbs_backfilled      1850
+  [timing] thumbs_backfilled      1882
+  [timing] thumbs_backfill_done     1882
+
+=== did the covers actually load? ===
+  01-all-books.png: 1600x1000  coloured=21.6%  lit=100.0%
+  02-all-books-settling.png: 1600x1000  coloured=21.6%  lit=100.0%
+  03-all-books-settled.png: 1600x1000  coloured=21.6%  lit=100.0%
+  04-home-for-comparison.png: 1600x1000  coloured=17.3%  lit=100.0%
+  (numbers only -- no threshold is enforced yet; see the docstring)
+
+=== screenshot fingerprints ===
+  49918ab14e438b941ef443a4cfb32d08  ci-shots-2000-windowed/01-all-books.png
+  49918ab14e438b941ef443a4cfb32d08  ci-shots-2000-windowed/02-all-books-settling.png
+  49918ab14e438b941ef443a4cfb32d08  ci-shots-2000-windowed/03-all-books-settled.png
+  a1af307f10f91977b6d0327f8e63c764  ci-shots-2000-windowed/04-home-for-comparison.png
+
+=== app stderr (non-timing lines) ===
+  
+  (kalam:12547): Gtk-WARNING **: 10:51:31.901: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  kalam: KALAM_ROUTE=all-books — navigating
+
+=== peak memory ===
+books=2000 peak_rss_kb=272936 peak_rss_mb=266
+
+=== shutting down ===
+
+=== artifacts ===
+  total 356
+  drwxr-xr-x  2 runner runner  4096 Sep 14 10:53 .
+  drwxr-xr-x 15 runner runner  4096 Sep 14 10:51 ..
+  -rw-r--r--  1 runner runner 82219 Sep 14 10:52 01-all-books.png
+  -rw-r--r--  1 runner runner 82219 Sep 14 10:52 02-all-books-settling.png
+  -rw-r--r--  1 runner runner 82219 Sep 14 10:52 03-all-books-settled.png
+  -rw-r--r--  1 runner runner 68745 Sep 14 10:53 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 14 10:52 grim.log
+  -rw-r--r--  1 runner runner  2024 Sep 14 10:52 kalam-home.log
+  -rw-r--r--  1 runner runner  2219 Sep 14 10:51 kalam.log
+  -rw-r--r--  1 runner runner  4240 Sep 14 10:53 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 14 10:51 sway.log
+  -rw-r--r--  1 runner runner  7185 Sep 14 10:52 tree.json
+--- run 34833673942 ---

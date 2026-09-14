@@ -1,2 +1,121 @@
-(no report produced)
---- run 34803168446 ---
+=== kalam screenshot run ===
+books=2000 out=ci-shots-2000 settle=60
+binary: 39025656 bytes
+
+=== seeding 2000 books ===
+seed-library: 2000 books, 1882 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.13195.sock
+sway up: {
+  "human_readable": "1.11",
+  "variant": "sway",
+  "major": 1,
+  "minor": 11,
+  "patch": 0,
+  "loaded_config_file_name
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+requested route: all-books
+windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
+toplevel windows seen: 1
+  shot: 01-all-books (80233 bytes)
+focused: 1
+  shot: 02-all-books-settling (80233 bytes)
+  shot: 03-all-books-settled (80233 bytes)
+navigation: app accepted route 'all-books'
+navigation: grid rendered (grid_build seen, grid_cards=2000)
+  shot: 04-home-for-comparison (68745 bytes)
+navigation: 'all-books' differs from Home -- the page really did change
+navigation: OK -- the images below are 'all-books'
+
+=== timing lines from the app ===
+  [timing] startup_db_open         6.8 ms
+  [timing] startup_dicts           0.1 ms
+  [timing] covers_queued            11
+  [timing] startup_first_page      6.2 ms
+  [timing] window_shown          160.8 ms
+  [timing] page_cache_miss           1
+  [timing] grid_build            148.4 ms
+  [timing] grid_cards             2000
+  [timing] covers_queued          1882
+  [timing] thumbs_backfilled        50
+  [timing] thumbs_backfilled       100
+  [timing] thumbs_backfilled       150
+  [timing] thumbs_backfilled       200
+  [timing] thumbs_backfilled       250
+  [timing] thumbs_backfilled       300
+  [timing] thumbs_backfilled       350
+  [timing] thumbs_backfilled       400
+  [timing] thumbs_backfilled       450
+  [timing] thumbs_backfilled       500
+  [timing] thumbs_backfilled       550
+  [timing] thumbs_backfilled       600
+  [timing] thumbs_backfilled       650
+  [timing] thumbs_backfilled       700
+  [timing] thumbs_backfilled       750
+  [timing] thumbs_backfilled       800
+  [timing] thumbs_backfilled       850
+  [timing] thumbs_backfilled       900
+  [timing] thumbs_backfilled       950
+  [timing] thumbs_backfilled      1000
+  [timing] thumbs_backfilled      1050
+  [timing] thumbs_backfilled      1100
+  [timing] thumbs_backfilled      1150
+  [timing] thumbs_backfilled      1200
+  [timing] thumbs_backfilled      1250
+  [timing] thumbs_backfilled      1300
+  [timing] thumbs_backfilled      1350
+  [timing] thumbs_backfilled      1400
+  [timing] thumbs_backfilled      1450
+  [timing] thumbs_backfilled      1500
+  [timing] thumbs_backfilled      1550
+  [timing] thumbs_backfilled      1600
+  [timing] thumbs_backfilled      1650
+  [timing] thumbs_backfilled      1700
+  [timing] thumbs_backfilled      1750
+  [timing] thumbs_backfilled      1800
+  [timing] thumbs_backfilled      1850
+  [timing] thumbs_backfilled      1882
+  [timing] thumbs_backfill_done     1882
+
+=== did the covers actually load? ===
+  01-all-books.png: 1600x1000  coloured=21.6%  lit=100.0%
+  02-all-books-settling.png: 1600x1000  coloured=21.6%  lit=100.0%
+  03-all-books-settled.png: 1600x1000  coloured=21.6%  lit=100.0%
+  04-home-for-comparison.png: 1600x1000  coloured=17.3%  lit=100.0%
+  (numbers only -- no threshold is enforced yet; see the docstring)
+
+=== screenshot fingerprints ===
+  20ef790e7cecf8c3ce9aae97120564c7  ci-shots-2000/01-all-books.png
+  20ef790e7cecf8c3ce9aae97120564c7  ci-shots-2000/02-all-books-settling.png
+  20ef790e7cecf8c3ce9aae97120564c7  ci-shots-2000/03-all-books-settled.png
+  a1af307f10f91977b6d0327f8e63c764  ci-shots-2000/04-home-for-comparison.png
+
+=== app stderr (non-timing lines) ===
+  
+  (kalam:13232): Gtk-WARNING **: 10:53:34.601: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  kalam: KALAM_ROUTE=all-books — navigating
+
+=== peak memory ===
+books=2000 peak_rss_kb=363592 peak_rss_mb=355
+
+=== shutting down ===
+
+=== artifacts ===
+  total 344
+  drwxr-xr-x  2 runner runner  4096 Sep 14 10:55 .
+  drwxr-xr-x 16 runner runner  4096 Sep 14 10:53 ..
+  -rw-r--r--  1 runner runner 80233 Sep 14 10:54 01-all-books.png
+  -rw-r--r--  1 runner runner 80233 Sep 14 10:54 02-all-books-settling.png
+  -rw-r--r--  1 runner runner 80233 Sep 14 10:54 03-all-books-settled.png
+  -rw-r--r--  1 runner runner 68745 Sep 14 10:55 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 14 10:54 grim.log
+  -rw-r--r--  1 runner runner  2024 Sep 14 10:54 kalam-home.log
+  -rw-r--r--  1 runner runner  2145 Sep 14 10:53 kalam.log
+  -rw-r--r--  1 runner runner  4117 Sep 14 10:55 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 14 10:53 sway.log
+  -rw-r--r--  1 runner runner  7185 Sep 14 10:54 tree.json
+--- run 34833673942 ---

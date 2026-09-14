@@ -1,12 +1,21 @@
 # Putting the engine into Kalam (step 5)
 
+> **Status (2026-09-14): executed.** Kalam's branch
+> `arena/01a08cfb-calibre-alt` builds without WebKit on this recipe.
+> Its `src/pages/reader/engine.rs` has been edited there since (the
+> dictionary card rebuilt from the owner's mockup, tap-to-dictionary
+> removed, the selection chip rebuilt) and **that copy is authoritative**.
+> The seed it grew from stays in kalam-engine at
+> `docs/kalam/patch/src/pages/reader/engine.rs` as history; the handoff
+> bundle no longer ships it. Read on for the reasoning behind the wiring,
+> not for code to paste over a live file.
+
 This is the recipe for swapping WebKit out of Kalam's reader page and
 putting `kalam-reader` in. It is written to be followed top to bottom,
 in the `calibre-alt` repo. Steps 0–3 form one build (see step 0 for
 why); step 4 is the run. The
-finished code for the new file ships beside this document (in the
-handoff bundle: `patch/engine.rs`; in kalam-engine:
-`docs/kalam/patch/src/pages/reader/engine.rs`); the rest are edits to
+seed code for the new file lives in kalam-engine at
+`docs/kalam/patch/src/pages/reader/engine.rs`; the rest are edits to
 files you already have.
 
 If something here does not match your tree, the tree wins — I worked
@@ -121,7 +130,8 @@ are painted and survive font changes, resizes and re-imports.
 
 ## Step 2 — drop the new file in
 
-Copy `patch/engine.rs` (from the handoff bundle) to
+(Done on Kalam's branch; for a fresh integration only.) Copy the seed
+`docs/kalam/patch/src/pages/reader/engine.rs` from kalam-engine to
 `src/pages/reader/engine.rs` and add `mod engine;` to
 `src/pages/reader/mod.rs`. It provides:
 
@@ -572,7 +582,7 @@ strip mode is reachable without a key:
   `#kalam-dict-popup` design translated to GTK CSS with the app's
   `@kalam_*` colour tokens; the reference copy is calibre-alt's
   `resources/style.css` from the branch that landed the card (Kalam
-  1e0dfd3), and `patch/engine.rs` is the matching Rust.
+  1e0dfd3), and Kalam's `engine.rs` is the matching Rust.
   The five dot colours are the engine's `HighlightColor::css()` values:
   yellow `#f4d35e`, green `#8acb9c`, blue `#8bb7f2`, pink `#e99bbd`,
   orange `#f2ae72`.

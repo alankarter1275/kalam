@@ -253,7 +253,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chapbook-core"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
 dependencies = [
  "log",
  "mezzotint",
@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "chapbook-epub"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
 dependencies = [
  "chapbook-core",
  "quick-xml 0.42.0",
@@ -275,7 +275,7 @@ dependencies = [
 [[package]]
 name = "chapbook-layout"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
 dependencies = [
  "app_units",
  "chapbook-core",
@@ -306,7 +306,7 @@ dependencies = [
 [[package]]
 name = "chapbook-paint"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
 dependencies = [
  "chapbook-core",
  "cosmic-text",
@@ -315,7 +315,7 @@ dependencies = [
 [[package]]
 name = "chapbook-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
 dependencies = [
  "chapbook-core",
  "chapbook-epub",
@@ -332,7 +332,7 @@ dependencies = [
 [[package]]
 name = "chapbook-render-tinyskia"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
 dependencies = [
  "chapbook-core",
  "chapbook-paint",
@@ -1935,7 +1935,7 @@ dependencies = [
 [[package]]
 name = "kalam-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
 dependencies = [
  "chapbook-core",
  "chapbook-reader",

@@ -19,5 +19,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/calibre-alt/calibre-alt)
-[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 15.27s
---- run 34832834702 ---
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 17.94s
+--- run 34833673942 ---

@@ -21,5 +21,5 @@ test service::tests::shelves_are_returned_and_an_empty_grid_is_not_an_error ... 
 test service::tests::there_are_no_quotes_at_all_is_not_an_error ... ok
 test tasks::tests::reporting_after_the_ui_is_gone_is_not_an_error ... ok
 test thumbs::tests::missing_source_is_not_an_error ... ok
-test result: ok. 343 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 9.57s
---- run 34694304814 ---
+test result: ok. 343 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 15.85s
+--- run 34797160691 ---

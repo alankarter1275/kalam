@@ -224,9 +224,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.4.5"
+version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80"
+checksum = "a3eb0f42d6c360dc3f8a821f6bf2fdea7f72bfd36b3076eb0e6d1e9e0752fff4"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -253,7 +253,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chapbook-core"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
 dependencies = [
  "log",
  "mezzotint",
@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "chapbook-epub"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
 dependencies = [
  "chapbook-core",
  "quick-xml 0.42.0",
@@ -275,7 +275,7 @@ dependencies = [
 [[package]]
 name = "chapbook-layout"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
 dependencies = [
  "app_units",
  "chapbook-core",
@@ -306,7 +306,7 @@ dependencies = [
 [[package]]
 name = "chapbook-paint"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
 dependencies = [
  "chapbook-core",
  "cosmic-text",
@@ -315,7 +315,7 @@ dependencies = [
 [[package]]
 name = "chapbook-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
 dependencies = [
  "chapbook-core",
  "chapbook-epub",
@@ -332,7 +332,7 @@ dependencies = [
 [[package]]
 name = "chapbook-render-tinyskia"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
 dependencies = [
  "chapbook-core",
  "chapbook-paint",
@@ -565,9 +565,9 @@ dependencies = [
 
 [[package]]
 name = "crc32fast"
-version = "1.5.1"
+version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8498c871161e1742aaa9d52551b2d6ebdd4c3d45a3be423e3728f33b955be550"
+checksum = "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78"
 dependencies = [
  "cfg-if",
 ]
@@ -1935,7 +1935,7 @@ dependencies = [
 [[package]]
 name = "kalam-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918591a0bacf18410c346fa67704c5f1102"
 dependencies = [
  "chapbook-core",
  "chapbook-reader",
@@ -3606,18 +3606,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.13.2"
+version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cf0ded5c4e56918d8f8a339e1bb67d038d3bc6d144ac407904015ba2e4cde9b"
-dependencies = [
- "tinyvec_macros",
-]
-
-[[package]]
-name = "tinyvec_macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "to_shmem"

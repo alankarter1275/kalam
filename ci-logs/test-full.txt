@@ -1,12 +1,5 @@
-[1m[92m   Compiling[0m chapbook-core v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
-[1m[92m   Compiling[0m chapbook-paint v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
-[1m[92m   Compiling[0m chapbook-epub v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
-[1m[92m   Compiling[0m chapbook-render-tinyskia v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
-[1m[92m   Compiling[0m chapbook-layout v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
-[1m[92m   Compiling[0m chapbook-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
-[1m[92m   Compiling[0m kalam-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e8)
 [1m[92m   Compiling[0m kalam v0.1.0 (/home/runner/work/calibre-alt/calibre-alt)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 17.20s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 10.72s
 [1m[92m     Running[0m unittests src/main.rs (target/debug/deps/kalam-7b687d949334b9b5)
 
 running 345 tests
@@ -18,15 +11,15 @@ test app::tests::unknown_route_names_are_rejected_not_guessed ... ok
 test author::tests::splits_common_multi_author_formats ... ok
 test author::tests::normalizes_sort_name_to_same_key ... ok
 test comics::tests::image_filename_filtering ... ok
-test comics::tests::natural_sorting_orders_numbers_correctly ... ok
 test comics::tests::natural_sorting_handles_nested_paths ... ok
+test comics::tests::natural_sorting_orders_numbers_correctly ... ok
 test db::authors::tests::finds_author_by_display_or_sort_name ... ok
-test db::dictionaries::tests::combined_store_priority_ignores_sense_counts ... ok
-test db::dictionaries::tests::combined_store_dedupes_identical_senses ... ok
 test db::dictionaries::tests::combined_store_falls_back_to_the_next_dictionary ... ok
+test db::dictionaries::tests::combined_store_dedupes_identical_senses ... ok
+test db::dictionaries::tests::combined_store_priority_ignores_sense_counts ... ok
 test db::dictionaries::tests::dictionary_variants_handle_common_inflections ... ok
-test db::dictionaries::tests::dictionary_variants_handle_possessives ... ok
 test db::dictionaries::dictionary_priority_order_and_reorder_change_the_merged_winner ... ok
+test db::dictionaries::tests::dictionary_variants_handle_possessives ... ok
 test db::dictionaries::tests::dictionary_variants_keep_suffix_rules_as_fallback ... ok
 test db::dictionaries::tests::dictionary_variants_resolve_irregulars_from_wordnet_exceptions ... ok
 test db::dictionaries::tests::dictionary_variants_strip_outer_punctuation ... ok
@@ -37,44 +30,44 @@ test db::dictionaries::tests::likely_sense_empty_context_returns_none ... ok
 test db::dictionaries::tests::likely_sense_ignores_the_looked_up_word_itself ... ok
 test db::dictionaries::tests::likely_sense_matching_is_case_insensitive ... ok
 test db::dictionaries::tests::likely_sense_neutral_context_returns_none ... ok
-test db::dictionaries::tests::likely_sense_prefers_the_gloss_matching_the_sentence ... ok
-test db::dictionaries::tests::likely_sense_stems_inflected_context_words ... ok
-test db::dictionaries::tests::combined_store_rebuilds_after_delete ... ok
-test db::dictionaries::tests::likely_sense_tie_returns_none_not_an_arbitrary_guess ... ok
 test db::dictionaries::tests::exact_key_lookup_uses_the_key_index ... ok
+test db::dictionaries::tests::likely_sense_prefers_the_gloss_matching_the_sentence ... ok
 test db::dictionaries::tests::inserted_entries_carry_folded_keys ... ok
-test db::dictionaries::tests::parse_pos_blob_handles_adjective_and_adverb_groups ... ok
+test db::dictionaries::tests::likely_sense_stems_inflected_context_words ... ok
+test db::dictionaries::tests::likely_sense_tie_returns_none_not_an_arbitrary_guess ... ok
 test db::dictionaries::tests::likely_sense_uses_example_overlap_too ... ok
+test db::dictionaries::tests::parse_pos_blob_handles_adjective_and_adverb_groups ... ok
 test db::dictionaries::tests::parse_pos_blob_ignores_fake_markers_and_keeps_continuations ... ok
-test db::dictionaries::tests::parse_pos_blob_splits_pos_groups_and_numbers_senses ... ok
 test db::dictionaries::tests::parse_pos_blob_keeps_mid_gloss_quotes_intact ... ok
 test db::dictionaries::tests::parse_pos_blob_splits_trailing_quoted_example ... ok
+test db::dictionaries::tests::parse_pos_blob_splits_pos_groups_and_numbers_senses ... ok
 test db::dictionaries::tests::parse_senses_keeps_plain_rows_as_single_senses ... ok
 test db::dictionaries::tests::parse_senses_renumbers_across_rows_and_pos_groups ... ok
+test db::dictionaries::tests::combined_store_rebuilds_after_delete ... ok
+test db::dictionaries::tests::search_phrase_breaks_down_when_no_phrase_headword ... ok
 test db::dictionaries::tests::search_dict_folds_case_and_diacritics_into_keys ... ok
 test db::dictionaries::tests::search_dict_resolves_irregulars_to_headwords ... ok
-test db::dictionaries::tests::search_phrase_breaks_down_when_no_phrase_headword ... ok
 test db::dictionaries::tests::search_phrase_empty_when_nothing_matches ... ok
+test db::dictionaries::tests::search_phrase_handles_irregular_tokens_in_the_breakdown ... ok
 test db::dictionaries::tests::search_phrase_finds_a_contained_phrase_headword ... ok
 test db::dictionaries::tests::split_example_ignores_stray_apostrophes ... ok
-test db::dictionaries::tests::stem_token_leaves_roots_alone ... ok
 test db::dictionaries::tests::stem_token_strips_common_inflections ... ok
+test db::dictionaries::tests::stem_token_leaves_roots_alone ... ok
 test db::dictionaries::tests::tokenize_context_keeps_content_words_only ... ok
-test db::dictionaries::tests::search_phrase_returns_the_full_phrase_headword ... ok
 test db::dictionaries::tests::search_phrase_omits_tokens_without_hits ... ok
-test db::dictionaries::tests::search_phrase_handles_irregular_tokens_in_the_breakdown ... ok
+test db::dictionaries::tests::search_phrase_returns_the_full_phrase_headword ... ok
+test db::history::tests::an_unclosed_session_is_reaped_at_startup ... ok
 test db::history::tests::a_checkpoint_preserves_time_across_a_crash ... ok
-test db::history::tests::reaping_leaves_properly_closed_sessions_alone ... ok
+test db::history::tests::a_checkpoint_is_clamped_like_a_close ... ok
 test db::pronunciation::tests::arpabet_to_ipa_converts_common_words ... ok
 test db::pronunciation::tests::arpabet_to_ipa_marks_secondary_stress ... ok
 test db::pronunciation::tests::arpabet_to_ipa_skips_unknown_phonemes ... ok
-test db::history::tests::an_unclosed_session_is_reaped_at_startup ... ok
-test db::history::tests::a_checkpoint_is_clamped_like_a_close ... ok
+test db::history::tests::reaping_leaves_properly_closed_sessions_alone ... ok
 test db::lookup_history::tests::lookup_history_logs_hits_misses_and_collapses_repeats ... ok
 test db::pronunciation::tests::packed_table_has_reasonable_coverage ... ok
-test db::pronunciation::tests::pronunciation_for_hits_common_words ... ok
 test db::pronunciation::tests::pronunciation_for_handles_inflected_forms ... ok
 test db::pronunciation::tests::pronunciation_for_is_fold_case_and_diacritic_insensitive ... ok
+test db::pronunciation::tests::pronunciation_for_hits_common_words ... ok
 test db::pronunciation::tests::pronunciation_for_unknown_word_returns_none ... ok
 test db::series::tests::series_key_normalises_spelling ... ok
 test db::series::tests::series_key_strips_articles_from_series_not_authors ... ok
@@ -83,15 +76,15 @@ test db::series::tests::series_cache_round_trips ... ok
 test db::series::tests::books_in_series_orders_by_index_then_title ... ok
 test db::tests::a_different_file_gets_no_overrides ... ok
 test db::tests::a_restored_book_keeps_its_cover ... ok
-test db::tests::auto_finish_fires_once ... ok
 test db::tests::book_first_opened_is_none_not_an_error_for_a_never_opened_book ... ok
-test db::tests::batched_tag_hydration_matches_per_book ... ok
+test db::tests::auto_finish_fires_once ... ok
 test db::tests::days_from_iso_handles_valid_and_invalid_inputs ... ok
+test db::tests::batched_tag_hydration_matches_per_book ... ok
 test db::tests::books_by_ids_batches_and_keeps_tags ... ok
 test db::tests::books_by_ids_on_no_ids_is_not_an_error ... ok
-test db::tests::empty_smart_shelf_matches_nothing ... ok
 test db::tests::editing_tags_prunes_orphans ... ok
 test db::tests::edits_survive_delete_and_reimport ... ok
+test db::tests::empty_smart_shelf_matches_nothing ... ok
 test db::tests::format_unix_utc_formats_timestamps ... ok
 test db::tests::hinnant_date_math_roundtrips_accurately ... ok
 test db::tests::iso_days_ago_is_midnight_aligned_in_utc ... ok
@@ -99,32 +92,32 @@ test db::tests::iso_days_ago_snaps_to_local_midnight_not_utc_midnight ... ok
 test db::tests::local_day_labels_walk_backwards_one_day_at_a_time ... ok
 test db::tests::local_day_sql_and_rust_agree_on_the_same_instant ... ok
 test db::tests::local_day_sql_produces_a_shifted_date_expression ... ok
+test db::tests::finishing_a_book_clears_it_from_the_reading_list ... ok
 test db::tests::finished_book_ids_batches_the_finished_flag ... ok
 test db::tests::forgetting_overrides_gives_a_clean_import ... ok
-test db::tests::finishing_a_book_clears_it_from_the_reading_list ... ok
 test db::tests::manual_shelf_membership_round_trips ... ok
 test db::tests::metadata_edit_round_trips_new_fields ... ok
 test db::tests::migrations_land_on_current_version ... ok
 test db::tests::opening_twice_in_an_hour_logs_one_event ... ok
 test db::tests::reading_bookmarks_round_trip ... ok
 test db::tests::reading_list_note_and_meta_are_not_book_fields ... ok
-test db::tests::recent_books_is_bounded_and_newest_first ... ok
 test db::tests::reading_list_reorders ... ok
+test db::tests::recent_books_is_bounded_and_newest_first ... ok
 test db::tests::recent_quotes_carries_its_book_title ... ok
-test db::tests::replacing_a_cover_updates_the_remembered_copy ... ok
 test db::tests::saved_words_known_flag_round_trips_and_filters ... ok
+test db::tests::replacing_a_cover_updates_the_remembered_copy ... ok
 test db::tests::restoring_does_not_clobber_the_stashed_cover ... ok
 test db::tests::sessions_clamp_absurd_durations ... ok
 test db::tests::shelf_name_collisions_are_detected ... ok
-test db::tests::smart_shelf_search_binds_alongside_rules ... ok
-test db::tests::streak_helpers_handle_gaps ... ok
 test db::tests::smart_shelf_filters_by_tag_and_progress ... ok
+test db::tests::streak_helpers_handle_gaps ... ok
 test db::tests::streaks_use_local_days ... ok
+test db::tests::smart_shelf_search_binds_alongside_rules ... ok
 test db::tests::stats_cache_refreshes_after_a_write ... ok
 test dict::tests::quote_ident_escapes_embedded_quotes ... ok
 test db::tests::stats_reflect_library_state ... ok
-test db::tests::tags_browse_counts_books ... ok
 test db::tests::whole_series_numbers_drop_the_decimal ... ok
+test db::tests::tags_browse_counts_books ... ok
 test dict::tests::same_file_resolves_symlinks_and_relative_paths ... ok
 test dict::tests::reimport_replaces_entries_instead_of_duplicating ... ok
 test dict::tests::same_file_rejects_distinct_files_and_directory_is_not_a_pack ... ok
@@ -153,7 +146,7 @@ test epub::tests::strip_html_separates_paragraphs_but_not_words ... ok
 test epub_book::tests::extract_refuses_an_absolute_entry_path ... ok
 test epub_book::tests::extract_refuses_to_climb_out_of_the_destination ... ok
 test dict::tests::tsv_import_accepts_tab_and_two_space_separators ... ok
-test dict::tests::unrecognized_format_error_names_the_expected_formats ... ok
+test epub::tests::import_epub_rejects_unsupported_extensions ... ok
 test epub_book::tests::extract_writes_normal_entries_including_nested_directories ... ok
 test epub_book::tests::find_opf_path_extracts_rootfile_full_path ... ok
 test epub_book::tests::parse_opf_spine_extracts_items_in_order ... ok
@@ -162,6 +155,7 @@ test epub_book::tests::spine_index_for_handles_fragments_and_paths ... ok
 test epub_book::tests::strip_tags_removes_markup_cleanly ... ok
 test epub_write::tests::backup_name_sits_beside_the_book ... ok
 test epub_write::tests::comments_survive_the_rewrite ... ok
+test dict::tests::unrecognized_format_error_names_the_expected_formats ... ok
 test epub_write::tests::escapes_xml_in_values ... ok
 test epub_write::tests::finds_cover_via_epub2_meta ... ok
 test epub_write::tests::finds_cover_via_epub3_properties ... ok
@@ -225,8 +219,8 @@ test metadata::tests::punctuation_and_case_do_not_defeat_dedup ... ok
 test metadata::tests::richness_prefers_covers_and_descriptions ... ok
 test metadata::tests::timeouts_and_refusals_get_their_own_wording ... ok
 test metadata::tests::unknown_network_errors_are_still_truncated ... ok
-test notify::tests::a_message_from_a_worker_thread_is_visible_from_the_main_thread ... ok
 test notify::tests::errors_linger_longer_than_chatter ... ok
+test notify::tests::a_message_from_a_worker_thread_is_visible_from_the_main_thread ... ok
 test notify::tests::history_is_bounded ... ok
 test notify::tests::history_keeps_newest_first ... ok
 test notify::tests::report_passes_ok_through_and_flags_errors ... ok
@@ -248,14 +242,13 @@ test pages::saved_words::tests::csv_escapes_commas_quotes_and_newlines ... ok
 test pages::saved_words::tests::csv_leaves_ordinary_fields_alone ... ok
 test pages::settings::tests::ayu_family_collects_both_variants ... ok
 test pages::settings::tests::selected_badge_marks_only_the_default_theme_as_default ... ok
-test epub::tests::import_epub_rejects_unsupported_extensions ... ok
 test perf::books_by_ids_batches_instead_of_looping ... ok
 test perf::books_with_tag_does_not_query_per_book ... ok
 test perf::library_stats_is_memoised_and_invalidates_on_write ... ok
-test perf::list_books_does_not_scale_queries_with_library_size ... ok
+test perf::list_books_search_path_does_not_scale_either ... ok
 test perf::perf_cover_decode ... ignored, run manually: cargo test --release perf -- --ignored --nocapture
 test perf::perf_data_layer_report ... ignored, run manually: cargo test --release perf -- --ignored --nocapture
-test perf::list_books_search_path_does_not_scale_either ... ok
+test perf::list_books_does_not_scale_queries_with_library_size ... ok
 test preload::tests::a_mark_past_the_end_still_queues_everything ... ok
 test preload::tests::books_without_a_cover_are_not_queued ... ok
 test perf::recent_books_cost_does_not_depend_on_how_many_it_returns ... ok
@@ -269,18 +262,18 @@ test service::tests::all_books_respects_the_search_query ... ok
 test service::tests::an_empty_dashboard_is_not_an_error ... ok
 test service::tests::an_empty_log_is_not_an_error ... ok
 test preload::tests::decoding_gives_back_exactly_the_requested_size ... ok
-test service::tests::analytics_snapshot_reads_the_goal_back ... ok
 test service::tests::an_empty_vocabulary_is_not_an_error ... ok
+test service::tests::analytics_snapshot_reads_the_goal_back ... ok
 test service::tests::book_detail_reflects_reading_list_and_finished_flags ... ok
 test service::tests::book_detail_separates_a_missing_book_from_a_failed_read ... ok
 test service::tests::book_stats_are_zero_for_an_unread_book_without_erroring ... ok
 test service::tests::book_stats_pick_up_a_finished_date ... ok
+test service::tests::continue_row_falls_back_to_the_newest_book ... ok
 test service::tests::continue_row_ignores_finished_books ... ok
 test service::tests::continue_row_keeps_recently_opened_when_present ... ok
 test service::tests::continue_row_prefers_in_progress_over_newest ... ok
-test service::tests::continue_row_falls_back_to_the_newest_book ... ok
-test service::tests::dashboard_reads_every_strip_without_errors ... ok
 test service::tests::history_and_lookup_history_return_rows_without_errors ... ok
+test service::tests::dashboard_reads_every_strip_without_errors ... ok
 test service::tests::home_reports_counts_and_recent_books ... ok
 test service::tests::opening_a_book_with_no_marks_is_not_an_error ... ok
 test service::tests::quotes_pair_each_annotation_with_its_book_in_one_batch ... ok
@@ -324,9 +317,9 @@ test thumbs::tests::an_empty_library_is_skipped_once_recorded ... ok
 test thumbs::tests::an_unchanged_library_is_skipped ... ok
 test sidecar::tests::a_tag_added_after_import_reaches_the_backup ... ok
 test thumbs::tests::backfill_missing_source_is_a_noop ... ok
-test thumbs::tests::backfill_generates_missing_and_skips_present ... ok
-test thumbs::tests::importing_or_deleting_forces_another_pass ... ok
 test thumbs::tests::generates_an_exact_size_png ... ok
+test thumbs::tests::importing_or_deleting_forces_another_pass ... ok
+test thumbs::tests::backfill_generates_missing_and_skips_present ... ok
 test thumbs::tests::missing_source_is_not_an_error ... ok
 test thumbs::tests::non_image_source_returns_false ... ok
 test widgets::book_row::tests::a_full_library_builds_a_screenful_not_the_whole_thing ... ok
@@ -356,5 +349,5 @@ test thumbs::tests::mismatched_extension_is_thumbnailed_successfully ... ok
 test epub_book::tests::extract_rejects_an_absurd_entry_count ... ok
 test epub_book::tests::extract_stops_at_the_size_ceiling ... ok
 
-test result: ok. 343 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 18.64s
+test result: ok. 343 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 22.07s
 

@@ -12,36 +12,53 @@ not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m bytemuck_derive v1.12.1
-[1m[92m  Downloaded[0m xml5ever v0.39.0
-[1m[92m   Compiling[0m bytemuck_derive v1.12.1
-[1m[92m    Checking[0m chapbook-core v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9)
-[1m[92m    Checking[0m xml5ever v0.39.0
-[1m[92m    Checking[0m chapbook-epub v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9)
-[1m[92m    Checking[0m bytemuck v1.25.2
-[1m[92m    Checking[0m font-types v0.12.5
-[1m[92m    Checking[0m font-types v0.11.3
-[1m[92m    Checking[0m tiny-skia-path v0.12.0
-[1m[92m    Checking[0m rustybuzz v0.20.1
-[1m[92m    Checking[0m read-fonts v0.37.0
-[1m[92m    Checking[0m read-fonts v0.41.0
+[1m[92m  Downloaded[0m cc v1.4.6
+[1m[92m  Downloaded[0m crc32fast v1.5.2
+[1m[92m  Downloaded[0m tinyvec v1.13.3
+[1m[92m   Compiling[0m cc v1.4.6
+[1m[92m   Compiling[0m crc32fast v1.5.2
+[1m[92m    Checking[0m tinyvec v1.13.3
+[1m[92m    Checking[0m chapbook-core v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918)
+[1m[92m    Checking[0m fontdb v0.23.0
+[1m[92m    Checking[0m fontdb v0.24.0
+[1m[92m    Checking[0m cosmic-text v0.19.0
+[1m[92m    Checking[0m usvg v0.48.1
+[1m[92m    Checking[0m chapbook-paint v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918)
+[1m[92m    Checking[0m unicode-normalization v0.1.25
+[1m[92m   Compiling[0m zstd-sys v2.1.0+zstd.1.5.7
+[1m[92m   Compiling[0m ring v0.17.14
+[1m[92m   Compiling[0m ittapi-sys v0.4.0
+[1m[92m    Checking[0m flate2 v1.1.10
+[1m[92m    Checking[0m png v0.18.1
 [1m[92m    Checking[0m tiny-skia v0.12.0
 [1m[92m    Checking[0m image v0.25.10
-[1m[92m    Checking[0m rgb v0.8.53
-[1m[92m    Checking[0m formulary v0.2.0
-[1m[92m    Checking[0m skrifa v0.40.0
-[1m[92m    Checking[0m harfrust v0.5.2
-[1m[92m    Checking[0m skrifa v0.44.0
-[1m[92m    Checking[0m harfrust v0.12.0
-[1m[92m    Checking[0m swash v0.2.10
-[1m[92m    Checking[0m usvg v0.48.1
+[1m[92m    Checking[0m zip v8.6.0
+[1m[92m    Checking[0m object v0.36.7
+[1m[92m    Checking[0m rbook v0.7.10
 [1m[92m    Checking[0m resvg v0.48.1
-[1m[92m    Checking[0m cosmic-text v0.19.0
-[1m[92m    Checking[0m chapbook-paint v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9)
-[1m[92m    Checking[0m chapbook-layout v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9)
-[1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9)
-[1m[92m    Checking[0m chapbook-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9)
-[1m[92m    Checking[0m kalam-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9)
+[1m[92m    Checking[0m zopfli v0.8.3
+[1m[92m   Compiling[0m wasmtime-fiber v24.0.13
+[1m[92m   Compiling[0m libsqlite3-sys v0.30.1
+[1m[92m    Checking[0m chapbook-layout v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918)
+[1m[92m    Checking[0m chapbook-epub v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918)
+[1m[92m    Checking[0m wasmtime-environ v24.0.13
+[1m[92m   Compiling[0m rustls v0.23.44
+[1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918)
+[1m[92m   Compiling[0m wasmtime v24.0.13
+[1m[92m    Checking[0m chapbook-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918)
+[1m[92m    Checking[0m rustls-webpki v0.103.15
+[1m[92m    Checking[0m ittapi v0.4.0
+[1m[92m    Checking[0m zip v6.0.0
+[1m[92m    Checking[0m wasmtime-jit-debug v24.0.13
+[1m[92m    Checking[0m epub-builder v0.8.3
+[1m[92m    Checking[0m rusqlite v0.32.1
+[1m[92m    Checking[0m wasmtime-cranelift v24.0.13
+[1m[92m    Checking[0m kalam-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#3fcfb918)
+[1m[92m    Checking[0m zip v2.4.2
+[1m[92m   Compiling[0m zstd-safe v7.3.0
+[1m[92m    Checking[0m ureq v2.12.1
+[1m[92m    Checking[0m zstd v0.13.3
+[1m[92m    Checking[0m wasmtime-cache v24.0.13
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/calibre-alt/calibre-alt)
-[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 27.96s
---- run 34694304814 ---
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 35.60s
+--- run 34797160691 ---

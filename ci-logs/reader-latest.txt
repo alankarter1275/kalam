@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5709.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5695.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,13 +32,13 @@ navigation: 'read-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'read-1'
 
 === timing lines from the app ===
-  [timing] startup_db_open         3.6 ms
+  [timing] startup_db_open         4.4 ms
   [timing] startup_dicts           0.1 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      1.9 ms
-  [timing] window_shown          108.0 ms
+  [timing] startup_first_page      2.0 ms
+  [timing] window_shown          130.8 ms
   [timing] page_cache_miss           1
-  [timing] book_open               2.9 ms
+  [timing] book_open               3.5 ms
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
@@ -59,26 +59,26 @@ navigation: OK -- the images below are 'read-1'
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5747): Gtk-WARNING **: 11:09:12.430: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:5732): Gtk-WARNING **: 22:33:24.540: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=read-1 — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=123052 peak_rss_mb=120
+books=139 peak_rss_kb=123392 peak_rss_mb=120
 
 === shutting down ===
 
 === artifacts ===
   total 744
-  drwxr-xr-x  2 runner runner   4096 Sep 14 11:10 .
-  drwxr-xr-x 16 runner runner   4096 Sep 14 11:09 ..
-  -rw-r--r--  1 runner runner 219850 Sep 14 11:09 01-read-1.png
-  -rw-r--r--  1 runner runner 219850 Sep 14 11:09 02-read-1-settling.png
-  -rw-r--r--  1 runner runner 219850 Sep 14 11:09 03-read-1-settled.png
-  -rw-r--r--  1 runner runner  62320 Sep 14 11:10 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner      0 Sep 14 11:09 grim.log
-  -rw-r--r--  1 runner runner    765 Sep 14 11:09 kalam-home.log
-  -rw-r--r--  1 runner runner    772 Sep 14 11:09 kalam.log
-  -rw-r--r--  1 runner runner   2788 Sep 14 11:10 report.txt
-  -rw-r--r--  1 runner runner     88 Sep 14 11:09 sway.log
-  -rw-r--r--  1 runner runner   7184 Sep 14 11:09 tree.json
---- run 34836054914 ---
+  drwxr-xr-x  2 runner runner   4096 Sep 15 22:34 .
+  drwxr-xr-x 16 runner runner   4096 Sep 15 22:33 ..
+  -rw-r--r--  1 runner runner 219850 Sep 15 22:33 01-read-1.png
+  -rw-r--r--  1 runner runner 219850 Sep 15 22:33 02-read-1-settling.png
+  -rw-r--r--  1 runner runner 219850 Sep 15 22:34 03-read-1-settled.png
+  -rw-r--r--  1 runner runner  62320 Sep 15 22:34 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner      0 Sep 15 22:33 grim.log
+  -rw-r--r--  1 runner runner    765 Sep 15 22:34 kalam-home.log
+  -rw-r--r--  1 runner runner    772 Sep 15 22:33 kalam.log
+  -rw-r--r--  1 runner runner   2788 Sep 15 22:34 report.txt
+  -rw-r--r--  1 runner runner     88 Sep 15 22:33 sway.log
+  -rw-r--r--  1 runner runner   7184 Sep 15 22:33 tree.json
+--- run 35030397788 ---

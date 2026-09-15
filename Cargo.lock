@@ -253,7 +253,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chapbook-core"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
 dependencies = [
  "log",
  "mezzotint",
@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "chapbook-epub"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
 dependencies = [
  "chapbook-core",
  "quick-xml 0.42.0",
@@ -275,7 +275,7 @@ dependencies = [
 [[package]]
 name = "chapbook-layout"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
 dependencies = [
  "app_units",
  "chapbook-core",
@@ -306,7 +306,7 @@ dependencies = [
 [[package]]
 name = "chapbook-paint"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
 dependencies = [
  "chapbook-core",
  "cosmic-text",
@@ -315,7 +315,7 @@ dependencies = [
 [[package]]
 name = "chapbook-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
 dependencies = [
  "chapbook-core",
  "chapbook-epub",
@@ -332,7 +332,7 @@ dependencies = [
 [[package]]
 name = "chapbook-render-tinyskia"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
 dependencies = [
  "chapbook-core",
  "chapbook-paint",
@@ -1935,7 +1935,7 @@ dependencies = [
 [[package]]
 name = "kalam-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#a745d5e87b6907074551dd50f204ae7c23979352"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
 dependencies = [
  "chapbook-core",
  "chapbook-reader",
@@ -2087,7 +2087,7 @@ checksum = "f44db74bde26fdf427af23f1d146c211aed857c59e3be750cf2617f6b0b05c94"
 dependencies = [
  "proc-macro2",
  "syn 2.0.119",
- "synstructure",
+ "synstructure 0.13.2",
 ]
 
 [[package]]
@@ -2815,9 +2815,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.44"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6725596c3f2c3a0aef021139e145d4eafe314a6623e4680ca83852b2c67ab2ba"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "log",
  "once_cell",
@@ -3302,7 +3302,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
- "synstructure",
+ "synstructure 0.13.2",
 ]
 
 [[package]]
@@ -3422,6 +3422,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "synstructure"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "901704edd0dfe137f1987838ee4f259e4e063c31371bdb423f7ae38ec6f77f02"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -3634,7 +3645,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
- "synstructure",
+ "synstructure 0.13.2",
 ]
 
 [[package]]
@@ -4699,14 +4710,14 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de844c262c8848816172cef550288e7dc6c7b7814b4ee56b3e1553f275f1858e"
+checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
- "synstructure",
+ "syn 3.0.5",
+ "synstructure 0.14.0",
 ]
 
 [[package]]
@@ -4746,14 +4757,14 @@ dependencies = [
 
 [[package]]
 name = "zerofrom-derive"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11532158c46691caf0f2593ea8358fed6bbf68a0315e80aae9bd41fbade684a1"
+checksum = "f75b4683f6c7f45248d4d64056a24298c6281e0993356d7d1b4a1a962ef10d4a"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
- "synstructure",
+ "syn 3.0.5",
+ "synstructure 0.14.0",
 ]
 
 [[package]]
@@ -4844,9 +4855,9 @@ dependencies = [
 
 [[package]]
 name = "zlib-rs"
-version = "0.6.7"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34b31d188d9d685a4f9c7b46d6e36631b07058d2cfe190267adce54dc230bf12"
+checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"
 
 [[package]]
 name = "zmij"

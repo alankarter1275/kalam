@@ -28,7 +28,7 @@ glib = "0.22"
 gio = { version = "0.22", package = "gio" }
 # The reading engine: opens the EPUB itself and draws the page. It replaces
 # the in-app browser page, so the browser and JS-engine crates are gone.
-kalam-reader = { git = "https://github.com/alankarter1275/kalam-engine", branch = "arena/01a07f3f-kalam-engine" }
+kalam-reader = { git = "https://github.com/alankarter1275/kalam-engine", tag = "v0.1.0" }
 
 # Library / persistence
 # `trace` powers the A0 step 7 query-count assertions in `src/perf.rs`: it is

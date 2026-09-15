@@ -253,7 +253,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chapbook-core"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
+source = "git+https://github.com/alankarter1275/kalam-engine?tag=v0.1.0#1b20f3558788abb4ff99611fcaba34b11c443228"
 dependencies = [
  "log",
  "mezzotint",
@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "chapbook-epub"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
+source = "git+https://github.com/alankarter1275/kalam-engine?tag=v0.1.0#1b20f3558788abb4ff99611fcaba34b11c443228"
 dependencies = [
  "chapbook-core",
  "quick-xml 0.42.0",
@@ -275,7 +275,7 @@ dependencies = [
 [[package]]
 name = "chapbook-layout"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
+source = "git+https://github.com/alankarter1275/kalam-engine?tag=v0.1.0#1b20f3558788abb4ff99611fcaba34b11c443228"
 dependencies = [
  "app_units",
  "chapbook-core",
@@ -306,7 +306,7 @@ dependencies = [
 [[package]]
 name = "chapbook-paint"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
+source = "git+https://github.com/alankarter1275/kalam-engine?tag=v0.1.0#1b20f3558788abb4ff99611fcaba34b11c443228"
 dependencies = [
  "chapbook-core",
  "cosmic-text",
@@ -315,7 +315,7 @@ dependencies = [
 [[package]]
 name = "chapbook-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
+source = "git+https://github.com/alankarter1275/kalam-engine?tag=v0.1.0#1b20f3558788abb4ff99611fcaba34b11c443228"
 dependencies = [
  "chapbook-core",
  "chapbook-epub",
@@ -332,7 +332,7 @@ dependencies = [
 [[package]]
 name = "chapbook-render-tinyskia"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
+source = "git+https://github.com/alankarter1275/kalam-engine?tag=v0.1.0#1b20f3558788abb4ff99611fcaba34b11c443228"
 dependencies = [
  "chapbook-core",
  "chapbook-paint",
@@ -844,7 +844,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1309,7 +1309,7 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps 9.0.0",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1935,7 +1935,7 @@ dependencies = [
 [[package]]
 name = "kalam-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#75747973b0dbc57d9fe121b02bd5b669fdc6c9cd"
+source = "git+https://github.com/alankarter1275/kalam-engine?tag=v0.1.0#1b20f3558788abb4ff99611fcaba34b11c443228"
 dependencies = [
  "chapbook-core",
  "chapbook-reader",
@@ -2810,7 +2810,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3492,7 +3492,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4457,7 +4457,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4558,15 +4558,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.61.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
-dependencies = [
- "windows-link",
 ]
 
 [[package]]

@@ -318,6 +318,70 @@ impl Component for ReaderModel {
                     },
                 },
             },
+
+            add_overlay = &gtk::Revealer {
+                add_css_class: "kalam-reader-search-shell",
+                #[watch]
+                set_reveal_child: model.search_active,
+                set_transition_type: gtk::RevealerTransitionType::SlideDown,
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Start,
+                set_margin_top: 14,
+                set_margin_end: 24,
+
+                #[wrap(Some)]
+                set_child = &gtk::Box {
+                    add_css_class: "kalam-reader-search-bar",
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 6,
+
+                    #[name = "search_entry"]
+                    gtk::SearchEntry {
+                        set_placeholder_text: Some("Search in book..."),
+                        set_width_request: 220,
+                        connect_search_changed[sender] => move |entry| {
+                            sender.input(ReaderMsg::UpdateSearchQuery(entry.text().to_string()));
+                        },
+                        connect_activate[sender] => move |_| {
+                            sender.input(ReaderMsg::NextSearchResult);
+                        },
+                    },
+
+                    #[name = "search_count_label"]
+                    gtk::Label {
+                        add_css_class: "kalam-reader-search-count",
+                        #[watch]
+                        set_label: &if model.search_query.is_empty() {
+                            String::new()
+                        } else if model.search_results.is_empty() {
+                            "0 matches".to_string()
+                        } else {
+                            format!("{} of {}", model.search_index + 1, model.search_results.len())
+                        },
+                    },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("go-up-symbolic", 14, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-search-btn",
+                        set_tooltip_text: Some("Previous match (Shift+Enter)"),
+                        connect_clicked => ReaderMsg::PrevSearchResult,
+                    },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("go-down-symbolic", 14, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-search-btn",
+                        set_tooltip_text: Some("Next match (Enter)"),
+                        connect_clicked => ReaderMsg::NextSearchResult,
+                    },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("window-close-symbolic", 14, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-search-btn",
+                        set_tooltip_text: Some("Close (Esc)"),
+                        connect_clicked => ReaderMsg::CloseSearch,
+                    },
+                },
+            },
         }
     }
 
@@ -1684,9 +1748,10 @@ impl ReaderModel {
         let popover = gtk::Popover::builder()
             .child(&overlay_box)
             .autohide(true)
+            .has_arrow(false)
             .build();
-        if let Some(stage) = &self.back_dock {
-            popover.set_parent(stage);
+        if let Some(view) = &self.view {
+            popover.set_parent(view.widget());
             popover.popup();
         }
         self.lightbox_popover = Some(popover);

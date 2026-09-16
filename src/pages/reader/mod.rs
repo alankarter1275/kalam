@@ -324,8 +324,6 @@ impl Component for ReaderModel {
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-search-shell",
                 #[watch]
-                set_visible: model.search_active,
-                #[watch]
                 set_reveal_child: model.search_active,
                 set_transition_type: gtk::RevealerTransitionType::SlideDown,
                 set_halign: gtk::Align::End,
@@ -869,6 +867,7 @@ impl Component for ReaderModel {
         let scroll_ctrl = gtk::EventControllerScroll::new(
             gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::BOTH_AXES,
         );
+        scroll_ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
         let tx_scroll = sender.input_sender().clone();
         scroll_ctrl.connect_scroll(move |_, _, _| {
             let _ = tx_scroll.send(ReaderMsg::UserScrolled);
@@ -976,8 +975,9 @@ impl Component for ReaderModel {
         // before it does anything else, the way it did in the old shell.
         let view_for_keys = model.view.clone();
         let key = gtk::EventControllerKey::new();
+        key.set_propagation_phase(gtk::PropagationPhase::Capture);
         let s = sender.clone();
-        key.connect_key_pressed(move |_, keyval, _, state| {
+        key.connect_key_pressed(move |controller, keyval, _, state| {
             use gtk::gdk::Key;
             if state.contains(gtk::gdk::ModifierType::CONTROL_MASK) {
                 if keyval == Key::f || keyval == Key::F {
@@ -985,23 +985,35 @@ impl Component for ReaderModel {
                     return gtk::glib::Propagation::Stop;
                 }
             }
-            match keyval {
-                Key::Escape => {
-                    s.input(ReaderMsg::CloseSearch);
-                    s.input(ReaderMsg::CloseImageLightbox);
-                    if let Some(view) = &view_for_keys {
-                        if view.selected_text().is_some() {
-                            view.clear_selection();
-                            return gtk::glib::Propagation::Stop;
-                        }
+
+            let is_typing = controller
+                .widget()
+                .and_then(|w| w.root())
+                .and_then(|r| r.focus())
+                .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
+
+            if keyval == Key::Escape {
+                s.input(ReaderMsg::CloseSearch);
+                s.input(ReaderMsg::CloseImageLightbox);
+                if let Some(view) = &view_for_keys {
+                    if view.selected_text().is_some() {
+                        view.clear_selection();
+                        return gtk::glib::Propagation::Stop;
                     }
-                    s.input(ReaderMsg::Close);
-                    gtk::glib::Propagation::Stop
                 }
+                if is_typing {
+                    return gtk::glib::Propagation::Stop;
+                }
+                s.input(ReaderMsg::Close);
+                return gtk::glib::Propagation::Stop;
+            }
+
+            if is_typing {
+                return gtk::glib::Propagation::Proceed;
+            }
+
+            match keyval {
                 Key::d | Key::D => {
-                    // The chip's dictionary button was labelled "D" in the
-                    // old reader; the shortcut goes with it. Without a
-                    // selection the message does nothing.
                     s.input(ReaderMsg::LookUpSelection);
                     gtk::glib::Propagation::Stop
                 }
@@ -1082,7 +1094,11 @@ impl Component for ReaderModel {
                         view.remove_highlight(-9999);
                     }
                 } else {
-                    widgets.search_entry.grab_focus();
+                    let entry = widgets.search_entry.clone();
+                    gtk::glib::idle_add_local_once(move || {
+                        entry.grab_focus();
+                        entry.select_region(0, -1);
+                    });
                 }
             }
             ReaderMsg::UpdateSearchQuery(query) => {
@@ -1326,13 +1342,13 @@ impl Component for ReaderModel {
                 self.save_progress();
                 self.checkpoint_session();
                 if moved {
-                    if !self.mouse_in_top_edge && self.show_back_button {
+                    if self.show_back_button {
                         if let Some(timer) = self.back_hide_timer.take() {
                             timer.remove();
                         }
                         self.show_back_button = false;
                     }
-                    if !self.mouse_in_bottom_edge && self.show_bottom_pill {
+                    if self.show_bottom_pill {
                         if let Some(timer) = self.bottom_hide_timer.take() {
                             timer.remove();
                         }
@@ -1813,14 +1829,14 @@ impl Component for ReaderModel {
             }
             ReaderMsg::UserScrolled => {
                 let mut changed = false;
-                if !self.mouse_in_top_edge && self.show_back_button {
+                if self.show_back_button {
                     if let Some(timer) = self.back_hide_timer.take() {
                         timer.remove();
                     }
                     self.show_back_button = false;
                     changed = true;
                 }
-                if !self.mouse_in_bottom_edge && self.show_bottom_pill {
+                if self.show_bottom_pill {
                     if let Some(timer) = self.bottom_hide_timer.take() {
                         timer.remove();
                     }

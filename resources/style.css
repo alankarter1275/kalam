@@ -39,15 +39,18 @@ window.kalam-window {
  *   - Reveal is driven by `scrollbar:hover`, never `scrolledwindow:hover`.
  *     A scrolledwindow is the entire content area, so that lights the bar up
  *     whenever the pointer is anywhere in the page. */
-scrollbar {
+scrollbar,
+scrollbar.overlay-indicator {
     background: transparent;
     border: none;
+    opacity: 1;
 }
 
 scrollbar trough {
     background: transparent;
     border: none;
     margin: 0;
+    opacity: 1;
 }
 
 /* Transparent at rest: present and grabbable, simply unpainted. */
@@ -59,6 +62,7 @@ scrollbar slider {
     min-height: 36px;
     border-radius: 999px;
     background-color: transparent;
+    opacity: 1;
     transition: background-color 130ms ease;
 }
 
@@ -897,6 +901,7 @@ progressbar.kalam-float-progress progress {
     min-height: 0;
     margin: 0;
     padding: 0;
+    opacity: 1;
 }
 
 .kalam-float-tags {
@@ -3362,6 +3367,7 @@ progressbar.kalam-nr-prog progress {
     background: @kalam_accent;
     border-radius: 999px;
     min-height: 6px;
+    min-width: 4px;
 }
 
 .kalam-nr-prog-label {
@@ -3453,12 +3459,14 @@ progressbar.kalam-goal-bar progress {
     background: @kalam_warning;
     border-radius: 999px;
     min-height: 4px;
+    min-width: 4px;
 }
 
 /* Continue reading. */
 .kalam-lib-scroll scrollbar {
     min-width: 0;
     min-height: 0;
+    opacity: 1;
 }
 button.kalam-lib-play {
     background: @kalam_accent;

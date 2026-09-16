@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.12571.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.12513.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,13 +32,13 @@ navigation: 'all-books' differs from Home -- the page really did change
 navigation: OK -- the images below are 'all-books'
 
 === timing lines from the app ===
-  [timing] startup_db_open         6.2 ms
+  [timing] startup_db_open         5.7 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      4.4 ms
-  [timing] window_shown          204.3 ms
+  [timing] startup_first_page      3.8 ms
+  [timing] window_shown          209.7 ms
   [timing] page_cache_miss           1
   [timing] covers_queued            45
-  [timing] grid_build              5.6 ms
+  [timing] grid_build              4.1 ms
   [timing] grid_cards               48
   [timing] grid_cards_total        139
   [timing] covers_queued             6
@@ -46,7 +46,7 @@ navigation: OK -- the images below are 'all-books'
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        1965.1 ms
+  [timing] startup_dicts        1930.2 ms
 
 === did the covers actually load? ===
   01-all-books.png: 1600x1000  coloured=21.6%  lit=100.0%
@@ -63,26 +63,26 @@ navigation: OK -- the images below are 'all-books'
 
 === app stderr (non-timing lines) ===
   
-  (kalam:12608): Gtk-WARNING **: 23:39:20.746: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:12550): Gtk-WARNING **: 00:07:27.236: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=all-books — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=267136 peak_rss_mb=260
+books=139 peak_rss_kb=266704 peak_rss_mb=260
 
 === shutting down ===
 
 === artifacts ===
   total 352
-  drwxr-xr-x  2 runner runner  4096 Sep 15 23:40 .
-  drwxr-xr-x 15 runner runner  4096 Sep 15 23:39 ..
-  -rw-r--r--  1 runner runner 82137 Sep 15 23:39 01-all-books.png
-  -rw-r--r--  1 runner runner 82137 Sep 15 23:39 02-all-books-settling.png
-  -rw-r--r--  1 runner runner 82137 Sep 15 23:40 03-all-books-settled.png
-  -rw-r--r--  1 runner runner 68467 Sep 15 23:40 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Sep 15 23:39 grim.log
-  -rw-r--r--  1 runner runner   692 Sep 15 23:40 kalam-home.log
-  -rw-r--r--  1 runner runner   924 Sep 15 23:39 kalam.log
-  -rw-r--r--  1 runner runner  2799 Sep 15 23:40 report.txt
-  -rw-r--r--  1 runner runner    88 Sep 15 23:39 sway.log
-  -rw-r--r--  1 runner runner  7185 Sep 15 23:39 tree.json
---- run 35035267178 ---
+  drwxr-xr-x  2 runner runner  4096 Sep 16 00:08 .
+  drwxr-xr-x 15 runner runner  4096 Sep 16 00:07 ..
+  -rw-r--r--  1 runner runner 82137 Sep 16 00:07 01-all-books.png
+  -rw-r--r--  1 runner runner 82137 Sep 16 00:07 02-all-books-settling.png
+  -rw-r--r--  1 runner runner 82137 Sep 16 00:08 03-all-books-settled.png
+  -rw-r--r--  1 runner runner 68467 Sep 16 00:08 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 16 00:07 grim.log
+  -rw-r--r--  1 runner runner   692 Sep 16 00:08 kalam-home.log
+  -rw-r--r--  1 runner runner   924 Sep 16 00:07 kalam.log
+  -rw-r--r--  1 runner runner  2799 Sep 16 00:08 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 16 00:07 sway.log
+  -rw-r--r--  1 runner runner  7185 Sep 16 00:07 tree.json
+--- run 35037694897 ---

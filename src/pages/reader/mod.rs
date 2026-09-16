@@ -1817,14 +1817,20 @@ impl ReaderModel {
         view.goto_locator(&res.locator, true);
     }
 
-    fn show_image_lightbox(&mut self, widgets: &mut <Self as relm4::Component>::Widgets, _w: u32, _h: u32, rgba: &[u8]) {
+    fn show_image_lightbox(&mut self, widgets: &mut <Self as relm4::Component>::Widgets, w: u32, h: u32, rgba: &[u8]) {
         let bytes = glib::Bytes::from_owned(rgba.to_vec());
-        let stream = gio::MemoryInputStream::from_bytes(&bytes);
-        if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_stream(&stream, None::<&gio::Cancellable>) {
-            let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
-            widgets.lightbox_picture.set_paintable(Some(&texture));
-            self.lightbox_active = true;
-        }
+        let pixbuf = gdk_pixbuf::Pixbuf::from_bytes(
+            &bytes,
+            gdk_pixbuf::Colorspace::Rgb,
+            true,
+            8,
+            w as i32,
+            h as i32,
+            (w * 4) as i32,
+        );
+        let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
+        widgets.lightbox_picture.set_paintable(Some(&texture));
+        self.lightbox_active = true;
     }
 }
 

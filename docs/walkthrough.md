@@ -1,21 +1,30 @@
-# Kalam Engine Review & WebKit Parity Walkthrough
+# Kalam Engine Reader Parity & Revamp Walkthrough
 
-## 1. Kalam Engine Architectural Review
-We reviewed `kalam-engine` (`chapbook-core`, `chapbook-reader`, `kalam-reader`) vs the legacy `WebKitGTK` implementation in `calibre-alt`.
+## Completed Enhancements
 
-### Key Findings & Fixes
-1. **Raw RGBA Pixbuf Lightbox Fix**:
-   * **Root Cause**: `show_image_lightbox` attempted to parse `rgba` byte vectors via `Pixbuf::from_stream`. Because `kalam-reader` emits raw uncompressed RGBA pixel buffers (without PNG/JPEG headers), `from_stream` failed every time and silently aborted without displaying the texture.
-   * **Fix**: Replaced stream loading with `Pixbuf::from_bytes(&bytes, Colorspace::Rgb, true, 8, w, h, w * 4)`.
+### 1. Image Lightbox Zoom & Controls
+- **Blurred Backdrop & Glassmorphism Toolbar**: Implemented a floating glassmorphism control toolbar positioned top-center when an image is tapped.
+- **Controls**:
+  - `[ + ]`: Zoom In (up to 5x)
+  - `[ - ]`: Zoom Out (down to 0.2x)
+  - `[ 1:1 ]`: Reset Zoom & Rotation
+  - `[ ↺ ]`: Rotate Left (90° counter-clockwise)
+  - `[ ↻ ]`: Rotate Right (90° clockwise)
+  - `[ ✕ ]`: Close Lightbox (or press Esc)
 
-2. **Full Input Unblocking (Clicks/Scrolls Fix)**:
-   * Added `#[watch] set_visible` to all overlay Revealers in `src/pages/reader/mod.rs` so inactive overlays do not block mouse clicks, drags, or scroll wheel events.
+### 2. GTK UI Revamps
+- **Dictionary Popover**: Built strictly to `docs/files/kalam_dictionary_popup_v3.html` specification (380px width, sticky header, Fraunces serif word title, IBM Plex Mono pronunciation, part-of-speech italic pill, numbered definitions with LIKELY HERE badge, italic examples, synonyms/antonyms chips, and idioms cards).
+- **Selection Actions Chip**: Redesigned GTK selection popover toolbar with sleek pill design, 1px dividers (`.kalam-reader-chip-sep`), aligned Cairo vector icons, and 5 color swatches (Yellow, Green, Blue, Pink, Orange).
+- **Selection Hover & Handles**: Refined interaction and positioning relative to text bounds.
 
-3. **In-Book Text Search (Ctrl+F) with Active Match Highlighting**:
-   * Added GTK Search Revealer and live match highlighting via `show_highlight(-9999, &hl)`.
+### 3. Chrome Auto-Hide Timer & Edge Hover Zones
+- **Inactivity Timer**: Top back button dock and bottom progress pill automatically hide after 3 seconds of mouse inactivity (or during continuous scroll).
+- **Edge Hover Revealer**: Moving mouse near top (top 32px edge) or bottom (bottom 32px edge) reveals the respective back button or progress pill.
 
 ---
 
-## 2. Verification Steps
-* `cargo check --workspace` in `kalam-engine` — PASSED (Exit 0).
-* `cargo check` in `calibre-alt` — PASSED (Exit 0).
+## Verification Results
+- `cargo check --workspace` in `kalam-engine` — **PASSED** (Exit 0)
+- `cargo check` in `calibre-alt` — **PASSED** (Exit 0)
+- Code committed & pushed to `main` (`f304c0b`).
+

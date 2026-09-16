@@ -3831,7 +3831,6 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 999px;
   padding: 5px 6px;
-  display: flex; align-items: center; gap: 2px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
 }
 
@@ -3849,24 +3848,21 @@ button.kalam-lightbox-tool-btn.close:hover {
 }
 
 .k-sel-action {
-  display: flex; align-items: center; gap: 5px;
   padding: 6px 12px; border-radius: 999px;
   border: none; background: transparent;
   color: rgba(255,255,255,0.8);
   font-family: 'IBM Plex Sans', sans-serif;
   font-size: 12px; font-weight: 500;
   transition: background 150ms ease, color 150ms ease;
-  white-space: nowrap;
 }
 
 .k-sel-action image { -gtk-icon-size: 14px; }
 .k-sel-action:hover { background: rgba(255,255,255,0.1); color: #fff; }
 .k-sel-action.accent { color: #61afef; }
 
-.k-sel-divider { width: 1px; min-height: 18px; background: rgba(255,255,255,0.12); margin: 0 2px; }
+.k-sel-divider { min-width: 1px; min-height: 18px; background: rgba(255,255,255,0.12); margin: 0 2px; }
 
-.k-color-bar { display: none; align-items: center; gap: 6px; padding: 0 4px; }
-.k-color-bar.visible { display: flex; }
+.k-color-bar { padding: 0 4px; }
 
 .k-color-dot {
   min-width: 20px; min-height: 20px; border-radius: 50%;

@@ -377,11 +377,9 @@ pub(crate) fn build_selection_chip(
 const HANDLE_HEADROOM: i32 = 8;
 /// One sense as the card draws it.
 ///
-/// `pos` is per-sense (the old popup grouped senses by part of speech);
 /// `hinted` is the Lesk "likely here" sense, which keeps its index into
 /// the *flat* sense list however the card then groups them.
 pub(crate) struct DictSense {
-    pub(crate) pos: Option<String>,
     pub(crate) def: String,
     pub(crate) example: Option<String>,
     pub(crate) hinted: bool,
@@ -419,7 +417,6 @@ impl DictCard {
             .iter()
             .enumerate()
             .map(|(i, s)| DictSense {
-                pos: s.pos.clone(),
                 def: s.def.clone(),
                 example: s.example.clone().filter(|e| !e.is_empty()),
                 hinted: hint == Some(i),

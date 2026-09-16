@@ -93,22 +93,22 @@ impl Component for ReaderModel {
 
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
-                add_css_class: "kalam-reader-hover-edge-top",
-                set_height_request: 32,
-                set_hexpand: true,
-                set_vexpand: false,
-                set_halign: gtk::Align::Fill,
-                set_valign: gtk::Align::Start,
+                add_css_class: "kalam-reader-hover-edge-left",
+                set_width_request: 15,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Fill,
             },
 
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
-                add_css_class: "kalam-reader-hover-edge-bottom",
-                set_height_request: 32,
-                set_hexpand: true,
-                set_vexpand: false,
-                set_halign: gtk::Align::Fill,
-                set_valign: gtk::Align::End,
+                add_css_class: "kalam-reader-hover-edge-right",
+                set_width_request: 15,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Fill,
             },
 
             add_overlay = &gtk::Box {
@@ -868,38 +868,40 @@ impl Component for ReaderModel {
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
 
-        if let Some(top_hover) = overlay_child_box(&root, 2) {
-            let motion = gtk::EventControllerMotion::new();
-            let tx = sender.input_sender().clone();
-            motion.connect_enter(move |_, _, _| {
-                let _ = tx.send(ReaderMsg::TopEdgeHover(true));
-            });
-            let tx = sender.input_sender().clone();
-            motion.connect_leave(move |_| {
-                let _ = tx.send(ReaderMsg::TopEdgeHover(false));
-            });
-            top_hover.add_controller(motion);
-        }
-        if let Some(bottom_hover) = overlay_child_box(&root, 3) {
-            let motion = gtk::EventControllerMotion::new();
-            let tx = sender.input_sender().clone();
-            motion.connect_enter(move |_, _, _| {
-                let _ = tx.send(ReaderMsg::BottomEdgeHover(true));
-            });
-            let tx = sender.input_sender().clone();
-            motion.connect_leave(move |_| {
-                let _ = tx.send(ReaderMsg::BottomEdgeHover(false));
-            });
-            bottom_hover.add_controller(motion);
-        }
-
-        // Install root motion controller to reset 3-second inactivity chrome timer
+        // Install root motion controller to reset 3-second inactivity chrome timer and detect edges
         let root_motion = gtk::EventControllerMotion::new();
         let tx = sender.input_sender().clone();
-        root_motion.connect_motion(move |_, _, _| {
+        let root_clone = root.clone();
+        root_motion.connect_motion(move |_, _, y| {
             let _ = tx.send(ReaderMsg::ResetChromeTimer);
+            let h = root_clone.height() as f64;
+            let top = y < 32.0;
+            let bottom = y > (h - 32.0) && h > 32.0;
+            let _ = tx.send(ReaderMsg::TopEdgeHover(top));
+            let _ = tx.send(ReaderMsg::BottomEdgeHover(bottom));
+        });
+        let tx_leave = sender.input_sender().clone();
+        root_motion.connect_leave(move |_| {
+            let _ = tx_leave.send(ReaderMsg::TopEdgeHover(false));
+            let _ = tx_leave.send(ReaderMsg::BottomEdgeHover(false));
         });
         root.add_controller(root_motion);
+        if let Some(left_hover) = overlay_child_box(&root, 2) {
+            connect_hover_zone(
+                &left_hover,
+                &sender,
+                ReaderMsg::OpenLeftSidebar,
+                ReaderMsg::ScheduleCloseLeft,
+            );
+        }
+        if let Some(right_hover) = overlay_child_box(&root, 3) {
+            connect_hover_zone(
+                &right_hover,
+                &sender,
+                ReaderMsg::OpenRightSidebar,
+                ReaderMsg::ScheduleCloseRight,
+            );
+        }
         if let Some(left_sidebar) = left_sidebar_box {
             connect_hover_zone(
                 &left_sidebar,
@@ -1717,12 +1719,14 @@ impl Component for ReaderModel {
                 self.update_lightbox_image(widgets);
             }
             ReaderMsg::ResetChromeTimer => {
-                self.show_back_button = self.mouse_in_top_edge;
-                self.show_bottom_pill = self.mouse_in_bottom_edge;
-                refresh_chrome = true;
+                // If we move the mouse, just reset the hide timer!
+                // Don't immediately hide it if we're not in the top edge.
                 self.schedule_chrome_auto_hide(sender.clone());
             }
             ReaderMsg::ChromeAutoTimerTick => {
+                if let Some(timer) = self.chrome_hide_timer.take() {
+                    timer.remove();
+                }
                 if !self.mouse_in_top_edge {
                     self.show_back_button = false;
                 }
@@ -1954,7 +1958,7 @@ impl ReaderModel {
             Duration::from_secs(3),
             move || {
                 let _ = tx.send(ReaderMsg::ChromeAutoTimerTick);
-                glib::ControlFlow::Break
+                glib::ControlFlow::Continue
             },
         ));
     }

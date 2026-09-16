@@ -278,20 +278,38 @@ pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
 ///
 /// Returns a popover already pointed at the selection; the caller keeps it
 /// in the model so `None` (selection cleared) can pop it down.
+
+fn action_button(icon_name: &str, label_text: &str, accent: bool) -> gtk::Button {
+    let btn = gtk::Button::new();
+    btn.add_css_class("k-sel-action");
+    if accent {
+        btn.add_css_class("accent");
+    }
+    let bx = gtk::Box::new(gtk::Orientation::Horizontal, 5);
+    bx.set_halign(gtk::Align::Center);
+    bx.set_valign(gtk::Align::Center);
+    let icon = gtk::Image::from_icon_name(icon_name);
+    let label = gtk::Label::new(Some(label_text));
+    bx.append(&icon);
+    bx.append(&label);
+    btn.set_child(Some(&bx));
+    btn
+}
+
 pub(crate) fn build_selection_chip(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    row.add_css_class("kalam-reader-chip");
+    row.add_css_class("k-sel-toolbar");
+    row.add_css_class("visible");
 
-    // The swatches, hidden until the highlighter button asks for them —
-    // `.kalam-chip-colors`, which opened the same way and closed again
-    // every time the chip was shown.
+    let highlight = action_button("format-text-highlight-symbolic", "Highlight", true);
+    row.append(&highlight);
+
     let colors = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    colors.add_css_class("kalam-reader-chip-colors");
-    colors.set_visible(false);
+    colors.add_css_class("k-color-bar");
     for color in [
         HighlightColor::Yellow,
         HighlightColor::Green,
@@ -300,8 +318,8 @@ pub(crate) fn build_selection_chip(
         HighlightColor::Orange,
     ] {
         let dot = gtk::Button::new();
-        dot.add_css_class("kalam-reader-chip-dot");
-        dot.add_css_class(&format!("kalam-reader-chip-dot-{}", color.name()));
+        dot.add_css_class("k-color-dot");
+        dot.add_css_class(&format!("k-color-dot-{}", color.name()));
         dot.set_tooltip_text(Some(&format!("Highlight {}", color.name())));
         let tx = sender.input_sender().clone();
         dot.connect_clicked(move |_| {
@@ -309,29 +327,32 @@ pub(crate) fn build_selection_chip(
         });
         colors.append(&dot);
     }
-
-    let highlight = chip_icon_button(ChipIcon::Highlight, "Highlight");
     {
         let colors = colors.clone();
         highlight.connect_clicked(move |_| {
-            let showing = !colors.is_visible();
-            colors.set_visible(showing);
+            if colors.has_css_class("visible") {
+                colors.remove_css_class("visible");
+            } else {
+                colors.add_css_class("visible");
+            }
         });
     }
-    row.append(&highlight);
+    
+    let sep1 = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    sep1.add_css_class("k-sel-divider");
+    row.append(&sep1);
     row.append(&colors);
 
-    for (icon, tooltip, msg) in [
-        (ChipIcon::Quote, "Save quote", ReaderMsg::QuoteSelection),
-        (
-            ChipIcon::Dictionary,
-            "Dictionary (D)",
-            ReaderMsg::LookUpSelection,
-        ),
-        (ChipIcon::Copy, "Copy", ReaderMsg::CopySelection),
+    for (icon_name, label, msg) in [
+        ("format-quote-symbolic", "Quote", ReaderMsg::QuoteSelection),
+        ("accessories-dictionary-symbolic", "Define", ReaderMsg::LookUpSelection),
+        ("edit-copy-symbolic", "Copy", ReaderMsg::CopySelection),
     ] {
-        row.append(&chip_separator());
-        let button = chip_icon_button(icon, tooltip);
+        let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        sep.add_css_class("k-sel-divider");
+        row.append(&sep);
+
+        let button = action_button(icon_name, label, false);
         let tx = sender.input_sender().clone();
         button.connect_clicked(move |_| {
             let _ = tx.send(msg.clone());
@@ -349,148 +370,11 @@ pub(crate) fn build_selection_chip(
     anchor.set_y(anchor.y() - HANDLE_HEADROOM);
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
-    popover.add_css_class("kalam-reader-chip-popover");
+    popover.add_css_class("k-sel-toolbar-popover");
     popover
 }
 
-/// How far above the selection's first band the chip is pointed: the
-/// engine's 5 px teardrop grip stands a shade over 6 px above the band
-/// (`kalam-reader`'s `handles.rs`: its tip is on the band's edge and the
-/// circle hangs away from the text), plus a little air.
 const HANDLE_HEADROOM: i32 = 8;
-
-/// One pixel of the chip's border colour at 18 per cent, twenty pixels
-/// tall — `.kalam-chip-sep`, which separated the chip's three groups.
-fn chip_separator() -> gtk::Box {
-    let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    sep.add_css_class("kalam-reader-chip-sep");
-    sep.set_valign(gtk::Align::Center);
-    sep
-}
-
-/// The four icons the JS chip drew as inline SVG. Each is authored in a
-/// 24-unit square, the same coordinates the SVG used.
-#[derive(Clone, Copy)]
-enum ChipIcon {
-    /// The highlighter: `m15 4 5 5-9 9H6v-5l9-9Z`, the nib line across it,
-    /// and the rule underneath.
-    Highlight,
-    /// The filled double quote (`kalam-chip-icon-fill` in the old CSS).
-    Quote,
-    /// The letters "Aa". Drawn as strokes rather than set as text: the
-    /// other three icons are paths, and a cairo drawing has no business
-    /// depending on which font fontconfig picks.
-    Dictionary,
-    /// The two sheets of the copy icon.
-    Copy,
-}
-
-/// A round chip button with a 17 px cairo drawing inside it. The colour is
-/// read back from CSS via `widget.color()`, so the palette stays in one
-/// place, and the drawing scales with the area.
-fn chip_icon_button(icon: ChipIcon, tooltip: &str) -> gtk::Button {
-    let area = gtk::DrawingArea::new();
-    area.set_content_width(17);
-    area.set_content_height(17);
-    area.set_valign(gtk::Align::Center);
-    area.set_draw_func(move |area, cr, w, h| {
-        let colour = area.color();
-        cr.set_source_rgba(
-            colour.red() as f64,
-            colour.green() as f64,
-            colour.blue() as f64,
-            colour.alpha() as f64,
-        );
-        let scale = (w.min(h) as f64) / 24.0;
-        if scale <= 0.0 {
-            return;
-        }
-        cr.scale(scale, scale);
-        cr.set_line_width(1.8);
-        cr.set_line_cap(gtk::cairo::LineCap::Round);
-        cr.set_line_join(gtk::cairo::LineJoin::Round);
-        match icon {
-            ChipIcon::Highlight => {
-                cr.move_to(15.0, 4.0);
-                cr.line_to(20.0, 9.0);
-                cr.line_to(11.0, 18.0);
-                cr.line_to(6.0, 18.0);
-                cr.line_to(6.0, 13.0);
-                cr.close_path();
-                cr.move_to(13.0, 6.0);
-                cr.line_to(18.0, 11.0);
-                cr.move_to(4.0, 20.0);
-                cr.line_to(12.0, 20.0);
-                let _ = cr.stroke();
-            }
-            ChipIcon::Quote => {
-                // Filled, not stroked: the old icon was the fill variant.
-                for dx in [0.0, 10.0] {
-                    cr.move_to(4.0 + dx, 11.0);
-                    cr.line_to(4.0 + dx, 8.0);
-                    cr.line_to(8.0 + dx, 8.0);
-                    cr.line_to(8.0 + dx, 11.0);
-                    cr.curve_to(8.0 + dx, 14.0, 6.7 + dx, 16.0, 4.0 + dx, 17.0);
-                    cr.line_to(4.0 + dx, 14.9);
-                    cr.curve_to(5.1 + dx, 14.4, 5.8 + dx, 13.6, 6.0 + dx, 12.0);
-                    cr.line_to(4.0 + dx, 12.0);
-                    cr.close_path();
-                }
-                let _ = cr.fill();
-            }
-            ChipIcon::Dictionary => {
-                // "A" at the old icon's 12 units, then "a" at 9.
-                cr.set_line_width(1.7);
-                cr.move_to(3.2, 16.2);
-                cr.line_to(7.9, 7.2);
-                cr.line_to(12.6, 16.2);
-                cr.move_to(5.3, 13.0);
-                cr.line_to(10.5, 13.0);
-                let _ = cr.stroke();
-                cr.set_line_width(1.5);
-                cr.arc(16.2, 16.4, 2.35, 0.0, std::f64::consts::TAU);
-                cr.move_to(18.55, 13.9);
-                cr.line_to(18.55, 19.0);
-                let _ = cr.stroke();
-            }
-            ChipIcon::Copy => {
-                // The back sheet. Its right edge is the stub the JS path
-                // started with (`M16 8 V6`); the rest of it hides behind the
-                // front sheet, so it is not drawn.
-                cr.move_to(16.0, 8.0);
-                cr.line_to(16.0, 6.0);
-                cr.arc_negative(14.0, 6.0, 2.0, 0.0, -std::f64::consts::FRAC_PI_2);
-                cr.line_to(5.0, 4.0);
-                cr.arc_negative(5.0, 6.0, 2.0, -std::f64::consts::FRAC_PI_2, -std::f64::consts::PI);
-                cr.line_to(3.0, 15.0);
-                cr.arc_negative(5.0, 15.0, 2.0, std::f64::consts::PI, std::f64::consts::FRAC_PI_2);
-                cr.line_to(8.0, 17.0);
-                // The front sheet: the SVG's rounded rect (8,8 11x12 r2).
-                rounded_rect(cr, 8.0, 8.0, 11.0, 12.0, 2.0);
-                let _ = cr.stroke();
-            }
-        }
-    });
-
-    let button = gtk::Button::new();
-    button.add_css_class("kalam-reader-chip-action");
-    button.set_child(Some(&area));
-    button.set_tooltip_text(Some(tooltip));
-    button
-}
-
-/// Trace a rounded rectangle as four corner arcs — cairo's own
-/// `rectangle()` cannot round the corners the SVG rect had.
-fn rounded_rect(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
-    use std::f64::consts::{FRAC_PI_2, PI};
-    cr.new_sub_path();
-    cr.arc(x + w - r, y + r, r, -FRAC_PI_2, 0.0);
-    cr.arc(x + w - r, y + h - r, r, 0.0, FRAC_PI_2);
-    cr.arc(x + r, y + h - r, r, FRAC_PI_2, PI);
-    cr.arc(x + r, y + r, r, PI, 3.0 * FRAC_PI_2);
-    cr.close_path();
-}
-
 /// One sense as the card draws it.
 ///
 /// `pos` is per-sense (the old popup grouped senses by part of speech);
@@ -569,83 +453,21 @@ impl DictCard {
 /// The parts of speech the old popup listed first, in this order. Anything
 /// else keeps its first-seen order; senses with no part of speech land last
 /// and get no divider row at all.
-const POS_GROUP_ORDER: [&str; 4] = ["noun", "verb", "adjective", "adverb"];
 
-/// How a sense's part of speech becomes a group key: trimmed, lowercased,
-/// empty when the entry does not say.
-fn pos_group_key(pos: Option<&str>) -> String {
-    pos.unwrap_or("").trim().to_lowercase()
-}
-
-/// The distinct group keys in display order (the JS `buildPosGroups`).
-fn pos_group_keys(senses: &[DictSense]) -> Vec<String> {
-    let mut first_seen: Vec<String> = Vec::new();
-    for sense in senses {
-        let key = pos_group_key(sense.pos.as_deref());
-        if !first_seen.contains(&key) {
-            first_seen.push(key);
-        }
-    }
-    // A plain loop, not `.iter().filter(...)`: the adapter hands the closure
-    // `&&str` and the extra reference layer makes the comparison read as a
-    // different type than it is (this cost two CI runs to get right).
-    let mut ordered: Vec<String> = Vec::new();
-    for known in POS_GROUP_ORDER {
-        if first_seen.iter().any(|key| key.as_str() == known) {
-            ordered.push(known.to_string());
-        }
-    }
-    for key in first_seen {
-        if !POS_GROUP_ORDER.contains(&key.as_str()) {
-            ordered.push(key);
-        }
-    }
-    ordered
-}
-
-/// For each sense, the divider label that precedes it, if any. A divider
-/// only appears before the *first* sense of a labelled group, and the
-/// unlabelled group never gets one — so its senses simply continue under
-/// the last labelled heading.
-fn pos_dividers(senses: &[DictSense]) -> Vec<Option<String>> {
-    let mut dividers = vec![None; senses.len()];
-    for key in pos_group_keys(senses) {
-        if key.is_empty() {
-            continue;
-        }
-        if let Some(first) = senses
-            .iter()
-            .position(|sense| pos_group_key(sense.pos.as_deref()) == key)
-        {
-            dividers[first] = Some(key.to_uppercase());
-        }
-    }
-    dividers
-}
-
-/// A round 26 px icon button — the card's save / find / copy cluster.
-fn icon_button(glyph: &str, tooltip: &str) -> gtk::Button {
-    let btn = gtk::Button::with_label(glyph);
-    btn.add_css_class("kalam-reader-dict-icon");
-    btn.set_tooltip_text(Some(tooltip));
-    btn
-}
-
-/// The header: word, pronunciation, part-of-speech pill, and the actions.
 fn dict_header(
-    host: &gtk::Widget,
+    _host: &gtk::Widget,
     card: &DictCard,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Box {
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    header.add_css_class("kalam-reader-dict-head");
+    header.add_css_class("k-header");
 
     let left = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    left.add_css_class("kalam-reader-dict-head-left");
+    left.add_css_class("k-header-left");
     left.set_hexpand(true);
 
     let word = gtk::Label::new(Some(&card.word));
-    word.add_css_class("kalam-reader-dict-word");
+    word.add_css_class("k-word");
     word.set_xalign(0.0);
     word.set_halign(gtk::Align::Start);
     word.set_wrap(true);
@@ -653,33 +475,25 @@ fn dict_header(
 
     if let Some(pronunciation) = &card.pronunciation {
         let pron = gtk::Label::new(Some(pronunciation));
-        pron.add_css_class("kalam-reader-dict-pron");
+        pron.add_css_class("k-pronunciation");
         pron.set_xalign(0.0);
         pron.set_halign(gtk::Align::Start);
         left.append(&pron);
     }
 
-    // The pill is redundant once the senses carry their own dividers, so it
-    // survives only for entries with a single group (the old popup's rule).
     if let Some(pos) = &card.pos {
-        if pos_group_keys(&card.senses).len() < 2 {
-            let pill = gtk::Label::new(Some(pos));
-            pill.add_css_class("kalam-reader-dict-pos");
-            pill.set_halign(gtk::Align::Start);
-            left.append(&pill);
-        }
+        let pill = gtk::Label::new(Some(pos));
+        pill.add_css_class("k-pos");
+        pill.set_halign(gtk::Align::Start);
+        left.append(&pill);
     }
     header.append(&left);
 
-    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    actions.add_css_class("kalam-reader-dict-actions");
-    actions.set_valign(gtk::Align::Start);
-
-    // Save: a ☆ that is a ✓ (and disabled) once the word is in the sidebar.
-    let save = icon_button(
-        if card.saved { "\u{2713}" } else { "\u{2606}" },
-        if card.saved { "Saved" } else { "Save word" },
-    );
+    let save = gtk::Button::new();
+    save.add_css_class("k-save-btn");
+    let icon = gtk::Image::from_icon_name("bookmark-new-symbolic");
+    save.set_child(Some(&icon));
+    save.set_tooltip_text(Some(if card.saved { "Saved" } else { "Save word" }));
     if card.saved {
         save.add_css_class("saved");
     }
@@ -690,172 +504,105 @@ fn dict_header(
             let _ = tx.send(ReaderMsg::SaveCurrentWord);
         });
     }
-    actions.append(&save);
+    header.append(&save);
 
-    // Find in chapter: the engine's `ReaderView` exposes no search yet
-    // (kalam-engine R12f defers it), so the button exists and is disabled
-    // rather than silently missing.
-    let find = gtk::Button::new();
-    find.add_css_class("kalam-reader-dict-icon");
-    find.set_tooltip_text(Some("Find in chapter (not available yet)"));
-    let icon = gtk::Image::from_icon_name("system-search-symbolic");
-    icon.set_pixel_size(14);
-    find.set_child(Some(&icon));
-    find.set_sensitive(false);
-    actions.append(&find);
-
-    // Copy: the word and its numbered definitions, the old popup's text.
-    let copy = icon_button("\u{29c9}", "Copy");
-    let text = card.clipboard_text();
-    let host = host.clone();
-    copy.connect_clicked(move |btn| {
-        // `Widget::clipboard()` is this widget display's
-        // `gdk::Display::clipboard()`, and is what the reader's own Copy
-        // action uses. The glyph flips to a tick for 900 ms as feedback.
-        host.clipboard().set_text(&text);
-        btn.set_label("\u{2713}");
-        let btn = btn.clone();
-        glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
-            btn.set_label("\u{29c9}");
-        });
-    });
-    actions.append(&copy);
-
-    header.append(&actions);
     header
-}
-
-impl DictCard {
-    /// What the copy button puts on the clipboard: the word, then every
-    /// sense numbered — the old popup's format, exactly.
-    fn clipboard_text(&self) -> String {
-        let mut text = self.word.clone();
-        for (i, sense) in self.senses.iter().enumerate() {
-            text.push('\n');
-            text.push_str(&format!("{}. {}", i + 1, sense.def));
-        }
-        text
-    }
 }
 
 fn section_label(text: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(&text.to_uppercase()));
-    label.add_css_class("kalam-reader-dict-section");
+    label.add_css_class("k-section-label");
     label.set_halign(gtk::Align::Start);
     label.set_xalign(0.0);
     label
 }
 
-fn pos_divider(text: &str) -> gtk::Label {
-    let label = gtk::Label::new(Some(text));
-    label.add_css_class("kalam-reader-dict-divider");
-    label.set_halign(gtk::Align::Start);
-    label.set_xalign(0.0);
-    label
-}
-
-/// One numbered sense: number, optional LIKELY HERE badge, definition,
-/// optional example.
 fn sense_row(sense: &DictSense, number: usize) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    row.add_css_class("kalam-reader-dict-sense");
+    row.add_css_class("k-def-item");
 
-    let num = gtk::Label::new(Some(&format!("{number}.")));
-    num.add_css_class("kalam-reader-dict-num");
+    let num = gtk::Label::new(Some(&format!("{}.", number)));
+    num.add_css_class("k-def-num");
     num.set_valign(gtk::Align::Start);
     row.append(&num);
 
-    let text = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    text.set_hexpand(true);
+    let text_box = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    text_box.set_hexpand(true);
 
-    let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    line.set_hexpand(true);
     if sense.hinted {
-        let badge = gtk::Label::new(Some(&"LIKELY HERE".to_uppercase()));
-        badge.add_css_class("kalam-reader-dict-badge");
+        let badge = gtk::Label::new(Some("LIKELY HERE"));
+        badge.add_css_class("k-def-badge");
         badge.set_valign(gtk::Align::Start);
-        line.append(&badge);
+        badge.set_halign(gtk::Align::Start);
+        text_box.append(&badge);
     }
+
     let def = gtk::Label::new(Some(&sense.def));
-    def.add_css_class("kalam-reader-dict-def");
+    def.add_css_class("k-def-text");
     def.set_wrap(true);
     def.set_xalign(0.0);
     def.set_halign(gtk::Align::Start);
-    def.set_hexpand(true);
-    def.set_max_width_chars(34);
-    line.append(&def);
-    text.append(&line);
+    text_box.append(&def);
 
     if let Some(example) = &sense.example {
         let ex = gtk::Label::new(Some(example));
-        ex.add_css_class("kalam-reader-dict-example");
+        ex.add_css_class("k-def-example");
         ex.set_wrap(true);
         ex.set_xalign(0.0);
         ex.set_halign(gtk::Align::Start);
-        ex.set_max_width_chars(34);
-        text.append(&ex);
+        text_box.append(&ex);
     }
-    row.append(&text);
+    row.append(&text_box);
     row
 }
 
-/// The definitions section: the first three senses, the rest behind
-/// "Show N more", with the part-of-speech dividers the old popup drew.
 fn append_definitions(body: &gtk::Box, card: &DictCard) {
     body.append(&section_label("Definitions"));
-    let dividers = pos_dividers(&card.senses);
+
+    let defs_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    defs_box.add_css_class("k-defs");
 
     let shown = card.senses.len().min(3);
-    let first = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    first.add_css_class("kalam-reader-dict-senses");
     for (i, sense) in card.senses.iter().take(shown).enumerate() {
-        if let Some(group) = &dividers[i] {
-            first.append(&pos_divider(group));
-        }
-        first.append(&sense_row(sense, i + 1));
+        defs_box.append(&sense_row(sense, i + 1));
     }
-    body.append(&first);
 
     let extra = &card.senses[shown..];
-    if extra.is_empty() {
-        return;
-    }
-    let hidden = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    hidden.add_css_class("kalam-reader-dict-senses");
-    for (offset, sense) in extra.iter().enumerate() {
-        let i = shown + offset;
-        if let Some(group) = &dividers[i] {
-            hidden.append(&pos_divider(group));
+    if !extra.is_empty() {
+        let hidden = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        hidden.add_css_class("k-extra-defs");
+        for (offset, sense) in extra.iter().enumerate() {
+            hidden.append(&sense_row(sense, shown + offset + 1));
         }
-        hidden.append(&sense_row(sense, i + 1));
-    }
-    let revealer = gtk::Revealer::new();
-    revealer.set_transition_type(gtk::RevealerTransitionType::None);
-    revealer.set_reveal_child(false);
-    revealer.set_child(Some(&hidden));
-    body.append(&revealer);
 
-    let more = gtk::Button::with_label(&format!("Show {} more", extra.len()));
-    more.add_css_class("kalam-reader-dict-more");
-    more.set_halign(gtk::Align::Start);
-    let count = extra.len();
-    let showing = std::rc::Rc::new(std::cell::Cell::new(false));
-    more.connect_clicked(move |btn| {
-        let next = !showing.get();
-        showing.set(next);
-        revealer.set_reveal_child(next);
-        let label = if next {
-            "Show less".to_string()
-        } else {
-            format!("Show {count} more")
-        };
-        btn.set_label(&label);
-    });
-    body.append(&more);
+        let revealer = gtk::Revealer::new();
+        revealer.set_transition_type(gtk::RevealerTransitionType::None);
+        revealer.set_reveal_child(false);
+        revealer.set_child(Some(&hidden));
+        defs_box.append(&revealer);
+
+        let more = gtk::Button::with_label(&format!("Show {} more", extra.len()));
+        more.add_css_class("k-show-more");
+        more.set_halign(gtk::Align::Start);
+        let count = extra.len();
+        let showing = std::rc::Rc::new(std::cell::Cell::new(false));
+        more.connect_clicked(move |btn| {
+            let next = !showing.get();
+            showing.set(next);
+            revealer.set_reveal_child(next);
+            let label = if next {
+                "Show less".to_string()
+            } else {
+                format!("Show {} more", count)
+            };
+            btn.set_label(&label);
+        });
+        defs_box.append(&more);
+    }
+
+    body.append(&defs_box);
 }
 
-/// A row of clickable chips (synonyms, antonyms, suggestions). FlowBox,
-/// because the old popup's chips wrapped onto as many lines as they needed.
 fn append_chips(body: &gtk::Box, words: &[String], antonym: bool, sender: &ComponentSender<ReaderModel>) {
     let flow = gtk::FlowBox::builder()
         .selection_mode(gtk::SelectionMode::None)
@@ -865,15 +612,11 @@ fn append_chips(body: &gtk::Box, words: &[String], antonym: bool, sender: &Compo
         .halign(gtk::Align::Start)
         .valign(gtk::Align::Start)
         .build();
-    flow.add_css_class("kalam-reader-dict-chips");
+    flow.add_css_class("k-chips");
     for word in words {
         let chip = gtk::Button::with_label(word);
-        chip.add_css_class("kalam-reader-dict-chip");
-        chip.add_css_class(if antonym {
-            "kalam-reader-dict-chip-ant"
-        } else {
-            "kalam-reader-dict-chip-syn"
-        });
+        chip.add_css_class("k-chip");
+        chip.add_css_class(if antonym { "k-chip-ant" } else { "k-chip-syn" });
         let tx = sender.input_sender().clone();
         let word = word.clone();
         chip.connect_clicked(move |_| {
@@ -898,27 +641,28 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
     }
     if !card.idioms.is_empty() {
         body.append(&section_label("Idioms"));
+        let idioms_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        idioms_box.add_css_class("k-idioms");
         for (phrase, def) in &card.idioms {
             let item = gtk::Box::new(gtk::Orientation::Vertical, 3);
-            item.add_css_class("kalam-reader-dict-idiom");
+            item.add_css_class("k-idiom-item");
             let phrase_label = gtk::Label::new(Some(phrase));
-            phrase_label.add_css_class("kalam-reader-dict-idiom-phrase");
+            phrase_label.add_css_class("k-idiom-phrase");
             phrase_label.set_xalign(0.0);
             phrase_label.set_halign(gtk::Align::Start);
             phrase_label.set_wrap(true);
             item.append(&phrase_label);
             let def_label = gtk::Label::new(Some(def));
-            def_label.add_css_class("kalam-reader-dict-idiom-def");
+            def_label.add_css_class("k-idiom-def");
             def_label.set_xalign(0.0);
             def_label.set_halign(gtk::Align::Start);
             def_label.set_wrap(true);
-            def_label.set_max_width_chars(34);
             item.append(&def_label);
-            body.append(&item);
+            idioms_box.append(&item);
         }
+        body.append(&idioms_box);
     }
     if card.senses.is_empty() && !card.suggestions.is_empty() {
-        // The old popup's wording: a phrase's pieces are not "did you mean".
         let label = if card.word.split_whitespace().count() > 1 {
             "Words in this phrase"
         } else {
@@ -928,85 +672,70 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
         append_chips(body, &card.suggestions, false, sender);
     }
     if card.senses.is_empty() && card.suggestions.is_empty() {
-        let empty = gtk::Label::new(Some(&format!(
-            "No entry for \u{2018}{}\u{2019}.",
-            card.word
-        )));
-        empty.add_css_class("kalam-reader-dict-empty");
+        let empty = gtk::Label::new(Some(&format!("No entry for \u{2018}{}\u{2019}.", card.word)));
+        empty.add_css_class("k-section-label");
         empty.set_xalign(0.0);
         empty.set_halign(gtk::Align::Start);
         body.append(&empty);
     }
 }
 
-/// The dictionary card: `docs/files/kalam_dictionary_popup_v3.html` (the
-/// mockup the owner compares against) with the shipped popup's three
-/// buttons — save, a disabled find-in-chapter, copy. Its numbers are the
-/// spec: 380 px, header 20/20/16, 26 px serif headword, 11 px mono
-/// pronunciation, 30 px round buttons, body 4/20/24, 9 px section labels,
-/// 13 px/1.6 senses, 12 px chips, radius-10 idiom cards.
-///
-/// Same input (`DictCard`), same three messages, same anchoring as before.
-/// Two deliberate differences, both reported: "Find in chapter" is present
-/// but disabled because `ReaderView` exposes no search, and the 320 px
-/// width is a minimum rather than a maximum — GTK has no `max-width`, so a
-/// very narrow window clamps the popover itself.
 pub(crate) fn build_dict_popover(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
     card: &DictCard,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    root.add_css_class("kalam-reader-dict");
-    // The mockup's 380 px, but never wider than the window it hangs over:
-    // GTK has no max-width, so a long unbroken word would otherwise widen
-    // the popover past the screen edge. The floor keeps the header readable
-    // when the window is tiny; GTK clamps the popover itself after that.
+    let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    popup.add_css_class("k-popup");
+
     let width = 380.min((host.width() - 32).max(240));
-    root.set_size_request(width, -1);
-    root.append(&dict_header(host, card, sender));
+    popup.set_size_request(width, 520);
 
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    body.add_css_class("kalam-reader-dict-body");
-    append_sections(&body, card, sender);
+    let header = dict_header(host, card, sender);
+    popup.append(&header);
 
-    // The body scrolls at 300 px and never shows a scrollbar; a 40 px
-    // gradient covers the cut so it reads as a fade, not a clip.
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
-        .max_content_height(300)
         .propagate_natural_height(true)
-        .child(&body)
         .build();
-    scroll.add_css_class("kalam-reader-dict-scroll");
-
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    body.add_css_class("k-body");
+    append_sections(&body, card, sender);
+    scroll.set_child(Some(&body));
+    
     let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    fade.add_css_class("kalam-reader-dict-fade");
+    fade.add_css_class("k-fade-bottom");
     fade.set_valign(gtk::Align::End);
     fade.set_size_request(-1, 40);
     fade.set_can_target(false);
-
+    
     let overlay = gtk::Overlay::new();
     overlay.set_child(Some(&scroll));
     overlay.add_overlay(&fade);
-    root.append(&overlay);
+
+    popup.append(&overlay);
 
     let popover = gtk::Popover::new();
-    popover.set_child(Some(&root));
+    popover.set_child(Some(&popup));
     popover.set_parent(host);
     popover.set_autohide(true);
+    popover.set_has_arrow(true);
     popover.set_position(gtk::PositionType::Bottom);
-    popover.set_pointing_to(Some(rect));
+    let mut anchor = *rect;
+    anchor.set_y(anchor.y() - HANDLE_HEADROOM);
+    anchor.set_height(anchor.height() + HANDLE_HEADROOM);
+    popover.set_pointing_to(Some(&anchor));
     popover.add_css_class("kalam-reader-dict-popover");
+    
     let tx = sender.input_sender().clone();
     popover.connect_closed(move |_| {
         let _ = tx.send(ReaderMsg::ClearDict);
     });
+
     popover
 }
-
 /// Take a popover down and off its parent. A popover with `set_parent`
 /// must be `unparent`ed before it is dropped, or GTK complains.
 pub(crate) fn dismiss(popover: Option<gtk::Popover>) {

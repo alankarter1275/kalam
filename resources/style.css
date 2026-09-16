@@ -3778,331 +3778,10 @@ scrollbar.kalam-reader-strip-bar {
     margin: 6px 4px 6px 0;
 }
 
-.kalam-reader-chip-popover {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-}
-
-/* The selection chip: the old WebKit reader's #kalam-chip, same
-   geometry — a pill with 32 px round buttons, 17 px icons drawn in the
-   button's colour, 1 px separators between the groups, and a 20 px
-   swatch row that stays hidden until the highlighter opens it. */
-.kalam-reader-chip {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 999px;
-    padding: 4px;
-    box-shadow: 0 10px 28px alpha(@kalam_bg, 0.26);
-}
-
-button.kalam-reader-chip-action {
-    min-width: 32px;
-    min-height: 32px;
-    padding: 0;
-    border: none;
-    border-radius: 999px;
-    background: transparent;
-    color: @kalam_text;
-}
-
-button.kalam-reader-chip-action:hover {
-    background: @kalam_surface_2;
-}
-
-.kalam-reader-chip-colors {
-    padding: 0 4px;
-}
-
-button.kalam-reader-chip-dot {
-    min-width: 16px;
-    min-height: 16px;
-    padding: 0;
-    border-radius: 999px;
-    border: 2px solid alpha(@kalam_border, 0.7);
-}
-
-button.kalam-reader-chip-dot:hover {
-    border-color: @kalam_border;
-}
-
-button.kalam-reader-chip-dot-yellow {
-    background: #f4d35e;
-}
-
-button.kalam-reader-chip-dot-green {
-    background: #8acb9c;
-}
-
-button.kalam-reader-chip-dot-blue {
-    background: #8bb7f2;
-}
-
-button.kalam-reader-chip-dot-pink {
-    background: #e99bbd;
-}
-
-button.kalam-reader-chip-dot-orange {
-    background: #f2ae72;
-}
-
-.kalam-reader-chip-sep {
-    min-width: 1px;
-    min-height: 20px;
-    margin: 0 2px;
-    background: alpha(@kalam_border, 0.18);
-}
-
-/* ── the dictionary card ────────────────────────────────────────────────
-   The old WebView popup's design as GTK widgets; the spec is kalam-engine
-   docs/kalam/RESEARCH.md §R12f and the original is inject_reading_shell's
-   showDictPopup + its #kalam-dict-popup CSS (base commit, epub_book.rs).
-   Every colour is an app token, so the card follows the app theme rather
-   than the book's reading theme. */
-
-.kalam-reader-dict-popover {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    padding: 0;
-}
-
-.kalam-reader-dict-popover > contents {
-    border-radius: 18px;
-    border: 1px solid @kalam_border;
-    background: @kalam_surface;
-    box-shadow: 0 18px 48px alpha(#000, 0.45);
-}
-
-.kalam-reader-dict {
-    color: @kalam_text;
-}
-
-.kalam-reader-dict-head {
-    padding: 20px 20px 16px 20px;
-    border-bottom: 1px solid @kalam_border;
-    background: @kalam_surface;
-    box-shadow: 0 3px 10px alpha(#000, 0.22);
-}
-
-/* Both of these exist so a long word or definition wraps inside the card
-   instead of widening it: a box's minimum width is its widest child's. */
-.kalam-reader-dict-head-left,
-.kalam-reader-dict-sense {
-    min-width: 0;
-}
-
-.kalam-reader-dict-word {
-    font-family: "Fraunces", serif;
-    font-size: 26px;
-    font-weight: 600;
-    margin-bottom: 5px;
-}
-
-.kalam-reader-dict-pron {
-    font-family: monospace;
-    font-size: 11px;
-    color: @kalam_text_dim;
-    margin-bottom: 7px;
-}
-
-/* The mockup's info violet. Kalam has no token for it, so the hex is
-   hard-coded the way the old popup hard-coded the antonym red. */
-.kalam-reader-dict-pos {
-    margin-top: 6px;
-    padding: 2px 9px;
-    border-radius: 999px;
-    background: alpha(#c678dd, 0.14);
-    color: #c678dd;
-    font-size: 10.5px;
-    font-style: italic;
-}
-
-.kalam-reader-dict-actions {
-    margin-top: 2px;
-}
-
-button.kalam-reader-dict-icon {
-    min-width: 30px;
-    min-height: 30px;
-    padding: 0;
-    border-radius: 999px;
-    border: 1px solid @kalam_border;
-    background: @kalam_surface_2;
-    color: @kalam_text_dim;
-    font-size: 15px;
-}
-
-button.kalam-reader-dict-icon:hover {
-    background: @kalam_border;
-    color: @kalam_text;
-}
-
-button.kalam-reader-dict-icon.saved {
-    color: @kalam_accent;
-    border-color: @kalam_accent;
-    background: alpha(@kalam_accent, 0.14);
-}
-
-button.kalam-reader-dict-icon:disabled {
-    opacity: 0.5;
-}
-
-.kalam-reader-dict-scroll {
-    background: transparent;
-}
-
-.kalam-reader-dict-scroll scrollbar {
-    opacity: 0;
-    min-width: 0;
-    min-height: 0;
-}
-
-.kalam-reader-dict-fade {
-    background: linear-gradient(to bottom, transparent, @kalam_surface);
-    border-radius: 0 0 18px 18px;
-}
-
-.kalam-reader-dict-body {
-    padding: 4px 20px 24px 20px;
-}
-
-.kalam-reader-dict-section {
-    margin: 20px 0 10px 0;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: @kalam_text_dim;
-}
-
-.kalam-reader-dict-divider {
-    margin: 8px 0 4px 0;
-    padding-top: 6px;
-    border-top: 1px solid @kalam_border;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: @kalam_text_dim;
-}
-
-.kalam-reader-dict-senses > .kalam-reader-dict-divider:first-child {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
-}
-
-.kalam-reader-dict-num {
-    min-width: 16px;
-    margin-top: 3px;
-    font-family: monospace;
-    font-size: 10px;
-    color: @kalam_accent;
-}
-
-.kalam-reader-dict-def {
-    font-size: 13px;
-    line-height: 1.6;
-    color: @kalam_text;
-}
-
-.kalam-reader-dict-example {
-    font-family: "Fraunces", serif;
-    font-style: italic;
-    font-size: 12px;
-    color: @kalam_text_dim;
-}
-
-.kalam-reader-dict-badge {
-    padding: 1px 7px;
-    border-radius: 999px;
-    border: 1px solid alpha(@kalam_accent, 0.32);
-    background: alpha(@kalam_accent, 0.14);
-    color: @kalam_accent;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-}
-
-button.kalam-reader-dict-more {
-    margin-top: 8px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    box-shadow: none;
-    color: @kalam_accent;
-    font-size: 11.5px;
-}
-
-button.kalam-reader-dict-more:hover {
-    color: @kalam_text;
-}
-
-.kalam-reader-dict-chips {
-    margin: 0;
-}
-
-button.kalam-reader-dict-chip {
-    padding: 4px 12px;
-    border-radius: 999px;
-    font-size: 12px;
-}
-
-button.kalam-reader-dict-chip-syn {
-    border: 1px solid alpha(@kalam_accent, 0.30);
-    background: alpha(@kalam_accent, 0.15);
-    color: @kalam_accent;
-}
-
-button.kalam-reader-dict-chip-syn:hover {
-    border-color: @kalam_accent;
-    background: alpha(@kalam_accent, 0.25);
-}
-
-button.kalam-reader-dict-chip-ant {
-    border: 1px solid alpha(#e06c75, 0.30);
-    background: alpha(#e06c75, 0.14);
-    color: #e06c75;
-}
-
-button.kalam-reader-dict-chip-ant:hover {
-    border-color: #e06c75;
-    background: alpha(#e06c75, 0.25);
-}
-
-.kalam-reader-dict-idiom {
-    margin-bottom: 10px;
-    padding: 10px 12px;
-    border: 1px solid @kalam_border;
-    border-radius: 10px;
-    background: @kalam_surface_2;
-}
-
-.kalam-reader-dict-idiom-phrase {
-    font-family: "Fraunces", serif;
-    font-style: italic;
-    font-size: 13px;
-    color: @kalam_text;
-}
-
-.kalam-reader-dict-idiom-def {
-    font-size: 12px;
-    line-height: 1.55;
-    color: @kalam_text;
-}
-
-.kalam-reader-dict-empty {
-    padding: 18px 4px;
-    font-size: 13px;
-    color: @kalam_text_dim;
-}
-
-/* ── Lightbox Glassmorphism Controls ── */
-.kalam-lightbox-backdrop {
     background: alpha(#000000, 0.75);
 }
 
 .kalam-lightbox-toolbar-dock {
-    z-index: 10;
 }
 
 .kalam-lightbox-toolbar {
@@ -4146,3 +3825,230 @@ button.kalam-lightbox-tool-btn.close:hover {
 }
 
 
+/* ── selection toolbar ────────────────────────────────── */
+.k-sel-toolbar {
+  background: rgba(22,24,30,0.96);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 999px;
+  padding: 5px 6px;
+  display: flex; align-items: center; gap: 2px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.k-sel-toolbar-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.k-sel-toolbar-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.k-sel-action {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 999px;
+  border: none; background: transparent;
+  color: rgba(255,255,255,0.8);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px; font-weight: 500;
+  transition: background 150ms ease, color 150ms ease;
+  white-space: nowrap;
+}
+
+.k-sel-action image { -gtk-icon-size: 14px; }
+.k-sel-action:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.k-sel-action.accent { color: #61afef; }
+
+.k-sel-divider { width: 1px; min-height: 18px; background: rgba(255,255,255,0.12); margin: 0 2px; }
+
+.k-color-bar { display: none; align-items: center; gap: 6px; padding: 0 4px; }
+.k-color-bar.visible { display: flex; }
+
+.k-color-dot {
+  min-width: 20px; min-height: 20px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2);
+  transition: transform 150ms ease, border-color 150ms ease;
+}
+
+.k-color-dot:hover { transform: scale(1.22); border-color: rgba(255,255,255,0.6); }
+
+.k-color-dot-yellow { background: rgba(229,192,123,0.38); }
+.k-color-dot-green  { background: rgba(152,195,121,0.38); }
+.k-color-dot-blue   { background: rgba(97,175,239,0.32); }
+.k-color-dot-pink   { background: rgba(198,120,221,0.38); }
+.k-color-dot-orange { background: rgba(209,154,102,0.38); }
+
+/* ── dictionary popup ─────────────────────────────────── */
+.k-popup {
+  background: #1b1e24;
+  border: 1px solid #343842;
+  border-radius: 18px;
+  box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.kalam-reader-dict-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.kalam-reader-dict-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.k-header {
+  padding: 20px 20px 16px;
+  background: #1b1e24;
+  border-bottom: 1px solid #343842;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+.k-header-left { }
+
+.k-word {
+  font-family: 'Fraunces', serif;
+  font-size: 26px;
+  font-weight: 600;
+  color: #e6e9ef;
+  margin-bottom: 5px;
+}
+
+.k-pronunciation {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 7px;
+}
+
+.k-pos {
+  font-size: 10.5px;
+  color: #c678dd;
+  background: rgba(198,120,221,0.14);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-style: italic;
+}
+
+.k-save-btn {
+  min-width: 30px; min-height: 30px;
+  border-radius: 50%;
+  background: #282c34;
+  border: 1px solid #343842;
+  color: #6b7280;
+  padding: 0;
+}
+.k-save-btn image { -gtk-icon-size: 15px; }
+.k-save-btn:hover { background: #343842; color: #abb2bf; }
+.k-save-btn.saved { color: #61afef; border-color: #61afef; background: rgba(97,175,239,0.15); }
+
+.k-body {
+  padding: 4px 20px 24px;
+}
+
+.k-section-label {
+  font-size: 9px;
+  letter-spacing: .08em;
+  color: #6b7280;
+  margin-bottom: 10px;
+  margin-top: 20px;
+}
+
+.k-defs { }
+
+.k-def-item { }
+
+.k-def-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #61afef;
+  margin-top: 3px;
+  min-width: 16px;
+}
+
+.k-def-text { font-size: 13px; color: #abb2bf; line-height: 1.6; }
+
+.k-def-example {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 3px;
+}
+
+.k-def-badge {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: #e5c07b;
+  background: rgba(229,192,123,0.18);
+  padding: 2px 6px;
+  border-radius: 999px;
+  margin-top: 3px;
+  margin-bottom: 2px;
+}
+
+.k-show-more {
+  font-size: 11.5px;
+  color: #61afef;
+  background: transparent; border: none; padding: 0; margin-top: 8px;
+}
+.k-show-more:hover { text-decoration: underline; }
+
+.k-extra-defs { }
+
+.k-chips { }
+
+.k-chip {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: transparent;
+}
+.k-chip-syn {
+  color: #61afef;
+  background: rgba(97,175,239,0.15);
+  border-color: rgba(97,175,239,0.3);
+}
+.k-chip-syn:hover { background: rgba(97,175,239,0.25); border-color: #61afef; }
+
+.k-chip-ant {
+  color: #e06c75;
+  background: rgba(224,108,117,0.14);
+  border-color: rgba(224,108,117,0.3);
+}
+.k-chip-ant:hover { background: rgba(224,108,117,0.25); border-color: #e06c75; }
+
+.k-idioms { }
+
+.k-idiom-item {
+  background: #282c34;
+  border: 1px solid #343842;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.k-idiom-phrase {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 13px;
+  color: #e6e9ef;
+  margin-bottom: 4px;
+}
+
+.k-idiom-def {
+  font-size: 12px;
+  color: #abb2bf;
+}
+
+.k-fade-bottom {
+  background: linear-gradient(to bottom, transparent, #1b1e24);
+  border-radius: 0 0 18px 18px;
+}

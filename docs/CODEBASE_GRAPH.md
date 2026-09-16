@@ -1,6 +1,17 @@
 # Codebase Graph Index (Kalam / calibre-alt)
 
-> **AI Agent Context Map**: Use this compact node index to locate components, database modules, GTK views, and EPUB parsers without reading full documentation files or running speculative file searches.
+> **AI Agent Executive Summary & Context Map**: Read this index first to understand Kalam's vision, current trajectory, and component architecture without reading full 300KB documentation files or running speculative file searches.
+
+---
+
+## 🎯 Executive Vision & Project Status
+* **What Kalam Is**: A lightweight, personal, all-in-one ebook manager & reader for Linux built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast and responsive on modest hardware.
+* **Core Capabilities**:
+  * SQLite catalog (`~/.local/share/kalam/catalog.db`)
+  * WebKitGTK EPUB reader (themes, font scaling, chapter scroll, TOC, highlight chips)
+  * Offline dictionary engine (StarDict, TSV, CMU IPA pronunciation, POS sense dividers)
+  * Library Hub (reading lists, smart rules, saved quotes, vocabulary Anki export)
+* **Current Trajectory**: Dictionary track shipped (Phases 8–10), reader improvements complete, background preloading active. Full roadmap details in [`ROADMAP.md`](file:///home/kunalsingh/Projects/calibre-alt/ROADMAP.md).
 
 ---
 

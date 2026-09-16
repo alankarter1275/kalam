@@ -382,6 +382,54 @@ impl Component for ReaderModel {
                     },
                 },
             },
+
+            add_overlay = &gtk::Revealer {
+                add_css_class: "kalam-reader-lightbox-shell",
+                #[watch]
+                set_reveal_child: model.lightbox_active,
+                set_transition_type: gtk::RevealerTransitionType::Crossfade,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Fill,
+
+                #[wrap(Some)]
+                set_child = &gtk::Box {
+                    add_css_class: "kalam-lightbox-backdrop",
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_hexpand: true,
+                    set_vexpand: true,
+
+                    gtk::Box {
+                        add_css_class: "kalam-lightbox-header",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_halign: gtk::Align::End,
+                        set_margin_top: 16,
+                        set_margin_end: 20,
+
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes("window-close-symbolic", 18, &["kalam-inline-icon"])),
+                            add_css_class: "kalam-lightbox-close-btn",
+                            set_tooltip_text: Some("Close Lightbox (Esc)"),
+                            connect_clicked => ReaderMsg::CloseImageLightbox,
+                        },
+                    },
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_hexpand: true,
+                        set_vexpand: true,
+                        set_halign: gtk::Align::Center,
+                        set_valign: gtk::Align::Center,
+
+                        #[name = "lightbox_picture"]
+                        gtk::Picture {
+                            set_content_fit: gtk::ContentFit::Contain,
+                            set_can_shrink: true,
+                            set_hexpand: true,
+                            set_vexpand: true,
+                        },
+                    },
+                },
+            },
         }
     }
 
@@ -650,6 +698,7 @@ impl Component for ReaderModel {
             search_query: String::new(),
             search_results: Vec::new(),
             search_index: 0,
+            lightbox_active: false,
             lightbox_popover: None,
         };
 
@@ -897,6 +946,11 @@ impl Component for ReaderModel {
                     self.search_query.clear();
                     self.search_results.clear();
                     self.search_index = 0;
+                    if let Some(view) = &self.view {
+                        view.remove_highlight(-9999);
+                    }
+                } else {
+                    widgets.search_entry.grab_focus();
                 }
             }
             ReaderMsg::UpdateSearchQuery(query) => {
@@ -907,14 +961,12 @@ impl Component for ReaderModel {
                 } else {
                     self.search_results.clear();
                 }
+                self.highlight_current_search_match();
             }
             ReaderMsg::NextSearchResult => {
                 if !self.search_results.is_empty() {
                     self.search_index = (self.search_index + 1) % self.search_results.len();
-                    let res = &self.search_results[self.search_index];
-                    if let Some(view) = &self.view {
-                        view.goto_locator(&res.locator, true);
-                    }
+                    self.highlight_current_search_match();
                 }
             }
             ReaderMsg::PrevSearchResult => {
@@ -924,10 +976,7 @@ impl Component for ReaderModel {
                     } else {
                         self.search_index -= 1;
                     }
-                    let res = &self.search_results[self.search_index];
-                    if let Some(view) = &self.view {
-                        view.goto_locator(&res.locator, true);
-                    }
+                    self.highlight_current_search_match();
                 }
             }
             ReaderMsg::CloseSearch => {
@@ -935,11 +984,15 @@ impl Component for ReaderModel {
                 self.search_query.clear();
                 self.search_results.clear();
                 self.search_index = 0;
+                if let Some(view) = &self.view {
+                    view.remove_highlight(-9999);
+                }
             }
             ReaderMsg::OpenImageLightbox(w, h, bytes) => {
-                self.show_image_lightbox(w, h, &bytes);
+                self.show_image_lightbox(widgets, w, h, &bytes);
             }
             ReaderMsg::CloseImageLightbox => {
+                self.lightbox_active = false;
                 if let Some(popover) = self.lightbox_popover.take() {
                     popover.popdown();
                 }
@@ -1725,36 +1778,45 @@ impl ReaderModel {
         ));
     }
 
-    fn show_image_lightbox(&mut self, w: u32, h: u32, rgba: &[u8]) {
-        if let Some(popover) = self.lightbox_popover.take() {
-            popover.popdown();
+    fn highlight_current_search_match(&self) {
+        let Some(view) = &self.view else { return };
+        view.remove_highlight(-9999);
+        if !self.search_active || self.search_results.is_empty() || self.search_index >= self.search_results.len() {
+            return;
         }
+        let res = &self.search_results[self.search_index];
+        let query_trimmed = self.search_query.trim();
+        if query_trimmed.is_empty() {
+            return;
+        }
+        let query_len = query_trimmed.chars().count() as u32;
+        let end_locator = kalam_reader::LayeredLocator {
+            spine_href: res.locator.spine_href.clone(),
+            spine_index: res.locator.spine_index,
+            char_offset: res.locator.char_offset + query_len,
+            locator_version: res.locator.locator_version,
+            quote: res.locator.quote.clone(),
+            spine_fraction: res.locator.spine_fraction,
+            book_progression: res.locator.book_progression,
+        };
+        let hl = kalam_reader::NewHighlight {
+            color: kalam_reader::HighlightColor::Yellow,
+            text: res.locator.quote.exact.clone(),
+            start: res.locator.clone(),
+            end: end_locator,
+        };
+        view.show_highlight(-9999, &hl);
+        view.goto_locator(&res.locator, true);
+    }
+
+    fn show_image_lightbox(&mut self, widgets: &mut <Self as relm4::Component>::Widgets, _w: u32, _h: u32, rgba: &[u8]) {
         let bytes = glib::Bytes::from_owned(rgba.to_vec());
         let stream = gio::MemoryInputStream::from_bytes(&bytes);
-        let pixbuf = match gdk_pixbuf::Pixbuf::from_stream(&stream, None::<&gio::Cancellable>) {
-            Ok(pb) => pb,
-            Err(_) => return,
-        };
-        let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
-        let picture = gtk::Picture::for_paintable(&texture);
-        picture.set_content_fit(gtk::ContentFit::Contain);
-        picture.set_can_shrink(true);
-        picture.set_size_request((w as i32).min(1000), (h as i32).min(800));
-
-        let overlay_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        overlay_box.add_css_class("kalam-lightbox-box");
-        overlay_box.append(&picture);
-
-        let popover = gtk::Popover::builder()
-            .child(&overlay_box)
-            .autohide(true)
-            .has_arrow(false)
-            .build();
-        if let Some(view) = &self.view {
-            popover.set_parent(view.widget());
-            popover.popup();
+        if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_stream(&stream, None::<&gio::Cancellable>) {
+            let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
+            widgets.lightbox_picture.set_paintable(Some(&texture));
+            self.lightbox_active = true;
         }
-        self.lightbox_popover = Some(popover);
     }
 }
 

@@ -10,15 +10,16 @@ We reviewed `kalam-engine` (`chapbook-core`, `chapbook-reader`, `kalam-reader`) 
 * **Dictionary & Annotations**: Selection chip pops up GTK options for Highlights, Quotes, Dictionary (D key), and Copy, decoupling dictionary lookups from WebKit DOM listeners.
 
 ### Issues Identified & Resolved
-1. **Missing Search UI (Ctrl+F)**: The model state for `search_active` was defined, but no GTK `Revealer` / `SearchBar` widget existed in `src/pages/reader/mod.rs`. Pressing Ctrl+F changed state without rendering input controls.
-   * **Fix**: Added `add_overlay` GTK `Revealer` containing `SearchEntry`, match counter label (`X of Y`), next/prev buttons, and escape handler.
-2. **Image Lightbox Zoom Parent Attachment**: `show_image_lightbox` attached popovers to `back_dock` (the tiny top-left button box).
-   * **Fix**: Attached the popover directly to `view.widget()` for proper stage centering.
-3. **Scrolled Mode Image Tap Coordinate Translation**: `image_at_page` in `kalam-reader` received raw widget X coordinates without subtracting the stage's left margin (`s.metrics().map(|m| m.margins.left).unwrap_or(0.0)`), causing hit-testing to miss images when side margins were active.
-   * **Fix**: Subtracted `margin_left` in `view.rs` before querying `image_at_page`.
+1. **Missing Search UI (Ctrl+F) & Active Text Highlight**:
+   * Added `add_overlay` GTK `Revealer` containing `SearchEntry`, match counter label (`X of Y`), next/prev buttons, and escape handler in `src/pages/reader/mod.rs`.
+   * Added live match text highlighting: as the user cycles through search matches, `highlight_current_search_match` builds a `NewHighlight` range and displays a bright yellow highlight over the matching text on screen via `show_highlight(-9999, &hl)`. Closing search removes the temporary highlight.
+2. **Image Lightbox Zoom Overlay**:
+   * Replaced static popover with a dedicated full-stage GTK Lightbox overlay in `src/pages/reader/mod.rs`.
+   * Tapping any image in the reader populates `lightbox_picture` with the full-resolution texture and reveals the lightbox modal.
+   * Fixed coordinate alignment in `kalam-reader` (`crates/kalam-reader/src/view.rs`).
 
 ---
 
 ## 2. Verification & Verification Steps
-* Run `cargo check` / `cargo build` in `calibre-alt` — confirmed compilation clean.
-* Run `cargo check --workspace` in `kalam-engine` — confirmed compilation clean.
+* Run `cargo check` / `cargo build` in `calibre-alt` — confirmed clean build.
+* Run `cargo check --workspace` in `kalam-engine` — confirmed clean build.

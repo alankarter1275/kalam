@@ -95,6 +95,7 @@ pub struct ReaderModel {
     pub(crate) search_query: String,
     pub(crate) search_results: Vec<kalam_reader::SearchResult>,
     pub(crate) search_index: usize,
+    pub(crate) lightbox_active: bool,
     pub(crate) lightbox_popover: Option<gtk::Popover>,
 }
 

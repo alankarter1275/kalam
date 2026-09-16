@@ -91,6 +91,11 @@ pub struct ReaderModel {
     pub(crate) highlight_filter_buttons: Vec<(HighlightFilter, gtk::Button)>,
     pub(crate) word_scope_buttons: Vec<(WordScope, gtk::Button)>,
     pub(crate) ui_css_provider: gtk::CssProvider,
+    pub(crate) search_active: bool,
+    pub(crate) search_query: String,
+    pub(crate) search_results: Vec<kalam_reader::SearchResult>,
+    pub(crate) search_index: usize,
+    pub(crate) lightbox_popover: Option<gtk::Popover>,
 }
 
 impl ReaderModel {

@@ -172,4 +172,11 @@ pub enum ReaderMsg {
     ShowBackChrome,
     ShowBottomChrome,
     ShowAllChrome,
+    ToggleSearch,
+    UpdateSearchQuery(String),
+    NextSearchResult,
+    PrevSearchResult,
+    CloseSearch,
+    OpenImageLightbox(u32, u32, Vec<u8>),
+    CloseImageLightbox,
 }

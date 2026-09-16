@@ -582,6 +582,11 @@ impl Component for ReaderModel {
             highlight_filter_buttons,
             word_scope_buttons,
             ui_css_provider,
+            search_active: false,
+            search_query: String::new(),
+            search_results: Vec::new(),
+            search_index: 0,
+            lightbox_popover: None,
         };
 
         let mut model = model;
@@ -727,14 +732,18 @@ impl Component for ReaderModel {
         let view_for_keys = model.view.clone();
         let key = gtk::EventControllerKey::new();
         let s = sender.clone();
-        key.connect_key_pressed(move |_, keyval, _, _| {
+        key.connect_key_pressed(move |_, keyval, _, state| {
             use gtk::gdk::Key;
+            if state.contains(gtk::gdk::ModifierType::CONTROL_MASK) {
+                if keyval == Key::f || keyval == Key::F {
+                    s.input(ReaderMsg::ToggleSearch);
+                    return gtk::glib::Propagation::Stop;
+                }
+            }
             match keyval {
                 Key::Escape => {
-                    // With a selection up, Escape is "never mind" — it drops
-                    // the selection and the chip; closing the book is what
-                    // is left when nothing is selected. The old shell's
-                    // Escape did the same, chip and bands and all.
+                    s.input(ReaderMsg::CloseSearch);
+                    s.input(ReaderMsg::CloseImageLightbox);
                     if let Some(view) = &view_for_keys {
                         if view.selected_text().is_some() {
                             view.clear_selection();
@@ -818,6 +827,59 @@ impl Component for ReaderModel {
         let mut refresh_tabs = false;
 
         match msg {
+            ReaderMsg::ToggleSearch => {
+                self.search_active = !self.search_active;
+                if !self.search_active {
+                    self.search_query.clear();
+                    self.search_results.clear();
+                    self.search_index = 0;
+                }
+            }
+            ReaderMsg::UpdateSearchQuery(query) => {
+                self.search_query = query.clone();
+                self.search_index = 0;
+                if let Some(view) = &self.view {
+                    self.search_results = view.search(&query);
+                } else {
+                    self.search_results.clear();
+                }
+            }
+            ReaderMsg::NextSearchResult => {
+                if !self.search_results.is_empty() {
+                    self.search_index = (self.search_index + 1) % self.search_results.len();
+                    let res = &self.search_results[self.search_index];
+                    if let Some(view) = &self.view {
+                        view.goto_locator(&res.locator, true);
+                    }
+                }
+            }
+            ReaderMsg::PrevSearchResult => {
+                if !self.search_results.is_empty() {
+                    if self.search_index == 0 {
+                        self.search_index = self.search_results.len() - 1;
+                    } else {
+                        self.search_index -= 1;
+                    }
+                    let res = &self.search_results[self.search_index];
+                    if let Some(view) = &self.view {
+                        view.goto_locator(&res.locator, true);
+                    }
+                }
+            }
+            ReaderMsg::CloseSearch => {
+                self.search_active = false;
+                self.search_query.clear();
+                self.search_results.clear();
+                self.search_index = 0;
+            }
+            ReaderMsg::OpenImageLightbox(w, h, bytes) => {
+                self.show_image_lightbox(w, h, &bytes);
+            }
+            ReaderMsg::CloseImageLightbox => {
+                if let Some(popover) = self.lightbox_popover.take() {
+                    popover.popdown();
+                }
+            }
             ReaderMsg::Close => {
                 self.close_annotation_editor();
                 if self.left_sidebar_open || self.right_sidebar_open {
@@ -1597,6 +1659,37 @@ impl ReaderModel {
                 glib::ControlFlow::Break
             },
         ));
+    }
+
+    fn show_image_lightbox(&mut self, w: u32, h: u32, rgba: &[u8]) {
+        if let Some(popover) = self.lightbox_popover.take() {
+            popover.popdown();
+        }
+        let bytes = glib::Bytes::from_owned(rgba.to_vec());
+        let stream = gio::MemoryInputStream::from_bytes(&bytes);
+        let pixbuf = match gdk_pixbuf::Pixbuf::from_stream(&stream, None::<&gio::Cancellable>) {
+            Ok(pb) => pb,
+            Err(_) => return,
+        };
+        let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
+        let picture = gtk::Picture::for_paintable(&texture);
+        picture.set_content_fit(gtk::ContentFit::Contain);
+        picture.set_can_shrink(true);
+        picture.set_size_request((w as i32).min(1000), (h as i32).min(800));
+
+        let overlay_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        overlay_box.add_css_class("kalam-lightbox-box");
+        overlay_box.append(&picture);
+
+        let popover = gtk::Popover::builder()
+            .child(&overlay_box)
+            .autohide(true)
+            .build();
+        if let Some(stage) = &self.back_dock {
+            popover.set_parent(stage);
+            popover.popup();
+        }
+        self.lightbox_popover = Some(popover);
     }
 }
 

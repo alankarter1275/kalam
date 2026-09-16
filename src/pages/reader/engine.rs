@@ -123,6 +123,11 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
             launcher.launch(None::<&gtk::Window>, gtk::gio::Cancellable::NONE, |_| {});
         }
     });
+
+    let tx = sender.input_sender().clone();
+    view.connect_image_tap(move |w: u32, h: u32, bytes: &[u8]| {
+        let _ = tx.send(ReaderMsg::OpenImageLightbox(w, h, bytes.to_vec()));
+    });
 }
 
 /// An engine rect (widget coordinates, f32) as the rectangle a

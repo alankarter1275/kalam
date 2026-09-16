@@ -179,8 +179,6 @@ impl Component for ReaderModel {
                 add_css_class: "kalam-reader-sidebar-shell",
                 add_css_class: "kalam-reader-sidebar-shell-left",
                 #[watch]
-                set_visible: model.left_sidebar_open,
-                #[watch]
                 set_reveal_child: model.left_sidebar_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideRight,
                 set_halign: gtk::Align::Start,
@@ -271,8 +269,6 @@ impl Component for ReaderModel {
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-sidebar-shell",
                 add_css_class: "kalam-reader-sidebar-shell-right",
-                #[watch]
-                set_visible: model.right_sidebar_open,
                 #[watch]
                 set_reveal_child: model.right_sidebar_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideLeft,
@@ -763,7 +759,8 @@ impl Component for ReaderModel {
             lightbox_pixbuf: None,
             lightbox_zoom: 1.0,
             lightbox_rotation: 0.0,
-            chrome_hide_timer: None,
+            back_hide_timer: None,
+            bottom_hide_timer: None,
             mouse_in_top_edge: false,
             mouse_in_bottom_edge: false,
         };
@@ -868,24 +865,75 @@ impl Component for ReaderModel {
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
 
-        // Install root motion controller to reset 3-second inactivity chrome timer and detect edges
+        // Root scroll controller: hide chrome immediately when the user starts scrolling
+        let scroll_ctrl = gtk::EventControllerScroll::new(
+            gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::BOTH_AXES,
+        );
+        let tx_scroll = sender.input_sender().clone();
+        scroll_ctrl.connect_scroll(move |_, _, _| {
+            let _ = tx_scroll.send(ReaderMsg::UserScrolled);
+            gtk::glib::Propagation::Proceed
+        });
+        root.add_controller(scroll_ctrl);
+
+        // Root motion controller to independently detect hover near top and bottom edges
         let root_motion = gtk::EventControllerMotion::new();
         let tx = sender.input_sender().clone();
         let root_clone = root.clone();
+        let was_top = std::rc::Rc::new(std::cell::Cell::new(false));
+        let was_bottom = std::rc::Rc::new(std::cell::Cell::new(false));
+        let was_top_clone = was_top.clone();
+        let was_bottom_clone = was_bottom.clone();
         root_motion.connect_motion(move |_, _, y| {
-            let _ = tx.send(ReaderMsg::ResetChromeTimer);
             let h = root_clone.height() as f64;
-            let top = y < 32.0;
-            let bottom = y > (h - 32.0) && h > 32.0;
-            let _ = tx.send(ReaderMsg::TopEdgeHover(top));
-            let _ = tx.send(ReaderMsg::BottomEdgeHover(bottom));
+            let top = y < 50.0;
+            let bottom = y > (h - 60.0) && h > 60.0;
+            if top != was_top_clone.get() {
+                was_top_clone.set(top);
+                let _ = tx.send(ReaderMsg::TopEdgeHover(top));
+            }
+            if bottom != was_bottom_clone.get() {
+                was_bottom_clone.set(bottom);
+                let _ = tx.send(ReaderMsg::BottomEdgeHover(bottom));
+            }
         });
         let tx_leave = sender.input_sender().clone();
         root_motion.connect_leave(move |_| {
-            let _ = tx_leave.send(ReaderMsg::TopEdgeHover(false));
-            let _ = tx_leave.send(ReaderMsg::BottomEdgeHover(false));
+            if was_top.get() {
+                was_top.set(false);
+                let _ = tx_leave.send(ReaderMsg::TopEdgeHover(false));
+            }
+            if was_bottom.get() {
+                was_bottom.set(false);
+                let _ = tx_leave.send(ReaderMsg::BottomEdgeHover(false));
+            }
         });
         root.add_controller(root_motion);
+
+        if let Some(back_dock) = &model.back_dock {
+            let motion = gtk::EventControllerMotion::new();
+            let tx = sender.input_sender().clone();
+            motion.connect_enter(move |_, _, _| {
+                let _ = tx.send(ReaderMsg::TopEdgeHover(true));
+            });
+            let tx = sender.input_sender().clone();
+            motion.connect_leave(move |_| {
+                let _ = tx.send(ReaderMsg::TopEdgeHover(false));
+            });
+            back_dock.add_controller(motion);
+        }
+        if let Some(bottom_dock) = &model.bottom_dock {
+            let motion = gtk::EventControllerMotion::new();
+            let tx = sender.input_sender().clone();
+            motion.connect_enter(move |_, _, _| {
+                let _ = tx.send(ReaderMsg::BottomEdgeHover(true));
+            });
+            let tx = sender.input_sender().clone();
+            motion.connect_leave(move |_| {
+                let _ = tx.send(ReaderMsg::BottomEdgeHover(false));
+            });
+            bottom_dock.add_controller(motion);
+        }
         if let Some(left_hover) = overlay_child_box(&root, 2) {
             connect_hover_zone(
                 &left_hover,
@@ -1272,10 +1320,25 @@ impl Component for ReaderModel {
                 // that path; that one is with the engine.
                 engine::dismiss(self.selection_chip.take());
                 let changed = chapter != self.chapter;
+                let moved = changed || (self.fraction - fraction).abs() > 0.001;
                 self.chapter = chapter.min(self.chapter_count.saturating_sub(1));
                 self.fraction = fraction.clamp(0.0, 1.0);
                 self.save_progress();
                 self.checkpoint_session();
+                if moved {
+                    if !self.mouse_in_top_edge && self.show_back_button {
+                        if let Some(timer) = self.back_hide_timer.take() {
+                            timer.remove();
+                        }
+                        self.show_back_button = false;
+                    }
+                    if !self.mouse_in_bottom_edge && self.show_bottom_pill {
+                        if let Some(timer) = self.bottom_hide_timer.take() {
+                            timer.remove();
+                        }
+                        self.show_bottom_pill = false;
+                    }
+                }
                 if changed {
                     self.reload_annotations();
                     self.reload_bookmarks();
@@ -1292,13 +1355,6 @@ impl Component for ReaderModel {
                 engine::dismiss(self.selection_chip.take());
                 self.last_selection = sel.as_ref().map(|(text, _)| text.clone());
                 self.dict_anchor = sel.as_ref().map(|(_, rect)| *rect);
-                if let Some((_, rect)) = &sel {
-                    let Some(view) = &self.view else { return };
-                    let chip =
-                        engine::build_selection_chip(view.widget().upcast_ref(), rect, &sender);
-                    chip.popup();
-                    self.selection_chip = Some(chip);
-                }
             }
             ReaderMsg::HighlightSelection(color_name) => {
                 engine::dismiss(self.selection_chip.take());
@@ -1382,15 +1438,10 @@ impl Component for ReaderModel {
             }
             ReaderMsg::LookUpSelection => {
                 engine::dismiss(self.selection_chip.take());
-                let Some(view) = self.view.clone() else {
-                    return;
-                };
-                let Some(word) = view.selected_text() else {
-                    return;
-                };
-                view.clear_selection();
-                let rect = self.dict_anchor_rect();
-                self.dict_lookup(word, None, rect, &sender);
+                engine::dismiss(self.dict_popover.take());
+                if let Some(view) = &self.view {
+                    view.clear_selection();
+                }
             }
             ReaderMsg::Progress(frac) => {
                 self.fraction = frac.clamp(0.0, 1.0);
@@ -1718,40 +1769,67 @@ impl Component for ReaderModel {
                 self.lightbox_rotation = (self.lightbox_rotation + 90.0) % 360.0;
                 self.update_lightbox_image(widgets);
             }
-            ReaderMsg::ResetChromeTimer => {
-                // If we move the mouse, just reset the hide timer!
-                // Don't immediately hide it if we're not in the top edge.
-                self.schedule_chrome_auto_hide(sender.clone());
-            }
-            ReaderMsg::ChromeAutoTimerTick => {
-                if let Some(timer) = self.chrome_hide_timer.take() {
+            ReaderMsg::BackChromeTimerTick => {
+                if let Some(timer) = self.back_hide_timer.take() {
                     timer.remove();
                 }
                 if !self.mouse_in_top_edge {
                     self.show_back_button = false;
+                    refresh_chrome = true;
+                }
+            }
+            ReaderMsg::BottomChromeTimerTick => {
+                if let Some(timer) = self.bottom_hide_timer.take() {
+                    timer.remove();
                 }
                 if !self.mouse_in_bottom_edge {
                     self.show_bottom_pill = false;
+                    refresh_chrome = true;
                 }
-                refresh_chrome = true;
             }
             ReaderMsg::TopEdgeHover(hovering) => {
                 self.mouse_in_top_edge = hovering;
                 if hovering {
+                    if let Some(timer) = self.back_hide_timer.take() {
+                        timer.remove();
+                    }
                     self.show_back_button = true;
-                } else {
-                    self.schedule_chrome_auto_hide(sender.clone());
+                } else if self.show_back_button {
+                    self.schedule_back_auto_hide(sender.clone());
                 }
                 refresh_chrome = true;
             }
             ReaderMsg::BottomEdgeHover(hovering) => {
                 self.mouse_in_bottom_edge = hovering;
                 if hovering {
+                    if let Some(timer) = self.bottom_hide_timer.take() {
+                        timer.remove();
+                    }
                     self.show_bottom_pill = true;
-                } else {
-                    self.schedule_chrome_auto_hide(sender.clone());
+                } else if self.show_bottom_pill {
+                    self.schedule_bottom_auto_hide(sender.clone());
                 }
                 refresh_chrome = true;
+            }
+            ReaderMsg::UserScrolled => {
+                let mut changed = false;
+                if !self.mouse_in_top_edge && self.show_back_button {
+                    if let Some(timer) = self.back_hide_timer.take() {
+                        timer.remove();
+                    }
+                    self.show_back_button = false;
+                    changed = true;
+                }
+                if !self.mouse_in_bottom_edge && self.show_bottom_pill {
+                    if let Some(timer) = self.bottom_hide_timer.take() {
+                        timer.remove();
+                    }
+                    self.show_bottom_pill = false;
+                    changed = true;
+                }
+                if changed {
+                    refresh_chrome = true;
+                }
             }
         }
 
@@ -1805,6 +1883,12 @@ impl Component for ReaderModel {
         self.close_session();
         self.cancel_left_close();
         self.cancel_right_close();
+        if let Some(timer) = self.back_hide_timer.take() {
+            timer.remove();
+        }
+        if let Some(timer) = self.bottom_hide_timer.take() {
+            timer.remove();
+        }
         engine::dismiss(self.selection_chip.take());
         engine::dismiss(self.dict_popover.take());
         if let Some(view) = self.view.take() {
@@ -1818,6 +1902,7 @@ impl ReaderModel {
     /// find the entry, work out which sense the sentence points at, log it,
     /// and show the popover. `sentence` is `None` when the lookup came from
     /// the Words sidebar instead of from a tap.
+    #[allow(dead_code)]
     fn dict_lookup(
         &mut self,
         word: String,
@@ -1949,15 +2034,29 @@ impl ReaderModel {
         view.goto_locator(&res.locator, true);
     }
 
-    pub(crate) fn schedule_chrome_auto_hide(&mut self, sender: ComponentSender<Self>) {
-        if let Some(timer) = self.chrome_hide_timer.take() {
+    pub(crate) fn schedule_back_auto_hide(&mut self, sender: ComponentSender<Self>) {
+        if let Some(timer) = self.back_hide_timer.take() {
             timer.remove();
         }
         let tx = sender.input_sender().clone();
-        self.chrome_hide_timer = Some(glib::timeout_add_local(
+        self.back_hide_timer = Some(glib::timeout_add_local(
             Duration::from_secs(3),
             move || {
-                let _ = tx.send(ReaderMsg::ChromeAutoTimerTick);
+                let _ = tx.send(ReaderMsg::BackChromeTimerTick);
+                glib::ControlFlow::Continue
+            },
+        ));
+    }
+
+    pub(crate) fn schedule_bottom_auto_hide(&mut self, sender: ComponentSender<Self>) {
+        if let Some(timer) = self.bottom_hide_timer.take() {
+            timer.remove();
+        }
+        let tx = sender.input_sender().clone();
+        self.bottom_hide_timer = Some(glib::timeout_add_local(
+            Duration::from_secs(3),
+            move || {
+                let _ = tx.send(ReaderMsg::BottomChromeTimerTick);
                 glib::ControlFlow::Continue
             },
         ));

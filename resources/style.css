@@ -3778,6 +3778,7 @@ scrollbar.kalam-reader-strip-bar {
     margin: 6px 4px 6px 0;
 }
 
+.kalam-lightbox-backdrop {
     background: alpha(#000000, 0.75);
 }
 

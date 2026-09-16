@@ -100,7 +100,8 @@ pub struct ReaderModel {
     pub(crate) lightbox_pixbuf: Option<gdk_pixbuf::Pixbuf>,
     pub(crate) lightbox_zoom: f64,
     pub(crate) lightbox_rotation: f64,
-    pub(crate) chrome_hide_timer: Option<glib::SourceId>,
+    pub(crate) back_hide_timer: Option<glib::SourceId>,
+    pub(crate) bottom_hide_timer: Option<glib::SourceId>,
     pub(crate) mouse_in_top_edge: bool,
     pub(crate) mouse_in_bottom_edge: bool,
 }

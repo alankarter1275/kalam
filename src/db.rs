@@ -27,6 +27,7 @@ pub use dictionaries::{
 };
 pub use history::{LibrarySession, SessionRow};
 pub use lookup_history::DictLookup;
+#[allow(unused_imports)]
 pub use pronunciation::pronunciation_for;
 pub use series::{series_key, SeriesWork};
 

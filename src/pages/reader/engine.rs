@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! The reading engine, wired to the reader page.
 //!
 //! This file replaces the old in-app browser page and its JS bridge. Every

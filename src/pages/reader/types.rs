@@ -184,8 +184,9 @@ pub enum ReaderMsg {
     LightboxReset,
     LightboxRotateLeft,
     LightboxRotateRight,
-    ResetChromeTimer,
-    ChromeAutoTimerTick,
+    BackChromeTimerTick,
+    BottomChromeTimerTick,
+    UserScrolled,
     TopEdgeHover(bool),
     BottomEdgeHover(bool),
 }

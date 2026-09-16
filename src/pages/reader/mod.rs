@@ -177,6 +177,8 @@ impl Component for ReaderModel {
                 add_css_class: "kalam-reader-sidebar-shell",
                 add_css_class: "kalam-reader-sidebar-shell-left",
                 #[watch]
+                set_visible: model.left_sidebar_open,
+                #[watch]
                 set_reveal_child: model.left_sidebar_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideRight,
                 set_halign: gtk::Align::Start,
@@ -268,6 +270,8 @@ impl Component for ReaderModel {
                 add_css_class: "kalam-reader-sidebar-shell",
                 add_css_class: "kalam-reader-sidebar-shell-right",
                 #[watch]
+                set_visible: model.right_sidebar_open,
+                #[watch]
                 set_reveal_child: model.right_sidebar_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideLeft,
                 set_halign: gtk::Align::End,
@@ -321,6 +325,8 @@ impl Component for ReaderModel {
 
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-search-shell",
+                #[watch]
+                set_visible: model.search_active,
                 #[watch]
                 set_reveal_child: model.search_active,
                 set_transition_type: gtk::RevealerTransitionType::SlideDown,
@@ -385,6 +391,8 @@ impl Component for ReaderModel {
 
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-lightbox-shell",
+                #[watch]
+                set_visible: model.lightbox_active,
                 #[watch]
                 set_reveal_child: model.lightbox_active,
                 set_transition_type: gtk::RevealerTransitionType::Crossfade,

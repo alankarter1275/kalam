@@ -3,23 +3,21 @@
 ## 1. Kalam Engine Architectural Review
 We reviewed `kalam-engine` (`chapbook-core`, `chapbook-reader`, `kalam-reader`) vs the legacy `WebKitGTK` implementation in `calibre-alt`.
 
-### Key Findings & Strengths
-* **Pure Rust Rendering**: Eliminates WebKitGTK heavy runtime footprint (~200MB RAM saved per reader tab), fast startup, and native GTK rendering via Cairo/tiny-skia.
-* **Layout & Navigation**: Full support for both Paged and Scrolled modes with instant page turns and precise char-offset `LayeredLocator` tracking across reflows/font resizes.
-* **Persistent Highlights**: Native support via `show_host_highlight` and `set_host_highlights`, persisting `LayeredLocator` ranges into SQLite `annotations.cfi`.
-* **Dictionary & Annotations**: Selection chip pops up GTK options for Highlights, Quotes, Dictionary (D key), and Copy, decoupling dictionary lookups from WebKit DOM listeners.
+### Key Findings & Fixes
+1. **Full Input Unblocking (Clicks/Scrolls Fix)**:
+   * **Root Cause**: The full-stage `add_overlay` GTK Revealer (`kalam-reader-lightbox-shell`) lacked `#[watch] set_visible: model.lightbox_active`. In GTK4, a full-screen overlay container without `set_visible: false` intercepts all mouse clicks, drag events, and scroll wheel ticks across the entire window even when hidden/inactive.
+   * **Fix**: Added `#[watch] set_visible` to all overlay Revealers (`search_shell`, `lightbox_shell`, `left_sidebar_shell`, `right_sidebar_shell`) in `src/pages/reader/mod.rs`. When inactive, `set_visible: false` ensures GTK skips target picking on overlay children and routes 100% of input directly to the reader canvas.
 
-### Issues Identified & Resolved
-1. **Missing Search UI (Ctrl+F) & Active Text Highlight**:
-   * Added `add_overlay` GTK `Revealer` containing `SearchEntry`, match counter label (`X of Y`), next/prev buttons, and escape handler in `src/pages/reader/mod.rs`.
-   * Added live match text highlighting: as the user cycles through search matches, `highlight_current_search_match` builds a `NewHighlight` range and displays a bright yellow highlight over the matching text on screen via `show_highlight(-9999, &hl)`. Closing search removes the temporary highlight.
-2. **Image Lightbox Zoom Overlay**:
-   * Replaced static popover with a dedicated full-stage GTK Lightbox overlay in `src/pages/reader/mod.rs`.
-   * Tapping any image in the reader populates `lightbox_picture` with the full-resolution texture and reveals the lightbox modal.
-   * Fixed coordinate alignment in `kalam-reader` (`crates/kalam-reader/src/view.rs`).
+2. **In-Book Text Search (Ctrl+F) with Active Match Highlighting**:
+   * Added GTK Search Revealer (`SearchEntry`, match counter `X of Y`, prev/next buttons) in `src/pages/reader/mod.rs`.
+   * As the reader cycles through matches, `highlight_current_search_match` computes the exact `LayeredLocator` range and renders a bright yellow highlight over the matching text on screen (`show_highlight(-9999, &hl)`). Closing search removes the temporary highlight.
+
+3. **Image Lightbox Zoom Overlay**:
+   * Restored panel-coordinate hit-testing in `kalam-reader` (`crates/kalam-reader/src/view.rs`).
+   * Revealing `lightbox_shell` displays the full-resolution image texture inside `lightbox_picture` with a top-right close button.
 
 ---
 
-## 2. Verification & Verification Steps
-* Run `cargo check` / `cargo build` in `calibre-alt` — confirmed clean build.
-* Run `cargo check --workspace` in `kalam-engine` — confirmed clean build.
+## 2. Verification Steps
+* `cargo check --workspace` in `kalam-engine` — PASSED (Exit 0).
+* `cargo check` in `calibre-alt` — PASSED (Exit 0).

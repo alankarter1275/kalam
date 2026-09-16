@@ -11,6 +11,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug)]
+// The three are "open something" on purpose; the shared prefix is the
+// point, not an accident.
+#[allow(clippy::enum_variant_names)]
 pub enum ComicsOut {
     OpenComic { book_id: i64 },
     OpenBookDialog { book_id: i64 },

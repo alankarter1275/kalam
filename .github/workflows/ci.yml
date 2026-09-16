@@ -8,13 +8,29 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A newer push cancels the run it supersedes. Without this, two runs of this
+# workflow on one branch race to commit ci-logs/ files back to it: both publish
+# steps `git pull --rebase` and the second one rebases onto a file the first
+# just rewrote, hits a conflict, and its `git push ... || true` silently drops
+# the report. That is how the first reader screenshot report was lost.
+# kalam-engine's own ci.yml uses the same group for the same reason.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
     name: build (ubuntu)
-    runs-on: ubuntu-latest
+    # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
+    # unifies that with Kalam's v4_12, and the gdk4-sys build script then
+    # demands system GTK >= 4.16 through pkg-config. 24.04 (still -latest)
+    # ships 4.14.5 and fails with "Package 'gtk4' has version '4.14.5',
+    # required version is '>= 4.16'". Same reason kalam-engine's own CI is on
+    # 26.04. The owner's machine is Arch, gtk4 4.20+.
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
@@ -30,8 +46,7 @@ jobs:
             build-essential pkg-config \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
-            libgraphene-1.0-dev \
-            libwebkitgtk-6.0-dev libsoup-3.0-dev
+            libgraphene-1.0-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -142,8 +157,15 @@ jobs:
         id: clippy
         run: |
           set -o pipefail
+          {
+            echo "--- system libraries (the agent cannot read Actions logs, and"
+            echo "--- kalam-reader's gtk4 v4_16 feature needs system GTK >= 4.16) ---"
+            for pc in gtk4 gdk4 libadwaita-1 glib-2.0; do
+              printf '%s: %s\n' "$pc" "$(pkg-config --modversion "$pc" 2>&1 || echo 'not found')"
+            done
+          } | tee /tmp/clippy.txt
           cargo clippy --all-targets --message-format=short -- -D warnings 2>&1 \
-            | tee /tmp/clippy.txt
+            | tee -a /tmp/clippy.txt
         continue-on-error: true
 
       # Runs on success too, for the same reason as the test log above.
@@ -157,12 +179,20 @@ jobs:
           grep -E "error|warning:" /tmp/clippy.txt | head -100 > ci-logs/clippy-latest.txt || true
           if [ ! -s ci-logs/clippy-latest.txt ]; then
             echo "(no lines matched; last 100 lines of output)" > ci-logs/clippy-latest.txt
-            tail -100 /tmp/clippy.txt >> ci-logs/clippy-latest.txt || true
           fi
+          # The grep keeps the compiler's own lines; a failed build script is
+          # reported by cargo as one "error:" line and the real cause is on the
+          # lines after it, which match neither pattern. Append the tail always.
+          echo "" >> ci-logs/clippy-latest.txt
+          echo "=== last 80 lines of the raw log ===" >> ci-logs/clippy-latest.txt
+          tail -80 /tmp/clippy.txt >> ci-logs/clippy-latest.txt || true
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/clippy-latest.txt
+          # Uncapped copy: the excerpt above is for humans, this is what the
+          # agent reads when the first error is not in the tail.
+          cp /tmp/clippy.txt ci-logs/clippy-full.txt || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/clippy-latest.txt
+          git add -f ci-logs/clippy-latest.txt ci-logs/clippy-full.txt
           git commit -m "ci: publish clippy failures [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
@@ -196,9 +226,10 @@ jobs:
             tail -100 /tmp/test.txt >> ci-logs/test-latest.txt || true
           fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/test-latest.txt
+          cp /tmp/test.txt ci-logs/test-full.txt || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/test-latest.txt
+          git add -f ci-logs/test-latest.txt ci-logs/test-full.txt
           git commit -m "ci: publish test failures [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
@@ -230,12 +261,19 @@ jobs:
   # Read docs/ci/README-screenshots.md before trusting these images. Summary of
   # the caveats: the software (Cairo) renderer is NOT the renderer on a real
   # desktop, headless sway is one virtual output rather than a tiling session,
-  # and the reader (WebKit) may not render at all here.
+  # and the reader is a GTK widget now, so `read-1` really opens a book --
+  # proof that it does not panic, not proof that it looks right on a desktop.
   # ---------------------------------------------------------------------------
   screenshots:
     name: screenshots (headless sway)
     needs: build
-    runs-on: ubuntu-latest
+    # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
+    # unifies that with Kalam's v4_12, and the gdk4-sys build script then
+    # demands system GTK >= 4.16 through pkg-config. 24.04 (still -latest)
+    # ships 4.14.5 and fails with "Package 'gtk4' has version '4.14.5',
+    # required version is '>= 4.16'". Same reason kalam-engine's own CI is on
+    # 26.04. The owner's machine is Arch, gtk4 4.20+.
+    runs-on: ubuntu-26.04
     continue-on-error: true
     # Needed by "publish the screenshot report" below, which commits the
     # text summary back to the branch for the agent to read.
@@ -255,7 +293,6 @@ jobs:
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
-            libwebkitgtk-6.0-dev libsoup-3.0-dev \
             sway grim wtype \
             xwayland \
             fonts-dejavu-core
@@ -275,6 +312,23 @@ jobs:
         run: |
           chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
           BOOKS=139 OUT=ci-shots docs/ci/screenshot.sh
+
+      # The reader is what this branch replaced, and the owner's machine would
+      # otherwise be the first place the engine widget ever runs. `read-<id>`
+      # opens it on a seeded book, so a panic, a wiring mistake or a blank page
+      # is caught here, in a text report the agent can read. Book 1 always
+      # exists -- the seeder inserts with AUTOINCREMENT from 1.
+      # TAP is deliberately not set: driving a pointer tap with swaymsg
+      # reported "no change" at three positions in a fullscreen window with
+      # both a one-second hold and an 80 ms one, which is evidence about
+      # sway's synthetic pointer under a headless compositor, not about the
+      # reader. The probe is still in screenshot.sh (TAP=1) for whoever
+      # revisits it; the tap behaviour itself is verified by hand on the
+      # owner's machine.
+      - name: reader screenshot
+        run: |
+          BOOKS=139 OUT=ci-shots-reader SETTLE=25 ROUTE=read-1 \
+            docs/ci/screenshot.sh
 
       - name: upload screenshots
         uses: actions/upload-artifact@v4
@@ -298,9 +352,12 @@ jobs:
           cp ci-shots/report.txt ci-logs/screenshots-latest.txt 2>/dev/null \
             || echo "(no report produced)" > ci-logs/screenshots-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/screenshots-latest.txt
+          cp ci-shots-reader/report.txt ci-logs/reader-latest.txt 2>/dev/null \
+            || echo "(no reader report produced)" > ci-logs/reader-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-latest.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/screenshots-latest.txt
+          git add -f ci-logs/screenshots-latest.txt ci-logs/reader-latest.txt
           git commit -m "ci: publish screenshot report [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
@@ -323,7 +380,13 @@ jobs:
     # Deliberately after `screenshots`, not in parallel: both jobs commit a
     # report to the same branch, and racing pushes means one of them loses.
     needs: [build, screenshots]
-    runs-on: ubuntu-latest
+    # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
+    # unifies that with Kalam's v4_12, and the gdk4-sys build script then
+    # demands system GTK >= 4.16 through pkg-config. 24.04 (still -latest)
+    # ships 4.14.5 and fails with "Package 'gtk4' has version '4.14.5',
+    # required version is '>= 4.16'". Same reason kalam-engine's own CI is on
+    # 26.04. The owner's machine is Arch, gtk4 4.20+.
+    runs-on: ubuntu-26.04
     continue-on-error: true
     permissions:
       contents: write
@@ -341,7 +404,6 @@ jobs:
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
-            libwebkitgtk-6.0-dev libsoup-3.0-dev \
             sway grim wtype \
             xwayland \
             fonts-dejavu-core

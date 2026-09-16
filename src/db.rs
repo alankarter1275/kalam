@@ -86,7 +86,6 @@ pub struct Annotation {
     pub color: String,
     pub text_excerpt: String,
     pub note: String,
-    #[allow(dead_code)]
     pub cfi: Option<String>,
     pub created_at: String,
     #[allow(dead_code)]

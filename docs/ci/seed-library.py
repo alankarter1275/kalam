@@ -7,10 +7,13 @@ something" placeholder -- useless for catching the class of bug that keeps
 getting through (grey covers that never fill, a float that is the wrong width).
 
 Writes straight to the catalog schema rather than driving the importer: the
-importer needs real EPUB files, and generating 2,000 valid EPUBs to look at a
-grid would be slow and beside the point. The rows here are what the *reader*
-would produce; anything that actually opens a book is out of scope for a
-screenshot run, which is stated in docs/ci/README-screenshots.md.
+importer is a lot of machinery to stand up just to fill a grid. The files are
+real EPUBs, though -- `epub_bytes()` writes a valid zip with a container, an
+OPF, a spine, both a nav and an NCX, and six chapters of text. They used to be
+the bytes of "not a real epub -- screenshots only", which is enough to point a
+grid at a title and a cover, but the reader route opens the file for real: with
+a stub, every book landed on the open-error label and the reader screenshot
+could not say anything about the reading page.
 
 Usage:
     XDG_DATA_HOME=/tmp/kalam-ci python3 seed-library.py --books 139
@@ -21,14 +24,18 @@ migrations forward, so a *lower* number here is safe; a higher one is not.
 """
 
 import argparse
+import io
 import os
 import pathlib
+import random
 import sqlite3
 import struct
 import sys
 import uuid
+import zipfile
 import zlib
 from datetime import datetime, timedelta, timezone
+from xml.sax.saxutils import escape
 
 # Must not exceed src/db.rs SCHEMA_VERSION. Lower is fine (the app migrates up).
 SCHEMA_VERSION = 14
@@ -87,6 +94,195 @@ TAGS = [
     "borrowed",
     "signed first edition with a needlessly long tag name",
 ]
+
+
+def epub_bytes(title: str, author: str, chapters: int = 6, nested: bool = False) -> bytes:
+    """A small but genuinely valid EPUB, so the reader has a real book to open.
+
+    Shape, per the spec: an uncompressed `mimetype` entry first, then
+    META-INF/container.xml pointing at the OPF, an OPF with metadata/manifest/
+    spine, both a nav document (EPUB 3) and an NCX (EPUB 2) so whichever parser
+    the engine uses finds a table of contents, and the chapters as XHTML.
+
+    The prose is generated from a fixed word list with a seeded PRNG, so two
+    runs produce byte-identical books. It is deliberately long enough to paginate
+    (six chapters, ~28 paragraphs each): a one-line chapter would render, but it
+    would not exercise line breaking, hyphenation or a page turn.
+
+    `nested=True` writes a two-level table of contents instead of a flat one:
+    two parts, each holding half the chapters. Real books do this, and it is
+    the shape that broke the TOC sidebar -- the list drew top-level entries
+    only, so a Part -> Chapter book showed two part headings and no chapters
+    at all. Both the nav and the NCX nest, so it does not matter which one the
+    reader picks up.
+    """
+    rng = random.Random(len(title) * 31 + len(author))
+    words = (
+        "the of and to in a is that it was for on are as with his they at be this"
+        " have from or one had by word but not what all were we when your can said"
+        " there use an each which she do how their if will up other about out many"
+        " then them these so some her would make like him into time has look two"
+        " more write go see number no way could people my than first water been"
+        " call who its now find long down day did get come made may part over new"
+        " sound take only little work know place year live me back give most very"
+        " after thing our just name good sentence man think say great where help"
+        " through much before line right too mean old any same tell boy follow came"
+        " want show also around form three small set put end does another well"
+        " large must big even such because turn here why ask went men read need"
+        " land different home us move try kind hand picture again change off play"
+        " spell air away animal house point page letter mother answer found study"
+        " still learn should world"
+    ).split()
+
+    def sentence() -> str:
+        n = rng.randint(8, 22)
+        return " ".join(rng.choice(words) for _ in range(n)).capitalize() + "."
+
+    def paragraph() -> str:
+        return " ".join(sentence() for _ in range(rng.randint(3, 6)))
+
+    def xhtml(head_title: str, body: str) -> str:
+        return (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<!DOCTYPE html>\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">\n'
+            f"<head><title>{escape(head_title)}</title>"
+            '<link rel="stylesheet" type="text/css" href="style.css"/></head>\n'
+            f"<body>{body}</body>\n</html>\n"
+        )
+
+    uid = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, title + '|' + author)}"
+    labels = [f"Chapter {n}" for n in range(1, chapters + 1)]
+
+    def nav_item(n: int, label: str) -> str:
+        return f'<li><a href="ch{n}.xhtml">{escape(label)}</a></li>'
+
+    if nested:
+        # Part One -> odd chapters, Part Two -> even ones. The parts link to
+        # their first chapter, which is what a real part heading usually does.
+        half = (chapters + 1) // 2
+        parts = []
+        for part, first in enumerate((1, 1 + half)):
+            if first > chapters:
+                continue
+            body_items = "".join(
+                nav_item(n, labels[n - 1]) for n in range(first, min(first + half, chapters + 1))
+            )
+            name = f"Part {'One' if part == 0 else 'Two'}"
+            parts.append(
+                f'<li><a href="ch{first}.xhtml">{name}</a><ol>{body_items}</ol></li>'
+            )
+        nav_items = "".join(parts)
+    else:
+        nav_items = "".join(
+            nav_item(n, label) for n, label in enumerate(labels, start=1)
+        )
+    nav = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml"'
+        ' xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en">\n'
+        "<head><title>Contents</title>"
+        '<link rel="stylesheet" type="text/css" href="style.css"/></head>\n'
+        '<body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>'
+        f"{nav_items}</ol></nav></body>\n</html>\n"
+    )
+
+    if nested:
+        half = (chapters + 1) // 2
+        points = []
+        play = 0
+        for part, first in enumerate((1, 1 + half)):
+            if first > chapters:
+                continue
+            # The part's own playOrder comes before its chapters', so it
+            # has to be captured before the inner loop moves `play` on.
+            play += 1
+            part_play = play
+            inner = []
+            for n in range(first, min(first + half, chapters + 1)):
+                play += 1
+                inner.append(
+                    f'<navPoint id="np{n}" playOrder="{play}"><navLabel>'
+                    f'<text>{escape(labels[n - 1])}</text></navLabel>'
+                    f'<content src="ch{n}.xhtml"/></navPoint>'
+                )
+            points.append(
+                f'<navPoint id="part{part}" playOrder="{part_play}"><navLabel>'
+                f'<text>Part {"One" if part == 0 else "Two"}</text></navLabel>'
+                f'<content src="ch{first}.xhtml"/>{"".join(inner)}</navPoint>'
+            )
+        nav_points = "".join(points)
+    else:
+        nav_points = "".join(
+            f'<navPoint id="np{n}" playOrder="{n}"><navLabel><text>{escape(label)}'
+            f'</text></navLabel><content src="ch{n}.xhtml"/></navPoint>'
+            for n, label in enumerate(labels, start=1)
+        )
+    ncx = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n'
+        f'<head><meta name="dtb:uid" content="{uid}"/></head>\n'
+        f"<docTitle><text>{escape(title)}</text></docTitle>\n"
+        f"<navMap>{nav_points}</navMap>\n</ncx>\n"
+    )
+
+    manifest = [
+        '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
+        '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>',
+        '<item id="css" href="style.css" media-type="text/css"/>',
+    ]
+    spine = []
+    for n in range(1, chapters + 1):
+        manifest.append(
+            f'<item id="ch{n}" href="ch{n}.xhtml" media-type="application/xhtml+xml"/>'
+        )
+        spine.append(f'<itemref idref="ch{n}"/>')
+    opf = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0"'
+        ' unique-identifier="bookid">\n'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+        f'<dc:identifier id="bookid">{uid}</dc:identifier>\n'
+        f"<dc:title>{escape(title)}</dc:title>\n"
+        f"<dc:creator>{escape(author)}</dc:creator>\n"
+        "<dc:language>en</dc:language>\n"
+        '<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>\n'
+        "</metadata>\n"
+        f"<manifest>{''.join(manifest)}</manifest>\n"
+        f'<spine toc="ncx">{"".join(spine)}</spine>\n'
+        "</package>\n"
+    )
+
+    css = (
+        "body { font-family: serif; line-height: 1.5; margin: 1em; }\n"
+        "h1 { font-size: 1.4em; }\n"
+        "p { margin: 0 0 0.7em 0; text-align: justify; }\n"
+    )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        # First and uncompressed: parts of the ecosystem still check this.
+        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr(
+            "META-INF/container.xml",
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<container version="1.0"'
+            ' xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n'
+            '<rootfiles><rootfile full-path="OEBPS/content.opf"'
+            ' media-type="application/oebps-package+xml"/></rootfiles>\n'
+            "</container>\n",
+        )
+        z.writestr("OEBPS/content.opf", opf)
+        z.writestr("OEBPS/nav.xhtml", nav)
+        z.writestr("OEBPS/toc.ncx", ncx)
+        z.writestr("OEBPS/style.css", css)
+        for n, label in enumerate(labels, start=1):
+            body = f"<h1>{escape(label)}</h1>" + "".join(
+                f"<p>{paragraph()}</p>" for _ in range(28)
+            )
+            z.writestr(f"OEBPS/ch{n}.xhtml", xhtml(label, body))
+    return buf.getvalue()
 
 
 def png(width: int, height: int, rgb: tuple) -> bytes:
@@ -212,7 +408,10 @@ def main() -> int:
 
         bdir = library / book_uuid
         bdir.mkdir(parents=True, exist_ok=True)
-        (bdir / "book.epub").write_bytes(b"not a real epub -- screenshots only")
+        # Book 1 is the one the reader screenshot opens (`read-1`), so that
+        # is the one that carries the nested table of contents.
+        nested_toc = i == 0
+        (bdir / "book.epub").write_bytes(epub_bytes(title, author, nested=nested_toc))
 
         cover_name = None
         if i % args.no_cover_every != 0:

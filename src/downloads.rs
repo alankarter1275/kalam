@@ -136,7 +136,7 @@ impl DownloadManager {
     
     pub fn get_jobs(&self) -> Vec<DownloadJob> {
         let mut jobs: Vec<_> = self.jobs.lock().unwrap().values().cloned().collect();
-        jobs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        jobs.sort_by_key(|job| std::cmp::Reverse(job.created_at));
         jobs
     }
 }

@@ -171,7 +171,7 @@ pub struct AppModel {
 
 /// Cache key for a route, or `None` for pages that must always be rebuilt.
 ///
-/// Reader is excluded deliberately: it owns a WebView and a reading session,
+/// Reader is excluded deliberately: it owns the reading widget and a session,
 /// and must be torn down on leave. Book and shelf pages are excluded because
 /// their content changes as you edit metadata, ratings and membership.
 fn cache_key(route: &Route) -> Option<String> {
@@ -1302,7 +1302,14 @@ impl Component for AppModel {
                 }
                 None => {
                     eprintln!("kalam: KALAM_ROUTE={name} — unknown route, ignoring");
-                    eprintln!("  known: {}", known_route_names().join(", "));
+                    eprintln!(
+                        "  known: {}",
+                        known_route_names()
+                            .into_iter()
+                            .chain(ROUTE_ID_FORMS)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
                 }
             }
         }
@@ -1514,10 +1521,24 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
 /// these by hand, and coupling them to Rust identifiers would silently break
 /// every caller the next time a variant is renamed.
 ///
-/// Only pages reachable without an id are listed. `BookPage` and `Reader` need
-/// a specific book, which a fixed name cannot supply.
+/// Most pages need no arguments; the two that do take the id after the name
+/// (`book-<id>` and `read-<id>`), because a bare `book` cannot say which book
+/// and guessing one would photograph some other page while looking right.
 fn route_by_name(name: &str) -> Option<Route> {
-    let route = match name.trim().to_ascii_lowercase().as_str() {
+    let name = name.trim().to_ascii_lowercase();
+    for (prefix, reader) in [("book-", false), ("read-", true)] {
+        if let Some(id) = name.strip_prefix(prefix) {
+            // A positive integer or nothing. `book-`, `book-abc` and `book--1`
+            // are typos, and a route that guessed would hide them.
+            let book_id = id.parse::<i64>().ok().filter(|id| *id > 0)?;
+            return Some(if reader {
+                Route::Reader { book_id }
+            } else {
+                Route::BookPage { book_id }
+            });
+        }
+    }
+    let route = match name.as_str() {
         "home" => Route::Module(NavItem::Home),
         "library" => Route::Module(NavItem::Library),
         "downloads" => Route::Module(NavItem::Downloads),
@@ -1561,6 +1582,10 @@ fn known_route_names() -> Vec<&'static str> {
         "analytics",
     ]
 }
+
+/// The two names that take an id, for the error message only. They are not in
+/// `known_route_names` because that list is asserted to resolve as it stands.
+const ROUTE_ID_FORMS: [&str; 2] = ["book-<id>", "read-<id>"];
 
 #[cfg(test)]
 mod tests {
@@ -1606,6 +1631,21 @@ mod tests {
         assert_eq!(route_by_name("All-Books"), expected);
         assert_eq!(route_by_name("  all-books  "), expected);
         assert_eq!(route_by_name("ALLBOOKS"), expected);
+    }
+
+    #[test]
+    fn route_names_with_a_book_id_resolve_and_bad_ids_do_not() {
+        // The screenshot job opens a real book with `read-1`. Book 1 always
+        // exists: the CI seeder inserts with AUTOINCREMENT from 1.
+        assert_eq!(route_by_name("read-1"), Some(Route::Reader { book_id: 1 }));
+        assert_eq!(route_by_name("book-1"), Some(Route::BookPage { book_id: 1 }));
+        assert_eq!(
+            route_by_name("  READ-12 "),
+            Some(Route::Reader { book_id: 12 })
+        );
+        for name in ["book", "reader", "book-", "read-", "book-abc", "book-1x", "read--1"] {
+            assert_eq!(route_by_name(name), None, "{name:?} must not resolve");
+        }
     }
 
     #[test]

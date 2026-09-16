@@ -578,7 +578,7 @@ impl Component for RemoteDetailModel {
 
             RemoteDetailMsg::OpenExternalUrl(url) => {
                 // Launch external chapter in system default web browser
-                let _ = gtk::glib::spawn_command_line_async(&format!("xdg-open '{}'", url));
+                let _ = gtk::glib::spawn_command_line_async(format!("xdg-open '{}'", url));
             }
         }
 

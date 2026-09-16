@@ -1378,7 +1378,7 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
     setting_row(
         &body,
         "Extracted EPUB cache",
-        "Temporary files extracted for the WebKitGTK reader. Safe to clear; books re-extract on open.",
+        "Unzipped copies of your books, kept so chapter lists and book details do not re-open the same EPUB every time. Safe to clear; they are rebuilt when a page needs them.",
         &right,
     );
 }

@@ -707,16 +707,6 @@ impl Catalog {
         Ok(n > 0)
     }
 
-    /// Forget every saved copy of a word for a book (popup bookmark toggle).
-    pub fn delete_saved_word_by_word(&self, word: &str, book_id: i64) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "DELETE FROM saved_words
-             WHERE word = ?1 COLLATE NOCASE AND book_id = ?2",
-            params![word, book_id],
-        )?;
-        Ok(())
-    }
 }
 
 /// A combined_words row -> the entry the reader shows: the word once, its

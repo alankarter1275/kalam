@@ -215,51 +215,6 @@ pub fn ahead_of(
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Chapter preloader
-// ---------------------------------------------------------------------------
-
-/// The next chapter's file, read and warmed in the OS page cache.
-///
-/// # What this can and cannot do
-///
-/// A chapter turn is two costs: reading and assembling the HTML (ours) and
-/// WebKit parsing plus laying it out (not ours). Only the first is
-/// preloadable — a `WebView` belongs to the main thread, and rendering into a
-/// second hidden one would cost more memory than the turn costs time.
-///
-/// So this warms the read. `chapter_html` does a `read_to_string` of a file
-/// that, on a cold chapter, is not yet in the page cache; doing that read
-/// ahead of time on a worker means the real one is served from RAM.
-///
-/// It is deliberately *only* a read. Building the HTML needs the current CSS,
-/// which changes with theme and font settings, so a cached string would be
-/// stale the moment the user changed anything — and a wrong chapter rendered
-/// is far worse than a slow one.
-pub fn warm_chapter_file(path: PathBuf) {
-    if !path.is_file() {
-        return;
-    }
-    crate::tasks::spawn(
-        move |_reporter| {
-            // The result is discarded on purpose: the point is the side effect
-            // on the OS page cache, not the bytes.
-            let _ = std::fs::read(&path);
-        },
-        |_update| {},
-        |_done| {},
-    );
-}
-
-/// The file to warm when the reader is showing `chapter`, if there is a next
-/// one.
-///
-/// Split out from [`warm_chapter_file`] so the "which file" decision — the
-/// part with an off-by-one in it — is testable without a reader or a display.
-pub fn next_chapter_file(spine: &[crate::epub_book::SpineItem], chapter: usize) -> Option<PathBuf> {
-    spine.get(chapter + 1).map(|item| item.path.clone())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,34 +359,6 @@ mod tests {
         let got = ahead_of(&books, 99, 128, 204);
         assert_eq!(got.len(), 3, "clamped to the end, then wrapped");
         assert_eq!(got[0], PathBuf::from("/covers/0.png"));
-    }
-
-    fn spine_item(path: &str) -> crate::epub_book::SpineItem {
-        crate::epub_book::SpineItem {
-            id: String::new(),
-            href: String::new(),
-            path: PathBuf::from(path),
-            title: String::new(),
-        }
-    }
-
-    #[test]
-    fn the_next_chapter_is_the_one_after_the_current() {
-        let spine = vec![spine_item("/a.xhtml"), spine_item("/b.xhtml")];
-        assert_eq!(
-            next_chapter_file(&spine, 0),
-            Some(PathBuf::from("/b.xhtml"))
-        );
-    }
-
-    #[test]
-    fn the_last_chapter_has_nothing_to_preload() {
-        // The off-by-one that matters: reading the final chapter must not
-        // index past the spine.
-        let spine = vec![spine_item("/a.xhtml"), spine_item("/b.xhtml")];
-        assert_eq!(next_chapter_file(&spine, 1), None);
-        assert_eq!(next_chapter_file(&spine, 99), None, "out of range");
-        assert_eq!(next_chapter_file(&[], 0), None, "empty spine");
     }
 
     #[test]

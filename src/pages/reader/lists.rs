@@ -6,7 +6,6 @@ use super::js_bridge::truncate_def;
 use super::mod_model::ReaderModel;
 use super::types::*;
 use crate::db::{Annotation, HighlightColor, SavedWord};
-use crate::epub_book::OpenBook;
 use gtk::prelude::*;
 use relm4::ComponentSender;
 
@@ -45,32 +44,28 @@ impl ReaderModel {
         }
     }
 
+    /// The book's table of contents as the engine reported it at open.
+    pub(crate) fn toc_entries(&self) -> Vec<kalam_reader::TocEntry> {
+        self.view.as_ref().map(|view| view.toc()).unwrap_or_default()
+    }
+
+    /// Which entry the TOC scroll should centre on, as (position, total)
+    /// in the list `rebuild_toc` builds from the same entries.
     pub(crate) fn toc_display_position(&self) -> Option<(usize, usize)> {
-        let active_spine = toc_active_spine_index(&self.open, self.chapter)?;
-        if self.open.toc.is_empty() {
-            let total = self.open.spine.len();
-            if total == 0 {
-                None
-            } else {
-                Some((active_spine.min(total.saturating_sub(1)), total))
-            }
-        } else {
-            let visible: Vec<usize> = self
-                .open
-                .toc
-                .iter()
-                .filter_map(|entry| entry.spine_index)
-                .collect();
-            let total = visible.len();
-            if total == 0 {
-                None
-            } else {
-                visible
-                    .iter()
-                    .position(|idx| *idx == active_spine)
-                    .map(|current| (current, total))
-            }
-        }
+        let entries = self.toc_entries();
+        let rows = toc_rows(&entries, &self.chapter_titles);
+        // The last row at or before the reading position: the same rule
+        // toc_active_spine_index applies, but over *rows* -- a nested part
+        // heading is a row with no spine index, so the two are not the same
+        // numbering and the scroll has to count every row the list drew.
+        let position = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.spine_index.is_some_and(|idx| idx <= self.chapter))
+            .map(|(i, _)| i)
+            .next_back()
+            .unwrap_or(0);
+        Some((position, rows.len()))
     }
 
     pub(crate) fn position_toc_scroll(&self) {
@@ -108,7 +103,6 @@ impl ReaderModel {
     pub(crate) fn close_annotation_editor(&mut self) {
         self.flush_annotation_note_draft();
         self.editing_annotation = None;
-        self.pending_annotation_jump = None;
     }
 
     pub(crate) fn persist_annotation_note(&mut self, id: i64, note: &str) -> bool {
@@ -199,9 +193,58 @@ impl ReaderModel {
     }
 }
 
+/// One row of the table of contents as the sidebar draws it.
+///
+/// `spine_index` is what a click jumps to; a row can be a nesting heading
+/// with nowhere to go (a "Part One" whose target is only its children),
+/// which is why it is optional and why the list is not simply a list of
+/// spine indices.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct TocRow {
+    pub(crate) label: String,
+    pub(crate) spine_index: Option<usize>,
+    pub(crate) depth: usize,
+}
+
+/// The rows the TOC list shows, depth first: a part, then its chapters,
+/// then the next part. When the engine's TOC has no usable target at all,
+/// the book's spine titles are the fallback — the list must never be empty
+/// on a book that has chapters.
+pub(crate) fn toc_rows(entries: &[kalam_reader::TocEntry], titles: &[String]) -> Vec<TocRow> {
+    let mut rows = Vec::new();
+    collect_toc_rows(entries, 0, &mut rows);
+    if rows.iter().all(|row| row.spine_index.is_none()) {
+        rows = titles
+            .iter()
+            .enumerate()
+            .map(|(idx, title)| TocRow {
+                label: title.clone(),
+                spine_index: Some(idx),
+                depth: 0,
+            })
+            .collect();
+    }
+    rows
+}
+
+fn collect_toc_rows(entries: &[kalam_reader::TocEntry], depth: usize, out: &mut Vec<TocRow>) {
+    for entry in entries {
+        out.push(TocRow {
+            label: entry.label.clone(),
+            spine_index: entry.spine_index,
+            depth,
+        });
+        // Recursing unconditionally, not just for entries with a target:
+        // a part heading usually has no spine index of its own, and its
+        // chapters are exactly what used to go missing.
+        collect_toc_rows(&entry.children, depth + 1, out);
+    }
+}
+
 pub(crate) fn rebuild_toc(
     list: &gtk::Box,
-    open: &OpenBook,
+    entries: &[kalam_reader::TocEntry],
+    titles: &[String],
     current: usize,
     sender: &ComponentSender<ReaderModel>,
 ) {
@@ -209,23 +252,46 @@ pub(crate) fn rebuild_toc(
         list.remove(&child);
     }
 
-    let active_spine = toc_active_spine_index(open, current);
-    if open.toc.is_empty() {
-        for (idx, item) in open.spine.iter().enumerate() {
-            append_toc_btn(list, &item.title, idx, active_spine, sender);
-        }
-    } else {
-        for entry in &open.toc {
-            if let Some(idx) = entry.spine_index {
-                append_toc_btn(list, &entry.label, idx, active_spine, sender);
-            }
+    let rows = toc_rows(entries, titles);
+    let active_spine = toc_active_spine_index(entries, titles.len(), current);
+    for row in &rows {
+        match row.spine_index {
+            Some(idx) => append_toc_btn(list, row, idx, active_spine, sender),
+            None => append_toc_heading(list, row),
         }
     }
 }
 
+/// A nesting heading: not a button, because there is nothing to jump to.
+fn append_toc_heading(list: &gtk::Box, row: &TocRow) {
+    let label = gtk::Label::new(Some(&row.label));
+    label.add_css_class("kalam-reader-toc-part");
+    label.set_halign(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_wrap(true);
+    label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    label.set_margin_start(16 + row.depth as i32 * 16);
+    label.set_margin_end(16);
+    list.append(&label);
+}
+
+/// Every spine index the table of contents points at, in display order
+/// (nested entries included — they are listed in the same depth-first
+/// order [`toc_rows`] draws, so the two cannot drift).
+fn toc_spine_indices(entries: &[kalam_reader::TocEntry]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for entry in entries {
+        if let Some(idx) = entry.spine_index {
+            out.push(idx);
+        }
+        out.extend(toc_spine_indices(&entry.children));
+    }
+    out
+}
+
 fn append_toc_btn(
     list: &gtk::Box,
-    label: &str,
+    row: &TocRow,
     idx: usize,
     active_spine: Option<usize>,
     sender: &ComponentSender<ReaderModel>,
@@ -235,7 +301,10 @@ fn append_toc_btn(
     if Some(idx) == active_spine {
         btn.add_css_class("active");
     }
-    let title = gtk::Label::new(Some(label));
+    // 16 px per nesting level, matching the sidebar's own 16 px padding so
+    // a top-level row and a chapter of the same book do not look switched.
+    btn.set_margin_start(row.depth as i32 * 16);
+    let title = gtk::Label::new(Some(&row.label));
     title.set_halign(gtk::Align::Start);
     title.set_hexpand(true);
     title.set_wrap(true);
@@ -249,30 +318,26 @@ fn append_toc_btn(
     list.append(&btn);
 }
 
-fn toc_active_spine_index(open: &OpenBook, current: usize) -> Option<usize> {
-    if open.toc.is_empty() {
-        if open.spine.is_empty() {
+fn toc_active_spine_index(
+    entries: &[kalam_reader::TocEntry],
+    chapter_count: usize,
+    current: usize,
+) -> Option<usize> {
+    let visible = toc_spine_indices(entries);
+    if visible.is_empty() {
+        if chapter_count == 0 {
             None
         } else {
-            Some(current.min(open.spine.len().saturating_sub(1)))
+            Some(current.min(chapter_count.saturating_sub(1)))
         }
     } else {
-        let visible: Vec<usize> = open
-            .toc
-            .iter()
-            .filter_map(|entry| entry.spine_index)
-            .collect();
-        if visible.is_empty() {
-            None
-        } else {
-            Some(
-                visible
-                    .iter()
-                    .copied()
-                    .rfind(|idx| *idx <= current)
-                    .unwrap_or(visible[0]),
-            )
-        }
+        Some(
+            visible
+                .iter()
+                .copied()
+                .rfind(|idx| *idx <= current)
+                .unwrap_or(visible[0]),
+        )
     }
 }
 
@@ -707,5 +772,80 @@ fn saved_word_meta(model: &ReaderModel, word: &SavedWord) -> String {
     match word.chapter_index {
         Some(ch) => format!("{} · saved word", chapter_label(model, ch as usize)),
         None => "Saved word".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(label: &str, spine: Option<usize>, children: Vec<kalam_reader::TocEntry>) -> kalam_reader::TocEntry {
+        kalam_reader::TocEntry {
+            label: label.to_string(),
+            href: None,
+            fragment: None,
+            spine_index: spine,
+            children,
+        }
+    }
+
+    #[test]
+    fn toc_rows_walk_parts_and_their_chapters_in_order() {
+        // Part One -> ch0, ch1; Part Two -> ch2. The headings have no spine
+        // index of their own, which is the shape the old code dropped: it
+        // listed top-level entries only, so a Part -> Chapter book showed
+        // two rows and both of them were the parts.
+        let entries = vec![
+            entry("Part One", None, vec![entry("One", Some(0), vec![]), entry("Two", Some(1), vec![])]),
+            entry("Part Two", None, vec![entry("Three", Some(2), vec![])]),
+        ];
+        let rows = toc_rows(&entries, &["fallback 0".into(), "fallback 1".into(), "fallback 2".into()]);
+        let seen: Vec<(&str, Option<usize>, usize)> = rows
+            .iter()
+            .map(|row| (row.label.as_str(), row.spine_index, row.depth))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                ("Part One", None, 0),
+                ("One", Some(0), 1),
+                ("Two", Some(1), 1),
+                ("Part Two", None, 0),
+                ("Three", Some(2), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn toc_rows_fall_back_to_chapter_titles_only_when_nothing_has_a_target() {
+        let titles = vec!["Chapter 1".to_string(), "Chapter 2".to_string()];
+        // No entries at all.
+        let rows = toc_rows(&[], &titles);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1].label, "Chapter 2");
+        assert_eq!(rows[1].spine_index, Some(1));
+        assert_eq!(rows[1].depth, 0);
+        // Entries that exist but point nowhere are still useless: the
+        // fallback is what a reader can actually click.
+        let entries = vec![entry("Contents", None, vec![])];
+        let rows = toc_rows(&entries, &titles);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].label, "Chapter 1");
+    }
+
+    #[test]
+    fn toc_rows_keep_a_nested_entrys_target_for_the_click() {
+        // Three levels, because an EPUB can nest them and depth is what the
+        // indent is drawn from.
+        let entries = vec![entry(
+            "One",
+            Some(0),
+            vec![entry("One A", Some(1), vec![entry("One A i", Some(2), vec![])])],
+        )];
+        let rows = toc_rows(&entries, &[]);
+        let depths: Vec<usize> = rows.iter().map(|row| row.depth).collect();
+        assert_eq!(depths, vec![0, 1, 2]);
+        let spines: Vec<Option<usize>> = rows.iter().map(|row| row.spine_index).collect();
+        assert_eq!(spines, vec![Some(0), Some(1), Some(2)]);
     }
 }

@@ -1,5 +1,3 @@
-[1m[92m   Compiling[0m quick-error v2.0.1
-[1m[92m   Compiling[0m thiserror v2.0.20
 test db::tests::book_first_opened_is_none_not_an_error_for_a_never_opened_book ... ok
 test db::tests::books_by_ids_on_no_ids_is_not_an_error ... ok
 test dict::tests::unrecognized_format_error_names_the_expected_formats ... ok
@@ -12,8 +10,8 @@ test notify::tests::errors_linger_longer_than_chatter ... ok
 test notify::tests::report_passes_ok_through_and_flags_errors ... ok
 test service::tests::a_missing_shelf_yields_no_books_and_no_error ... ok
 test service::tests::an_empty_dashboard_is_not_an_error ... ok
-test service::tests::an_empty_log_is_not_an_error ... ok
 test service::tests::an_empty_vocabulary_is_not_an_error ... ok
+test service::tests::an_empty_log_is_not_an_error ... ok
 test service::tests::book_stats_are_zero_for_an_unread_book_without_erroring ... ok
 test service::tests::dashboard_reads_every_strip_without_errors ... ok
 test service::tests::history_and_lookup_history_return_rows_without_errors ... ok
@@ -23,5 +21,5 @@ test service::tests::shelves_are_returned_and_an_empty_grid_is_not_an_error ... 
 test service::tests::there_are_no_quotes_at_all_is_not_an_error ... ok
 test tasks::tests::reporting_after_the_ui_is_gone_is_not_an_error ... ok
 test thumbs::tests::missing_source_is_not_an_error ... ok
-test result: ok. 311 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 21.34s
---- run 33945343087 ---
+test result: ok. 343 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 22.25s
+--- run 35037694897 ---

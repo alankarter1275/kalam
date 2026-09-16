@@ -59,7 +59,12 @@ pub fn book_dir(uuid: &str) -> PathBuf {
     library_dir().join(uuid)
 }
 
-/// Extracted EPUB cache for the reader.
+/// Extracted EPUB cache: `cache/reader/<uuid>`, the unzipped copy that
+/// `epub_book::OpenBook` reads spine titles and chapter bodies out of.
+///
+/// Not the reader page's own storage — the engine widget opens the `.epub`
+/// itself. This is what the book, library and remote-detail pages use to list
+/// chapters without unzipping the same file again.
 pub fn reader_cache_dir(uuid: &str) -> PathBuf {
     data_dir().join("cache").join("reader").join(uuid)
 }

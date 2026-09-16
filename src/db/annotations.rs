@@ -207,6 +207,17 @@ impl Catalog {
         Ok(())
     }
 
+    /// Store the engine's locator JSON for a highlight (the `cfi` column,
+    /// which the WebKit reader never used).
+    pub fn update_annotation_cfi(&self, id: i64, cfi: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE annotations SET cfi = ?1, updated_at = ?2 WHERE id = ?3",
+            params![cfi, chrono_like_now(), id],
+        )?;
+        Ok(())
+    }
+
     /// Refresh the backup for whichever book owns this annotation.
     ///
     /// Best-effort, like every other sidecar write: an annotation that has

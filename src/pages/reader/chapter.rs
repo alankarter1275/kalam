@@ -1,234 +1,48 @@
-//! EPUB chapter loading, preloading, CSS generation, and navigation.
+//! Chapter identity and navigation: the engine owns everything else.
+//!
+//! The WebKit reader built an HTML string per chapter, warmed the next
+//! file, and injected chapter bodies into a live DOM. The engine opens
+//! the EPUB itself and lays chapters out on demand, so what is left here
+//! is the two things the page still owns: the chapter's *name* (from the
+//! table of contents, captured at open) and the jump that the TOC,
+//! bookmarks and the position callback all go through.
 
+use super::engine;
 use super::mod_model::ReaderModel;
-use crate::epub_book::reading_css;
-use webkit6::prelude::*;
 
 impl ReaderModel {
-    pub(crate) fn css(&self) -> String {
-        reading_css(
-            self.theme,
-            self.font_px,
-            self.line_height,
-            self.column_px,
-            crate::theme::current(self.service.catalog()),
-        )
-    }
-
+    /// The title of the chapter on screen, for the pill and the sidebar
+    /// header. Falls back the same way the engine's divider rule does.
     pub(crate) fn current_chapter_title(&self) -> &str {
-        self.open
-            .spine
+        self.chapter_titles
             .get(self.chapter)
-            .map(|item| item.title.as_str())
+            .map(String::as_str)
             .unwrap_or("Reading")
     }
 
+    /// Jump to a chapter, or to a fraction of the way through it. The
+    /// engine reports where it landed through the position callback,
+    /// which saves progress and reloads the sidebars.
     pub(crate) fn go_chapter(&mut self, idx: usize, frac: f64) {
-        self.save_progress();
-        self.chapter = idx;
-        self.fraction = frac.clamp(0.0, 1.0);
-        self.loading = true;
-        self.reload_annotations();
-        self.reload_bookmarks();
-        self.reload_saved_words();
-
-        // Inject the new chapter body directly into the existing DOM — no webview.load_html,
-        // so there is zero flash. kalamJumpToChapter replaces the stream in-place.
-        if self.open.chapter_count() > 0 {
-            match self.open.chapter_body(idx) {
-                Ok(body) => {
-                    // Handle remote placeholder chapters: wait for fetch before jumping
-                    if body.contains("kalam-remote-placeholder") {
-                        let source_id =
-                            extract_attr(&body, "data-source-id").unwrap_or_default();
-                        let chapter_id =
-                            extract_attr(&body, "data-chapter-id").unwrap_or_default();
-                        if !source_id.is_empty() && !chapter_id.is_empty() {
-                            let webview = self.webview.clone();
-                            let title = self
-                                .open
-                                .spine
-                                .get(idx)
-                                .map(|i| i.title.clone())
-                                .unwrap_or_default();
-                            let path = self.open.spine.get(idx).map(|i| i.path.clone());
-                            let frac_val = self.fraction;
-                            crate::tasks::spawn(
-                                move |_| {
-                                    let source_mgr = crate::sources::global_source_manager();
-                                    let source = source_mgr
-                                        .get(&source_id)
-                                        .ok_or_else(|| anyhow::anyhow!("Source not found"))?;
-                                    let chap_content = source.get_chapter_content(&chapter_id)?;
-                                    let c_html = match chap_content {
-                                        crate::sources::ChapterContent::Html(h) => h,
-                                        _ => {
-                                            return Err(anyhow::anyhow!("Expected HTML content"))
-                                        }
-                                    };
-                                    if let Some(p) = path {
-                                        let xhtml = format!(
-                                            r#"<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head><title>{}</title></head>
-<body>
-<h1>{}</h1>
-{}
-</body>
-</html>"#,
-                                            quick_xml::escape::escape(&title),
-                                            quick_xml::escape::escape(&title),
-                                            c_html
-                                        );
-                                        let _ = std::fs::write(&p, &xhtml);
-                                    }
-                                    Ok::<_, anyhow::Error>((title, c_html))
-                                },
-                                |_| {},
-                                move |res| {
-                                    if let Ok((chap_title, c_html)) = res {
-                                        let title_json = serde_json::to_string(&chap_title)
-                                            .unwrap_or_else(|_| "\"\"".into());
-                                        let body_json = serde_json::to_string(&c_html)
-                                            .unwrap_or_else(|_| "\"\"".into());
-                                        let script = format!(
-                                            "if (window.kalamJumpToChapter) window.kalamJumpToChapter({idx}, {title_json}, {body_json}, {frac_val});"
-                                        );
-                                        super::js_bridge::eval_js(&webview, &script);
-                                    }
-                                },
-                            );
-                        } else {
-                            // Malformed placeholder — fall back to full reload
-                            load_chapter(self);
-                        }
-                    } else {
-                        let title = self
-                            .open
-                            .spine
-                            .get(idx)
-                            .map(|i| i.title.clone())
-                            .unwrap_or_default();
-                        let title_json = serde_json::to_string(&title)
-                            .unwrap_or_else(|_| "\"\"".into());
-                        let body_json = serde_json::to_string(&body)
-                            .unwrap_or_else(|_| "\"\"".into());
-                        let frac_val = self.fraction;
-                        let script = format!(
-                            "if (window.kalamJumpToChapter) window.kalamJumpToChapter({idx}, {title_json}, {body_json}, {frac_val});"
-                        );
-                        super::js_bridge::eval_js(&self.webview, &script);
-                    }
-                }
-                Err(err) => {
-                    eprintln!("kalam: go_chapter body read failed: {err:#}");
-                    // Fall back to full reload on error only
-                    load_chapter(self);
-                }
-            }
+        if idx >= self.chapter_count {
+            return;
         }
-
-        self.loading = false;
-        self.preload_next_chapter();
-    }
-
-    /// A0 step 5: warm the *next* chapter's file while this one is being read.
-    pub(crate) fn preload_next_chapter(&self) {
-        if let Some(path) = crate::preload::next_chapter_file(&self.open.spine, self.chapter) {
-            crate::preload::warm_chapter_file(path);
-        }
+        self.flush_annotation_note_draft();
+        self.editing_annotation = None;
+        engine::dismiss(self.selection_chip.take());
+        engine::dismiss(self.dict_popover.take());
+        self.with_view(|v| {
+            v.goto_chapter(idx, frac);
+        });
+        // The position callback sets chapter/fraction, saves progress and
+        // reloads the sidebars once the page is on screen.
     }
 }
 
 pub(crate) fn chapter_label(model: &ReaderModel, chapter_index: usize) -> String {
-    if let Some(item) = model.open.spine.get(chapter_index) {
-        item.title.clone()
-    } else {
-        format!("Ch {}", chapter_index + 1)
-    }
-}
-
-pub(crate) fn extract_attr(html: &str, attr: &str) -> Option<String> {
-    let needle = format!("{attr}=\"");
-    let start = html.find(&needle)? + needle.len();
-    let end = html[start..].find('"')? + start;
-    Some(html[start..end].to_string())
-}
-
-pub(crate) fn load_chapter(model: &ReaderModel) {
-    if model.open.chapter_count() == 0 {
-        return;
-    }
-    crate::timing::span("chapter_load");
-    match model
-        .open
-        .chapter_html(model.chapter, &model.css(), model.fraction)
-    {
-        Ok(html) => {
-            let base = model.open.extract_dir.to_string_lossy();
-            let base_uri = if base.starts_with('/') {
-                format!("file://{base}/")
-            } else {
-                format!("file:///{}/", base.replace('\\', "/"))
-            };
-            if html.contains("kalam-remote-placeholder") {
-                if let Some(item) = model.open.spine.get(model.chapter) {
-                    let path = item.path.clone();
-                    let title = item.title.clone();
-                    let source_id = extract_attr(&html, "data-source-id").unwrap_or_default();
-                    let chapter_id = extract_attr(&html, "data-chapter-id").unwrap_or_default();
-                    if !source_id.is_empty() && !chapter_id.is_empty() {
-                        let webview = model.webview.clone();
-                        let ch_idx = model.chapter;
-                        crate::tasks::spawn(
-                            move |_| {
-                                let source_mgr = crate::sources::global_source_manager();
-                                let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
-                                let chap_content = source.get_chapter_content(&chapter_id)?;
-                                let c_html = match chap_content {
-                                    crate::sources::ChapterContent::Html(h) => h,
-                                    _ => return Err(anyhow::anyhow!("Expected HTML content")),
-                                };
-                                let xhtml = format!(
-                                    r#"<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head><title>{}</title></head>
-<body>
-<h1>{}</h1>
-{}
-</body>
-</html>"#,
-                                    quick_xml::escape::escape(&title),
-                                    quick_xml::escape::escape(&title),
-                                    c_html
-                                );
-                                let _ = std::fs::write(&path, &xhtml);
-                                Ok::<_, anyhow::Error>((title, c_html))
-                            },
-                            |_| {},
-                            move |res| {
-                                if let Ok((chap_title, c_html)) = res {
-                                    let title_json = serde_json::to_string(&chap_title).unwrap_or_else(|_| "\"\"".into());
-                                    let body_json = serde_json::to_string(&c_html).unwrap_or_else(|_| "\"\"".into());
-                                    let script = format!(
-                                        "if (window.kalamReplaceChapter && document.getElementById('kalam-chapter-{ch_idx}')) {{ \
-                                            window.kalamReplaceChapter({ch_idx}, {title_json}, {body_json}); \
-                                        }}"
-                                    );
-                                    super::js_bridge::eval_js(&webview, &script);
-                                }
-                            }
-                        );
-                    }
-                }
-            }
-            model.webview.load_html(&html, Some(&base_uri));
-        }
-        Err(err) => {
-            let err_html = format!(
-                "<html><body style='padding:2rem;background:#f5f0e8;color:#2c2820;font-family:Georgia,serif'><h1>Could not load chapter</h1><pre>{err:#}</pre></body></html>"
-            );
-            model.webview.load_html(&err_html, None);
-        }
-    }
+    model
+        .chapter_titles
+        .get(chapter_index)
+        .cloned()
+        .unwrap_or_else(|| format!("Ch {}", chapter_index + 1))
 }

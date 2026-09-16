@@ -13,10 +13,10 @@ default = ["bundled-dictionaries"]
 bundled-dictionaries = []
 
 [dependencies]
-relm4 = { version = "0.9", features = ["libadwaita", "gnome_45"] }
-libadwaita = { version = "0.7", features = ["v1_4"] }
-gtk = { version = "0.9", package = "gtk4", features = ["v4_12"] }
-gdk-pixbuf = "0.20"
+relm4 = { version = "0.11", features = ["libadwaita", "gnome_45"] }
+libadwaita = { version = "0.9", features = ["v1_4"] }
+gtk = { version = "0.11", package = "gtk4", features = ["v4_12"] }
+gdk-pixbuf = "0.22"
 # A0 step 3: persistent cover thumbnails. gdk-pixbuf can decode but cannot
 # encode PNG in this toolchain, so we use `image` (pure Rust, no system deps)
 # to generate the small thumbnails written to cache/thumbs/ at import time.
@@ -24,10 +24,11 @@ gdk-pixbuf = "0.20"
 # stack and rayon); `std` is always on in `image`, so we only need the codecs
 # covers actually use (png to encode the thumbnail, jpeg/gif/webp to read them).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-webkit6 = { version = "0.4", package = "webkit6", features = ["v2_44"] }
-javascriptcore = { version = "0.4", package = "javascriptcore6" }
-glib = "0.20"
-gio = { version = "0.20", package = "gio" }
+glib = "0.22"
+gio = { version = "0.22", package = "gio" }
+# The reading engine: opens the EPUB itself and draws the page. It replaces
+# the in-app browser page, so the browser and JS-engine crates are gone.
+kalam-reader = { git = "https://github.com/alankarter1275/kalam-engine", tag = "v0.1.0" }
 
 # Library / persistence
 # `trace` powers the A0 step 7 query-count assertions in `src/perf.rs`: it is
@@ -63,7 +64,15 @@ epub-builder = "0.8.3"
 wasmtime = { version = "24.0.0", features = ["component-model"] }
 
 [profile.release]
-lto = true
-codegen-units = 1
+# `lto = true` is fat LTO, and `codegen-units = 1` takes the backend's ability
+# to work in parallel away; together they make rustc's peak memory roughly the
+# size of the whole crate graph. The engine's git dependency drags stylo in,
+# and on a 4 GB machine that peak is past the limit: rustc is killed by the
+# OOM killer with no diagnostic at all, which reads as a crash rather than a
+# memory problem. Thin LTO keeps most of the cross-crate inlining for a
+# fraction of the peak, and leaving codegen-units at its default lets rustc
+# use the machine's cores. CI has memory to spare and never saw this; the
+# owner's 4 GB box is the machine this profile has to fit.
+lto = "thin"
 strip = true
 opt-level = 3

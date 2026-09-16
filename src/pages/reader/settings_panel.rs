@@ -20,6 +20,7 @@ pub(crate) fn build_reader_settings_panel(
     font_px: u32,
     line_height: f32,
     column_px: u32,
+    scrolled: bool,
     ui_prefs: ReaderUiPrefs,
     dict_sense_hint: bool,
     dict_history_enabled: bool,
@@ -109,6 +110,25 @@ pub(crate) fn build_reader_settings_panel(
         ReaderMsg::ColumnWidthDelta(20),
     ));
     reading_page.append(&width_section);
+    reading_page.append(&reader_panel_divider());
+
+    // "Layout": one page at a time, or one long strip. Same control the
+    // `reader.scrolled` preference holds, so the key and the switch agree.
+    let mode_section = reader_settings_section("Layout");
+    let mode_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    mode_row.add_css_class("kalam-reader-setting-row");
+    let mode_label = gtk::Label::new(Some("Continuous scroll"));
+    mode_label.add_css_class("kalam-reader-setting-name");
+    mode_label.set_hexpand(true);
+    mode_label.set_halign(gtk::Align::Start);
+    mode_row.append(&mode_label);
+    let mode_tx = sender.input_sender().clone();
+    let mode_switch = crate::pages::settings::toggle_switch(scrolled, move |on| {
+        let _ = mode_tx.send(ReaderMsg::SetScrolled(on));
+    });
+    mode_row.append(&mode_switch);
+    mode_section.append(&mode_row);
+    reading_page.append(&mode_section);
     reading_page.append(&reader_panel_divider());
 
     let dict_section = reader_settings_section("Dictionary");

@@ -10,7 +10,7 @@
 //! night, and supporting light variants would double the surface area of
 //! every future design change for a mode nobody asked for.
 //!
-//! The reading pane inside the WebView keeps its own separate Light/Sepia/Dark
+//! The reading pane keeps its own separate Light/Sepia/Dark
 //! setting (see `epub_book::ReadingTheme`). Paper colour and chrome colour are
 //! different decisions: plenty of people want a sepia page inside a dark app.
 

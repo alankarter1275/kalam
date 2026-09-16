@@ -255,6 +255,93 @@ shot "02-$ROUTE-settling"
 for _ in $(seq 1 12); do sample_rss; sleep 1; done
 shot "03-$ROUTE-settled"
 
+# --- does a tap on the page turn it? (TAP=1) -------------------------------
+#
+# This is the one reader behaviour a screenshot cannot see. Kalam removed
+# tap-to-look-up before the engine swap, so a tap on text must fall through
+# to the widget's page-turn zones -- the widget only claims taps when the
+# host connects a word handler, and Kalam does not. If that regressed, the
+# page would sit there and every other check would still pass.
+#
+# A tap is a press and a release in the same place, and the honest signal is
+# "did the pixels change". The pointer is placed from the window's own
+# geometry, not the output size: the two are equal only when the window is
+# fullscreen, and a tap outside the window is indistinguishable from a tap
+# the app ignored -- exactly the false negative this check exists to avoid.
+#
+# STATUS, 2026-09-11: this probe does NOT work in CI and is off by default.
+# Run on the reader route it reports "window: 1600x1000 at 0,0" -- a
+# fullscreen window, so the coordinates are right -- and then no change at
+# 0.75/0.25/0.50 of the width, with both a one-second hold and an 80 ms one.
+# Nothing changes at any position, including the centre, which the reader
+# does react to for other reasons; the simplest explanation is that
+# `seat ... cursor press` events do not reach the app under a headless sway
+# (no libinput devices). Do not read "no change" as a defect: it is a
+# property of the harness. The gesture is verified by hand instead.
+if [ "${TAP:-0}" = "1" ]; then
+  say ""
+  say "=== tap check (TAP=1) ==="
+  SEAT="$(swaymsg -t get_seats 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["name"])' 2>/dev/null \
+    || echo seat0)"
+  GEOM="$(swaymsg -t get_tree 2>/dev/null | python3 -c '
+import json, sys
+
+
+def walk(node):
+    yield node
+    for child in node.get("nodes", []) + node.get("floating_nodes", []):
+        yield from walk(child)
+
+
+best = None
+for node in walk(json.load(sys.stdin)):
+    app_id = node.get("app_id") or ""
+    rect = node.get("rect", {})
+    if "kalam" in app_id.lower() and rect.get("width", 0) > 200:
+        best = rect
+print("{} {} {} {}".format(best["x"], best["y"], best["width"], best["height"]) if best else "")
+' 2>/dev/null || true)"
+  if [ -z "$GEOM" ]; then
+    say "tap check: SKIPPED -- no kalam window in sway's tree"
+  else
+    WIN_X="$(printf '%s' "$GEOM" | cut -d' ' -f1)"
+    WIN_Y="$(printf '%s' "$GEOM" | cut -d' ' -f2)"
+    WIN_W="$(printf '%s' "$GEOM" | cut -d' ' -f3)"
+    WIN_H="$(printf '%s' "$GEOM" | cut -d' ' -f4)"
+    say "window: ${WIN_W}x${WIN_H} at ${WIN_X},${WIN_Y}  seat=$SEAT"
+    # Mid-height, three across: the next-page zone on the right, the
+    # previous-page zone on the left, and the middle.
+    TAP_FRACS="${TAP_FRACS:-0.75 0.25 0.50}"
+    n=0
+    for frac in $TAP_FRACS; do
+      n=$((n + 1))
+      TAP_X="$(python3 -c "print(int($WIN_X + $WIN_W * $frac))")"
+      TAP_Y="$(python3 -c "print(int($WIN_Y + $WIN_H * 0.5))")"
+      # A *tap* is a short press: hold the button down for a second and the
+      # reader treats it as a long press (the selection anchor), which is a
+      # different gesture and does not turn the page. 80 ms is under the
+      # usual threshold and well above sway's round trip.
+      swaymsg "seat $SEAT cursor set $TAP_X $TAP_Y" >/dev/null 2>&1 || true
+      sleep 1
+      swaymsg "seat $SEAT cursor press button1" >/dev/null 2>&1 || true
+      sleep "${TAP_HOLD:-0.08}"
+      swaymsg "seat $SEAT cursor release button1" >/dev/null 2>&1 || true
+      sleep 2
+      shot "05-after-tap-$n"
+      if cmp -s "$OUT/03-$ROUTE-settled.png" "$OUT/05-after-tap-$n.png"; then
+        say "tap $n at $TAP_X,$TAP_Y (frac $frac): no change"
+      else
+        say "tap $n at $TAP_X,$TAP_Y (frac $frac): CHANGED"
+      fi
+    done
+    say "tap check: each line compares its shot with 03-$ROUTE-settled.png."
+    say "           A change means the tap reached the page. No change at any"
+    say "           of the three means the widget ignored it or sway did not"
+    say "           deliver it -- the owner's own tap decides which."
+  fi
+fi
+
 # --- did we actually render the requested page? ---------------------------
 #
 # Three checks, because each catches a different failure and the first two can

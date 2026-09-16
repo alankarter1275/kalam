@@ -1,11 +1,21 @@
 # Putting the engine into Kalam (step 5)
 
+> **Status (2026-09-14): executed.** Kalam's branch
+> `arena/01a08cfb-calibre-alt` builds without WebKit on this recipe.
+> Its `src/pages/reader/engine.rs` has been edited there since (the
+> dictionary card rebuilt from the owner's mockup, tap-to-dictionary
+> removed, the selection chip rebuilt) and **that copy is authoritative**.
+> The seed it grew from stays in kalam-engine at
+> `docs/kalam/patch/src/pages/reader/engine.rs` as history; the handoff
+> bundle no longer ships it. Read on for the reasoning behind the wiring,
+> not for code to paste over a live file.
+
 This is the recipe for swapping WebKit out of Kalam's reader page and
 putting `kalam-reader` in. It is written to be followed top to bottom,
-in the `calibre-alt` repo, compiling after each numbered step. The
-finished code for the new file ships beside this document (in the
-handoff bundle: `patch/engine.rs`; in kalam-engine:
-`docs/kalam/patch/src/pages/reader/engine.rs`); the rest are edits to
+in the `calibre-alt` repo. Steps 0–3 form one build (see step 0 for
+why); step 4 is the run. The
+seed code for the new file lives in kalam-engine at
+`docs/kalam/patch/src/pages/reader/engine.rs`; the rest are edits to
 files you already have.
 
 If something here does not match your tree, the tree wins — I worked
@@ -57,18 +67,33 @@ kalam-reader = { git = "https://github.com/alankarter1275/kalam-engine", branch 
 # delete: webkit6, javascriptcore
 ```
 
-Then `cargo build --release -j 2` **before touching any reader code**.
-Expect a handful of small breakages from the gtk-rs 0.9 → 0.11 move
-(renamed methods, a `glib::Propagation` here and there). Fix those
-first, on their own commit, so the reader swap is not mixed up with them.
-The build will also fail on `webkit6` being gone — that is fine, it
-tells you the exact list of files step 3 replaces. If you would rather
-keep it compiling the whole way, leave `webkit6` in for step 0 and
-remove it in step 3.
+**Why webkit6 goes in the same commit as the bump:** `gtk4-sys` 0.9
+and 0.11 both declare `links = "gtk-4"`, and webkit6 0.4 is built on
+gtk4 0.9, so Cargo refuses a graph that has the bump and WebKit at once
+("multiple packages link to native library `gtk-4`") before compiling a
+line. There is no intermediate state that builds: steps 0–3 are **one
+build**. Keep them as separate commits for readability, but do not
+expect anything to compile until step 3 is complete. Expect a handful of
+small breakages from the gtk-rs 0.9 → 0.11 move elsewhere in the app
+(renamed methods, `set_popover` now taking `impl IsA<Popover>`, a
+`glib::Propagation` here and there) — fix those in step 3's build, on
+their own commit.
 
-System side (Arch): `pacman -S gtk4 libadwaita` are already there for
-0.9; 0.11 needs no newer system GTK at the `v4_12` feature level.
-`webkit2gtk-6.0` can be uninstalled at the end.
+`kalam-reader` asks gtk4 for `v4_16`; Cargo unifies that with Kalam's
+`v4_12`, so the binary needs GTK ≥ 4.16 at build and run time (Arch has
+4.20+).
+
+**Build profile.** Kalam's `[profile.release]` has `lto = true` and
+`codegen-units = 1`. On the owner's 4 GB machine that gets `rustc`
+OOM-killed (`signal: 15, SIGTERM`, no error message) while compiling
+`stylo`, the largest crate the engine brings in. Change it to
+`lto = "thin"` and delete the `codegen-units` line; build with `-j 1`
+if it is still killed. CI runners have the memory and never see this.
+
+System side (Arch): `pacman -S gtk4 libadwaita` are already there.
+`webkit2gtk-6.0` can be uninstalled at the end. The engine's git
+dependency pulls stylo, which needs Python 3 at build time (Arch has
+it); Kalam's toolchain must be ≥ 1.92 (the engine workspace's floor).
 
 ## Step 1 — the database: one column gains a meaning, one function is added
 
@@ -105,7 +130,8 @@ are painted and survive font changes, resizes and re-imports.
 
 ## Step 2 — drop the new file in
 
-Copy `patch/engine.rs` (from the handoff bundle) to
+(Done on Kalam's branch; for a fresh integration only.) Copy the seed
+`docs/kalam/patch/src/pages/reader/engine.rs` from kalam-engine to
 `src/pages/reader/engine.rs` and add `mod engine;` to
 `src/pages/reader/mod.rs`. It provides:
 
@@ -382,6 +408,14 @@ Then, arm by arm (only the changed lines shown):
                 }
             }
   ```
+
+  The widget paints the selection band and the two drag handles itself
+  (R12j); Kalam draws only the chip. `SelectedText` also carries
+  `start_rect`/`end_rect` (the first and last line's band, widget
+  coordinates — where the handles stand) for a host that wants its chip
+  clear of them; `rect` is still the union. This message arrives again
+  after a handle drag, with the new text and rects: dismiss and rebuild
+  the chip as above.
 * **`HighlightSelection(color_name)`** (new) — the old `"highlight"` bridge message:
 
   ```rust
@@ -415,7 +449,7 @@ Then, arm by arm (only the changed lines shown):
 * **`QuoteSelection`** (new) — same shape with kind `"quote"`, colour `"yellow"`, and no `show_highlight`; `crate::notify::compact("Quote saved", "")`. Call `view.clear_selection()` after reading `view.selected_text()`.
 * **`CopySelection`** (new) — `if let Some(text) = view.selected_text() { view.widget().clipboard().set_text(&text); view.clear_selection(); }`.
 * **`LookUpSelection`** (new) — `let word = view.selected_text(); view.clear_selection();` then fall into the same code as `EngineWord` with `sentence = None` and the chip's rect as anchor (keep the rect from the last `EngineSelection` in `self.dict_anchor`).
-* **`EngineWord { word, sentence, rect, highlight }`** (new) — the old `"dict-lookup"` bridge message. If `highlight` is `Some(id)`, the tap landed on an existing highlight: open the Highlights sidebar on it (`sender.input(ReaderMsg::ToggleAnnotation(id))`) and return. Otherwise it is the body of the old `"dict-lookup"` arm verbatim (lookup_entry, saved_word_exists, sense hint, log_dict_lookup) ending in `self.show_dict(&data, saved, hint_index, rect, &sender)` (3f) instead of `show_dict_in_webview`. Set `self.dict_context = Some(sentence)`.
+* **`EngineWord { word, sentence, rect, highlight }`** — **do not wire this for Kalam.** Kalam's `main` had removed tap-to-look-up (the JS `fireTapLookup` has no caller), and a connected word handler makes a tap on text a lookup instead of a page turn. Leave `connect_word` unconnected; the chip's Look up is the only entry. The rest of this bullet is kept for a host that wants the feature: the old `"dict-lookup"` bridge message. If `highlight` is `Some(id)`, the tap landed on an existing highlight: open the Highlights sidebar on it (`sender.input(ReaderMsg::ToggleAnnotation(id))`) and return. Otherwise it is the body of the old `"dict-lookup"` arm verbatim (lookup_entry, saved_word_exists, sense hint, log_dict_lookup) ending in `self.show_dict(&data, saved, hint_index, rect, &sender)` (3f) instead of `show_dict_in_webview`. Set `self.dict_context = Some(sentence)`.
 * **`DictSearchSelect(word)`** — replace `self.show_dict_in_webview(&word, None, None)` with `self.show_dict(..)` anchored at `self.dict_anchor` (or the widget's centre if `None`).
 * **`ClearDict`** — replace the `eval_js` with `engine::dismiss(self.dict_popover.take());`.
 * **`SaveCurrentWord`** — unchanged; after a save, rebuild the popover so the button reads "Saved ✓" (call `show_dict` again), or simply dismiss it.
@@ -544,6 +578,11 @@ strip mode is reachable without a key:
   nothing now; add classes for the chip and the popover
   (`kalam-reader-chip`, `kalam-reader-chip-dot-yellow` … `-orange`,
   `kalam-reader-chip-action`, `kalam-reader-dict*`, `kalam-reader-strip-bar`).
+  The dictionary card's 37 `kalam-reader-dict*` rules are the old
+  `#kalam-dict-popup` design translated to GTK CSS with the app's
+  `@kalam_*` colour tokens; the reference copy is calibre-alt's
+  `resources/style.css` from the branch that landed the card (Kalam
+  1e0dfd3), and Kalam's `engine.rs` is the matching Rust.
   The five dot colours are the engine's `HighlightColor::css()` values:
   yellow `#f4d35e`, green `#8acb9c`, blue `#8bb7f2`, pink `#e99bbd`,
   orange `#f2ae72`.
@@ -569,7 +608,10 @@ Open a long novel and check, in this order:
 5. Drag-select text → chip; pick a colour → highlight painted, listed
    in the Highlights sidebar; change font size → highlight still on the
    same words; reopen the book → still there.
-6. Tap a word → dictionary popover; Save word → Words sidebar.
+6. Select a word → chip → Look up → dictionary popover; Save word →
+   Words sidebar. (A plain tap on a word turns the page by zone: Kalam
+   removed tap-to-look-up before the swap, so do not call
+   `connect_word`.)
 7. Click a footnote link → follows in place; click a web link → browser.
 8. Memory: `ps -o rss= -p $(pidof kalam)` while reading; the target is
    under 100 MB more than the library page alone.

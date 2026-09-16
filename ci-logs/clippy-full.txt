@@ -1,6 +1,3 @@
-(no lines matched; last 100 lines of output)
-
-=== last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
 --- kalam-reader's gtk4 v4_16 feature needs system GTK >= 4.16) ---
 gtk4: 4.22.4
@@ -13,4 +10,3 @@ libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/calibre-alt/calibre-alt)
 [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 10.01s
---- run 35037694897 ---

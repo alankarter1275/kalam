@@ -4,7 +4,7 @@ use super::mod_model::ReaderModel;
 
 impl ReaderModel {
     pub(crate) fn progress_pct(&self) -> i64 {
-        let count = self.open.chapter_count();
+        let count = self.chapter_count;
         if count == 0 {
             return 0;
         }
@@ -14,14 +14,14 @@ impl ReaderModel {
     }
 
     pub(crate) fn save_progress(&mut self) {
-        if self.open.chapter_count() == 0 {
+        if self.chapter_count == 0 {
             return;
         }
         let _ = self.service.catalog().set_reading_progress(
             self.book_id,
             self.chapter,
             self.fraction,
-            self.open.chapter_count(),
+            self.chapter_count,
         );
         let pct = self.progress_pct();
         let _ = self

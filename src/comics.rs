@@ -62,7 +62,7 @@ fn natural_sort_key(s: &str) -> Vec<SortChunk> {
 
 /// Natural sort helper for a list of string file names.
 pub fn sort_comic_pages(pages: &mut [String]) {
-    pages.sort_by(|a, b| natural_sort_key(a).cmp(&natural_sort_key(b)));
+    pages.sort_by_key(|page| natural_sort_key(page));
 }
 
 /// List all image pages in a comic archive, ordered naturally.

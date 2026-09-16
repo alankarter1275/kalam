@@ -2,7 +2,7 @@
 
 use super::types::*;
 use crate::db::{Annotation, DictEntry, ReadingBookmark, SavedWord};
-use crate::epub_book::{OpenBook, ReadingTheme};
+use crate::epub_book::ReadingTheme;
 use crate::service::LibraryService;
 use gtk::glib;
 use std::path::PathBuf;
@@ -13,20 +13,34 @@ pub struct ReaderModel {
     pub(crate) book_title: String,
     pub(crate) book_authors: String,
     pub(crate) book_cover_path: Option<PathBuf>,
-    pub(crate) open: OpenBook,
+    /// The reading widget; `None` when the book failed to open.
+    pub(crate) view: Option<kalam_reader::ReaderView>,
+    /// Chapter count and titles, kept so the page works without a view.
+    pub(crate) chapter_count: usize,
+    pub(crate) chapter_titles: Vec<String>,
     pub(crate) chapter: usize,
     pub(crate) fraction: f64,
     pub(crate) theme: ReadingTheme,
     pub(crate) font_px: u32,
     pub(crate) line_height: f32,
     pub(crate) column_px: u32,
-    pub(crate) loading: bool,
-    pub(crate) webview: webkit6::WebView,
-    pub(crate) webview_handlers: Option<WebViewHandlers>,
+    /// The chip over the current selection and the dictionary popover,
+    /// so they can be taken down again.
+    pub(crate) selection_chip: Option<gtk::Popover>,
+    pub(crate) dict_popover: Option<gtk::Popover>,
+    /// Where the last word tap was, for the popover that follows it.
+    pub(crate) dict_anchor: Option<gtk::gdk::Rectangle>,
+    /// How many pops-down of a *replaced* dictionary popover are still in
+    /// flight. Each replaced popover reports itself closed on its way out
+    /// and that report must not close its successor.
+    pub(crate) dict_suppress_clear: u32,
+    /// One page at a time, or one long strip, and the strip's scrollbar
+    /// (shown only in strip mode).
+    pub(crate) scrolled: bool,
+    pub(crate) strip_scrollbar: Option<gtk::Scrollbar>,
     pub(crate) chapter_annotations: Vec<Annotation>,
     pub(crate) all_book_annotations: Vec<Annotation>,
     pub(crate) annotation_search_query: String,
-    pub(crate) pending_annotation_jump: Option<i64>,
     pub(crate) editing_annotation: Option<i64>,
     pub(crate) annotation_note_draft: Option<(i64, String)>,
     pub(crate) bookmarks: Vec<ReadingBookmark>,
@@ -35,7 +49,6 @@ pub struct ReaderModel {
     pub(crate) dict_results: Vec<DictEntry>,
     pub(crate) dict_lookup_word: Option<String>,
     pub(crate) dict_lookup_def: Option<String>,
-    pub(crate) dict_lookup_rect_json: Option<String>,
     pub(crate) dict_context: Option<String>,
     pub(crate) last_selection: Option<String>,
     pub(crate) session_id: Option<i64>,
@@ -78,4 +91,13 @@ pub struct ReaderModel {
     pub(crate) highlight_filter_buttons: Vec<(HighlightFilter, gtk::Button)>,
     pub(crate) word_scope_buttons: Vec<(WordScope, gtk::Button)>,
     pub(crate) ui_css_provider: gtk::CssProvider,
+}
+
+impl ReaderModel {
+    /// Run `f` on the reading widget, if the book opened.
+    pub(crate) fn with_view(&self, f: impl FnOnce(&kalam_reader::ReaderView)) {
+        if let Some(view) = &self.view {
+            f(view);
+        }
+    }
 }

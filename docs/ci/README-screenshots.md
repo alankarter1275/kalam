@@ -82,8 +82,10 @@ nothing — the same rule as `pitfalls.md` §19.
 
 The app now accepts `KALAM_ROUTE=<name>` (`all-books`, `settings`, `shelves`,
 `analytics`, … — an unknown name prints the full list and is ignored rather
-than fatal). Set `ROUTE=` to change which page is photographed; it defaults to
-`all-books`.
+than fatal). Pages that need a book take its id after the name: `book-<id>`
+opens the book page and `read-<id>` opens the engine reader, which is how the
+reader gets exercised without the owner's desk. Set `ROUTE=` to change which
+page is photographed; it defaults to `all-books`.
 
 Three independent checks now have to agree before the report says navigation
 was OK, because each catches a different failure:

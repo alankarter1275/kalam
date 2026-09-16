@@ -11,8 +11,7 @@ widget from kalam-engine.
 
 | File | What |
 |---|---|
-| `INTEGRATION.md` | **The recipe.** Numbered steps, each a compile point. Follow it in order. |
-| `patch/engine.rs` | Complete new file → copy to `src/pages/reader/engine.rs`. |
+| `INTEGRATION.md` | **The recipe** the wiring was built from (executed on your branch). Read it for *why* things are shaped as they are; your tree wins where they differ. |
 | `kalam-reader-API.md` | Every public item of the widget crate with its doc comments, generated from source. Authoritative for signatures. |
 | `kalam-reader-README.md` | The widget crate's README: what it does, what it needs, the numbers behind its defaults. |
 | `ENGINE-VERSION.txt` | The exact engine commit this bundle describes. Quote it in every report. |
@@ -20,6 +19,14 @@ widget from kalam-engine.
 You do **not** have the engine's source. Do not guess at APIs beyond
 `kalam-reader-API.md`; if you need something the widget does not
 expose, say so in a report (format below) instead of working around it.
+
+**Your `src/pages/reader/engine.rs` is authoritative.** The bundle used
+to carry a `patch/engine.rs`; it was the seed that file grew from and it
+stopped matching the moment you first edited yours, so it is no longer
+shipped (2026-09-14). When an engine update changes the widget's API,
+the diff of `kalam-reader-API.md` between two bundles is the whole
+change list — edit your file against it. Never replace your file with a
+copy from anywhere.
 
 ## Ground rules (from the owner, via the engine side)
 

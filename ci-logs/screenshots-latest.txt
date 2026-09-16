@@ -1,44 +1,44 @@
 === kalam screenshot run ===
 books=139 out=ci-shots settle=25
-binary: 16195640 bytes
+binary: 39016888 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
-sway binary: /usr/bin/sway sway version 1.9
-SWAYSOCK=/run/user/1001/sway-ipc.1001.7095.sock
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.12513.sock
 sway up: {
-  "human_readable": "1.9",
+  "human_readable": "1.11",
   "variant": "sway",
   "major": 1,
-  "minor": 9,
+  "minor": 11,
   "patch": 0,
-  "loaded_config_file_name":
+  "loaded_config_file_name
 WAYLAND_DISPLAY=wayland-1
 
 === launching kalam ===
 requested route: all-books
 windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 toplevel windows seen: 1
-  shot: 01-all-books (67756 bytes)
+  shot: 01-all-books (82137 bytes)
 focused: 1
-  shot: 02-all-books-settling (67756 bytes)
-  shot: 03-all-books-settled (67756 bytes)
+  shot: 02-all-books-settling (82137 bytes)
+  shot: 03-all-books-settled (82137 bytes)
 navigation: app accepted route 'all-books'
 navigation: grid rendered (grid_build seen, grid_cards=139)
-  shot: 04-home-for-comparison (61519 bytes)
+  shot: 04-home-for-comparison (68467 bytes)
 navigation: 'all-books' differs from Home -- the page really did change
 navigation: OK -- the images below are 'all-books'
 
 === timing lines from the app ===
-  [timing] startup_db_open         8.5 ms
+  [timing] startup_db_open         5.7 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      3.9 ms
-  [timing] window_shown          235.1 ms
+  [timing] startup_first_page      3.8 ms
+  [timing] window_shown          209.7 ms
   [timing] page_cache_miss           1
   [timing] covers_queued            45
-  [timing] grid_build             12.2 ms
+  [timing] grid_build              4.1 ms
   [timing] grid_cards               48
   [timing] grid_cards_total        139
   [timing] covers_queued             6
@@ -46,43 +46,43 @@ navigation: OK -- the images below are 'all-books'
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        3033.5 ms
+  [timing] startup_dicts        1930.2 ms
 
 === did the covers actually load? ===
-  01-all-books.png: 1600x1000  coloured=21.7%  lit=100.0%
-  02-all-books-settling.png: 1600x1000  coloured=21.7%  lit=100.0%
-  03-all-books-settled.png: 1600x1000  coloured=21.7%  lit=100.0%
-  04-home-for-comparison.png: 1600x1000  coloured=16.8%  lit=100.0%
+  01-all-books.png: 1600x1000  coloured=21.6%  lit=100.0%
+  02-all-books-settling.png: 1600x1000  coloured=21.6%  lit=100.0%
+  03-all-books-settled.png: 1600x1000  coloured=21.6%  lit=100.0%
+  04-home-for-comparison.png: 1600x1000  coloured=17.3%  lit=100.0%
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  edc0f42850b3ae583ad27defa13abba5  ci-shots/01-all-books.png
-  edc0f42850b3ae583ad27defa13abba5  ci-shots/02-all-books-settling.png
-  edc0f42850b3ae583ad27defa13abba5  ci-shots/03-all-books-settled.png
-  244d265e968cce3adc41632820721ec2  ci-shots/04-home-for-comparison.png
+  b9b689862b8758633c1da9657b7bec58  ci-shots/01-all-books.png
+  b9b689862b8758633c1da9657b7bec58  ci-shots/02-all-books-settling.png
+  b9b689862b8758633c1da9657b7bec58  ci-shots/03-all-books-settled.png
+  3246a0aece91f265df9f45604f1bd665  ci-shots/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (kalam:7127): Gtk-WARNING **: 04:58:25.104: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:12550): Gtk-WARNING **: 00:07:27.236: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=all-books — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=269916 peak_rss_mb=263
+books=139 peak_rss_kb=266704 peak_rss_mb=260
 
 === shutting down ===
 
 === artifacts ===
-  total 296
-  drwxr-xr-x  2 runner runner  4096 Sep  5 04:59 .
-  drwxr-xr-x 13 runner runner  4096 Sep  5 04:58 ..
-  -rw-r--r--  1 runner runner 67756 Sep  5 04:58 01-all-books.png
-  -rw-r--r--  1 runner runner 67756 Sep  5 04:58 02-all-books-settling.png
-  -rw-r--r--  1 runner runner 67756 Sep  5 04:59 03-all-books-settled.png
-  -rw-r--r--  1 runner runner 61519 Sep  5 04:59 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Sep  5 04:58 grim.log
-  -rw-r--r--  1 runner runner   580 Sep  5 04:59 kalam-home.log
-  -rw-r--r--  1 runner runner   923 Sep  5 04:58 kalam.log
-  -rw-r--r--  1 runner runner  2796 Sep  5 04:59 report.txt
-  -rw-r--r--  1 runner runner     0 Sep  5 04:58 sway.log
-  -rw-r--r--  1 runner runner  6548 Sep  5 04:58 tree.json
---- run 33945343087 ---
+  total 352
+  drwxr-xr-x  2 runner runner  4096 Sep 16 00:08 .
+  drwxr-xr-x 15 runner runner  4096 Sep 16 00:07 ..
+  -rw-r--r--  1 runner runner 82137 Sep 16 00:07 01-all-books.png
+  -rw-r--r--  1 runner runner 82137 Sep 16 00:07 02-all-books-settling.png
+  -rw-r--r--  1 runner runner 82137 Sep 16 00:08 03-all-books-settled.png
+  -rw-r--r--  1 runner runner 68467 Sep 16 00:08 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 16 00:07 grim.log
+  -rw-r--r--  1 runner runner   692 Sep 16 00:08 kalam-home.log
+  -rw-r--r--  1 runner runner   924 Sep 16 00:07 kalam.log
+  -rw-r--r--  1 runner runner  2799 Sep 16 00:08 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 16 00:07 sway.log
+  -rw-r--r--  1 runner runner  7185 Sep 16 00:07 tree.json
+--- run 35037694897 ---

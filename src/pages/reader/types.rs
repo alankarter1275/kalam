@@ -2,9 +2,7 @@
 
 use crate::db::HighlightColor;
 use crate::epub_book::ReadingTheme;
-use gtk::glib;
 use relm4::prelude::*;
-use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -12,51 +10,6 @@ use std::rc::Rc;
 pub enum ReaderOut {
     Close,
     OpenAuthor { name: String },
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct JsPayload {
-    #[serde(rename = "type")]
-    pub(crate) kind: String,
-    #[serde(default)]
-    pub(crate) fraction: Option<f64>,
-    #[serde(default)]
-    pub(crate) text: Option<String>,
-    #[serde(default)]
-    pub(crate) color: Option<String>,
-    #[serde(rename = "startPath", default)]
-    pub(crate) start_path: Option<String>,
-    #[serde(rename = "startOffset", default)]
-    pub(crate) start_offset: Option<i64>,
-    #[serde(rename = "endPath", default)]
-    pub(crate) end_path: Option<String>,
-    #[serde(rename = "endOffset", default)]
-    pub(crate) end_offset: Option<i64>,
-    #[serde(rename = "tmpId", default)]
-    pub(crate) tmp_id: Option<String>,
-    #[serde(default)]
-    pub(crate) word: Option<String>,
-    #[serde(default)]
-    pub(crate) context: Option<String>,
-    #[serde(default)]
-    pub(crate) rect: Option<serde_json::Value>,
-    #[serde(default)]
-    pub(crate) definition: Option<String>,
-    #[serde(default)]
-    pub(crate) count: Option<i64>,
-    #[serde(default)]
-    pub(crate) chapter: Option<usize>,
-    #[serde(default)]
-    pub(crate) next: Option<usize>,
-    #[serde(default)]
-    pub(crate) prev: Option<usize>,
-    #[serde(rename = "andScrollTo", default)]
-    pub(crate) and_scroll_to: Option<bool>,
-    #[serde(default)]
-    pub(crate) href: Option<String>,
-    /// Target chapter index for jump-to-chapter bridge message.
-    #[serde(default)]
-    pub(crate) target: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,7 +129,17 @@ pub enum ReaderMsg {
     SetDictSenseHint(bool),
     /// Phase 10: `dict_history_enabled` — records every dictionary lookup.
     SetDictHistory(bool),
-    JsRaw(String),
+    /// From the engine: the chapter on screen and how far into it.
+    EnginePosition(usize, f64),
+    /// From the engine: a finished selection (text, where), or cleared.
+    EngineSelection(Option<(String, gtk::gdk::Rectangle)>),
+    /// From the selection chip.
+    HighlightSelection(String),
+    QuoteSelection,
+    LookUpSelection,
+    CopySelection,
+    /// Settings: one page at a time, or one long strip.
+    SetScrolled(bool),
     Progress(f64),
     AnnotationsReload,
     DeleteAnnotation(i64),
@@ -209,15 +172,4 @@ pub enum ReaderMsg {
     ShowBackChrome,
     ShowBottomChrome,
     ShowAllChrome,
-}
-
-/// The signal handlers one reader connects to the pooled WebView, kept so they
-/// can be disconnected again when that reader goes away.
-pub(crate) struct WebViewHandlers {
-    pub(crate) title: glib::SignalHandlerId,
-    pub(crate) load_changed: glib::SignalHandlerId,
-    pub(crate) decide_policy: glib::SignalHandlerId,
-    /// The content manager is held alongside its id: the signal belongs to the
-    /// manager, not the view, so disconnecting needs both.
-    pub(crate) script_message: Option<(webkit6::UserContentManager, glib::SignalHandlerId)>,
 }

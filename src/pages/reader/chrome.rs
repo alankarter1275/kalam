@@ -125,7 +125,7 @@ pub(crate) fn update_sidebar_header(
 }
 
 pub(crate) fn update_chrome_labels(widgets: &super::ReaderModelWidgets, model: &ReaderModel) {
-    if model.open.chapter_count() == 0 {
+    if model.chapter_count == 0 {
         widgets.progress_label.set_label("—");
         widgets.pill_chapter_label.set_label(&model.book_title);
         return;
@@ -133,7 +133,7 @@ pub(crate) fn update_chrome_labels(widgets: &super::ReaderModelWidgets, model: &
     widgets.progress_label.set_label(&format!(
         "{} / {}",
         model.chapter + 1,
-        model.open.chapter_count()
+        model.chapter_count
     ));
     widgets
         .pill_chapter_label

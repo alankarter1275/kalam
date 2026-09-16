@@ -2,6 +2,7 @@
 
 mod chapter;
 mod chrome;
+mod engine;
 mod js_bridge;
 mod lists;
 mod mod_model;
@@ -14,13 +15,11 @@ mod ui_prefs;
 pub use mod_model::ReaderModel;
 pub use types::ReaderOut;
 
-use chapter::load_chapter;
 use chrome::{
     connect_hover_zone, overlay_child_box, rebuild_cover_host, reader_sidebar_tab_content,
     sync_reader_controls, sync_reader_stage_theme, sync_reader_stacks, sync_sidebar_tabs,
     update_chrome_labels, update_sidebar_header,
 };
-use js_bridge::url_decode;
 use lists::{rebuild_bookmarks_list, rebuild_highlights_list, rebuild_toc, rebuild_words_list};
 use panels::{build_bookmarks_panel, build_highlights_panel, build_words_panel};
 use settings_panel::build_reader_settings_panel;
@@ -28,9 +27,8 @@ use types::*;
 use ui_prefs::{apply_reader_ui_prefs, register_reader_ui_provider, update_reader_ui_setting};
 
 use crate::db::Catalog;
-use crate::epub_book::{OpenBook, ReadingTheme};
+use crate::epub_book::ReadingTheme;
 use crate::models::Book;
-use crate::paths::reader_cache_dir;
 use crate::service::LibraryService;
 use gtk::glib;
 use gtk::prelude::*;
@@ -38,7 +36,6 @@ use relm4::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use webkit6::prelude::*;
 
 fn report_errors(errors: &[String]) {
     for err in errors {
@@ -334,29 +331,42 @@ impl Component for ReaderModel {
         let snap = service.reader(book_id);
         report_errors(&snap.errors);
         let book = snap.book.clone();
-        crate::timing::span("book_open");
-        let webview = crate::webview_pool::acquire();
 
-        let (book_meta, open, chapter, fraction) = if let Some(book) = book.clone() {
-            let cache = reader_cache_dir(&book.uuid);
-            match OpenBook::open(&book.file_path, &cache) {
-                Ok(open) => {
-                    crate::timing::span_end("book_open");
+        let catalog_theme = catalog
+            .get_pref("reader.theme")
+            .map(|v| ReadingTheme::from_str_lossy(&v))
+            .unwrap_or(ReadingTheme::Sepia);
+        let catalog_font = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
+        let catalog_line_height = catalog
+            .get_pref("reader.line_height")
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(1.8)
+            .clamp(1.3, 2.5);
+        let catalog_column = catalog
+            .get_pref_i64("reader.column_px", 620)
+            .clamp(400, 860) as u32;
+        let scrolled = catalog.get_pref_i64(engine::PREF_SCROLLED, 0) != 0;
+
+        // The engine opens the EPUB itself: one widget holds the book, and
+        // its failure is the only thing that leaves the page without text.
+        let mut open_failure: Option<String> = None;
+        let (book_meta, view, chapter, fraction) = if let Some(book) = book.clone() {
+            let prefs =
+                engine::engine_prefs(catalog_theme, catalog_font, catalog_line_height, catalog_column);
+            match engine::open_engine(&book.file_path, prefs) {
+                Ok(view) => {
                     let (ch, frac) = catalog
                         .get_reading_progress(book_id)
                         .ok()
                         .flatten()
                         .unwrap_or((0, 0.0));
-                    let ch = ch.min(open.chapter_count().saturating_sub(1));
-                    (book, open, ch, frac)
+                    let ch = ch.min(view.chapter_count().saturating_sub(1));
+                    (book, Some(view), ch, frac)
                 }
                 Err(err) => {
                     eprintln!("kalam: open epub failed: {err:#}");
-                    let msg = format!(
-                        "<html><body style='padding:2rem;background:#f5f0e8;color:#2c2820;font-family:Georgia,serif'><h1>Could not open book</h1><pre>{err:#}</pre><p>Press Esc to go back.</p></body></html>"
-                    );
-                    webview.load_html(&msg, None);
-                    (book, OpenBook::empty_placeholder(), 0, 0.0)
+                    open_failure = Some(format!("{err:#}"));
+                    (book, None, 0, 0.0)
                 }
             }
         } else {
@@ -382,13 +392,27 @@ impl Component for ReaderModel {
                     cover_path: None,
                     file_path: PathBuf::new(),
                 },
-                OpenBook::empty_placeholder(),
+                None,
                 0,
                 0.0,
             )
         };
+        let chapter_count = view.as_ref().map(|v| v.chapter_count()).unwrap_or(0);
+        // Titles come from the engine's table of contents, so the pill, the
+        // TOC list and the engine's own chapter dividers agree on a name.
+        let chapter_titles: Vec<String> = match &view {
+            Some(v) => {
+                let toc = v.toc();
+                (0..chapter_count)
+                    .map(|i| {
+                        toc_title(&toc, i).unwrap_or_else(|| format!("Chapter {}", i + 1))
+                    })
+                    .collect()
+            }
+            None => Vec::new(),
+        };
 
-        let chapter_annotations = if open.chapter_count() > 0 {
+        let chapter_annotations = if chapter_count > 0 {
             catalog
                 .get_annotations_for_chapter(book_id, chapter as i64)
                 .unwrap_or_default()
@@ -447,6 +471,7 @@ impl Component for ReaderModel {
             catalog_font,
             catalog_line_height,
             catalog_column,
+            scrolled,
             ui_prefs,
             catalog.get_pref_i64("dict_sense_hint", 1) != 0,
             catalog.get_pref_i64("dict_history_enabled", 1) != 0,
@@ -489,20 +514,24 @@ impl Component for ReaderModel {
             book_title: book_meta.title.clone(),
             book_authors: book_meta.authors_display().to_string(),
             book_cover_path: book_meta.cover_path.clone(),
-            open,
+            view,
+            chapter_count,
+            chapter_titles,
             chapter,
             fraction,
             theme: catalog_theme,
             font_px: catalog_font,
             line_height: catalog_line_height,
             column_px: catalog_column,
-            loading: false,
-            webview: webview.clone(),
-            webview_handlers: None,
+            selection_chip: None,
+            dict_popover: None,
+            dict_anchor: None,
+            dict_suppress_clear: 0,
+            scrolled,
+            strip_scrollbar: None,
             chapter_annotations,
             all_book_annotations,
             annotation_search_query: String::new(),
-            pending_annotation_jump: None,
             editing_annotation: None,
             annotation_note_draft: None,
             bookmarks,
@@ -511,7 +540,6 @@ impl Component for ReaderModel {
             dict_results: Vec::new(),
             dict_lookup_word: None,
             dict_lookup_def: None,
-            dict_lookup_rect_json: None,
             dict_context: None,
             last_selection: None,
             session_id: None,
@@ -557,7 +585,7 @@ impl Component for ReaderModel {
         };
 
         let mut model = model;
-        if model.open.chapter_count() > 0 {
+        if model.chapter_count > 0 {
             let _ = model.service.catalog().mark_book_opened(book_id);
             let start_pct = book.as_ref().map(|b| b.progress as i64).unwrap_or(0);
             model.session_start_pct = start_pct;
@@ -570,7 +598,50 @@ impl Component for ReaderModel {
         }
 
         let widgets = view_output!();
-        widgets.web_host.append(&webview);
+        if let Some(view) = &model.view {
+            // The widget, with a scrollbar lying over its right edge for
+            // strip mode. Over, not beside: beside it, showing the bar
+            // would change the widget's width, and a new width is a fresh
+            // layout of every chapter.
+            let scrollbar =
+                gtk::Scrollbar::new(gtk::Orientation::Vertical, Some(view.vadjustment()));
+            scrollbar.set_halign(gtk::Align::End);
+            scrollbar.set_valign(gtk::Align::Fill);
+            scrollbar.add_css_class("kalam-reader-strip-bar");
+            let overlay = gtk::Overlay::new();
+            overlay.set_hexpand(true);
+            overlay.set_vexpand(true);
+            overlay.set_child(Some(view.widget()));
+            overlay.add_overlay(&scrollbar);
+            widgets.web_host.append(&overlay);
+
+            engine::wire(view, &sender);
+            if model.scrolled {
+                view.set_mode(kalam_reader::ReadingMode::Scrolled);
+            }
+            scrollbar.set_visible(model.scrolled);
+            model.strip_scrollbar = Some(scrollbar);
+            view.widget().grab_focus();
+        } else {
+            // The book could not be opened (or there is no file): the same
+            // "press Esc to go back" page the WebKit reader showed, as a
+            // plain label now that there is no HTML surface to draw it on.
+            let message = match &open_failure {
+                Some(err) => format!("Could not open book\n\n{err}\n\nPress Esc to go back."),
+                None => "Missing book\n\nThis library row has no file to open.\n\nPress Esc to go back.".to_string(),
+            };
+            let label = gtk::Label::new(Some(&message));
+            label.set_wrap(true);
+            label.set_justify(gtk::Justification::Center);
+            label.set_halign(gtk::Align::Center);
+            label.set_valign(gtk::Align::Center);
+            label.set_margin_top(24);
+            label.set_margin_bottom(24);
+            label.set_margin_start(24);
+            label.set_margin_end(24);
+            label.add_css_class("kalam-reader-open-error");
+            widgets.web_host.append(&label);
+        }
         widgets.left_panel_host.append(&model.left_stack);
         widgets.right_panel_host.append(&model.right_stack);
         let left_sidebar_box = widgets
@@ -601,7 +672,14 @@ impl Component for ReaderModel {
         apply_reader_ui_prefs(&model);
         sync_reader_stacks(&model);
         sync_reader_controls(&model);
-        rebuild_toc(&model.toc_list, &model.open, model.chapter, &sender);
+        let toc_entries = model.toc_entries();
+        rebuild_toc(
+            &model.toc_list,
+            &toc_entries,
+            &model.chapter_titles,
+            model.chapter,
+            &sender,
+        );
         rebuild_highlights_list(&model, &sender);
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
@@ -639,93 +717,45 @@ impl Component for ReaderModel {
             );
         }
 
-        let s = sender.clone();
-        let title_handler = webview.connect_title_notify(move |wv| {
-            if let Some(title) = wv.title() {
-                let t = title.to_string();
-                if t.contains("kalam://")
-                    || (t.starts_with('{') && t.contains("\"type\""))
-                    || t.starts_with("kalam-selection::")
-                    || t.starts_with("kalam-progress::")
-                {
-                    s.input(ReaderMsg::JsRaw(t));
-                }
-            }
-        });
-
-        let s = sender.clone();
-        let load_handler = webview.connect_load_changed(move |_wv, event| {
-            if event == webkit6::LoadEvent::Finished {
-                crate::timing::span_end("chapter_load");
-                s.input(ReaderMsg::AnnotationsReload);
-            }
-        });
-
-        let script_handler = webview.user_content_manager().map(|ucm| {
-            let s = sender.clone();
-            let id = ucm.connect_script_message_received(Some("kalam"), move |_mgr, msg| {
-                s.input(ReaderMsg::JsRaw(msg.to_string()));
-            });
-            (ucm, id)
-        });
-
-        let s = sender.clone();
-        let policy_handler = webview.connect_decide_policy(move |_wv, decision, decision_type| {
-            if decision_type == webkit6::PolicyDecisionType::NavigationAction {
-                if let Some(nav_decision) =
-                    decision.downcast_ref::<webkit6::NavigationPolicyDecision>()
-                {
-                    if let Some(mut nav_action) = nav_decision.navigation_action() {
-                        if let Some(request) = nav_action.request() {
-                            if let Some(uri) = request.uri() {
-                                let uri_str = uri.to_string();
-                                if uri_str.starts_with("kalam://") {
-                                    let payload = uri_str.trim_start_matches("kalam://");
-                                    let decoded = url_decode(payload);
-                                    s.input(ReaderMsg::JsRaw(decoded));
-                                    decision.ignore();
-                                    return true;
-                                }
-                                if uri_str.starts_with("http://") || uri_str.starts_with("https://") {
-                                    let launcher = gtk::UriLauncher::new(&uri_str);
-                                    launcher.launch(None::<&gtk::Window>, gtk::gio::Cancellable::NONE, |_| {});
-                                    decision.ignore();
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            false
-        });
-
-        model.webview_handlers = Some(WebViewHandlers {
-            title: title_handler,
-            load_changed: load_handler,
-            decide_policy: policy_handler,
-            script_message: script_handler,
-        });
-
-        if model.open.chapter_count() > 0 {
-            load_chapter(&model);
-            model.preload_next_chapter();
+        if let Some(view) = &model.view {
+            view.goto_chapter(model.chapter, model.fraction);
+            engine::show_all_highlights(view, &model.all_book_annotations);
         }
 
+        // The keys need the view too: Escape drops a standing selection
+        // before it does anything else, the way it did in the old shell.
+        let view_for_keys = model.view.clone();
         let key = gtk::EventControllerKey::new();
         let s = sender.clone();
         key.connect_key_pressed(move |_, keyval, _, _| {
             use gtk::gdk::Key;
             match keyval {
                 Key::Escape => {
+                    // With a selection up, Escape is "never mind" — it drops
+                    // the selection and the chip; closing the book is what
+                    // is left when nothing is selected. The old shell's
+                    // Escape did the same, chip and bands and all.
+                    if let Some(view) = &view_for_keys {
+                        if view.selected_text().is_some() {
+                            view.clear_selection();
+                            return gtk::glib::Propagation::Stop;
+                        }
+                    }
                     s.input(ReaderMsg::Close);
                     gtk::glib::Propagation::Stop
                 }
-                Key::n | Key::N | Key::Right => {
+                Key::d | Key::D => {
+                    // The chip's dictionary button was labelled "D" in the
+                    // old reader; the shortcut goes with it. Without a
+                    // selection the message does nothing.
+                    s.input(ReaderMsg::LookUpSelection);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::n | Key::N => {
                     s.input(ReaderMsg::NextChapter);
                     gtk::glib::Propagation::Stop
                 }
-                Key::p | Key::P | Key::Left => {
+                Key::p | Key::P => {
                     s.input(ReaderMsg::PrevChapter);
                     gtk::glib::Propagation::Stop
                 }
@@ -794,6 +824,8 @@ impl Component for ReaderModel {
                     self.close_sidebars();
                     refresh_tabs = true;
                 } else {
+                    engine::dismiss(self.selection_chip.take());
+                    engine::dismiss(self.dict_popover.take());
                     if self.fraction < 0.05 {
                         self.fraction = 0.15;
                     }
@@ -802,10 +834,7 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::TocSelect(idx) | ReaderMsg::JumpToChapter(idx) => {
-                if idx < self.open.chapter_count() && idx != self.chapter && !self.loading {
-                    self.flush_annotation_note_draft();
-                    self.editing_annotation = None;
-                    self.pending_annotation_jump = None;
+                if idx < self.chapter_count && idx != self.chapter {
                     self.go_chapter(idx, 0.0);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
@@ -825,13 +854,12 @@ impl Component for ReaderModel {
                     return;
                 };
                 let idx = annotation.chapter_index as usize;
-                if idx >= self.open.chapter_count() || self.loading {
+                if idx >= self.chapter_count {
                     return;
                 }
                 if self.editing_annotation == Some(annotation.id) {
                     self.flush_annotation_note_draft();
                     self.editing_annotation = None;
-                    self.pending_annotation_jump = None;
                     refresh_highlights = true;
                     refresh_tabs = true;
                 } else {
@@ -840,26 +868,29 @@ impl Component for ReaderModel {
                     self.right_sidebar_open = true;
                     self.cancel_right_close();
                     self.editing_annotation = Some(annotation.id);
-                    self.pending_annotation_jump = Some(annotation.id);
-                    if idx != self.chapter {
+                    // A row the engine painted is a place as well as a row:
+                    // jump straight to the highlight. A WebKit-era row has no
+                    // locator, so its chapter is as close as we can get.
+                    let jumped = engine::highlight_of(&annotation).is_some()
+                        && self
+                            .view
+                            .as_ref()
+                            .map(|v| v.goto_highlight(id))
+                            .unwrap_or(false);
+                    if !jumped && idx != self.chapter {
                         self.go_chapter(idx, 0.0);
                         refresh_sidebar_header = true;
                         refresh_toc = true;
                         refresh_bookmarks = true;
                         refresh_words = true;
                         refresh_chrome = true;
-                    } else {
-                        self.restore_pending_annotation();
                     }
                     refresh_tabs = true;
                     refresh_highlights = true;
                 }
             }
             ReaderMsg::JumpToLocation(idx, frac) => {
-                if idx < self.open.chapter_count() && !self.loading {
-                    self.flush_annotation_note_draft();
-                    self.editing_annotation = None;
-                    self.pending_annotation_jump = None;
+                if idx < self.chapter_count {
                     self.go_chapter(idx, frac);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
@@ -870,24 +901,14 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::PrevChapter => {
-                if self.chapter > 0 && !self.loading {
-                    self.flush_annotation_note_draft();
-                    self.editing_annotation = None;
-                    self.pending_annotation_jump = None;
-                    let prev = self.chapter - 1;
-                    let script = format!("if (window.kalamNavigateChapter) window.kalamNavigateChapter({prev});");
-                    js_bridge::eval_js(&self.webview, &script);
-                }
+                self.flush_annotation_note_draft();
+                self.editing_annotation = None;
+                self.with_view(|v| v.prev_chapter());
             }
             ReaderMsg::NextChapter => {
-                if self.chapter + 1 < self.open.chapter_count() && !self.loading {
-                    self.flush_annotation_note_draft();
-                    self.editing_annotation = None;
-                    self.pending_annotation_jump = None;
-                    let next = self.chapter + 1;
-                    let script = format!("if (window.kalamNavigateChapter) window.kalamNavigateChapter({next});");
-                    js_bridge::eval_js(&self.webview, &script);
-                }
+                self.flush_annotation_note_draft();
+                self.editing_annotation = None;
+                self.with_view(|v| v.next_chapter());
             }
             ReaderMsg::Theme(theme) => {
                 self.close_annotation_editor();
@@ -895,9 +916,7 @@ impl Component for ReaderModel {
                 self.service
                     .catalog()
                     .set_pref("reader.theme", theme.as_str());
-                self.loading = true;
-                load_chapter(self);
-                self.loading = false;
+                self.with_view(|v| v.set_theme(engine::engine_theme(theme)));
                 refresh_controls = true;
                 refresh_stage = true;
             }
@@ -909,9 +928,7 @@ impl Component for ReaderModel {
                     self.service
                         .catalog()
                         .set_pref("reader.font_px", &next.to_string());
-                    self.loading = true;
-                    load_chapter(self);
-                    self.loading = false;
+                    self.with_view(|v| v.set_font_px(next as f32));
                     refresh_controls = true;
                 }
             }
@@ -924,9 +941,7 @@ impl Component for ReaderModel {
                     self.service
                         .catalog()
                         .set_pref("reader.line_height", &format!("{next:.1}"));
-                    self.loading = true;
-                    load_chapter(self);
-                    self.loading = false;
+                    self.with_view(|v| v.set_line_height(next));
                     refresh_controls = true;
                 }
             }
@@ -938,9 +953,7 @@ impl Component for ReaderModel {
                     self.service
                         .catalog()
                         .set_pref("reader.column_px", &next.to_string());
-                    self.loading = true;
-                    load_chapter(self);
-                    self.loading = false;
+                    self.with_view(|v| v.set_column_px(next as f32));
                     refresh_controls = true;
                 }
             }
@@ -973,61 +986,148 @@ impl Component for ReaderModel {
                     .catalog()
                     .set_pref("dict_history_enabled", if on { "1" } else { "0" });
             }
-            ReaderMsg::JsRaw(raw) => {
-                let cleaned = raw.trim();
-                let json_part = if cleaned.starts_with("kalam://") {
-                    url_decode(cleaned.trim_start_matches("kalam://"))
-                } else if cleaned.contains("kalam://") {
-                    if let Some(idx) = cleaned.find("kalam://") {
-                        url_decode(&cleaned[idx + 8..])
-                    } else {
-                        cleaned.to_string()
-                    }
-                } else {
-                    cleaned.to_string()
+            ReaderMsg::SetScrolled(on) => {
+                self.scrolled = on;
+                self.service.catalog().set_pref(
+                    engine::PREF_SCROLLED,
+                    if on { "1" } else { "0" },
+                );
+                self.with_view(|v| v.set_mode(engine::mode_from_pref(on as i64)));
+                if let Some(bar) = &self.strip_scrollbar {
+                    bar.set_visible(on);
+                }
+                refresh_controls = true;
+            }
+            ReaderMsg::EnginePosition(chapter, fraction) => {
+                // The old "progress" + "chapter-changed" bridge messages, in
+                // one: where the engine is, on every page turn.
+                //
+                // A page turn means the tap that caused it already dropped
+                // the selection in the widget, so the chip must not outlive
+                // the page it was pointing at. A tap in the middle band
+                // clears the selection too, but the widget says nothing on
+                // that path; that one is with the engine.
+                engine::dismiss(self.selection_chip.take());
+                let changed = chapter != self.chapter;
+                self.chapter = chapter.min(self.chapter_count.saturating_sub(1));
+                self.fraction = fraction.clamp(0.0, 1.0);
+                self.save_progress();
+                self.checkpoint_session();
+                if changed {
+                    self.reload_annotations();
+                    self.reload_bookmarks();
+                    self.reload_saved_words();
+                    refresh_highlights = true;
+                    refresh_bookmarks = true;
+                    refresh_words = true;
+                    refresh_toc = true;
+                }
+                refresh_sidebar_header = true;
+                refresh_chrome = true;
+            }
+            ReaderMsg::EngineSelection(sel) => {
+                engine::dismiss(self.selection_chip.take());
+                self.last_selection = sel.as_ref().map(|(text, _)| text.clone());
+                self.dict_anchor = sel.as_ref().map(|(_, rect)| *rect);
+                if let Some((_, rect)) = &sel {
+                    let Some(view) = &self.view else { return };
+                    let chip =
+                        engine::build_selection_chip(view.widget().upcast_ref(), rect, &sender);
+                    chip.popup();
+                    self.selection_chip = Some(chip);
+                }
+            }
+            ReaderMsg::HighlightSelection(color_name) => {
+                engine::dismiss(self.selection_chip.take());
+                let Some(view) = self.view.clone() else {
+                    return;
                 };
-                let decoded = url_decode(&json_part);
-                if let Ok(payload) = serde_json::from_str::<JsPayload>(&decoded) {
-                    let kind = payload.kind.clone();
-                    self.handle_js_payload(payload, sender.clone());
-                    refresh_sidebar_header = true;
-                    refresh_chrome = true;
-                    match kind.as_str() {
-                        "highlight" | "quote" => refresh_highlights = true,
-                        "save-word" => {
-                            refresh_words = true;
-                            refresh_tabs = true;
-                        }
-                        "dict-shortcut" => {
-                            refresh_words = true;
-                            refresh_tabs = true;
-                        }
-                        _ => {}
+                let color = engine::engine_color(&color_name);
+                let Some(h) = view.capture_highlight(color) else {
+                    return;
+                };
+                let cfi = engine::range_to_json(&h.start, &h.end);
+                let inserted = self.service.catalog().insert_annotation(
+                    self.book_id,
+                    "highlight",
+                    h.start.spine_index as i64,
+                    "",
+                    0,
+                    "",
+                    0,
+                    color.name(),
+                    &h.text,
+                    "",
+                );
+                match inserted {
+                    Ok(id) => {
+                        crate::notify::report(
+                            self.service.catalog().update_annotation_cfi(id, &cfi),
+                            "Could not place the highlight",
+                        );
+                        view.show_highlight(id, &h);
+                        self.reload_annotations();
+                        refresh_highlights = true;
                     }
-                } else if let Ok(payload) = serde_json::from_str::<JsPayload>(&json_part) {
-                    let kind = payload.kind.clone();
-                    self.handle_js_payload(payload, sender.clone());
-                    refresh_sidebar_header = true;
-                    refresh_chrome = true;
-                    match kind.as_str() {
-                        "highlight" | "quote" => refresh_highlights = true,
-                        "save-word" => {
-                            refresh_words = true;
-                            refresh_tabs = true;
-                        }
-                        "dict-shortcut" => {
-                            refresh_words = true;
-                            refresh_tabs = true;
-                        }
-                        _ => {}
+                    Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
+                }
+            }
+            ReaderMsg::QuoteSelection => {
+                engine::dismiss(self.selection_chip.take());
+                let Some(view) = self.view.clone() else {
+                    return;
+                };
+                let color = engine::engine_color("yellow");
+                let Some(h) = view.capture_highlight(color) else {
+                    return;
+                };
+                let cfi = engine::range_to_json(&h.start, &h.end);
+                let inserted = self.service.catalog().insert_annotation(
+                    self.book_id,
+                    "quote",
+                    h.start.spine_index as i64,
+                    "",
+                    0,
+                    "",
+                    0,
+                    "yellow",
+                    &h.text,
+                    "",
+                );
+                view.clear_selection();
+                match inserted {
+                    Ok(id) => {
+                        crate::notify::report(
+                            self.service.catalog().update_annotation_cfi(id, &cfi),
+                            "Could not place the quote",
+                        );
+                        crate::notify::compact("Quote saved", "");
+                        self.reload_annotations();
+                        refresh_highlights = true;
                     }
-                } else if let Ok(f) = decoded.parse::<f64>() {
-                    if (0.0..=1.0).contains(&f) {
-                        self.fraction = f;
-                        refresh_sidebar_header = true;
-                        refresh_chrome = true;
+                    Err(e) => crate::notify::error("Could not save the quote", &e.to_string()),
+                }
+            }
+            ReaderMsg::CopySelection => {
+                engine::dismiss(self.selection_chip.take());
+                if let Some(view) = self.view.clone() {
+                    if let Some(text) = view.selected_text() {
+                        view.widget().clipboard().set_text(&text);
+                        view.clear_selection();
                     }
                 }
+            }
+            ReaderMsg::LookUpSelection => {
+                engine::dismiss(self.selection_chip.take());
+                let Some(view) = self.view.clone() else {
+                    return;
+                };
+                let Some(word) = view.selected_text() else {
+                    return;
+                };
+                view.clear_selection();
+                let rect = self.dict_anchor_rect();
+                self.dict_lookup(word, None, rect, &sender);
             }
             ReaderMsg::Progress(frac) => {
                 self.fraction = frac.clamp(0.0, 1.0);
@@ -1039,8 +1139,9 @@ impl Component for ReaderModel {
                 self.reload_annotations();
                 self.reload_bookmarks();
                 self.reload_saved_words();
-                self.inject_highlights();
-                self.restore_pending_annotation();
+                if let Some(view) = &self.view {
+                    engine::show_all_highlights(view, &self.all_book_annotations);
+                }
                 refresh_highlights = true;
                 refresh_bookmarks = true;
                 refresh_words = true;
@@ -1083,11 +1184,7 @@ impl Component for ReaderModel {
                                 annotation.color = color_name.to_string();
                             }
                         }
-                        let script = format!(
-                            "if (window.kalamRecolorHighlight) window.kalamRecolorHighlight({}, '{}');",
-                            id, color_name
-                        );
-                        js_bridge::eval_js(&self.webview, &script);
+                        self.with_view(|v| v.recolor_highlight(id, engine::engine_color(color_name)));
                         refresh_highlights = true;
                     }
                     Err(err) => {
@@ -1114,11 +1211,7 @@ impl Component for ReaderModel {
                     self.annotation_note_draft = None;
                 }
                 self.reload_annotations();
-                let script = format!(
-                    "if (window.kalamRemoveHighlight) window.kalamRemoveHighlight('{}');",
-                    id
-                );
-                js_bridge::eval_js(&self.webview, &script);
+                self.with_view(|v| v.remove_highlight(id));
                 refresh_highlights = true;
             }
             ReaderMsg::AnnotationNoteChanged(id, note) => {
@@ -1168,7 +1261,13 @@ impl Component for ReaderModel {
                     .first()
                     .map(|s| s.def.clone())
                     .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
-                self.show_dict_in_webview(&word, None, None);
+                let saved = self
+                    .service
+                    .catalog()
+                    .saved_word_exists(&data.word, self.book_id)
+                    .unwrap_or(false);
+                let rect = self.dict_anchor_rect();
+                self.show_dict(&data, saved, None, rect, &sender);
                 self.right_tab = RightSidebarTab::Words;
                 self.right_sidebar_open = true;
                 refresh_tabs = true;
@@ -1187,6 +1286,9 @@ impl Component for ReaderModel {
                         Ok(_) => {
                             crate::notify::compact("Word saved", word);
                             self.reload_saved_words();
+                            // The toast is the confirmation; the popover has
+                            // nothing left to say.
+                            engine::dismiss(self.dict_popover.take());
                             refresh_words = true;
                         }
                         Err(e) => crate::notify::error("Could not save the word", &e.to_string()),
@@ -1194,20 +1296,22 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::ClearDict => {
+                // A popover that a newer one replaced still reports itself
+                // closed; that report must not take the new popover down.
+                if self.dict_suppress_clear > 0 {
+                    self.dict_suppress_clear -= 1;
+                    return;
+                }
+                engine::dismiss(self.dict_popover.take());
                 self.dict_lookup_word = None;
                 self.dict_lookup_def = None;
-                self.dict_lookup_rect_json = None;
                 self.dict_context = None;
-                js_bridge::eval_js(
-                    &self.webview,
-                    "if (window.kalamHideDict) window.kalamHideDict();",
-                );
             }
             ReaderMsg::AddBookmark => {
                 self.right_tab = RightSidebarTab::Bookmarks;
                 self.right_sidebar_open = true;
                 self.cancel_right_close();
-                if self.open.chapter_count() > 0 {
+                if self.chapter_count > 0 {
                     let label = self.current_chapter_title().to_string();
                     match self.service.catalog().insert_reading_bookmark(
                         self.book_id,
@@ -1351,7 +1455,14 @@ impl Component for ReaderModel {
             sync_sidebar_tabs(widgets, self);
         }
         if refresh_toc {
-            rebuild_toc(&self.toc_list, &self.open, self.chapter, &sender);
+            let entries = self.toc_entries();
+            rebuild_toc(
+                &self.toc_list,
+                &entries,
+                &self.chapter_titles,
+                self.chapter,
+                &sender,
+            );
             if self.left_sidebar_open && self.left_tab == LeftSidebarTab::Toc {
                 self.position_toc_scroll();
             }
@@ -1375,21 +1486,83 @@ impl Component for ReaderModel {
         self.close_session();
         self.cancel_left_close();
         self.cancel_right_close();
-        self.webview.stop_loading();
-
-        if let Some(handlers) = self.webview_handlers.take() {
-            self.webview.disconnect(handlers.title);
-            self.webview.disconnect(handlers.load_changed);
-            self.webview.disconnect(handlers.decide_policy);
-            if let Some((ucm, id)) = handlers.script_message {
-                ucm.disconnect(id);
-            }
-            crate::webview_pool::release(self.webview.clone());
+        engine::dismiss(self.selection_chip.take());
+        engine::dismiss(self.dict_popover.take());
+        if let Some(view) = self.view.take() {
+            view.close();
         }
     }
 }
 
 impl ReaderModel {
+    /// The dictionary lookup every word-tap and chip-lookup goes through:
+    /// find the entry, work out which sense the sentence points at, log it,
+    /// and show the popover. `sentence` is `None` when the lookup came from
+    /// the Words sidebar instead of from a tap.
+    fn dict_lookup(
+        &mut self,
+        word: String,
+        sentence: Option<String>,
+        rect: gtk::gdk::Rectangle,
+        sender: &ComponentSender<Self>,
+    ) {
+        if word.trim().is_empty() {
+            return;
+        }
+        self.dict_context = sentence.clone();
+        self.dict_anchor = Some(rect);
+        let data = self
+            .service
+            .catalog()
+            .lookup_entry(&word)
+            .unwrap_or_else(|_| crate::db::EntryData {
+                word: word.clone(),
+                ..Default::default()
+            });
+        self.dict_lookup_word = Some(data.word.clone());
+        self.dict_lookup_def = data
+            .senses
+            .first()
+            .map(|s| s.def.clone())
+            .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
+        let hint_index = sentence.as_deref().and_then(|sentence| {
+            if self.service.catalog().get_pref_i64("dict_sense_hint", 1) == 0 {
+                return None;
+            }
+            if !data.senses.iter().any(|s| s.pos.is_some()) {
+                return None;
+            }
+            crate::db::likely_sense_index(sentence, &data.word, &data.senses)
+        });
+        let _ = self.service.catalog().log_dict_lookup(
+            &word,
+            Some(self.book_id),
+            Some(self.chapter as i64),
+            sentence.as_deref(),
+            !data.senses.is_empty(),
+        );
+        let saved = self
+            .service
+            .catalog()
+            .saved_word_exists(&data.word, self.book_id)
+            .unwrap_or(false);
+        self.show_dict(&data, saved, hint_index, rect, sender);
+    }
+
+    /// Where to point a popover when the message did not carry a spot on
+    /// the page: the last place the engine reported, or the middle of the
+    /// reading area.
+    fn dict_anchor_rect(&self) -> gtk::gdk::Rectangle {
+        self.dict_anchor.unwrap_or_else(|| {
+            let (w, h) = self
+                .view
+                .as_ref()
+                .map(|v| (v.widget().width(), v.widget().height()))
+                .unwrap_or((0, 0));
+            gtk::gdk::Rectangle::new(w / 2, h / 2, 1, 1)
+        })
+    }
+
     pub(crate) fn cancel_left_close(&mut self) {
         self.left_close_token = self.left_close_token.wrapping_add(1);
         self.left_close_timer = None;
@@ -1425,4 +1598,18 @@ impl ReaderModel {
             },
         ));
     }
+}
+
+/// The first table-of-contents label that points at chapter `spine`,
+/// searching through nested entries.
+fn toc_title(entries: &[kalam_reader::TocEntry], spine: usize) -> Option<String> {
+    for entry in entries {
+        if entry.spine_index == Some(spine) && !entry.label.trim().is_empty() {
+            return Some(entry.label.trim().to_string());
+        }
+        if let Some(found) = toc_title(&entry.children, spine) {
+            return Some(found);
+        }
+    }
+    None
 }

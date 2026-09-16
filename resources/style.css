@@ -4096,3 +4096,53 @@ button.kalam-reader-dict-chip-ant:hover {
     color: @kalam_text_dim;
 }
 
+/* ── Lightbox Glassmorphism Controls ── */
+.kalam-lightbox-backdrop {
+    background: alpha(#000000, 0.75);
+}
+
+.kalam-lightbox-toolbar-dock {
+    z-index: 10;
+}
+
+.kalam-lightbox-toolbar {
+    background: alpha(@kalam_surface, 0.70);
+    border: 1px solid alpha(@kalam_border, 0.60);
+    border-radius: 999px;
+    padding: 6px 12px;
+    box-shadow: 0 8px 32px alpha(#000000, 0.45);
+}
+
+button.kalam-lightbox-tool-btn {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: @kalam_text;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+button.kalam-lightbox-tool-btn:hover {
+    background: alpha(@kalam_surface_2, 0.80);
+    border-color: @kalam_border;
+}
+
+button.kalam-lightbox-tool-btn.close {
+    color: @kalam_danger;
+}
+
+button.kalam-lightbox-tool-btn.close:hover {
+    background: alpha(@kalam_danger, 0.15);
+    border-color: @kalam_danger;
+}
+
+.kalam-lightbox-sep {
+    min-width: 1px;
+    min-height: 18px;
+    margin: 0 4px;
+    background: alpha(@kalam_border, 0.50);
+}
+
+

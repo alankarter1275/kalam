@@ -93,20 +93,22 @@ impl Component for ReaderModel {
 
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
-                set_width_request: 28,
-                set_hexpand: false,
-                set_vexpand: true,
-                set_halign: gtk::Align::Start,
-                set_valign: gtk::Align::Fill,
+                add_css_class: "kalam-reader-hover-edge-top",
+                set_height_request: 32,
+                set_hexpand: true,
+                set_vexpand: false,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Start,
             },
 
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
-                set_width_request: 28,
-                set_hexpand: false,
-                set_vexpand: true,
-                set_halign: gtk::Align::End,
-                set_valign: gtk::Align::Fill,
+                add_css_class: "kalam-reader-hover-edge-bottom",
+                set_height_request: 32,
+                set_hexpand: true,
+                set_vexpand: false,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::End,
             },
 
             add_overlay = &gtk::Box {
@@ -407,17 +409,67 @@ impl Component for ReaderModel {
                     set_vexpand: true,
 
                     gtk::Box {
-                        add_css_class: "kalam-lightbox-header",
+                        add_css_class: "kalam-lightbox-toolbar-dock",
                         set_orientation: gtk::Orientation::Horizontal,
-                        set_halign: gtk::Align::End,
-                        set_margin_top: 16,
-                        set_margin_end: 20,
+                        set_halign: gtk::Align::Center,
+                        set_valign: gtk::Align::Start,
+                        set_margin_top: 20,
 
-                        gtk::Button {
-                            set_child: Some(&crate::icons::symbolic_with_classes("window-close-symbolic", 18, &["kalam-inline-icon"])),
-                            add_css_class: "kalam-lightbox-close-btn",
-                            set_tooltip_text: Some("Close Lightbox (Esc)"),
-                            connect_clicked => ReaderMsg::CloseImageLightbox,
+                        gtk::Box {
+                            add_css_class: "kalam-lightbox-toolbar",
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 6,
+
+                            gtk::Button {
+                                set_child: Some(&crate::icons::symbolic_with_classes("zoom-in-symbolic", 16, &["kalam-inline-icon"])),
+                                add_css_class: "kalam-lightbox-tool-btn",
+                                set_tooltip_text: Some("Zoom In (+)"),
+                                connect_clicked => ReaderMsg::LightboxZoomIn,
+                            },
+
+                            gtk::Button {
+                                set_child: Some(&crate::icons::symbolic_with_classes("zoom-out-symbolic", 16, &["kalam-inline-icon"])),
+                                add_css_class: "kalam-lightbox-tool-btn",
+                                set_tooltip_text: Some("Zoom Out (-)"),
+                                connect_clicked => ReaderMsg::LightboxZoomOut,
+                            },
+
+                            gtk::Button {
+                                set_child: Some(&crate::icons::symbolic_with_classes("zoom-original-symbolic", 16, &["kalam-inline-icon"])),
+                                add_css_class: "kalam-lightbox-tool-btn",
+                                set_tooltip_text: Some("Reset Zoom (1:1)"),
+                                connect_clicked => ReaderMsg::LightboxReset,
+                            },
+
+                            gtk::Box {
+                                add_css_class: "kalam-lightbox-sep",
+                            },
+
+                            gtk::Button {
+                                set_child: Some(&crate::icons::symbolic_with_classes("object-rotate-left-symbolic", 16, &["kalam-inline-icon"])),
+                                add_css_class: "kalam-lightbox-tool-btn",
+                                set_tooltip_text: Some("Rotate Left (↺)"),
+                                connect_clicked => ReaderMsg::LightboxRotateLeft,
+                            },
+
+                            gtk::Button {
+                                set_child: Some(&crate::icons::symbolic_with_classes("object-rotate-right-symbolic", 16, &["kalam-inline-icon"])),
+                                add_css_class: "kalam-lightbox-tool-btn",
+                                set_tooltip_text: Some("Rotate Right (↻)"),
+                                connect_clicked => ReaderMsg::LightboxRotateRight,
+                            },
+
+                            gtk::Box {
+                                add_css_class: "kalam-lightbox-sep",
+                            },
+
+                            gtk::Button {
+                                set_child: Some(&crate::icons::symbolic_with_classes("window-close-symbolic", 16, &["kalam-inline-icon"])),
+                                add_css_class: "kalam-lightbox-tool-btn",
+                                add_css_class: "close",
+                                set_tooltip_text: Some("Close Lightbox (Esc)"),
+                                connect_clicked => ReaderMsg::CloseImageLightbox,
+                            },
                         },
                     },
 
@@ -708,6 +760,12 @@ impl Component for ReaderModel {
             search_index: 0,
             lightbox_active: false,
             lightbox_popover: None,
+            lightbox_pixbuf: None,
+            lightbox_zoom: 1.0,
+            lightbox_rotation: 0.0,
+            chrome_hide_timer: None,
+            mouse_in_top_edge: false,
+            mouse_in_bottom_edge: false,
         };
 
         let mut model = model;
@@ -810,22 +868,38 @@ impl Component for ReaderModel {
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
 
-        if let Some(left_hover) = overlay_child_box(&root, 2) {
-            connect_hover_zone(
-                &left_hover,
-                &sender,
-                ReaderMsg::OpenLeftSidebar,
-                ReaderMsg::ScheduleCloseLeft,
-            );
+        if let Some(top_hover) = overlay_child_box(&root, 2) {
+            let motion = gtk::EventControllerMotion::new();
+            let tx = sender.input_sender().clone();
+            motion.connect_enter(move |_, _, _| {
+                let _ = tx.send(ReaderMsg::TopEdgeHover(true));
+            });
+            let tx = sender.input_sender().clone();
+            motion.connect_leave(move |_| {
+                let _ = tx.send(ReaderMsg::TopEdgeHover(false));
+            });
+            top_hover.add_controller(motion);
         }
-        if let Some(right_hover) = overlay_child_box(&root, 3) {
-            connect_hover_zone(
-                &right_hover,
-                &sender,
-                ReaderMsg::OpenRightSidebar,
-                ReaderMsg::ScheduleCloseRight,
-            );
+        if let Some(bottom_hover) = overlay_child_box(&root, 3) {
+            let motion = gtk::EventControllerMotion::new();
+            let tx = sender.input_sender().clone();
+            motion.connect_enter(move |_, _, _| {
+                let _ = tx.send(ReaderMsg::BottomEdgeHover(true));
+            });
+            let tx = sender.input_sender().clone();
+            motion.connect_leave(move |_| {
+                let _ = tx.send(ReaderMsg::BottomEdgeHover(false));
+            });
+            bottom_hover.add_controller(motion);
         }
+
+        // Install root motion controller to reset 3-second inactivity chrome timer
+        let root_motion = gtk::EventControllerMotion::new();
+        let tx = sender.input_sender().clone();
+        root_motion.connect_motion(move |_, _, _| {
+            let _ = tx.send(ReaderMsg::ResetChromeTimer);
+        });
+        root.add_controller(root_motion);
         if let Some(left_sidebar) = left_sidebar_box {
             connect_hover_zone(
                 &left_sidebar,
@@ -1621,6 +1695,60 @@ impl Component for ReaderModel {
                 self.show_bottom_pill = true;
                 refresh_chrome = true;
             }
+            ReaderMsg::LightboxZoomIn => {
+                self.lightbox_zoom = (self.lightbox_zoom * 1.25).min(5.0);
+                self.update_lightbox_image(widgets);
+            }
+            ReaderMsg::LightboxZoomOut => {
+                self.lightbox_zoom = (self.lightbox_zoom / 1.25).max(0.2);
+                self.update_lightbox_image(widgets);
+            }
+            ReaderMsg::LightboxReset => {
+                self.lightbox_zoom = 1.0;
+                self.lightbox_rotation = 0.0;
+                self.update_lightbox_image(widgets);
+            }
+            ReaderMsg::LightboxRotateLeft => {
+                self.lightbox_rotation = (self.lightbox_rotation - 90.0) % 360.0;
+                self.update_lightbox_image(widgets);
+            }
+            ReaderMsg::LightboxRotateRight => {
+                self.lightbox_rotation = (self.lightbox_rotation + 90.0) % 360.0;
+                self.update_lightbox_image(widgets);
+            }
+            ReaderMsg::ResetChromeTimer => {
+                self.show_back_button = self.mouse_in_top_edge;
+                self.show_bottom_pill = self.mouse_in_bottom_edge;
+                refresh_chrome = true;
+                self.schedule_chrome_auto_hide(sender.clone());
+            }
+            ReaderMsg::ChromeAutoTimerTick => {
+                if !self.mouse_in_top_edge {
+                    self.show_back_button = false;
+                }
+                if !self.mouse_in_bottom_edge {
+                    self.show_bottom_pill = false;
+                }
+                refresh_chrome = true;
+            }
+            ReaderMsg::TopEdgeHover(hovering) => {
+                self.mouse_in_top_edge = hovering;
+                if hovering {
+                    self.show_back_button = true;
+                } else {
+                    self.schedule_chrome_auto_hide(sender.clone());
+                }
+                refresh_chrome = true;
+            }
+            ReaderMsg::BottomEdgeHover(hovering) => {
+                self.mouse_in_bottom_edge = hovering;
+                if hovering {
+                    self.show_bottom_pill = true;
+                } else {
+                    self.schedule_chrome_auto_hide(sender.clone());
+                }
+                refresh_chrome = true;
+            }
         }
 
         if refresh_stage {
@@ -1817,6 +1945,20 @@ impl ReaderModel {
         view.goto_locator(&res.locator, true);
     }
 
+    pub(crate) fn schedule_chrome_auto_hide(&mut self, sender: ComponentSender<Self>) {
+        if let Some(timer) = self.chrome_hide_timer.take() {
+            timer.remove();
+        }
+        let tx = sender.input_sender().clone();
+        self.chrome_hide_timer = Some(glib::timeout_add_local(
+            Duration::from_secs(3),
+            move || {
+                let _ = tx.send(ReaderMsg::ChromeAutoTimerTick);
+                glib::ControlFlow::Break
+            },
+        ));
+    }
+
     fn show_image_lightbox(&mut self, widgets: &mut <Self as relm4::Component>::Widgets, w: u32, h: u32, rgba: &[u8]) {
         let bytes = glib::Bytes::from_owned(rgba.to_vec());
         let pixbuf = gdk_pixbuf::Pixbuf::from_bytes(
@@ -1828,9 +1970,44 @@ impl ReaderModel {
             h as i32,
             (w * 4) as i32,
         );
-        let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
-        widgets.lightbox_picture.set_paintable(Some(&texture));
+        self.lightbox_pixbuf = Some(pixbuf);
+        self.lightbox_zoom = 1.0;
+        self.lightbox_rotation = 0.0;
+        self.update_lightbox_image(widgets);
         self.lightbox_active = true;
+    }
+
+    fn update_lightbox_image(&self, widgets: &mut <Self as relm4::Component>::Widgets) {
+        let Some(pixbuf) = &self.lightbox_pixbuf else { return };
+        let mut result = pixbuf.clone();
+        let angle = ((self.lightbox_rotation % 360.0) + 360.0) % 360.0;
+        if (angle - 90.0).abs() < 1.0 {
+            if let Some(rotated) = pixbuf.rotate_simple(gdk_pixbuf::PixbufRotation::Clockwise) {
+                result = rotated;
+            }
+        } else if (angle - 180.0).abs() < 1.0 {
+            if let Some(rotated) = pixbuf.rotate_simple(gdk_pixbuf::PixbufRotation::Upsidedown) {
+                result = rotated;
+            }
+        } else if (angle - 270.0).abs() < 1.0 {
+            if let Some(rotated) = pixbuf.rotate_simple(gdk_pixbuf::PixbufRotation::Counterclockwise) {
+                result = rotated;
+            }
+        }
+
+        let orig_w = result.width();
+        let orig_h = result.height();
+        let scaled_w = ((orig_w as f64) * self.lightbox_zoom).round() as i32;
+        let scaled_h = ((orig_h as f64) * self.lightbox_zoom).round() as i32;
+
+        if scaled_w > 0 && scaled_h > 0 && (scaled_w != orig_w || scaled_h != orig_h) {
+            if let Some(scaled) = result.scale_simple(scaled_w, scaled_h, gdk_pixbuf::InterpType::Bilinear) {
+                result = scaled;
+            }
+        }
+
+        let texture = gtk::gdk::Texture::for_pixbuf(&result);
+        widgets.lightbox_picture.set_paintable(Some(&texture));
     }
 }
 

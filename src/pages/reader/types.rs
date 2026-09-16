@@ -179,4 +179,13 @@ pub enum ReaderMsg {
     CloseSearch,
     OpenImageLightbox(u32, u32, Vec<u8>),
     CloseImageLightbox,
+    LightboxZoomIn,
+    LightboxZoomOut,
+    LightboxReset,
+    LightboxRotateLeft,
+    LightboxRotateRight,
+    ResetChromeTimer,
+    ChromeAutoTimerTick,
+    TopEdgeHover(bool),
+    BottomEdgeHover(bool),
 }

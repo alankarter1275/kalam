@@ -72,12 +72,17 @@ impl PdfReaderModel {
             _ => ("PDF Reader".to_string(), None),
         };
 
+        let saved_page = match init.catalog.get_reading_progress(init.book_id) {
+            Ok(Some((page, _))) if page >= 1 => page,
+            _ => 1,
+        };
+
         let mut model = Self {
             book_id: init.book_id,
             catalog: init.catalog,
             title,
             pdf_doc: None,
-            current_page: 1,
+            current_page: saved_page,
             total_pages: 1,
             zoom_level: 1.0,
             smart_crop: true,
@@ -96,12 +101,15 @@ impl PdfReaderModel {
         if let Some(path) = file_path {
             if let Ok(doc) = PdfDocument::open(&path) {
                 model.total_pages = doc.page_count();
+                if saved_page > model.total_pages {
+                    model.current_page = 1;
+                }
                 let doc_arc = Arc::new(doc);
                 model.pdf_doc = Some(doc_arc);
                 model.is_loading = false;
                 model.status_text.clear();
 
-                // Initial render of page 1
+                // Initial render of page
                 model.render_current_page();
             } else {
                 model.status_text = "Failed to load PDF file".to_string();
@@ -119,6 +127,19 @@ impl PdfReaderModel {
         let Some(ref pdf_doc) = self.pdf_doc else {
             return;
         };
+
+        let fraction = if self.total_pages > 0 {
+            self.current_page as f64 / self.total_pages as f64
+        } else {
+            0.0
+        };
+        let _ = self.catalog.set_reading_progress(
+            self.book_id,
+            self.current_page,
+            fraction,
+            self.total_pages,
+        );
+        let _ = crate::sidecar::refresh_for_book(&self.catalog, self.book_id);
 
         if self.reflow_mode {
             // Extract and reflow text
@@ -198,10 +219,23 @@ impl Component for PdfReaderModel {
                         connect_clicked => PdfReaderMsg::PrevPage,
                     },
 
+                    gtk::SpinButton {
+                        set_range: (1.0, model.total_pages.max(1) as f64),
+                        #[watch]
+                        set_value: model.current_page as f64,
+                        set_numeric: true,
+                        set_width_chars: 4,
+                        set_tooltip_text: Some("Jump to page"),
+                        connect_value_changed[sender] => move |spin| {
+                            let page = spin.value() as usize;
+                            sender.input(PdfReaderMsg::SetPage(page));
+                        },
+                    },
+
                     gtk::Label {
                         #[watch]
-                        set_label: &format!("Page {} of {}", model.current_page, model.total_pages),
-                        set_margin_start: 6,
+                        set_label: &format!("/ {}", model.total_pages),
+                        set_margin_start: 2,
                         set_margin_end: 6,
                     },
 

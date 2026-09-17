@@ -5,8 +5,10 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub enum ChapterContent {
     /// Manga returns a list of image URLs to stream.
+    #[allow(dead_code)]
     Images(Vec<String>),
     /// Fiction returns an HTML string.
+    #[allow(dead_code)]
     Html(String),
 }
 
@@ -45,10 +47,13 @@ pub struct RemoteChapter {
 /// Dynamic filter type definition for Tachiyomi-style UI generation.
 #[derive(Debug, Clone)]
 pub enum FilterType {
+    #[allow(dead_code)]
     Text { placeholder: String },
     #[allow(dead_code)]
     Checkbox,
+    #[allow(dead_code)]
     Select { options: Vec<(String, String)> },
+    #[allow(dead_code)]
     Sort { options: Vec<(String, String)> },
 }
 

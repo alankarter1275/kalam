@@ -49,6 +49,7 @@ impl InkBoundingBox {
 
 /// PDF Document handle.
 pub struct PdfDocument {
+    #[allow(dead_code)]
     pub path: PathBuf,
     doc: Document,
     page_numbers: Vec<u32>,
@@ -200,6 +201,7 @@ impl PdfDocument {
     }
 
     /// Calculate Zathura-Style Smart Crop ink bounding box for a page (1-indexed).
+    #[allow(dead_code)]
     pub fn calculate_ink_box(&self, page_num: usize) -> InkBoundingBox {
         if let Ok(img) = self.render_page_image_uncropped(page_num) {
             Self::calculate_ink_box_for_image(&img)

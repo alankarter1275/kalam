@@ -1,3 +1,13 @@
+/* ── Material 3 / Libadwaita Design Tokens ───────────────── */
+@define-color m3_surface @kalam_surface;
+@define-color m3_surface_variant @kalam_surface_2;
+@define-color m3_primary @kalam_accent;
+@define-color m3_on_primary @kalam_bg;
+@define-color m3_outline @kalam_border;
+@define-color m3_shadow alpha(#000000, 0.35);
+@define-color libadwaita_card_bg @kalam_surface;
+@define-color libadwaita_card_hover @kalam_surface_2;
+
 /* ── base font ──────────────────────────────────────── */
 /* Nerd Fonts "Propo" (proportional) variants first, so UI text and
  * fallback glyphs (✓, →, ·) never come from a mono-width nerd face;
@@ -225,16 +235,20 @@ scrollbar slider:active {
 
 /* ── cards (shelves grid, book cards, hub tiles) ─────── */
 .kalam-card {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
+    border-radius: 16px;
     padding: 16px;
     min-height: 96px;
+    box-shadow: 0 2px 8px @m3_shadow;
+    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .kalam-card:hover {
-    border-color: @kalam_accent;
-    background: @kalam_surface_2;
+    border-color: alpha(@m3_primary, 0.6);
+    background: @m3_surface_variant;
+    box-shadow: 0 6px 20px @m3_shadow;
+    transform: translateY(-2px);
 }
 
 .kalam-card-title {
@@ -252,10 +266,10 @@ scrollbar slider:active {
 .kalam-card-badge {
     font-size: 0.75rem;
     font-weight: 600;
-    color: @kalam_accent;
+    color: @m3_primary;
     background: @kalam_accent_dim;
-    border-radius: 999px;
-    padding: 2px 8px;
+    border-radius: 9999px;
+    padding: 2px 10px;
 }
 
 /* ── hub tiles inside My Library ────────────────────── */
@@ -264,15 +278,20 @@ scrollbar slider:active {
 }
 
 .kalam-hub-tile {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
+    border-radius: 16px;
     padding: 18px 14px;
     min-width: 120px;
+    box-shadow: 0 2px 8px @m3_shadow;
+    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .kalam-hub-tile:hover {
-    border-color: @kalam_accent;
+    border-color: @m3_primary;
+    background: @m3_surface_variant;
+    box-shadow: 0 6px 18px @m3_shadow;
+    transform: translateY(-2px);
 }
 
 .kalam-hub-tile-icon {
@@ -300,26 +319,27 @@ scrollbar slider:active {
 
 /* ── book row in shelf list ─────────────────────────── */
 .kalam-cover-frame {
-    border-radius: 6px;
-    background: @kalam_surface_2;
+    border-radius: 8px;
+    background: @m3_surface_variant;
     padding: 0;
     margin: 0;
     border: none;
-    box-shadow: 0 2px 10px alpha(#000, 0.35);
+    box-shadow: 0 4px 14px @m3_shadow;
+    transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
 }
 
 .kalam-cover-placeholder {
-    background: linear-gradient(160deg, @kalam_surface_2 0%, @kalam_surface 100%);
-    border-radius: 6px;
+    background: linear-gradient(160deg, @m3_surface_variant 0%, @m3_surface 100%);
+    border-radius: 8px;
 }
 
 .kalam-cover-img {
-    border-radius: 6px;
+    border-radius: 8px;
 }
 
 .kalam-progress {
     font-size: 0.75rem;
-    color: @kalam_accent;
+    color: @m3_primary;
 }
 
 /* ── book detail page ───────────────────────────────── */
@@ -403,37 +423,59 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-chip {
-    background: @kalam_surface_2;
+    background: @m3_surface_variant;
     color: @kalam_text;
-    border-radius: 999px;
-    padding: 4px 10px;
+    border-radius: 9999px;
+    padding: 4px 12px;
     font-size: 0.78rem;
-    border: 1px solid @kalam_border;
+    border: 1px solid @m3_outline;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
-.kalam-primary-btn {
-    background: @kalam_accent;
-    color: @kalam_bg;
+.kalam-chip:hover {
+    border-color: @m3_primary;
+    color: @m3_primary;
+}
+
+.kalam-primary-btn,
+.kalam-btn-read,
+.kalam-btn-filled,
+.kalam-float-read {
+    background: @m3_primary;
+    color: @m3_on_primary;
     font-weight: 700;
-    border-radius: 999px;
+    border-radius: 9999px;
     padding: 10px 22px;
     border: none;
+    box-shadow: 0 2px 8px @m3_shadow;
+    transition: filter 150ms ease, box-shadow 150ms ease, transform 150ms ease, background-color 150ms ease;
 }
 
-.kalam-primary-btn:hover {
+.kalam-primary-btn:hover,
+.kalam-btn-read:hover,
+.kalam-btn-filled:hover,
+.kalam-float-read:hover {
     filter: brightness(1.08);
+    box-shadow: 0 4px 14px @m3_shadow;
 }
 
-.kalam-secondary-btn {
-    background: @kalam_surface_2;
+.kalam-secondary-btn,
+.kalam-icon-btn,
+.kalam-float-icon-btn {
+    background: @m3_surface_variant;
     color: @kalam_text;
-    border-radius: 999px;
+    border-radius: 9999px;
     padding: 10px 18px;
-    border: 1px solid @kalam_border;
+    border: 1px solid @m3_outline;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
-.kalam-secondary-btn:hover {
-    border-color: @kalam_accent;
+.kalam-secondary-btn:hover,
+.kalam-icon-btn:hover,
+.kalam-float-icon-btn:hover {
+    border-color: @m3_primary;
+    color: @m3_primary;
+    box-shadow: 0 2px 8px @m3_shadow;
 }
 
 /* ── empty / placeholder ────────────────────────────── */
@@ -441,9 +483,9 @@ button.kalam-author-link-reader:hover {
     color: @kalam_text_dim;
     font-size: 0.95rem;
     padding: 24px;
-    border: 1px dashed @kalam_border;
-    border-radius: 12px;
-    background: alpha(@kalam_surface, 0.5);
+    border: 1px dashed @m3_outline;
+    border-radius: 16px;
+    background: alpha(@m3_surface, 0.5);
 }
 
 .kalam-muted {
@@ -451,10 +493,17 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-home-continue {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
     border-radius: 16px;
     padding: 20px;
+    box-shadow: 0 4px 16px @m3_shadow;
+    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.kalam-home-continue:hover {
+    border-color: alpha(@m3_primary, 0.6);
+    box-shadow: 0 8px 24px @m3_shadow;
 }
 
 .kalam-section-label {
@@ -672,7 +721,24 @@ button.kalam-author-photo-refresh:hover {
 }
 
 .kalam-book-card:hover .kalam-cover-frame {
-    box-shadow: 0 6px 18px alpha(#000, 0.5);
+    box-shadow: 0 10px 26px alpha(#000000, 0.55);
+    transform: translateY(-3px);
+}
+
+.kalam-card-selected .kalam-cover-frame {
+    border: 2px solid @m3_primary;
+    box-shadow: 0 6px 18px @m3_shadow;
+}
+
+.kalam-selection-badge {
+    background: @m3_primary;
+    color: @m3_on_primary;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    box-shadow: 0 4px 12px @m3_shadow;
+    margin-top: 4px;
 }
 
 .kalam-book-card-title {
@@ -713,10 +779,10 @@ button.kalam-author-photo-refresh:hover {
 }
 
 .kalam-float {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
     border-radius: 20px;
-    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
+    box-shadow: 0 24px 64px alpha(#000, 0.45), 0 8px 24px @m3_shadow;
     padding: 0px;
     min-width: 700px;
     min-height: 368px;
@@ -2363,11 +2429,19 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-hero-card {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
     border-radius: 16px;
-    padding: 14px 16px;
+    padding: 16px 18px;
     min-height: 104px;
+    box-shadow: 0 2px 8px @m3_shadow;
+    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.kalam-hero-card:hover {
+    border-color: alpha(@m3_primary, 0.5);
+    box-shadow: 0 6px 16px @m3_shadow;
+    transform: translateY(-1px);
 }
 
 .kalam-hero-label {
@@ -2412,10 +2486,17 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-chart-card {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
     border-radius: 16px;
-    padding: 16px 18px;
+    padding: 18px 20px;
+    box-shadow: 0 2px 8px @m3_shadow;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.kalam-chart-card:hover {
+    border-color: alpha(@m3_primary, 0.4);
+    box-shadow: 0 6px 16px @m3_shadow;
 }
 
 .kalam-chart-title {
@@ -2430,14 +2511,22 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-linechart {
-    color: @kalam_accent;
+    color: @m3_primary;
 }
 
 .kalam-stat-tile {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 12px;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
+    border-radius: 14px;
     padding: 14px 16px;
+    box-shadow: 0 2px 6px @m3_shadow;
+    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.kalam-stat-tile:hover {
+    background-color: @m3_surface_variant;
+    border-color: alpha(@m3_primary, 0.4);
+    box-shadow: 0 4px 12px @m3_shadow;
 }
 
 .kalam-stat-value {
@@ -2453,21 +2542,22 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-bar-chart {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 12px;
-    padding: 14px 12px 10px 12px;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
+    border-radius: 16px;
+    padding: 16px 14px 12px 14px;
     min-height: 150px;
+    box-shadow: 0 2px 8px @m3_shadow;
 }
 
 .kalam-bar {
-    background: linear-gradient(180deg, @kalam_accent 0%, alpha(@kalam_accent, 0.55) 100%);
-    border-radius: 5px 5px 2px 2px;
+    background: linear-gradient(180deg, @m3_primary 0%, alpha(@m3_primary, 0.55) 100%);
+    border-radius: 6px 6px 2px 2px;
     min-width: 14px;
 }
 
 .kalam-bar-empty {
-    background: @kalam_border;
+    background: @m3_outline;
 }
 
 .kalam-bar-value {
@@ -2482,10 +2572,17 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-rank-row {
-    padding: 7px 12px;
-    border-radius: 8px;
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
+    padding: 8px 14px;
+    border-radius: 12px;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
+    box-shadow: 0 2px 6px @m3_shadow;
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.kalam-rank-row:hover {
+    background: @m3_surface_variant;
+    border-color: alpha(@m3_primary, 0.4);
 }
 
 /* ── dictionary rows (P5.5 settings) ────────────────── */
@@ -2561,9 +2658,11 @@ entry.kalam-reader-search > text {
 
 /* ── section cards ── */
 .kalam-section-card {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
     border-radius: 16px;
+    box-shadow: 0 2px 8px @m3_shadow;
+    overflow: hidden;
 }
 
 .kalam-section-head {
@@ -2571,13 +2670,13 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-section-icon {
-    color: @kalam_accent;
+    color: @m3_primary;
     -gtk-icon-size: 16px;
 }
 
 .kalam-section-title {
-    font-size: 0.9rem;
-    font-weight: 600;
+    font-size: 0.95rem;
+    font-weight: 700;
     color: @kalam_text;
 }
 
@@ -2589,9 +2688,10 @@ entry.kalam-reader-search > text {
 }
 
 separator.kalam-section-divider {
-    background: @kalam_border;
+    background: @m3_outline;
     min-height: 1px;
     margin: 0 20px;
+    opacity: 0.6;
 }
 
 .kalam-section-body {
@@ -2600,13 +2700,18 @@ separator.kalam-section-divider {
 
 /* ── setting rows: hairline between rows, none above the first ── */
 .kalam-setting-row {
-    padding: 12px 0;
-    border-top: 1px solid @kalam_border;
+    padding: 14px 0;
+    border-top: 1px solid @m3_outline;
+    transition: background-color 150ms ease;
 }
 
 .kalam-setting-row:first-child {
     border-top: none;
     padding-top: 0;
+}
+
+.kalam-setting-row:hover {
+    background-color: alpha(@m3_surface_variant, 0.35);
 }
 
 .kalam-setting-label {
@@ -2621,47 +2726,55 @@ separator.kalam-section-divider {
 }
 
 .kalam-setting-entry {
-    background: @kalam_surface_2;
-    border: 1px solid @kalam_border;
-    border-radius: 8px;
-    padding: 5px 10px;
+    background: @m3_surface_variant;
+    border: 1px solid @m3_outline;
+    border-radius: 9999px;
+    padding: 5px 12px;
     font-size: 0.8rem;
 }
 
 .kalam-settings-path-box {
-    background: @kalam_surface_2;
-    border: 1px solid @kalam_border;
-    border-radius: 8px;
+    background: @m3_surface_variant;
+    border: 1px solid @m3_outline;
+    border-radius: 12px;
     padding: 7px 12px;
     font-family: monospace;
     font-size: 0.72rem;
     color: @kalam_text_dim;
 }
 
-/* The app's switch, Material-You style: 40x22 pill, accent when on.
+/* The app's switch, Material-You / Libadwaita style: pill switch, accent when on.
    Margins and borders zeroed per the house rules before sizing. */
 switch.kalam-switch {
     margin: 0;
     border: none;
-    min-width: 40px;
-    min-height: 22px;
-    border-radius: 999px;
-    background: @kalam_border;
+    min-width: 44px;
+    min-height: 24px;
+    border-radius: 9999px;
+    background-color: @m3_surface_variant;
+    border: 1px solid @m3_outline;
+    transition: background-color 200ms ease, border-color 200ms ease;
 }
 
 switch.kalam-switch:checked {
-    background: @kalam_accent;
+    background-color: @m3_primary;
+    border-color: @m3_primary;
 }
 
 /* The knob is white in every theme on purpose: all 13 palettes are dark, so
    white is the one knob colour that reads on every accent. */
 switch.kalam-switch slider {
-    margin: 0;
+    margin: 2px;
     border: none;
-    min-width: 16px;
-    min-height: 16px;
-    border-radius: 999px;
-    background: #ffffff;
+    min-width: 18px;
+    min-height: 18px;
+    border-radius: 9999px;
+    background-color: @kalam_text;
+    transition: transform 200ms ease, background-color 200ms ease;
+}
+
+switch.kalam-switch:checked slider {
+    background-color: @m3_on_primary;
 }
 
 /* Small modifier for the P5.5 button hierarchy (row-level actions). */

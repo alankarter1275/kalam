@@ -674,6 +674,7 @@ pub fn build_book_card_selectable(
         card.add_css_class("kalam-card-selected");
         let check = gtk::Label::new(Some("✓ Selected"));
         check.add_css_class("kalam-tag-count");
+        check.add_css_class("kalam-selection-badge");
         check.set_halign(gtk::Align::Center);
         check.set_valign(gtk::Align::Start);
         check.set_margin_top(4);

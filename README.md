@@ -37,6 +37,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md) ·
   design decisions: [`docs/conversation.md`](./docs/conversation.md) ·
   known pitfalls: [`docs/pitfalls.md`](./docs/pitfalls.md) ·
+  stability policy: [`docs/STABILITY.md`](./docs/STABILITY.md) ·
   how to smoke-test the A0 changes and read the timing output:
   [`docs/testing-a0.md`](./docs/testing-a0.md) ·
   **A0 steps 4+5 (background tasks + preloaders):

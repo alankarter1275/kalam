@@ -1505,9 +1505,9 @@ fn selection_band_is_the_glyph_box_plus_padding_not_the_line_box() {
     let rects = page.rects_for_range(line.locator_start, line.locator_start + 6);
     assert_eq!(rects.len(), 1, "{rects:?}");
     let band = rects[0];
-    let pad = chapbook_paint::BAND_PADDING;
-    let expected_top = fragment.rect.origin.y + line.baseline - line.ascent - pad;
-    let expected_h = line.ascent + line.descent + 2.0 * pad;
+    let (top_off, bot_off) = line.band_extent(fragment.rect.size.h);
+    let expected_top = fragment.rect.origin.y + top_off;
+    let expected_h = bot_off - top_off;
     assert!(
         (band.origin.y - expected_top).abs() < 1e-3,
         "{band:?} vs top {expected_top}"

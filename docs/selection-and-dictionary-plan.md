@@ -28,6 +28,9 @@
   - Restored `ReaderMsg::LookUpSelection` to invoke `dict_lookup` and display `self.dict_popover`.
   - Cleaned up unused annotations.
 - `src/pages/reader/engine.rs` & `resources/style.css`:
-  - Implemented `build_selection_chip` with 4 action buttons (Highlight with inline 5-color palette, Quote, Define/Dictionary, Copy) styled as `.k-sel-toolbar`.
-  - Implemented `build_dict_popover` with compact sizing (~320px width, max 380px height) matching `docs/files/kalam_dictionary_popup_v3.html`.
+  - Implemented `build_selection_chip` with 4 action buttons (Highlight, Quote, Define/Dictionary, Copy) styled as `.k-sel-toolbar` with pure symbolic icons (no text words) and compact pill geometry.
+  - Added `gtk::Revealer` (slide-right) for the 5-color palette: initially collapsed/hidden, smoothly slides out when clicking the Highlight action button, and slides back in when clicked again.
+  - Fixed stretched circular buttons: `.k-color-dot` and `.k-save-btn` now use fixed 16px/24px dimensions with `9999px` border radius and `padding: 0`.
+  - Scaled down dictionary popover: width 270px, max-height 190px scroll area, compact header with 19px headword and proportional layout matching mockup.
+  - In `chapbook-paint/src/page.rs`: decreased selection highlight band height from top by adding `TOP_INSET: 2.5px`, fixing the bottom boundary where it is so it sits snug against uppercase glyph tops.
 

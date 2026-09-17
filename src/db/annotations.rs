@@ -375,7 +375,7 @@ impl Catalog {
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
                     color, text_excerpt, note, cfi, created_at, updated_at
-             FROM annotations ORDER BY created_at DESC",
+             FROM annotations WHERE kind IN ('quote', 'highlight') ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_annotation)?;
         let mut quotes = Vec::new();
@@ -384,7 +384,7 @@ impl Catalog {
             let anno = r?;
             if anno.kind == "quote" {
                 quotes.push(anno);
-            } else {
+            } else if anno.kind == "highlight" {
                 highlights.push(anno);
             }
         }

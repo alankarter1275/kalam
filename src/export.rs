@@ -15,12 +15,17 @@ impl Catalog {
     /// `~/Kalam-Export.md`.
     /// Returns the total number of items exported (words + quotes + highlights).
     pub fn export_reading_data_markdown(&self, output_path: &Path) -> Result<usize> {
-        let default_path;
+        let expanded_path;
         let path = if output_path.as_os_str().is_empty() || output_path == Path::new("~/Kalam-Export.md") {
-            default_path = crate::paths::home_dir()
+            expanded_path = crate::paths::home_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join("Kalam-Export.md");
-            &default_path
+            &expanded_path
+        } else if let Ok(stripped) = output_path.strip_prefix("~/") {
+            expanded_path = crate::paths::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(stripped);
+            &expanded_path
         } else {
             output_path
         };
@@ -71,15 +76,19 @@ impl Catalog {
                 }
                 md.push('\n');
 
-                if !word.definition.trim().is_empty() {
-                    md.push_str(&format!("  - **Definition:** {}\n", word.definition.trim()));
+                let def_clean = word.definition.trim();
+                if !def_clean.is_empty() {
+                    let formatted_def = def_clean.replace("\r\n", "\n").replace('\n', " ");
+                    md.push_str(&format!("  - **Definition:** {}\n", formatted_def));
                 }
                 if let Some(ctx) = &word.context_text {
-                    if !ctx.trim().is_empty() {
+                    let ctx_clean = ctx.trim();
+                    if !ctx_clean.is_empty() {
+                        let formatted_ctx = ctx_clean.replace("\r\n", "\n").replace('\n', " ");
                         let source_str = word.book_id.and_then(|id| books.get(&id)).map(|b| {
                             format!(" (*{}* by {})", b.title, b.authors_display())
                         }).unwrap_or_default();
-                        md.push_str(&format!("  - **Context:** \"{}\"{}\n", ctx.trim(), source_str));
+                        md.push_str(&format!("  - **Context:** \"{}\"{}\n", formatted_ctx, source_str));
                     }
                 }
             }
@@ -96,10 +105,13 @@ impl Catalog {
                 let title = book_info.map(|b| b.title.as_str()).unwrap_or("Unknown Book");
                 let authors = book_info.map(|b| b.authors_display()).unwrap_or("Unknown");
 
-                md.push_str(&format!("- > {}\n", q.text_excerpt.trim()));
+                let excerpt_clean = q.text_excerpt.trim().replace("\r\n", "\n").replace('\n', " ");
+                md.push_str(&format!("- > {}\n", excerpt_clean));
                 md.push_str(&format!("  — *{}* by {} ({})\n", title, authors, q.created_at));
-                if !q.note.trim().is_empty() {
-                    md.push_str(&format!("  - **Note:** {}\n", q.note.trim()));
+                let note_clean = q.note.trim();
+                if !note_clean.is_empty() {
+                    let formatted_note = note_clean.replace("\r\n", "\n").replace('\n', " ");
+                    md.push_str(&format!("  - **Note:** {}\n", formatted_note));
                 }
             }
             md.push('\n');
@@ -115,9 +127,12 @@ impl Catalog {
                 let title = book_info.map(|b| b.title.as_str()).unwrap_or("Unknown Book");
                 let authors = book_info.map(|b| b.authors_display()).unwrap_or("Unknown");
 
-                md.push_str(&format!("- **\"{}\"**\n", h.text_excerpt.trim()));
-                if !h.note.trim().is_empty() {
-                    md.push_str(&format!("  - **Note:** {}\n", h.note.trim()));
+                let excerpt_clean = h.text_excerpt.trim().replace("\r\n", "\n").replace('\n', " ");
+                md.push_str(&format!("- **\"{}\"**\n", excerpt_clean));
+                let note_clean = h.note.trim();
+                if !note_clean.is_empty() {
+                    let formatted_note = note_clean.replace("\r\n", "\n").replace('\n', " ");
+                    md.push_str(&format!("  - **Note:** {}\n", formatted_note));
                 }
                 md.push_str(&format!("  - **Source:** *{}* by {} ({})\n", title, authors, h.created_at));
             }
@@ -237,5 +252,25 @@ mod tests {
         assert!(content.contains("My custom note"));
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_export_reading_data_markdown_path_expansion() {
+        let cat = Catalog::open_in_memory().expect("in-memory catalog");
+        let default_target = crate::paths::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Kalam-Export.md");
+
+        // Clean up beforehand if it exists
+        let _ = std::fs::remove_file(&default_target);
+
+        let count = cat.export_reading_data_markdown(Path::new("~/Kalam-Export.md")).unwrap();
+        assert_eq!(count, 0);
+        assert!(default_target.exists());
+
+        let content = std::fs::read_to_string(&default_target).unwrap();
+        assert!(content.contains("# Kalam Reading Data Export"));
+
+        let _ = std::fs::remove_file(&default_target);
     }
 }

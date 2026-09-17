@@ -150,6 +150,12 @@ impl Catalog {
         hydrate_books(&conn, &mut books)?;
         Ok(books)
     }
+
+    /// Auto-detect books belonging to `series` in local catalog,
+    /// ordered by `series_index` (reading order).
+    pub fn detect_local_series(&self, series: &str) -> Result<Vec<Book>> {
+        self.books_in_series(series)
+    }
 }
 
 #[cfg(test)]

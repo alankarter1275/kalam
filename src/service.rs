@@ -1018,6 +1018,74 @@ mod tests {
     }
 
     #[test]
+    fn advanced_search_syntax_filters_correctly() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id1 = cat
+            .insert_book(
+                "uuid-dune",
+                "Dune",
+                "Frank Herbert",
+                Some("Dune Chronicles"),
+                "Sci-fi classic",
+                BookFormat::Epub,
+                "dune.epub",
+                "hash-dune",
+                None,
+                &["sci-fi".into(), "classic".into()],
+            )
+            .unwrap();
+        cat.set_book_rating(id1, 8).unwrap();
+        cat.set_book_finished(id1, true).unwrap();
+
+        let id2 = cat
+            .insert_book(
+                "uuid-mistborn",
+                "Mistborn",
+                "Brandon Sanderson",
+                Some("Mistborn"),
+                "Epic fantasy",
+                BookFormat::Epub,
+                "mistborn.epub",
+                "hash-mistborn",
+                None,
+                &["fantasy".into()],
+            )
+            .unwrap();
+        cat.set_book_rating(id2, 10).unwrap();
+
+        let svc = LibraryService::new(Arc::new(cat));
+
+        // Filter by tag
+        let res = svc.all_books(SortKey::Title, "tag:fantasy");
+        assert_eq!(res.books.len(), 1);
+        assert_eq!(res.books[0].title, "Mistborn");
+
+        // Filter by author
+        let res = svc.all_books(SortKey::Title, "author:Herbert");
+        assert_eq!(res.books.len(), 1);
+        assert_eq!(res.books[0].title, "Dune");
+
+        // Filter by status
+        let res = svc.all_books(SortKey::Title, "status:finished");
+        assert_eq!(res.books.len(), 1);
+        assert_eq!(res.books[0].title, "Dune");
+
+        let res = svc.all_books(SortKey::Title, "status:unread");
+        assert_eq!(res.books.len(), 1);
+        assert_eq!(res.books[0].title, "Mistborn");
+
+        // Filter by rating
+        let res = svc.all_books(SortKey::Title, "rating:>4");
+        assert_eq!(res.books.len(), 1);
+        assert_eq!(res.books[0].title, "Mistborn");
+
+        // Combined filter
+        let res = svc.all_books(SortKey::Title, "tag:fantasy author:Sanderson status:unread rating:>=5");
+        assert_eq!(res.books.len(), 1);
+        assert_eq!(res.books[0].title, "Mistborn");
+    }
+
+    #[test]
     fn shelves_are_returned_and_an_empty_grid_is_not_an_error() {
         // Same defect as the reading list: `unwrap_or_default()` made a broken
         // read look like "you have no shelves yet".

@@ -173,10 +173,18 @@ impl Component for SeriesFloatModel {
                 sender.clone(),
             ),
             Err(err) => {
+                let rows = local_series_rows(&model.catalog, &model.series_name);
                 model.fetching = false;
-                model.state = SeriesState::Error {
-                    detail: err.to_string(),
-                };
+                if !rows.is_empty() {
+                    model.state = SeriesState::Ready {
+                        rows,
+                        fetched_at: "Local library (offline)".into(),
+                    };
+                } else {
+                    model.state = SeriesState::Error {
+                        detail: err.to_string(),
+                    };
+                }
             }
         }
         render(&model, &widgets, &sender);
@@ -211,12 +219,18 @@ impl Component for SeriesFloatModel {
                     Some(works) => {
                         let fetched_at = crate::db::chrono_like_now();
                         if works.is_empty() {
-                            // Say so plainly; don't cache the absence, so the
-                            // next open retries the lookup.
-                            self.state = SeriesState::Ready {
-                                rows: Vec::new(),
-                                fetched_at,
-                            };
+                            let rows = local_series_rows(&self.catalog, &self.series_name);
+                            if !rows.is_empty() {
+                                self.state = SeriesState::Ready {
+                                    rows,
+                                    fetched_at: "Local library".into(),
+                                };
+                            } else {
+                                self.state = SeriesState::Ready {
+                                    rows: Vec::new(),
+                                    fetched_at,
+                                };
+                            }
                         } else {
                             self.state = SeriesState::Ready {
                                 rows: merge_rows(&self.catalog, &self.series_name, &works),
@@ -225,9 +239,17 @@ impl Component for SeriesFloatModel {
                         }
                     }
                     None => {
-                        self.state = SeriesState::Error {
-                            detail: error.unwrap_or_else(|| "Unknown error".into()),
-                        };
+                        let rows = local_series_rows(&self.catalog, &self.series_name);
+                        if !rows.is_empty() {
+                            self.state = SeriesState::Ready {
+                                rows,
+                                fetched_at: "Local library (offline)".into(),
+                            };
+                        } else {
+                            self.state = SeriesState::Error {
+                                detail: error.unwrap_or_else(|| "Unknown error".into()),
+                            };
+                        }
                     }
                 }
                 render(self, widgets, &sender);
@@ -483,12 +505,29 @@ fn render(
 
             // Honest footer: where this came from, and when.
             widgets.footer.set_visible(true);
-            widgets.footer.set_label(&format!(
-                "Open Library · fetched {}",
-                pretty_fetched(fetched_at)
-            ));
+            if fetched_at.starts_with("Local library") {
+                widgets.footer.set_label(fetched_at);
+            } else {
+                widgets.footer.set_label(&format!(
+                    "Open Library · fetched {}",
+                    pretty_fetched(fetched_at)
+                ));
+            }
         }
     }
+}
+
+fn local_series_rows(catalog: &Arc<Catalog>, series_name: &str) -> Vec<SeriesRow> {
+    let local_books = catalog.detect_local_series(series_name).unwrap_or_default();
+    local_books
+        .into_iter()
+        .map(|b| SeriesRow {
+            title: b.title.clone(),
+            cover: b.cover_path.clone(),
+            year: 0,
+            local: Some(b),
+        })
+        .collect()
 }
 
 fn build_series_row(

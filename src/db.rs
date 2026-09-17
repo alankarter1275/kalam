@@ -18,6 +18,7 @@ mod metadata;
 mod prefs;
 mod pronunciation;
 mod series;
+pub mod search;
 mod shelves;
 mod stats;
 
@@ -32,6 +33,7 @@ pub use history::{LibrarySession, SessionRow};
 pub use lookup_history::DictLookup;
 #[allow(unused_imports)]
 pub use pronunciation::pronunciation_for;
+pub use search::{build_search_sql, parse_search_query, RatingOp, SearchFilter, StatusFilter};
 pub use series::{series_key, SeriesWork};
 
 #[derive(Debug, Error)]
@@ -953,26 +955,12 @@ impl Catalog {
             SortKey::Added => "added_at DESC",
         };
 
-        let q = query.trim();
-        let mut books = if q.is_empty() {
-            let sql = format!("SELECT {BOOK_COLUMNS} FROM books ORDER BY {order}");
-            let mut stmt = conn.prepare_cached(&sql)?;
-            let rows = stmt.query_map([], row_to_book)?;
-            rows.collect::<std::result::Result<Vec<_>, _>>()?
-        } else {
-            let like = format!("%{}%", escape_like(q));
-            let sql = format!(
-                "SELECT {BOOK_COLUMNS}
-                 FROM books
-                 WHERE books.title LIKE ?1 ESCAPE '\\'
-                    OR books.authors LIKE ?1 ESCAPE '\\'
-                    OR IFNULL(books.series,'') LIKE ?1 ESCAPE '\\'
-                 ORDER BY {order}"
-            );
-            let mut stmt = conn.prepare_cached(&sql)?;
-            let rows = stmt.query_map(params![like], row_to_book)?;
-            rows.collect::<std::result::Result<Vec<_>, _>>()?
-        };
+        let filters = search::parse_search_query(query);
+        let (sql, sql_params) = search::build_search_sql(&filters, order);
+
+        let mut stmt = conn.prepare_cached(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(sql_params.iter()), row_to_book)?;
+        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
 
         hydrate_books(&conn, &mut books)?;
         Ok(books)
@@ -1339,7 +1327,7 @@ impl Catalog {
 }
 
 /// Shared projection so every book query returns the same column order.
-const BOOK_COLUMNS: &str = "books.id, books.uuid, books.title, books.authors, books.series, \
+pub(crate) const BOOK_COLUMNS: &str = "books.id, books.uuid, books.title, books.authors, books.series, \
      books.description, books.format, books.file_name, books.file_hash, books.cover_name, \
      books.added_at, books.progress, books.rating, books.publisher, books.published, \
      books.series_index";

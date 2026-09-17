@@ -156,7 +156,7 @@ impl Component for AllBooksModel {
                 #[name = "search"]
                 gtk::SearchEntry {
                     set_hexpand: true,
-                    set_placeholder_text: Some("Search title, author, series…"),
+                    set_placeholder_text: Some("Search title, author, tag:fantasy, status:unread, rating:>3…"),
                     connect_search_changed[sender] => move |entry| {
                         sender.input(AllBooksMsg::SearchChanged(entry.text().to_string()));
                     },

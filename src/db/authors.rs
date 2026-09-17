@@ -106,6 +106,55 @@ impl Catalog {
         }
         Ok(author_id)
     }
+
+    pub fn books_for_author(&self, author_name: &str) -> Result<Vec<Book>> {
+        let display_name = crate::author::display_author_name(author_name);
+        let target = crate::author::normalize_author_name(&display_name);
+        if target.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sort_name = crate::author::sort_author_name(&display_name);
+
+        let conn = self.conn();
+        let like_display = format!("%{}%", escape_like(&display_name));
+        let like_raw = format!("%{}%", escape_like(author_name.trim()));
+
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS} FROM books
+             WHERE books.authors = ?1 COLLATE NOCASE
+                OR books.authors = ?2 COLLATE NOCASE
+                OR books.authors = ?3 COLLATE NOCASE
+                OR books.authors LIKE ?4 ESCAPE '\\'
+                OR books.authors LIKE ?5 ESCAPE '\\'
+             ORDER BY sort_title COLLATE NOCASE ASC"
+        );
+        let mut stmt = conn.prepare_cached(&sql)?;
+        let candidate_rows = stmt
+            .query_map(
+                params![
+                    display_name,
+                    sort_name,
+                    author_name.trim(),
+                    like_display,
+                    like_raw,
+                ],
+                row_to_book,
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        let mut books: Vec<Book> = candidate_rows
+            .into_iter()
+            .filter(|book| {
+                crate::author::split_author_names(book.authors_display())
+                    .into_iter()
+                    .any(|name| crate::author::normalize_author_name(&name) == target)
+                    || crate::author::normalize_author_name(book.authors_display()) == target
+            })
+            .collect();
+
+        hydrate_books(&conn, &mut books)?;
+        Ok(books)
+    }
 }
 
 fn load_author_profile(conn: &Connection, id: i64) -> Result<Option<AuthorProfile>> {
@@ -191,5 +240,62 @@ mod tests {
 
         assert_eq!(by_display.canonical_name, "George R. R. Martin");
         assert_eq!(by_sort.canonical_name, "George R. R. Martin");
+    }
+
+    #[test]
+    fn books_for_author_queries_database_indexed() {
+        use crate::models::BookFormat;
+        let catalog = Catalog::open_in_memory().unwrap();
+        catalog
+            .insert_book(
+                "uuid-1",
+                "A Game of Thrones",
+                "George R. R. Martin",
+                Some("A Song of Ice and Fire"),
+                "",
+                BookFormat::Epub,
+                "got.epub",
+                "hash-1",
+                None,
+                &[],
+            )
+            .unwrap();
+        catalog
+            .insert_book(
+                "uuid-2",
+                "A Clash of Kings",
+                "Martin, George R. R.",
+                Some("A Song of Ice and Fire"),
+                "",
+                BookFormat::Epub,
+                "cok.epub",
+                "hash-2",
+                None,
+                &[],
+            )
+            .unwrap();
+        catalog
+            .insert_book(
+                "uuid-3",
+                "The Hobbit",
+                "J. R. R. Tolkien",
+                None,
+                "",
+                BookFormat::Epub,
+                "hobbit.epub",
+                "hash-3",
+                None,
+                &[],
+            )
+            .unwrap();
+
+        let books = catalog.books_for_author("George R. R. Martin").unwrap();
+        assert_eq!(books.len(), 2);
+        let titles: Vec<_> = books.iter().map(|b| b.title.as_str()).collect();
+        assert!(titles.contains(&"A Game of Thrones"));
+        assert!(titles.contains(&"A Clash of Kings"));
+
+        let books_sort = catalog.books_for_author("Martin, George R. R.").unwrap();
+        assert_eq!(books_sort.len(), 2);
     }
 }

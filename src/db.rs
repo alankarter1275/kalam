@@ -562,6 +562,7 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_books_title ON books(sort_title);
             CREATE INDEX IF NOT EXISTS idx_books_added ON books(added_at);
             CREATE INDEX IF NOT EXISTS idx_books_hash ON books(file_hash);
+            CREATE INDEX IF NOT EXISTS idx_books_authors ON books(authors COLLATE NOCASE);
 
             CREATE TABLE IF NOT EXISTS reading_progress (
                 book_id       INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,

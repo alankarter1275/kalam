@@ -1,4 +1,4 @@
-use crate::db::{Annotation, AuthorProfile, AuthorWork, Catalog, SortKey};
+use crate::db::{Annotation, AuthorProfile, AuthorWork, Catalog};
 use crate::metadata::{self, CoverRef};
 use crate::models::Book;
 use crate::paths::authors_dir;
@@ -185,19 +185,7 @@ pub fn normalize_author_name(name: &str) -> String {
 }
 
 pub fn owned_books_for_author(catalog: &Catalog, author_name: &str) -> Vec<Book> {
-    let target = normalize_author_name(author_name);
-    if target.is_empty() {
-        return Vec::new();
-    }
-
-    let mut books = catalog.list_books(SortKey::Title, "").unwrap_or_default();
-    books.retain(|book| {
-        split_author_names(book.authors_display())
-            .into_iter()
-            .any(|name| normalize_author_name(&name) == target)
-            || normalize_author_name(book.authors_display()) == target
-    });
-    books
+    catalog.books_for_author(author_name).unwrap_or_default()
 }
 
 #[allow(dead_code)]
@@ -270,10 +258,31 @@ pub fn fetch_and_cache_author(
         .get_author_profile_by_name(requested_name)
         .map_err(|e| e.to_string())?;
 
-    let doc = search_author(&requested_display, owned_books)?
-        .ok_or_else(|| format!("Could not find online info for {}.", requested_display))?;
+    let doc = match search_author(&requested_display, owned_books) {
+        Ok(Some(doc)) => doc,
+        Ok(None) => {
+            if let Some(profile) = existing {
+                return Ok(profile);
+            }
+            return Err(format!("Could not find online info for {}.", requested_display));
+        }
+        Err(err) => {
+            if let Some(profile) = existing {
+                return Ok(profile);
+            }
+            return Err(err);
+        }
+    };
 
-    let mut profile = fetch_author_profile(&doc)?;
+    let mut profile = match fetch_author_profile(&doc) {
+        Ok(prof) => prof,
+        Err(err) => {
+            if let Some(existing_prof) = existing {
+                return Ok(existing_prof);
+            }
+            return Err(err);
+        }
+    };
     profile.normalized_name = requested_key;
     if profile.canonical_name.trim().is_empty() {
         profile.canonical_name = requested_display.clone();
@@ -291,10 +300,13 @@ pub fn fetch_and_cache_author(
             profile.photo_file = current.photo_file.clone();
             profile.photo_path = current.photo_path.clone();
         }
+        if profile.bio.trim().is_empty() && !current.bio.trim().is_empty() {
+            profile.bio = current.bio.clone();
+        }
     }
     profile.aliases = dedup_names(aliases);
 
-    if let Some(photo_file) = fetch_author_photo(&profile.openlibrary_key)? {
+    if let Ok(Some(photo_file)) = fetch_author_photo(&profile.openlibrary_key) {
         profile.photo_file = Some(photo_file.clone());
         profile.photo_path = Some(authors_dir().join(photo_file));
     }
@@ -515,8 +527,15 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
         })
         .collect::<Vec<_>>();
     let mut series_names = HashMap::new();
+    let mut remote_budget = 5usize;
+    let mut rate_limited = false;
     for work in &mut works {
-        enrich_author_work(work, &mut series_names);
+        enrich_author_work(
+            work,
+            &mut series_names,
+            &mut remote_budget,
+            &mut rate_limited,
+        );
     }
 
     let mut aliases = parsed.alternate_names;
@@ -555,39 +574,63 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
     })
 }
 
-fn enrich_author_work(work: &mut AuthorWork, series_names: &mut HashMap<String, String>) {
+fn enrich_author_work(
+    work: &mut AuthorWork,
+    series_names: &mut HashMap<String, String>,
+    remote_budget: &mut usize,
+    rate_limited: &mut bool,
+) {
     if let Some(cover_id) = work.cover_id {
         if let Ok(photo_file) = fetch_work_cover(&work.work_key, cover_id) {
             work.cover_file = photo_file;
         }
     }
 
-    if !work.work_key.trim().is_empty() {
-        if let Ok(details) = fetch_work_details(&work.work_key) {
-            if let Some(series) = details.series.into_iter().next() {
-                let series_key = series_path(&series.series.key);
-                if !series_key.is_empty() {
-                    work.series_key = series_key.clone();
-                    work.series_position = collapse_ws(&series.position);
-                    let name = load_series_name(series_names, &series_key);
-                    if !name.is_empty() {
-                        work.series_name = name;
+    if work.series_name.trim().is_empty() {
+        if let Some(name) = series_name_from_subjects(&work.subjects) {
+            work.series_name = name;
+        }
+    }
+
+    if !work.work_key.trim().is_empty() && !*rate_limited && *remote_budget > 0 {
+        if work.series_name.trim().is_empty() {
+            *remote_budget = remote_budget.saturating_sub(1);
+            match fetch_work_details(&work.work_key) {
+                Ok(details) => {
+                    if let Some(series) = details.series.into_iter().next() {
+                        let series_key = series_path(&series.series.key);
+                        if !series_key.is_empty() {
+                            work.series_key = series_key.clone();
+                            work.series_position = collapse_ws(&series.position);
+                            let name = load_series_name(series_names, &series_key);
+                            if !name.is_empty() {
+                                work.series_name = name;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    if err.contains("429") || err.contains("Limited") || err.contains("Too Many Requests") {
+                        *rate_limited = true;
                     }
                 }
             }
         }
 
-        if let Ok((average, count)) = fetch_work_rating(&work.work_key) {
-            if count > 0 {
-                work.rating_average = Some(average.clamp(0.0, 5.0));
-                work.rating_count = count;
+        if !*rate_limited {
+            match fetch_work_rating(&work.work_key) {
+                Ok((average, count)) => {
+                    if count > 0 {
+                        work.rating_average = Some(average.clamp(0.0, 5.0));
+                        work.rating_count = count;
+                    }
+                }
+                Err(err) => {
+                    if err.contains("429") || err.contains("Limited") || err.contains("Too Many Requests") {
+                        *rate_limited = true;
+                    }
+                }
             }
-        }
-    }
-
-    if work.series_name.trim().is_empty() {
-        if let Some(name) = series_name_from_subjects(&work.subjects) {
-            work.series_name = name;
         }
     }
 }
@@ -674,6 +717,11 @@ fn fetch_author_photo(author_key: &str) -> Result<Option<String>, String> {
     if olid.is_empty() {
         return Ok(None);
     }
+    let file_name = format!("{olid}.jpg");
+    let path = authors_dir().join(&file_name);
+    if path.is_file() {
+        return Ok(Some(file_name));
+    }
     let cover = CoverRef::Url(format!(
         "https://covers.openlibrary.org/a/olid/{olid}-L.jpg"
     ));
@@ -683,8 +731,7 @@ fn fetch_author_photo(author_key: &str) -> Result<Option<String>, String> {
         Err(_) => return Ok(None),
     };
     fs::create_dir_all(authors_dir()).map_err(|e| e.to_string())?;
-    let file_name = format!("{olid}.jpg");
-    fs::write(authors_dir().join(&file_name), bytes).map_err(|e| e.to_string())?;
+    fs::write(&path, bytes).map_err(|e| e.to_string())?;
     Ok(Some(file_name))
 }
 

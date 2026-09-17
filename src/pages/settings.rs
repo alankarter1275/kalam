@@ -1383,12 +1383,37 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
     );
 }
 
-/// Export saved quotes to Markdown, from Settings.
+/// Export saved reading data and quotes to Markdown, from Settings.
 fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
     let body = section_card(host, "document-save-symbolic", "Export", None);
+
+    let export_all_btn = gtk::Button::with_label("Export All Data");
+    export_all_btn.add_css_class("kalam-btn-outlined");
+    export_all_btn.set_valign(gtk::Align::Center);
+    {
+        let catalog = catalog.clone();
+        export_all_btn.connect_clicked(move |_| {
+            let out_path = crate::paths::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("Kalam-Export.md");
+            match catalog.export_reading_data_markdown(&out_path) {
+                Ok(count) => crate::notify::success(
+                    &format!("{count} item{} exported", if count == 1 { "" } else { "s" }),
+                    &out_path.display().to_string(),
+                ),
+                Err(err) => crate::notify::error("Could not export reading data", &err.to_string()),
+            }
+        });
+    }
+    setting_row(
+        &body,
+        "Export All Data to Markdown",
+        "Saves vocabulary, quotes, and highlights to ~/Kalam-Export.md",
+        &export_all_btn,
+    );
 
     let export_btn = gtk::Button::with_label("Export quotes");
     export_btn.add_css_class("kalam-btn-outlined");

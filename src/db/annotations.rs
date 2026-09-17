@@ -357,6 +357,40 @@ impl Catalog {
         Ok(())
     }
 
+    /// Fetch all saved words without display caps for data export.
+    pub fn list_all_saved_words_unlimited(&self) -> Result<Vec<SavedWord>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+             FROM saved_words ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], row_to_saved_word)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    /// Fetch all annotations (split into quotes and highlights) without display caps for data export.
+    pub fn list_all_annotations_unlimited(&self) -> Result<(Vec<Annotation>, Vec<Annotation>)> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                    color, text_excerpt, note, cfi, created_at, updated_at
+             FROM annotations ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], row_to_annotation)?;
+        let mut quotes = Vec::new();
+        let mut highlights = Vec::new();
+        for r in rows {
+            let anno = r?;
+            if anno.kind == "quote" {
+                quotes.push(anno);
+            } else {
+                highlights.push(anno);
+            }
+        }
+        Ok((quotes, highlights))
+    }
+
     // -----------------------------------------------------------------------
     // Reader bookmarks
     // -----------------------------------------------------------------------

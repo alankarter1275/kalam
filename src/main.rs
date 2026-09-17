@@ -12,6 +12,7 @@ mod downloads;
 mod epub;
 mod epub_book;
 mod epub_write;
+mod export;
 // mod plugins;
 mod epub_writer;
 mod icons;

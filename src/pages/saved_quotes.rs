@@ -17,6 +17,7 @@ pub enum SavedQuotesMsg {
     SearchChanged(String),
     Delete(i64),
     Export,
+    ExportAllData,
     Refresh,
     SaveNote { id: i64, note: String },
 }
@@ -53,10 +54,16 @@ impl Component for SavedQuotesModel {
                     set_hexpand: true,
                 },
                 gtk::Button {
-                    set_label: "Export Markdown",
+                    set_label: "Export Quotes",
                     add_css_class: "kalam-secondary-btn",
                     set_tooltip_text: Some("Export all quotes to ~/Quotes.md"),
                     connect_clicked => SavedQuotesMsg::Export,
+                },
+                gtk::Button {
+                    set_label: "Export All Data",
+                    add_css_class: "kalam-secondary-btn",
+                    set_tooltip_text: Some("Export all vocabulary, quotes, and highlights to ~/Kalam-Export.md"),
+                    connect_clicked => SavedQuotesMsg::ExportAllData,
                 },
                 gtk::Button {
                     set_child: Some(&crate::icons::symbolic_with_classes(
@@ -166,6 +173,28 @@ impl Component for SavedQuotesModel {
                     Err(err) => {
                         self.status = format!("Export failed: {err}");
                         crate::notify::error("Could not export quotes", &err.to_string());
+                    }
+                }
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedQuotesMsg::ExportAllData => {
+                let out_path = crate::paths::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("Kalam-Export.md");
+                match self.service.catalog().export_reading_data_markdown(&out_path) {
+                    Ok(count) => {
+                        self.status = format!("Exported all data to {}", out_path.display());
+                        crate::notify::success(
+                            &format!(
+                                "{count} item{} exported",
+                                if count == 1 { "" } else { "s" }
+                            ),
+                            &out_path.display().to_string(),
+                        );
+                    }
+                    Err(err) => {
+                        self.status = format!("Export failed: {err}");
+                        crate::notify::error("Could not export reading data", &err.to_string());
                     }
                 }
                 widgets.status_label.set_label(&self.status);

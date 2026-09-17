@@ -25,6 +25,7 @@ pub enum SavedWordsMsg {
     SearchWord(String),
     ExportCsv,
     ExportAnki,
+    ExportMarkdown,
     Refresh,
 }
 
@@ -127,6 +128,12 @@ impl Component for SavedWordsModel {
                     add_css_class: "kalam-btn-outlined",
                     set_halign: gtk::Align::Center,
                     connect_clicked => SavedWordsMsg::ExportAnki,
+                },
+                gtk::Button {
+                    set_label: "Export Markdown",
+                    add_css_class: "kalam-btn-outlined",
+                    set_halign: gtk::Align::Center,
+                    connect_clicked => SavedWordsMsg::ExportMarkdown,
                 },
             },
             // Phase 10: repeat-lookup study set, filled by
@@ -318,6 +325,20 @@ impl Component for SavedWordsModel {
                 }
                 Err(e) => crate::notify::error("Could not export words", &e),
             },
+            SavedWordsMsg::ExportMarkdown => {
+                let out_path = crate::paths::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("Kalam-Export.md");
+                match self.service.catalog().export_reading_data_markdown(&out_path) {
+                    Ok(n) => {
+                        crate::notify::success(
+                            &format!("{n} item{} exported", if n == 1 { "" } else { "s" }),
+                            &out_path.display().to_string(),
+                        );
+                    }
+                    Err(e) => crate::notify::error("Could not export reading data", &e.to_string()),
+                }
+            }
             SavedWordsMsg::Refresh => {
                 self.reload();
                 rebuild(&widgets.list_box, &self.words, &sender);

@@ -281,20 +281,15 @@ pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
 /// Returns a popover already pointed at the selection; the caller keeps it
 /// in the model so `None` (selection cleared) can pop it down.
 
-fn action_button(icon_name: &str, label_text: &str, accent: bool) -> gtk::Button {
-    let btn = gtk::Button::new();
+fn action_button(icon_name: &str, tooltip: &str, accent: bool) -> gtk::Button {
+    let btn = gtk::Button::from_icon_name(icon_name);
     btn.add_css_class("k-sel-action");
     if accent {
         btn.add_css_class("accent");
     }
-    let bx = gtk::Box::new(gtk::Orientation::Horizontal, 5);
-    bx.set_halign(gtk::Align::Center);
-    bx.set_valign(gtk::Align::Center);
-    let icon = gtk::Image::from_icon_name(icon_name);
-    let label = gtk::Label::new(Some(label_text));
-    bx.append(&icon);
-    bx.append(&label);
-    btn.set_child(Some(&bx));
+    btn.set_tooltip_text(Some(tooltip));
+    btn.set_valign(gtk::Align::Center);
+    btn.set_halign(gtk::Align::Center);
     btn
 }
 
@@ -305,12 +300,21 @@ pub(crate) fn build_selection_chip(
 ) -> gtk::Popover {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
     row.add_css_class("k-sel-toolbar");
-    row.add_css_class("visible");
 
     let highlight = action_button("format-text-highlight-symbolic", "Highlight", true);
     row.append(&highlight);
 
-    let colors = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let colors_revealer = gtk::Revealer::new();
+    colors_revealer.set_transition_type(gtk::RevealerTransitionType::SlideRight);
+    colors_revealer.set_transition_duration(200);
+    colors_revealer.set_reveal_child(false);
+
+    let colors_box = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+    let sep0 = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    sep0.add_css_class("k-sel-divider");
+    colors_box.append(&sep0);
+
+    let colors = gtk::Box::new(gtk::Orientation::Horizontal, 3);
     colors.add_css_class("k-color-bar");
     for color in [
         HighlightColor::Yellow,
@@ -323,29 +327,26 @@ pub(crate) fn build_selection_chip(
         dot.add_css_class("k-color-dot");
         dot.add_css_class(&format!("k-color-dot-{}", color.name()));
         dot.set_tooltip_text(Some(&format!("Highlight {}", color.name())));
+        dot.set_valign(gtk::Align::Center);
+        dot.set_halign(gtk::Align::Center);
         let tx = sender.input_sender().clone();
         dot.connect_clicked(move |_| {
             let _ = tx.send(ReaderMsg::HighlightSelection(color.name().to_string()));
         });
         colors.append(&dot);
     }
+    colors_box.append(&colors);
+    colors_revealer.set_child(Some(&colors_box));
+
     {
-        let colors = colors.clone();
+        let colors_revealer = colors_revealer.clone();
         highlight.connect_clicked(move |_| {
-            if colors.has_css_class("visible") {
-                colors.remove_css_class("visible");
-            } else {
-                colors.add_css_class("visible");
-            }
+            colors_revealer.set_reveal_child(!colors_revealer.reveals_child());
         });
     }
-    
-    let sep1 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    sep1.add_css_class("k-sel-divider");
-    row.append(&sep1);
-    row.append(&colors);
+    row.append(&colors_revealer);
 
-    for (icon_name, label, msg) in [
+    for (icon_name, tooltip, msg) in [
         ("format-quote-symbolic", "Quote", ReaderMsg::QuoteSelection),
         ("accessories-dictionary-symbolic", "Define", ReaderMsg::LookUpSelection),
         ("edit-copy-symbolic", "Copy", ReaderMsg::CopySelection),
@@ -354,7 +355,7 @@ pub(crate) fn build_selection_chip(
         sep.add_css_class("k-sel-divider");
         row.append(&sep);
 
-        let button = action_button(icon_name, label, false);
+        let button = action_button(icon_name, tooltip, false);
         let tx = sender.input_sender().clone();
         button.connect_clicked(move |_| {
             let _ = tx.send(msg.clone());
@@ -492,6 +493,9 @@ fn dict_header(
     save.add_css_class("k-save-btn");
     let icon = gtk::Image::from_icon_name("bookmark-new-symbolic");
     save.set_child(Some(&icon));
+    save.set_valign(gtk::Align::Start);
+    save.set_halign(gtk::Align::Center);
+    save.set_size_request(26, 26);
     save.set_tooltip_text(Some(if card.saved { "Saved" } else { "Save word" }));
     if card.saved {
         save.add_css_class("saved");
@@ -688,7 +692,7 @@ pub(crate) fn build_dict_popover(
     let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
     popup.add_css_class("k-popup");
 
-    let width = 320.min((host.width() - 32).max(240));
+    let width = 270.min((host.width() - 32).max(220));
     popup.set_size_request(width, -1);
 
     let header = dict_header(host, card, sender);
@@ -698,7 +702,7 @@ pub(crate) fn build_dict_popover(
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
         .propagate_natural_height(true)
-        .max_content_height(280)
+        .max_content_height(190)
         .build();
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.add_css_class("k-body");
@@ -708,7 +712,7 @@ pub(crate) fn build_dict_popover(
     let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
     fade.add_css_class("k-fade-bottom");
     fade.set_valign(gtk::Align::End);
-    fade.set_size_request(-1, 40);
+    fade.set_size_request(-1, 24);
     fade.set_can_target(false);
     
     let overlay = gtk::Overlay::new();

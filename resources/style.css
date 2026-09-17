@@ -3842,10 +3842,10 @@ button.kalam-lightbox-tool-btn.close:hover {
 /* ── selection toolbar ────────────────────────────────── */
 .k-sel-toolbar {
   background: rgba(22,24,30,0.96);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 999px;
-  padding: 5px 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 9999px;
+  padding: 3px 5px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
 }
 
 .k-sel-toolbar-popover {
@@ -3862,29 +3862,61 @@ button.kalam-lightbox-tool-btn.close:hover {
 }
 
 .k-sel-action {
-  padding: 6px 12px; border-radius: 999px;
-  border: none; background: transparent;
+  min-width: 26px;
+  min-height: 26px;
+  max-width: 26px;
+  max-height: 26px;
+  padding: 0;
+  margin: 0;
+  border-radius: 9999px;
+  -gtk-outline-radius: 9999px;
+  border: none;
+  background: transparent;
   color: rgba(255,255,255,0.8);
-  font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 12px; font-weight: 500;
   transition: background 150ms ease, color 150ms ease;
 }
 
-.k-sel-action image { -gtk-icon-size: 14px; }
-.k-sel-action:hover { background: rgba(255,255,255,0.1); color: #fff; }
-.k-sel-action.accent { color: #61afef; }
+.k-sel-action image {
+  -gtk-icon-size: 14px;
+}
+.k-sel-action:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+.k-sel-action.accent {
+  color: #61afef;
+}
 
-.k-sel-divider { min-width: 1px; min-height: 18px; background: rgba(255,255,255,0.12); margin: 0 2px; }
+.k-sel-divider {
+  min-width: 1px;
+  max-width: 1px;
+  min-height: 14px;
+  max-height: 14px;
+  background: rgba(255,255,255,0.15);
+  margin: 0 2px;
+}
 
-.k-color-bar { padding: 0 4px; }
+.k-color-bar {
+  padding: 0 2px;
+}
 
 .k-color-dot {
-  min-width: 20px; min-height: 20px; border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.2);
+  min-width: 16px;
+  min-height: 16px;
+  max-width: 16px;
+  max-height: 16px;
+  padding: 0;
+  margin: 0 2px;
+  border-radius: 9999px;
+  -gtk-outline-radius: 9999px;
+  border: 2px solid rgba(255,255,255,0.25);
   transition: transform 150ms ease, border-color 150ms ease;
 }
 
-.k-color-dot:hover { transform: scale(1.22); border-color: rgba(255,255,255,0.6); }
+.k-color-dot:hover {
+  transform: scale(1.22);
+  border-color: rgba(255,255,255,0.8);
+}
 
 .k-color-dot-yellow { background: rgba(229,192,123,0.38); }
 .k-color-dot-green  { background: rgba(152,195,121,0.38); }
@@ -3896,8 +3928,8 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-popup {
   background: #1b1e24;
   border: 1px solid #343842;
-  border-radius: 18px;
-  box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3);
+  border-radius: 14px;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.5), 0 6px 16px rgba(0,0,0,0.3);
 }
 
 .kalam-reader-dict-popover {
@@ -3914,7 +3946,7 @@ button.kalam-lightbox-tool-btn.close:hover {
 }
 
 .k-header {
-  padding: 20px 20px 16px;
+  padding: 12px 14px 10px;
   background: #1b1e24;
   border-bottom: 1px solid #343842;
   box-shadow: 0 4px 12px rgba(0,0,0,0.25);
@@ -3924,50 +3956,55 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-word {
   font-family: 'Fraunces', serif;
-  font-size: 26px;
+  font-size: 19px;
   font-weight: 600;
   color: #e6e9ef;
-  margin-bottom: 5px;
+  margin-bottom: 2px;
 }
 
 .k-pronunciation {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px;
+  font-size: 10.5px;
   color: #6b7280;
-  margin-bottom: 7px;
+  margin-bottom: 4px;
 }
 
 .k-pos {
-  font-size: 10.5px;
+  font-size: 9.5px;
   color: #c678dd;
   background: rgba(198,120,221,0.14);
-  padding: 2px 9px;
-  border-radius: 999px;
+  padding: 1px 7px;
+  border-radius: 9999px;
   font-style: italic;
 }
 
 .k-save-btn {
-  min-width: 30px; min-height: 30px;
-  border-radius: 50%;
+  min-width: 24px;
+  min-height: 24px;
+  max-width: 24px;
+  max-height: 24px;
+  border-radius: 9999px;
+  -gtk-outline-radius: 9999px;
   background: #282c34;
   border: 1px solid #343842;
   color: #6b7280;
   padding: 0;
+  margin: 2px 0 0 0;
 }
-.k-save-btn image { -gtk-icon-size: 15px; }
+.k-save-btn image { -gtk-icon-size: 12px; }
 .k-save-btn:hover { background: #343842; color: #abb2bf; }
 .k-save-btn.saved { color: #61afef; border-color: #61afef; background: rgba(97,175,239,0.15); }
 
 .k-body {
-  padding: 4px 20px 24px;
+  padding: 2px 14px 14px;
 }
 
 .k-section-label {
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: .08em;
   color: #6b7280;
-  margin-bottom: 10px;
-  margin-top: 20px;
+  margin-bottom: 6px;
+  margin-top: 10px;
 }
 
 .k-defs { }
@@ -3976,37 +4013,37 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-def-num {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
+  font-size: 9.5px;
   color: #61afef;
-  margin-top: 3px;
-  min-width: 16px;
+  margin-top: 2px;
+  min-width: 14px;
 }
 
-.k-def-text { font-size: 13px; color: #abb2bf; line-height: 1.6; }
+.k-def-text { font-size: 11.5px; color: #abb2bf; line-height: 1.5; }
 
 .k-def-example {
   font-family: 'Fraunces', serif;
   font-style: italic;
-  font-size: 12px;
+  font-size: 11px;
   color: #6b7280;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 .k-def-badge {
-  font-size: 8px;
+  font-size: 7.5px;
   letter-spacing: 0.08em;
   color: #e5c07b;
   background: rgba(229,192,123,0.18);
-  padding: 2px 6px;
-  border-radius: 999px;
-  margin-top: 3px;
-  margin-bottom: 2px;
+  padding: 1px 5px;
+  border-radius: 9999px;
+  margin-top: 2px;
+  margin-bottom: 1px;
 }
 
 .k-show-more {
-  font-size: 11.5px;
+  font-size: 10.5px;
   color: #61afef;
-  background: transparent; border: none; padding: 0; margin-top: 8px;
+  background: transparent; border: none; padding: 0; margin-top: 6px;
 }
 .k-show-more:hover { text-decoration: underline; }
 
@@ -4015,9 +4052,9 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-chips { }
 
 .k-chip {
-  font-size: 12px;
-  padding: 4px 12px;
-  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 9999px;
   border: 1px solid;
   font-family: 'IBM Plex Sans', sans-serif;
   background: transparent;
@@ -4041,24 +4078,24 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-idiom-item {
   background: #282c34;
   border: 1px solid #343842;
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 6px 9px;
 }
 
 .k-idiom-phrase {
   font-family: 'Fraunces', serif;
   font-style: italic;
-  font-size: 13px;
+  font-size: 11.5px;
   color: #e6e9ef;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .k-idiom-def {
-  font-size: 12px;
+  font-size: 11px;
   color: #abb2bf;
 }
 
 .k-fade-bottom {
   background: linear-gradient(to bottom, transparent, #1b1e24);
-  border-radius: 0 0 18px 18px;
+  border-radius: 0 0 14px 14px;
 }

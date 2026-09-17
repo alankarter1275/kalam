@@ -3910,11 +3910,11 @@ button.kalam-lightbox-tool-btn.close:hover {
   border-color: rgba(255,255,255,0.8);
 }
 
-.k-color-dot-yellow { background: #e5c07b; }
-.k-color-dot-green  { background: #98c379; }
-.k-color-dot-blue   { background: #61afef; }
-.k-color-dot-pink   { background: #e06c75; }
-.k-color-dot-orange { background: #c678dd; }
+.k-color-dot-yellow { background-color: #e5c07b; background-image: none; }
+.k-color-dot-green  { background-color: #98c379; background-image: none; }
+.k-color-dot-blue   { background-color: #61afef; background-image: none; }
+.k-color-dot-pink   { background-color: #e06c75; background-image: none; }
+.k-color-dot-orange { background-color: #c678dd; background-image: none; }
 
 /* ── dictionary popup ─────────────────────────────────── */
 .k-popup {

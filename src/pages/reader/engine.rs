@@ -372,19 +372,9 @@ pub(crate) fn build_selection_chip(
 
     {
         let cr1 = colors_revealer.clone();
-        let popover_weak = popover.downgrade();
         highlight.connect_clicked(move |_| {
             let next = !cr1.reveals_child();
             cr1.set_reveal_child(next);
-            if let Some(p) = popover_weak.upgrade() {
-                p.present();
-            }
-        });
-        let popover_weak2 = popover.downgrade();
-        colors_revealer.connect_child_revealed_notify(move |_| {
-            if let Some(p) = popover_weak2.upgrade() {
-                p.present();
-            }
         });
     }
 

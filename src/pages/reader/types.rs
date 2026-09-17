@@ -33,6 +33,7 @@ pub(crate) enum HighlightFilter {
     Blue,
     Pink,
     Orange,
+    Underline,
     Quotes,
 }
 

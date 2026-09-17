@@ -63,6 +63,11 @@ pub(crate) fn build_highlights_panel(
             HighlightFilter::Orange,
             Some("kalam-reader-filter-orange"),
         ),
+        (
+            "Underline",
+            HighlightFilter::Underline,
+            Some("kalam-reader-filter-underline"),
+        ),
         ("Quotes", HighlightFilter::Quotes, None),
     ] {
         let btn = gtk::Button::with_label(label);

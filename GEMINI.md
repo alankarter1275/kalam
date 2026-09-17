@@ -6,4 +6,5 @@
   - Do NOT use temporary `.gemini/antigravity/brain/` artifacts for permanent project documentation. 
   - Document ongoing steps, dead-ends, and failures directly into the respective files in `docs/` before pivoting to new strategies.
 
-- **Fast Context & Graph Lookup**: ALWAYS check [`docs/CODEBASE_GRAPH.md`](./docs/CODEBASE_GRAPH.md) first when starting a task to get the project vision, current phase, and exact component mappings before reading raw documentation files or running multi-step searches.
+- **Strict Developer Invariants**: ALWAYS follow strict developer invariants specified in [`docs/WORKING.md`](./docs/WORKING.md) (zero `unwrap()` in production, sidecar backup sync on DB updates, no root scratch files).
+

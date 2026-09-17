@@ -1213,6 +1213,26 @@ button.kalam-reader-pill-nav:hover {
     color: @kalam_text;
 }
 
+.kalam-reader-bottom-right-dock {
+    background: transparent;
+    margin-right: 18px;
+    margin-bottom: 18px;
+}
+
+.kalam-reader-location-pill {
+    background: alpha(@kalam_surface, 0.85);
+    border: 1px solid alpha(@kalam_border, 0.7);
+    border-radius: 999px;
+    padding: 4px 12px;
+    box-shadow: 0 4px 12px alpha(#000, 0.15);
+}
+
+.kalam-reader-location-text {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: alpha(@kalam_text, 0.85);
+}
+
 .kalam-reader-panel-scroll,
 .kalam-reader-panel-scroll viewport {
     background: transparent;
@@ -4059,6 +4079,7 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-color-dot-blue   { background-color: #61afef; background-image: none; }
 .k-color-dot-pink   { background-color: #e06c75; background-image: none; }
 .k-color-dot-orange { background-color: #c678dd; background-image: none; }
+.k-color-dot-underline { background-color: #3b82f6; background-image: none; border-bottom: 2px solid #2563eb; }
 
 /* ── dictionary popup ─────────────────────────────────── */
 .k-popup {

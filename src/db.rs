@@ -381,6 +381,7 @@ pub enum HighlightColor {
     Blue,
     Pink,
     Orange,
+    Underline,
 }
 
 impl HighlightColor {
@@ -391,6 +392,7 @@ impl HighlightColor {
             HighlightColor::Blue => "blue",
             HighlightColor::Pink => "pink",
             HighlightColor::Orange => "orange",
+            HighlightColor::Underline => "underline",
         }
     }
 
@@ -400,6 +402,7 @@ impl HighlightColor {
             "blue" => HighlightColor::Blue,
             "pink" | "rose" => HighlightColor::Pink,
             "orange" => HighlightColor::Orange,
+            "underline" => HighlightColor::Underline,
             _ => HighlightColor::Yellow,
         }
     }
@@ -410,6 +413,7 @@ impl HighlightColor {
         HighlightColor::Blue,
         HighlightColor::Pink,
         HighlightColor::Orange,
+        HighlightColor::Underline,
     ];
 }
 

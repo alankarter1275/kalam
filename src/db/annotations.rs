@@ -409,7 +409,10 @@ impl Catalog {
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![book_id, chapter_index, fraction.clamp(0.0, 1.0), label, now],
         )?;
-        Ok(conn.last_insert_rowid())
+        let id = conn.last_insert_rowid();
+        drop(conn);
+        crate::sidecar::refresh_for_book(self, book_id);
+        Ok(id)
     }
 
     pub fn list_reading_bookmarks(&self, book_id: i64) -> Result<Vec<ReadingBookmark>> {
@@ -427,7 +430,18 @@ impl Catalog {
 
     pub fn delete_reading_bookmark(&self, id: i64) -> Result<()> {
         let conn = self.conn();
+        let book_id: Option<i64> = conn
+            .query_row(
+                "SELECT book_id FROM reading_bookmarks WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?;
         conn.execute("DELETE FROM reading_bookmarks WHERE id = ?1", params![id])?;
+        drop(conn);
+        if let Some(book_id) = book_id {
+            crate::sidecar::refresh_for_book(self, book_id);
+        }
         Ok(())
     }
 }

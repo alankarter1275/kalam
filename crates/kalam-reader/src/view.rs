@@ -42,7 +42,7 @@ use chapbook_core::{
     Action, EdgeSizes, Key, KeyMap, LayeredLocator, PageMetrics, Rect, Rotation, Size, TapZones,
     TocEntry,
 };
-use chapbook_reader::{HostHighlight, Session, SessionConfig, SessionEvent};
+use chapbook_reader::{tiny_skia, HostHighlight, Session, SessionConfig, SessionEvent};
 
 use crate::divider::{DividerPainter, DividerPlace, DividerStyle};
 use crate::handles::{self, Edge, Handle};
@@ -869,6 +869,40 @@ impl ReaderView {
                 _ => {}
             }
         }
+        if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+            if action == Action::NextPage {
+                let mut s = self.inner.session.borrow_mut();
+                let spine = s.spine();
+                let page = s.page();
+                let count = s.page_extents(spine).len();
+                let outcome = if page + 2 < count {
+                    s.set_position(spine, page + 2);
+                    ActionOutcome::Changed
+                } else {
+                    s.apply(Action::NextPage)
+                };
+                drop(s);
+                if outcome.needs_redraw() {
+                    self.area.queue_draw();
+                }
+                return outcome;
+            } else if action == Action::PrevPage {
+                let mut s = self.inner.session.borrow_mut();
+                let spine = s.spine();
+                let page = s.page();
+                let outcome = if page >= 2 {
+                    s.set_position(spine, page - 2);
+                    ActionOutcome::Changed
+                } else {
+                    s.apply(Action::PrevPage)
+                };
+                drop(s);
+                if outcome.needs_redraw() {
+                    self.area.queue_draw();
+                }
+                return outcome;
+            }
+        }
         let outcome = self.inner.session.borrow_mut().apply(action);
         if outcome.needs_redraw() {
             self.area.queue_draw();
@@ -1199,14 +1233,94 @@ impl ReaderView {
             let pixmap = match view.mode() {
                 ReadingMode::Paged => {
                     let mut s = view.inner.session.borrow_mut();
-                    s.set_metrics(metrics);
-                    let mut pixmap = s.render();
-                    // The selection's handles, over the page. Paged
-                    // widget coordinates are page coordinates.
-                    if let (Some(out), Some(handles)) = (pixmap.as_mut(), view.place_handles(&s)) {
-                        handles::paint(out, &handles, prefs.theme.handle(), scale);
+                    if width > 900 {
+                        let single_w = (width as f32 / 2.0).floor();
+                        let side = ((single_w - prefs.column_px).max(0.0) / 2.0).max(MARGIN_SIDE_MIN);
+                        let single_metrics = PageMetrics {
+                            size: Size::new(single_w, height as f32),
+                            margins: EdgeSizes {
+                                top: MARGIN_TOP,
+                                right: side,
+                                bottom: MARGIN_BOTTOM,
+                                left: side,
+                            },
+                            dpi_scale: scale,
+                            rotation: Rotation::None,
+                        };
+                        s.set_metrics(single_metrics);
+
+                        let spine = s.spine();
+                        let page_idx = s.page();
+                        let page_count = s.page_extents(spine).len();
+
+                        let mut left_pixmap = s.render();
+                        if let (Some(out), Some(handles)) = (left_pixmap.as_mut(), view.place_handles(&s)) {
+                            handles::paint(out, &handles, prefs.theme.handle(), scale);
+                        }
+
+                        let right_pixmap = if page_idx + 1 < page_count {
+                            s.set_position(spine, page_idx + 1);
+                            let mut right = s.render();
+                            if let (Some(out), Some(handles)) = (right.as_mut(), view.place_handles(&s)) {
+                                handles::paint(out, &handles, prefs.theme.handle(), scale);
+                            }
+                            s.set_position(spine, page_idx);
+                            right
+                        } else {
+                            None
+                        };
+
+                        let pw = (width as f32 * scale) as u32;
+                        let ph = (height as f32 * scale) as u32;
+                        let mut combined = tiny_skia::Pixmap::new(pw, ph);
+                        if let Some(ref mut comb) = combined {
+                            let bg = prefs.theme.background();
+                            comb.fill(tiny_skia::Color::from_rgba8(bg.r, bg.g, bg.b, bg.a));
+
+                            if let Some(left) = left_pixmap {
+                                comb.draw_pixmap(
+                                    0,
+                                    0,
+                                    left.as_ref(),
+                                    &tiny_skia::PixmapPaint::default(),
+                                    tiny_skia::Transform::identity(),
+                                    None,
+                                );
+                            }
+                            if let Some(right) = right_pixmap {
+                                let left_w_px = (single_w * scale) as i32;
+                                comb.draw_pixmap(
+                                    left_w_px,
+                                    0,
+                                    right.as_ref(),
+                                    &tiny_skia::PixmapPaint::default(),
+                                    tiny_skia::Transform::identity(),
+                                    None,
+                                );
+                            }
+
+                            // Subtle spine divider line down center
+                            let spine_x = (single_w * scale) as f32;
+                            let mut spine_paint = tiny_skia::Paint::default();
+                            let spine_color = if prefs.theme.is_dark() {
+                                chapbook_core::Rgba::new(255, 255, 255, 25)
+                            } else {
+                                chapbook_core::Rgba::new(0, 0, 0, 30)
+                            };
+                            spine_paint.set_color_rgba8(spine_color.r, spine_color.g, spine_color.b, spine_color.a);
+                            if let Some(rect) = tiny_skia::Rect::from_xywh(spine_x - 0.5, 0.0, 1.0, ph as f32) {
+                                comb.fill_rect(rect, &spine_paint, tiny_skia::Transform::identity(), None);
+                            }
+                        }
+                        combined
+                    } else {
+                        s.set_metrics(metrics);
+                        let mut pixmap = s.render();
+                        if let (Some(out), Some(handles)) = (pixmap.as_mut(), view.place_handles(&s)) {
+                            handles::paint(out, &handles, prefs.theme.handle(), scale);
+                        }
+                        pixmap
                     }
-                    pixmap
                 }
                 ReadingMode::Scrolled => view.draw_scrolled(metrics),
             };

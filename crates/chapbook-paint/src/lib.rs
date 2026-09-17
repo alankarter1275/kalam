@@ -13,7 +13,7 @@ mod panel;
 
 pub use display::{
     build_display_list, is_dark_ground, Blend, DisplayList, DisplayOp, Frame, FrameIntent,
-    ImageTreatment, Selection, BAND_RADIUS,
+    ImageTreatment, Selection, SelectionStyle, BAND_RADIUS,
 };
 pub use images::{ImageLook, ImageStore, StoredImage};
 pub use page::{

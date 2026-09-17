@@ -166,15 +166,25 @@ impl Session {
         let highlight_color = self.settings.palette().highlight;
         // A stored color keeps the theme's transparency unless it states
         // its own; an unparseable one falls back rather than vanishing.
-        let paint = |h: &Highlight| Selection {
-            start: h.start,
-            end: h.end,
-            color: h
-                .color
-                .as_deref()
-                .and_then(|hex| Rgba::from_hex(hex, highlight_color.a))
-                .unwrap_or(highlight_color),
-            blend: Blend::Normal,
+        let paint = |h: &Highlight| {
+            let color_str = h.color.as_deref().unwrap_or("");
+            let is_underline = color_str == "#3b82f6ff" || color_str == "#2563ebff" || color_str == "underline";
+            let style = if is_underline {
+                chapbook_paint::SelectionStyle::Underline
+            } else {
+                chapbook_paint::SelectionStyle::Band
+            };
+            Selection {
+                start: h.start,
+                end: h.end,
+                color: h
+                    .color
+                    .as_deref()
+                    .and_then(|hex| Rgba::from_hex(hex, highlight_color.a))
+                    .unwrap_or(highlight_color),
+                blend: Blend::Normal,
+                style,
+            }
         };
         let mut selections: Vec<Selection> =
             self.host_highlights(spine).iter().map(paint).collect();
@@ -184,6 +194,7 @@ impl Session {
                 end,
                 color: self.settings.palette().selection,
                 blend: self.selection_blend(),
+                style: chapbook_paint::SelectionStyle::Band,
             });
         }
         let background = self.settings.palette().background;

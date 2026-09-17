@@ -328,6 +328,7 @@ pub(crate) fn build_selection_chip(
         HighlightColor::Blue,
         HighlightColor::Pink,
         HighlightColor::Orange,
+        HighlightColor::Underline,
     ] {
         let dot = gtk::Button::new();
         dot.add_css_class("k-color-dot");

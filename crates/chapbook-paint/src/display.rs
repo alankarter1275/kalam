@@ -223,6 +223,15 @@ pub enum Blend {
     Screen,
 }
 
+/// kalam: how a [`Selection`] is rendered. `Band` is a block background tint;
+/// `Underline` is a crisp bottom border line under the text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectionStyle {
+    #[default]
+    Band,
+    Underline,
+}
+
 /// A range to highlight: locator range plus fill color, painted per line
 /// under the text. Stored highlights and the transient selection are the
 /// same op — only the color differs.
@@ -236,6 +245,7 @@ pub struct Selection {
     pub end: u32,
     pub color: Rgba,
     pub blend: Blend,
+    pub style: SelectionStyle,
 }
 
 /// kalam: corner radius of a selection band, CSS px — the old reader's
@@ -356,17 +366,33 @@ fn push_selection_rect(
     }
     let (top, bottom) = line.band_extent(fragment.rect.size.h);
     for (from, to) in spans {
-        ops.push(DisplayOp::Band {
-            rect: Rect::new(
-                fragment.rect.origin.x + from,
-                fragment.rect.origin.y + top,
-                to - from,
-                bottom - top,
-            ),
-            color: sel.color,
-            radius: BAND_RADIUS,
-            blend: sel.blend,
-        });
+        match sel.style {
+            SelectionStyle::Band => {
+                ops.push(DisplayOp::Band {
+                    rect: Rect::new(
+                        fragment.rect.origin.x + from,
+                        fragment.rect.origin.y + top,
+                        to - from,
+                        bottom - top,
+                    ),
+                    color: sel.color,
+                    radius: BAND_RADIUS,
+                    blend: sel.blend,
+                });
+            }
+            SelectionStyle::Underline => {
+                let line_height = 2.0;
+                ops.push(DisplayOp::FillRect {
+                    rect: Rect::new(
+                        fragment.rect.origin.x + from,
+                        fragment.rect.origin.y + bottom - line_height,
+                        to - from,
+                        line_height,
+                    ),
+                    color: sel.color,
+                });
+            }
+        }
     }
 }
 

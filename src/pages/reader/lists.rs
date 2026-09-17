@@ -167,6 +167,9 @@ impl ReaderModel {
                     HighlightFilter::Orange => {
                         anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
                     }
+                    HighlightFilter::Underline => {
+                        anno.kind == "highlight" && (anno.color.eq_ignore_ascii_case("underline") || HighlightColor::from_str_lossy(&anno.color) == HighlightColor::Underline)
+                    }
                     HighlightFilter::Quotes => anno.kind == "quote",
                 };
                 if !matches_filter || query.is_empty() {
@@ -441,6 +444,7 @@ fn highlight_color_label(color: HighlightColor) -> &'static str {
         HighlightColor::Blue => "Blue",
         HighlightColor::Pink => "Pink",
         HighlightColor::Orange => "Orange",
+        HighlightColor::Underline => "Underline",
     }
 }
 
@@ -451,6 +455,7 @@ fn highlight_color_choice_class(color: HighlightColor) -> &'static str {
         HighlightColor::Blue => "kalam-reader-color-choice-blue",
         HighlightColor::Pink => "kalam-reader-color-choice-pink",
         HighlightColor::Orange => "kalam-reader-color-choice-orange",
+        HighlightColor::Underline => "kalam-reader-color-choice-underline",
     }
 }
 
@@ -626,6 +631,7 @@ fn color_card_class(color: &str) -> &'static str {
         HighlightColor::Blue => "kalam-reader-annotation-card-blue",
         HighlightColor::Pink => "kalam-reader-annotation-card-pink",
         HighlightColor::Orange => "kalam-reader-annotation-card-orange",
+        HighlightColor::Underline => "kalam-reader-annotation-card-underline",
     }
 }
 

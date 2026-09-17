@@ -149,6 +149,7 @@ pub enum HighlightColor {
     Blue,
     Pink,
     Orange,
+    Underline,
 }
 
 impl HighlightColor {
@@ -160,6 +161,7 @@ impl HighlightColor {
             HighlightColor::Blue => "blue",
             HighlightColor::Pink => "pink",
             HighlightColor::Orange => "orange",
+            HighlightColor::Underline => "underline",
         }
     }
 
@@ -170,6 +172,7 @@ impl HighlightColor {
             "blue" => Some(HighlightColor::Blue),
             "pink" => Some(HighlightColor::Pink),
             "orange" => Some(HighlightColor::Orange),
+            "underline" => Some(HighlightColor::Underline),
             _ => None,
         }
     }
@@ -184,6 +187,7 @@ impl HighlightColor {
             HighlightColor::Blue => "#8bb7f2a3",
             HighlightColor::Pink => "#e99bbdad",
             HighlightColor::Orange => "#f2ae72a3",
+            HighlightColor::Underline => "#3b82f6ff",
         }
     }
 
@@ -191,7 +195,8 @@ impl HighlightColor {
     pub fn rgba(self) -> Rgba {
         // Every `css()` value is a well-formed `#rrggbbaa`; the fallback
         // is unreachable and exists only so this cannot panic.
-        Rgba::from_hex(self.css(), 0xa3).unwrap_or(Rgba::new(0xf4, 0xd3, 0x5e, 0xa3))
+        let default_alpha = if self == HighlightColor::Underline { 255 } else { 0xa3 };
+        Rgba::from_hex(self.css(), default_alpha).unwrap_or(Rgba::new(0xf4, 0xd3, 0x5e, 0xa3))
     }
 }
 
@@ -411,6 +416,7 @@ mod tests {
             HighlightColor::Blue,
             HighlightColor::Pink,
             HighlightColor::Orange,
+            HighlightColor::Underline,
         ] {
             assert!(
                 Rgba::from_hex(color.css(), 255).is_some(),
@@ -418,10 +424,10 @@ mod tests {
                 color.name()
             );
             assert_eq!(HighlightColor::from_name(color.name()), Some(color));
-            let alpha = if color == HighlightColor::Pink {
-                0xad
-            } else {
-                0xa3
+            let alpha = match color {
+                HighlightColor::Pink => 0xad,
+                HighlightColor::Underline => 0xff,
+                _ => 0xa3,
             };
             assert_eq!(color.rgba().a, alpha);
         }

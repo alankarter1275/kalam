@@ -128,6 +128,7 @@ pub(crate) fn update_chrome_labels(widgets: &super::ReaderModelWidgets, model: &
     if model.chapter_count == 0 {
         widgets.progress_label.set_label("—");
         widgets.pill_chapter_label.set_label(&model.book_title);
+        widgets.location_pill_label.set_label("—");
         return;
     }
     widgets.progress_label.set_label(&format!(
@@ -138,6 +139,11 @@ pub(crate) fn update_chrome_labels(widgets: &super::ReaderModelWidgets, model: &
     widgets
         .pill_chapter_label
         .set_label(model.current_chapter_title());
+    widgets.location_pill_label.set_label(&format!(
+        "Ch. {} · {}%",
+        model.chapter + 1,
+        model.progress_pct()
+    ));
 }
 
 pub(crate) fn sync_reader_stage_theme(stage: &gtk::Box, theme: ReadingTheme) {

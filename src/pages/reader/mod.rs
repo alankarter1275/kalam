@@ -115,6 +115,8 @@ impl Component for ReaderModel {
                 add_css_class: "kalam-reader-back-dock",
                 #[watch]
                 set_visible: model.show_back_button,
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 6,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
 
@@ -122,6 +124,30 @@ impl Component for ReaderModel {
                     set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
                     add_css_class: "kalam-reader-back",
                     connect_clicked => ReaderMsg::Close,
+                },
+
+                gtk::Button {
+                    set_child: Some(&crate::icons::symbolic_with_classes("bookmark-new-symbolic", 16, &["kalam-inline-icon"])),
+                    add_css_class: "kalam-reader-back",
+                    set_tooltip_text: Some("Bookmark (B)"),
+                    connect_clicked => ReaderMsg::AddBookmark,
+                },
+            },
+
+            add_overlay = &gtk::Box {
+                add_css_class: "kalam-reader-bottom-right-dock",
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::End,
+
+                gtk::Box {
+                    add_css_class: "kalam-reader-location-pill",
+                    set_valign: gtk::Align::Center,
+
+                    #[name = "location_pill_label"]
+                    gtk::Label {
+                        add_css_class: "kalam-reader-location-text",
+                        set_valign: gtk::Align::Center,
+                    },
                 },
             },
 
@@ -1053,7 +1079,7 @@ impl Component for ReaderModel {
                     gtk::glib::Propagation::Stop
                 }
                 Key::b | Key::B => {
-                    s.input(ReaderMsg::SwitchRightTab(RightSidebarTab::Bookmarks));
+                    s.input(ReaderMsg::AddBookmark);
                     gtk::glib::Propagation::Stop
                 }
                 Key::m | Key::M => {
@@ -1712,15 +1738,25 @@ impl Component for ReaderModel {
                 self.right_sidebar_open = true;
                 self.cancel_right_close();
                 if self.chapter_count > 0 {
-                    let label = self.current_chapter_title().to_string();
-                    match self.service.catalog().insert_reading_bookmark(
-                        self.book_id,
-                        self.chapter as i64,
-                        self.fraction,
-                        &label,
-                    ) {
-                        Ok(_) => crate::notify::compact("Mark saved", &label),
-                        Err(e) => crate::notify::error("Could not save the mark", &e.to_string()),
+                    let existing_id = self.bookmarks.iter().find(|b| {
+                        b.chapter_index == self.chapter as i64 && (b.fraction - self.fraction).abs() < 0.03
+                    }).map(|b| b.id);
+                    if let Some(id) = existing_id {
+                        match self.service.catalog().delete_reading_bookmark(id) {
+                            Ok(_) => crate::notify::compact("Bookmark removed", ""),
+                            Err(e) => crate::notify::error("Could not remove bookmark", &e.to_string()),
+                        }
+                    } else {
+                        let label = self.current_chapter_title().to_string();
+                        match self.service.catalog().insert_reading_bookmark(
+                            self.book_id,
+                            self.chapter as i64,
+                            self.fraction,
+                            &label,
+                        ) {
+                            Ok(_) => crate::notify::compact("Mark saved", &label),
+                            Err(e) => crate::notify::error("Could not save the mark", &e.to_string()),
+                        }
                     }
                     self.reload_bookmarks();
                     refresh_bookmarks = true;

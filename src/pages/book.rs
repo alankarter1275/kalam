@@ -1383,9 +1383,10 @@ fn fill_author_card(
     let photo = profile.as_ref().and_then(|p| p.photo_path.clone());
     match photo.filter(|p| p.is_file()) {
         Some(path) => {
-            let img = gtk::Image::from_file(&path);
-            img.set_pixel_size(40);
-            avatar.append(&img);
+            let cover = cover_widget_deferred(Some(&path), 40, 40);
+            cover.add_css_class("kalam-author-avatar-img");
+            avatar.append(&cover);
+            crate::preload::warm_covers(vec![path], 40, 40);
         }
         None => {
             let initials = crate::author::initials(first_author);

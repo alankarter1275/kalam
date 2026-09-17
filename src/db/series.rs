@@ -278,4 +278,16 @@ mod tests {
         let titles: Vec<&str> = books.iter().map(|b| b.title.as_str()).collect();
         assert_eq!(titles, vec!["First", "Second", "Untitled Entry"]);
     }
+
+    #[test]
+    fn detect_local_series_returns_books_in_reading_order() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed_series(&cat, "Book Three", Some("Foundation"), 3.0);
+        seed_series(&cat, "Book One", Some("Foundation"), 1.0);
+        seed_series(&cat, "Book Two", Some("Foundation"), 2.0);
+
+        let books = cat.detect_local_series("Foundation").unwrap();
+        let titles: Vec<&str> = books.iter().map(|b| b.title.as_str()).collect();
+        assert_eq!(titles, vec!["Book One", "Book Two", "Book Three"]);
+    }
 }

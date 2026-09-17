@@ -72,65 +72,68 @@ pub fn parse_search_query(query: &str) -> Vec<SearchFilter> {
             continue;
         }
 
-        if let Some(val) = token_trim.strip_prefix("tag:").or_else(|| token_trim.strip_prefix("TAG:")) {
-            let val = val.trim();
-            if !val.is_empty() {
-                filters.push(SearchFilter::Tag(val.to_string()));
-                continue;
-            }
-        }
-
-        if let Some(val) = token_trim.strip_prefix("author:").or_else(|| token_trim.strip_prefix("AUTHOR:")) {
-            let val = val.trim();
-            if !val.is_empty() {
-                filters.push(SearchFilter::Author(val.to_string()));
-                continue;
-            }
-        }
-
-        if let Some(val) = token_trim.strip_prefix("status:").or_else(|| token_trim.strip_prefix("STATUS:")) {
-            let val = val.trim().to_lowercase();
-            match val.as_str() {
-                "unread" => {
-                    filters.push(SearchFilter::Status(StatusFilter::Unread));
-                    continue;
+        if let Some((prefix, val)) = token_trim.split_once(':') {
+            let prefix_lower = prefix.to_lowercase();
+            match prefix_lower.as_str() {
+                "tag" => {
+                    let val = val.trim();
+                    if !val.is_empty() {
+                        filters.push(SearchFilter::Tag(val.to_string()));
+                        continue;
+                    }
                 }
-                "reading" => {
-                    filters.push(SearchFilter::Status(StatusFilter::Reading));
-                    continue;
+                "author" => {
+                    let val = val.trim();
+                    if !val.is_empty() {
+                        filters.push(SearchFilter::Author(val.to_string()));
+                        continue;
+                    }
                 }
-                "finished" | "read" => {
-                    filters.push(SearchFilter::Status(StatusFilter::Finished));
-                    continue;
+                "status" => {
+                    let val = val.trim().to_lowercase();
+                    match val.as_str() {
+                        "unread" => {
+                            filters.push(SearchFilter::Status(StatusFilter::Unread));
+                            continue;
+                        }
+                        "reading" => {
+                            filters.push(SearchFilter::Status(StatusFilter::Reading));
+                            continue;
+                        }
+                        "finished" | "read" => {
+                            filters.push(SearchFilter::Status(StatusFilter::Finished));
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+                "rating" => {
+                    let val = val.trim();
+                    let (op, rest) = if let Some(r) = val.strip_prefix(">=") {
+                        (RatingOp::GreaterThanOrEqual, r)
+                    } else if let Some(r) = val.strip_prefix('>') {
+                        (RatingOp::GreaterThan, r)
+                    } else if let Some(r) = val.strip_prefix("<=") {
+                        (RatingOp::LessThanOrEqual, r)
+                    } else if let Some(r) = val.strip_prefix('<') {
+                        (RatingOp::LessThan, r)
+                    } else if let Some(r) = val.strip_prefix('=') {
+                        (RatingOp::Equal, r)
+                    } else {
+                        (RatingOp::Equal, val)
+                    };
+
+                    if let Ok(num) = rest.trim().parse::<f32>() {
+                        let half_stars = if num <= 5.0 && num > 0.0 {
+                            (num * 2.0).round() as u8
+                        } else {
+                            num.round().clamp(0.0, 10.0) as u8
+                        };
+                        filters.push(SearchFilter::Rating(op, half_stars));
+                        continue;
+                    }
                 }
                 _ => {}
-            }
-        }
-
-        if let Some(val) = token_trim.strip_prefix("rating:").or_else(|| token_trim.strip_prefix("RATING:")) {
-            let val = val.trim();
-            let (op, rest) = if let Some(r) = val.strip_prefix(">=") {
-                (RatingOp::GreaterThanOrEqual, r)
-            } else if let Some(r) = val.strip_prefix('>') {
-                (RatingOp::GreaterThan, r)
-            } else if let Some(r) = val.strip_prefix("<=") {
-                (RatingOp::LessThanOrEqual, r)
-            } else if let Some(r) = val.strip_prefix('<') {
-                (RatingOp::LessThan, r)
-            } else if let Some(r) = val.strip_prefix('=') {
-                (RatingOp::Equal, r)
-            } else {
-                (RatingOp::Equal, val)
-            };
-
-            if let Ok(num) = rest.trim().parse::<f32>() {
-                let half_stars = if num <= 5.0 && num > 0.0 {
-                    (num * 2.0).round() as u8
-                } else {
-                    num.round().clamp(0.0, 10.0) as u8
-                };
-                filters.push(SearchFilter::Rating(op, half_stars));
-                continue;
             }
         }
 
@@ -262,5 +265,21 @@ mod tests {
         assert!(sql.contains("finished_at"));
         assert!(sql.contains("books.rating >= ?"));
         assert_eq!(params.len(), 2); // tag param + rating param (status needs no param)
+    }
+
+    #[test]
+    fn test_parse_search_query_edge_cases() {
+        let query = r#"Tag:"epic fantasy" Author:"Frank Herbert" Status:Reading Rating:<=4.5 "Dune: Messiah""#;
+        let filters = parse_search_query(query);
+        assert_eq!(
+            filters,
+            vec![
+                SearchFilter::Tag("epic fantasy".to_string()),
+                SearchFilter::Author("Frank Herbert".to_string()),
+                SearchFilter::Status(StatusFilter::Reading),
+                SearchFilter::Rating(RatingOp::LessThanOrEqual, 9),
+                SearchFilter::Text("Dune: Messiah".to_string()),
+            ]
+        );
     }
 }

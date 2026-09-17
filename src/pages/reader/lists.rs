@@ -502,7 +502,13 @@ pub(crate) fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSen
         text.set_xalign(0.0);
         text.set_halign(gtk::Align::Start);
         text_col.append(&text);
-        let meta = gtk::Label::new(Some(&chapter_label(model, anno.chapter_index as usize)));
+        let is_legacy = super::engine::highlight_of(anno).is_none();
+        let meta_str = if is_legacy {
+            format!("{} · (Archived)", chapter_label(model, anno.chapter_index as usize))
+        } else {
+            chapter_label(model, anno.chapter_index as usize)
+        };
+        let meta = gtk::Label::new(Some(&meta_str));
         meta.add_css_class("kalam-reader-annotation-meta");
         meta.set_halign(gtk::Align::Start);
         meta.set_xalign(0.0);

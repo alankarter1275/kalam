@@ -451,6 +451,11 @@ impl ReaderView {
         self.inner.callbacks.borrow_mut().word = Some(Box::new(f));
     }
 
+    /// Disconnect the single-tap word lookup handler so taps on text turn pages.
+    pub fn disconnect_word(&self) {
+        self.inner.callbacks.borrow_mut().word = None;
+    }
+
     /// Called when a drag-selection ends with text in it (`Some`), and
     /// when the selection is cleared (`None`) — show and hide the chip.
     pub fn connect_selection(&self, f: impl Fn(Option<&SelectedText>) + 'static) {

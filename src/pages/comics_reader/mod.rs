@@ -13,7 +13,7 @@ pub use types::*;
 use gtk::gdk;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub struct ComicsReaderModel {
@@ -26,11 +26,12 @@ pub struct ComicsReaderModel {
     pub show_chrome: bool,
     pub show_settings: bool,
     pub textures: HashMap<usize, gdk::Texture>,
+    pub pending_loads: HashSet<usize>,
 }
 
 impl ComicsReaderModel {
     pub fn new(init: types::ComicsReaderInit) -> Self {
-        let model = Self {
+        Self {
             title: init.title,
             provider: init.provider,
             current_page: 0,
@@ -40,13 +41,8 @@ impl ComicsReaderModel {
             show_chrome: true,
             show_settings: false,
             textures: HashMap::new(),
-        };
-
-        // Note: we can't spawn tasks directly from new without the sender,
-        // so preload_nearby_pages must be called from `init` trait method,
-        // or we handle loading synchronously if it's local.
-        // For now we just return the model and let `init` trigger the fetch.
-        model
+            pending_loads: HashSet::new(),
+        }
     }
 
     /// Ask the provider for images in the window `curr ± 2` (or wider for webtoon/double).
@@ -66,12 +62,13 @@ impl ComicsReaderModel {
             (curr.saturating_sub(2), (curr + 2).min(total.saturating_sub(1)))
         };
 
-        // Retain textures inside active preloading range to bound memory
+        // Retain textures and pending loads inside active preloading range to bound memory
         self.textures.retain(|&idx, _| idx >= min_keep && idx <= max_keep);
+        self.pending_loads.retain(|&idx| idx >= min_keep && idx <= max_keep);
 
         let mut missing = Vec::new();
         for idx in min_keep..=max_keep {
-            if !self.textures.contains_key(&idx) {
+            if !self.textures.contains_key(&idx) && !self.pending_loads.contains(&idx) {
                 missing.push(idx);
             }
         }
@@ -92,6 +89,7 @@ impl ComicsReaderModel {
         let provider = self.provider.clone();
 
         for idx in missing {
+            self.pending_loads.insert(idx);
             let s = sender.clone();
             let prov = provider.clone();
             crate::tasks::spawn(
@@ -102,7 +100,8 @@ impl ComicsReaderModel {
                         let width = rgba.width() as i32;
                         let height = rgba.height() as i32;
                         let stride = (width * 4) as usize;
-                        let gbytes = glib::Bytes::from(&rgba.into_raw());
+                        let raw_pixels = rgba.into_raw();
+                        let gbytes = glib::Bytes::from_owned(raw_pixels);
                         let mem_tex = gdk::MemoryTexture::new(
                             width,
                             height,
@@ -126,12 +125,27 @@ impl ComicsReaderModel {
     }
 
     pub fn next_page(&mut self) {
-        let step = if self.page_style == PageStyle::Double { 2 } else { 1 };
         let total = self.provider.page_count();
-        if total > 0 && self.current_page + step < total {
-            self.set_page(self.current_page + step);
-        } else if total > 0 {
-            self.set_page(total - 1);
+        if total == 0 {
+            return;
+        }
+
+        if self.page_style == PageStyle::Double {
+            let max_start = if total > 1 {
+                if total % 2 == 0 { total - 2 } else { total - 1 }
+            } else {
+                0
+            };
+            let next = self.current_page + 2;
+            if next <= max_start {
+                self.set_page(next);
+            } else {
+                self.set_page(max_start);
+            }
+        } else {
+            if self.current_page + 1 < total {
+                self.set_page(self.current_page + 1);
+            }
         }
     }
 
@@ -911,8 +925,9 @@ impl Component for ComicsReaderModel {
                     self.show_chrome = !self.show_chrome;
                 }
             }
-            ComicsReaderMsg::PageLoaded(idx, maybe_tex) => {
-                if let Some(tex) = maybe_tex {
+            ComicsReaderMsg::PageLoaded(idx, ref maybe_tex) => {
+                self.pending_loads.remove(&idx);
+                if let Some(tex) = maybe_tex.clone() {
                     self.textures.insert(idx, tex);
                     loaded_page_idx = Some(idx);
                 }
@@ -960,34 +975,55 @@ impl Component for ComicsReaderModel {
 
         let mut updated_in_place = false;
         if is_webtoon {
-            if let Some(child_widget) = widgets.viewport_box.child() {
-                if child_widget.has_css_class("kalam-webtoon-container") {
-                    if let Ok(vbox) = child_widget.downcast::<gtk::Box>() {
-                        if let Some(idx) = loaded_page_idx {
-                            if let Some(tex) = self.textures.get(&idx) {
-                                let mut curr = vbox.first_child();
-                                let mut i = 0;
-                                while let Some(item) = curr {
-                                    if i == idx {
-                                        if let Ok(item_box) = item.downcast::<gtk::Box>() {
-                                            while let Some(old) = item_box.first_child() {
-                                                item_box.remove(&old);
+            if loaded_page_idx.is_some() {
+                if let Some(child_widget) = widgets.viewport_box.child() {
+                    if child_widget.has_css_class("kalam-webtoon-container") {
+                        if let Ok(vbox) = child_widget.downcast::<gtk::Box>() {
+                            if let Some(idx) = loaded_page_idx {
+                                if let Some(tex) = self.textures.get(&idx) {
+                                    let mut curr = vbox.first_child();
+                                    let mut i = 0;
+                                    while let Some(item) = curr {
+                                        if i == idx {
+                                            if let Ok(item_box) = item.downcast::<gtk::Box>() {
+                                                while let Some(old) = item_box.first_child() {
+                                                    item_box.remove(&old);
+                                                }
+                                                let pic = gtk::Picture::for_paintable(tex);
+                                                pic.set_can_shrink(true);
+                                                pic.set_content_fit(fit_content_fit);
+                                                pic.set_halign(gtk::Align::Center);
+                                                item_box.append(&pic);
                                             }
-                                            let pic = gtk::Picture::for_paintable(tex);
-                                            pic.set_can_shrink(true);
-                                            pic.set_content_fit(fit_content_fit);
-                                            pic.set_halign(gtk::Align::Center);
-                                            item_box.append(&pic);
+                                            break;
                                         }
-                                        break;
+                                        curr = item.next_sibling();
+                                        i += 1;
                                     }
-                                    curr = item.next_sibling();
-                                    i += 1;
                                 }
                             }
+                            updated_in_place = true;
                         }
-                        updated_in_place = true;
                     }
+                }
+            }
+
+            // Adjust vertical scroll position on navigation actions
+            let is_nav_msg = matches!(
+                msg,
+                ComicsReaderMsg::SetPage(_)
+                    | ComicsReaderMsg::NextPage
+                    | ComicsReaderMsg::PrevPage
+                    | ComicsReaderMsg::KeyLeft
+                    | ComicsReaderMsg::KeyRight
+            );
+            if is_nav_msg {
+                let vadj = widgets.viewport_box.vadjustment();
+                let max = (vadj.upper() - vadj.page_size()).max(0.0);
+                let total = self.provider.page_count();
+                if total > 1 && max > 0.0 {
+                    let target_ratio = self.current_page as f64 / (total - 1) as f64;
+                    vadj.set_value(target_ratio * max);
                 }
             }
         }
@@ -1053,8 +1089,38 @@ mod tests {
         model.next_page();
         assert_eq!(model.current_page, 4);
 
+        model.next_page();
+        assert_eq!(model.current_page, 6);
+
+        model.next_page();
+        assert_eq!(model.current_page, 8);
+
+        // Next page at boundary (page 8 of 10) must remain at 8 so even/odd pairs remain aligned
+        model.next_page();
+        assert_eq!(model.current_page, 8);
+
         model.prev_page();
-        assert_eq!(model.current_page, 2);
+        assert_eq!(model.current_page, 6);
+    }
+
+    #[test]
+    fn test_pending_loads_deduplication() {
+        let dummy = Arc::new(DummyProvider { count: 10 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Test Preload".to_string(),
+            provider: dummy,
+        });
+        model.page_style = PageStyle::Single;
+        model.current_page = 0;
+
+        let missing_first = model.get_missing_pages();
+        assert_eq!(missing_first, vec![0, 1, 2]);
+
+        // Simulate marking page 1 as pending load
+        model.pending_loads.insert(1);
+
+        let missing_second = model.get_missing_pages();
+        assert_eq!(missing_second, vec![0, 2]);
     }
 
     #[test]

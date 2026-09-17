@@ -177,15 +177,26 @@ where
                     image::ImageFormat::Png
                 };
 
-                if resized
-                    .write_to(&mut std::io::Cursor::new(&mut encoded_bytes), format)
-                    .is_ok()
-                {
+                let encode_res = if format == image::ImageFormat::Jpeg {
+                    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded_bytes, 92);
+                    encoder.encode_image(&resized).map_err(image::ImageError::from)
+                } else {
+                    resized.write_to(&mut std::io::Cursor::new(&mut encoded_bytes), format)
+                };
+
+                if encode_res.is_ok() {
                     zip_writer.start_file(&name, deflated_options)?;
                     zip_writer.write_all(&encoded_bytes)?;
                 } else {
-                    zip_writer.start_file(&name, deflated_options)?;
-                    zip_writer.write_all(&buffer)?;
+                    // Fallback to PNG encoding if original format encoder (e.g. WebP) is unavailable in image crate
+                    let mut png_bytes = Vec::new();
+                    if resized.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png).is_ok() {
+                        zip_writer.start_file(&name, deflated_options)?;
+                        zip_writer.write_all(&png_bytes)?;
+                    } else {
+                        zip_writer.start_file(&name, deflated_options)?;
+                        zip_writer.write_all(&buffer)?;
+                    }
                 }
             } else {
                 zip_writer.start_file(&name, deflated_options)?;

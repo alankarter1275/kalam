@@ -34,16 +34,32 @@ Sub-Step B of Step 4 adds full-featured reading polish for comic archives (CBZ/C
   * Integrated into book detail page (`src/pages/book.rs`) and floating book details (`src/pages/book_float.rs`).
   * Background task execution with progress reporting and notifications.
 
+## 3. Review Fixes & Architectural Refinements
+* **Webtoon Navigation & Scroll Sync**:
+  * Fixed issue where page navigation actions (`SetPage`, `NextPage`, `PrevPage`, arrow keys) in Webtoon mode updated `current_page` without moving the `ScrolledWindow` position.
+  * Added programmatic `vadjustment.set_value` synchronization on navigation actions in Webtoon mode.
+  * Fixed Fit Mode switching in Webtoon mode so all strip images update their `content_fit` properties.
+* **Double-Page Spread Pair Alignment**:
+  * Fixed page boundary stepping in Double-Page mode so even/odd page pairing is preserved at the end of the comic archive without misaligning subsequent page turns.
+* **0-Latency Preloading Optimization & De-duplication**:
+  * Added `pending_loads` set to track in-flight background decoding tasks and prevent duplicate parallel decodes of the same page during rapid page turns.
+  * Replaced slice copy with zero-copy `glib::Bytes::from_owned(rgba.into_raw())` for background `gdk::MemoryTexture` creation.
+* **Lanczos3 Remaster Quality & Format Support**:
+  * Upgraded JPEG encoder in `remaster_comic_cbz` to `JpegEncoder::new_with_quality(..., 92)` to eliminate compression artifacts on ink lines and screentones.
+  * Added PNG fallback encoding for WebP/GIF scans when direct encoding is unsupported in the image codec, ensuring WebP comics are properly remastered instead of skipped.
+
 ---
 
-## 3. Verification & Testing
+## 4. Verification & Testing
 * Unit tests in `src/comics.rs`:
   * Image filename filtering (`is_image_filename`).
   * Natural sorting (`sort_comic_pages`).
   * Lanczos3 CBZ upscaling (`test_remaster_comic_cbz`).
 * Unit tests in `src/pages/comics_reader/mod.rs`:
   * `test_missing_pages_preloading_bounds`
-  * `test_double_page_step_and_navigation`
+  * `test_double_page_step_and_navigation` (including boundary pair alignment)
+  * `test_pending_loads_deduplication`
   * `test_reading_direction_cycle`
   * `test_webtoon_mode_preloading_range`
-* `cargo check` and `cargo test` pass with 371 passing tests.
+* All unit tests pass cleanly (`cargo test`).
+

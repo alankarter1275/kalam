@@ -45,6 +45,9 @@ fn main() {
     // RelmApp::new initializes GTK; only touch Adwaita/GTK after that.
     let app = RelmApp::new("app.kalam.Kalam");
 
+    // Initialize custom symbolic icons (highlights, quotes, dictionary, copy)
+    icons::init();
+
     // Dark baseline via Adwaita (GtkSettings prefer-dark is unsupported with libadwaita).
     let style = adw::StyleManager::default();
     style.set_color_scheme(adw::ColorScheme::ForceDark);

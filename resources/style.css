@@ -3864,12 +3864,9 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-sel-action {
   min-width: 26px;
   min-height: 26px;
-  max-width: 26px;
-  max-height: 26px;
   padding: 0;
   margin: 0;
   border-radius: 9999px;
-  -gtk-outline-radius: 9999px;
   border: none;
   background: transparent;
   color: rgba(255,255,255,0.8);
@@ -3889,9 +3886,7 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-sel-divider {
   min-width: 1px;
-  max-width: 1px;
   min-height: 14px;
-  max-height: 14px;
   background: rgba(255,255,255,0.15);
   margin: 0 2px;
 }
@@ -3903,12 +3898,9 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-color-dot {
   min-width: 16px;
   min-height: 16px;
-  max-width: 16px;
-  max-height: 16px;
   padding: 0;
   margin: 0 2px;
   border-radius: 9999px;
-  -gtk-outline-radius: 9999px;
   border: 2px solid rgba(255,255,255,0.25);
   transition: transform 150ms ease, border-color 150ms ease;
 }
@@ -3918,18 +3910,18 @@ button.kalam-lightbox-tool-btn.close:hover {
   border-color: rgba(255,255,255,0.8);
 }
 
-.k-color-dot-yellow { background: rgba(229,192,123,0.38); }
-.k-color-dot-green  { background: rgba(152,195,121,0.38); }
-.k-color-dot-blue   { background: rgba(97,175,239,0.32); }
-.k-color-dot-pink   { background: rgba(198,120,221,0.38); }
-.k-color-dot-orange { background: rgba(209,154,102,0.38); }
+.k-color-dot-yellow { background: #e5c07b; }
+.k-color-dot-green  { background: #98c379; }
+.k-color-dot-blue   { background: #61afef; }
+.k-color-dot-pink   { background: #e06c75; }
+.k-color-dot-orange { background: #c678dd; }
 
 /* ── dictionary popup ─────────────────────────────────── */
 .k-popup {
   background: #1b1e24;
   border: 1px solid #343842;
-  border-radius: 14px;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.5), 0 6px 16px rgba(0,0,0,0.3);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3);
 }
 
 .kalam-reader-dict-popover {
@@ -3946,7 +3938,7 @@ button.kalam-lightbox-tool-btn.close:hover {
 }
 
 .k-header {
-  padding: 12px 14px 10px;
+  padding: 10px 12px 8px;
   background: #1b1e24;
   border-bottom: 1px solid #343842;
   box-shadow: 0 4px 12px rgba(0,0,0,0.25);
@@ -3956,7 +3948,7 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-word {
   font-family: 'Fraunces', serif;
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 600;
   color: #e6e9ef;
   margin-bottom: 2px;
@@ -3964,16 +3956,16 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-pronunciation {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 10.5px;
+  font-size: 10px;
   color: #6b7280;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .k-pos {
-  font-size: 9.5px;
+  font-size: 9px;
   color: #c678dd;
   background: rgba(198,120,221,0.14);
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: 9999px;
   font-style: italic;
 }
@@ -3981,15 +3973,12 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-save-btn {
   min-width: 24px;
   min-height: 24px;
-  max-width: 24px;
-  max-height: 24px;
   border-radius: 9999px;
-  -gtk-outline-radius: 9999px;
   background: #282c34;
   border: 1px solid #343842;
   color: #6b7280;
   padding: 0;
-  margin: 2px 0 0 0;
+  margin: 0;
 }
 .k-save-btn image { -gtk-icon-size: 12px; }
 .k-save-btn:hover { background: #343842; color: #abb2bf; }

@@ -31,6 +31,22 @@
   - Implemented `build_selection_chip` with 4 action buttons (Highlight, Quote, Define/Dictionary, Copy) styled as `.k-sel-toolbar` with pure symbolic icons (no text words) and compact pill geometry.
   - Added `gtk::Revealer` (slide-right) for the 5-color palette: initially collapsed/hidden, smoothly slides out when clicking the Highlight action button, and slides back in when clicked again.
   - Fixed stretched circular buttons: `.k-color-dot` and `.k-save-btn` now use fixed 16px/24px dimensions with `9999px` border radius and `padding: 0`.
-  - Scaled down dictionary popover: width 270px, max-height 190px scroll area, compact header with 19px headword and proportional layout matching mockup.
+  - Scaled down dictionary popover: width 240px, max-height 160px scroll area, compact header with 17px headword and proportional layout matching mockup.
   - In `chapbook-paint/src/page.rs`: decreased selection highlight band height from top by adding `TOP_INSET: 2.5px`, fixing the bottom boundary where it is so it sits snug against uppercase glyph tops.
+
+## 3. Popover Refinements & GTK CSS Warning Elimination
+- **GTK CSS Warning Elimination**:
+  - Removed unsupported `max-width`, `max-height`, and `-gtk-outline-radius` properties from `resources/style.css` (`.k-sel-action`, `.k-sel-divider`, `.k-color-dot`, and `.k-save-btn`), preventing runtime `Gtk-WARNING` parser errors.
+  - Explicit sizing is strictly enforced through GTK `set_size_request(...)` and CSS `min-width`/`min-height`/`border-radius`.
+- **Custom Symbolic Icons**:
+  - Added `src/icons.rs` embedded SVG registration for `kalam-highlight-symbolic`, `kalam-quote-symbolic`, `kalam-dictionary-symbolic`, and `kalam-copy-symbolic`.
+  - Registered to `~/.local/share/kalam/icons` search path via `gtk::IconTheme::for_display(...)` during application startup (`src/main.rs`).
+  - Eliminates GTK missing-icon fallback glyphs (🚫 circle/box with diagonal line) completely.
+- **Color Selection Palette Slide-out**:
+  - `build_selection_chip` binds `highlight.connect_clicked` and `colors_revealer.connect_child_revealed_notify` with `popover.present()`.
+  - Dynamically recalculates popup layout and repositioning so the 5 solid vivid swatches slide smoothly out beside the highlight button without clipping.
+- **Dictionary Popover Triangle Removal & Compact Layout**:
+  - Set `popover.set_has_arrow(false)` on `build_dict_popover` to remove the top pointer arrow.
+  - Reduced popup width to 240px and max content height to 160px for a refined, compact aesthetic.
+
 

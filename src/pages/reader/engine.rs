@@ -288,6 +288,7 @@ fn action_button(icon_name: &str, tooltip: &str, accent: bool) -> gtk::Button {
         btn.add_css_class("accent");
     }
     btn.set_tooltip_text(Some(tooltip));
+    btn.set_size_request(26, 26);
     btn.set_valign(gtk::Align::Center);
     btn.set_halign(gtk::Align::Center);
     btn
@@ -301,7 +302,7 @@ pub(crate) fn build_selection_chip(
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
     row.add_css_class("k-sel-toolbar");
 
-    let highlight = action_button("format-text-highlight-symbolic", "Highlight", true);
+    let highlight = action_button("kalam-highlight-symbolic", "Highlight", true);
     row.append(&highlight);
 
     let colors_revealer = gtk::Revealer::new();
@@ -327,6 +328,7 @@ pub(crate) fn build_selection_chip(
         dot.add_css_class("k-color-dot");
         dot.add_css_class(&format!("k-color-dot-{}", color.name()));
         dot.set_tooltip_text(Some(&format!("Highlight {}", color.name())));
+        dot.set_size_request(16, 16);
         dot.set_valign(gtk::Align::Center);
         dot.set_halign(gtk::Align::Center);
         let tx = sender.input_sender().clone();
@@ -337,17 +339,10 @@ pub(crate) fn build_selection_chip(
     }
     colors_box.append(&colors);
     colors_revealer.set_child(Some(&colors_box));
-
-    {
-        let colors_revealer = colors_revealer.clone();
-        highlight.connect_clicked(move |_| {
-            colors_revealer.set_reveal_child(!colors_revealer.reveals_child());
-        });
-    }
     row.append(&colors_revealer);
 
     for (icon_name, tooltip, msg) in [
-        ("format-quote-symbolic", "Quote", ReaderMsg::QuoteSelection),
+        ("kalam-quote-symbolic", "Quote", ReaderMsg::QuoteSelection),
         ("accessories-dictionary-symbolic", "Define", ReaderMsg::LookUpSelection),
         ("edit-copy-symbolic", "Copy", ReaderMsg::CopySelection),
     ] {
@@ -374,6 +369,25 @@ pub(crate) fn build_selection_chip(
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
     popover.add_css_class("k-sel-toolbar-popover");
+
+    {
+        let cr1 = colors_revealer.clone();
+        let popover_weak = popover.downgrade();
+        highlight.connect_clicked(move |_| {
+            let next = !cr1.reveals_child();
+            cr1.set_reveal_child(next);
+            if let Some(p) = popover_weak.upgrade() {
+                p.present();
+            }
+        });
+        let popover_weak2 = popover.downgrade();
+        colors_revealer.connect_child_revealed_notify(move |_| {
+            if let Some(p) = popover_weak2.upgrade() {
+                p.present();
+            }
+        });
+    }
+
     popover
 }
 
@@ -495,7 +509,7 @@ fn dict_header(
     save.set_child(Some(&icon));
     save.set_valign(gtk::Align::Start);
     save.set_halign(gtk::Align::Center);
-    save.set_size_request(26, 26);
+    save.set_size_request(24, 24);
     save.set_tooltip_text(Some(if card.saved { "Saved" } else { "Save word" }));
     if card.saved {
         save.add_css_class("saved");
@@ -692,7 +706,7 @@ pub(crate) fn build_dict_popover(
     let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
     popup.add_css_class("k-popup");
 
-    let width = 270.min((host.width() - 32).max(220));
+    let width = 240.min((host.width() - 32).max(200));
     popup.set_size_request(width, -1);
 
     let header = dict_header(host, card, sender);
@@ -702,7 +716,7 @@ pub(crate) fn build_dict_popover(
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
         .propagate_natural_height(true)
-        .max_content_height(190)
+        .max_content_height(160)
         .build();
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.add_css_class("k-body");
@@ -712,7 +726,7 @@ pub(crate) fn build_dict_popover(
     let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
     fade.add_css_class("k-fade-bottom");
     fade.set_valign(gtk::Align::End);
-    fade.set_size_request(-1, 24);
+    fade.set_size_request(-1, 16);
     fade.set_can_target(false);
     
     let overlay = gtk::Overlay::new();
@@ -725,7 +739,7 @@ pub(crate) fn build_dict_popover(
     popover.set_child(Some(&popup));
     popover.set_parent(host);
     popover.set_autohide(true);
-    popover.set_has_arrow(true);
+    popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Bottom);
     let mut anchor = *rect;
     anchor.set_y(anchor.y() - HANDLE_HEADROOM);

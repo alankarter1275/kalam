@@ -157,13 +157,15 @@ impl PdfDocument {
         for y in 0..height {
             for x in 0..width {
                 let pixel = rgba.get_pixel(x, y);
-                // Check if pixel is "ink" (not white/near-white or transparent)
-                let r = pixel[0] as u32;
-                let g = pixel[1] as u32;
-                let b = pixel[2] as u32;
+                // Check if pixel is "ink" (using luminance threshold < 225 out of 255)
+                let r = pixel[0] as f32;
+                let g = pixel[1] as f32;
+                let b = pixel[2] as f32;
                 let a = pixel[3] as u32;
 
-                if a > 30 && (r < 240 || g < 240 || b < 240) {
+                let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                if a > 30 && lum < 225.0 {
                     found_ink = true;
                     if x < min_x {
                         min_x = x;
@@ -229,8 +231,14 @@ impl PdfDocument {
                             if let Ok(stream) = stream_res {
                                 if let Ok(subtype) = stream.dict.get(b"Subtype").and_then(|s| s.as_name()) {
                                     if subtype == b"Image" {
-                                        if let Ok(data) = stream.decompressed_content() {
-                                            if let Ok(img) = image::load_from_memory(&data) {
+                                        // Try decompressed stream content first, then fallback to raw stream content (e.g. for JPEG DCTDecode streams)
+                                        let bytes_candidates = vec![
+                                            stream.decompressed_content().ok(),
+                                            Some(stream.content.clone()),
+                                        ];
+
+                                        for bytes in bytes_candidates.into_iter().flatten() {
+                                            if let Ok(img) = image::load_from_memory(&bytes) {
                                                 return Ok(img);
                                             }
                                         }
@@ -287,18 +295,7 @@ fn is_header_or_footer(line: &str) -> bool {
 fn render_text_to_canvas(text: &str, width: u32, height: u32) -> DynamicImage {
     let mut img = RgbaImage::from_pixel(width, height, Rgba([255, 255, 255, 255]));
 
-    // Draw page margin box / border
     let margin = 40;
-    for x in margin..(width - margin) {
-        img.put_pixel(x, margin, Rgba([220, 220, 220, 255]));
-        img.put_pixel(x, height - margin, Rgba([220, 220, 220, 255]));
-    }
-    for y in margin..(height - margin) {
-        img.put_pixel(margin, y, Rgba([220, 220, 220, 255]));
-        img.put_pixel(width - margin, y, Rgba([220, 220, 220, 255]));
-    }
-
-    // Render simple text block representations (lines of ink) onto canvas
     let lines: Vec<&str> = text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
     let mut current_y = margin + 30;
 
@@ -309,7 +306,7 @@ fn render_text_to_canvas(text: &str, width: u32, height: u32) -> DynamicImage {
         let line_len = line.len().min(70);
         let line_w = ((line_len as u32) * 9).min(width - 2 * margin - 20);
 
-        // Draw ink pixels representing the text line
+        // Draw ink pixels representing the text line (no margin border line to avoid breaking smart crop)
         for dy in 0..8 {
             for dx in 0..line_w {
                 let px = margin + 20 + dx;
@@ -360,6 +357,16 @@ mod tests {
     }
 
     #[test]
+    fn test_synthetic_canvas_smart_crop() {
+        let canvas = render_text_to_canvas("Sample header line\nSecond line of content", 800, 1050);
+        let ink_box = PdfDocument::calculate_ink_box_for_image(&canvas);
+
+        // Verify smart crop calculated bounds specifically around the text block, ignoring blank margins
+        assert!(ink_box.min_x >= 0.05); // margin at left
+        assert!(ink_box.max_y <= 0.50); // text only covers top half of canvas
+    }
+
+    #[test]
     fn test_reflow_text_heuristics() {
         let raw = "This is a sentence that is split across two-\nlines due to PDF formatting.\n\nThis is a second paragraph.\nIt continues here.";
         let reflowed = PdfDocument::reflow_text(raw);
@@ -369,3 +376,4 @@ mod tests {
         assert_eq!(reflowed[1], "This is a second paragraph. It continues here.");
     }
 }
+

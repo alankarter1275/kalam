@@ -59,6 +59,8 @@ pub struct PdfReaderModel {
     pub line_height: f32,
     pub reflowed_paragraphs: Vec<String>,
     pub current_texture: Option<gdk::Texture>,
+    pub texture_width: i32,
+    pub texture_height: i32,
     pub is_loading: bool,
     pub status_text: String,
 }
@@ -85,6 +87,8 @@ impl PdfReaderModel {
             line_height: 1.5,
             reflowed_paragraphs: Vec::new(),
             current_texture: None,
+            texture_width: 600,
+            texture_height: 800,
             is_loading: true,
             status_text: "Loading PDF...".to_string(),
         };
@@ -128,6 +132,9 @@ impl PdfReaderModel {
             if let Ok(img) = pdf_doc.render_page_image(self.current_page, self.smart_crop) {
                 let rgba_img = img.to_rgba8();
                 let (w, h) = (rgba_img.width() as i32, rgba_img.height() as i32);
+                self.texture_width = w;
+                self.texture_height = h;
+
                 let bytes = glib::Bytes::from(&rgba_img.into_raw());
                 let texture = gdk::MemoryTexture::new(
                     w,
@@ -370,13 +377,14 @@ impl Component for PdfReaderModel {
                         set_visible: model.current_texture.is_some(),
                         #[watch]
                         set_size_request: (
-                            (600.0 * model.zoom_level) as i32,
-                            (800.0 * model.zoom_level) as i32,
+                            (model.texture_width as f32 * model.zoom_level) as i32,
+                            (model.texture_height as f32 * model.zoom_level) as i32,
                         ),
                     },
                 },
 
                 // Option 2: Text Reflow Mode (Reflow ON)
+                #[name = "reflow_box"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 16,
@@ -384,12 +392,6 @@ impl Component for PdfReaderModel {
                     set_hexpand: true,
                     set_halign: gtk::Align::Center,
                     set_size_request: (720, -1),
-                    add_css_class: match model.reading_theme {
-                        ReadingTheme::Ink => "kalam-theme-ink",
-                        ReadingTheme::Sepia => "kalam-theme-sepia",
-                        ReadingTheme::Dark => "kalam-theme-dark",
-                        ReadingTheme::Light => "kalam-theme-ink",
-                    },
                     #[watch]
                     set_visible: model.reflow_mode,
 
@@ -417,11 +419,52 @@ impl Component for PdfReaderModel {
 
     fn init(
         init: Self::Init,
-        _root: Self::Root,
-        _sender: ComponentSender<Self>,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = Self::new(init);
         let widgets = view_output!();
+
+        // Keyboard shortcuts controller
+        let key = gtk::EventControllerKey::new();
+        let s = sender.clone();
+        key.connect_key_pressed(move |_, keyval, _keycode, _state| {
+            use gtk::gdk::Key;
+            match keyval {
+                Key::Left | Key::Page_Up | Key::BackSpace | Key::k | Key::K => {
+                    s.input(PdfReaderMsg::PrevPage);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::Right | Key::Page_Down | Key::space | Key::j | Key::J => {
+                    s.input(PdfReaderMsg::NextPage);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::plus | Key::equal | Key::KP_Add => {
+                    s.input(PdfReaderMsg::ZoomIn);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::minus | Key::KP_Subtract => {
+                    s.input(PdfReaderMsg::ZoomOut);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::r | Key::R => {
+                    s.input(PdfReaderMsg::ToggleReflow);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::c | Key::C => {
+                    s.input(PdfReaderMsg::ToggleSmartCrop);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::Escape | Key::q | Key::Q => {
+                    s.input(PdfReaderMsg::Close);
+                    gtk::glib::Propagation::Stop
+                }
+                _ => gtk::glib::Propagation::Proceed,
+            }
+        });
+        root.add_controller(key);
+        root.set_can_focus(true);
+        root.grab_focus();
 
         // Update reflow container paragraphs dynamically when building view
         populate_reflow_paragraphs(&widgets.reflow_container, &model);
@@ -492,6 +535,20 @@ impl Component for PdfReaderModel {
 
     fn post_view(&self, widgets: &Self::Widgets) {
         if self.reflow_mode {
+            let container = &widgets.reflow_box;
+            container.remove_css_class("kalam-theme-light");
+            container.remove_css_class("kalam-theme-sepia");
+            container.remove_css_class("kalam-theme-dark");
+            container.remove_css_class("kalam-theme-ink");
+
+            let theme_class = match self.reading_theme {
+                ReadingTheme::Light => "kalam-theme-light",
+                ReadingTheme::Sepia => "kalam-theme-sepia",
+                ReadingTheme::Dark => "kalam-theme-dark",
+                ReadingTheme::Ink => "kalam-theme-ink",
+            };
+            container.add_css_class(theme_class);
+
             populate_reflow_paragraphs(&widgets.reflow_container, self);
         }
     }

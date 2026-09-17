@@ -215,6 +215,8 @@ impl Catalog {
             "UPDATE annotations SET cfi = ?1, updated_at = ?2 WHERE id = ?3",
             params![cfi, chrono_like_now(), id],
         )?;
+        drop(conn);
+        self.refresh_sidecar_for_annotation(id);
         Ok(())
     }
 
@@ -393,5 +395,78 @@ impl Catalog {
         let conn = self.conn();
         conn.execute("DELETE FROM reading_bookmarks WHERE id = ?1", params![id])?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::BookFormat;
+
+    fn catalog_with_book() -> (Catalog, i64) {
+        let cat = Catalog::open_in_memory().expect("in-memory catalog");
+        let id = cat
+            .insert_book(
+                "uuid-anno-test",
+                "Annotation Book",
+                "Author",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                "hash-anno-test",
+                None,
+                &[],
+            )
+            .expect("insert book");
+        (cat, id)
+    }
+
+    #[test]
+    fn insert_and_update_annotation_cfi_persists_locators() {
+        let (cat, book_id) = catalog_with_book();
+        let id = cat
+            .insert_annotation(
+                book_id,
+                "highlight",
+                2,
+                "",
+                0,
+                "",
+                0,
+                "yellow",
+                "Sample text excerpt",
+                "Test note",
+            )
+            .expect("insert annotation");
+
+        let cfi_json = r#"{"kalam_locator":1,"start":{"spine_href":"ch2.xhtml","spine_index":2,"char_offset":10,"locator_version":1,"quote":{"prefix":"","exact":"Sample","suffix":""},"spine_fraction":0.1,"book_progression":0.05},"end":{"spine_href":"ch2.xhtml","spine_index":2,"char_offset":20,"locator_version":1,"quote":{"prefix":"","exact":"text","suffix":""},"spine_fraction":0.12,"book_progression":0.06}}"#;
+
+        cat.update_annotation_cfi(id, cfi_json).expect("update cfi");
+
+        let annotations = cat.get_annotations_for_book(book_id).expect("get annotations");
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].cfi.as_deref(), Some(cfi_json));
+        assert_eq!(annotations[0].kind, "highlight");
+        assert_eq!(annotations[0].chapter_index, 2);
+    }
+
+    #[test]
+    fn reading_bookmarks_crud() {
+        let (cat, book_id) = catalog_with_book();
+        let mark_id = cat
+            .insert_reading_bookmark(book_id, 1, 0.45, "Chapter 2 - Middle")
+            .expect("insert bookmark");
+
+        let marks = cat.list_reading_bookmarks(book_id).expect("list bookmarks");
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0].id, mark_id);
+        assert_eq!(marks[0].chapter_index, 1);
+        assert!((marks[0].fraction - 0.45).abs() < f64::EPSILON);
+        assert_eq!(marks[0].label, "Chapter 2 - Middle");
+
+        cat.delete_reading_bookmark(mark_id).expect("delete bookmark");
+        let marks2 = cat.list_reading_bookmarks(book_id).expect("list bookmarks");
+        assert!(marks2.is_empty());
     }
 }

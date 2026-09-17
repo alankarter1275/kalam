@@ -1235,7 +1235,7 @@ impl Component for ReaderModel {
                             .as_ref()
                             .map(|v| v.goto_highlight(id))
                             .unwrap_or(false);
-                    if !jumped && idx != self.chapter {
+                    if !jumped {
                         self.go_chapter(idx, 0.0);
                         refresh_sidebar_header = true;
                         refresh_toc = true;

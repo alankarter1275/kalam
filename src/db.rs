@@ -21,6 +21,9 @@ mod series;
 mod shelves;
 mod stats;
 
+mod tags;
+
+pub use tags::BulkMetadataEdit;
 pub use dictionaries::{
     likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
     BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,

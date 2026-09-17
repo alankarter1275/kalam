@@ -133,7 +133,7 @@ impl Catalog {
 
     /// Drop tags no book references — orphaned ones would clutter the tag
     /// browser.
-    fn prune_orphan_tags(&self) -> Result<()> {
+    pub(super) fn prune_orphan_tags(&self) -> Result<()> {
         let conn = self.conn();
         conn.execute(
             "DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM book_tags)",

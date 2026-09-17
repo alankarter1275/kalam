@@ -663,6 +663,213 @@ pub fn build_book_grid(
     shell
 }
 
+pub fn build_book_card_selectable(
+    book: &Book,
+    is_selected: bool,
+    on_full: impl Fn() + 'static,
+    on_float: impl Fn() + 'static,
+) -> gtk::Box {
+    let card = build_book_card(book, on_full, on_float);
+    if is_selected {
+        card.add_css_class("kalam-card-selected");
+        let check = gtk::Label::new(Some("✓ Selected"));
+        check.add_css_class("kalam-tag-count");
+        check.set_halign(gtk::Align::Center);
+        check.set_valign(gtk::Align::Start);
+        check.set_margin_top(4);
+
+        let overlay = gtk::Overlay::new();
+        overlay.set_child(Some(&card));
+        overlay.add_overlay(&check);
+
+        let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        outer.set_size_request(CARD_W, CARD_H);
+        outer.append(&overlay);
+        return outer;
+    }
+    card
+}
+
+fn build_windowed_grid_selectable(
+    books: &[Book],
+    is_selected: impl Fn(i64) -> bool + Clone + 'static,
+    on_full: impl Fn(i64) + Clone + 'static,
+    on_float: impl Fn(i64) + Clone + 'static,
+) -> gtk::Box {
+    let grid = gtk::Fixed::new();
+    grid.set_halign(gtk::Align::Start);
+    grid.set_valign(gtk::Align::Start);
+    grid.set_hexpand(false);
+    grid.set_vexpand(false);
+    grid.add_css_class("kalam-book-grid");
+
+    let shell = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    shell.set_halign(gtk::Align::Fill);
+    shell.set_valign(gtk::Align::Start);
+    shell.set_hexpand(true);
+    shell.set_vexpand(false);
+    shell.add_css_class("kalam-book-grid-shell");
+
+    crate::timing::span("grid_build");
+
+    let total_rows = row_count(books.len());
+
+    if total_rows > 0 {
+        let full_w = GRID_COLS * CARD_W + (GRID_COLS - 1) * COL_SPACING as i32;
+        grid.set_size_request(full_w, grid_height(books.len()));
+    }
+
+    let mounted: Rc<RefCell<HashMap<usize, gtk::Box>>> = Rc::new(RefCell::new(HashMap::new()));
+    let books_owned: Rc<Vec<Book>> = Rc::new(books.to_vec());
+
+    let sync: Rc<dyn Fn(f64, f64)> = {
+        let grid = grid.clone();
+        let mounted = mounted.clone();
+        let books = books_owned.clone();
+        let is_selected = is_selected.clone();
+        let on_full = on_full.clone();
+        let on_float = on_float.clone();
+        Rc::new(move |scroll_top: f64, viewport_h: f64| {
+            let (first, last) = visible_rows(scroll_top, viewport_h, total_rows);
+            if last < first {
+                return;
+            }
+
+            let want_from = (first as usize) * GRID_COLS as usize;
+            let want_to = (((last + 1) as usize) * GRID_COLS as usize).min(books.len());
+
+            let mut mounted = mounted.borrow_mut();
+
+            mounted.retain(|&i, cell| {
+                if i >= want_from && i < want_to {
+                    return true;
+                }
+                grid.remove(cell);
+                false
+            });
+
+            let mut added = Vec::new();
+            for i in want_from..want_to {
+                if mounted.contains_key(&i) {
+                    continue;
+                }
+                let book = &books[i];
+                let id = book.id;
+                let f1 = on_full.clone();
+                let f2 = on_float.clone();
+                let sel = is_selected(id);
+                let card = build_book_card_selectable(book, sel, move || f1(id), move || f2(id));
+
+                let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                cell.set_size_request(CARD_W, CARD_H);
+                cell.set_hexpand(false);
+                cell.set_vexpand(false);
+                cell.set_halign(gtk::Align::Start);
+                cell.append(&card);
+
+                let (x, y) = card_position(i);
+                grid.put(&cell, x as f64, y as f64);
+                mounted.insert(i, cell);
+                added.push(i);
+            }
+
+            if let Some(&start) = added.first() {
+                let slice_end = (want_to).min(books.len());
+                crate::preload::warm_books(&books[start..slice_end], 0, COVER_W, COVER_H);
+            }
+        })
+    };
+
+    sync(0.0, 0.0);
+
+    shell.append(&grid);
+    crate::timing::span_end("grid_build");
+    crate::timing::note("grid_cards", mounted.borrow().len());
+    crate::timing::note("grid_cards_total", books.len());
+
+    drop_dead_pending_frames();
+
+    let sync_for_map = sync.clone();
+    shell.connect_map(move |shell| {
+        let Some(scroller) = enclosing_scroller(shell) else {
+            return;
+        };
+        let adj = scroller.vadjustment();
+
+        sync_for_map(adj.value(), adj.page_size());
+
+        let s = sync_for_map.clone();
+        adj.connect_value_changed(move |adj| {
+            s(adj.value(), adj.page_size());
+        });
+
+        let s2 = sync_for_map.clone();
+        adj.connect_page_size_notify(move |adj| {
+            s2(adj.value(), adj.page_size());
+        });
+    });
+
+    shell
+}
+
+pub fn build_book_grid_selectable(
+    books: &[Book],
+    is_selected: impl Fn(i64) -> bool + Clone + 'static,
+    on_full: impl Fn(i64) + Clone + 'static,
+    on_float: impl Fn(i64) + Clone + 'static,
+) -> gtk::Box {
+    if windowed_grid_enabled() {
+        return build_windowed_grid_selectable(books, is_selected, on_full, on_float);
+    }
+
+    let grid = gtk::Grid::new();
+    grid.set_column_spacing(COL_SPACING);
+    grid.set_row_spacing(ROW_SPACING);
+    grid.set_column_homogeneous(true);
+    grid.set_row_homogeneous(false);
+    grid.set_halign(gtk::Align::Start);
+    grid.set_valign(gtk::Align::Start);
+    grid.set_hexpand(true);
+    grid.set_vexpand(false);
+    grid.add_css_class("kalam-book-grid");
+
+    let shell = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    shell.set_halign(gtk::Align::Fill);
+    shell.set_valign(gtk::Align::Start);
+    shell.set_hexpand(true);
+    shell.set_vexpand(false);
+    shell.add_css_class("kalam-book-grid-shell");
+
+    crate::timing::span("grid_build");
+
+    for (i, book) in books.iter().enumerate() {
+        let id = book.id;
+        let f1 = on_full.clone();
+        let f2 = on_float.clone();
+        let card = build_book_card_selectable(book, is_selected(id), move || f1(id), move || f2(id));
+
+        let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        cell.set_size_request(CARD_W, CARD_H);
+        cell.set_hexpand(false);
+        cell.set_vexpand(false);
+        cell.set_halign(gtk::Align::Start);
+        cell.append(&card);
+
+        let col = (i as i32) % GRID_COLS;
+        let row = (i as i32) / GRID_COLS;
+        grid.attach(&cell, col, row, 1, 1);
+    }
+
+    shell.append(&grid);
+    crate::timing::span_end("grid_build");
+    crate::timing::note("grid_cards", books.len());
+
+    drop_dead_pending_frames();
+    crate::preload::warm_books(books, 0, COVER_W, COVER_H);
+
+    shell
+}
+
 /// Fixed `w`×`h` cover (always the same size — with or without an image).
 ///
 /// Decodes on the spot. Right for the one-or-two covers on a detail page,

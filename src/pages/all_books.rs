@@ -1,11 +1,11 @@
-//! My Library → All books: search, sort, import, cover grid.
-
-use crate::db::{Catalog, SortKey};
+use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
 use crate::service::LibraryService;
-use crate::widgets::book_row::build_book_grid;
+use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable};
+use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -29,6 +29,12 @@ pub enum AllBooksMsg {
     },
     /// The whole import finished.
     ImportFinished(ImportTally),
+    ToggleSelectionMode,
+    ToggleSelectBook(i64),
+    SelectAll,
+    DeselectAll,
+    OpenBulkEditDialog(gtk::Widget),
+    ApplyBulkEdit(BulkMetadataEdit),
 }
 
 #[derive(Debug, Default)]
@@ -41,10 +47,6 @@ pub struct ImportTally {
 }
 
 /// The one-line summary shown after an import finishes.
-///
-/// Lifted out of both pages because the two copies were byte-identical, and
-/// because it is the only part of the import worth asserting on in CI: the
-/// rest needs a display.
 pub fn import_summary(tally: &ImportTally) -> String {
     let restored_note = if tally.restored > 0 {
         format!(" {} kept your earlier metadata edits.", tally.restored)
@@ -65,15 +67,6 @@ pub fn import_summary(tally: &ImportTally) -> String {
 }
 
 /// Import `paths` on a worker thread, reporting per file.
-///
-/// Shared by Home and All books: both had a byte-identical copy of this loop,
-/// so a fix to one silently missed the other.
-///
-/// `on_step` and `on_done` run on the main thread (see `crate::tasks`), which
-/// is what makes it safe for them to touch widgets. Note the failure path
-/// deliberately does *not* raise a toast from inside the worker — it collects
-/// the messages and hands them back, because `notify` from a worker is how
-/// import errors used to disappear (`docs/pitfalls.md` §4e).
 pub fn spawn_import(
     catalog: Arc<Catalog>,
     paths: Vec<PathBuf>,
@@ -86,8 +79,6 @@ pub fn spawn_import(
             let mut tally = ImportTally::default();
             let mut failures: Vec<(String, String)> = Vec::new();
             for (i, path) in paths.iter().enumerate() {
-                // Importing a folder of a few hundred books is the longest
-                // job in the app; closing the window should stop it.
                 if reporter.cancelled() {
                     break;
                 }
@@ -118,9 +109,6 @@ pub fn spawn_import(
         },
         move |update| on_step(update.done, update.total, update.detail),
         move |(tally, failures)| {
-            // Back on the main thread, so raising toasts here is safe. The
-            // worker deliberately only *collects* them: a `notify` call from a
-            // worker thread is how import errors used to vanish.
             for (title, detail) in &failures {
                 crate::notify::error(title, detail);
             }
@@ -137,6 +125,8 @@ pub struct AllBooksModel {
     status: String,
     /// True while a background import is running; disables the button.
     importing: bool,
+    selection_mode: bool,
+    selected_books: HashSet<i64>,
 }
 
 #[relm4::component(pub)]
@@ -180,6 +170,17 @@ impl Component for AllBooksModel {
 
                 gtk::Button {
                     #[watch]
+                    set_label: if model.selection_mode {
+                        "Exit Select"
+                    } else {
+                        "Select Mode"
+                    },
+                    add_css_class: "kalam-secondary-btn",
+                    connect_clicked => AllBooksMsg::ToggleSelectionMode,
+                },
+
+                gtk::Button {
+                    #[watch]
                     set_label: if model.importing {
                         "Importing…"
                     } else {
@@ -189,6 +190,46 @@ impl Component for AllBooksModel {
                     #[watch]
                     set_sensitive: !model.importing,
                     connect_clicked => AllBooksMsg::PickFiles,
+                },
+            },
+
+            #[name = "selection_bar"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 8,
+                #[watch]
+                set_visible: model.selection_mode,
+
+                gtk::Label {
+                    #[watch]
+                    set_label: &format!(
+                        "{} book{} selected",
+                        model.selected_books.len(),
+                        if model.selected_books.len() == 1 { "" } else { "s" }
+                    ),
+                    add_css_class: "kalam-page-sub",
+                },
+
+                gtk::Button {
+                    set_label: "Select All",
+                    add_css_class: "kalam-secondary-btn",
+                    connect_clicked => AllBooksMsg::SelectAll,
+                },
+
+                gtk::Button {
+                    set_label: "Deselect All",
+                    add_css_class: "kalam-secondary-btn",
+                    connect_clicked => AllBooksMsg::DeselectAll,
+                },
+
+                gtk::Button {
+                    set_label: "Bulk Edit…",
+                    add_css_class: "kalam-primary-btn",
+                    #[watch]
+                    set_sensitive: !model.selected_books.is_empty(),
+                    connect_clicked[sender] => move |btn| {
+                        sender.input(AllBooksMsg::OpenBulkEditDialog(btn.clone().upcast()));
+                    },
                 },
             },
 
@@ -219,9 +260,6 @@ impl Component for AllBooksModel {
         let sort = SortKey::Added;
         let service = LibraryService::new(catalog);
         let snap = service.all_books(sort, "");
-        // `reload()` has always shown "Database error: .." in the status line;
-        // `init()` used `unwrap_or_default()`, so the very first paint claimed
-        // an empty library where a refresh would have told the truth.
         let status = match snap.errors.first() {
             Some(err) => format!("Database error: {err}"),
             None => status_line(snap.books.len(), ""),
@@ -234,6 +272,8 @@ impl Component for AllBooksModel {
             sort,
             status,
             importing: false,
+            selection_mode: false,
+            selected_books: HashSet::new(),
         };
         let widgets = view_output!();
 
@@ -254,7 +294,14 @@ impl Component for AllBooksModel {
         }
         group_toggles(&widgets.sort_box);
 
-        rebuild_list(&widgets.list, &model.books, &model.query, &sender);
+        rebuild_list(
+            &widgets.list,
+            &model.books,
+            &model.query,
+            model.selection_mode,
+            &model.selected_books,
+            &sender,
+        );
 
         ComponentParts { model, widgets }
     }
@@ -268,8 +315,6 @@ impl Component for AllBooksModel {
     ) {
         match msg {
             AllBooksMsg::ImportStep { done, total, title } => {
-                // Only the counter moves per file; the list is rebuilt once at
-                // the end so a large import does not thrash the grid.
                 self.status = if title.is_empty() {
                     format!("Importing {done} of {total}…")
                 } else {
@@ -304,6 +349,243 @@ impl Component for AllBooksModel {
                 self.sort = sort;
                 self.status.clear();
                 self.reload();
+            }
+            AllBooksMsg::ToggleSelectionMode => {
+                self.selection_mode = !self.selection_mode;
+                if !self.selection_mode {
+                    self.selected_books.clear();
+                }
+            }
+            AllBooksMsg::ToggleSelectBook(id) => {
+                if self.selected_books.contains(&id) {
+                    self.selected_books.remove(&id);
+                } else {
+                    self.selected_books.insert(id);
+                }
+            }
+            AllBooksMsg::SelectAll => {
+                for b in &self.books {
+                    self.selected_books.insert(b.id);
+                }
+            }
+            AllBooksMsg::DeselectAll => {
+                self.selected_books.clear();
+            }
+            AllBooksMsg::OpenBulkEditDialog(anchor) => {
+                let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
+
+                let info = gtk::Label::new(Some(&format!(
+                    "Editing metadata for {} selected book{}.",
+                    self.selected_books.len(),
+                    if self.selected_books.len() == 1 { "" } else { "s" }
+                )));
+                info.set_halign(gtk::Align::Start);
+                info.add_css_class("kalam-muted");
+                content.append(&info);
+
+                // Add tags
+                let add_tags_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                let add_tags_check = gtk::CheckButton::with_label("Add tags:");
+                let add_tags_entry = gtk::Entry::new();
+                add_tags_entry.set_placeholder_text(Some("e.g. favourite, sci-fi"));
+                add_tags_entry.set_hexpand(true);
+                add_tags_box.append(&add_tags_check);
+                add_tags_box.append(&add_tags_entry);
+                content.append(&add_tags_box);
+
+                let chk = add_tags_check.clone();
+                add_tags_entry.connect_changed(move |e| {
+                    chk.set_active(!e.text().trim().is_empty());
+                });
+
+                // Set/Replace tags
+                let set_tags_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                let set_tags_check = gtk::CheckButton::with_label("Set/Replace tags:");
+                let set_tags_entry = gtk::Entry::new();
+                set_tags_entry.set_placeholder_text(Some("e.g. classic, fiction"));
+                set_tags_entry.set_hexpand(true);
+                set_tags_box.append(&set_tags_check);
+                set_tags_box.append(&set_tags_entry);
+                content.append(&set_tags_box);
+
+                let chk = set_tags_check.clone();
+                set_tags_entry.connect_changed(move |e| {
+                    chk.set_active(!e.text().trim().is_empty());
+                });
+
+                // Author
+                let author_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                let author_check = gtk::CheckButton::with_label("Update Author:");
+                let author_entry = gtk::Entry::new();
+                author_entry.set_placeholder_text(Some("e.g. Frank Herbert"));
+                author_entry.set_hexpand(true);
+                author_box.append(&author_check);
+                author_box.append(&author_entry);
+                content.append(&author_box);
+
+                let chk = author_check.clone();
+                author_entry.connect_changed(move |e| {
+                    chk.set_active(!e.text().trim().is_empty());
+                });
+
+                // Publisher
+                let publisher_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                let publisher_check = gtk::CheckButton::with_label("Update Publisher:");
+                let publisher_entry = gtk::Entry::new();
+                publisher_entry.set_placeholder_text(Some("e.g. Chilton Books"));
+                publisher_entry.set_hexpand(true);
+                publisher_box.append(&publisher_check);
+                publisher_box.append(&publisher_entry);
+                content.append(&publisher_box);
+
+                let chk = publisher_check.clone();
+                publisher_entry.connect_changed(move |e| {
+                    chk.set_active(!e.text().trim().is_empty());
+                });
+
+                // Reading status
+                let status_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                let status_check = gtk::CheckButton::with_label("Update Reading Status:");
+                let status_combo = gtk::DropDown::from_strings(&["Unread", "Reading", "Finished"]);
+                status_box.append(&status_check);
+                status_box.append(&status_combo);
+                content.append(&status_box);
+
+                let chk = status_check.clone();
+                status_combo.connect_selected_notify(move |_| {
+                    chk.set_active(true);
+                });
+
+                // Buttons
+                let btn_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                btn_box.set_halign(gtk::Align::End);
+                let cancel = gtk::Button::with_label("Cancel");
+                cancel.add_css_class("kalam-secondary-btn");
+                let apply = gtk::Button::with_label("Apply Changes");
+                apply.add_css_class("kalam-primary-btn");
+                btn_box.append(&cancel);
+                btn_box.append(&apply);
+                content.append(&btn_box);
+
+                let btn = apply.clone();
+                add_tags_entry.connect_activate(move |_| {
+                    btn.emit_clicked();
+                });
+                let btn = apply.clone();
+                set_tags_entry.connect_activate(move |_| {
+                    btn.emit_clicked();
+                });
+                let btn = apply.clone();
+                author_entry.connect_activate(move |_| {
+                    btn.emit_clicked();
+                });
+                let btn = apply.clone();
+                publisher_entry.connect_activate(move |_| {
+                    btn.emit_clicked();
+                });
+
+                let dialog = in_app_dialog::present(
+                    &anchor,
+                    "Bulk Edit Metadata",
+                    in_app_dialog::DialogExit::UnsavedInput,
+                    &content,
+                );
+
+                if let Some(dlg) = dialog {
+                    let d = dlg.clone();
+                    cancel.connect_clicked(move |_| d.close());
+
+                    let d = dlg.clone();
+                    let s = sender.clone();
+                    apply.connect_clicked(move |_| {
+                        let add_tags = if add_tags_check.is_active() {
+                            let text = add_tags_entry.text();
+                            let tags: Vec<String> = text
+                                .split(',')
+                                .map(|t| t.trim().to_string())
+                                .filter(|t| !t.is_empty())
+                                .collect();
+                            if !tags.is_empty() {
+                                Some(tags)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        let set_tags = if set_tags_check.is_active() {
+                            let text = set_tags_entry.text();
+                            let tags: Vec<String> = text
+                                .split(',')
+                                .map(|t| t.trim().to_string())
+                                .filter(|t| !t.is_empty())
+                                .collect();
+                            Some(tags)
+                        } else {
+                            None
+                        };
+
+                        let author = if author_check.is_active() {
+                            let text = author_entry.text().trim().to_string();
+                            if !text.is_empty() {
+                                Some(text)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        let publisher = if publisher_check.is_active() {
+                            let text = publisher_entry.text().trim().to_string();
+                            if !text.is_empty() {
+                                Some(text)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        let reading_status = if status_check.is_active() {
+                            let idx = status_combo.selected();
+                            match idx {
+                                0 => Some("Unread".to_string()),
+                                1 => Some("Reading".to_string()),
+                                2 => Some("Finished".to_string()),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+
+                        let edit = BulkMetadataEdit {
+                            add_tags,
+                            set_tags,
+                            author,
+                            publisher,
+                            reading_status,
+                        };
+
+                        s.input(AllBooksMsg::ApplyBulkEdit(edit));
+                        d.close();
+                    });
+                }
+            }
+            AllBooksMsg::ApplyBulkEdit(edit) => {
+                let ids: Vec<i64> = self.selected_books.iter().copied().collect();
+                if let Err(err) = self.service.catalog().bulk_update_metadata(&ids, &edit) {
+                    crate::notify::error("Bulk edit failed", &err.to_string());
+                } else {
+                    crate::notify::success(
+                        "Bulk edit complete",
+                        &format!("Updated metadata for {} books", ids.len()),
+                    );
+                    self.selected_books.clear();
+                    self.selection_mode = false;
+                    self.reload();
+                }
             }
             AllBooksMsg::PickFiles => {
                 let dialog = gtk::FileDialog::builder()
@@ -355,9 +637,6 @@ impl Component for AllBooksModel {
                 );
             }
             AllBooksMsg::FilesChosen(paths) => {
-                // Importing parses, hashes and copies each file. Doing that
-                // inline froze the window with no sign of progress, so it runs
-                // on a worker thread and reports back per file.
                 let total = paths.len();
                 self.importing = true;
                 self.status = format!("Importing 1 of {total}…");
@@ -378,7 +657,14 @@ impl Component for AllBooksModel {
             }
         }
 
-        rebuild_list(&widgets.list, &self.books, &self.query, &sender);
+        rebuild_list(
+            &widgets.list,
+            &self.books,
+            &self.query,
+            self.selection_mode,
+            &self.selected_books,
+            &sender,
+        );
         self.update_view(widgets, sender);
     }
 }
@@ -393,8 +679,6 @@ impl AllBooksModel {
         }
         let n = snap.books.len();
         self.books = snap.books;
-        // An import summary outranks the generic count: it is the result of
-        // something the user just did.
         if !self.status.starts_with("Import done") {
             self.status = status_line(n, &self.query);
         }
@@ -432,13 +716,12 @@ fn group_toggles(box_: &gtk::Box) {
     }
 }
 
-/// `query` distinguishes the two very different reasons the grid can be empty.
-/// Telling a user with 300 books that their "library is empty" because a
-/// search matched nothing is simply wrong, and it hides the fix: clear it.
 fn rebuild_list(
     list: &gtk::Box,
     books: &[Book],
     query: &str,
+    selection_mode: bool,
+    selected_books: &HashSet<i64>,
     sender: &ComponentSender<AllBooksModel>,
 ) {
     while let Some(child) = list.first_child() {
@@ -461,16 +744,32 @@ fn rebuild_list(
 
     let s = sender.clone();
     let s2 = sender.clone();
-    let grid = build_book_grid(
-        books,
-        move |id| {
-            s.output(AllBooksOut::OpenBook { book_id: id }).ok();
-        },
-        move |id| {
-            s2.output(AllBooksOut::OpenBookDialog { book_id: id }).ok();
-        },
-    );
-    list.append(&grid);
+
+    if selection_mode {
+        let sel_set = selected_books.clone();
+        let grid = build_book_grid_selectable(
+            books,
+            move |id| sel_set.contains(&id),
+            move |id| {
+                s.input(AllBooksMsg::ToggleSelectBook(id));
+            },
+            move |id| {
+                s2.input(AllBooksMsg::ToggleSelectBook(id));
+            },
+        );
+        list.append(&grid);
+    } else {
+        let grid = build_book_grid(
+            books,
+            move |id| {
+                s.output(AllBooksOut::OpenBook { book_id: id }).ok();
+            },
+            move |id| {
+                s2.output(AllBooksOut::OpenBookDialog { book_id: id }).ok();
+            },
+        );
+        list.append(&grid);
+    }
 }
 
 #[cfg(test)]

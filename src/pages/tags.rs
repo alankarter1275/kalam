@@ -12,6 +12,8 @@ use std::sync::Arc;
 // Tag cloud
 // ---------------------------------------------------------------------------
 
+use crate::widgets::in_app_dialog;
+
 #[derive(Debug)]
 pub enum TagsOut {
     OpenTag { tag: String },
@@ -20,9 +22,13 @@ pub enum TagsOut {
 #[derive(Debug)]
 pub enum TagsMsg {
     SearchChanged(String),
+    RenameTag { old_name: String, new_name: String },
+    MergeTag { source_tag: String, target_tag: String },
+    DeleteTag { tag_name: String },
 }
 
 pub struct TagsModel {
+    catalog: Arc<Catalog>,
     tags: Vec<(String, i64)>,
     query: String,
 }
@@ -84,11 +90,10 @@ impl Component for TagsModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        // A0 step 2: ask the service, and say so when the read fails instead
-        // of drawing an empty cloud.
-        let snap = LibraryService::new(catalog).tags();
+        let snap = LibraryService::new(catalog.clone()).tags();
         report_errors(&snap.errors);
         let model = TagsModel {
+            catalog,
             tags: snap.tags,
             query: String::new(),
         };
@@ -106,6 +111,36 @@ impl Component for TagsModel {
     ) {
         match msg {
             TagsMsg::SearchChanged(q) => self.query = q,
+            TagsMsg::RenameTag { old_name, new_name } => {
+                if let Err(err) = self.catalog.rename_tag(&old_name, &new_name) {
+                    crate::notify::error("Could not rename tag", &err.to_string());
+                } else {
+                    crate::notify::success("Tag renamed", &format!("Renamed #{old_name} to #{new_name}"));
+                }
+                let snap = LibraryService::new(self.catalog.clone()).tags();
+                report_errors(&snap.errors);
+                self.tags = snap.tags;
+            }
+            TagsMsg::MergeTag { source_tag, target_tag } => {
+                if let Err(err) = self.catalog.merge_tags(&source_tag, &target_tag) {
+                    crate::notify::error("Could not merge tags", &err.to_string());
+                } else {
+                    crate::notify::success("Tags merged", &format!("Merged #{source_tag} into #{target_tag}"));
+                }
+                let snap = LibraryService::new(self.catalog.clone()).tags();
+                report_errors(&snap.errors);
+                self.tags = snap.tags;
+            }
+            TagsMsg::DeleteTag { tag_name } => {
+                if let Err(err) = self.catalog.delete_tag(&tag_name) {
+                    crate::notify::error("Could not delete tag", &err.to_string());
+                } else {
+                    crate::notify::success("Tag deleted", &format!("Deleted tag #{tag_name}"));
+                }
+                let snap = LibraryService::new(self.catalog.clone()).tags();
+                report_errors(&snap.errors);
+                self.tags = snap.tags;
+            }
         }
         rebuild(&widgets.cloud, &self.visible(), &sender);
         self.update_view(widgets, sender);
@@ -147,10 +182,11 @@ fn rebuild(cloud: &gtk::FlowBox, tags: &[(String, i64)], sender: &ComponentSende
         return;
     }
 
-    // Scale the chip with usage so heavy tags stand out.
     let max = tags.iter().map(|(_, n)| *n).max().unwrap_or(1).max(1);
 
     for (name, count) in tags {
+        let container = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+
         let btn = gtk::Button::new();
         btn.add_css_class("kalam-tag-chip");
         let weight = (*count * 3) / max;
@@ -175,7 +211,183 @@ fn rebuild(cloud: &gtk::FlowBox, tags: &[(String, i64)], sender: &ComponentSende
         btn.connect_clicked(move |_| {
             s.output(TagsOut::OpenTag { tag: tag.clone() }).ok();
         });
-        cloud.insert(&btn, -1);
+        container.append(&btn);
+
+        // Action menu button
+        let menu_btn = gtk::MenuButton::new();
+        menu_btn.set_icon_name("view-more-symbolic");
+        menu_btn.add_css_class("kalam-secondary-btn");
+        menu_btn.set_tooltip_text(Some("Tag actions"));
+
+        let popover = gtk::Popover::new();
+        let pop_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        pop_box.set_margin_top(6);
+        pop_box.set_margin_bottom(6);
+        pop_box.set_margin_start(6);
+        pop_box.set_margin_end(6);
+
+        // 1. Rename
+        let rename_btn = gtk::Button::with_label("Rename");
+        rename_btn.add_css_class("kalam-secondary-btn");
+        let name_clone = name.clone();
+        let sender_clone = sender.clone();
+        let popover_clone = popover.clone();
+        rename_btn.connect_clicked(move |anchor| {
+            popover_clone.popdown();
+            let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+            let entry = gtk::Entry::new();
+            entry.set_text(&name_clone);
+            entry.set_placeholder_text(Some("New tag name"));
+            content.append(&entry);
+
+            let btn_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            btn_box.set_halign(gtk::Align::End);
+            let cancel = gtk::Button::with_label("Cancel");
+            cancel.add_css_class("kalam-secondary-btn");
+            let save = gtk::Button::with_label("Rename");
+            save.add_css_class("kalam-primary-btn");
+            btn_box.append(&cancel);
+            btn_box.append(&save);
+            content.append(&btn_box);
+
+            let save_btn = save.clone();
+            entry.connect_activate(move |_| {
+                save_btn.emit_clicked();
+            });
+
+            let dialog = in_app_dialog::present(
+                anchor,
+                &format!("Rename tag “{name_clone}”"),
+                in_app_dialog::DialogExit::UnsavedInput,
+                &content,
+            );
+
+            if let Some(dlg) = dialog {
+                let d = dlg.clone();
+                cancel.connect_clicked(move |_| d.close());
+                let d = dlg.clone();
+                let old = name_clone.clone();
+                let s = sender_clone.clone();
+                save.connect_clicked(move |_| {
+                    let new_name = entry.text().trim().to_string();
+                    if !new_name.is_empty() && new_name != old {
+                        s.input(TagsMsg::RenameTag { old_name: old.clone(), new_name });
+                    }
+                    d.close();
+                });
+            }
+        });
+        pop_box.append(&rename_btn);
+
+        // 2. Merge
+        let merge_btn = gtk::Button::with_label("Merge into…");
+        merge_btn.add_css_class("kalam-secondary-btn");
+        let name_clone = name.clone();
+        let sender_clone = sender.clone();
+        let popover_clone = popover.clone();
+        merge_btn.connect_clicked(move |anchor| {
+            popover_clone.popdown();
+            let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+            let label = gtk::Label::new(Some(&format!("Move all books from “{name_clone}” into another tag:")));
+            label.set_halign(gtk::Align::Start);
+            content.append(&label);
+
+            let entry = gtk::Entry::new();
+            entry.set_placeholder_text(Some("Target tag name"));
+            content.append(&entry);
+
+            let btn_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            btn_box.set_halign(gtk::Align::End);
+            let cancel = gtk::Button::with_label("Cancel");
+            cancel.add_css_class("kalam-secondary-btn");
+            let merge = gtk::Button::with_label("Merge Tags");
+            merge.add_css_class("kalam-primary-btn");
+            btn_box.append(&cancel);
+            btn_box.append(&merge);
+            content.append(&btn_box);
+
+            let merge_btn = merge.clone();
+            entry.connect_activate(move |_| {
+                merge_btn.emit_clicked();
+            });
+
+            let dialog = in_app_dialog::present(
+                anchor,
+                &format!("Merge tag “{name_clone}”"),
+                in_app_dialog::DialogExit::UnsavedInput,
+                &content,
+            );
+
+            if let Some(dlg) = dialog {
+                let d = dlg.clone();
+                cancel.connect_clicked(move |_| d.close());
+                let d = dlg.clone();
+                let src = name_clone.clone();
+                let s = sender_clone.clone();
+                merge.connect_clicked(move |_| {
+                    let target_tag = entry.text().trim().to_string();
+                    if !target_tag.is_empty() && target_tag != src {
+                        s.input(TagsMsg::MergeTag { source_tag: src.clone(), target_tag });
+                    }
+                    d.close();
+                });
+            }
+        });
+        pop_box.append(&merge_btn);
+
+        // 3. Delete
+        let delete_btn = gtk::Button::with_label("Delete Tag");
+        delete_btn.add_css_class("kalam-secondary-btn");
+        delete_btn.add_css_class("destructive-action");
+        let name_clone = name.clone();
+        let sender_clone = sender.clone();
+        let popover_clone = popover.clone();
+        delete_btn.connect_clicked(move |anchor| {
+            popover_clone.popdown();
+            let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+            let label = gtk::Label::new(Some(&format!(
+                "Are you sure you want to delete tag “{name_clone}”? It will be removed from all books."
+            )));
+            label.set_wrap(true);
+            label.set_halign(gtk::Align::Start);
+            content.append(&label);
+
+            let btn_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            btn_box.set_halign(gtk::Align::End);
+            let cancel = gtk::Button::with_label("Cancel");
+            cancel.add_css_class("kalam-secondary-btn");
+            let del = gtk::Button::with_label("Delete");
+            del.add_css_class("destructive-action");
+            btn_box.append(&cancel);
+            btn_box.append(&del);
+            content.append(&btn_box);
+
+            let dialog = in_app_dialog::present(
+                anchor,
+                &format!("Delete tag “{name_clone}”?"),
+                in_app_dialog::DialogExit::OwnButtons,
+                &content,
+            );
+
+            if let Some(dlg) = dialog {
+                let d = dlg.clone();
+                cancel.connect_clicked(move |_| d.close());
+                let d = dlg.clone();
+                let tag_name = name_clone.clone();
+                let s = sender_clone.clone();
+                del.connect_clicked(move |_| {
+                    s.input(TagsMsg::DeleteTag { tag_name: tag_name.clone() });
+                    d.close();
+                });
+            }
+        });
+        pop_box.append(&delete_btn);
+
+        popover.set_child(Some(&pop_box));
+        menu_btn.set_popover(Some(&popover));
+        container.append(&menu_btn);
+
+        cloud.insert(&container, -1);
     }
 }
 

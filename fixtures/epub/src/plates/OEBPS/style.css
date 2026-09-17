@@ -1,0 +1,10 @@
+/* Penguin Random House's shape for a picture: an inline-block wrapper
+   sized as a percentage of the measure, the image filling it. */
+.squeeze {
+  display: inline-block;
+  max-width: 100%;
+  text-indent: 0;
+}
+.squeeze50 { width: 50%; }
+.center { text-align: center; }
+img { max-width: 100%; }

@@ -22,6 +22,7 @@ mod models;
 mod notify;
 mod pages;
 mod paths;
+mod pdf;
 mod perf;
 mod preload;
 mod service;

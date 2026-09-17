@@ -17,6 +17,7 @@ use crate::pages::{downloads::DownloadsModel,
     library::{LibraryOut, LibraryPageModel},
     lookup_history::LookupHistoryModel,
     placeholder::PlaceholderPageModel,
+    pdf_reader::{PdfReaderInit, PdfReaderModel, PdfReaderOut},
     reader::{ReaderModel, ReaderOut},
     reading_list::{ReadingListModel, ReadingListOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
@@ -88,6 +89,7 @@ enum PageSlot {
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
+    PdfReader(Controller<PdfReaderModel>),
     Comics(Controller<ComicsModel>),
     ComicsReader(Controller<ComicsReaderModel>),
     RemoteBrowse(Controller<BrowseModel>),
@@ -117,6 +119,7 @@ impl PageSlot {
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
+            PageSlot::PdfReader(c) => c.widget().clone().upcast(),
             PageSlot::Comics(c) => c.widget().clone().upcast(),
             PageSlot::ComicsReader(c) => c.widget().clone().upcast(),
             PageSlot::RemoteBrowse(c) => c.widget().clone().upcast(),
@@ -188,6 +191,7 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
         | Route::Reader { .. }
+        | Route::PdfReader { .. }
         | Route::ComicsReader { .. }
         | Route::RemoteDetail { .. }
         | Route::RemoteReader { .. }
@@ -557,6 +561,19 @@ impl AppModel {
                         }
                     });
                 PageSlot::Reader(ctrl)
+            }
+
+            Route::PdfReader { book_id } => {
+                let init = PdfReaderInit {
+                    book_id: *book_id,
+                    catalog: catalog.clone(),
+                };
+                let ctrl = PdfReaderModel::builder()
+                    .launch(init)
+                    .forward(sender.input_sender(), |out| match out {
+                        PdfReaderOut::Close => AppMsg::Back,
+                    });
+                PageSlot::PdfReader(ctrl)
             }
 
             Route::RemoteReader { source_id, chapter_id, title } => {
@@ -1437,6 +1454,8 @@ impl Component for AppModel {
                 let route = if let Ok(Some(book)) = self.catalog.get_book(book_id) {
                     if matches!(book.format, crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr) {
                         Route::ComicsReader { book_id }
+                    } else if matches!(book.format, crate::models::BookFormat::Pdf) {
+                        Route::PdfReader { book_id }
                     } else {
                         Route::Reader { book_id }
                     }

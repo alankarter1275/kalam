@@ -91,6 +91,10 @@ pub enum Route {
     ComicsReader {
         book_id: i64,
     },
+    /// Immersive PDF reader with smart crop and text reflow.
+    PdfReader {
+        book_id: i64,
+    },
     RemoteSearch {
         source_id: String,
         query: String,
@@ -104,7 +108,7 @@ impl Route {
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
-            Route::BookPage { .. } | Route::Reader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
+            Route::BookPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {
                 if source_id == "royalroad" {
@@ -117,7 +121,7 @@ impl Route {
     }
 
     pub fn is_reader(&self) -> bool {
-        matches!(self, Route::Reader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. })
+        matches!(self, Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. })
     }
 }
 

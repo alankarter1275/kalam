@@ -33,7 +33,7 @@ use crate::db::Catalog;
 use crate::models::Book;
 use crate::pages::metadata_editor::open_metadata_editor;
 use crate::service::LibraryService;
-use crate::widgets::book_row::{cover_widget, invalidate_cover_cache};
+use crate::widgets::book_row::{cover_widget_deferred, invalidate_cover_cache};
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -869,6 +869,10 @@ fn fill(
         sender,
     ));
 
+    if let Some(path) = book.cover_path.as_deref() {
+        crate::preload::warm_covers(vec![path.to_path_buf()], COVER_W, COVER_H);
+    }
+
     let progress_fraction = (book.progress as f64 / 100.0).clamp(0.0, 1.0);
     widgets.progress_bar.set_fraction(progress_fraction);
     widgets
@@ -947,7 +951,7 @@ fn build_cover_display(
     edge.set_margin_top(5);
     shell.set_child(Some(&edge));
 
-    let cover = cover_widget(path, COVER_W, COVER_H);
+    let cover = cover_widget_deferred(path, COVER_W, COVER_H);
     cover.add_css_class("kalam-float-cover");
     cover.set_halign(gtk::Align::Start);
     cover.set_valign(gtk::Align::Start);

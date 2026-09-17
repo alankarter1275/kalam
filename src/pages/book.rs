@@ -14,7 +14,7 @@ use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
 use crate::service::LibraryService;
 use crate::widgets::author_links::replace_author_links;
-use crate::widgets::book_row::{cover_widget, invalidate_cover_cache};
+use crate::widgets::book_row::{cover_widget_deferred, invalidate_cover_cache};
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -888,8 +888,12 @@ fn fill_cover(host: &gtk::Box, book: Option<&Book>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let cover = cover_widget(book.and_then(|b| b.cover_path.as_deref()), COVER_W, COVER_H);
+    let path = book.and_then(|b| b.cover_path.as_deref());
+    let cover = cover_widget_deferred(path, COVER_W, COVER_H);
     host.append(&cover);
+    if let Some(path) = path {
+        crate::preload::warm_covers(vec![path.to_path_buf()], COVER_W, COVER_H);
+    }
 }
 
 /// A `KEY` over `value` line, used by the hero meta block and the file card.
@@ -1431,10 +1435,14 @@ fn fill_author_card(
         none.add_css_class("kalam-muted");
         books_host.append(&none);
     } else {
+        let other_covers: Vec<_> = others.iter().filter_map(|b| b.cover_path.clone()).collect();
+        if !other_covers.is_empty() {
+            crate::preload::warm_covers(other_covers, 36, 52);
+        }
         for b in others {
             let thumb = gtk::Box::new(gtk::Orientation::Vertical, 4);
             thumb.set_valign(gtk::Align::Start);
-            let cover = cover_widget(b.cover_path.as_deref(), 36, 52);
+            let cover = cover_widget_deferred(b.cover_path.as_deref(), 36, 52);
             cover.add_css_class("kalam-author-thumb-cover");
             thumb.append(&cover);
             let title = gtk::Label::new(Some(&b.title));

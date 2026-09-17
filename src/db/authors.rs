@@ -116,27 +116,32 @@ impl Catalog {
         let sort_name = crate::author::sort_author_name(&display_name);
 
         let conn = self.conn();
-        let like_display = format!("%{}%", escape_like(&display_name));
-        let like_raw = format!("%{}%", escape_like(author_name.trim()));
+        let prefix_display = format!("{}%", escape_like(&display_name));
+        let prefix_sort = format!("{}%", escape_like(&sort_name));
+        let prefix_raw = format!("{}%", escape_like(author_name.trim()));
+        let contains_space = format!("% {}%", escape_like(&display_name));
 
         let sql = format!(
             "SELECT {BOOK_COLUMNS} FROM books
-             WHERE books.authors = ?1 COLLATE NOCASE
-                OR books.authors = ?2 COLLATE NOCASE
-                OR books.authors = ?3 COLLATE NOCASE
-                OR books.authors LIKE ?4 ESCAPE '\\'
-                OR books.authors LIKE ?5 ESCAPE '\\'
+             WHERE books.id IN (
+                 SELECT id FROM books WHERE books.authors LIKE ?1 ESCAPE '\\'
+                 UNION
+                 SELECT id FROM books WHERE books.authors LIKE ?2 ESCAPE '\\'
+                 UNION
+                 SELECT id FROM books WHERE books.authors LIKE ?3 ESCAPE '\\'
+                 UNION
+                 SELECT id FROM books WHERE books.authors LIKE ?4 ESCAPE '\\'
+             )
              ORDER BY sort_title COLLATE NOCASE ASC"
         );
         let mut stmt = conn.prepare_cached(&sql)?;
         let candidate_rows = stmt
             .query_map(
                 params![
-                    display_name,
-                    sort_name,
-                    author_name.trim(),
-                    like_display,
-                    like_raw,
+                    prefix_display,
+                    prefix_sort,
+                    prefix_raw,
+                    contains_space,
                 ],
                 row_to_book,
             )?
@@ -297,5 +302,34 @@ mod tests {
 
         let books_sort = catalog.books_for_author("Martin, George R. R.").unwrap();
         assert_eq!(books_sort.len(), 2);
+    }
+
+    #[test]
+    fn books_for_author_uses_minimal_queries() {
+        use crate::models::BookFormat;
+        let catalog = Catalog::open_in_memory().unwrap();
+        for i in 0..20 {
+            catalog
+                .insert_book(
+                    &format!("uuid-{i}"),
+                    &format!("Book {i}"),
+                    "Brandon Sanderson",
+                    None,
+                    "",
+                    BookFormat::Epub,
+                    &format!("book{i}.epub"),
+                    &format!("hash-{i}"),
+                    None,
+                    &[],
+                )
+                .unwrap();
+        }
+
+        let query_count = catalog.count_queries(|| {
+            let books = catalog.books_for_author("Brandon Sanderson").unwrap();
+            assert_eq!(books.len(), 20);
+        });
+
+        assert!(query_count <= 5, "Expected <= 5 queries, got {query_count}");
     }
 }

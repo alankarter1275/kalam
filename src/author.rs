@@ -274,7 +274,7 @@ pub fn fetch_and_cache_author(
         }
     };
 
-    let mut profile = match fetch_author_profile(&doc) {
+    let mut profile = match fetch_author_profile(catalog, &doc, existing.as_ref()) {
         Ok(prof) => prof,
         Err(err) => {
             if let Some(existing_prof) = existing {
@@ -469,7 +469,11 @@ fn pick_best_author(
     })
 }
 
-fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> {
+fn fetch_author_profile(
+    catalog: &Catalog,
+    doc: &AuthorSearchDoc,
+    existing: Option<&AuthorProfile>,
+) -> Result<AuthorProfile, String> {
     let author_key = author_path(&doc.key);
     let body = metadata::agent()
         .get(&format!("https://openlibrary.org{author_key}.json"))
@@ -501,36 +505,68 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
         Some(OpenLibraryText::Object { value }) => value,
         None => String::new(),
     };
+
+    let existing_works_by_key: HashMap<String, AuthorWork> = existing
+        .map(|p| {
+            p.works
+                .iter()
+                .filter(|w| !w.work_key.trim().is_empty())
+                .map(|w| (w.work_key.trim().to_string(), w.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let existing_works_by_title: HashMap<String, AuthorWork> = existing
+        .map(|p| {
+            p.works
+                .iter()
+                .filter(|w| !w.title.trim().is_empty())
+                .map(|w| (normalize_title(&w.title), w.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+
     let mut works = works_parsed
         .entries
         .into_iter()
         .filter(|entry| !entry.title.trim().is_empty())
-        .map(|entry| AuthorWork {
-            title: entry.title.trim().to_string(),
-            first_publish_year: entry
-                .first_publish_year
-                .or_else(|| extract_year(&entry.first_publish_date)),
-            subjects: entry
-                .subjects
-                .into_iter()
-                .filter(|subject| subject.len() <= 32)
-                .take(4)
-                .collect(),
-            cover_id: entry.covers.into_iter().next(),
-            cover_file: None,
-            work_key: entry.key,
-            series_key: String::new(),
-            series_name: String::new(),
-            series_position: String::new(),
-            rating_average: None,
-            rating_count: 0,
+        .map(|entry| {
+            let key = entry.key.trim();
+            let title = entry.title.trim();
+            let prev = existing_works_by_key
+                .get(key)
+                .cloned()
+                .or_else(|| existing_works_by_title.get(&normalize_title(title)).cloned());
+
+            AuthorWork {
+                title: title.to_string(),
+                first_publish_year: entry
+                    .first_publish_year
+                    .or_else(|| extract_year(&entry.first_publish_date))
+                    .or_else(|| prev.as_ref().and_then(|p| p.first_publish_year)),
+                subjects: entry
+                    .subjects
+                    .into_iter()
+                    .filter(|subject| subject.len() <= 32)
+                    .take(4)
+                    .collect(),
+                cover_id: entry.covers.into_iter().next().or_else(|| prev.as_ref().and_then(|p| p.cover_id)),
+                cover_file: prev.as_ref().and_then(|p| p.cover_file.clone()),
+                work_key: entry.key,
+                series_key: prev.as_ref().map(|p| p.series_key.clone()).unwrap_or_default(),
+                series_name: prev.as_ref().map(|p| p.series_name.clone()).unwrap_or_default(),
+                series_position: prev.as_ref().map(|p| p.series_position.clone()).unwrap_or_default(),
+                rating_average: prev.as_ref().and_then(|p| p.rating_average),
+                rating_count: prev.as_ref().map(|p| p.rating_count).unwrap_or(0),
+            }
         })
         .collect::<Vec<_>>();
+
     let mut series_names = HashMap::new();
     let mut remote_budget = 5usize;
     let mut rate_limited = false;
     for work in &mut works {
         enrich_author_work(
+            catalog,
             work,
             &mut series_names,
             &mut remote_budget,
@@ -575,19 +611,29 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
 }
 
 fn enrich_author_work(
+    catalog: &Catalog,
     work: &mut AuthorWork,
     series_names: &mut HashMap<String, String>,
     remote_budget: &mut usize,
     rate_limited: &mut bool,
 ) {
     if let Some(cover_id) = work.cover_id {
-        if let Ok(photo_file) = fetch_work_cover(&work.work_key, cover_id) {
-            work.cover_file = photo_file;
+        if work.cover_file.is_none() {
+            if let Ok(photo_file) = fetch_work_cover(&work.work_key, cover_id, rate_limited) {
+                work.cover_file = photo_file;
+            }
         }
     }
 
     if work.series_name.trim().is_empty() {
         if let Some(name) = series_name_from_subjects(&work.subjects) {
+            work.series_name = name;
+        }
+    }
+
+    if work.series_name.trim().is_empty() && !work.series_key.trim().is_empty() {
+        let name = load_series_name(catalog, series_names, &work.series_key, rate_limited);
+        if !name.is_empty() {
             work.series_name = name;
         }
     }
@@ -602,7 +648,7 @@ fn enrich_author_work(
                         if !series_key.is_empty() {
                             work.series_key = series_key.clone();
                             work.series_position = collapse_ws(&series.position);
-                            let name = load_series_name(series_names, &series_key);
+                            let name = load_series_name(catalog, series_names, &series_key, rate_limited);
                             if !name.is_empty() {
                                 work.series_name = name;
                             }
@@ -617,7 +663,7 @@ fn enrich_author_work(
             }
         }
 
-        if !*rate_limited {
+        if !*rate_limited && work.rating_average.is_none() {
             match fetch_work_rating(&work.work_key) {
                 Ok((average, count)) => {
                     if count > 0 {
@@ -662,8 +708,12 @@ fn fetch_work_rating(work_key: &str) -> Result<(f32, i64), String> {
     Ok((parsed.summary.average, parsed.summary.count))
 }
 
-fn fetch_work_cover(work_key: &str, cover_id: i64) -> Result<Option<String>, String> {
-    if cover_id <= 0 {
+fn fetch_work_cover(
+    work_key: &str,
+    cover_id: i64,
+    rate_limited: &mut bool,
+) -> Result<Option<String>, String> {
+    if cover_id <= 0 || *rate_limited {
         return Ok(None);
     }
     let stem = work_key.rsplit('/').next().unwrap_or("work").trim();
@@ -676,19 +726,44 @@ fn fetch_work_cover(work_key: &str, cover_id: i64) -> Result<Option<String>, Str
     let bytes = match metadata::fetch_cover(&CoverRef::OpenLibraryId(cover_id)) {
         Ok(bytes) if !bytes.is_empty() => bytes,
         Ok(_) => return Ok(None),
-        Err(_) => return Ok(None),
+        Err(err) => {
+            let err_str = err.to_string();
+            if err_str.contains("429") || err_str.contains("Limited") || err_str.contains("Too Many Requests") {
+                *rate_limited = true;
+            }
+            return Ok(None);
+        }
     };
     fs::create_dir_all(authors_dir()).map_err(|e| e.to_string())?;
     fs::write(path, bytes).map_err(|e| e.to_string())?;
     Ok(Some(file_name))
 }
 
-fn load_series_name(cache: &mut HashMap<String, String>, series_key: &str) -> String {
+fn load_series_name(
+    catalog: &Catalog,
+    cache: &mut HashMap<String, String>,
+    series_key: &str,
+    rate_limited: &mut bool,
+) -> String {
     if let Some(name) = cache.get(series_key) {
         return name.clone();
     }
 
-    let name = metadata::agent()
+    if let Ok(Some(entry)) = catalog.get_cached_series(series_key) {
+        if let Some(first_work) = entry.works.first() {
+            if !first_work.title.trim().is_empty() {
+                let name = collapse_ws(&first_work.title);
+                cache.insert(series_key.to_string(), name.clone());
+                return name;
+            }
+        }
+    }
+
+    if *rate_limited {
+        return String::new();
+    }
+
+    let result = metadata::agent()
         .get(&format!(
             "https://openlibrary.org{}.json",
             series_path(series_key)
@@ -696,11 +771,21 @@ fn load_series_name(cache: &mut HashMap<String, String>, series_key: &str) -> St
         .call()
         .map_err(|e| e.to_string())
         .and_then(|resp| resp.into_string().map_err(|e| e.to_string()))
-        .and_then(|body| serde_json::from_str::<SeriesResponse>(&body).map_err(|e| e.to_string()))
-        .map(|series| collapse_ws(&series.name))
-        .unwrap_or_default();
+        .and_then(|body| serde_json::from_str::<SeriesResponse>(&body).map_err(|e| e.to_string()));
 
-    cache.insert(series_key.to_string(), name.clone());
+    let name = match result {
+        Ok(series) => collapse_ws(&series.name),
+        Err(err) => {
+            if err.contains("429") || err.contains("Limited") || err.contains("Too Many Requests") {
+                *rate_limited = true;
+            }
+            String::new()
+        }
+    };
+
+    if !name.is_empty() {
+        cache.insert(series_key.to_string(), name.clone());
+    }
     name
 }
 

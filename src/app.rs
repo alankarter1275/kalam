@@ -588,21 +588,48 @@ impl AppModel {
 
             Route::ComicsReader { book_id } => {
                 let id = *book_id;
-                let book = catalog.get_book(id).unwrap().unwrap();
-                let provider = std::sync::Arc::new(
-                    crate::pages::comics_reader::providers::LocalProvider::new(book.file_path.clone()).unwrap()
-                );
-                let init = crate::pages::comics_reader::types::ComicsReaderInit {
-                    title: book.title.clone(),
-                    provider,
-                };
-                let ctrl = ComicsReaderModel::builder()
-                    .launch(init)
-                    .forward(sender.input_sender(), |out| match out {
-                        ComicsReaderOut::Close => AppMsg::Back,
-                    });
-                PageSlot::ComicsReader(ctrl)
+                // Use proper error handling — if the book row is missing or its
+                // file has moved/been deleted, log and go back instead of aborting
+                // the whole GTK process with a double-unwrap panic.
+                let book_result = catalog.get_book(id);
+                match book_result {
+                    Ok(Some(book)) => {
+                        match crate::pages::comics_reader::providers::LocalProvider::new(book.file_path.clone()) {
+                            Ok(provider) => {
+                                let init = crate::pages::comics_reader::types::ComicsReaderInit {
+                                    title: book.title.clone(),
+                                    provider: std::sync::Arc::new(provider),
+                                };
+                                let ctrl = ComicsReaderModel::builder()
+                                    .launch(init)
+                                    .forward(sender.input_sender(), |out| match out {
+                                        ComicsReaderOut::Close => AppMsg::Back,
+                                    });
+                                PageSlot::ComicsReader(ctrl)
+                            }
+                            Err(err) => {
+                                eprintln!("kalam: failed to open comic file for book {id}: {err}");
+                                sender.input(AppMsg::Back);
+                                let ctrl = PlaceholderPageModel::builder().launch(NavItem::Comics).detach();
+                                PageSlot::Placeholder(ctrl)
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        eprintln!("kalam: comic book {id} not found in catalog");
+                        sender.input(AppMsg::Back);
+                        let ctrl = PlaceholderPageModel::builder().launch(NavItem::Comics).detach();
+                        PageSlot::Placeholder(ctrl)
+                    }
+                    Err(err) => {
+                        eprintln!("kalam: database error looking up comic book {id}: {err}");
+                        sender.input(AppMsg::Back);
+                        let ctrl = PlaceholderPageModel::builder().launch(NavItem::Comics).detach();
+                        PageSlot::Placeholder(ctrl)
+                    }
+                }
             }
+
             Route::Module(NavItem::Comics) => {
                 let ctrl = ComicsModel::builder()
                     .launch(catalog.clone())

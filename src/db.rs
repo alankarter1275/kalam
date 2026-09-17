@@ -987,7 +987,7 @@ impl Catalog {
     }
 
     pub fn add_remote_book(&self, book: &crate::sources::RemoteBookDetails, source_id: &str) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "INSERT OR REPLACE INTO remote_books (id, source_id, remote_id, title, author, description, cover_url, added_at, status)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), ?8)"
@@ -1009,56 +1009,86 @@ impl Catalog {
     }
 
     pub fn list_remote_books(&self, source_id_filter: Option<&str>) -> anyhow::Result<Vec<crate::sources::RemoteBookDetails>> {
-        let conn = self.conn.lock().unwrap();
-        let mut sql = "SELECT source_id, remote_id, title, author, description, cover_url, status FROM remote_books".to_string();
-        if let Some(src) = source_id_filter {
-            sql.push_str(&format!(" WHERE source_id = '{src}'"));
-        }
-        sql.push_str(" ORDER BY added_at DESC");
-        
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| {
-            Ok(crate::sources::RemoteBookDetails {
-                remote_id: row.get(1)?,
-                title: row.get(2)?,
-                author: row.get(3)?,
-                description: row.get(4)?,
-                cover_url: row.get(5)?,
-                status: row.get(6)?,
-                tags: Vec::new(),
-            })
-        })?;
-        
+        let conn = self.conn();
+
+        // Two separate queries with proper parameterized placeholders — never
+        // format user-supplied strings into SQL. The `source_id_filter` path
+        // used to do `format!("WHERE source_id = '{src}'")`; that is gone.
+        let sql_filtered   = "SELECT source_id, remote_id, title, author, description, cover_url, status \
+                               FROM remote_books WHERE source_id = ?1 ORDER BY added_at DESC";
+        let sql_unfiltered = "SELECT source_id, remote_id, title, author, description, cover_url, status \
+                               FROM remote_books ORDER BY added_at DESC";
+
         let mut res = Vec::new();
-        for r in rows {
-            res.push(r?);
+
+        match source_id_filter {
+            Some(src) => {
+                let mut stmt = conn.prepare(sql_filtered)?;
+                let rows = stmt.query_map(rusqlite::params![src], |row| {
+                    Ok(crate::sources::RemoteBookDetails {
+                        remote_id: row.get(1)?,
+                        title: row.get(2)?,
+                        author: row.get(3)?,
+                        description: row.get(4)?,
+                        cover_url: row.get(5)?,
+                        status: row.get(6)?,
+                        tags: Vec::new(),
+                    })
+                })?;
+                for r in rows { res.push(r?); }
+            }
+            None => {
+                let mut stmt = conn.prepare(sql_unfiltered)?;
+                let rows = stmt.query_map([], |row| {
+                    Ok(crate::sources::RemoteBookDetails {
+                        remote_id: row.get(1)?,
+                        title: row.get(2)?,
+                        author: row.get(3)?,
+                        description: row.get(4)?,
+                        cover_url: row.get(5)?,
+                        status: row.get(6)?,
+                        tags: Vec::new(),
+                    })
+                })?;
+                for r in rows { res.push(r?); }
+            }
         }
+
         Ok(res)
     }
 
+
     pub fn add_remote_chapters(&self, book_remote_id: &str, source_id: &str, chapters: &[crate::sources::RemoteChapter]) -> anyhow::Result<()> {
         let book_id_str = format!("{}-{}", source_id, book_remote_id);
-        
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "INSERT OR REPLACE INTO remote_chapters (id, book_id, chapter_id, title, number, volume, url, fetched_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))"
-        )?;
 
-        for ch in chapters {
-            let ch_id_str = format!("{}-{}", book_id_str, ch.chapter_id);
-            stmt.execute(rusqlite::params![
-                ch_id_str,
-                book_id_str,
-                ch.chapter_id,
-                ch.title,
-                ch.number,
-                ch.volume,
-                ch.url,
-            ])?;
+        // Use the poisoned-lock-safe helper, and batch all inserts in one
+        // transaction so they land in a single disk write instead of one
+        // fsync per chapter.
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR REPLACE INTO remote_chapters (id, book_id, chapter_id, title, number, volume, url, fetched_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))"
+            )?;
+
+            for ch in chapters {
+                let ch_id_str = format!("{}-{}", book_id_str, ch.chapter_id);
+                stmt.execute(rusqlite::params![
+                    ch_id_str,
+                    book_id_str,
+                    ch.chapter_id,
+                    ch.title,
+                    ch.number,
+                    ch.volume,
+                    ch.url,
+                ])?;
+            }
         }
+        tx.commit()?;
         Ok(())
     }
+
 
     pub fn get_book(&self, id: i64) -> Result<Option<Book>> {
         let conn = self.conn();

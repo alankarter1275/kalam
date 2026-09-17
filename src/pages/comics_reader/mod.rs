@@ -49,18 +49,24 @@ impl ComicsReaderModel {
         model
     }
 
-    /// Ask the provider for images in the window `curr ± 2`.
-    /// Note: this now returns a list of indices we need to fetch via a task.
+    /// Ask the provider for images in the window `curr ± 2` (or wider for webtoon/double).
     fn get_missing_pages(&mut self) -> Vec<usize> {
         let total = self.provider.page_count();
         if total == 0 {
             return Vec::new();
         }
         let curr = self.current_page;
-        let min_keep = curr.saturating_sub(2);
-        let max_keep = (curr + 2).min(total.saturating_sub(1));
+        let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
 
-        // Retain only textures inside [min_keep, max_keep]
+        let (min_keep, max_keep) = if is_webtoon {
+            (curr.saturating_sub(4), (curr + 6).min(total.saturating_sub(1)))
+        } else if self.page_style == PageStyle::Double {
+            (curr.saturating_sub(2), (curr + 3).min(total.saturating_sub(1)))
+        } else {
+            (curr.saturating_sub(2), (curr + 2).min(total.saturating_sub(1)))
+        };
+
+        // Retain textures inside active preloading range to bound memory
         self.textures.retain(|&idx, _| idx >= min_keep && idx <= max_keep);
 
         let mut missing = Vec::new();
@@ -79,8 +85,6 @@ impl ComicsReaderModel {
         }
         let clamped = idx.clamp(0, total - 1);
         self.current_page = clamped;
-        
-        // Note: DB progress saving will need to be re-added via the new abstraction later
     }
 
     pub fn trigger_loads(&mut self, sender: &relm4::ComponentSender<Self>) {
@@ -88,43 +92,180 @@ impl ComicsReaderModel {
         let provider = self.provider.clone();
 
         for idx in missing {
-            // Insert a dummy texture or mark as loading if we wanted to be strict.
-            // For now, just spawn the task if it's not already in textures.
-            // If it's already fetching, it might fetch twice if we change pages fast.
             let s = sender.clone();
             let prov = provider.clone();
             crate::tasks::spawn(
-                move |_| {
-                    prov.fetch_page(idx).ok()
+                move |_| -> Option<gdk::Texture> {
+                    let b = prov.fetch_page(idx).ok()?;
+                    if let Ok(img) = image::load_from_memory(&b) {
+                        let rgba = img.to_rgba8();
+                        let width = rgba.width() as i32;
+                        let height = rgba.height() as i32;
+                        let stride = (width * 4) as usize;
+                        let gbytes = glib::Bytes::from(&rgba.into_raw());
+                        let mem_tex = gdk::MemoryTexture::new(
+                            width,
+                            height,
+                            gdk::MemoryFormat::R8g8b8a8,
+                            &gbytes,
+                            stride,
+                        );
+                        Some(mem_tex.upcast::<gdk::Texture>())
+                    } else if let Ok(tex) = gdk::Texture::from_bytes(&glib::Bytes::from(&b)) {
+                        Some(tex)
+                    } else {
+                        None
+                    }
                 },
                 |_| {},
-                move |bytes| {
-                    if let Some(b) = bytes {
-                        let gbytes = glib::Bytes::from(&b);
-                        if let Ok(tex) = gdk::Texture::from_bytes(&gbytes) {
-                            s.input(types::ComicsReaderMsg::PageLoaded(idx, Some(tex)));
-                        } else {
-                            s.input(types::ComicsReaderMsg::PageLoaded(idx, None));
-                        }
-                    } else {
-                        s.input(types::ComicsReaderMsg::PageLoaded(idx, None));
-                    }
-                }
+                move |tex_opt| {
+                    s.input(types::ComicsReaderMsg::PageLoaded(idx, tex_opt));
+                },
             );
         }
     }
 
     pub fn next_page(&mut self) {
-        if self.current_page + 1 < self.provider.page_count() {
-            self.set_page(self.current_page + 1);
+        let step = if self.page_style == PageStyle::Double { 2 } else { 1 };
+        let total = self.provider.page_count();
+        if total > 0 && self.current_page + step < total {
+            self.set_page(self.current_page + step);
+        } else if total > 0 {
+            self.set_page(total - 1);
         }
     }
 
     pub fn prev_page(&mut self) {
-        if self.current_page > 0 {
-            self.set_page(self.current_page - 1);
-        }
+        let step = if self.page_style == PageStyle::Double { 2 } else { 1 };
+        self.set_page(self.current_page.saturating_sub(step));
     }
+}
+
+fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
+    let fit_content_fit = match model.fit_mode {
+        FitMode::Width => gtk::ContentFit::Fill,
+        FitMode::Height => gtk::ContentFit::Contain,
+        FitMode::Screen => gtk::ContentFit::Cover,
+        FitMode::Original => gtk::ContentFit::ScaleDown,
+    };
+
+    let is_webtoon = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
+
+    if is_webtoon {
+        let vbox = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        vbox.set_halign(gtk::Align::Center);
+        vbox.set_valign(gtk::Align::Start);
+        vbox.set_hexpand(true);
+        vbox.add_css_class("kalam-webtoon-container");
+
+        let total = model.provider.page_count();
+        for idx in 0..total {
+            let item_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            item_box.set_halign(gtk::Align::Center);
+            item_box.set_valign(gtk::Align::Start);
+            item_box.set_hexpand(true);
+            item_box.add_css_class("kalam-webtoon-page-item");
+
+            if let Some(texture) = model.textures.get(&idx) {
+                let pic = gtk::Picture::for_paintable(texture);
+                pic.set_can_shrink(true);
+                pic.set_content_fit(fit_content_fit);
+                pic.set_halign(gtk::Align::Center);
+                item_box.append(&pic);
+            } else {
+                let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                placeholder.set_size_request(400, 600);
+                placeholder.set_halign(gtk::Align::Center);
+                placeholder.set_valign(gtk::Align::Center);
+
+                let spinner = gtk::Spinner::new();
+                spinner.set_spinning(true);
+                spinner.set_size_request(32, 32);
+                spinner.set_halign(gtk::Align::Center);
+                spinner.set_valign(gtk::Align::Center);
+                placeholder.append(&spinner);
+
+                item_box.append(&placeholder);
+            }
+            vbox.append(&item_box);
+        }
+        return vbox.upcast();
+    }
+
+    if model.page_style == PageStyle::Double {
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        hbox.set_halign(gtk::Align::Center);
+        hbox.set_valign(gtk::Align::Center);
+        hbox.set_hexpand(true);
+        hbox.set_vexpand(true);
+
+        let page_a = model.current_page;
+        let page_b = if model.current_page + 1 < model.provider.page_count() {
+            Some(model.current_page + 1)
+        } else {
+            None
+        };
+
+        // For RTL (manga): Page A is on the RIGHT, Page B is on the LEFT.
+        // For LTR: Page A is on the LEFT, Page B is on the RIGHT.
+        let (left_idx, right_idx) = match model.direction {
+            ReadingDirection::Rtl => (page_b, Some(page_a)),
+            _ => (Some(page_a), page_b),
+        };
+
+        let create_page_widget = |opt_idx: Option<usize>| -> gtk::Widget {
+            let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            container.set_halign(gtk::Align::Center);
+            container.set_valign(gtk::Align::Center);
+            container.set_hexpand(true);
+            container.set_vexpand(true);
+
+            if let Some(idx) = opt_idx {
+                if let Some(texture) = model.textures.get(&idx) {
+                    let pic = gtk::Picture::for_paintable(texture);
+                    pic.set_can_shrink(true);
+                    pic.set_content_fit(fit_content_fit);
+                    pic.set_halign(gtk::Align::Center);
+                    pic.set_valign(gtk::Align::Center);
+                    container.append(&pic);
+                } else {
+                    let spinner = gtk::Spinner::new();
+                    spinner.set_spinning(true);
+                    spinner.set_size_request(48, 48);
+                    container.append(&spinner);
+                }
+            }
+            container.upcast()
+        };
+
+        hbox.append(&create_page_widget(left_idx));
+        hbox.append(&create_page_widget(right_idx));
+
+        return hbox.upcast();
+    }
+
+    // Single page mode
+    let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    vbox.set_halign(gtk::Align::Center);
+    vbox.set_valign(gtk::Align::Center);
+    vbox.set_hexpand(true);
+    vbox.set_vexpand(true);
+
+    if let Some(texture) = model.textures.get(&model.current_page) {
+        let pic = gtk::Picture::for_paintable(texture);
+        pic.set_can_shrink(true);
+        pic.set_content_fit(fit_content_fit);
+        pic.set_halign(gtk::Align::Center);
+        pic.set_valign(gtk::Align::Center);
+        vbox.append(&pic);
+    } else {
+        let spinner = gtk::Spinner::new();
+        spinner.set_spinning(true);
+        spinner.set_size_request(48, 48);
+        vbox.append(&spinner);
+    }
+
+    vbox.upcast()
 }
 
 #[relm4::component(pub)]
@@ -147,32 +288,6 @@ impl Component for ComicsReaderModel {
                 add_css_class: "kalam-comics-viewport",
                 set_hexpand: true,
                 set_vexpand: true,
-
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_halign: gtk::Align::Center,
-                    set_valign: gtk::Align::Center,
-                    set_hexpand: true,
-                    set_vexpand: true,
-
-                    gtk::Spinner {
-                        #[watch]
-                        set_spinning: !model.textures.contains_key(&model.current_page),
-                        #[watch]
-                        set_visible: !model.textures.contains_key(&model.current_page),
-                        set_size_request: (48, 48),
-                    },
-
-                    #[name = "picture"]
-                    gtk::Picture {
-                        set_can_shrink: true,
-                        set_content_fit: gtk::ContentFit::Contain,
-                        set_halign: gtk::Align::Center,
-                        set_valign: gtk::Align::Center,
-                        #[watch]
-                        set_visible: model.textures.contains_key(&model.current_page),
-                    },
-                },
             },
 
             // ── 2. Overlay: Dim Backdrop for Settings Drawer ───────────
@@ -660,18 +775,37 @@ impl Component for ComicsReaderModel {
         model.trigger_loads(&sender);
         let widgets = view_output!();
 
-        // Paint current page texture if available
-        if let Some(texture) = model.textures.get(&model.current_page) {
-            widgets.picture.set_paintable(Some(texture));
-        }
+        let child = rebuild_viewport_widget(&model);
+        widgets.viewport_box.set_child(Some(&child));
 
-        // Tap/click on the comic viewport toggles the chrome for immersive reading
+        // Tap/click on the comic viewport: left = prev/next, right = next/prev, center = toggle chrome
         let click = gtk::GestureClick::new();
         let s = sender.clone();
-        click.connect_released(move |_, _, _, _| {
-            s.input(ComicsReaderMsg::ToggleChrome);
+        click.connect_released(move |gesture, _, x, _| {
+            if let Some(widget) = gesture.widget() {
+                let width = widget.width() as f64;
+                if width > 0.0 {
+                    let ratio = x / width;
+                    s.input(ComicsReaderMsg::TapAtRatio(ratio));
+                } else {
+                    s.input(ComicsReaderMsg::ToggleChrome);
+                }
+            }
         });
         widgets.viewport_box.add_controller(click);
+
+        // Webtoon scroll position listener
+        let vadj = widgets.viewport_box.vadjustment();
+        let s_scroll = sender.clone();
+        let page_count = model.provider.page_count();
+        vadj.connect_value_changed(move |adj| {
+            let max = (adj.upper() - adj.page_size()).max(1.0);
+            if max > 0.0 && page_count > 0 {
+                let ratio = (adj.value() / max).clamp(0.0, 1.0);
+                let page = ((page_count - 1) as f64 * ratio).round() as usize;
+                s_scroll.input(ComicsReaderMsg::UpdateScrollPage(page));
+            }
+        });
 
         // Keyboard navigation controller
         let key_controller = gtk::EventControllerKey::new();
@@ -682,11 +816,19 @@ impl Component for ComicsReaderModel {
                     s.input(ComicsReaderMsg::Close);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Left | gdk::Key::Page_Up => {
+                gdk::Key::Left => {
+                    s.input(ComicsReaderMsg::KeyLeft);
+                    glib::Propagation::Stop
+                }
+                gdk::Key::Right => {
+                    s.input(ComicsReaderMsg::KeyRight);
+                    glib::Propagation::Stop
+                }
+                gdk::Key::Page_Up | gdk::Key::Up => {
                     s.input(ComicsReaderMsg::PrevPage);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Right | gdk::Key::Page_Down | gdk::Key::space => {
+                gdk::Key::Page_Down | gdk::Key::Down | gdk::Key::space => {
                     s.input(ComicsReaderMsg::NextPage);
                     glib::Propagation::Stop
                 }
@@ -709,28 +851,70 @@ impl Component for ComicsReaderModel {
         sender: ComponentSender<Self>,
         _root: &Self::Root,
     ) {
+        let mut loaded_page_idx = None;
+
         match msg {
             ComicsReaderMsg::SetPage(idx) => {
                 self.set_page(idx);
                 self.trigger_loads(&sender);
             }
-            ComicsReaderMsg::NextPage => {
-                match self.direction {
-                    ReadingDirection::Ltr | ReadingDirection::Webtoon => self.next_page(),
-                    ReadingDirection::Rtl => self.prev_page(),
+            ComicsReaderMsg::UpdateScrollPage(idx) => {
+                let total = self.provider.page_count();
+                if total > 0 {
+                    let clamped = idx.clamp(0, total - 1);
+                    if self.current_page != clamped {
+                        self.current_page = clamped;
+                        self.trigger_loads(&sender);
+                    }
                 }
+            }
+            ComicsReaderMsg::NextPage => {
+                self.next_page();
                 self.trigger_loads(&sender);
             }
             ComicsReaderMsg::PrevPage => {
-                match self.direction {
-                    ReadingDirection::Ltr | ReadingDirection::Webtoon => self.prev_page(),
-                    ReadingDirection::Rtl => self.next_page(),
+                self.prev_page();
+                self.trigger_loads(&sender);
+            }
+            ComicsReaderMsg::KeyLeft => {
+                if self.direction == ReadingDirection::Rtl {
+                    self.next_page();
+                } else {
+                    self.prev_page();
                 }
                 self.trigger_loads(&sender);
+            }
+            ComicsReaderMsg::KeyRight => {
+                if self.direction == ReadingDirection::Rtl {
+                    self.prev_page();
+                } else {
+                    self.next_page();
+                }
+                self.trigger_loads(&sender);
+            }
+            ComicsReaderMsg::TapAtRatio(ratio) => {
+                if ratio < 0.35 {
+                    if self.direction == ReadingDirection::Rtl {
+                        self.next_page();
+                    } else {
+                        self.prev_page();
+                    }
+                    self.trigger_loads(&sender);
+                } else if ratio > 0.65 {
+                    if self.direction == ReadingDirection::Rtl {
+                        self.prev_page();
+                    } else {
+                        self.next_page();
+                    }
+                    self.trigger_loads(&sender);
+                } else {
+                    self.show_chrome = !self.show_chrome;
+                }
             }
             ComicsReaderMsg::PageLoaded(idx, maybe_tex) => {
                 if let Some(tex) = maybe_tex {
                     self.textures.insert(idx, tex);
+                    loaded_page_idx = Some(idx);
                 }
             }
             ComicsReaderMsg::ToggleDirection => {
@@ -744,21 +928,9 @@ impl Component for ComicsReaderModel {
             }
             ComicsReaderMsg::ToggleFitMode => {
                 self.fit_mode = self.fit_mode.next();
-                match self.fit_mode {
-                    FitMode::Width => widgets.picture.set_content_fit(gtk::ContentFit::Fill),
-                    FitMode::Height => widgets.picture.set_content_fit(gtk::ContentFit::Contain),
-                    FitMode::Screen => widgets.picture.set_content_fit(gtk::ContentFit::Cover),
-                    FitMode::Original => widgets.picture.set_content_fit(gtk::ContentFit::ScaleDown),
-                }
             }
             ComicsReaderMsg::SetFitMode(fit) => {
                 self.fit_mode = fit;
-                match self.fit_mode {
-                    FitMode::Width => widgets.picture.set_content_fit(gtk::ContentFit::Fill),
-                    FitMode::Height => widgets.picture.set_content_fit(gtk::ContentFit::Contain),
-                    FitMode::Screen => widgets.picture.set_content_fit(gtk::ContentFit::Cover),
-                    FitMode::Original => widgets.picture.set_content_fit(gtk::ContentFit::ScaleDown),
-                }
             }
             ComicsReaderMsg::ToggleChrome => {
                 self.show_chrome = !self.show_chrome;
@@ -776,16 +948,136 @@ impl Component for ComicsReaderModel {
                     let _ = sender.output(ComicsReaderOut::Close);
                 }
             }
-
         }
 
-        // Update active texture on picture widget
-        if let Some(texture) = self.textures.get(&self.current_page) {
-            widgets.picture.set_paintable(Some(texture));
-        } else {
-            widgets.picture.set_paintable(None::<&gdk::Texture>);
+        let fit_content_fit = match self.fit_mode {
+            FitMode::Width => gtk::ContentFit::Fill,
+            FitMode::Height => gtk::ContentFit::Contain,
+            FitMode::Screen => gtk::ContentFit::Cover,
+            FitMode::Original => gtk::ContentFit::ScaleDown,
+        };
+        let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+
+        let mut updated_in_place = false;
+        if is_webtoon {
+            if let Some(child_widget) = widgets.viewport_box.child() {
+                if child_widget.has_css_class("kalam-webtoon-container") {
+                    if let Ok(vbox) = child_widget.downcast::<gtk::Box>() {
+                        if let Some(idx) = loaded_page_idx {
+                            if let Some(tex) = self.textures.get(&idx) {
+                                let mut curr = vbox.first_child();
+                                let mut i = 0;
+                                while let Some(item) = curr {
+                                    if i == idx {
+                                        if let Ok(item_box) = item.downcast::<gtk::Box>() {
+                                            while let Some(old) = item_box.first_child() {
+                                                item_box.remove(&old);
+                                            }
+                                            let pic = gtk::Picture::for_paintable(tex);
+                                            pic.set_can_shrink(true);
+                                            pic.set_content_fit(fit_content_fit);
+                                            pic.set_halign(gtk::Align::Center);
+                                            item_box.append(&pic);
+                                        }
+                                        break;
+                                    }
+                                    curr = item.next_sibling();
+                                    i += 1;
+                                }
+                            }
+                        }
+                        updated_in_place = true;
+                    }
+                }
+            }
+        }
+
+        if !updated_in_place {
+            let child = rebuild_viewport_widget(self);
+            widgets.viewport_box.set_child(Some(&child));
         }
 
         self.update_view(widgets, sender);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    struct DummyProvider {
+        count: usize,
+    }
+
+    impl provider::ImageProvider for DummyProvider {
+        fn page_count(&self) -> usize {
+            self.count
+        }
+
+        fn fetch_page(&self, _idx: usize) -> anyhow::Result<Vec<u8>> {
+            Ok(vec![0u8; 16])
+        }
+    }
+
+    #[test]
+    fn test_missing_pages_preloading_bounds() {
+        let dummy = Arc::new(DummyProvider { count: 10 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Test Manga".to_string(),
+            provider: dummy,
+        });
+
+        model.page_style = PageStyle::Single;
+        model.direction = ReadingDirection::Ltr;
+        model.current_page = 5;
+
+        let missing = model.get_missing_pages();
+        assert_eq!(missing, vec![3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn test_double_page_step_and_navigation() {
+        let dummy = Arc::new(DummyProvider { count: 10 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Test Manga".to_string(),
+            provider: dummy,
+        });
+
+        model.page_style = PageStyle::Double;
+        model.current_page = 0;
+
+        model.next_page();
+        assert_eq!(model.current_page, 2);
+
+        model.next_page();
+        assert_eq!(model.current_page, 4);
+
+        model.prev_page();
+        assert_eq!(model.current_page, 2);
+    }
+
+    #[test]
+    fn test_reading_direction_cycle() {
+        let dir = ReadingDirection::Ltr;
+        assert_eq!(dir.next(), ReadingDirection::Rtl);
+        assert_eq!(ReadingDirection::Rtl.next(), ReadingDirection::Webtoon);
+        assert_eq!(ReadingDirection::Webtoon.next(), ReadingDirection::Ltr);
+    }
+
+    #[test]
+    fn test_webtoon_mode_preloading_range() {
+        let dummy = Arc::new(DummyProvider { count: 20 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Test Webtoon".to_string(),
+            provider: dummy,
+        });
+
+        model.direction = ReadingDirection::Webtoon;
+        model.current_page = 5;
+
+        let missing = model.get_missing_pages();
+        assert_eq!(missing, (1..=11).collect::<Vec<_>>());
+    }
+}
+

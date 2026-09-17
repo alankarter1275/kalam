@@ -5,9 +5,10 @@
 
 use anyhow::{anyhow, Context, Result};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
-use zip::ZipArchive;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 /// Check if a filename extension corresponds to a supported comic image format.
 pub fn is_image_filename(filename: &str) -> bool {
@@ -118,6 +119,90 @@ pub fn extract_comic_cover(archive_path: &Path) -> Result<Vec<u8>> {
     extract_comic_page(archive_path, first_page)
 }
 
+/// Upscale all image pages in a CBZ archive using Lanczos3 resampling filter.
+///
+/// Unpacks the CBZ file, rescales each page image by `scale_factor` (e.g. 2.0x) using `image::imageops::FilterType::Lanczos3`
+/// to preserve ink sharpness and smooth screentones, and repacks into `output_path`.
+pub fn remaster_comic_cbz<F>(
+    input_path: &Path,
+    output_path: &Path,
+    scale_factor: f32,
+    progress_cb: F,
+) -> Result<()>
+where
+    F: Fn(usize, usize),
+{
+    let file = File::open(input_path)
+        .with_context(|| format!("Could not open source comic archive at {:?}", input_path))?;
+    let mut archive = ZipArchive::new(file)
+        .with_context(|| format!("Failed to read ZIP archive from {:?}", input_path))?;
+
+    let total_entries = archive.len();
+    let dest_file = File::create(output_path)
+        .with_context(|| format!("Could not create output comic archive at {:?}", output_path))?;
+    let mut zip_writer = ZipWriter::new(dest_file);
+
+    let deflated_options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+    for i in 0..total_entries {
+        let mut entry = archive.by_index(i)?;
+        let name = entry.name().to_string();
+
+        if entry.is_dir() {
+            progress_cb(i + 1, total_entries);
+            continue;
+        }
+
+        let mut buffer = Vec::with_capacity(entry.size() as usize);
+        entry.read_to_end(&mut buffer)?;
+
+        if is_image_filename(&name) && !name.contains("__MACOSX") {
+            if let Ok(img) = image::load_from_memory(&buffer) {
+                let nwidth = (img.width() as f32 * scale_factor).round() as u32;
+                let nheight = (img.height() as f32 * scale_factor).round() as u32;
+                let nwidth = nwidth.max(1);
+                let nheight = nheight.max(1);
+
+                let resized = img.resize(nwidth, nheight, image::imageops::FilterType::Lanczos3);
+
+                let mut encoded_bytes = Vec::new();
+                let lower = name.to_lowercase();
+                let format = if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+                    image::ImageFormat::Jpeg
+                } else if lower.ends_with(".webp") {
+                    image::ImageFormat::WebP
+                } else if lower.ends_with(".gif") {
+                    image::ImageFormat::Gif
+                } else {
+                    image::ImageFormat::Png
+                };
+
+                if resized
+                    .write_to(&mut std::io::Cursor::new(&mut encoded_bytes), format)
+                    .is_ok()
+                {
+                    zip_writer.start_file(&name, deflated_options)?;
+                    zip_writer.write_all(&encoded_bytes)?;
+                } else {
+                    zip_writer.start_file(&name, deflated_options)?;
+                    zip_writer.write_all(&buffer)?;
+                }
+            } else {
+                zip_writer.start_file(&name, deflated_options)?;
+                zip_writer.write_all(&buffer)?;
+            }
+        } else {
+            zip_writer.start_file(&name, deflated_options)?;
+            zip_writer.write_all(&buffer)?;
+        }
+
+        progress_cb(i + 1, total_entries);
+    }
+
+    zip_writer.finish()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,4 +253,48 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_remaster_comic_cbz() -> Result<()> {
+        let tmp_dir = std::env::temp_dir();
+        let uid = uuid::Uuid::new_v4().to_string();
+        let input_cbz = tmp_dir.join(format!("test_in_{uid}.cbz"));
+        let output_cbz = tmp_dir.join(format!("test_out_{uid}.cbz"));
+
+        // Create a dummy CBZ with a 10x10 image
+        let img = image::RgbImage::new(10, 10);
+        let mut img_bytes = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut img_bytes), image::ImageFormat::Png)?;
+
+        {
+            let file = File::create(&input_cbz)?;
+            let mut zip = ZipWriter::new(file);
+            let options = SimpleFileOptions::default();
+            zip.start_file("page01.png", options)?;
+            zip.write_all(&img_bytes)?;
+            zip.finish()?;
+        }
+
+        // Remaster 2.0x
+        remaster_comic_cbz(&input_cbz, &output_cbz, 2.0, |_, _| {})?;
+
+        // Verify output archive
+        let out_file = File::open(&output_cbz)?;
+        let mut out_zip = ZipArchive::new(out_file)?;
+        assert_eq!(out_zip.len(), 1);
+
+        let mut entry = out_zip.by_index(0)?;
+        let mut out_bytes = Vec::new();
+        entry.read_to_end(&mut out_bytes)?;
+
+        let remastered_img = image::load_from_memory(&out_bytes)?;
+        assert_eq!(remastered_img.width(), 20);
+        assert_eq!(remastered_img.height(), 20);
+
+        let _ = std::fs::remove_file(&input_cbz);
+        let _ = std::fs::remove_file(&output_cbz);
+
+        Ok(())
+    }
 }
+

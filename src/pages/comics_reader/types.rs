@@ -97,8 +97,12 @@ impl FitMode {
 pub enum ComicsReaderMsg {
     PageLoaded(usize, Option<gtk::gdk::Texture>),
     SetPage(usize),
+    UpdateScrollPage(usize),
     NextPage,
     PrevPage,
+    KeyLeft,
+    KeyRight,
+    TapAtRatio(f64),
     ToggleDirection,
     SetDirection(ReadingDirection),
     SetPageStyle(PageStyle),

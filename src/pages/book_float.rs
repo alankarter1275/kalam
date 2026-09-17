@@ -104,6 +104,7 @@ pub enum BookFloatMsg {
     EditMetadata,
     ShowShelfMenu,
     Refresh,
+    RemasterComic,
 }
 
 pub struct BookFloatModel {
@@ -581,6 +582,22 @@ impl Component for BookFloatModel {
                             connect_clicked => BookFloatMsg::ToggleFinished,
                         },
 
+                        #[name = "remaster_btn"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "zoom-in-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            set_has_frame: false,
+                            add_css_class: "kalam-btn-icon",
+                            add_css_class: "kalam-float-icon-btn",
+                            set_valign: gtk::Align::Center,
+                            set_vexpand: false,
+                            set_tooltip_text: Some("Remaster Comic (Lanczos3 upscaler)"),
+                            connect_clicked => BookFloatMsg::RemasterComic,
+                        },
+
                         gtk::Box {
                             set_hexpand: true,
                         },
@@ -634,6 +651,7 @@ impl Component for BookFloatModel {
         widgets.shelf_btn.set_size_request(40, 40);
         widgets.edit_btn.set_size_request(40, 40);
         widgets.finish_btn.set_size_request(40, 40);
+        widgets.remaster_btn.set_size_request(40, 40);
         widgets.remove_btn.set_size_request(40, 40);
         fill(&widgets, &model, &sender);
 
@@ -770,6 +788,40 @@ impl Component for BookFloatModel {
             BookFloatMsg::Refresh => {
                 if let Some(book) = &self.book {
                     self.reload_state(book.id);
+                }
+            }
+            BookFloatMsg::RemasterComic => {
+                if let Some(book) = &self.book {
+                    if matches!(book.format, crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr) {
+                        let path = book.file_path.clone();
+                        let title = book.title.clone();
+                        let s = sender.clone();
+                        crate::notify::info("Remastering comic...", &format!("Rescaling {} with Lanczos3 filter", title));
+                        crate::tasks::spawn(
+                            move |reporter| -> anyhow::Result<()> {
+                                let tmp = path.with_extension("remastered.cbz");
+                                crate::comics::remaster_comic_cbz(&path, &tmp, 2.0, |done, total| {
+                                    reporter.step(done, total, format!("Page {done}/{total}"));
+                                })?;
+                                std::fs::rename(&tmp, &path)?;
+                                Ok(())
+                            },
+                            |_| {},
+                            move |res| {
+                                match res {
+                                    Ok(()) => {
+                                        crate::notify::success("Comic Remastered", &format!("Successfully remastered {}", title));
+                                        s.input(BookFloatMsg::Refresh);
+                                    }
+                                    Err(err) => {
+                                        crate::notify::error("Remaster failed", &err.to_string());
+                                    }
+                                }
+                            },
+                        );
+                    } else {
+                        crate::notify::info("Not a comic", "Remastering is only available for CBZ comic archives");
+                    }
                 }
             }
         }

@@ -70,6 +70,8 @@ pub enum BookPageMsg {
     ToggleJourney,
     /// Open the full annotations dialog from the highlights card.
     ViewHighlights,
+    /// Remaster comic archive using Lanczos3 upscaler.
+    RemasterComic,
 }
 
 pub struct BookPageModel {
@@ -267,6 +269,17 @@ impl Component for BookPageModel {
                                         16,
                                     )),
                                     connect_clicked => BookPageMsg::ToggleFinished,
+                                },
+
+                                gtk::Button {
+                                    add_css_class: "kalam-icon-btn",
+                                    set_focus_on_click: false,
+                                    set_tooltip_text: Some("Remaster Comic (Lanczos3 upscaler)"),
+                                    set_child: Some(&crate::icons::symbolic(
+                                        "zoom-in-symbolic",
+                                        16,
+                                    )),
+                                    connect_clicked => BookPageMsg::RemasterComic,
                                 },
 
                                 gtk::Button {
@@ -754,6 +767,40 @@ impl Component for BookPageModel {
             BookPageMsg::Refresh => {
                 if let Some(id) = self.book.as_ref().map(|b| b.id) {
                     self.reload_state(id);
+                }
+            }
+            BookPageMsg::RemasterComic => {
+                if let Some(book) = &self.book {
+                    if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr) {
+                        let path = book.file_path.clone();
+                        let title = book.title.clone();
+                        let s = sender.clone();
+                        crate::notify::info("Remastering comic...", &format!("Rescaling {} with Lanczos3 filter", title));
+                        crate::tasks::spawn(
+                            move |reporter| -> anyhow::Result<()> {
+                                let tmp = path.with_extension("remastered.cbz");
+                                crate::comics::remaster_comic_cbz(&path, &tmp, 2.0, |done, total| {
+                                    reporter.step(done, total, format!("Page {done}/{total}"));
+                                })?;
+                                std::fs::rename(&tmp, &path)?;
+                                Ok(())
+                            },
+                            |_| {},
+                            move |res| {
+                                match res {
+                                    Ok(()) => {
+                                        crate::notify::success("Comic Remastered", &format!("Successfully remastered {}", title));
+                                        s.input(BookPageMsg::Refresh);
+                                    }
+                                    Err(err) => {
+                                        crate::notify::error("Remaster failed", &err.to_string());
+                                    }
+                                }
+                            },
+                        );
+                    } else {
+                        crate::notify::info("Not a comic", "Remastering is only available for CBZ comic archives");
+                    }
                 }
             }
         }

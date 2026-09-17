@@ -319,22 +319,22 @@ scrollbar slider:active {
 
 /* ── book row in shelf list ─────────────────────────── */
 .kalam-cover-frame {
-    border-radius: 8px;
+    border-radius: 12px;
     background: @m3_surface_variant;
     padding: 0;
     margin: 0;
-    border: none;
+    border: 1px solid alpha(@m3_outline, 0.4);
     box-shadow: 0 4px 14px @m3_shadow;
     transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
 }
 
 .kalam-cover-placeholder {
     background: linear-gradient(160deg, @m3_surface_variant 0%, @m3_surface 100%);
-    border-radius: 8px;
+    border-radius: 12px;
 }
 
 .kalam-cover-img {
-    border-radius: 8px;
+    border-radius: 12px;
 }
 
 .kalam-progress {
@@ -789,8 +789,8 @@ button.kalam-author-photo-refresh:hover {
 }
 
 .kalam-float-cover-col {
-    background: @kalam_surface_2;
-    border-right: 1px solid @kalam_border;
+    background: @m3_surface_variant;
+    border-right: 1px solid @m3_outline;
     padding-top: 18px;
     padding-right: 8px;
     padding-bottom: 16px;
@@ -800,6 +800,10 @@ button.kalam-author-photo-refresh:hover {
 .kalam-float-cover-col,
 .kalam-float-right {
     min-height: 0;
+}
+
+.kalam-float-right {
+    background: @m3_surface;
 }
 
 .kalam-float-cover-host {
@@ -2978,7 +2982,27 @@ button.kalam-tag-add label {
 
 /* Author links on the page (vs float/reader variants). */
 button.kalam-author-link-page {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: @m3_surface_variant;
+    border: 1px solid @m3_outline;
+    border-radius: 9999px;
+    padding: 4px 14px;
+    color: @kalam_text;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+button.kalam-author-link-page:hover {
+    border-color: @m3_primary;
+    color: @m3_primary;
+}
+
+.kalam-rating-badge {
+    background: @m3_surface_variant;
+    border: 1px solid alpha(@m3_outline, 0.6);
+    border-radius: 9999px;
+    padding: 4px 14px;
+    box-shadow: 0 2px 6px @m3_shadow;
 }
 
 /* Card grid. */
@@ -2987,11 +3011,18 @@ button.kalam-author-link-page {
 }
 
 .kalam-detail-card {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
+    background: @m3_surface;
+    border: 1px solid @m3_outline;
+    border-radius: 16px;
     padding: 16px;
     min-height: 96px;
+    box-shadow: 0 2px 8px @m3_shadow;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.kalam-detail-card:hover {
+    border-color: alpha(@m3_primary, 0.4);
+    box-shadow: 0 4px 14px @m3_shadow;
 }
 
 .kalam-detail-card-icon {

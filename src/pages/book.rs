@@ -191,6 +191,7 @@ impl Component for BookPageModel {
                             #[name = "rating_host"]
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
+                                add_css_class: "kalam-rating-badge",
                                 set_spacing: 8,
                                 set_halign: gtk::Align::Start,
                             },

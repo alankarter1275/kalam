@@ -384,6 +384,7 @@ fn rebuild(
                     s2.output(HomeOut::BookDialog { book_id: id }).ok();
                 },
             );
+            card.add_css_class("kalam-home-continue");
             widgets.continue_host.append(&card);
             on_screen.push(book.clone());
         }

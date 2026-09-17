@@ -688,8 +688,8 @@ pub(crate) fn build_dict_popover(
     let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
     popup.add_css_class("k-popup");
 
-    let width = 380.min((host.width() - 32).max(240));
-    popup.set_size_request(width, 520);
+    let width = 320.min((host.width() - 32).max(240));
+    popup.set_size_request(width, -1);
 
     let header = dict_header(host, card, sender);
     popup.append(&header);
@@ -698,6 +698,7 @@ pub(crate) fn build_dict_popover(
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
         .propagate_natural_height(true)
+        .max_content_height(280)
         .build();
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.add_css_class("k-body");

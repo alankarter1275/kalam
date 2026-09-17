@@ -1403,6 +1403,13 @@ impl Component for ReaderModel {
                 engine::dismiss(self.selection_chip.take());
                 self.last_selection = sel.as_ref().map(|(text, _)| text.clone());
                 self.dict_anchor = sel.as_ref().map(|(_, rect)| *rect);
+                if let Some((_, rect)) = &sel {
+                    let Some(view) = &self.view else { return };
+                    let chip =
+                        engine::build_selection_chip(view.widget().upcast_ref(), rect, &sender);
+                    chip.popup();
+                    self.selection_chip = Some(chip);
+                }
             }
             ReaderMsg::HighlightSelection(color_name) => {
                 engine::dismiss(self.selection_chip.take());
@@ -1486,10 +1493,15 @@ impl Component for ReaderModel {
             }
             ReaderMsg::LookUpSelection => {
                 engine::dismiss(self.selection_chip.take());
-                engine::dismiss(self.dict_popover.take());
-                if let Some(view) = &self.view {
-                    view.clear_selection();
-                }
+                let Some(view) = self.view.clone() else {
+                    return;
+                };
+                let Some(word) = view.selected_text() else {
+                    return;
+                };
+                view.clear_selection();
+                let rect = self.dict_anchor_rect();
+                self.dict_lookup(word, None, rect, &sender);
             }
             ReaderMsg::Progress(frac) => {
                 self.fraction = frac.clamp(0.0, 1.0);
@@ -1950,7 +1962,6 @@ impl ReaderModel {
     /// find the entry, work out which sense the sentence points at, log it,
     /// and show the popover. `sentence` is `None` when the lookup came from
     /// the Words sidebar instead of from a tap.
-    #[allow(dead_code)]
     fn dict_lookup(
         &mut self,
         word: String,

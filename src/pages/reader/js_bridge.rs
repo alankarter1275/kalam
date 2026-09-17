@@ -10,6 +10,7 @@
 use super::engine;
 use super::mod_model::ReaderModel;
 use crate::db::{DictEntry, EntryData, PhraseLookup};
+use gtk::prelude::*;
 use relm4::ComponentSender;
 
 impl ReaderModel {
@@ -59,13 +60,23 @@ impl ReaderModel {
     /// (`None` when the hint preference is off).
     pub(crate) fn show_dict(
         &mut self,
-        _data: &EntryData,
-        _saved: bool,
-        _hint: Option<usize>,
-        _rect: gtk::gdk::Rectangle,
-        _sender: &ComponentSender<ReaderModel>,
+        data: &EntryData,
+        saved: bool,
+        hint: Option<usize>,
+        rect: gtk::gdk::Rectangle,
+        sender: &ComponentSender<ReaderModel>,
     ) {
+        if self.dict_popover.is_some() {
+            self.dict_suppress_clear = self.dict_suppress_clear.saturating_add(1);
+        }
         engine::dismiss(self.dict_popover.take());
+        let Some(view) = &self.view else { return };
+        let pronunciation = crate::db::pronunciation_for(&data.word).map(|p| format!("/{p}"));
+        let card = engine::DictCard::from_entry(data, pronunciation, saved, hint);
+        let popover = engine::build_dict_popover(view.widget().upcast_ref(), &rect, &card, sender);
+        popover.popup();
+        self.dict_anchor = Some(rect);
+        self.dict_popover = Some(popover);
     }
 }
 

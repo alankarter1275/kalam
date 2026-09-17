@@ -797,7 +797,13 @@ impl ReaderView {
         let mut s = self.inner.session.borrow_mut();
         match self.band_at(y as f32) {
             Some((band, py)) => s.host_highlight_at_page(band.spine, band.page, x as f32, py),
-            None if self.mode() == ReadingMode::Paged => s.host_highlight_at(x as f32, y as f32),
+            None if self.mode() == ReadingMode::Paged => {
+                if let Some((spine, page, px, py)) = self.paged_point(&mut *s, x as f32, y as f32) {
+                    s.host_highlight_at_page(spine, page, px, py)
+                } else {
+                    None
+                }
+            }
             None => None,
         }
     }
@@ -879,7 +885,7 @@ impl ReaderView {
                     s.set_position(spine, page + 2);
                     ActionOutcome::Changed
                 } else {
-                    s.apply(Action::NextPage)
+                    s.apply(Action::NextUnit)
                 };
                 drop(s);
                 if outcome.needs_redraw() {
@@ -893,8 +899,17 @@ impl ReaderView {
                 let outcome = if page >= 2 {
                     s.set_position(spine, page - 2);
                     ActionOutcome::Changed
+                } else if page == 1 {
+                    s.set_position(spine, 0);
+                    ActionOutcome::Changed
+                } else if spine > 0 {
+                    let prev_spine = spine - 1;
+                    let prev_count = s.page_extents(prev_spine).len();
+                    let target_page = if prev_count > 1 { (prev_count - 1) / 2 * 2 } else { 0 };
+                    s.set_position(prev_spine, target_page);
+                    ActionOutcome::Changed
                 } else {
-                    s.apply(Action::PrevPage)
+                    ActionOutcome::Unchanged
                 };
                 drop(s);
                 if outcome.needs_redraw() {
@@ -932,9 +947,31 @@ impl ReaderView {
         }
     }
 
+    /// Map widget (x, y) coordinates to (spine, page, local_x, local_y) in paged mode.
+    /// In dual-page spread (>900px), points on the right half map to page + 1 with local_x = x - single_w.
+    fn paged_point(&self, s: &mut Session, x: f32, y: f32) -> Option<(usize, usize, f32, f32)> {
+        let spine = s.spine();
+        let page = s.page();
+        if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+            let single_w = (self.area.width() as f32 / 2.0).floor();
+            let page_count = s.page_extents(spine).len();
+            if x >= single_w {
+                if page + 1 < page_count {
+                    Some((spine, page + 1, x - single_w, y))
+                } else {
+                    None
+                }
+            } else {
+                Some((spine, page, x, y))
+            }
+        } else {
+            Some((spine, page, x, y))
+        }
+    }
+
     /// Page-space rects of a range on `spine`, in widget coordinates —
     /// every visible band of that chapter, in either mode.
-    fn widget_rects(&self, s: &Session, spine: usize, start: u32, end: u32) -> Vec<Rect> {
+    fn widget_rects(&self, s: &mut Session, spine: usize, start: u32, end: u32) -> Vec<Rect> {
         let strip = self.inner.strip.borrow();
         match strip.as_ref() {
             Some(strip) => strip
@@ -947,7 +984,27 @@ impl ReaderView {
                         .map(move |rect| strip.to_widget(&band, rect))
                 })
                 .collect(),
-            None => s.range_rects(start, end),
+            None => {
+                if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+                    let single_w = (self.area.width() as f32 / 2.0).floor();
+                    let page_left = s.page();
+                    let page_right = page_left + 1;
+                    let page_count = s.page_extents(spine).len();
+                    let mut rects = Vec::new();
+                    for rect in s.range_rects_on_page(spine, page_left, start, end) {
+                        rects.push(rect);
+                    }
+                    if page_right < page_count {
+                        for mut rect in s.range_rects_on_page(spine, page_right, start, end) {
+                            rect.origin.x += single_w;
+                            rects.push(rect);
+                        }
+                    }
+                    rects
+                } else {
+                    s.range_rects(start, end)
+                }
+            }
         }
     }
 
@@ -1150,10 +1207,11 @@ impl ReaderView {
 
     fn notify_selection(&self) {
         let selected = {
-            let s = self.inner.session.borrow();
+            let mut s = self.inner.session.borrow_mut();
             s.selected_range().and_then(|(start, end)| {
                 let text = readable(&s.selected_text()?);
-                let rects = self.widget_rects(&s, s.spine(), start, end);
+                let spine = s.spine();
+                let rects = self.widget_rects(&mut *s, spine, start, end);
                 let rect = union(&rects)?;
                 let (start_rect, end_rect) = ends(&rects)?;
                 Some(SelectedText {
@@ -1173,9 +1231,10 @@ impl ReaderView {
     /// remember them for the next press. `None` — and nothing remembered
     /// — without a selection, or with one whose lines are all off screen
     /// (scrolled away in a strip).
-    fn place_handles(&self, s: &Session) -> Option<[Handle; 2]> {
+    fn place_handles(&self, s: &mut Session) -> Option<[Handle; 2]> {
         let handles = s.selected_range().and_then(|(start, end)| {
-            let rects = self.widget_rects(s, s.spine(), start, end);
+            let spine = s.spine();
+            let rects = self.widget_rects(s, spine, start, end);
             let (first, last) = ends(&rects)?;
             Some(Handle::pair(first, last))
         });
@@ -1253,17 +1312,11 @@ impl ReaderView {
                         let page_idx = s.page();
                         let page_count = s.page_extents(spine).len();
 
-                        let mut left_pixmap = s.render();
-                        if let (Some(out), Some(handles)) = (left_pixmap.as_mut(), view.place_handles(&s)) {
-                            handles::paint(out, &handles, prefs.theme.handle(), scale);
-                        }
+                        let left_pixmap = s.render();
 
                         let right_pixmap = if page_idx + 1 < page_count {
                             s.set_position(spine, page_idx + 1);
-                            let mut right = s.render();
-                            if let (Some(out), Some(handles)) = (right.as_mut(), view.place_handles(&s)) {
-                                handles::paint(out, &handles, prefs.theme.handle(), scale);
-                            }
+                            let right = s.render();
                             s.set_position(spine, page_idx);
                             right
                         } else {
@@ -1311,12 +1364,16 @@ impl ReaderView {
                             if let Some(rect) = tiny_skia::Rect::from_xywh(spine_x - 0.5, 0.0, 1.0, ph as f32) {
                                 comb.fill_rect(rect, &spine_paint, tiny_skia::Transform::identity(), None);
                             }
+
+                            if let Some(handles) = view.place_handles(&mut *s) {
+                                handles::paint(comb, &handles, prefs.theme.handle(), scale);
+                            }
                         }
                         combined
                     } else {
                         s.set_metrics(metrics);
                         let mut pixmap = s.render();
-                        if let (Some(out), Some(handles)) = (pixmap.as_mut(), view.place_handles(&s)) {
+                        if let (Some(out), Some(handles)) = (pixmap.as_mut(), view.place_handles(&mut s)) {
                             handles::paint(out, &handles, prefs.theme.handle(), scale);
                         }
                         pixmap
@@ -1523,7 +1580,7 @@ impl ReaderView {
         // The selection's handles, last, over everything. `place_handles`
         // reads the strip, so the mutable borrow above must end first.
         drop(strip_slot);
-        if let Some(handles) = self.place_handles(&s) {
+        if let Some(handles) = self.place_handles(&mut s) {
             handles::paint(
                 &mut out,
                 &handles,
@@ -1620,7 +1677,13 @@ impl ReaderView {
                     let ok = match view.band_at(y) {
                         Some((band, py)) => s.select_word_at_page(band.spine, band.page, x, py),
                         None if view.mode() == ReadingMode::Scrolled => false,
-                        None => s.select_word_at(x, y),
+                        None => {
+                            if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                                s.select_word_at_page(spine, page, px, py)
+                            } else {
+                                false
+                            }
+                        }
                     };
                     drop(s);
                     if ok {
@@ -1635,7 +1698,13 @@ impl ReaderView {
                             s.select_paragraph_at_page(band.spine, band.page, x, py)
                         }
                         None if view.mode() == ReadingMode::Scrolled => false,
-                        None => s.select_paragraph_at(x, y),
+                        None => {
+                            if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                                s.select_paragraph_at_page(spine, page, px, py)
+                            } else {
+                                false
+                            }
+                        }
                     };
                     drop(s);
                     if ok {
@@ -1701,7 +1770,13 @@ impl ReaderView {
                 // external URL) is the shell's.
                 let href = match band {
                     Some((band, py)) => s.link_at_page(band.spine, band.page, x, py),
-                    None => s.link_at(x, y),
+                    None => {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                            s.link_at_page(spine, page, px, py)
+                        } else {
+                            None
+                        }
+                    }
                 };
                 if let Some(href) = href {
                     if s.follow_link(&href) {
@@ -1717,7 +1792,13 @@ impl ReaderView {
                 }
                 let image = match band {
                     Some((band, py)) => s.image_at_page(band.spine, band.page, x, py),
-                    None => s.image_at(x, y),
+                    None => {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                            s.image_at_page(spine, page, px, py)
+                        } else {
+                            None
+                        }
+                    }
                 };
                 if let Some((w, h, rgba)) = image {
                     drop(s);
@@ -1732,7 +1813,9 @@ impl ReaderView {
                         s.selection_begin_on_page(band.spine, band.page, x, py);
                     }
                     None => {
-                        s.selection_begin(x, y);
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                            s.selection_begin_on_page(spine, page, px, py);
+                        }
                     }
                 }
                 tap.set(true);
@@ -1759,7 +1842,11 @@ impl ReaderView {
                         // Off every band in a strip: the pointer is in a
                         // gap or past the last line; keep what it had.
                         None if view.mode() == ReadingMode::Scrolled => return,
-                        None => s.selection_drag(x, y),
+                        None => {
+                            if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                                s.selection_drag_on_page(spine, page, px, py);
+                            }
+                        }
                     }
                     drop(s);
                     view.area.queue_draw();
@@ -1829,8 +1916,17 @@ impl ReaderView {
                     }
                     None if view.mode() == ReadingMode::Scrolled => None,
                     None => {
-                        let (spine, page) = (s.spine(), s.page());
-                        word_at(&mut s, spine, page, x, y)
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                            word_at(&mut s, spine, page, px, py).map(|mut word| {
+                                if view.mode() == ReadingMode::Paged && view.area.width() > 900 && page > s.page() {
+                                    let single_w = (view.area.width() as f32 / 2.0).floor();
+                                    word.rect.origin.x += single_w;
+                                }
+                                word
+                            })
+                        } else {
+                            None
+                        }
                     }
                 };
                 if let Some(word) = word {

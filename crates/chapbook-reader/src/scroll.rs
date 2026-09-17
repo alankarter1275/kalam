@@ -151,7 +151,7 @@ impl Session {
         let highlight_color = palette.highlight;
         let paint = |h: &Highlight| {
             let color_str = h.color.as_deref().unwrap_or("");
-            let is_underline = color_str == "#3b82f6ff" || color_str == "#2563ebff" || color_str == "underline";
+            let is_underline = color_str == "#3b82f6ff" || color_str == "#2563ebff" || color_str.eq_ignore_ascii_case("underline");
             let style = if is_underline {
                 chapbook_paint::SelectionStyle::Underline
             } else {

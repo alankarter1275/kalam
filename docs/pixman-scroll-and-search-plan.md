@@ -8,30 +8,31 @@
   - In `ReaderMsg::UserScrolled`, unconditionally set `show_back_button = false` and `show_bottom_pill = false`, and remove any pending timers.
 
 ## 2. Ctrl+F Search Shortcut Reliability
-- **Problem**: Pressing `Ctrl+F` sometimes opens the search bar, but other times seems to do nothing.
+- **Problem**: Pressing `Ctrl+F` opened the search bar, but after closing it with `Escape`, pressing `Ctrl+F` again failed to open search until clicking/tapping on the reader area.
 - **Cause**:
-  - Event propagation: The keyboard controller on `root` uses `Bubble` phase. If focus is captured by `ReaderView` or a sidebar button/entry, or lost from `root`, keyboard combinations may not bubble up.
-  - Widget state / focus: The search bar is inside a `gtk::Revealer` with `#[watch] set_visible: model.search_active`. In `ToggleSearch`, `widgets.search_entry.grab_focus()` was called immediately during `update()`, when the revealer in the GTK tree still had `visible: false`. In GTK4, grabbing focus on an unmapped/invisible widget fails silently.
+  - Focus lifecycle in GTK4: When the user pressed `Ctrl+F`, `widgets.search_entry.grab_focus()` moved window focus into the search text field. When `Escape` was pressed, the search revealer hid `search_entry`. In GTK4, when a currently focused widget is hidden or unmapped, GTK clears focus from it without automatically redirecting it, leaving `window.focus()` as `None`.
+  - EventControllerKey scope: `gtk::EventControllerKey` attached to `root` (a `gtk::Overlay`) only receives keyboard events when either `root` or one of its descendants has focus. When focus was `None`, GTK dropped subsequent key events, so `Ctrl+F` was never received. Clicking the book gave focus to `ReaderView` (`view.widget()`), re-enabling keyboard delivery.
 - **Solution**:
-  - Set `key.set_propagation_phase(gtk::PropagationPhase::Capture);` on the root key controller.
-  - Remove `set_visible: model.search_active` from the search revealer (the revealer handles visibility smoothly).
-  - Schedule `search_entry.grab_focus()` with `glib::idle_add_local_once` so the GTK layout pass finishes mapping the entry before focus is requested.
+  - Installed a `gtk::ShortcutController` with `gtk::ShortcutScope::Global` on `root` bound to `<Control>f`. In GTK4, `ShortcutScope::Global` triggers across the whole window regardless of whether any widget has focus.
+  - In `Key::Escape` handler, `ReaderMsg::CloseSearch`, and `ReaderMsg::ToggleSearch` (closing branch), explicitly restore focus to `view.widget()` immediately and via `glib::idle_add_local_once` so reader navigation ('n', 'p', 's', 'w') works immediately after closing search without requiring a mouse click.
 
 ## 3. Pixman Bug: `In pixman_region32_init_rect: Invalid rectangle passed`
 - **Problem**: Repeated warnings in stderr:
-  ```
+  ```text
   *** BUG ***
   In pixman_region32_init_rect: Invalid rectangle passed
   Set a breakpoint on '_pixman_log_error' to debug
   ```
 - **Cause**:
-  - Pixman is Cairo's low-level 2D rasterization library. It logs this bug when a clip rectangle or surface allocation has a width or height < 0 (or overflow).
-  - In GTK4 / Libadwaita, default scrollbars have `.overlay-indicator` with `opacity: 0` when inactive.
-  - Any widget with `opacity < 1` forces GTK to render through an offscreen surface.
-  - When a `ScrolledWindow` has zero scroll range or has not yet completed layout measurement, the scrollbar has a 0x0 allocation. An offscreen surface for a 0x0 widget triggers `pixman_region32_init_rect`.
-  - Kalam's `style.css` originally hid scrollbars via transparent backgrounds, but never explicitly set `opacity: 1;` on `scrollbar`. Thus, Libadwaita's built-in `.overlay-indicator:not(.hovering) { opacity: 0; }` was still active.
-  - Additionally, progress bars with rounded corners (`.kalam-nr-prog progress`, `.kalam-goal-bar progress`) had `border-radius: 999px;` without a `min-width: 4px;` clamp. At 0% progress, GTK attempts to clip a 0-width rounded rectangle, passing invalid coordinates to Pixman.
+  - Pixman explicitly logs this warning whenever `width == 0` or `height == 0` is passed to `pixman_region32_init_rect`.
+  - In Adwaita, `scrollbar > range > trough > slider:disabled` ships `opacity: 0`. Any scrollbar on content that does not overflow has a disabled slider, which forced GTK to render through an offscreen surface with zero dimensions.
+  - In `resources/style.css`, `.kalam-lib-scroll scrollbar` and `.kalam-float-tags-scroll > scrollbar` had `min-width: 0; min-height: 0;` forcing 0-pixel allocations.
+  - In `src/pages/library.rs:607`, `continue_strip` was configured with `hscrollbar_policy(PolicyType::Automatic)` and `vscrollbar_policy(PolicyType::Never)`, and `src/pages/book_float.rs` had `vscrollbar_policy` defaulted to `Automatic`.
 - **Solution**:
-  - Set `opacity: 1;` on `scrollbar`, `scrollbar.overlay-indicator`, `scrollbar trough`, and `scrollbar slider` in `resources/style.css`.
-  - Add `min-width: 4px;` to all progress bars with `border-radius: 999px`.
-  - Preserve all existing dimensions, colors, and transparent backgrounds so scrollbar aesthetics remain completely unchanged.
+  - In `resources/style.css`:
+    - Overrode `scrollbar slider:disabled`, `scrollbar.overlay-indicator slider:disabled`, and `scrollbar > range > trough > slider:disabled` with `background-color: transparent; opacity: 1;` so Adwaita's `opacity: 0` never causes zero-sized offscreen surfaces.
+    - Zeroed `outline: none; margin: 0; padding: 0;` on `scrollbar slider`, `scrollbar trough`, and `scrollbar range`.
+    - Removed `min-width: 0; min-height: 0;` from `.kalam-lib-scroll scrollbar` and `.kalam-float-tags-scroll > scrollbar`.
+  - In `src/pages/library.rs:607`: configured `continue_strip` with `.hscrollbar_policy(gtk::PolicyType::External)` so GTK never allocates or draws a scrollbar widget, while wheel/touchpad horizontal scrolling continues to function smoothly.
+  - In `src/pages/book_float.rs:466`: configured `tags_scroll` with `set_vscrollbar_policy: gtk::PolicyType::External`.
+  - Kept all existing scrollbar widths, styling, and transparent visuals 100% intact.

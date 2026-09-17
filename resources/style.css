@@ -46,10 +46,12 @@ scrollbar.overlay-indicator {
     opacity: 1;
 }
 
-scrollbar trough {
+scrollbar trough,
+scrollbar range {
     background: transparent;
     border: none;
     margin: 0;
+    padding: 0;
     opacity: 1;
 }
 
@@ -58,6 +60,7 @@ scrollbar slider {
     margin: 0;
     border: none;
     padding: 0;
+    outline: none;
     min-width: 5px;
     min-height: 36px;
     border-radius: 999px;
@@ -69,6 +72,15 @@ scrollbar slider {
 scrollbar.horizontal slider {
     min-width: 36px;
     min-height: 5px;
+}
+
+/* Adwaita's disabled slider sets `opacity: 0`, which forces GTK into offscreen
+   surfaces with zero-sized allocations. Keep opacity at 1 and hide via color. */
+scrollbar slider:disabled,
+scrollbar.overlay-indicator slider:disabled,
+scrollbar > range > trough > slider:disabled {
+    background-color: transparent;
+    opacity: 1;
 }
 
 /* Visible only with the pointer on the bar. `.hovering` is GTK's own class for
@@ -897,8 +909,6 @@ progressbar.kalam-float-progress progress {
     background: transparent;
     background-color: transparent;
     border: none;
-    min-width: 0;
-    min-height: 0;
     margin: 0;
     padding: 0;
     opacity: 1;
@@ -3463,11 +3473,6 @@ progressbar.kalam-goal-bar progress {
 }
 
 /* Continue reading. */
-.kalam-lib-scroll scrollbar {
-    min-width: 0;
-    min-height: 0;
-    opacity: 1;
-}
 button.kalam-lib-play {
     background: @kalam_accent;
     color: @kalam_bg;

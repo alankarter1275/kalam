@@ -996,6 +996,11 @@ impl Component for ReaderModel {
                 s.input(ReaderMsg::CloseSearch);
                 s.input(ReaderMsg::CloseImageLightbox);
                 if let Some(view) = &view_for_keys {
+                    let w = view.widget().clone();
+                    w.grab_focus();
+                    glib::idle_add_local_once(move || {
+                        w.grab_focus();
+                    });
                     if view.selected_text().is_some() {
                         view.clear_selection();
                         return gtk::glib::Propagation::Stop;
@@ -1063,6 +1068,23 @@ impl Component for ReaderModel {
         root.add_controller(key);
         root.set_can_focus(true);
 
+        let shortcut_ctrl = gtk::ShortcutController::new();
+        shortcut_ctrl.set_scope(gtk::ShortcutScope::Global);
+        let s_ctrl_f = sender.clone();
+        let trigger = gtk::ShortcutTrigger::parse_string("<Control>f");
+        let action = gtk::CallbackAction::new(move |_, _| {
+            s_ctrl_f.input(ReaderMsg::ToggleSearch);
+            glib::Propagation::Stop
+        });
+        if let Some(trigger) = trigger {
+            let shortcut = gtk::Shortcut::builder()
+                .trigger(&trigger)
+                .action(&action)
+                .build();
+            shortcut_ctrl.add_shortcut(shortcut);
+        }
+        root.add_controller(shortcut_ctrl);
+
         ComponentParts { model, widgets }
     }
 
@@ -1092,6 +1114,11 @@ impl Component for ReaderModel {
                     self.search_index = 0;
                     if let Some(view) = &self.view {
                         view.remove_highlight(-9999);
+                        let w = view.widget().clone();
+                        w.grab_focus();
+                        glib::idle_add_local_once(move || {
+                            w.grab_focus();
+                        });
                     }
                 } else {
                     let entry = widgets.search_entry.clone();
@@ -1134,6 +1161,11 @@ impl Component for ReaderModel {
                 self.search_index = 0;
                 if let Some(view) = &self.view {
                     view.remove_highlight(-9999);
+                    let w = view.widget().clone();
+                    w.grab_focus();
+                    glib::idle_add_local_once(move || {
+                        w.grab_focus();
+                    });
                 }
             }
             ReaderMsg::OpenImageLightbox(w, h, bytes) => {

@@ -464,6 +464,7 @@ impl Component for BookFloatModel {
                     gtk::ScrolledWindow {
                         add_css_class: "kalam-float-tags-scroll",
                         set_hscrollbar_policy: gtk::PolicyType::External,
+                        set_vscrollbar_policy: gtk::PolicyType::External,
                         // `External`, NOT `Never`. This is the bug that made
                         // the action buttons keep moving: with `Never`, GTK
                         // guarantees the content is fully visible in that

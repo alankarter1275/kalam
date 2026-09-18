@@ -14,9 +14,11 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
   * Dual-page view in widescreen mode and continuous vertical scrolling option.
   * Table of Contents (TOC) hierarchy navigation, reading progress tracking, and bottom-right reading location percentage pill.
   * Ribbon bookmark button in top-right header with bookmark management panel.
-  * **"Jump Back" History (Breadcrumbs)**: If jumping to a footnote, Table of Contents, or search match, a floating button lets you instantly return to your previous reading position.
-  * **Auto-Hiding Mouse Cursor**: Pointer hides after 2 seconds of inactivity during reading so it never blocks words.
+  * **"Jump Back" History (Breadcrumbs)**: Instant return button whenever jumping to footnotes, TOC headers, or search matches.
+  * **Auto-Hiding Mouse Cursor**: Mouse pointer disappears after 2 seconds of inactivity so it never blocks words.
   * **Custom Keybindings & Mouse Wheel Tuning**: Fully configurable shortcut keys and adjustable mouse wheel scroll step sensitivity.
+  * **Custom Fonts Folder**: Drop `.ttf` / `.otf` fonts into Kalam's font directory without needing root OS installation.
+  * **Text Justification & Hyphenation Toggle**: Easily toggle between left-aligned (ragged right) and fully justified text with smart hyphenation.
 * **Text Selection & Tooling**:
   * Fluid mouse/touch selection with custom teardrop drag handles.
   * Double-click to select word; triple-click to select paragraph.
@@ -49,6 +51,8 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
   * Automatic dual-page spread detection in landscape/widescreen mode.
 * **Smart Page Splitting & Stitching**:
   * Automatic splitting of dual-page scans into single pages when reading in portrait/narrow window mode.
+* **Manga Zoom Loupe (Magnifying Glass)**:
+  * Smooth right-click/press magnifying loupe to inspect small speech bubble text or detailed artwork without full-page zoom.
 * **Image Tuning Filters**:
   * Instant contrast, sharpness, and brightness adjustments to clean up faded manga scans and enhance dark artwork.
 * **Zero-Latency Preloading**:
@@ -81,6 +85,8 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
     * Repairs broken XML syntax.
     * Auto-generates Table of Contents from `<h1>`/`<h2>` headings if the manifest lacks one.
     * Pre-extracts cover images into the thumbnail cache.
+* **Folder-Watch Auto-Import ("Drop Folder")**:
+  * Background directory watcher monitoring a configured folder (e.g. `~/Downloads/Books`) to silently import and sanitize new files into the library.
 * **Library-Wide Deep Content Search (Tantivy FTS)**:
   * Blazing fast offline full-text search engine indexing the complete text of all books.
   * Instant (10–20ms) queries across tens of thousands of books for character names, quotes, or themes.
@@ -111,6 +117,8 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
   * Dashboard statistics tracking total books finished, weekly reading hours, and daily reading streaks.
 * **Bulk Metadata & Tag Editing**:
   * Multi-select books to batch-assign tags, authors, shelves, or reading statuses in a single click.
+* **Duplicate Book Finder**:
+  * One-click tool to identify duplicate files across the catalog by hash or Title/Author matching for easy library hygiene.
 
 ---
 

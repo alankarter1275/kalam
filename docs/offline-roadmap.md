@@ -14,6 +14,9 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
   * Dual-page view in widescreen mode and continuous vertical scrolling option.
   * Table of Contents (TOC) hierarchy navigation, reading progress tracking, and bottom-right reading location percentage pill.
   * Ribbon bookmark button in top-right header with bookmark management panel.
+  * **"Jump Back" History (Breadcrumbs)**: If jumping to a footnote, Table of Contents, or search match, a floating button lets you instantly return to your previous reading position.
+  * **Auto-Hiding Mouse Cursor**: Pointer hides after 2 seconds of inactivity during reading so it never blocks words.
+  * **Custom Keybindings & Mouse Wheel Tuning**: Fully configurable shortcut keys and adjustable mouse wheel scroll step sensitivity.
 * **Text Selection & Tooling**:
   * Fluid mouse/touch selection with custom teardrop drag handles.
   * Double-click to select word; triple-click to select paragraph.
@@ -44,6 +47,10 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
   * Single page, Left-to-Right (Western), Right-to-Left (Manga), and Webtoon continuous vertical scroll mode.
 * **Double-Page Spreads**:
   * Automatic dual-page spread detection in landscape/widescreen mode.
+* **Smart Page Splitting & Stitching**:
+  * Automatic splitting of dual-page scans into single pages when reading in portrait/narrow window mode.
+* **Image Tuning Filters**:
+  * Instant contrast, sharpness, and brightness adjustments to clean up faded manga scans and enhance dark artwork.
 * **Zero-Latency Preloading**:
   * Viewport memory caching with background preloading of adjacent pages (`page ± 2`) for instant page turns.
 * **Comic Remaster Tool**:
@@ -96,6 +103,14 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 * **Custom & Smart Shelves**:
   * **Manual Shelves**: Curated collections and reading playlists.
   * **Smart Shelves**: Dynamic playlists generated from live search queries (e.g., `tag:Sci-Fi status:Unread rating:>4`) pinned to the sidebar.
+* **Reading Statuses**:
+  * Built-in primary reading states for all books: **Currently Reading**, **Want to Read**, **Finished**, and **Abandoned / Dropped**.
+* **Personal Star Ratings & Book Reviews**:
+  * 5-star rating widget and private notes/review markdown editor on the Book Details page.
+* **Reading Streaks & Offline Reading Stats**:
+  * Dashboard statistics tracking total books finished, weekly reading hours, and daily reading streaks.
+* **Bulk Metadata & Tag Editing**:
+  * Multi-select books to batch-assign tags, authors, shelves, or reading statuses in a single click.
 
 ---
 

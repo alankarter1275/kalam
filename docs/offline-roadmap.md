@@ -24,14 +24,19 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
   * Double-click to select word; triple-click to select paragraph.
   * Action Toolbar:
     * Highlight with multi-color palette (Yellow, Green, Blue, Pink, Orange) + Underline style.
-    * `[Fix Typo]` inline action popover.
+    * `[Fix Typo]` inline action popover: type the correction, hit Enter, and the fix is immediately saved as a sidecar patch without interrupting reading flow.
     * Quote, Dictionary lookup, and Copy actions.
-* **Non-Destructive Inline EPUB Editing (Sidecar Patch Proxy)**:
-  * Fix typos and formatting errors directly inside books without altering or corrupting the original `.epub` file on disk.
-  * Edits are stored as XPath / DOM replacement rules in the database and sidecar `kalam.json`.
-  * Served natively during chapter loading via fast DOM parsing (`scraper`/`tl`), ensuring zero layout shift and a pristine original file.
-* **Proofreading Edit Mode (Power User)**:
+* **Non-Destructive Sidecar Patches & Permanent EPUB Baking**:
+  * **Sidecar Patches (Default)**: While reading, typo fixes and notes are saved as non-destructive XPath/DOM replacement rules in the database and `kalam.json`. Original `.epub` files on disk remain untouched.
+  * **"Apply Patches to EPUB" (Permanent Bake)**: An explicit button in book tools allowing users to permanently write all accumulated sidecar typo fixes directly into the `.epub` archive and re-verify its container structure.
+* **Proofreading Edit Mode (In-Reader)**:
   * Dedicated pencil toggle in reader chrome allowing one-click paragraph editing inline with hover highlights.
+* **Obsidian-Style Full EPUB Editor (Calibre Power, Modern Zen UI)**:
+  * A dedicated full-screen book editor route for comprehensive book crafting and remodeling:
+    * **Live Preview Surface (Default)**: Obsidian-like WYSIWYG editor where HTML markup is presented as clean, intuitive Markdown-style formatting (`# Headings`, `**bold**`, `*italics*`, `> blockquotes`, images).
+    * **Raw HTML / CSS Code Mode Toggle**: One-click switch for power users to edit raw HTML tags, class attributes, and stylesheets with syntax highlighting.
+    * **Book File Tree & Asset Manager**: Left sidebar showing all XHTML chapters, stylesheets (`.css`), embedded fonts, and images.
+    * **Table of Contents (TOC) & Chapter Editor**: Visually rename chapters, nest sub-chapters, reorder sections, or split/merge chapters.
 * **Quote-Anchored Locators & Robust CFI**:
   * Locators dynamically re-anchor to the exact text snippet regardless of reflow, font resizing, or window dimension changes.
   * Clicking an annotation, quote, or bookmark in the sidebar jumps directly to the exact highlighted phrase.
@@ -74,7 +79,7 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
   * UI components never run blocking SQLite queries on the main thread.
   * Requests are routed through an async `LibraryService` actor pattern, ensuring 60 FPS UI responsiveness.
 * **Task Manager (`tasks.rs`)**:
-  * Centralized queue for long-running jobs (importing books, batch metadata fetching, full-text index rebuilding, comic remastering) with progress bars and cancellation support.
+  * Centralized queue for long-running jobs (importing books, batch metadata fetching, full-text index rebuilding, comic remastering, EPUB patch baking) with progress bars and cancellation support.
 * **Smart Preloaders & Memory Safety**:
   * Preloading next chapter in the background while the user reads.
   * Async cover texture generation and memory-bounded thumbnail caching (surviving restarts via persisted ~200px thumbnails).
@@ -108,8 +113,11 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 * **Interactive Inline Metadata Editing (`book.rs`)**:
   * Seamless inline editing directly on the Book Details page: clicking Title, Author, or series wraps labels in a `gtk::Stack` overlapping with a `gtk::Entry` box to save instantly on Enter.
   * Tag FlowBox features a permanent `[ + ]` pill to open a mini inline entry to quickly append tags.
-* **Dedicated Metadata Editor & Fetcher Page**:
-  * Full-screen editing route for detailed book metadata: series index, publisher, publication date, custom cover assignment, edition comparison, and tag management.
+* **Dedicated Metadata Editor & Online Fetcher Hub**:
+  * Full-screen editing route for detailed book metadata:
+    * **Integrated Online Fetching**: Search and fetch accurate metadata and high-res cover art from OpenLibrary and Google Books.
+    * **Edition & Cover Comparison**: Side-by-side comparison of fetched editions before applying.
+    * **Comprehensive Field Editing**: Title, authors, series name, series index, publisher, publication date, language, ISBN, synopsis/description, and tags.
 * **Author Pages**:
   * Dedicated author hub displaying author biographies, personal notes, and all associated books grouped by series and release date.
 * **Series Management ("Cover Stacks")**:

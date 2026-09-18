@@ -10,7 +10,7 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 
 ### 1. EPUB & Reflowable Text Engine (Kalam Engine)
 * **Core Reading Experience**:
-  * Crisp typography with user-selectable fonts, font sizes, line heights, margins, and themes (Light, Sepia, Dark, OLED/Ink).
+  * Crisp typography with user-selectable fonts, font sizes, line heights, margins, and themes (Light, Sepia, Dark, OLED/Ink Pure Black).
   * Dual-page view in widescreen mode and continuous vertical scrolling option.
   * Table of Contents (TOC) hierarchy navigation, reading progress tracking, and bottom-right reading location percentage pill.
   * Ribbon bookmark button in top-right header with bookmark management panel.
@@ -47,6 +47,8 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 ### 3. Comics & Manga Engine (CBZ/CBR)
 * **Reading Modes**:
   * Single page, Left-to-Right (Western), Right-to-Left (Manga), and Webtoon continuous vertical scroll mode.
+* **Manga Night / Dark Mode (Color Inversion)**:
+  * One-tap dark mode inversion for black-and-white manga pages (white page backgrounds become dark, black ink lines become crisp white) for strain-free reading in dark rooms.
 * **Double-Page Spreads**:
   * Automatic dual-page spread detection in landscape/widescreen mode.
 * **Smart Page Splitting & Stitching**:

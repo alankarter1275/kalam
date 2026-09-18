@@ -1,7 +1,4 @@
-crates/kalam-reader/src/view.rs:428:5: [1m[91merror[0m: empty line after doc comment
-crates/kalam-reader/src/view.rs:913:8: [1m[91merror[0m: method `to_widget_rect` is never used
-[1m[91merror[0m: could not compile `kalam-reader` (lib) due to 2 previous errors
-[1m[91merror[0m: could not compile `kalam-reader` (lib test) due to 2 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -23,9 +20,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-crates/kalam-reader/src/view.rs:428:5: [1m[91merror[0m: empty line after doc comment
-crates/kalam-reader/src/view.rs:913:8: [1m[91merror[0m: method `to_widget_rect` is never used
-[1m[91merror[0m: could not compile `kalam-reader` (lib) due to 2 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam-reader` (lib test) due to 2 previous errors
---- run 35398262496 ---
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 14.50s
+--- run 35399375314 ---

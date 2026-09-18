@@ -139,13 +139,13 @@ fn build_window(app: &gtk::Application, view: ReaderView, started: std::time::In
             }
         });
     }
-    view.connect_word(|word| match word.highlight {
-        Some(id) => eprintln!("demo: tapped highlight #{id} (on {:?})", word.word),
-        None => eprintln!(
-            "demo: word tapped {:?} at ({:.0},{:.0}) — sentence: {:?}",
-            word.word, word.rect.origin.x, word.rect.origin.y, word.sentence
-        ),
-    });
+    // There is deliberately no tap-a-word handler here. The widget used to
+    // offer `connect_word`, which turned a single tap on text into a
+    // dictionary lookup; the owner removed the feature outright, and the
+    // engine API went with it. A tap on text is now just a tap — the page-turn
+    // zones decide what it does. Highlight taps go through
+    // `ReaderView::highlight_at(x, y)`, which is a separate path and is
+    // unaffected. Do not reinstate a tap-to-look-up.
     view.connect_selection(|selected| match selected {
         Some(s) => eprintln!("demo: selected {:?}", s.text),
         None => eprintln!("demo: selection cleared"),

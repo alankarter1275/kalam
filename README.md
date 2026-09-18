@@ -4,9 +4,13 @@
 Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest hardware.
 
 > Reader-improvements track complete — merged dictionary store, popup redesign,
-> POS + likely-sense hint, offline IPA pronunciation, tap-to-look-up, find in
-> chapter, vocabulary review + CSV/Anki export. Dictionary track Phases 8–10
+> POS + likely-sense hint, offline IPA pronunciation, find in chapter,
+> vocabulary review + CSV/Anki export. Dictionary track Phases 8–10
 > shipped (POS dividers, priority reorder, lookup history).
+>
+> **Tap-a-word-to-open-dictionary is not a feature and never will be.** It
+> shipped once under WebKit, and the owner removed it deliberately. Look a word
+> up by selecting it. Do not reintroduce a tap-to-look-up.
 
 > **For AI agents / new chats — read this first.**
 > **Current plan: [`docs/offline-roadmap.md`](./docs/offline-roadmap.md)** —
@@ -103,7 +107,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | P3 | Highlights, quotes, offline dictionary ✅ |
 | P4 | Shelves engine, lists, history, tags, analytics ✅ |
 | **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
-| Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 shipped: POS grouping dividers, dictionary priority reorder UI, lookup history |
+| Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 shipped: POS grouping dividers, dictionary priority reorder UI, lookup history |
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
 | A0 (architecture) | ✅ **done** except the plugin seam. Measured (`perf.rs` / `timing.rs`) · `LibraryService` seam · cover thumbnails · task manager · preloaders · **windowed book grid** (2,000 books: 502 MB → 247 MB, 434 ms → 12 ms) · perf budgets in CI that assert **query counts**, not milliseconds. The plugin-host seam is designed in `docs/archive/source-seam.md` and lands with its first implementation (Part 2) |
 | **P6.5** | **Libraries** ✅ — choose the folder, keep several, switch between them (restarts), copy one to another machine and it opens. App settings stay shared; dictionaries are not duplicated per library. Every book folder keeps a `kalam.json` backup of its details, tags, highlights and reading position |

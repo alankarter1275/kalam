@@ -103,22 +103,6 @@ pub struct ReadingPosition {
     pub fraction: f64,
 }
 
-/// A word the reader tapped, for the dictionary popover.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TappedWord {
-    /// The word itself, trimmed, as the page shows it.
-    pub word: String,
-    /// The sentence around it, for sense ranking — what Kalam's
-    /// `sentenceAroundText` produced from the DOM.
-    pub sentence: String,
-    /// Where the word sits, in widget coordinates, so a popover can point
-    /// at it.
-    pub rect: Rect,
-    /// Kalam's id of the highlight the word sits in, if any — the tap
-    /// that means "this highlight" (recolour, delete) rather than "this
-    /// word" (look it up). Kalam decides which; the widget reports both.
-    pub highlight: Option<i64>,
-}
 
 /// A text selection the reader finished, for the copy/highlight/lookup
 /// chip.
@@ -173,7 +157,6 @@ pub enum ReadingMode {
 }
 
 type PositionCallback = dyn Fn(&ReadingPosition);
-type WordCallback = dyn Fn(&TappedWord);
 type SelectionCallback = dyn Fn(Option<&SelectedText>);
 type LinkCallback = dyn Fn(&str);
 type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
@@ -186,7 +169,6 @@ type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
 #[derive(Default)]
 struct Callbacks {
     position: Option<Box<PositionCallback>>,
-    word: Option<Box<WordCallback>>,
     selection: Option<Box<SelectionCallback>>,
     link: Option<Box<LinkCallback>>,
     image_tap: Option<Box<ImageTapCallback>>,
@@ -444,18 +426,7 @@ impl ReaderView {
     }
 
     /// Called when the reader taps a word (press and release without
-    /// moving, on text). Connecting this makes a tap on text a word
-    /// event instead of a page turn; a host that has no tap-to-look-up
-    /// (Kalam, since it removed the feature) simply never connects it.
-    pub fn connect_word(&self, f: impl Fn(&TappedWord) + 'static) {
-        self.inner.callbacks.borrow_mut().word = Some(Box::new(f));
-    }
-
-    /// Disconnect the single-tap word lookup handler so taps on text turn pages.
-    pub fn disconnect_word(&self) {
-        self.inner.callbacks.borrow_mut().word = None;
-    }
-
+ 
     /// Called when a drag-selection ends with text in it (`Some`), and
     /// when the selection is cleared (`None`) — show and hide the chip.
     pub fn connect_selection(&self, f: impl Fn(Option<&SelectedText>) + 'static) {
@@ -635,7 +606,6 @@ impl ReaderView {
     /// The current selection's text, if any — as a person would type it:
     /// the publisher's soft hyphens and zero-width spaces are gone and
     /// whitespace is collapsed, the same as the text in a `NewHighlight`
-    /// and a `TappedWord`.
     pub fn selected_text(&self) -> Option<String> {
         self.inner
             .session
@@ -1900,43 +1870,6 @@ impl ReaderView {
                     view.area.queue_draw();
                     return;
                 }
-                // A tap on a word is a dictionary lookup only for a host
-                // that asked for one (`connect_word`); then it takes
-                // precedence over the page-turn zones, so a word near the
-                // edge is still a word. With no word handler a tap on text
-                // is just a tap, and the zones decide what it does.
-                let wants_words = view.inner.callbacks.borrow().word.is_some();
-                let word = match view.band_at(y) {
-                    _ if !wants_words => None,
-                    Some((band, py)) => {
-                        word_at(&mut s, band.spine, band.page, x, py).map(|mut word| {
-                            word.rect = view.to_widget_rect(&band, word.rect);
-                            word
-                        })
-                    }
-                    None if view.mode() == ReadingMode::Scrolled => None,
-                    None => {
-                        if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
-                            word_at(&mut s, spine, page, px, py).map(|mut word| {
-                                if view.mode() == ReadingMode::Paged && view.area.width() > 900 && page > s.page() {
-                                    let single_w = (view.area.width() as f32 / 2.0).floor();
-                                    word.rect.origin.x += single_w;
-                                }
-                                word
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                };
-                if let Some(word) = word {
-                    drop(s);
-                    view.area.queue_draw();
-                    if let Some(cb) = &view.inner.callbacks.borrow().word {
-                        cb(&word);
-                    }
-                    return;
-                }
                 // Tap zones turn pages in paged mode only; a strip has no
                 // pages to turn, and the wheel is right there.
                 if view.mode() == ReadingMode::Scrolled {
@@ -2061,63 +1994,6 @@ fn position_of(s: &mut Session) -> ReadingPosition {
     }
 }
 
-/// The word under a page-space point on `spine`'s `page`, with its
-/// sentence and its rectangle *on that page* — `None` off text or on
-/// punctuation. The caller maps the rect to the widget.
-fn word_at(s: &mut Session, spine: usize, page: usize, x: f32, y: f32) -> Option<TappedWord> {
-    let (start, end) = s.word_at_page(spine, page, x, y)?;
-    let speakable = s.speakable_page_of(spine, page)?;
-    let span = speakable
-        .words
-        .iter()
-        .find(|w| w.locator_start == start && w.locator_end == end)?;
-    let text: Vec<char> = speakable.text.chars().collect();
-    let word: String = text
-        .get(span.text_start as usize..span.text_end as usize)?
-        .iter()
-        .collect();
-    let word = readable(&word);
-    if !word.chars().any(|c| c.is_alphanumeric()) {
-        return None;
-    }
-    let sentence = sentence_around(&text, span.text_start as usize, span.text_end as usize);
-    let sentence = readable(&sentence);
-    let rect = union(&s.range_rects_on_page(spine, page, start, end))?;
-    let highlight = s.host_highlight_at_page(spine, page, x, y);
-    Some(TappedWord {
-        word,
-        sentence,
-        rect,
-        highlight,
-    })
-}
-
-/// The sentence containing `[start, end)` of the page text: back to the
-/// previous sentence end, forward to the next. Capped at 600 chars like
-/// Kalam's own `sentenceAroundText`.
-fn sentence_around(text: &[char], start: usize, end: usize) -> String {
-    const CAP: usize = 600;
-    let is_end = |c: char| matches!(c, '.' | '!' | '?' | '…');
-    let mut from = start;
-    while from > 0 && !is_end(text[from - 1]) {
-        from -= 1;
-    }
-    let mut to = end;
-    while to < text.len() && !is_end(text[to]) {
-        to += 1;
-    }
-    // Keep the closing punctuation.
-    if to < text.len() {
-        to += 1;
-    }
-    let sentence: String = text[from..to].iter().collect();
-    let sentence = sentence.split_whitespace().collect::<Vec<_>>().join(" ");
-    if sentence.chars().count() > CAP {
-        sentence.chars().take(CAP).collect()
-    } else {
-        sentence
-    }
-}
 
 /// Text as a person would type it. Publishers' files are full of invisible
 /// layout hints — soft hyphens inside words (`Har\u{ad}ry`), zero-width
@@ -2259,19 +2135,6 @@ mod tests {
         // A joiner is part of the word in scripts that use it.
         assert_eq!(readable("\u{feff}क\u{94d}\u{200d}ष"), "क\u{94d}\u{200d}ष");
         assert_eq!(readable("  "), "");
-    }
-
-    #[test]
-    fn sentence_is_cut_at_punctuation_and_collapsed() {
-        let text: Vec<char> = "First one. The  bank\nwas closed! Third?".chars().collect();
-        let start = text.iter().position(|&c| c == 'b').unwrap();
-        assert_eq!(
-            sentence_around(&text, start, start + 4),
-            "The bank was closed!"
-        );
-        assert_eq!(sentence_around(&text, 0, 5), "First one.");
-        let last = text.len() - 6;
-        assert_eq!(sentence_around(&text, last, last + 5), "Third?");
     }
 
     #[test]

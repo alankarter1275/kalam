@@ -33,7 +33,6 @@
 //!     catalog.save_progress(book_id, pos.chapter, pos.fraction);
 //!     // and pos.locator, serialised, for the durable record
 //! });
-//! view.connect_word(move |w| sender.input(ReaderMsg::DictSearch(w.word.clone())));
 //! // ReaderMsg::NextChapter => view.next_chapter(), and so on.
 //! ```
 
@@ -52,5 +51,5 @@ pub use fonts::{font_source, SANS_FONT};
 pub use prefs::{HighlightColor, KalamPrefs, KalamTheme, BODY_FONT};
 pub use view::{
     NewHighlight, ReaderOptions, ReaderView, ReadingMode, ReadingPosition, SearchResult, SelectedText,
-    TappedWord, DEFAULT_CACHE_BUDGET,
+    DEFAULT_CACHE_BUDGET,
 };

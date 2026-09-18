@@ -1781,9 +1781,15 @@ PDFium a close second and Poppler clearly behind both.
 
 ### Plugin substrate: WebAssembly
 
+**Set aside — Part 2 work (owner's instruction, 2026-09-18).** The decision
+below stands, but nothing is being built. This section is the record for
+whoever picks it up in Part 2. `ARCH.md`'s Source-seam section is now
+banner-marked as set aside and points here, so the stale Lua text there is no
+longer silently authoritative.
+
 Owner's decision, and it is the one recorded in the most recent discussion. It
 supersedes both earlier answers — `ARCH.md`'s Lua and the "pure Rust + TOML
-selectors" pivot — and **`ARCH.md` needs correcting when this is picked up.**
+selectors" pivot.
 
 It is a defensible choice. Worth being clear about what it costs and what it
 buys, because the cost lands in a specific place:

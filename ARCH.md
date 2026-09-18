@@ -154,6 +154,20 @@ Writes still go straight to `Catalog`. They belong to the task manager
 
 ## Source seam (A0 step 8 — designed, not yet code)
 
+> **SET ASIDE — this is Part 2 work (2026-09-18).** The owner's instruction:
+> the plugin system belongs to Part 2, so it is not being decided or built now.
+> Everything below stays as the *design record*, and one thing in it is already
+> known to be stale: **the Lua choice below was superseded.** The current
+> decision is **WebAssembly**, recorded in `docs/conversation.md` §22. It is
+> not being implemented, and the reasoning that would make it safe to implement
+> (feature-gate `wasmtime`, do not ship the host before a second plugin exists,
+> keep the TOML selector config for selector-only fixes) is written there.
+>
+> Do not start on this section during Part 1. The parts that are *not* about
+> plugins — one `Source` trait for fiction and manga, rate limits enforced by
+> the host, a source being a pure function with no filesystem or widgets — are
+> still the intended shape whenever Part 2 does pick this up.
+
 Where books come from that are not the user's disk: AO3, FanFiction.net, Royal
 Road, MangaDex, Komga. Full design in
 [`docs/source-seam.md`](./docs/archive/source-seam.md); the essentials:

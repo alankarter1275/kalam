@@ -101,9 +101,13 @@ much it matters, not by how easy it is.
   Lua". The scaffolding that exists (`wit/kalam.wit`, `plugins/ao3`) is Wasm.
   `src/sources/scrapers/mangaball.toml` is the TOML approach and nothing reads
   it. Pick one and delete the other two sets of notes.
-- **`docs/ci/github-actions-ci.yml` claims to be the canonical copy of the
+- ~~**`docs/ci/github-actions-ci.yml` claims to be the canonical copy of the
   workflow** (README says so) but has drifted ~130 lines from
-  `.github/workflows/ci.yml`. One of them should be deleted.
+  `.github/workflows/ci.yml`. One of them should be deleted.~~ **Resolved
+  2026-09-18: deleted.** The owner granted the GitHub App the `workflows`
+  permission, so the agent now edits `.github/workflows/ci.yml` directly and
+  pushes it. The duplicate existed only because that permission was missing,
+  and a copy you must remember to re-sync had already drifted 134 lines.
 
 ### App-level rules that do not exist yet
 

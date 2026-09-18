@@ -48,9 +48,8 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   - Note that `ci-logs/` is a snapshot, not live: the committed logs predate
     the engine becoming a path member and still reference it as a git
     dependency.
-- Workflow changes are made by you with your own account (the App cannot push
-  `.github/workflows/`); the canonical copy lives at
-  `docs/ci/github-actions-ci.yml` — see `docs/ci/README.md`.
+- Workflow changes are made by the agent directly in
+  `.github/workflows/ci.yml` — see `docs/ci/README.md`.
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md) ·
   design decisions: [`docs/conversation.md`](./docs/conversation.md) ·

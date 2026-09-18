@@ -2665,3 +2665,5 @@ We have officially halted all online scraper work (P7/P9) and removed hardcoded 
 9. **P5.5 - UI Overhaul:** "Two Worlds" design (Offline Library vs Online Hub).
 10. **P12 - Wasm Plugin Ecosystem:** Build the WebAssembly host architecture to power dynamic scrapers (`wit/kalam.wit`), officially replacing hardcoded Rust scrapers.
 11. **P7/P9 - Reintroduce Online Sources:** Write Wasm plugins for AO3, MangaDex, etc., and pair them with bespoke hardcoded GTK UI "Husks" inside Kalam.
+
+| 2026-09-18 | **Part 1 Offline Master Plan Locked (`docs/offline-roadmap.md`).** Consolidated all offline requirements into 6 dedicated modules (Reading Engines & Inline Editor, Yazi Architecture & Service Layer, Content Sanitizer & Deep Content Search, Library Management & Metadata Editors, Annotations & Vocabulary Hub, and UI/Performance Closure). All online scraper/plugin features strictly relegated to Part 2, and the Material 3 UI design overhaul positioned at the very end of Part 1. |

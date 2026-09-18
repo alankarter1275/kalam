@@ -1,5 +1,29 @@
 # Codebase Graph Index (Kalam / calibre-alt)
 
+> ## ⚠️ Stale and machine-generated — do not trust, do not hand-edit
+>
+> This file was produced by [Graft](https://github.com/trailhq/Graft), not
+> written by hand, and it describes the project **as it was before the reading
+> engine was replaced**. In particular it still says the reader is WebKitGTK.
+> It is not: the reader is now `crates/kalam-reader` over the vendored
+> `chapbook-*` crates, and nothing in `src/` uses WebKit any more. It also
+> predates the `crates/` and `tools/` trees entirely, which is now roughly a
+> third of the repository.
+>
+> The absolute `file:///home/...` links below are Graft output too, and were
+> never deliberately written. Hand-fixing them is pointless: the next
+> `graft build` overwrites the file and they come back.
+>
+> **Regenerate rather than repair:** `npx @nanonets/graft` and then replace
+> this file. Until then it is kept here for history only. Nothing else in the
+> repository links to it.
+>
+> For an accurate map, read [`README.md`](../../README.md) ("Project layout"),
+> [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) and
+> [`docs/offline-roadmap.md`](../offline-roadmap.md).
+
+---
+
 > **AI Agent Executive Summary & Context Map**: Read this index first to understand Kalam's vision, current trajectory, and component architecture without reading full 300KB documentation files or running speculative file searches.
 
 ---

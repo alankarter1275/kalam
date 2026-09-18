@@ -27,5 +27,5 @@ run), and "build it" became "fork it and strip it".
 |---|---|
 | `README.md` | Original front page |
 | `ARCHITECTURE.md` | The six-stage pipeline that was never built |
-| `RESTRICTIONS.md` | Guardrails; see above for which still apply |
+| `RESTRICTIONS.md` | Guardrails; **superseded by the live [`../RESTRICTIONS.md`](../RESTRICTIONS.md)**, which records what the rules are now and how each is checked |
 | `ROADMAP.md` | Six phases, none completed |

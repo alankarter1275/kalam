@@ -5,7 +5,7 @@
 Personal Linux-only ebook manager + reader. One process. No plugin host, no content server.
 
 **Name:** Kalam  
-**Stack:** Rust · GTK4 · Relm4 · (later) WebKitGTK · SQLite · MuPDF for PDF  
+**Stack:** Rust · GTK4 · Relm4 · `kalam-reader` (native engine, no WebKit) · SQLite · `lopdf` for PDF  
 
 ## Navigation (P0)
 
@@ -14,8 +14,14 @@ Sidebar
   Home
   Library  → hub tiles → section lists → Book page
   Shelves  → 2-col grid → Shelf detail → Book page
-  Downloads / Comics / AO3 / Fanfic / Settings  (placeholders)
+  Comics   → local CBZ/CBR grid → comics reader
+  Settings (pinned to the bottom of the rail)
 ```
+
+`Downloads`, `Browse` and `Fanfic` still exist as `NavItem`s, routes and
+placeholder copy, but are **not** in `NavItem::ALL`, so the sidebar does not
+show them. They belong to Part 2 and nothing implements a `Source` yet; see
+`docs/offline-roadmap.md` and the comment on `NavItem::ALL`.
 
 Book can open as:
 
@@ -33,20 +39,40 @@ Smart shelf ≈ Calibre virtual library (saved rules).
 Manual shelf ≈ pinned book ids.  
 Rule engine is **not** implemented in P0 (sample data only).
 
-## EPUB reader (P2 + P3 enhancements)
+## EPUB reader
 
-- WebKitGTK  
-- Reader component split into sub-modules under `src/pages/reader/` (`mod.rs`, `types.rs`, `mod_model.rs`, `chapter.rs`, `session.rs`, `js_bridge.rs`, `ui_prefs.rs`, `settings_panel.rs`, `panels.rs`, `lists.rs`, `chrome.rs`)
-- **Chapter-wise** continuous scroll  
-- Prefetch next chapter near ~85–90% scroll (P2: manual N/›; auto-next disabled for stability)  
-- Keep at most ~3 chapters mounted  
-- Instant CSS (fonts, theme, margins) — reload chapter on theme/font change  
-- Highlights / quotes / dictionary in P3:
-  - Selection → `#kalam-chip` floating inside WebView (colors, quote, dict, copy)
-  - `wrapRangeByPaths` via nodePath (child index path) + offsets for persistence
-  - Reinject via `kalamInjectHighlights` on `LoadEvent::Finished`
-  - JS bridge: `window.webkit.messageHandlers.kalam.postMessage(JSON)` + fallback `kalam://` iframe + title notify; Rust: `UCM::register_script_message_handler("kalam", None)` + `connect_script_message_received` + `decide_policy`
-  - Dictionary: Settings → import StarDict/SQLite/TSV → `dict_entries` → search (exact → prefix → substring) → popup near rect via `kalamShowDict`
+**Native, not WebKit.** The reader is `crates/kalam-reader`'s `ReaderView`, a
+`gtk::DrawingArea` that lays out and paints the book itself via the vendored
+`chapbook-*` crates. There is no web process, no injected JavaScript and no
+JS bridge. The engine replaced WebKitGTK; `docs/kalam/INTEGRATION.md` records
+the wiring.
+
+- Reading modes: **Paged** (one page at a time) and **Scrolled** (the whole
+  book as one column, chapters laid out on demand with estimated heights that
+  self-correct). Switching modes keeps your place.
+- Preferences are four numbers plus a theme — `font_px`, `line_height`,
+  `column_px` and one of four `KalamTheme`s — applied live with no reload.
+- Position is a `LayeredLocator`, serialised field by field into the
+  previously-unused `annotations.cfi` column (`locator_to_json` /
+  `locator_from_json` in `src/pages/reader/engine.rs`). It survives relayout,
+  font changes and window resizes.
+- Everything the old JS did is now a method call, and everything the JS sent
+  back arrives through the callbacks `engine::wire` installs:
+  `connect_position`, `connect_selection`, `connect_word`,
+  `connect_external_link`, `connect_image_tap`.
+- The selection chip and the dictionary popover are real GTK popovers built
+  in `engine.rs`, not HTML drawn inside a page.
+
+The page is still split into sub-modules under `src/pages/reader/`: `mod.rs`,
+`types.rs`, `mod_model.rs`, `chapter.rs` (chapter identity only — the engine
+owns the rest), `session.rs` (telemetry + progress checkpoint), `engine.rs`
+(all engine wiring), `js_bridge.rs` (**misnamed leftover** — it is now the
+dictionary query and its popover, with no JS in it; rename when convenient),
+`ui_prefs.rs`, `settings_panel.rs`, `panels.rs`, `lists.rs`, `chrome.rs`.
+
+Dictionary flow is unchanged from P3: Settings → import StarDict / SQLite /
+TSV → `dict_entries` → exact → prefix → substring → popover anchored at the
+selection.
 
 ## Shelves engine (P4)
 
@@ -82,7 +108,9 @@ Nested boolean groups were considered and deferred — the JSON can gain a
                              #   reading_events, reading_sessions
   library/<uuid>/            # book.epub + cover.*
   dictionaries/              # (placeholder dir, actual entries in catalog.db)
-  cache/reader/<uuid>/       # extracted EPUB for WebView
+  cache/reader/<uuid>/       # extracted EPUB — used by the book/library pages
+                             #   to list chapters; the engine reads the .epub
+                             #   itself and does not need this
   cache/thumbs/<uuid>.png    # persistent cover thumbnails (A0 step 3)
   covers/<file_hash>.<ext>   # stashed covers for metadata restore — survives
                              #   book deletion, hence not under library/<uuid>/
@@ -128,7 +156,7 @@ Writes still go straight to `Catalog`. They belong to the task manager
 
 Where books come from that are not the user's disk: AO3, FanFiction.net, Royal
 Road, MangaDex, Komga. Full design in
-[`docs/source-seam.md`](./docs/source-seam.md); the essentials:
+[`docs/source-seam.md`](./docs/archive/source-seam.md); the essentials:
 
 - **One `Source` trait for fiction and manga**, not two. They differ only in
   the final step, which is a two-variant `Content` enum (`Text` / `Images`).
@@ -156,20 +184,22 @@ Road, MangaDex, Komga. Full design in
 Lands as code with AO3 in P7, its first implementation and first caller — a
 trait with no implementation would fail `-D warnings` in a binary crate.
 
-## Reader WebView (A0)
+## Reader engine (replaces the old "Reader WebView" section)
 
-The reader borrows one long-lived `WebView` from `src/webview_pool.rs` instead
-of constructing one per book open (a WebKit process spawn, ~400 ms measured).
-Only the widget is pooled — not the reader page — so the reading session and
-progress save still happen on every entry and exit.
+There is no WebView pool any more, and `src/webview_pool.rs` is gone. The
+`KALAM_NO_WEBVIEW_POOL=1` switch listed in the README's switch table is a
+leftover and does nothing.
 
-The catch worth remembering: a recycled view keeps the previous reader's
-signal handlers, each holding a dropped component's `Sender`. So permanent
-setup (sizing, context-menu suppression, `register_script_message_handler`,
-which WebKit refuses twice for one name) lives in the pool, while every
-handler capturing a `ComponentSender` is recorded as a `SignalHandlerId` and
-disconnected in `shutdown()` before the view is parked.
-`KALAM_NO_WEBVIEW_POOL=1` restores the old spawn-per-open behaviour.
+What replaced it: one `ReaderView` per reader page, created in
+`ReaderModel::init` and torn down in `shutdown()`. There is no cross-book
+reuse to manage, because there is no ~400 ms web-process spawn to avoid — the
+widget is constructed in-process.
+
+What *is* worth keeping from the old design is the underlying problem, which
+still applies in a different form: the engine's per-chapter layout is cached
+inside the session (`Session`'s layout and image caches, see
+`crates/chapbook-reader/src/cache.rs`), and `ReaderView::cache_bytes()`
+reports it. Closing a book drops the session and its cache with it.
 
 ## Theming & CSS
 

@@ -39,6 +39,6 @@ cargo run --example demo
 ---
 
 ## 📚 Documentation Map
-- **[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md):** Detailed breakdown of the rendering pipeline, pagination data structures, and GTK painting model.
-- **[`docs/RESTRICTIONS.md`](./docs/RESTRICTIONS.md):** Non-negotiable architectural boundaries (No C++ `stylo`, No WebKit/WebViews, No JS bridges).
-- **[`docs/ROADMAP.md`](./docs/ROADMAP.md):** Sequenced implementation plan for `kalam-engine`.
+- **[`docs/ARCHITECTURE.md`](./ARCHITECTURE.md):** Detailed breakdown of the rendering pipeline, pagination data structures, and GTK painting model.
+- **[`docs/RESTRICTIONS.md`](./RESTRICTIONS.md):** Non-negotiable architectural boundaries (No C++ `stylo`, No WebKit/WebViews, No JS bridges).
+- **[`docs/ROADMAP.md`](./ROADMAP.md):** Sequenced implementation plan for `kalam-engine`.

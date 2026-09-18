@@ -236,7 +236,7 @@ The missing pieces:
   where the verbs are small — and within that, **Lua where the code breaks
   when a website changes** (scrapers), **compiled Rust where it does not**
   (documented APIs, themes, export). See §5 and
-  [`source-seam.md`](./source-seam.md) §9a.
+  [`source-seam.md`](./archive/source-seam.md) §9a.
 - **The "blazing fast" bar itself.** A TUI renders text in microseconds and
   reads a directory listing. We render books. Even with perfect architecture,
   WebKitGTK dominates. That's why the renderer conversation is the other
@@ -341,7 +341,7 @@ it requires throwing nothing away.
 
 **Status: ✅ seam designed 2026-09-03; Lua removed, then restored the same day
 on the user's Calibre argument. Final answer: **Lua for the surfaces that rot,
-compiled Rust for the ones that do not** — [`source-seam.md`](./source-seam.md)
+compiled Rust for the ones that do not** — [`source-seam.md`](./archive/source-seam.md)
 §0, §9a, §12a.**
 
 The user settled the audience question, which is what the whole thing turned
@@ -458,7 +458,7 @@ surface — they become a second API you must keep stable forever.
   formats. Lua: AO3, FFN, scraped manga, and add-on metadata providers —
   Calibre's model, and the surfaces that break. Sequenced after AO3 lands
   natively so the API is extracted, not guessed (§5,
-  [`source-seam.md`](./source-seam.md) §9a, §11).
+  [`source-seam.md`](./archive/source-seam.md) §9a, §11).
 - **Scope:** confirmed as a **content platform** — fiction sources
   (AO3/FFN/webnovel, tag search, downloads, auto-updates) + manga sources
   (Suwayomi-class) + a Lua plugin seam for scrapers + fast architecture (§7).
@@ -607,7 +607,7 @@ itself stays on WebKit until replaced.
 > *shape* — one adapter per site, written by us, Tachiyomi-like — was never in
 > doubt. The final split: **scraped sites are Lua, API-backed sites
 > (MangaDex, Komga, Kavita, OPDS) are built-in Rust.** See
-> [`source-seam.md`](./source-seam.md) §9a.
+> [`source-seam.md`](./archive/source-seam.md) §9a.
 
 **User (2026-09-02):** "We could have a similar architecture… plugins which
 we will write. Also, no need for a bridge with the Kotlin extensions —
@@ -697,7 +697,7 @@ it; Poppler/GPL is the alternative if we ever want to avoid AGPL).
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -848,7 +848,7 @@ much time do you reckon it will take you?"
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -961,7 +961,7 @@ suite asserts IST and EST behaviour explicitly and is identical everywhere.
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1095,7 +1095,7 @@ fallback.
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1215,7 +1215,7 @@ exists?
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1318,7 +1318,7 @@ last thing to arrive; nothing before it waits for it.
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1446,7 +1446,7 @@ content ⇒ a box model over clean markup, not "write a browser."
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1589,3 +1589,230 @@ Implemented local comic archive reading and interactive Relm4 comics viewer comp
 - **Inline EPUB Editing:** Non-destructive sidecar patches in `kalam.json`.
 - **PDF Engine:** Zathura-style smart-crop default, Reflow toggle.
 - **Scrapers & Metadata:** WebAssembly (Wasm) plugin ecosystem replacing Lua.
+
+---
+
+## 20. Which PDF engine? (2026-09-18)
+
+**Trigger.** `docs/offline-roadmap.md` Module 1 calls for "crisp PDF rendering
+backed by Google's PDFium engine (`pdfium-render`)". Checking that against the
+code found the assumption underneath it was wrong, so the decision was taken
+back up.
+
+### What is actually there
+
+`src/pdf.rs` parses PDFs with `lopdf` and can extract text, but **it has no
+page rasterizer**. `render_page_image_uncropped` walks the page's resources
+for an embedded image XObject and returns it if one exists. That means:
+
+- **Scanned PDFs work.** A scan is one image per page, so page mode shows the
+  real page, and `calculate_ink_box_for_image` + smart crop trim the margins
+  properly. This is the good case and it is genuinely useful.
+- **Text PDFs do not.** With no embedded image, the fallback is
+  `render_text_to_canvas`, which paints a black bar per line of text so the
+  ink-bounds detection has something to measure. Page mode is the default
+  (`reflow_mode: false` in `src/pages/pdf_reader.rs`), so opening an ordinary
+  text PDF shows a page of black rectangles.
+- **Reflow mode does work** — it extracts real text and shows it as
+  paragraphs.
+
+So the first fix is not a library choice at all: default to reflow when the
+page has no embedded image, and label it. Small change, removes a visibly
+broken screen.
+
+### The candidates, for the real-rendering decision
+
+| | Rendering | Cost to Kalam | Licence |
+|---|---|---|---|
+| **Poppler** (`poppler-rs`) | Very good — it is what GNOME Document Viewer uses | One system package (`pacman -S poppler`), already present on most Linux desktops because browsers and Evince pull it in. GLib-based, which Kalam already is. | LGPL — no effect on a personal app |
+| **PDFium** (`pdfium-render`) | Excellent — it is Chrome's engine | **Not bundled.** You must ship or download `libpdfium.so`, a ~10–25 MB prebuilt binary, and manage its version. | Apache-2.0 / BSD |
+| **MuPDF** (`mupdf` crate) | Excellent, often fastest | Builds from C source; slow first build, needs a C toolchain | **AGPL-3.0** — would make Kalam AGPL |
+| **`lopdf` alone** (today) | Parses only; no rasterization | Free | MIT/Apache |
+| Pure-Rust renderers (`pdf`, `printpdf`) | Poor coverage of real-world PDFs | Free | permissive |
+
+Writing our own rasterizer is not an option — it is a multi-year project and
+PDF is a hostile format to do it in.
+
+### Recommendation
+
+**Poppler**, for the stated goals of lightweight, fast and not bloated:
+
+1. Kalam is already GTK4 + GLib, so Poppler adds no new *kind* of dependency.
+2. "Lightweight" is about what the user must install, and Poppler is already
+   installed on nearly every Linux desktop. Bundling a 20 MB PDFium binary to
+   avoid one pacman line is the heavier choice, not the lighter one.
+3. It is what ARCH.md's original stack line implied anyway ("MuPDF for PDF" —
+   a system renderer, just a different one).
+
+PDFium becomes the right answer if Kalam ever needs to run where Poppler is
+not available (Flatpak sandbox without the runtime, or a non-GNOME distro
+image). MuPDF only if AGPL stops being a concern and build time stops
+matterting.
+
+**Not decided here.** This records the analysis and a recommendation; the
+choice is the owner's, and nothing has been changed in `Cargo.toml`.
+
+*Last updated: 2026-09-18.*
+
+---
+
+## 21. Guidelines for the app half (2026-09-18)
+
+**Trigger.** `kalam-engine` carries `RESTRICTIONS.md` — four hard rules that
+keep it from turning into a browser engine. `src/` has nothing equivalent. The
+question was whether the app needs the same treatment.
+
+### First, an uncomfortable observation about the engine's own rules
+
+`docs/kalam/archive/RESTRICTIONS.md` says, verbatim:
+
+> **NO `stylo` (Firefox CSS Engine):** Do not bring in `stylo` or Gecko C++
+> dependencies.
+
+The root `Cargo.toml` pins **five** stylo crates (`stylo`, `stylo_traits`,
+`stylo_atoms`, `stylo_static_prefs`, `stylo_dom`, all at `=0.20.0`), and
+twelve files under `crates/chapbook-layout/src/` reference stylo. The whole
+cascade is built on it.
+
+Rules 1 and 4 also mandate `lol_html` as the CSS sanitizer. **`lol_html` is
+not a dependency anywhere in the workspace**, and there is no sanitizer in the
+crates at all.
+
+So two of the engine's four guardrails are already false, and nobody noticed.
+That is not a criticism of whoever wrote them — it is the predictable result
+of writing a rule that nothing checks. The document is in `archive/` now,
+which is the right place for it.
+
+**The lesson is the actual answer to the question.** Rules in a markdown file
+do not constrain an AI agent. Rules with a test attached do.
+
+### What already works, and why
+
+The engine has two guardrails that *are* effective, and both are tests rather
+than prose:
+
+- `tools/chapbook-cli/tests/stability.rs` reads `Cargo.toml`'s member list and
+  asserts every member is named in `docs/STABILITY.md`, and that the document
+  names no crate that has left. Add a crate without updating the policy and
+  the build fails.
+- `crates/chapbook-core/tests/fixture_discipline.rs` walks every `.rs` file in
+  `crates/` and `tools/` and fails if any default-running test reads the
+  downloaded corpus.
+
+Those work because they are checkable and because they fail loudly. Copy that
+pattern, not the `RESTRICTIONS.md` pattern.
+
+### The ratchet
+
+Most of the rules worth having are already broken in a few places, and
+fixing all of them first is not realistic. So the pattern is:
+
+1. Count today's violations.
+2. Write a test asserting the count is **no greater than** that number.
+3. Fix some, lower the number in the test.
+
+The count can never go up. That is the whole mechanism, and it is what makes
+this practical for a project where an AI writes most of the code.
+
+### Proposed rules for `src/`, each with its check
+
+| Rule | Check | Broken today |
+|---|---|---|
+| No `unwrap()`/`expect()` outside `#[cfg(test)]` — already in `docs/WORKING.md` §1 | grep test, ratcheted | 6, all in `src/downloads.rs` |
+| Pages ask `LibraryService`, not `Catalog` | count `Arc<Catalog>` fields in `src/pages/`, ratchet | many; ARCH.md tracks which pages are converted |
+| Colours live in `theme.rs`; `style.rs` and `resources/style.css` hold shape only, no literal hex outside an allowlist | scan the CSS for `#[0-9a-fA-F]{3,8}` | unknown, small |
+| Every annotation/progress write refreshes the sidecar — `docs/WORKING.md` §2 | grep test over the mutation methods | **0 — currently honoured** |
+| Every `#[allow(dead_code)]` carries a reason comment | scan for the attribute with no adjacent comment | most of the 90 |
+| No source file over N lines without being a generated view | line-count test, ratchet | 8 files over 1,200 |
+| Every workspace member is named in the README project layout | the `stability.rs` pattern, applied to README | **0 — fixed 2026-09-18** |
+
+### Anti-bloat rules (not checkable, so keep them few)
+
+These have to be prose, because nothing can test for "unnecessary". Keep the
+list short enough that it can actually be read:
+
+- **No new abstraction before there is a second caller.** One caller means
+  write it inline; extract when the second one appears.
+- **No new dependency without saying what it replaces or enables**, in the
+  README's layout section.
+- **No new environment-variable switch without removing one.** There are five;
+  that is the ceiling. One was already dead (`KALAM_NO_WEBVIEW_POOL`) and has
+  been removed from the README.
+- **No new page without a route and a way back out of it.**
+- **Part 2 stays out of Part 1.** `docs/offline-roadmap.md` is the boundary;
+  anything that touches the network belongs on the other side of it.
+
+### Recommendation
+
+Do not write a `RESTRICTIONS.md` for `src/`. Write **three ratchet tests** —
+the `unwrap` one, the `Arc<Catalog>`-in-pages one, and the literal-hex one —
+plus a short prose list of the anti-bloat rules in `docs/WORKING.md`. That is
+less documentation than the engine has and more enforcement.
+
+*Last updated: 2026-09-18.*
+
+---
+
+## 22. Two decisions locked (2026-09-18)
+
+### PDF engine: MuPDF
+
+Owner's decision, on rendering quality as the deciding criterion and with
+licence explicitly out of scope ("strictly personal, not community"). The
+comparison is in §20; the short version is that MuPDF is fastest in every
+measurement found and won the one serious published fidelity study, with
+PDFium a close second and Poppler clearly behind both.
+
+**Consequences to handle when this is picked up:**
+
+- The `mupdf` crate compiles MuPDF from vendored source — **no system PDF
+  package**, which is what "lightweight" means here. But it needs a C/C++
+  toolchain, `libclang` (for bindgen), and Fontconfig headers on Linux.
+- Its **default features pull in XPS, SVG, EPUB, HTML, Tesseract OCR, Brotli
+  and DOCX output.** Use `default-features = false` and enable only PDF, or
+  the "not bloated" goal dies at build time rather than at install time.
+- This does not remove the need for the small fix first: page mode currently
+  draws black bars for a text PDF (see `docs/offline-roadmap.md`, "The PDF
+  reader is not doing what the roadmap assumes"). That fix stands on its own
+  and should land before the engine swap, because it makes the broken state go
+  away today.
+- `lopdf` stays for now — it is still doing text extraction and the ink-bounds
+  measurement that smart crop depends on.
+
+### Plugin substrate: WebAssembly
+
+Owner's decision, and it is the one recorded in the most recent discussion. It
+supersedes both earlier answers — `ARCH.md`'s Lua and the "pure Rust + TOML
+selectors" pivot — and **`ARCH.md` needs correcting when this is picked up.**
+
+It is a defensible choice. Worth being clear about what it costs and what it
+buys, because the cost lands in a specific place:
+
+**What it buys.** Crash isolation — a scraper that panics cannot take the
+reader down. Sandboxing — plugin code cannot reach the filesystem, which
+matters for anything downloaded. Both are real.
+
+**What it costs.** `wasmtime` is a large dependency tree (the archived CI logs
+show `wasmtime`, `wasmtime-cache`, `wasmtime-environ` and
+`wasmtime-wit-bindgen` all compiling), which is build time and binary size on
+a machine described in `docs/kalam/WORKING.md` as 4 GB of RAM and a hard disk.
+Writing or fixing a plugin then needs a wasm toolchain rather than an edit.
+And the sandbox's main value is containing *untrusted* code — in a project
+with no community and one author, it is mostly protecting the author from the
+author.
+
+**So, three conditions that make it work well:**
+
+1. **Put `wasmtime` behind a Cargo feature**, off by default, so the ordinary
+   build and the CI build do not pay for it.
+2. **Do not ship the plugin host until there is a second plugin.** One plugin
+   behind a wasm boundary is all of the cost and none of the benefit.
+3. **Keep the TOML selector config alongside it**, not instead of it.
+   `src/sources/scrapers/mangaball.toml` is already that shape. Most scraper
+   breakage is a changed CSS selector, not changed logic — and a selector fix
+   that needs a wasm rebuild is not the "fix loop measured in seconds" the
+   original design was reaching for. Wasm for sources that need logic, TOML
+   for sources that need a selector. That is a tiered design, not a
+   contradiction, and the existing scaffolding already half-supports it.
+
+*Last updated: 2026-09-18.*

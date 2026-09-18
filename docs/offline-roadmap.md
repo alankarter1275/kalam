@@ -6,6 +6,195 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 
 ---
 
+## Read this before picking up work (added 2026-09-18)
+
+The six modules below are a **list of everything Part 1 wants**, not a queue.
+Left unmarked, every session picks a different starting point and the work
+comes out in fragments. So: check the status first, then take the next item
+from [the order](#suggested-order), not the next item in the document.
+
+Status was verified against the code on 2026-09-18, not copied from an older
+claim. Re-check before trusting it.
+
+### Already built
+
+The comics reader (CBZ/CBR, ~2,000 lines), the metadata editor with Open
+Library and Google Books, author pages, series cover stacks, smart shelves
+with a real rule engine, ratings, streaks and analytics, saved words and
+quotes with Markdown/CSV/Anki export, the multi-library switcher, the
+background task manager (`src/tasks.rs`), cover preloaders and persistent
+thumbnails (`src/preload.rs`, `src/thumbs.rs`), the offline dictionary system,
+the `kalam.json` sidecar beside every book, find-in-chapter, the reading
+location pill, the bookmarks panel, and the teardrop selection handles
+(`crates/kalam-reader/src/handles.rs`).
+
+### Partly built — finish, don't restart
+
+- **Text layout controls.** The engine hyphenates and justifies, but there is
+  no user-facing toggle for either.
+- **In-book search.** Exists as find-in-chapter; the roadmap wants a
+  library-wide match list with counters and next/previous.
+- **PDF.** See the warning below — this one is further from done than it looks.
+
+### Not started
+
+Full-text search across the library (the `tantivy` crate is not a
+dependency), the full EPUB editor, sidecar typo patches, folder-watch
+auto-import, the duplicate finder, "Abandoned" as a reading status, custom
+keybindings, footnote popovers, jump-back history, dual-page view, a
+user-supplied fonts folder, and the Material 3 redesign.
+
+### ⚠️ The PDF reader is not doing what the roadmap assumes
+
+`src/pdf.rs` has no real page rasterizer. `render_page_image_uncropped` looks
+for an embedded image in the page and, if there is one, returns it — so
+**scanned PDFs work**, and smart crop trims their margins correctly. When
+there is no embedded image it falls back to `render_text_to_canvas`, which
+draws a black bar for each line of text. Page mode is the default
+(`reflow_mode: false`), so **opening an ordinary text PDF shows a page of
+black rectangles.**
+
+Reflow mode does work — it extracts and shows the real text. So the smallest
+honest fix is to default to reflow when a page has no embedded image, and say
+so on screen. That is a small change and it removes a visibly broken state.
+
+Real page rendering is a separate, deliberate decision — it means taking on a
+rendering library (`lopdf` parses PDFs but cannot rasterize them, and writing
+a rasterizer is not a realistic option). The candidates and the trade-offs are
+recorded under **"Which PDF engine?"** in `docs/conversation.md`.
+
+---
+
+## Open items — recorded 2026-09-18, nothing actioned yet
+
+Everything below was found during the code review and **deliberately not
+fixed**. It is written down so it does not have to be rediscovered, and so a
+session that picks up Part 1 knows what is already known-broken. Sorted by how
+much it matters, not by how easy it is.
+
+### Blocking or near-blocking
+
+- **Engine migration is unfinished and the damage list does not exist.**
+  Replacing WebKit with `kalam-reader` broke things built on top of it and the
+  repairs are still in progress. There is no written list of what is broken.
+  Until there is, "the migration is done" is not a claim anyone can check, and
+  every new session rediscovers the same breakage. **Creating that list is
+  step 1 of the order above.**
+- **CI never covered the engine — fixed, unverified.** `--workspace` was added
+  to the clippy and test steps on 2026-09-18. Before that, one test binary ran
+  (`unittests src/main.rs`) and three workspace members were never even
+  compiled. The first run with the flag may fail; a failure there is
+  information, not a regression. **Needs a push to confirm.**
+- **PDF default mode is visibly broken** for text PDFs (black bars). See
+  above.
+- **PDF engine undecided.** See
+  [Which PDF engine?](./conversation.md#20-which-pdf-engine-2026-09-18) in
+  `docs/conversation.md` for the comparison. Recommendation on rendering
+  quality alone: **MuPDF**, narrowly ahead of PDFium, both clearly ahead of
+  Poppler.
+
+### Contradictions between documents — settle before Part 2
+
+- **The plugin substrate has three different answers.** `ARCH.md` says Lua.
+  `docs/conversation.md` records "Lua pivot reversed: Pure Rust" with fragile
+  selectors in a TOML file, and *then* "WebAssembly plugin ecosystem replacing
+  Lua". The scaffolding that exists (`wit/kalam.wit`, `plugins/ao3`) is Wasm.
+  `src/sources/scrapers/mangaball.toml` is the TOML approach and nothing reads
+  it. Pick one and delete the other two sets of notes.
+- **`docs/ci/github-actions-ci.yml` claims to be the canonical copy of the
+  workflow** (README says so) but has drifted ~130 lines from
+  `.github/workflows/ci.yml`. One of them should be deleted.
+
+### App-level rules that do not exist yet
+
+`crates/kalam-reader` inherits strict boundaries from upstream
+(`docs/kalam/archive/RESTRICTIONS.md`: no C++ stylo, no WebKit, no JS bridges)
+which is a large part of why that code stayed clean. **`src/` has no
+equivalent.** `docs/WORKING.md` has four invariants and only one of them (zero
+`unwrap`) is checkable. See the discussion in `docs/conversation.md` under
+**"Guidelines for the app half"**.
+
+### Small, safe, and worth doing in one sweep
+
+- **Three unused dependencies** in the root `Cargo.toml`: `toml` (zero uses),
+  `urlencoding` (zero uses), `scraper` (used only by the disabled
+  `src/plugins/mod.rs`). They cost build time for nothing.
+- **No logger is installed.** `log = "0.4"` is only in `[workspace.dependencies]`.
+  The engine emits `log::` calls that go nowhere, and the app has 83
+  `eprintln!` sites in non-test code — all invisible when launched from the
+  `.desktop` file, which is the normal way to launch it.
+- **Icon installed at the wrong size.** `Makefile` puts a 128×128
+  `assets/logo.png` into `icons/hicolor/512x512/apps/`, so the system upscales
+  it. A 2048×2048 source already exists at `docs/design/logo_transparent.png`.
+- **No file association.** `resources/app.kalam.Kalam.desktop` has no
+  `MimeType` and `Exec=kalam` has no `%f`, and `main.rs` never reads `argv`.
+  So "Open with Kalam" on an `.epub` cannot work.
+- **`src/plugins/mod.rs` cannot compile.** It imports `wasmtime`, which is in
+  neither `Cargo.toml` nor `Cargo.lock`. It survives only because `main.rs`
+  has `// mod plugins;` commented out. Delete it or fix it; do not leave it.
+- **`epub_write.rs` and `epub_writer.rs`** are unrelated files with
+  near-identical names (OPF metadata writeback vs building an EPUB from
+  fetched HTML), and the generic `human_size()` helper lives in the former and
+  is imported from `app.rs` and `settings.rs`.
+- **`src/downloads.rs` breaks the repo's own zero-`unwrap` rule** — six
+  `lock().unwrap()` calls on a mutex touched from a worker thread, which is
+  exactly the cascade-panic that `src/tasks.rs:52` documents and guards
+  against. It also writes to `std::env::temp_dir()` instead of going through
+  `src/paths.rs`, and has no rate limiting. Part 2 code, but it should use
+  `src/tasks.rs` when it is picked up.
+- **`paths.rs::home_dir()` reads only `$HOME`**, falling back to
+  `PathBuf::from(".")`. With `HOME` unset the app creates a `kalam/` folder in
+  the current directory.
+- **90 `#[allow(dead_code)]` attributes, 5 of them module-wide**
+  (`src/dict.rs`, `src/shelf_rules.rs`, `src/db/pronunciation.rs`,
+  `src/pages/reader/engine.rs`, `src/plugins/mod.rs`). CI's `-D warnings` was
+  added specifically to catch dead code; these suppress it wholesale.
+- **`ROADMAP.md` is 2,669 lines** and the README tells every new session to
+  read it. Needs trimming to a dated log.
+- **No `LICENSE` file at the repository root**, despite
+  `license = "GPL-3.0-or-later"` in `Cargo.toml`. Low priority for a personal
+  project, but the repo is public.
+
+### Upstream relationship — needs a decision
+
+`docs/kalam/UPSTREAM.md` describes a monthly routine of cherry-picking fixes
+from the original chapbook repository. The engine crates are now ordinary
+workspace members that Kalam edits directly. **Editing in place and pulling
+from upstream at the same time produces conflicts.** Either stop tracking
+upstream, or keep a clean boundary between "files we edit" and "files we
+don't". The routine also assumes the merged upstream history is present; this
+could not be verified here because the working checkout is shallow.
+
+
+### Suggested order
+
+Deliberately front-loads finishing the engine swap, because the editor, the
+sanitizer and the search index all sit on top of it and would be built twice
+otherwise.
+
+1. **Finish and verify the reading-engine migration.** Keep a written list of
+   what the WebKit replacement broke; the migration is done when that list is
+   empty. Nothing below should start before this.
+2. **Fix the PDF default mode** (small; stops a visibly broken screen).
+3. **Make `LibraryService` asynchronous.** It was designed for this and is
+   currently synchronous, so this is finishing a design, not starting one. It
+   unblocks the smoothness everything else is judged on.
+4. **Reading-engine completeness**: text layout toggles, footnotes, jump-back
+   history, dual-page view, custom fonts folder.
+5. **Library-wide full-text search** (`tantivy`). Largest single new
+   subsystem; do it after the service layer is async so indexing can run in
+   the background.
+6. **Ingestion**: the sanitizer pipeline, then folder-watch auto-import.
+7. **The EPUB editor.** Last of the engine work and the biggest item — it
+   depends on 1, 4 and 6.
+8. **Library management odds and ends**: duplicate finder, "Abandoned"
+   status, inline metadata editing, bulk edits.
+9. **Performance budgets.**
+10. **Material 3 redesign.** Deliberately last, exactly as this document
+    already says: every step above adds screens.
+
+---
+
 ## Module 1: The Reading Engines & EPUB Editor
 
 ### 1. EPUB & Reflowable Text Engine (Kalam Engine)

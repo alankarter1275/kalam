@@ -8,14 +8,22 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 > chapter, vocabulary review + CSV/Anki export. Dictionary track Phases 8–10
 > shipped (POS dividers, priority reorder, lookup history).
 
-> **For AI agents / new chats — read this first.** Plan and status:
-> [`ROADMAP.md`](./ROADMAP.md) (its **"Read this first"** block and **"Current
-> trajectory"** section). Design decisions: [`docs/conversation.md`](./docs/conversation.md).
+> **For AI agents / new chats — read this first.**
+> **Current plan: [`docs/offline-roadmap.md`](./docs/offline-roadmap.md)** —
+> the single source of truth for **Part 1** (everything offline: engines,
+> editor, library, search, performance). Online sources, scrapers and plugins
+> are all **Part 2** and deliberately unbuilt.
+> Older plan and history: [`ROADMAP.md`](./ROADMAP.md) (its **"Read this
+> first"** block and **"Current trajectory"** section) — large and partly
+> stale, treat as a log.
+> Design decisions and the Part 2 discussion:
+> [`docs/conversation.md`](./docs/conversation.md).
 > **Known pitfalls: [`docs/pitfalls.md`](./docs/pitfalls.md)** — mistakes already
 > made here and how they were fixed; read it before writing code, and add to it
 > when you get something wrong.
-> **Keep all four updated in the same commit as your code** — a change that
-> leaves the roadmap stale is not done.
+> **Keep all of these updated in the same commit as your code** — a change that
+> leaves the plan stale is not done.
+
 
 ## Working agreement
 
@@ -25,11 +33,21 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   importers hardened (read-only SQLite packs, identifier quoting, rollback,
   catalog.db self-import guard), one latent bug fixed (reading-list column
   offsets), 9 new unit tests. No other defects.
-- **CI now runs the 173 unit tests on every push** (175 `#[test]`s, 2 of them
-  `#[ignore]`d perf probes that are run by hand — the `cargo test` step is
-  live in `.github/workflows/ci.yml`). The first real run caught one failing
-  test (a bad escape in the `quote_ident` test literal) — fixed, all green.
-  On failure the diagnostics are published to `ci-logs/test-latest.txt`.
+- **CI runs the test suite on every push** (`cargo test --workspace
+  --all-targets`, live in `.github/workflows/ci.yml`). On failure the
+  diagnostics are published to `ci-logs/test-latest.txt`.
+  - `--workspace` is load-bearing and was missing until 2026-09-18. This
+    workspace's root is itself a package (`kalam`), so with no
+    `default-members` key Cargo defaults to that one package: a bare
+    `cargo test` ran the app's ~374 unit tests and silently skipped the ~420
+    under `crates/*/tests` and `tools/*/tests`. Same for clippy. If you add a
+    member, `--workspace` already covers it.
+  - Counts drift; check with
+    `grep -rc '#\[test\]' src crates tools --include='*.rs'` rather than
+    trusting a number written here.
+  - Note that `ci-logs/` is a snapshot, not live: the committed logs predate
+    the engine becoming a path member and still reference it as a git
+    dependency.
 - Workflow changes are made by you with your own account (the App cannot push
   `.github/workflows/`); the canonical copy lives at
   `docs/ci/github-actions-ci.yml` — see `docs/ci/README.md`.
@@ -39,9 +57,9 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   known pitfalls: [`docs/pitfalls.md`](./docs/pitfalls.md) ·
   stability policy: [`docs/STABILITY.md`](./docs/STABILITY.md) ·
   how to smoke-test the A0 changes and read the timing output:
-  [`docs/testing-a0.md`](./docs/testing-a0.md) ·
+  [`docs/testing-a0.md`](./docs/archive/testing-a0.md) ·
   **A0 steps 4+5 (background tasks + preloaders):
-  [`docs/testing-a0-step5.md`](./docs/testing-a0-step5.md)**
+  [`docs/testing-a0-step5.md`](./docs/archive/testing-a0-step5.md)**
 
 ## What works now
 
@@ -51,7 +69,9 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **All books** grid (search, sort, cover cards) — from Home → “All books” or the
   My Library quick links
 - **Reading list**, **Tags** and **Analytics** — from the My Library quick links
-- **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
+- **EPUB reader** (`crates/kalam-reader`, a native GTK4 widget — no WebKit, no
+  JavaScript): paged and continuous-scroll reading, TOC, four themes, font
+  size, line height, column width, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
 - **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip, tap, or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary, keyboard support (↑/↓ focus a sense, Enter saves it), and **Find in chapter**
 - **Annotations list**: reader bottom pill ✎ shows highlights/quotes for current book, jump & delete
@@ -86,7 +106,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
 | Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 shipped: POS grouping dividers, dictionary priority reorder UI, lookup history |
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
-| A0 (architecture) | ✅ **done** except the plugin seam. Measured (`perf.rs` / `timing.rs`) · `LibraryService` seam · cover thumbnails · task manager · preloaders · one reused WebView · **windowed book grid** (2,000 books: 502 MB → 247 MB, 434 ms → 12 ms) · perf budgets in CI that assert **query counts**, not milliseconds. The plugin-host seam is designed in `docs/source-seam.md` and lands with its first implementation |
+| A0 (architecture) | ✅ **done** except the plugin seam. Measured (`perf.rs` / `timing.rs`) · `LibraryService` seam · cover thumbnails · task manager · preloaders · **windowed book grid** (2,000 books: 502 MB → 247 MB, 434 ms → 12 ms) · perf budgets in CI that assert **query counts**, not milliseconds. The plugin-host seam is designed in `docs/archive/source-seam.md` and lands with its first implementation (Part 2) |
 | **P6.5** | **Libraries** ✅ — choose the folder, keep several, switch between them (restarts), copy one to another machine and it opens. App settings stay shared; dictionaries are not duplicated per library. Every book folder keeps a `kalam.json` backup of its details, tags, highlights and reading position |
 | P8 / P9 | Comics and manga — **next**. Image pager, then the same `Source` trait with MangaDex |
 | P6 + P7 | Downloads hub **and** the fiction client, **built together** (combined 2026-09-04): a queue with nothing to download is a shell. Browsing client for AO3 / Royal Road / Literotica / FFN — browse, filter, author pages, read online, download, auto-update |
@@ -104,9 +124,14 @@ does the right thing with none of them set.
 | `KALAM_TIMING=1` | print cold-start / book-open / chapter-turn timings |
 | `KALAM_NO_WINDOWED_GRID=1` | build every book card again, not just the visible ones |
 | `KALAM_NO_PRELOAD=1` | decode covers synchronously, as before A0 step 5 |
-| `KALAM_NO_WEBVIEW_POOL=1` | spawn a fresh WebKit view per book instead of reusing one |
 | `KALAM_NO_CSS=1` | run with stock GTK styling — tells you whether a visual bug is ours |
-| `KALAM_ROUTE=<page>` | open straight to a page (`all-books`, `settings`, …); used by the CI screenshots |
+| `KALAM_ROUTE=<page>` | open straight to a page (`all-books`, `settings`, `read-1`, …); used by the CI screenshots |
+
+`KALAM_NO_WEBVIEW_POOL=1` used to be in this table. It is dead — nothing reads
+it any more, because the WebKit view pool it controlled went with the reader
+it belonged to. `KALAM_ROUTE` can still reach the hidden Part 2 pages
+(`downloads`, `browse`), which is how CI gets at them now that the sidebar
+does not list them.
 
 ## Where your files live
 
@@ -133,13 +158,23 @@ rebuilt as needed and does not need to travel.
 ## Requirements (Arch Linux)
 
 ```bash
-sudo pacman -S --needed rust gtk4 libadwaita webkitgtk-6.0 base-devel pkgconf
+sudo pacman -S --needed rust gtk4 libadwaita base-devel pkgconf
 ```
+
+**GTK 4.16 or newer.** Kalam itself asks gtk4-rs for 4.12, but
+`crates/kalam-reader` asks for 4.16 (for the `AccessibleText` interface and
+its extents/offset geometry), Cargo unifies the two, and the build then
+requires system GTK ≥ 4.16. This is also why CI pins `ubuntu-26.04` rather
+than `-latest`.
+
+WebKitGTK is **not** a dependency and has not been since the reader was
+replaced by `kalam-reader`. If a build error mentions webkit, something is
+stale.
 
 ## Build & run
 
 ```bash
-cd calibre-alt   # or your clone path
+cd kalam   # or your clone path
 cargo run
 ```
 
@@ -148,6 +183,11 @@ Release build (what you’ll use day to day):
 ```bash
 cargo run --release
 ```
+
+`cargo build`/`cargo run` build just the app. To build, lint or test the whole
+workspace — the reading engine crates and the two tools included — use
+`make check` / `make test`, or pass `--workspace` yourself. See the note in
+the [Working agreement](#working-agreement) for why that flag matters.
 
 ## Test online with GitHub Codespaces
 
@@ -210,39 +250,92 @@ cargo run
 
 ## Project layout
 
+The repository is **two projects in one workspace**: the application (`src/`)
+and the reading engine it embeds (`crates/`, vendored from
+[ophymx/chapbook](https://github.com/ophymx/chapbook) — see
+[`docs/kalam/UPSTREAM.md`](./docs/kalam/UPSTREAM.md)). Roughly a third of the
+code is the engine. Both are workspace members, which is why the `--workspace`
+flag on `cargo test`/`cargo clippy` matters so much.
+
 ```text
-src/
-  main.rs          entry + dark preference
+src/                       THE APPLICATION (~51k lines)
+  main.rs          entry, library check, catalog open, theme
   app.rs           shell, sidebar, routing, page cache
-  db.rs            SQLite catalog + annotations + dict + P4 shelves/lists/stats
-  dict.rs          StarDict / SQLite / TSV import & search
-  shelf_rules.rs   smart-shelf rule documents → SQL
-  epub.rs          EPUB OPF metadata + cover extract/replace
-  epub_book.rs     spine, TOC, chapter HTML + reading CSS/JS (highlights, chip, dict)
-  epub_write.rs    metadata writeback into the EPUB's OPF
-  author.rs        author profile fetch + normalisation
-  models.rs        routes + books/shelves
-  icons.rs         symbolic icon helpers
-  notify.rs        toast notifications + history
+  db.rs            SQLite catalog + schema migrations
+  db/              db.rs split: annotations, authors, dictionaries, history,
+                   lookup_history, metadata, prefs, pronunciation, search,
+                   series, shelves, stats, tags
+  models.rs        routes, NavItem, books/shelves
+  service.rs       LibraryService — pages ask, it answers (A0 step 2)
+  tasks.rs         background tasks with progress + cancellation (A0 step 4)
+  preload.rs       background cover/asset preloaders (A0 step 5)
+  thumbs.rs        persistent cover thumbnails (A0 step 3)
   paths.rs         XDG paths — per-library vs shared (P6.5)
   libraries.rs     which library is open, the registry, global prefs (P6.5)
   sidecar.rs       kalam.json backup beside every book (P6.5)
-  service.rs       LibraryService — pages ask, it answers (A0 step 2)
-  webview_pool.rs  one reused WebKit view across book opens (A0)
-  thumbs.rs        persistent cover thumbnails (A0 step 3)
+  notify.rs        toast notifications + history
   perf.rs          query-count budgets (gate CI) + timing probes (manual)
   timing.rs        in-app timing harness (KALAM_TIMING=1)
   theme.rs         every colour — 13 dark themes
   style.rs         global CSS — shape only (spacing, radii, type scale)
+
+  # reading & formats
+  epub.rs          EPUB OPF metadata + cover extract/replace
+  epub_book.rs     open an on-disk EPUB: spine, TOC, chapter text, safe unzip
+  epub_write.rs    metadata writeback into the EPUB's OPF
+  epub_writer.rs   build a new EPUB from fetched HTML chapters (Part 2)
+  dict.rs          StarDict / SQLite / TSV dictionary import & search
+  shelf_rules.rs   smart-shelf rule documents → SQL
+  comics.rs        CBZ/CBR archive reading
+  pdf.rs           PDF parsing via lopdf, text extraction, smart crop
+  author.rs        author profile fetch + normalisation
+  export.rs        quotes / vocabulary export (Markdown, CSV, Anki TSV)
   metadata/        Open Library + Google Books fetch, series lookup
-  pages/           Home, Library, Shelves (+ editor/detail), ReadingList,
-                   History, Tags, Analytics, Book, Reader, SavedQuotes,
-                   SavedWords, LookupHistory, Settings, floats
-  db/              db.rs split: annotations, authors, dictionaries, history,
-                   lookup_history, metadata, prefs, pronunciation, series,
-                   shelves, stats
-  widgets/         book row/card, charts, author links
+  icons.rs         symbolic icon helpers
+
+  # Part 2 scaffolding — present but not wired up, see below
+  downloads.rs     download queue
+  sources/         the Source trait + an empty SourceManager
+  plugins/         Wasm plugin host — disabled (`// mod plugins;` in main.rs)
+
+  pages/           Home, Library, AllBooks, Shelves (+ editor/detail),
+                   ReadingList, History, Tags, Analytics, Book (+ float),
+                   Author, Series float, Reader, Comics (+ comics_reader/),
+                   PDF reader, MetadataEditor, SavedQuotes, SavedWords,
+                   LookupHistory, Downloads, Browse, Settings
+  widgets/         book row/card, charts, author links, focus trap, dialogs
+
+crates/                    THE READING ENGINE (vendored, ~24k lines)
+  chapbook-core/           formats, locators, geometry, fonts, credentials
+  chapbook-epub/           EPUB container, OPF, font obfuscation
+  chapbook-layout/         the layout engine: DOM → stylo cascade → box tree
+                           → cosmic-text inline layout → pagination
+  chapbook-paint/          page/panel/display lists, image store
+  chapbook-render-tinyskia/  rasterizer
+  chapbook-reader/         the reading session: cache, nav, selection,
+                           highlights, scroll, zoom, conformance suite
+  chapbook-viewer-gtk/     standalone GTK4 reference viewer (dev harness)
+  kalam-reader/            the widget Kalam actually embeds — wraps
+                           chapbook-reader, adds Kalam's themes/fonts/prefs
+
+tools/
+  chapbook-cli/            layout/render/text dump CLI + snapshot & golden tests
+  kalam-reader-demo/       run the reader widget on its own, no Kalam
+
+fixtures/          test EPUBs (with sources), fonts, golden render PNGs
+resources/         app CSS, .desktop file, bundled dictionaries
+wit/               Wasm interface for the (disabled) plugin host
 ```
+
+### Part 2 scaffolding
+
+`downloads.rs`, `sources/`, `plugins/` and `wit/` are the frame of the online
+feature set: a queue, a `Source` trait, a Wasm plugin host. **Nothing
+implements `Source`, so `SourceManager` is always empty**, and the plugin host
+is commented out of `main.rs` (it references `wasmtime`, which is not a
+dependency). The Downloads sidebar entry and the rail indicator are hidden for
+that reason — see the comment on `NavItem::ALL` in `src/models.rs`. This is
+all Part 2; [`docs/offline-roadmap.md`](./docs/offline-roadmap.md) is Part 1.
 
 ### Backend layout (post split)
 
@@ -260,6 +353,9 @@ on the same `Catalog`:
 | `db/stats.rs` | analytics, backup |
 | `db/authors.rs` / `db/series.rs` | author profiles, series cache |
 | `db/prefs.rs` / `db/pronunciation.rs` | app prefs, IPA pronunciation |
+| `db/search.rs` | search query parser (`tag:` / `author:` / `status:` / `rating:`) → SQL |
+| `db/tags.rs` | tag CRUD and bulk metadata edits |
+| `db/lookup_history.rs` | append-only dictionary lookup log (misses included) |
 
 ## Data
 

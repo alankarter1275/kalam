@@ -1,5 +1,10 @@
-//! Open an on-disk EPUB for reading: spine, TOC, chapter HTML.
-//! P3 adds highlight CSS + selection chip + dictionary JS.
+//! Open an on-disk EPUB for reading: spine, TOC, chapter text.
+//!
+//! The chapter text is plain HTML with the body extracted. The reader is
+//! `crates/kalam-reader`, a native GTK widget, so nothing here generates CSS
+//! or JavaScript any more — the highlight chip, selection handling and
+//! dictionary popup the WebKit reader drove from injected JS are now GTK
+//! popovers built in `src/pages/reader/engine.rs`.
 
 use anyhow::{anyhow, Context, Result};
 use roxmltree::Document;

@@ -5,6 +5,30 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
+> **Sync note (2026-09-18).** The agent edits the *real*
+> `.github/workflows/ci.yml` directly, because that is the file that actually
+> runs. This copy exists so that *you* can apply a change with your own
+> account when a push of a workflow file gets rejected. It drifts, and it had
+> drifted 134 lines before being re-synced today.
+>
+> **After any workflow change, re-sync it:**
+>
+> ```bash
+> cp .github/workflows/ci.yml docs/ci/github-actions-ci.yml
+> ```
+>
+> If you would rather not carry the duplicate at all, say so and it can be
+> deleted — the cost is losing the manual-install fallback described at the
+> bottom of this file.
+
+## Slimmed 2026-09-18 — three jobs became two
+
+The `scale` job (2,000 books) was removed and the `screenshots` job was cut to
+a single run, now labelled *smoke test*. Reasons and the retired numbers are in
+[`README-screenshots.md`](./README-screenshots.md) under "Slimmed on
+2026-09-18". `build` is unchanged and is still the only job that can fail a
+run.
+
 ## ACTION NEEDED (2026-09-04, third attempt) — rustfmt must stop pushing
 
 Sorry, one more copy of the workflow. My previous fix was the wrong shape.
@@ -67,23 +91,32 @@ published file always describes the latest run. Same fix as the rustfmt diff.
 
 ---
 
-## Done: windowed-grid measurement (applied 2026-09-04)
+## Retired 2026-09-18: windowed-grid measurement (was applied 2026-09-04)
 
-Installed and running. The `scale` job runs the 2,000-book library twice, once
-with each grid, and publishes a side-by-side summary to
-`ci-logs/scale-2000-comparison.txt`. Both runs happen in the same job on the
-same machine on purpose: comparing against a number from a previous run would
-be comparing two different rented VMs, which is what made timing-based tests
-useless (see the A0 step 7 entry in the roadmap).
+**This job no longer exists in the workflow.** Kept here as the record of what
+it measured and how, because the numbers are still the ones the grid decisions
+rest on.
 
-**No reinstall needed** even though the windowed grid later became the default.
-The version installed passes `WINDOWED=1` on one run and nothing on the other;
-"nothing" would now mean *windowed* as well, so both runs would measure the
-same thing and report a green, meaningless comparison. Rather than ask for
-another manual install, `screenshot.sh` now infers the baseline from the output
-directory: a run writing to a plain `ci-shots-*` path is the old grid unless
-told otherwise. An explicit `WINDOWED=` still wins, so the updated copy in this
-directory works too.
+The `scale` job ran the 2,000-book library twice, once with each grid, and
+published a side-by-side summary to `ci-logs/scale-2000-comparison.txt`. Both
+runs happened in the same job on the same machine on purpose: comparing
+against a number from a previous run would be comparing two different rented
+VMs, which is what made timing-based tests useless (see the A0 step 7 entry in
+the roadmap).
+
+**Result, and the reason it was retired:** windowed 247 MB / 7.1 ms, old
+build-every-card grid 352 MB / 139.7 ms. The question was answered on
+2026-09-04 and re-answering it on every push produced no new information. The
+committed logs are frozen at their last run. If the grid changes, restore the
+job from git history rather than extrapolating again.
+
+The one subtlety worth keeping if it comes back: the version installed passed
+`WINDOWED=1` on one run and nothing on the other, and the windowed grid later
+became the default — so "nothing" would now mean *windowed* too, and both runs
+would measure the same thing and report a green, meaningless comparison.
+Rather than ask for another manual install, `screenshot.sh` infers the baseline
+from the output directory: a run writing to a plain `ci-shots-*` path is the
+old grid unless told otherwise. An explicit `WINDOWED=` still wins.
 
 ---
 
@@ -129,36 +162,49 @@ You already enabled CI once (Option C). Good — leave it.
 ### If the agent asks you to update the workflow
 
 ```bash
-cd /path/to/calibre-alt
+cd /path/to/kalam
 git fetch origin
-git checkout arena/01a05974-calibre-alt
+git checkout arena/01a0b2ee-kalam
 git pull
 cp docs/ci/github-actions-ci.yml .github/workflows/ci.yml
 git add .github/workflows/ci.yml
 git commit -m "ci: update workflow"
-git push origin arena/01a05974-calibre-alt
+git push origin arena/01a0b2ee-kalam
 ```
 
 Or GitHub UI: edit `.github/workflows/ci.yml` and paste the contents of
 `docs/ci/github-actions-ci.yml`.
 
-> Note: if the branch name is not `arena/01a05974-calibre-alt`, run
+> Note: if the branch name is not `arena/01a0b2ee-kalam`, run
 > `git branch --show-current` and substitute it.
 
 ## What CI does
 
-On every push / PR:
+On every push / PR, the **`build`** job — the gate — on `ubuntu-26.04` (not
+`-latest`; see the comment in the workflow for the GTK 4.16 reason):
 
-1. Install `libgtk-4-dev` + `libadwaita-1-dev` on `ubuntu-latest`
-2. `cargo fmt --check` (auto-fix + push when it differs)
-3. `cargo clippy --all-targets` (warnings do not fail; errors publish the
-   diagnostics to `ci-logs/clippy-latest.txt` and fail the run)
-4. `cargo test --all-targets` — compiles **and runs** the unit tests
-   (in-memory SQLite, headless). Failures publish the diagnostics to
-   `ci-logs/test-latest.txt` and fail the run.
-5. `cargo build` and `cargo build --release`
+1. Install `libgtk-4-dev` + `libadwaita-1-dev` and friends
+2. Generate and push `Cargo.lock` if missing or stale
+3. `cargo fmt --check` — **report only**; the diff goes to
+   `ci-logs/rustfmt-latest.diff` and never fails the run
+4. `cargo clippy --all-targets` with `-D warnings` — publishes to
+   `ci-logs/clippy-latest.txt`, then a separate step fails the run if it found
+   anything
+5. `cargo test --workspace --all-targets` — compiles **and runs** the unit
+   tests (in-memory SQLite, headless), failures to `ci-logs/test-latest.txt`
+6. `cargo build` and `cargo build --release`
 
-No display / no GUI smoke tests — those stay on your Arch box at phase end.
+The **`screenshots`** job then runs as a `continue-on-error` smoke test: one
+headless-sway run that opens a book and commits a text report to
+`ci-logs/reader-latest.txt`. It is a diagnostic and can never block a change.
+
+Visual judgement still stays on your Arch box at phase end. A green smoke test
+means "it launched and did not panic", not "it looks right".
+
+> **`--workspace` matters.** Without it cargo builds only the root package, so
+> the eleven engine and tool crates never compile and ~420 tests never run.
+> Fixed 2026-09-18 in both the workflow and the `Makefile`; it is not yet
+> confirmed green by an actual run.
 
 ## After it’s enabled
 

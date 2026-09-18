@@ -960,11 +960,18 @@ impl Component for AppModel {
                                 set_orientation: gtk::Orientation::Vertical,
                                 set_spacing: 0,
                                 
+                                // Hidden with the Downloads page: with no
+                                // `Source` registered the queue is always
+                                // empty, so this rail icon only ever opens a
+                                // popover saying "No downloads tracked."
+                                // The wiring below is kept so re-enabling it
+                                // is one word. See `NavItem::ALL`.
                                 #[name = "download_indicator"]
                                 gtk::MenuButton {
                                     set_icon_name: "emblem-downloads-symbolic",
                                     add_css_class: "kalam-nav-btn",
                                     set_tooltip_text: Some("Active Downloads"),
+                                    set_visible: false,
                                     #[name = "download_popover"]
                                     #[wrap(Some)]
                                     set_popover = &gtk::Popover {

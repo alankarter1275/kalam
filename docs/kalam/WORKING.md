@@ -11,6 +11,36 @@ not written anywhere else. The research behind each decision is in
 Everything here was true on 2026-09-10. Verify before relying on a
 version number.
 
+> ## ⚠️ What has changed since this was written (2026-09-18)
+>
+> This file was written **for the separate `kalam-engine` repository**. That
+> repository no longer exists on its own — the engine crates were merged into
+> Kalam's repo as ordinary workspace members. Four sections below describe
+> things that are no longer true, and are marked inline:
+>
+> - **§1 "Phase"** — the widget *is* wired into Kalam now
+>   (`src/pages/reader/engine.rs`). That step is done.
+> - **§3 "The build/CI loop"** — describes kalam-engine's workflow
+>   (`rust-toolchain.toml` pinned at 1.98.0, a `lockfile` step running
+>   `cargo metadata --locked`, `RUST_PIN`, a `report` job publishing a "CI
+>   details" check run). **None of that exists here.** This repo has one
+>   workflow, `.github/workflows/ci.yml`, on `dtolnay/rust-toolchain@stable`
+>   with `cargo generate-lockfile`. There is no `rust-toolchain.toml` and no
+>   `CONTRIBUTING.md`. Read the workflow, not this section.
+> - **§5 "Kalam (the host app)"** — says Kalam's source is private and not in
+>   this repo, recoverable from commit `c7c02b2`. **It is in this repo**, at
+>   `src/`. Read the source; do not reconstruct it from a snapshot. The facts
+>   listed there are still a useful index, but the versions are stale (the app
+>   is on relm4 0.11 / libadwaita 0.9 / gtk4 0.11 / glib 0.22 now).
+> - **§7a "The two-agent handoff"** — `docs/kalam/handoff/make-bundle.sh`,
+>   `AGENT-BRIEF.md`, `RELAY.md` and `docs/engine-handoff/` are all gone. One
+>   agent works on both halves now.
+>
+> Everything else — §2's owner directives, §4's repository map, §6's design
+> decisions, §7's round shape — still holds, and §2 and §6 are the most
+> valuable things in this file. §8's deferred list has been partly closed;
+> each item is annotated.
+
 ## 1. The situation in one screen
 
 - **What this is.** A soft fork of [ophymx/chapbook](https://github.com/ophymx/chapbook)
@@ -250,20 +280,23 @@ sources: calibre-alt `docs/files/*.html` (R12h).
 
 ## 8. Deferred (known, not done, in no particular order)
 
-- `ReaderView::search(&str)` — `chapbook_reader::Session::search`
-  exists (R13) but the widget does not expose it. The old dictionary
-  popup's "Find in chapter" button needs it (R12f).
-- "Unsave" from the dictionary card. The old popup's bookmark toggle
-  could forget a saved word; the new card only saves ("Saved ✓" is
+Annotated 2026-09-18 against the current tree. Items marked **done** were
+closed without this list being updated.
+
+- ~~`ReaderView::search(&str)` — the widget does not expose it.~~ **Done.**
+  Exposed at `crates/kalam-reader/src/view.rs:655` and called from
+  `src/pages/reader/mod.rs:1161` for find-in-chapter.
+- "Unsave" from the dictionary card. **Still open.** The old popup's bookmark
+  toggle could forget a saved word; the new card only saves ("Saved ✓" is
   disabled afterwards) and unsaving lives on the Words page. Kalam's
-  `delete_saved_word_by_word` was deleted with its last caller; a
-  "Saved ✓ → tap to unsave" affordance is a small Kalam-side change if
-  the owner misses it (R12c).
+  `delete_saved_word_by_word` is still gone — only `delete_saved_word(id)`
+  exists (`src/db/annotations.rs:354`), called from
+  `src/pages/saved_words.rs:229`. A "Saved ✓ → tap to unsave" affordance is
+  a small Kalam-side change if the owner misses it (R12c).
 - Page-raster cache in scrolled mode (drawing was measured at ~8 ms per
   frame, so this is low value until proven otherwise).
-- Kinetic (flick) scrolling in scrolled mode.
-- Expose `Session::search(query, limit)` on `ReaderView` — it is
-  blocking; must run off the UI thread or per unit in an idle.
+- Kinetic (flick) scrolling in scrolled mode. **Still absent** — no kinetic or
+  flick code in `crates/kalam-reader/src/`.
 - Remember the page within a chapter across `n`/`p`.
 - Double first layout on window resize at start-up (logged as two
   size changes).
@@ -272,8 +305,15 @@ sources: calibre-alt `docs/files/*.html` (R12h).
   DOM-path → text-offset mapper; probably never worth it.
 - Remote-source placeholder chapters in Kalam (fetch-on-demand HTML):
   the engine reads the file, so those must be fetched at import time.
+  **Now Part 2** — see `docs/offline-roadmap.md`.
 - Move `html5ever`/`markup5ever`/`xml5ever` to 0.40 (a lockstep bump with
   `web_atoms` 0.3; MSRV 1.85) and delete the `"Duplicate attribute"`
   exemption in `dom/parse.rs` — xml5ever 0.39 reports `xml:lang` + `lang`
-  as a duplicate (R17). Needs a machine with cargo for the lock file.
-- Monthly upstream review (`UPSTREAM.md`); last done 2026-09-10.
+  as a duplicate (R17). **Still open: all three are at 0.39** in the
+  workspace root.
+- Monthly upstream review (`UPSTREAM.md`); last done 2026-09-10. **Note that
+  this is now harder, not easier:** the engine crates are ordinary workspace
+  members that Kalam edits in place, so upstream cherry-picks conflict with
+  local edits. Decide whether upstream tracking is still wanted — see the
+  "Upstream relationship" item in `docs/offline-roadmap.md`.
+

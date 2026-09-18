@@ -7,17 +7,26 @@ APPID = app.kalam.Kalam
 
 all: build
 
+# `build` and `dev` stay scoped to the app: these are what you run, and
+# building the GTK reference viewer and the two demo tools on every `make dev`
+# is time spent on binaries you are not about to launch. `make check` and
+# `make test` cover the whole workspace, which is where a break in those
+# crates gets caught.
 build:
 	cargo build --release
 
 dev:
 	cargo build
 
+# --workspace matters. The root of this workspace is a package (`kalam`), so
+# with no `default-members` key Cargo defaults to that one package: a bare
+# `cargo test` runs the app's unit tests and silently skips the ~420 tests in
+# crates/*/tests and tools/*/tests. Same reason CI passes --workspace.
 test:
-	cargo test
+	cargo test --workspace
 
 check:
-	cargo check
+	cargo check --workspace
 
 clean:
 	cargo clean

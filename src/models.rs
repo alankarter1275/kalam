@@ -15,13 +15,25 @@ pub enum NavItem {
 }
 
 impl NavItem {
+    /// What the sidebar actually shows.
+    ///
+    /// Deliberately missing, and not an oversight:
+    ///
+    /// * `Downloads` — the queue page works, but nothing ever registers a
+    ///   `Source`, so it can only ever read "0 downloads tracked". Online
+    ///   sources are Part 2 (`docs/offline-roadmap.md`); until one exists the
+    ///   button advertises a feature the app cannot perform.
+    /// * `RemoteBrowse` and `Fanfiction` — same reason, removed earlier.
+    ///
+    /// All three stay in the enum, in `label`/`icon`, in `placeholder_copy`
+    /// and in the `KALAM_ROUTE` map, so putting one back is a one-line change
+    /// here and nothing else.
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
         NavItem::Shelves,
-        NavItem::Downloads,
         NavItem::Comics,
-                NavItem::Settings,
+        NavItem::Settings,
     ];
 
     pub fn label(self) -> &'static str {

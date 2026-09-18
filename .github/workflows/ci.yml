@@ -164,7 +164,16 @@ jobs:
               printf '%s: %s\n' "$pc" "$(pkg-config --modversion "$pc" 2>&1 || echo 'not found')"
             done
           } | tee /tmp/clippy.txt
-          cargo clippy --all-targets --message-format=short -- -D warnings 2>&1 \
+          # --workspace, not just --all-targets. This workspace has a root
+          # package (`kalam`), so with no `default-members` key Cargo selects
+          # ONLY that package by default -- --all-targets picks targets, not
+          # packages. Without --workspace the eight crates under crates/ (seven
+          # chapbook plus kalam-reader) and the two under tools/ were compiled
+          # as dependencies but never linted, and chapbook-viewer-gtk,
+          # chapbook-cli and kalam-reader-demo (not dependencies of anything)
+          # were never even built. They could fail to compile and this run
+          # stayed green. 10 of the 11 workspace members were being skipped.
+          cargo clippy --workspace --all-targets --message-format=short -- -D warnings 2>&1 \
             | tee -a /tmp/clippy.txt
         continue-on-error: true
 
@@ -208,7 +217,12 @@ jobs:
         id: test
         run: |
           set -o pipefail
-          cargo test --all-targets --message-format=short 2>&1 \
+          # --workspace: see the clippy step above. Before this, the run
+          # executed one test binary -- `unittests src/main.rs` -- and stopped.
+          # The ~420 tests under crates/*/tests and tools/*/tests (pagination,
+          # reader conformance, locators, render goldens, the stability policy)
+          # never ran at all.
+          cargo test --workspace --all-targets --message-format=short 2>&1 \
             | tee /tmp/test.txt
         continue-on-error: true
 
@@ -245,27 +259,39 @@ jobs:
         run: cargo build --release
 
   # ---------------------------------------------------------------------------
-  # Screenshots on a headless display.
+  # Smoke test: does the app actually launch, and does a book open?
   #
-  # Why: the build job proves the code compiles. It has now been green through
-  # two bugs that were obvious on screen -- Home's covers never loaded, and only
-  # the first two rows of the grid ever filled. Neither is detectable without
-  # looking at pixels.
+  # Why this exists when the build job already passes: compiling proves nothing
+  # about a GTK app. This job has caught two bugs the build job was green
+  # through -- Home's covers never loaded, and only the first two rows of the
+  # grid ever filled. Neither is detectable from a unit test.
+  #
+  # Slimmed on 2026-09-18. It used to take a full grid screenshot pass, upload
+  # PNG artifacts, and run a second 2,000-book scale job after it. The PNGs
+  # went to nobody (the agent cannot download artifacts, and the text report
+  # carries the same information), and the scale job re-answered a question
+  # that was settled on 2026-09-04 and is recorded in
+  # ci-logs/scale-2000-comparison.txt: windowed grid 247 MB / 7.1 ms against
+  # the old build-every-card grid's 352 MB / 139.7 ms. Those numbers are the
+  # evidence; re-measuring them on every push was not. Bring the scale run
+  # back deliberately if the grid ever changes.
+  #
+  # One run remains, on the `read-1` route: it opens a real book through the
+  # engine widget, so a panic, a wiring mistake or a blank page is caught.
   #
   # A SEPARATE job, on purpose:
   #   * `continue-on-error` so a flaky compositor can never block a correct
   #     change. This is a diagnostic, not a gate. CI remains the gate for
   #     compile/clippy/test only.
-  #   * it needs `build` to pass first, so we never screenshot a broken tree.
+  #   * it needs `build` to pass first, so we never smoke-test a broken tree.
   #
-  # Read docs/ci/README-screenshots.md before trusting these images. Summary of
-  # the caveats: the software (Cairo) renderer is NOT the renderer on a real
-  # desktop, headless sway is one virtual output rather than a tiling session,
-  # and the reader is a GTK widget now, so `read-1` really opens a book --
-  # proof that it does not panic, not proof that it looks right on a desktop.
+  # Caveats, unchanged: the software (Cairo) renderer is NOT the renderer on a
+  # real desktop, and headless sway is one virtual output rather than a tiling
+  # session. A pass here means "it did not crash and it drew something", not
+  # "it looks right". Read docs/ci/README-screenshots.md.
   # ---------------------------------------------------------------------------
   screenshots:
-    name: screenshots (headless sway)
+    name: smoke test (headless sway)
     needs: build
     # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
     # unifies that with Kalam's v4_12, and the gdk4-sys build script then
@@ -307,17 +333,13 @@ jobs:
         run: cargo build --release
 
       # 139 books: matches the library the user actually measured on, so the
-      # screenshots and the numbers describe the same thing.
-      - name: screenshots
-        run: |
-          chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
-          BOOKS=139 OUT=ci-shots docs/ci/screenshot.sh
-
-      # The reader is what this branch replaced, and the owner's machine would
-      # otherwise be the first place the engine widget ever runs. `read-<id>`
-      # opens it on a seeded book, so a panic, a wiring mistake or a blank page
-      # is caught here, in a text report the agent can read. Book 1 always
-      # exists -- the seeder inserts with AUTOINCREMENT from 1.
+      # seeded state is a familiar one rather than an arbitrary small number.
+      #
+      # The reader is the part this branch replaced, and the owner's machine
+      # would otherwise be the first place the engine widget ever runs.
+      # `read-<id>` opens it on a seeded book, so a panic, a wiring mistake or
+      # a blank page is caught here, in a text report the agent can read. Book
+      # 1 always exists -- the seeder inserts with AUTOINCREMENT from 1.
       # TAP is deliberately not set: driving a pointer tap with swaymsg
       # reported "no change" at three positions in a fullscreen window with
       # both a one-second hold and an 80 ms one, which is evidence about
@@ -325,160 +347,29 @@ jobs:
       # reader. The probe is still in screenshot.sh (TAP=1) for whoever
       # revisits it; the tap behaviour itself is verified by hand on the
       # owner's machine.
-      - name: reader screenshot
+      - name: open a book and report
         run: |
+          chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
           BOOKS=139 OUT=ci-shots-reader SETTLE=25 ROUTE=read-1 \
             docs/ci/screenshot.sh
-
-      - name: upload screenshots
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshots
-          path: ci-shots/
-          retention-days: 14
-          if-no-files-found: warn
 
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
       # this text report is the only way the agent can see what happened.
-      # Committed on success AND failure, because a failed screenshot run is
-      # precisely when the diagnostics matter.
-      - name: publish the screenshot report
+      # Committed on success AND failure, because a failed run is precisely
+      # when the diagnostics matter.
+      - name: publish the report
         if: always()
         run: |
           mkdir -p ci-logs
-          cp ci-shots/report.txt ci-logs/screenshots-latest.txt 2>/dev/null \
-            || echo "(no report produced)" > ci-logs/screenshots-latest.txt
-          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/screenshots-latest.txt
           cp ci-shots-reader/report.txt ci-logs/reader-latest.txt 2>/dev/null \
             || echo "(no reader report produced)" > ci-logs/reader-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-latest.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/screenshots-latest.txt ci-logs/reader-latest.txt
-          git commit -m "ci: publish screenshot report [skip ci]" || true
+          git add -f ci-logs/reader-latest.txt
+          git commit -m "ci: publish smoke-test report [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
 
-  # ---------------------------------------------------------------------------
-  # Scale check: 2,000 books.
-  #
-  # The A0 acceptance criterion is "the grid stays smooth at 2,000+ books" and
-  # nobody has ever run this app at that size -- every decision about grid
-  # virtualization so far has been extrapolated from a 139-book library, and
-  # those extrapolations have been wrong repeatedly.
-  #
-  # Runner *timing* is noise (shared, throttled VMs), so this does not assert on
-  # milliseconds. Peak RSS is far more stable and is the number that actually
-  # decides whether the unbounded cover cache is a problem: at 128x204xRGBA,
-  # 2,000 cached covers is ~200 MB that nothing ever evicts.
-  # ---------------------------------------------------------------------------
-  scale:
-    name: scale check (2000 books)
-    # Deliberately after `screenshots`, not in parallel: both jobs commit a
-    # report to the same branch, and racing pushes means one of them loses.
-    needs: [build, screenshots]
-    # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
-    # unifies that with Kalam's v4_12, and the gdk4-sys build script then
-    # demands system GTK >= 4.16 through pkg-config. 24.04 (still -latest)
-    # ships 4.14.5 and fails with "Package 'gtk4' has version '4.14.5',
-    # required version is '>= 4.16'". Same reason kalam-engine's own CI is on
-    # 26.04. The owner's machine is Arch, gtk4 4.20+.
-    runs-on: ubuntu-26.04
-    continue-on-error: true
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential pkg-config \
-            libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
-            libpango1.0-dev libgdk-pixbuf-2.0-dev \
-            libgraphene-1.0-dev \
-            sway grim wtype \
-            xwayland \
-            fonts-dejavu-core
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: build (release)
-        run: cargo build --release
-
-      # The script samples the app's own RSS and writes peak-rss.txt; see the
-      # comment in screenshot.sh for why /usr/bin/time cannot do this (sway is
-      # the parent, not us). Longer settle: 2,000 covers take a while to warm.
-      # The windowed grid is the default since 2026-09-04, so this run
-      # measures shipped behaviour.
-      - name: run at 2000 books and record peak memory
-        run: |
-          chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
-          BOOKS=2000 OUT=ci-shots-2000-windowed SETTLE=60 WINDOWED=1 \
-            docs/ci/screenshot.sh
-
-      # ...and the same library again with the old build-every-card grid, so
-      # the before/after comes from one machine in one run. Comparing against a
-      # number from a previous run would be comparing two different rented VMs
-      # -- the whole reason step 7 asserts query counts and not milliseconds.
-      - name: run at 2000 books with the old build-every-card grid
-        run: |
-          BOOKS=2000 OUT=ci-shots-2000 SETTLE=60 WINDOWED=0 \
-            docs/ci/screenshot.sh
-
-      - name: upload scale artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: scale-2000
-          path: |
-            ci-shots-2000/
-            ci-shots-2000-windowed/
-          retention-days: 14
-          if-no-files-found: warn
-
-      # Same reasoning as the screenshots job: the peak-memory number is the
-      # whole point of this job, and it is useless if it can only be read by
-      # downloading a zip the agent cannot reach.
-      - name: publish the scale report
-        if: always()
-        run: |
-          mkdir -p ci-logs
-          cp ci-shots-2000/report.txt ci-logs/scale-2000-latest.txt 2>/dev/null \
-            || echo "(no report produced)" > ci-logs/scale-2000-latest.txt
-          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/scale-2000-latest.txt
-          cp ci-shots-2000-windowed/report.txt \
-            ci-logs/scale-2000-windowed-latest.txt 2>/dev/null \
-            || echo "(no report produced)" > ci-logs/scale-2000-windowed-latest.txt
-          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/scale-2000-windowed-latest.txt
-          # The one line that answers "did it work", so it is not buried in
-          # two 60-line reports.
-          {
-            echo "=== A0 step 6: windowed grid (shipped) vs old grid, 2,000 books ==="
-            echo "windowed grid (default):"
-            grep -E "peak_rss|grid_build|grid_cards" \
-              ci-logs/scale-2000-windowed-latest.txt | sed 's/^/  /' || true
-            echo "old build-every-card grid:"
-            grep -E "peak_rss|grid_build|grid_cards" ci-logs/scale-2000-latest.txt \
-              | sed 's/^/  /' || true
-          } > ci-logs/scale-2000-comparison.txt
-          cat ci-logs/scale-2000-comparison.txt
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add -f ci-logs/scale-2000-latest.txt \
-            ci-logs/scale-2000-windowed-latest.txt \
-            ci-logs/scale-2000-comparison.txt
-          git commit -m "ci: publish scale report [skip ci]" || true
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
-          git push origin "HEAD:$GITHUB_REF_NAME" || true

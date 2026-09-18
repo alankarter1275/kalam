@@ -425,8 +425,6 @@ impl ReaderView {
         self.inner.callbacks.borrow_mut().position = Some(Box::new(f));
     }
 
-    /// Called when the reader taps a word (press and release without
- 
     /// Called when a drag-selection ends with text in it (`Some`), and
     /// when the selection is cleared (`None`) — show and hide the chip.
     pub fn connect_selection(&self, f: impl Fn(Option<&SelectedText>) + 'static) {
@@ -907,14 +905,6 @@ impl ReaderView {
     /// there; `None` in paged mode or off any band.
     fn band_at(&self, y: f32) -> Option<(Band, f32)> {
         self.inner.strip.borrow().as_ref()?.widget_to_page(y)
-    }
-
-    /// A page-space rect on `band`'s page, in widget coordinates.
-    fn to_widget_rect(&self, band: &Band, rect: Rect) -> Rect {
-        match self.inner.strip.borrow().as_ref() {
-            Some(strip) => strip.to_widget(band, rect),
-            None => rect,
-        }
     }
 
     /// Map widget (x, y) coordinates to (spine, page, local_x, local_y) in paged mode.

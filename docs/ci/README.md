@@ -1,25 +1,25 @@
 # Enabling GitHub Actions for Kalam
 
-The Arena coding agent **cannot push** files under `.github/workflows/` unless the
-GitHub App has the `workflows` permission. The workflow body lives here instead:
-
-**Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
-
-> **Sync note (2026-09-18).** The agent edits the *real*
-> `.github/workflows/ci.yml` directly, because that is the file that actually
-> runs. This copy exists so that *you* can apply a change with your own
-> account when a push of a workflow file gets rejected. It drifts, and it had
-> drifted 134 lines before being re-synced today.
+> **Corrected 2026-09-18: the agent CAN push `.github/workflows/` now.**
 >
-> **After any workflow change, re-sync it:**
+> This file used to say it could not, and that it needed you to install every
+> workflow change by hand. That was true when it was written. It is not true
+> now — commit `a4c4d54` changed `.github/workflows/ci.yml`, was pushed by the
+> agent's own token, was **not** refused, and triggered CI run `35362407132`.
+> So the manual-handoff workflow at the bottom of this file is a fallback, not
+> a requirement. The rest of this section is kept because the fallback still
+> has a use: if a future token ever loses the `workflows` permission, the copy
+> below is how you apply a change yourself.
+>
+> **The duplicate still has to be kept in sync**, which is its only real cost.
+> It had drifted 134 lines before being re-synced today:
 >
 > ```bash
 > cp .github/workflows/ci.yml docs/ci/github-actions-ci.yml
 > ```
->
-> If you would rather not carry the duplicate at all, say so and it can be
-> deleted — the cost is losing the manual-install fallback described at the
-> bottom of this file.
+
+**Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml) — a copy
+of the real one, kept for the fallback path below.
 
 ## Slimmed 2026-09-18 — three jobs became two
 
@@ -125,20 +125,20 @@ old grid unless told otherwise. An explicit `WINDOWED=` still wins.
 The lockfile step is installed and has run — `Cargo.lock` is committed and the
 dependency graph is pinned. Nothing to do here; kept as a record.
 
-## Working agreement (manual CI handoff)
+## Working agreement (manual CI handoff — fallback only, see the note at the top)
 
-The Arena agent **cannot** create or update `.github/workflows/*` (GitHub App
-has no `workflows` permission, and that cannot be toggled from your side).
-
-So we do this forever:
+**This is no longer the normal path.** The agent pushes workflow files itself
+now; proven by commit `a4c4d54` / run `35362407132` on 2026-09-18. Keep this
+only for the case where a push of `.github/workflows/*` starts getting refused
+again, which happens if the App token loses the `workflows` permission.
 
 | Situation | Who | What |
 |-----------|-----|------|
-| Need a workflow change | Agent | Writes the full file under `docs/ci/` and gives you paste/copy steps |
-| Apply workflow change | **You** | Copy into `.github/workflows/ci.yml` (CLI or GitHub UI) and push |
+| Need a workflow change | Agent | Edits `.github/workflows/ci.yml`, pushes it, re-syncs the `docs/ci/` copy |
+| Push refused (fallback) | **You** | Copy `docs/ci/github-actions-ci.yml` into `.github/workflows/ci.yml` and push |
 | CI fails | Agent | Says which run/step failed |
-| Share the failure | **You** | Paste the failed step log (or the “Diff in …” / rustc error block) |
-| Fix code | Agent | Pushes code fixes (not workflow files) |
+| Share the failure | **You** | Only if the agent cannot read `ci-logs/` — paste the failed step log |
+| Fix code | Agent | Pushes code fixes |
 
 You already enabled CI once (Option C). Good — leave it.
 

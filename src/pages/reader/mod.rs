@@ -1005,11 +1005,11 @@ impl Component for ReaderModel {
         let s = sender.clone();
         key.connect_key_pressed(move |controller, keyval, _, state| {
             use gtk::gdk::Key;
-            if state.contains(gtk::gdk::ModifierType::CONTROL_MASK) {
-                if keyval == Key::f || keyval == Key::F {
-                    s.input(ReaderMsg::ToggleSearch);
-                    return gtk::glib::Propagation::Stop;
-                }
+            if state.contains(gtk::gdk::ModifierType::CONTROL_MASK)
+                && (keyval == Key::f || keyval == Key::F)
+            {
+                s.input(ReaderMsg::ToggleSearch);
+                return gtk::glib::Propagation::Stop;
             }
 
             let is_typing = controller

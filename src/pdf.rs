@@ -286,7 +286,7 @@ fn is_header_or_footer(line: &str) -> bool {
     let lower = line.to_lowercase();
     if lower.starts_with("page ") || lower.starts_with("chapter ") {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() <= 3 && parts.get(1).map_or(false, |p| p.chars().all(|c| c.is_numeric())) {
+        if parts.len() <= 3 && parts.get(1).is_some_and(|p| p.chars().all(|c| c.is_numeric())) {
             return true;
         }
     }

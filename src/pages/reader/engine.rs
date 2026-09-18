@@ -273,7 +273,6 @@ pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
 ///
 /// Returns a popover already pointed at the selection; the caller keeps it
 /// in the model so `None` (selection cleared) can pop it down.
-
 fn action_button(icon_name: &str, tooltip: &str, accent: bool) -> gtk::Button {
     let btn = gtk::Button::from_icon_name(icon_name);
     btn.add_css_class("k-sel-action");
@@ -440,7 +439,6 @@ impl DictCard {
 /// The parts of speech the old popup listed first, in this order. Anything
 /// else keeps its first-seen order; senses with no part of speech land last
 /// and get no divider row at all.
-
 fn dict_header(
     _host: &gtk::Widget,
     card: &DictCard,

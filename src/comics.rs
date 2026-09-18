@@ -179,7 +179,9 @@ where
 
                 let encode_res = if format == image::ImageFormat::Jpeg {
                     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded_bytes, 92);
-                    encoder.encode_image(&resized).map_err(image::ImageError::from)
+                    // encode_image already yields ImageError; the old
+                    // `.map_err(ImageError::from)` converted it to itself.
+                    encoder.encode_image(&resized)
                 } else {
                     resized.write_to(&mut std::io::Cursor::new(&mut encoded_bytes), format)
                 };

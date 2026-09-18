@@ -110,10 +110,8 @@ impl ComicsReaderModel {
                             stride,
                         );
                         Some(mem_tex.upcast::<gdk::Texture>())
-                    } else if let Ok(tex) = gdk::Texture::from_bytes(&glib::Bytes::from(&b)) {
-                        Some(tex)
                     } else {
-                        None
+                        gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok()
                     }
                 },
                 |_| {},
@@ -132,7 +130,7 @@ impl ComicsReaderModel {
 
         if self.page_style == PageStyle::Double {
             let max_start = if total > 1 {
-                if total % 2 == 0 { total - 2 } else { total - 1 }
+                if total.is_multiple_of(2) { total - 2 } else { total - 1 }
             } else {
                 0
             };

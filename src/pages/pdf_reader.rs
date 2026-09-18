@@ -139,7 +139,8 @@ impl PdfReaderModel {
             fraction,
             self.total_pages,
         );
-        let _ = crate::sidecar::refresh_for_book(&self.catalog, self.book_id);
+        // refresh_for_book returns (); the old `let _ =` discarded nothing.
+        crate::sidecar::refresh_for_book(&self.catalog, self.book_id);
 
         if self.reflow_mode {
             // Extract and reflow text

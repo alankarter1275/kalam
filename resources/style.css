@@ -1,13 +1,3 @@
-/* ── Material 3 / Libadwaita Design Tokens ───────────────── */
-@define-color m3_surface @kalam_surface;
-@define-color m3_surface_variant @kalam_surface_2;
-@define-color m3_primary @kalam_accent;
-@define-color m3_on_primary @kalam_bg;
-@define-color m3_outline @kalam_border;
-@define-color m3_shadow alpha(#000000, 0.35);
-@define-color libadwaita_card_bg @kalam_surface;
-@define-color libadwaita_card_hover @kalam_surface_2;
-
 /* ── base font ──────────────────────────────────────── */
 /* Nerd Fonts "Propo" (proportional) variants first, so UI text and
  * fallback glyphs (✓, →, ·) never come from a mono-width nerd face;
@@ -235,20 +225,16 @@ scrollbar slider:active {
 
 /* ── cards (shelves grid, book cards, hub tiles) ─────── */
 .kalam-card {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
-    border-radius: 16px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
     padding: 16px;
     min-height: 96px;
-    box-shadow: 0 2px 8px @m3_shadow;
-    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .kalam-card:hover {
-    border-color: alpha(@m3_primary, 0.6);
-    background: @m3_surface_variant;
-    box-shadow: 0 6px 20px @m3_shadow;
-    transform: translateY(-2px);
+    border-color: @kalam_accent;
+    background: @kalam_surface_2;
 }
 
 .kalam-card-title {
@@ -266,10 +252,10 @@ scrollbar slider:active {
 .kalam-card-badge {
     font-size: 0.75rem;
     font-weight: 600;
-    color: @m3_primary;
+    color: @kalam_accent;
     background: @kalam_accent_dim;
-    border-radius: 9999px;
-    padding: 2px 10px;
+    border-radius: 999px;
+    padding: 2px 8px;
 }
 
 /* ── hub tiles inside My Library ────────────────────── */
@@ -278,20 +264,15 @@ scrollbar slider:active {
 }
 
 .kalam-hub-tile {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
-    border-radius: 16px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
     padding: 18px 14px;
     min-width: 120px;
-    box-shadow: 0 2px 8px @m3_shadow;
-    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .kalam-hub-tile:hover {
-    border-color: @m3_primary;
-    background: @m3_surface_variant;
-    box-shadow: 0 6px 18px @m3_shadow;
-    transform: translateY(-2px);
+    border-color: @kalam_accent;
 }
 
 .kalam-hub-tile-icon {
@@ -319,27 +300,26 @@ scrollbar slider:active {
 
 /* ── book row in shelf list ─────────────────────────── */
 .kalam-cover-frame {
-    border-radius: 12px;
-    background: @m3_surface_variant;
+    border-radius: 6px;
+    background: @kalam_surface_2;
     padding: 0;
     margin: 0;
-    border: 1px solid alpha(@m3_outline, 0.4);
-    box-shadow: 0 4px 14px @m3_shadow;
-    transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+    border: none;
+    box-shadow: 0 2px 10px alpha(#000, 0.35);
 }
 
 .kalam-cover-placeholder {
-    background: linear-gradient(160deg, @m3_surface_variant 0%, @m3_surface 100%);
-    border-radius: 12px;
+    background: linear-gradient(160deg, @kalam_surface_2 0%, @kalam_surface 100%);
+    border-radius: 6px;
 }
 
 .kalam-cover-img {
-    border-radius: 12px;
+    border-radius: 6px;
 }
 
 .kalam-progress {
     font-size: 0.75rem;
-    color: @m3_primary;
+    color: @kalam_accent;
 }
 
 /* ── book detail page ───────────────────────────────── */
@@ -423,59 +403,37 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-chip {
-    background: @m3_surface_variant;
+    background: @kalam_surface_2;
     color: @kalam_text;
-    border-radius: 9999px;
-    padding: 4px 12px;
+    border-radius: 999px;
+    padding: 4px 10px;
     font-size: 0.78rem;
-    border: 1px solid @m3_outline;
-    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+    border: 1px solid @kalam_border;
 }
 
-.kalam-chip:hover {
-    border-color: @m3_primary;
-    color: @m3_primary;
-}
-
-.kalam-primary-btn,
-.kalam-btn-read,
-.kalam-btn-filled,
-.kalam-float-read {
-    background: @m3_primary;
-    color: @m3_on_primary;
+.kalam-primary-btn {
+    background: @kalam_accent;
+    color: @kalam_bg;
     font-weight: 700;
-    border-radius: 9999px;
+    border-radius: 999px;
     padding: 10px 22px;
     border: none;
-    box-shadow: 0 2px 8px @m3_shadow;
-    transition: filter 150ms ease, box-shadow 150ms ease, transform 150ms ease, background-color 150ms ease;
 }
 
-.kalam-primary-btn:hover,
-.kalam-btn-read:hover,
-.kalam-btn-filled:hover,
-.kalam-float-read:hover {
+.kalam-primary-btn:hover {
     filter: brightness(1.08);
-    box-shadow: 0 4px 14px @m3_shadow;
 }
 
-.kalam-secondary-btn,
-.kalam-icon-btn,
-.kalam-float-icon-btn {
-    background: @m3_surface_variant;
+.kalam-secondary-btn {
+    background: @kalam_surface_2;
     color: @kalam_text;
-    border-radius: 9999px;
+    border-radius: 999px;
     padding: 10px 18px;
-    border: 1px solid @m3_outline;
-    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+    border: 1px solid @kalam_border;
 }
 
-.kalam-secondary-btn:hover,
-.kalam-icon-btn:hover,
-.kalam-float-icon-btn:hover {
-    border-color: @m3_primary;
-    color: @m3_primary;
-    box-shadow: 0 2px 8px @m3_shadow;
+.kalam-secondary-btn:hover {
+    border-color: @kalam_accent;
 }
 
 /* ── empty / placeholder ────────────────────────────── */
@@ -483,9 +441,9 @@ button.kalam-author-link-reader:hover {
     color: @kalam_text_dim;
     font-size: 0.95rem;
     padding: 24px;
-    border: 1px dashed @m3_outline;
-    border-radius: 16px;
-    background: alpha(@m3_surface, 0.5);
+    border: 1px dashed @kalam_border;
+    border-radius: 12px;
+    background: alpha(@kalam_surface, 0.5);
 }
 
 .kalam-muted {
@@ -493,17 +451,10 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-home-continue {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
     border-radius: 16px;
     padding: 20px;
-    box-shadow: 0 4px 16px @m3_shadow;
-    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
-}
-
-.kalam-home-continue:hover {
-    border-color: alpha(@m3_primary, 0.6);
-    box-shadow: 0 8px 24px @m3_shadow;
 }
 
 .kalam-section-label {
@@ -721,24 +672,7 @@ button.kalam-author-photo-refresh:hover {
 }
 
 .kalam-book-card:hover .kalam-cover-frame {
-    box-shadow: 0 10px 26px alpha(#000000, 0.55);
-    transform: translateY(-3px);
-}
-
-.kalam-card-selected .kalam-cover-frame {
-    border: 2px solid @m3_primary;
-    box-shadow: 0 6px 18px @m3_shadow;
-}
-
-.kalam-selection-badge {
-    background: @m3_primary;
-    color: @m3_on_primary;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding: 3px 10px;
-    box-shadow: 0 4px 12px @m3_shadow;
-    margin-top: 4px;
+    box-shadow: 0 6px 18px alpha(#000, 0.5);
 }
 
 .kalam-book-card-title {
@@ -779,18 +713,18 @@ button.kalam-author-photo-refresh:hover {
 }
 
 .kalam-float {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
     border-radius: 20px;
-    box-shadow: 0 24px 64px alpha(#000, 0.45), 0 8px 24px @m3_shadow;
+    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
     padding: 0px;
     min-width: 700px;
     min-height: 368px;
 }
 
 .kalam-float-cover-col {
-    background: @m3_surface_variant;
-    border-right: 1px solid @m3_outline;
+    background: @kalam_surface_2;
+    border-right: 1px solid @kalam_border;
     padding-top: 18px;
     padding-right: 8px;
     padding-bottom: 16px;
@@ -800,10 +734,6 @@ button.kalam-author-photo-refresh:hover {
 .kalam-float-cover-col,
 .kalam-float-right {
     min-height: 0;
-}
-
-.kalam-float-right {
-    background: @m3_surface;
 }
 
 .kalam-float-cover-host {
@@ -1211,26 +1141,6 @@ button.kalam-reader-pill-nav:hover {
     font-size: 0.9rem;
     font-weight: 600;
     color: @kalam_text;
-}
-
-.kalam-reader-bottom-right-dock {
-    background: transparent;
-    margin-right: 18px;
-    margin-bottom: 18px;
-}
-
-.kalam-reader-location-pill {
-    background: alpha(@kalam_surface, 0.85);
-    border: 1px solid alpha(@kalam_border, 0.7);
-    border-radius: 999px;
-    padding: 4px 12px;
-    box-shadow: 0 4px 12px alpha(#000, 0.15);
-}
-
-.kalam-reader-location-text {
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: alpha(@kalam_text, 0.85);
 }
 
 .kalam-reader-panel-scroll,
@@ -2453,19 +2363,11 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-hero-card {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
     border-radius: 16px;
-    padding: 16px 18px;
+    padding: 14px 16px;
     min-height: 104px;
-    box-shadow: 0 2px 8px @m3_shadow;
-    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
-}
-
-.kalam-hero-card:hover {
-    border-color: alpha(@m3_primary, 0.5);
-    box-shadow: 0 6px 16px @m3_shadow;
-    transform: translateY(-1px);
 }
 
 .kalam-hero-label {
@@ -2510,17 +2412,10 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-chart-card {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
     border-radius: 16px;
-    padding: 18px 20px;
-    box-shadow: 0 2px 8px @m3_shadow;
-    transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.kalam-chart-card:hover {
-    border-color: alpha(@m3_primary, 0.4);
-    box-shadow: 0 6px 16px @m3_shadow;
+    padding: 16px 18px;
 }
 
 .kalam-chart-title {
@@ -2535,22 +2430,14 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-linechart {
-    color: @m3_primary;
+    color: @kalam_accent;
 }
 
 .kalam-stat-tile {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
-    border-radius: 14px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
     padding: 14px 16px;
-    box-shadow: 0 2px 6px @m3_shadow;
-    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.kalam-stat-tile:hover {
-    background-color: @m3_surface_variant;
-    border-color: alpha(@m3_primary, 0.4);
-    box-shadow: 0 4px 12px @m3_shadow;
 }
 
 .kalam-stat-value {
@@ -2566,22 +2453,21 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-bar-chart {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
-    border-radius: 16px;
-    padding: 16px 14px 12px 14px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 14px 12px 10px 12px;
     min-height: 150px;
-    box-shadow: 0 2px 8px @m3_shadow;
 }
 
 .kalam-bar {
-    background: linear-gradient(180deg, @m3_primary 0%, alpha(@m3_primary, 0.55) 100%);
-    border-radius: 6px 6px 2px 2px;
+    background: linear-gradient(180deg, @kalam_accent 0%, alpha(@kalam_accent, 0.55) 100%);
+    border-radius: 5px 5px 2px 2px;
     min-width: 14px;
 }
 
 .kalam-bar-empty {
-    background: @m3_outline;
+    background: @kalam_border;
 }
 
 .kalam-bar-value {
@@ -2596,17 +2482,10 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-rank-row {
-    padding: 8px 14px;
-    border-radius: 12px;
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
-    box-shadow: 0 2px 6px @m3_shadow;
-    transition: background-color 150ms ease, border-color 150ms ease;
-}
-
-.kalam-rank-row:hover {
-    background: @m3_surface_variant;
-    border-color: alpha(@m3_primary, 0.4);
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
 }
 
 /* ── dictionary rows (P5.5 settings) ────────────────── */
@@ -2682,11 +2561,9 @@ entry.kalam-reader-search > text {
 
 /* ── section cards ── */
 .kalam-section-card {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
     border-radius: 16px;
-    box-shadow: 0 2px 8px @m3_shadow;
-    overflow: hidden;
 }
 
 .kalam-section-head {
@@ -2694,13 +2571,13 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-section-icon {
-    color: @m3_primary;
+    color: @kalam_accent;
     -gtk-icon-size: 16px;
 }
 
 .kalam-section-title {
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: 0.9rem;
+    font-weight: 600;
     color: @kalam_text;
 }
 
@@ -2712,10 +2589,9 @@ entry.kalam-reader-search > text {
 }
 
 separator.kalam-section-divider {
-    background: @m3_outline;
+    background: @kalam_border;
     min-height: 1px;
     margin: 0 20px;
-    opacity: 0.6;
 }
 
 .kalam-section-body {
@@ -2724,18 +2600,13 @@ separator.kalam-section-divider {
 
 /* ── setting rows: hairline between rows, none above the first ── */
 .kalam-setting-row {
-    padding: 14px 0;
-    border-top: 1px solid @m3_outline;
-    transition: background-color 150ms ease;
+    padding: 12px 0;
+    border-top: 1px solid @kalam_border;
 }
 
 .kalam-setting-row:first-child {
     border-top: none;
     padding-top: 0;
-}
-
-.kalam-setting-row:hover {
-    background-color: alpha(@m3_surface_variant, 0.35);
 }
 
 .kalam-setting-label {
@@ -2750,55 +2621,47 @@ separator.kalam-section-divider {
 }
 
 .kalam-setting-entry {
-    background: @m3_surface_variant;
-    border: 1px solid @m3_outline;
-    border-radius: 9999px;
-    padding: 5px 12px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    padding: 5px 10px;
     font-size: 0.8rem;
 }
 
 .kalam-settings-path-box {
-    background: @m3_surface_variant;
-    border: 1px solid @m3_outline;
-    border-radius: 12px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
     padding: 7px 12px;
     font-family: monospace;
     font-size: 0.72rem;
     color: @kalam_text_dim;
 }
 
-/* The app's switch, Material-You / Libadwaita style: pill switch, accent when on.
+/* The app's switch, Material-You style: 40x22 pill, accent when on.
    Margins and borders zeroed per the house rules before sizing. */
 switch.kalam-switch {
     margin: 0;
     border: none;
-    min-width: 44px;
-    min-height: 24px;
-    border-radius: 9999px;
-    background-color: @m3_surface_variant;
-    border: 1px solid @m3_outline;
-    transition: background-color 200ms ease, border-color 200ms ease;
+    min-width: 40px;
+    min-height: 22px;
+    border-radius: 999px;
+    background: @kalam_border;
 }
 
 switch.kalam-switch:checked {
-    background-color: @m3_primary;
-    border-color: @m3_primary;
+    background: @kalam_accent;
 }
 
 /* The knob is white in every theme on purpose: all 13 palettes are dark, so
    white is the one knob colour that reads on every accent. */
 switch.kalam-switch slider {
-    margin: 2px;
+    margin: 0;
     border: none;
-    min-width: 18px;
-    min-height: 18px;
-    border-radius: 9999px;
-    background-color: @kalam_text;
-    transition: transform 200ms ease, background-color 200ms ease;
-}
-
-switch.kalam-switch:checked slider {
-    background-color: @m3_on_primary;
+    min-width: 16px;
+    min-height: 16px;
+    border-radius: 999px;
+    background: #ffffff;
 }
 
 /* Small modifier for the P5.5 button hierarchy (row-level actions). */
@@ -3002,27 +2865,7 @@ button.kalam-tag-add label {
 
 /* Author links on the page (vs float/reader variants). */
 button.kalam-author-link-page {
-    font-size: 0.85rem;
-    font-weight: 600;
-    background: @m3_surface_variant;
-    border: 1px solid @m3_outline;
-    border-radius: 9999px;
-    padding: 4px 14px;
-    color: @kalam_text;
-    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
-}
-
-button.kalam-author-link-page:hover {
-    border-color: @m3_primary;
-    color: @m3_primary;
-}
-
-.kalam-rating-badge {
-    background: @m3_surface_variant;
-    border: 1px solid alpha(@m3_outline, 0.6);
-    border-radius: 9999px;
-    padding: 4px 14px;
-    box-shadow: 0 2px 6px @m3_shadow;
+    font-size: 0.9rem;
 }
 
 /* Card grid. */
@@ -3031,18 +2874,11 @@ button.kalam-author-link-page:hover {
 }
 
 .kalam-detail-card {
-    background: @m3_surface;
-    border: 1px solid @m3_outline;
-    border-radius: 16px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
     padding: 16px;
     min-height: 96px;
-    box-shadow: 0 2px 8px @m3_shadow;
-    transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.kalam-detail-card:hover {
-    border-color: alpha(@m3_primary, 0.4);
-    box-shadow: 0 4px 14px @m3_shadow;
 }
 
 .kalam-detail-card-icon {
@@ -4006,6 +3842,229 @@ button.kalam-lightbox-tool-btn.close:hover {
 /* ── selection toolbar ────────────────────────────────── */
 .k-sel-toolbar {
   background: rgba(22,24,30,0.96);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 999px;
+  padding: 5px 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.k-sel-toolbar-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.k-sel-toolbar-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.k-sel-action {
+  padding: 6px 12px; border-radius: 999px;
+  border: none; background: transparent;
+  color: rgba(255,255,255,0.8);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px; font-weight: 500;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.k-sel-action image { -gtk-icon-size: 14px; }
+.k-sel-action:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.k-sel-action.accent { color: #61afef; }
+
+.k-sel-divider { min-width: 1px; min-height: 18px; background: rgba(255,255,255,0.12); margin: 0 2px; }
+
+.k-color-bar { padding: 0 4px; }
+
+.k-color-dot {
+  min-width: 20px; min-height: 20px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2);
+  transition: transform 150ms ease, border-color 150ms ease;
+}
+
+.k-color-dot:hover { transform: scale(1.22); border-color: rgba(255,255,255,0.6); }
+
+.k-color-dot-yellow { background: rgba(229,192,123,0.38); }
+.k-color-dot-green  { background: rgba(152,195,121,0.38); }
+.k-color-dot-blue   { background: rgba(97,175,239,0.32); }
+.k-color-dot-pink   { background: rgba(198,120,221,0.38); }
+.k-color-dot-orange { background: rgba(209,154,102,0.38); }
+
+/* ── dictionary popup ─────────────────────────────────── */
+.k-popup {
+  background: #1b1e24;
+  border: 1px solid #343842;
+  border-radius: 18px;
+  box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.kalam-reader-dict-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.kalam-reader-dict-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.k-header {
+  padding: 20px 20px 16px;
+  background: #1b1e24;
+  border-bottom: 1px solid #343842;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+.k-header-left { }
+
+.k-word {
+  font-family: 'Fraunces', serif;
+  font-size: 26px;
+  font-weight: 600;
+  color: #e6e9ef;
+  margin-bottom: 5px;
+}
+
+.k-pronunciation {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 7px;
+}
+
+.k-pos {
+  font-size: 10.5px;
+  color: #c678dd;
+  background: rgba(198,120,221,0.14);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-style: italic;
+}
+
+.k-save-btn {
+  min-width: 30px; min-height: 30px;
+  border-radius: 50%;
+  background: #282c34;
+  border: 1px solid #343842;
+  color: #6b7280;
+  padding: 0;
+}
+.k-save-btn image { -gtk-icon-size: 15px; }
+.k-save-btn:hover { background: #343842; color: #abb2bf; }
+.k-save-btn.saved { color: #61afef; border-color: #61afef; background: rgba(97,175,239,0.15); }
+
+.k-body {
+  padding: 4px 20px 24px;
+}
+
+.k-section-label {
+  font-size: 9px;
+  letter-spacing: .08em;
+  color: #6b7280;
+  margin-bottom: 10px;
+  margin-top: 20px;
+}
+
+.k-defs { }
+
+.k-def-item { }
+
+.k-def-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #61afef;
+  margin-top: 3px;
+  min-width: 16px;
+}
+
+.k-def-text { font-size: 13px; color: #abb2bf; line-height: 1.6; }
+
+.k-def-example {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 3px;
+}
+
+.k-def-badge {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: #e5c07b;
+  background: rgba(229,192,123,0.18);
+  padding: 2px 6px;
+  border-radius: 999px;
+  margin-top: 3px;
+  margin-bottom: 2px;
+}
+
+.k-show-more {
+  font-size: 11.5px;
+  color: #61afef;
+  background: transparent; border: none; padding: 0; margin-top: 8px;
+}
+.k-show-more:hover { text-decoration: underline; }
+
+.k-extra-defs { }
+
+.k-chips { }
+
+.k-chip {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: transparent;
+}
+.k-chip-syn {
+  color: #61afef;
+  background: rgba(97,175,239,0.15);
+  border-color: rgba(97,175,239,0.3);
+}
+.k-chip-syn:hover { background: rgba(97,175,239,0.25); border-color: #61afef; }
+
+.k-chip-ant {
+  color: #e06c75;
+  background: rgba(224,108,117,0.14);
+  border-color: rgba(224,108,117,0.3);
+}
+.k-chip-ant:hover { background: rgba(224,108,117,0.25); border-color: #e06c75; }
+
+.k-idioms { }
+
+.k-idiom-item {
+  background: #282c34;
+  border: 1px solid #343842;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.k-idiom-phrase {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 13px;
+  color: #e6e9ef;
+  margin-bottom: 4px;
+}
+
+.k-idiom-def {
+  font-size: 12px;
+  color: #abb2bf;
+}
+
+.k-fade-bottom {
+  background: linear-gradient(to bottom, transparent, #1b1e24);
+  border-radius: 0 0 18px 18px;
+}
+/* ── selection toolbar ────────────────────────────────── */
+.k-sel-toolbar {
+  background: rgba(22,24,30,0.96);
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 9999px;
   padding: 3px 5px;
@@ -4253,3 +4312,19 @@ button.kalam-lightbox-tool-btn.close:hover {
   background: linear-gradient(to bottom, transparent, #1b1e24);
   border-radius: 0 0 14px 14px;
 }
+.kalam-reader-bottom-right-dock {
+    background: transparent;
+    margin-right: 18px;
+    margin-bottom: 18px;
+}
+
+.kalam-reader-location-pill {
+    background: alpha(@kalam_surface, 0.85);
+    border: 1px solid alpha(@kalam_border, 0.7);
+    border-radius: 999px;
+    padding: 4px 12px;
+    box-shadow: 0 4px 12px alpha(#000, 0.15);
+}
+
+.kalam-reader-location-text {
+    font-size: 0.78rem;

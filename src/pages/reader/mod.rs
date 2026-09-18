@@ -667,7 +667,6 @@ impl Component for ReaderModel {
             ui_prefs,
             catalog.get_pref_i64("dict_sense_hint", 1) != 0,
             catalog.get_pref_i64("dict_history_enabled", 1) != 0,
-            catalog.get_pref_i64("reader.single_tap_dict", 1) != 0,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -821,8 +820,7 @@ impl Component for ReaderModel {
             overlay.add_overlay(&scrollbar);
             widgets.web_host.append(&overlay);
 
-            let single_tap_dict = model.service.catalog().get_pref_i64("reader.single_tap_dict", 1) != 0;
-            engine::wire(view, &sender, single_tap_dict);
+            engine::wire(view, &sender);
             if model.scrolled {
                 view.set_mode(kalam_reader::ReadingMode::Scrolled);
             }
@@ -1369,33 +1367,6 @@ impl Component for ReaderModel {
                 self.service
                     .catalog()
                     .set_pref("dict_history_enabled", if on { "1" } else { "0" });
-            }
-            ReaderMsg::SetSingleTapDict(on) => {
-                self.service
-                    .catalog()
-                    .set_pref("reader.single_tap_dict", if on { "1" } else { "0" });
-                if let Some(view) = &self.view {
-                    if on {
-                        let tx = sender.input_sender().clone();
-                        view.connect_word(move |tap: &kalam_reader::TappedWord| {
-                            let _ = tx.send(ReaderMsg::EngineWordTap(
-                                tap.word.clone(),
-                                tap.sentence.clone(),
-                                engine::gdk_rect(tap.rect),
-                                tap.highlight,
-                            ));
-                        });
-                    } else {
-                        view.disconnect_word();
-                    }
-                }
-                refresh_controls = true;
-            }
-            ReaderMsg::EngineWordTap(word, sentence, rect, _highlight) => {
-                if self.service.catalog().get_pref_i64("reader.single_tap_dict", 1) != 0 {
-                    engine::dismiss(self.selection_chip.take());
-                    self.dict_lookup(word, Some(sentence), rect, &sender);
-                }
             }
             ReaderMsg::SetScrolled(on) => {
                 self.scrolled = on;

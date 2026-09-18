@@ -226,13 +226,16 @@ impl Component for HomePageModel {
                     .build();
 
                 let filter = gtk::FileFilter::new();
-                filter.set_name(Some("Books & Comic Archives (*.epub, *.cbz, *.cbr)"));
+                filter.set_name(Some("Books, Comics, & PDFs (*.epub, *.cbz, *.cbr, *.pdf)"));
                 filter.add_suffix("epub");
                 filter.add_suffix("cbz");
                 filter.add_suffix("cbr");
+                filter.add_suffix("pdf");
+                filter.add_suffix("pdf");
                 filter.add_mime_type("application/epub+zip");
                 filter.add_mime_type("application/x-cbz");
                 filter.add_mime_type("application/x-cbr");
+                filter.add_mime_type("application/pdf");
                 let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
                 filters.append(&filter);
                 dialog.set_filters(Some(&filters));

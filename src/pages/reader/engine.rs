@@ -99,23 +99,11 @@ pub(crate) fn mode_from_pref(value: i64) -> ReadingMode {
 /// Install the four callbacks. Each one only *sends a message*; the
 /// model reacts in `update_with_view` like it did for the old payloads, so
 /// borrow rules stay simple (a callback never touches the model).
-pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>, single_tap_dict: bool) {
+pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
     let tx = sender.input_sender().clone();
     view.connect_position(move |pos: &ReadingPosition| {
         let _ = tx.send(ReaderMsg::EnginePosition(pos.chapter, pos.fraction));
     });
-
-    if single_tap_dict {
-        let tx = sender.input_sender().clone();
-        view.connect_word(move |tap: &kalam_reader::TappedWord| {
-            let _ = tx.send(ReaderMsg::EngineWordTap(
-                tap.word.clone(),
-                tap.sentence.clone(),
-                gdk_rect(tap.rect),
-                tap.highlight,
-            ));
-        });
-    }
 
     let tx = sender.input_sender().clone();
     view.connect_selection(move |sel: Option<&SelectedText>| {
@@ -310,11 +298,6 @@ pub(crate) fn build_selection_chip(
     let highlight = action_button("kalam-highlight-symbolic", "Highlight", true);
     row.append(&highlight);
 
-    let colors_revealer = gtk::Revealer::new();
-    colors_revealer.set_transition_type(gtk::RevealerTransitionType::SlideRight);
-    colors_revealer.set_transition_duration(200);
-    colors_revealer.set_reveal_child(false);
-
     let colors_box = gtk::Box::new(gtk::Orientation::Horizontal, 2);
     let sep0 = gtk::Box::new(gtk::Orientation::Vertical, 0);
     sep0.add_css_class("k-sel-divider");
@@ -344,8 +327,7 @@ pub(crate) fn build_selection_chip(
         colors.append(&dot);
     }
     colors_box.append(&colors);
-    colors_revealer.set_child(Some(&colors_box));
-    row.append(&colors_revealer);
+    row.append(&colors_box);
 
     for (icon_name, tooltip, msg) in [
         ("kalam-quote-symbolic", "Quote", ReaderMsg::QuoteSelection),
@@ -377,11 +359,6 @@ pub(crate) fn build_selection_chip(
     popover.add_css_class("k-sel-toolbar-popover");
 
     {
-        let cr1 = colors_revealer.clone();
-        highlight.connect_clicked(move |_| {
-            let next = !cr1.reveals_child();
-            cr1.set_reveal_child(next);
-        });
     }
 
     popover

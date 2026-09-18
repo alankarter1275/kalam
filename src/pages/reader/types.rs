@@ -131,9 +131,7 @@ pub enum ReaderMsg {
     /// Phase 10: `dict_history_enabled` — records every dictionary lookup.
     SetDictHistory(bool),
     /// Single-tap word lookup setting preference.
-    SetSingleTapDict(bool),
     /// From the engine: single-tap word event (word, sentence, anchor rect, optional highlight ID).
-    EngineWordTap(String, String, gtk::gdk::Rectangle, Option<i64>),
     /// From the engine: the chapter on screen and how far into it.
     EnginePosition(usize, f64),
     /// From the engine: a finished selection (text, where), or cleared.

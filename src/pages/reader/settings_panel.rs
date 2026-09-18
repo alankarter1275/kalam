@@ -24,7 +24,7 @@ pub(crate) fn build_reader_settings_panel(
     ui_prefs: ReaderUiPrefs,
     dict_sense_hint: bool,
     dict_history_enabled: bool,
-    single_tap_dict: bool,
+
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -133,19 +133,6 @@ pub(crate) fn build_reader_settings_panel(
     reading_page.append(&reader_panel_divider());
 
     let dict_section = reader_settings_section("Dictionary");
-    let single_tap_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    single_tap_row.add_css_class("kalam-reader-setting-row");
-    let single_tap_label = gtk::Label::new(Some("Single-tap lookup"));
-    single_tap_label.add_css_class("kalam-reader-setting-name");
-    single_tap_label.set_hexpand(true);
-    single_tap_label.set_halign(gtk::Align::Start);
-    single_tap_row.append(&single_tap_label);
-    let single_tap_tx = sender.input_sender().clone();
-    let single_tap_switch = crate::pages::settings::toggle_switch(single_tap_dict, move |on| {
-        let _ = single_tap_tx.send(ReaderMsg::SetSingleTapDict(on));
-    });
-    single_tap_row.append(&single_tap_switch);
-    dict_section.append(&single_tap_row);
 
     let hint_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     hint_row.add_css_class("kalam-reader-setting-row");

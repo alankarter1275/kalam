@@ -330,7 +330,7 @@ with 55 checks. Four pieces:
 |---|---|---|
 | Find in chapter | **survived** — `ReaderView::search` is wired at `src/pages/reader/mod.rs:1161` | none |
 | Tap-a-word | **removed as a feature, deliberately** | none — do not rebuild |
-| Popup keyboard: ↑/↓ sense focus ring, Enter saves the focused sense | **gone.** No `k-def-focus`, no focused-sense concept; the reader's only key handling is Ctrl+F and Esc | real work, in GTK |
+| Arrow-key sense-walk **inside** the open popup (↑/↓ move between senses, Enter saves the focused one) | **gone.** No `k-def-focus` and no focused-sense concept anywhere in `src/`. The lookup itself is fine — select a word, press `d`, `LookUpSelection` at `src/pages/reader/mod.rs:1517` opens the card | real work, in GTK |
 | The 55 jsdom checks | **gone**, and cannot be rebuilt as JavaScript | rewrite as Rust tests against the engine |
 
 So: one rebuild and one test rewrite. Both belong in Module 1.

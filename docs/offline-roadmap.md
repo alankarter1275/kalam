@@ -2,10 +2,11 @@
 
 > **Moved 2026-09-18. This file is now a pointer.**
 >
-> The six-module offline plan that lived here is now **Part 1** of
+> The offline plan that lived here is now **Part 1** of
 > [`ROADMAP.md`](../ROADMAP.md), which is the only roadmap for this project.
-> Nothing was dropped — all six modules are there, and the ten-step ordering is
-> there as "Suggested order".
+> Nothing was dropped, but it is no longer organised as six modules: it is now
+> **eight phases in a queue**, because a shopping list does not tell you what to
+> do next. Every module's contents are inside one of the phases.
 
 **Read [`ROADMAP.md`](../ROADMAP.md).**
 

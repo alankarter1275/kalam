@@ -176,101 +176,211 @@ test binary ran.
 
 ## Part 1 — the offline library
 
-Six modules. **These are a list of everything Part 1 wants, not a queue.**
-Take the next item from [the order](#suggested-order), not the next item in the
-document.
+Part 1 is split into **eight phases**. Unlike the old plan, these *are* a queue:
+work top to bottom, and take the next unfinished item from the phase you are in.
 
-### Module 1: Reading engines and the EPUB editor
+**Why this order.** The question was whether to do all the invisible
+groundwork first so the backend is solid before anything visible gets built.
+The answer is **yes for the groundwork that later work sits on, but not all of
+it up front**, and the phases alternate on purpose.
 
-**EPUB and reflowable text (`kalam-reader`).** Crisp typography with
-user-selectable fonts, sizes, line heights, margins and themes (Light, Sepia,
-Dark, OLED black). Dual-page view in widescreen, continuous vertical scroll.
-TOC hierarchy, progress tracking, reading-location pill. Bookmark ribbon with a
-management panel. **"Jump back" history** — an instant return after jumping to a
-footnote, TOC entry or search match. Auto-hiding mouse cursor after 2s.
-Configurable keybindings and mouse-wheel sensitivity. A **custom fonts folder**
-— drop `.ttf`/`.otf` in without a system install. **Justification and
-hyphenation toggles**: the engine already hyphenates and justifies; there is no
-user-facing switch for either yet.
+Three reasons:
 
-**Selection and tooling.** Fluid mouse/touch selection with teardrop handles
-(`crates/kalam-reader/src/handles.rs`). Double-click selects a word,
-triple-click a paragraph. Action toolbar: highlight in five colours plus
-underline, **`[Fix Typo]`** inline popover that saves a sidecar patch without
-interrupting reading, quote, dictionary lookup, copy.
+1. **Some invisible work is genuinely load-bearing.** Making the database
+   layer asynchronous is a prerequisite for the search index, folder-watch
+   import, EPUB patch baking and bulk edits. Building any of those first means
+   rebuilding it. So Phase 1 exists, and it is invisible.
+2. **Doing *all* the invisible work first is a trap.** Six months of
+   groundwork with nothing on screen is hard to judge and easy to get wrong —
+   you cannot tell whether an abstraction is right until something real is
+   built on it. So the phases alternate: invisible, visible, invisible,
+   visible.
+3. **Cheap fixes should not wait for a phase of their own.** Dead
+   dependencies, a mis-sized icon, a missing file association — these are
+   minutes each, so they are batched into Phase 1 rather than given a phase.
 
-**Sidecar patches and permanent baking.** Typo fixes and notes are saved as
-non-destructive replacement rules in the database and `kalam.json`; the `.epub`
-on disk is untouched. An explicit **"Apply patches to EPUB"** writes them into
-the archive and re-verifies the container.
+Each phase below ends with **"Done when"**. A phase is not finished when the
+code is written; it is finished when that line is true.
 
-**Proofreading edit mode.** A pencil toggle in the reader chrome for one-click
-inline paragraph editing with hover highlights.
+---
 
-**Full EPUB editor.** A dedicated full-screen route: an Obsidian-like WYSIWYG
-surface presenting HTML as clean Markdown-style formatting; a raw HTML/CSS mode
-with syntax highlighting; a file tree and asset manager for chapters,
-stylesheets, fonts and images; and a visual TOC editor to rename, nest, reorder,
-split and merge chapters.
+### Phase 1 — Foundations
 
-**Quote-anchored locators.** Already the engine's model (`LayeredLocator`).
-Annotations re-anchor to their text regardless of reflow, font size or window
-size.
+> Mostly invisible. Everything after this sits on it.
 
-**Footnotes.** Clicking `[1]` opens an instant popover or jumps to the note,
-with a quick back trigger.
+**Goal:** make the ground solid enough that later phases are built once, not
+twice.
 
-**PDF engine.** Smart margin crop by ink-bounds detection (Zathura-style), a
-reflow mode that reconstructs paragraphs from line spacing and indentation, and
-an outline/TOC tree with page jump and bookmarks.
+**Why first:** the database layer is synchronous today, which is the single
+thing that blocks the search index, background import, EPUB patch baking and
+bulk editing. Fixing it later means rewriting all four.
 
-> **The PDF reader is further from done than it looks.** `src/pdf.rs` has no
-> page rasterizer. It returns an embedded image if the page has one — so
-> **scanned PDFs work**, and smart crop trims them correctly. With no embedded
-> image it falls back to `render_text_to_canvas`, which draws **a black bar for
-> each line of text**. Page mode is the default (`reflow_mode: false`), so
-> **opening an ordinary text PDF shows a page of black rectangles.** Reflow mode
-> does work. The smallest honest fix is to default to reflow when a page has no
-> embedded image, and say so on screen. Real page rendering means taking on a
-> rendering library; **the decision is MuPDF** — see
-> [`docs/conversation.md`](./docs/conversation.md) §22.
+**Work:**
 
-**Comics and manga.** Single page, LTR, RTL and webtoon strip modes. Manga night
-mode (colour inversion for black-and-white scans). Automatic double-page spread
-detection, and splitting of spreads in portrait. A magnifying loupe for small
-speech-bubble text. Contrast/sharpness/brightness tuning for faded scans.
-Viewport caching with background preloading of `page ± 2`. And a **remaster
-tool**: a background worker upscaling low-resolution scans with CPU Lanczos3,
-repacked into an enhanced archive.
+- **Write the engine damage list.** Replacing WebKit with `kalam-reader` broke
+  things built on top of it. Until there is a written list of what is broken,
+  "the migration is done" is not a claim anyone can check. Go through the
+  reader, the dictionary, the export paths and the sidebar; write down every
+  gap. **This list is the input to Phase 2** — several items below came from an
+  early pass at it and may be incomplete.
+- **Make `LibraryService` asynchronous.** It was designed for this and is
+  currently synchronous, so this is finishing a design, not starting one. No UI
+  component may run blocking SQLite on the main thread.
+- **Route background work through `src/tasks.rs`.** It already exists with
+  poison-safe locking. Imports, batch metadata fetching, index rebuilds and
+  patch baking go through it, with progress and cancellation. Note that
+  `src/downloads.rs` currently uses bare `thread::spawn` and six
+  `lock().unwrap()` calls — that is precisely the cascade-panic this file
+  exists to prevent.
+- **Install a logger.** The engine makes 17 `log::` calls that currently go
+  nowhere, and the app has 83 `eprintln!` sites — all invisible when launched
+  from the `.desktop` file, which is the normal way to launch it.
+- **Fix `paths.rs::home_dir()`.** It reads only `$HOME` and falls back to
+  `PathBuf::from(".")`, so with `HOME` unset the app creates a `kalam/` folder
+  in whatever directory it was started from.
+- **Batch of small, safe fixes**, each a few minutes:
+  - Delete three unused dependencies from the root `Cargo.toml`: `toml`,
+    `urlencoding`, `scraper`.
+  - Delete or fix `src/plugins/mod.rs`. It imports `wasmtime`, which is in
+    neither `Cargo.toml` nor `Cargo.lock`; it only survives because
+    `// mod plugins;` is commented out in `src/main.rs`.
+  - Rename one of `src/epub_write.rs` / `src/epub_writer.rs`. They are
+    unrelated files with near-identical names.
+  - Install the icon at the right size. The `Makefile` puts a 128×128
+    `assets/logo.png` into `icons/hicolor/512x512/apps/`; a 2048×2048 source
+    exists at `docs/design/logo_transparent.png`.
+  - Make "Open with Kalam" work: add `MimeType` to the `.desktop` file, add
+    `%f` to `Exec`, and parse `argv` in `main.rs`. None of the three exist.
+  - Add a `LICENSE` file at the repository root. `Cargo.toml` already says
+    `GPL-3.0-or-later`; the file is just missing.
+  - Work through the 90 `#[allow(dead_code)]` attributes, 5 of them
+    module-wide. CI's `-D warnings` was added specifically to catch dead code
+    and these suppress it wholesale.
+- **Write the app-level guardrails.** `crates/kalam-reader` inherits strict
+  boundaries from upstream, which is a large part of why that code stayed clean.
+  **`src/` has no equivalent.** `docs/WORKING.md` states four invariants and only
+  one (zero `unwrap`) is actually checkable. Add the other three as tests that
+  can fail: `Arc<Catalog>` in `src/pages/`, and no literal hex colours outside
+  `theme.rs`. See "Guidelines for the app half" in `docs/conversation.md`.
+- **Decide the upstream relationship.** `docs/kalam/UPSTREAM.md` describes
+  cherry-picking fixes monthly from the original chapbook repository, but the
+  engine crates are now ordinary workspace members that Kalam edits directly.
+  Editing in place and pulling from upstream at the same time produces
+  conflicts. Either stop tracking upstream, or keep a clean boundary between
+  files we edit and files we do not.
 
-### Module 2: Architecture and performance
+**Done when:** no UI thread blocks on SQLite; background work reports progress
+and can be cancelled; the app writes a log file that survives a `.desktop`
+launch; the damage list exists and is either empty or fully accounted for in a
+later phase; `cargo build` is clean of dead dependencies.
 
-- **Asynchronous `LibraryService`.** It was designed for this and is currently
-  synchronous, so this is finishing a design, not starting one. UI components
-  must never run blocking SQLite on the main thread.
-- **Task manager.** `src/tasks.rs` exists; route imports, batch metadata
-  fetching, index rebuilds, comic remastering and EPUB patch baking through it,
-  with progress and cancellation.
-- **Preloaders and memory safety.** Next-chapter preload, async cover textures,
-  memory-bounded thumbnail cache. All exist; extend to the new subsystems.
-- **Floating window host.** Book cards, quick notes and dictionary popups float
-  above the active view without reloading the page or leaking memory.
+---
 
-### Module 3: Sanitizer and deep content search
+### Phase 2 — Reading quality
 
-- **EPUB ingestion sanitizer.** On import: unzip, strip toxic hardcoded CSS
-  (forced 8px fonts, fixed margins, forced colour overrides), repair broken XML,
-  generate a TOC from `<h1>`/`<h2>` when the manifest lacks one, pre-extract the
-  cover, repack.
+> Visible. The reader is the part you touch most, and it is where the engine
+> swap did the most damage.
+
+**Goal:** make daily reading complete again, and finish the dictionary.
+
+**Work:**
+
+- **Dictionary: arrow-key sense-walk.** The lookup itself works — select a
+  word, press `d`, and `LookUpSelection` at `src/pages/reader/mod.rs:1517`
+  opens the card. What is gone is moving between meanings with ↑/↓ and pressing
+  Enter to save the one you are on. There is no `k-def-focus` and no
+  focused-sense concept anywhere in `src/`; this is new GTK work.
+- **Dictionary: rebuild the tests.** The old 55-check jsdom harness is gone and
+  cannot be rebuilt as JavaScript. Rewrite the equivalent coverage as Rust
+  tests against the engine.
+- **Text layout toggles.** The engine already hyphenates and justifies — there
+  is simply no user-facing switch for either yet.
+- **Footnotes.** Clicking `[1]` opens an instant popover or jumps to the note.
+- **"Jump back" history.** An instant return after jumping to a footnote, TOC
+  entry or search match.
+- **Dual-page view** in widescreen, plus continuous vertical scroll.
+- **Custom fonts folder** — drop `.ttf`/`.otf` in without a system install.
+- **Auto-hiding mouse cursor** after 2s, and configurable keybindings and
+  mouse-wheel sensitivity.
+- **Selection toolbar.** Double-click selects a word, triple-click a paragraph.
+  The teardrop handles exist (`crates/kalam-reader/src/handles.rs`). The
+  toolbar needs highlight in five colours plus underline, quote, dictionary
+  lookup and copy.
+
+**What already survived.** The dictionary overhaul shipped ten phases under
+WebKit; most of it is SQLite and is intact — the headword index, WordNet
+lemmatization, phrase decomposition, the merged store, the popup UI and part-of-
+speech dividers, the Lesk likely-sense hint, pronunciation, vocabulary tools,
+priority reorder and lookup history. Only the JavaScript-driven interaction
+layer died, and find-in-chapter came across intact. So this is one rebuild and
+one test rewrite, not a redo.
+
+**Deliberately not here:** tap-a-word-to-open-dictionary. Removed on
+2026-09-18 and the engine API deleted so it cannot return by accident.
+
+**Done when:** a full read of a real EPUB — with a footnote, a looked-up word
+saved to vocabulary, and a jump back from the TOC — needs no workaround.
+
+---
+
+### Phase 3 — Ingestion
+
+> Mostly invisible, but the result is visible: fewer broken books.
+
+**Goal:** books imported into Kalam arrive clean.
+
+**Why after Phase 1:** the sanitizer runs at import time and must not freeze
+the interface, so it needs the async service layer.
+
+**Work:**
+
+- **The EPUB ingestion sanitizer.** On import: unzip, strip toxic hardcoded
+  CSS (forced 8px fonts, fixed margins, forced colour overrides), repair broken
+  XML, generate a TOC from `<h1>`/`<h2>` when the manifest lacks one,
+  pre-extract the cover, repack. `extract_zip` is already hardened against zip
+  attacks with four named tests, so the entry point is safe.
 - **Folder-watch auto-import.** A background watcher on a configured folder
   (`~/Downloads/Books`) that silently imports and sanitizes new files.
-- **Library-wide full-text search** (`tantivy`). 10–20 ms queries across the
-  whole library for character names, quotes or themes. The largest single new
-  subsystem in Part 1.
-- **In-book search (`Ctrl+F`).** Live matches with counters and next/previous.
-  Find-in-chapter exists; this extends it.
 
-### Module 4: Library management and metadata
+**Done when:** dropping a messy real-world EPUB into the watch folder produces
+a book that opens correctly, with a cover and a table of contents, without
+touching the interface.
+
+---
+
+### Phase 4 — Search
+
+> The largest single new subsystem in Part 1.
+
+**Goal:** find things across the whole library, and within a book.
+
+**Why after Phase 3:** indexing every book takes minutes and must run in the
+background, and it should index *clean* books — otherwise the index has to be
+rebuilt after Phase 3 changes them.
+
+**Work:**
+
+- **Library-wide full-text search** with `tantivy`. 10–20 ms queries across
+  the whole library for character names, quotes or themes. `tantivy` is not
+  currently a dependency.
+- **Extend in-book search.** Find-in-chapter already works —
+  `ReaderView::search` is wired at `src/pages/reader/mod.rs:1161` behind
+  Ctrl+F. This adds live match counting and next/previous across the whole
+  book.
+
+**Done when:** a search for a character's name returns the right books in
+under 100 ms on a library of a few thousand books, and rebuilding the index
+does not block the interface.
+
+---
+
+### Phase 5 — Library management
+
+> Visible. Browsing and organising.
+
+**Goal:** the library page can answer questions about your books.
+
+**Work:**
 
 - **Inline metadata editing** on the book page: click Title/Author/series, a
   `gtk::Stack` swaps in an entry, Enter saves. A permanent `[ + ]` pill on the
@@ -278,65 +388,142 @@ repacked into an enhanced archive.
 - **Metadata editor and fetcher hub.** Full-screen route with Open Library and
   Google Books, side-by-side edition and cover comparison before applying, and
   every field: title, authors, series, series index, publisher, date, language,
-  ISBN, synopsis, tags.
+  ISBN, synopsis, tags. The fetchers exist in `src/metadata/`; the hub does
+  not.
 - **Author pages** with biography, personal notes, and books grouped by series
   and release date.
 - **Series cover stacks** in the grid — Book 1 with a stacked-paper effect,
   expanding to the full reading order.
 - **Manual and smart shelves.** Smart shelves are dynamic queries pinned to the
-  sidebar.
+  sidebar; `src/shelf_rules.rs` already has the rule engine.
 - **Reading statuses**: Currently Reading, Want to Read, Finished, and
-  **Abandoned** (the last does not exist yet).
+  **Abandoned** — the last does not exist yet, and matters because abandoned
+  books should stop counting toward streaks.
 - **Ratings and private reviews.** 5 stars plus a Markdown notes editor.
 - **Bulk editing.** Multi-select to batch-assign tags, authors, shelves or
-  status.
+  status. Needs Phase 1's async layer or it will freeze on a large selection.
 - **Duplicate finder** by hash or title/author.
 
-### Module 5: Annotations, vocabulary and export
+**Done when:** you can find, fix and organise a messy 500-book library without
+leaving the app or editing files by hand.
 
-- **Saved words hub** with pronunciation, definitions, part of speech and
-  reading context.
-- **Saved quotes hub.**
-- **Markdown export** of progress, highlights, notes and quotes to
-  `~/Kalam-Export.md` for Obsidian-style tools.
-- **Multi-library switcher** between isolated catalogues.
+---
 
-### Module 6: Performance budgets and the final UI system
+### Phase 6 — The EPUB editor
 
-- **Fix the remaining bottlenecks**, notably opening latency on floating book
+> The biggest item in Part 1, and the reason everything above comes first.
+
+**Goal:** edit EPUBs without another application.
+
+**Why last of the engine work:** it depends on Phase 1 (async), Phase 2
+(engine completeness) and Phase 3 (the sanitizer, since editing a toxic file
+means fighting the publisher's CSS).
+
+**Work:**
+
+- **Sidecar patches.** Typo fixes and notes are saved as non-destructive
+  replacement rules in the database and `kalam.json`; the `.epub` on disk is
+  untouched. An explicit **"Apply patches to EPUB"** writes them into the
+  archive and re-verifies the container.
+- **`[Fix Typo]`** inline popover that saves a sidecar patch without
+  interrupting reading.
+- **Proofreading edit mode.** A pencil toggle in the reader chrome for
+  one-click inline paragraph editing with hover highlights.
+- **Full EPUB editor.** A dedicated full-screen route: an Obsidian-like
+  WYSIWYG surface presenting HTML as clean Markdown-style formatting; a raw
+  HTML/CSS mode with syntax highlighting; a file tree and asset manager for
+  chapters, stylesheets, fonts and images; and a visual TOC editor to rename,
+  nest, reorder, split and merge chapters.
+- **Quote-anchored locators.** Already the engine's model (`LayeredLocator` in
+  `crates/chapbook-core`), so annotations re-anchor to their text regardless of
+  reflow, font size or window size. Verify it holds after edits.
+
+**Done when:** you can fix a typo mid-paragraph, restructure a bad table of
+contents, and produce a clean `.epub` that opens correctly in another reader.
+
+---
+
+### Phase 7 — Performance budgets
+
+**Goal:** keep it fast as the app grows.
+
+**Why here:** there is a point in measuring only once the features exist to
+measure. The ratchet is already in place — `src/perf.rs` has six query budgets
+that gate CI, and they are not `#[ignore]`d.
+
+**Work:**
+
+- Fix the remaining bottlenecks, notably opening latency on floating book
   cards and detail views.
-- **Material 3 redesign** across Home, Library, Details, Reader, Settings and
-  the author hub. **Deliberately last**: every step above adds screens, so
-  restyling now means restyling again.
+- **Floating window host.** Book cards, quick notes and dictionary popups float
+  above the active view without reloading the page or leaking memory.
+- Extend the perf budgets to the new subsystems from Phases 3–6.
+
+**Done when:** a 2,000-book library opens in under a second, scrolling never
+drops a frame on a mid-range machine, and every subsystem added in Phases 3–6
+has a budget.
+
+**Reference point:** windowing the book grid took peak memory from 502 MB to
+247 MB at 2,000 books. Building every card at once cost 352 MB and 139.7 ms
+per card. See `ci-logs/scale-2000-comparison.txt`.
 
 ---
 
-## The dictionary: what died with WebKit
+### Phase 8 — Material 3 redesign
 
-The dictionary overhaul shipped ten phases under WebKit. Most of it survived the
-engine swap, because most of it is SQLite. One phase did not.
-
-**Survived — engine-independent.** Phases 1–4 (headword index, WordNet
-lemmatization, phrase decomposition, merged store), 5 and 8 (popup UI and POS
-dividers, in `src/pages/reader/engine.rs`), 5.5 (Lesk likely-sense hint), 5.6
-(pronunciation), 7 (vocabulary tools), 9 (priority reorder) and 10 (lookup
-history). All verified present.
-
-**Phase 6, "Interaction", was built on WebKit JavaScript** — `caretFromPoint`,
-`wordFromCaret`, `sentenceAroundText`, `kalamSearchInBook`, and a jsdom harness
-with 55 checks. Four pieces:
-
-| Piece | State | Work |
-|---|---|---|
-| Find in chapter | **survived** — `ReaderView::search` is wired at `src/pages/reader/mod.rs:1161` | none |
-| Tap-a-word | **removed as a feature, deliberately** | none — do not rebuild |
-| Arrow-key sense-walk **inside** the open popup (↑/↓ move between senses, Enter saves the focused one) | **gone.** No `k-def-focus` and no focused-sense concept anywhere in `src/`. The lookup itself is fine — select a word, press `d`, `LookUpSelection` at `src/pages/reader/mod.rs:1517` opens the card | real work, in GTK |
-| The 55 jsdom checks | **gone**, and cannot be rebuilt as JavaScript | rewrite as Rust tests against the engine |
-
-So: one rebuild and one test rewrite. Both belong in Module 1.
+**Deliberately last.** Every phase above adds screens, so restyling now means
+restyling again later. Home, Library, Details, Reader, Settings and the author
+hub, once.
 
 ---
 
+## Deferred — PDF
+
+**You said PDFs are rare, so this is not on the critical path.** Recorded so it
+is not lost.
+
+The PDF reader is further from done than it looks. `src/pdf.rs` has no page
+rasterizer — only `lopdf`, which reads text. `render_page_image_uncropped`
+looks for a picture embedded in the page: **scanned PDFs work**, and smart
+crop trims them correctly. With no embedded picture it falls back to
+`render_text_to_canvas`, which draws **a dark grey bar for each line of text** —
+the code comment says so directly. Page mode is the default
+(`reflow_mode: false` at `src/pages/pdf_reader.rs:89`), so **opening an
+ordinary text PDF shows a page of grey stripes.**
+
+Two options, in order of cost:
+
+1. **Cheap:** default to the existing reflow mode when a page has no embedded
+   picture, and say so on screen. A few hours. Makes text PDFs readable.
+2. **Real:** add a rendering library. **The decision is MuPDF** — 8.7 ms/page
+   against Poppler's 14.6, and it won the one rigorous eight-engine fidelity
+   study. The `mupdf` crate compiles the library from vendored source, so it
+   needs a C/C++ toolchain, `libclang` and fontconfig headers, and it **must
+   set `default-features = false`** or it pulls in XPS, SVG, EPUB, HTML, OCR,
+   Brotli and DOCX. Reasoning in `docs/conversation.md` §22.
+
+**Comics and manga** are a separate track and are already shipped (1,685
+lines). Not deferred. Wishlist items from the old plan, if ever: automatic
+double-page spread detection, a magnifying loupe, contrast/sharpness tuning
+for faded scans, and a remaster tool for upscaling low-resolution scans.
+
+---
+
+## Decisions still needed
+
+Raised, deliberately not decided, and **not** dropped.
+
+- **Multiple books open at once** (raised 2026-09-04). Reading two things side
+  by side, or keeping several open and switching. Touches the reader, routing
+  and reading-session bookkeeping — two open books must not both count reading
+  time. **Discuss before designing.**
+- **Upstream relationship** — see Phase 1. Needs an answer before Phase 6.
+- **Toolchain pinning.** `.github/workflows/ci.yml` uses
+  `dtolnay/rust-toolchain@stable` unpinned, so a new Rust release can break a
+  build that was green yesterday. Pinning costs flexibility; not pinning costs
+  predictability.
+
+---
 ## Part 2 — online (stub)
 
 Everything networked lives here and **nothing in Part 1 may depend on it.**
@@ -357,89 +544,6 @@ Everything networked lives here and **nothing in Part 1 may depend on it.**
   `lock().unwrap()` calls, which is the cascade-panic that `src/tasks.rs:52`
   exists to prevent.
 - **Literotica account sync** — raised, never decided.
-
----
-
-## Open items — known, not yet fixed
-
-Sorted by how much it matters, not how easy it is.
-
-### Blocking or near-blocking
-
-- **The engine migration is unfinished and the damage list does not exist.**
-  Replacing WebKit with `kalam-reader` broke things built on top of it. Until
-  there is a written list of what is broken, "the migration is done" is not a
-  claim anyone can check. **Creating that list is step 1.**
-- **PDF default mode is visibly broken** for text PDFs (black bars).
-- **PDF engine undecided in code.** MuPDF is chosen; nothing is wired.
-
-### App-level rules that do not exist yet
-
-`crates/kalam-reader` inherits strict boundaries from upstream, which is a large
-part of why that code stayed clean. **`src/` has no equivalent.**
-`docs/WORKING.md` has four invariants and only one (zero `unwrap`) is checkable.
-See "Guidelines for the app half" in `docs/conversation.md`.
-
-### Small, safe, worth doing in one sweep
-
-- **Three unused dependencies** in the root `Cargo.toml`: `toml`, `urlencoding`,
-  `scraper`. Build time for nothing.
-- **No logger is installed.** The engine emits `log::` calls that go nowhere;
-  the app has 83 `eprintln!` sites, all invisible when launched from the
-  `.desktop` file, which is the normal way to launch it.
-- **Icon installed at the wrong size.** The `Makefile` puts a 128×128
-  `assets/logo.png` into `icons/hicolor/512x512/apps/`. A 2048×2048 source
-  exists at `docs/design/logo_transparent.png`.
-- **No file association.** The `.desktop` file has no `MimeType`, `Exec=kalam`
-  has no `%f`, and `main.rs` never reads `argv`. "Open with Kalam" cannot work.
-- **`src/plugins/mod.rs` cannot compile** — it imports `wasmtime`, which is in
-  neither `Cargo.toml` nor `Cargo.lock`. It survives only because
-  `// mod plugins;` is commented out. Delete it or fix it.
-- **`epub_write.rs` and `epub_writer.rs`** are unrelated files with
-  near-identical names.
-- **`paths.rs::home_dir()` reads only `$HOME`**, falling back to
-  `PathBuf::from(".")` — with `HOME` unset the app creates a `kalam/` folder in
-  the current directory.
-- **90 `#[allow(dead_code)]` attributes, 5 of them module-wide.** CI's
-  `-D warnings` was added specifically to catch dead code; these suppress it
-  wholesale.
-- **No `LICENSE` file at the repository root**, despite
-  `license = "GPL-3.0-or-later"` in `Cargo.toml`.
-
-### Upstream relationship — needs a decision
-
-`docs/kalam/UPSTREAM.md` describes a monthly routine of cherry-picking fixes
-from the original chapbook repository. The engine crates are now ordinary
-workspace members that Kalam edits directly. **Editing in place and pulling from
-upstream at the same time produces conflicts.** Either stop tracking upstream,
-or keep a clean boundary between files we edit and files we do not.
-
----
-
-## Suggested order
-
-Deliberately front-loads finishing the engine swap, because the editor, the
-sanitizer and the search index all sit on top of it and would be built twice
-otherwise.
-
-1. **Finish and verify the reading-engine migration.** Keep a written list of
-   what the WebKit replacement broke; the migration is done when that list is
-   empty. Nothing below should start before this.
-2. **Fix the PDF default mode.** Small, and it stops a visibly broken screen.
-3. **Make `LibraryService` asynchronous.** Finishing a design, not starting one.
-   It unblocks the smoothness everything else is judged on.
-4. **Reading-engine completeness.** Text layout toggles, footnotes, jump-back
-   history, dual-page view, custom fonts folder, and the dictionary popup
-   keyboard.
-5. **Library-wide full-text search** (`tantivy`). Largest single new subsystem;
-   do it after the service layer is async so indexing can run in the background.
-6. **Ingestion**: the sanitizer pipeline, then folder-watch auto-import.
-7. **The EPUB editor.** Last of the engine work and the biggest item — depends on
-   1, 4 and 6.
-8. **Library management odds and ends**: duplicate finder, "Abandoned" status,
-   inline metadata editing, bulk edits.
-9. **Performance budgets.**
-10. **Material 3 redesign.** Deliberately last: every step above adds screens.
 
 ---
 
@@ -671,6 +775,7 @@ top-to-bottom like a journal.
 | 2026-09-18 | **CI slimmed from three jobs to two, and the `--workspace` fix landed.** Two changes, both to `.github/workflows/ci.yml` (and mirrored in `docs/ci/github-actions-ci.yml`). **(1) The gate was only running a tenth of the workspace.** The workspace has 11 members and no `default-members` key, so with no `--workspace` flag Cargo selected only the root `kalam` package — `--all-targets` picks *targets*, not *packages*. Both `cargo clippy` and `cargo test` were scoped that way, so 8 crates under `crates/` and 2 under `tools/` were compiled as dependencies but never linted or tested, and `chapbook-viewer-gtk`, `chapbook-cli` and `kalam-reader-demo` — which nothing depends on — were never built at all. They could have failed to compile and the run stayed green. Roughly 420 tests under `crates/*/tests` and `tools/*/tests` (pagination, reader conformance, locators, render goldens, the stability policy) never executed. Fixed with `--workspace` in the workflow *and* in the `Makefile`. **Confirmed green on run `35364884201` (2026-09-18): 52 test binaries, 751 tests passed, 0 failed, 6 ignored, no panics.** It took four runs to get there, and every failure was exactly the class the fix was meant to expose — see the three fix commits that follow this row. Before the fix one test binary ran; now 52 do. **(2) The `scale` job was deleted and `screenshots` cut to one run.** The scale job re-measured a question settled on 2026-09-04, whose answer is committed in `ci-logs/scale-2000-comparison.txt` (windowed 247 MB / 7.1 ms vs the old build-every-card grid 352 MB / 139.7 ms). The PNG artifact upload went to nobody — the sandbox cannot download artifacts, and the text report carries the same facts — and the all-books screenshot pass duplicated the `read-1` run for the one thing still worth proving: the app launches and a book opens without panicking. That single run remains, renamed *smoke test*, still `continue-on-error: true`, so `build` is still the only job that can fail a run. `ci-logs/screenshots-latest.txt` and `ci-logs/scale-2000-*.txt` are now frozen records rather than current output. **Also corrected:** the workflow's own comment undercounted the skipped members as "seven chapbook/kalam-reader crates"; the real figure is eight crates plus two tools. `docs/ci/github-actions-ci.yml` had drifted 134 lines from the file that actually runs; it was re-synced, and then **deleted** once the owner granted the GitHub App the `workflows` permission, which removed the only reason it existed |
 | 2026-09-18 | **Deleted the duplicate workflow copy and the manual-handoff machinery around it.** The owner granted the GitHub App GitHub's `workflows` permission, so the agent edits `.github/workflows/ci.yml` directly and pushes it — no copy for the user to install. `docs/ci/github-actions-ci.yml` is gone, and with it the three "ACTION NEEDED (2026-09-04)" sections in `docs/ci/README.md`, the "Working agreement (manual CI handoff)" table, and the paste-and-push instructions; every one of them existed only to route a workflow change through the user's account. The *reasoning* behind those sections was worth keeping and is now a short "Design decisions worth keeping" section instead: why rustfmt reports rather than pushes (a rejected push failed four runs for a reason unrelated to the code), why clippy and the test step are `continue-on-error` with a separate fail step (so the publish step still runs and the log explaining the failure is not skipped), and why the toolchain is left unpinned. The drift was the argument: a second copy you must remember to re-sync had already diverged by 134 lines, and the file that actually runs is the one an agent reads |
 | 2026-09-18 | **The `--workspace` fix went green, and it took four rounds — every failure was exactly what the fix was built to expose.** Run `35364884201`: **52 test binaries, 751 tests passed, 0 failed, 6 ignored, no panics.** Before the fix, one test binary ran. Round 1 (`a4c4d54`) → compile error: `chapbook_paint::Selection` had gained a `style: SelectionStyle` field and `crates/chapbook-layout/tests/pagination.rs` was never updated, because nothing compiled it. That is the precise failure mode `--workspace` exists to catch: a struct changes in `src/`, and a test file that no build ever touched drifts behind it silently. Fixed at :1433 and :1528 with `SelectionStyle::Band` spelled out rather than `::default()`, because both tests assert on a `DisplayOp::Band` and a future change to the default arm must not quietly change what they check. Round 2 (`bba2e00`) → 11 clippy findings in `kalam-reader/src/view.rs`, also never linted: ten `explicit_auto_deref` (`&mut *s` on a `RefMut<Session>`, where `&mut s` auto-derefs identically) and one `unnecessary_cast` (`(single_w * scale) as f32` where both are already `f32`, verified from the declarations at :1296 and :1275 rather than taken on the lint's word). Round 3 (`bb43750`) → 8 findings in the root package, and these are **new lints, not new code**: the workflow installs `dtolnay/rust-toolchain@stable` unpinned, and its own comment already warned "a new Rust release that adds a lint can turn this red without the code changing." All eight mechanical — a `map_err` converting `ImageError` to itself, an if-let-Ok that is `.ok()`, `% 2 == 0` that is `is_multiple_of(2)`, a `let _ =` on a function returning `()`, two blank lines between a doc comment and its `fn`, a collapsible `if`, and `map_or(false, f)` that is `is_some_and(f)`. **Round 4 also found a real bug the tests could not see:** the smoke-test log carried `Gtk-WARNING: Theme parser warning: Unterminated block at end of document`. `resources/style.css` was **truncated mid-rule** — 4330 lines, braces unbalanced by one, ending at `.kalam-reader-location-text { font-size: 0.78rem;` with no closing brace. Pre-existing since `29788b4`, not introduced here. GTK drops an unterminated rule entirely, and the class *is* live (`src/pages/reader/mod.rs:148`), so the reader's location text has been rendering with no `font-size` at all. Closed the block; both CSS files now balance. **This is the second thing the slimmed CI caught that the build job could not** — which is the argument for keeping the smoke test rather than cutting it to nothing |
+| 2026-09-19 | **Part 1 reorganised from six modules into eight phases.** A module list says what is wanted; it does not say what to do next. Phases are a queue, each with a "Done when" line. The phases alternate invisible/visible on purpose: the async service layer is genuinely load-bearing and must come first, but doing *all* the groundwork before anything appears on screen means six months with no way to tell whether an abstraction is right. PDF dropped to a deferred section — the owner reads EPUB, PDFs rarely. Also corrected a false claim from the previous row: the reader binds twelve keyboard shortcuts, not just Ctrl+F and Escape, so dictionary lookup by selection already works. |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

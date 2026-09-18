@@ -22,12 +22,16 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 * **Text Selection & Tooling**:
   * Fluid mouse/touch selection with custom teardrop drag handles.
   * Double-click to select word; triple-click to select paragraph.
-  * Action Toolbar (Highlight with multi-color palette + Underline style, Quote, Dictionary lookup, Copy).
-* **Non-Destructive Inline EPUB Editing**:
+  * Action Toolbar:
+    * Highlight with multi-color palette (Yellow, Green, Blue, Pink, Orange) + Underline style.
+    * `[Fix Typo]` inline action popover.
+    * Quote, Dictionary lookup, and Copy actions.
+* **Non-Destructive Inline EPUB Editing (Sidecar Patch Proxy)**:
   * Fix typos and formatting errors directly inside books without altering or corrupting the original `.epub` file on disk.
-  * Edits are stored as XPath replacement rules in the database and sidecar `kalam.json`.
-* **Proofreading Edit Mode**:
-  * Dedicated pencil toggle in reader chrome allowing one-click paragraph editing inline.
+  * Edits are stored as XPath / DOM replacement rules in the database and sidecar `kalam.json`.
+  * Served natively during chapter loading via fast DOM parsing (`scraper`/`tl`), ensuring zero layout shift and a pristine original file.
+* **Proofreading Edit Mode (Power User)**:
+  * Dedicated pencil toggle in reader chrome allowing one-click paragraph editing inline with hover highlights.
 * **Quote-Anchored Locators & Robust CFI**:
   * Locators dynamically re-anchor to the exact text snippet regardless of reflow, font resizing, or window dimension changes.
   * Clicking an annotation, quote, or bookmark in the sidebar jumps directly to the exact highlighted phrase.
@@ -36,11 +40,11 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 
 ### 2. PDF Engine (Zathura-Style Smart Engine)
 * **High-Performance Rendering**:
-  * Crisp PDF rendering backed by Google's PDFium engine.
+  * Crisp PDF rendering backed by Google's PDFium engine (`pdfium-render`).
 * **Smart Margin Crop**:
-  * Automatic ink-boundary detection: detects the actual text and illustration bounding box on each page and crops out empty whitespace margins for maximum screen usage.
+  * Automatic ink-boundary detection: detects the actual text and illustration bounding boxes on each page and automatically crops/zooms to remove empty whitespace margins, maximizing screen real estate (Zathura-style).
 * **Text Reflow Mode**:
-  * Heuristic text layer extraction converting text-heavy PDFs into reflowable text with customizable fonts, themes, and font sizes.
+  * Heuristic text layer extraction guessing paragraph boundaries based on line spacing/indentation, converting text-heavy PDFs into reflowable text with customizable fonts, themes, and font sizes.
 * **PDF Navigation & Bookmarks**:
   * PDF outline / Table of Contents tree, page jump box, and page bookmarking.
 
@@ -60,7 +64,7 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 * **Zero-Latency Preloading**:
   * Viewport memory caching with background preloading of adjacent pages (`page ± 2`) for instant page turns.
 * **Comic Remaster Tool**:
-  * Background worker to upscale and clean up low-resolution vintage scans using Lanczos3 scaling without blocking the UI.
+  * Background worker to upscale and clean up low-resolution vintage scans using CPU Lanczos3 scaling (`image` crate), preserving crisp black ink lines while smoothing screentones, repacked cleanly into an enhanced archive.
 
 ---
 
@@ -73,7 +77,7 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
   * Centralized queue for long-running jobs (importing books, batch metadata fetching, full-text index rebuilding, comic remastering) with progress bars and cancellation support.
 * **Smart Preloaders & Memory Safety**:
   * Preloading next chapter in the background while the user reads.
-  * Async cover texture generation and memory-bounded thumbnail caching.
+  * Async cover texture generation and memory-bounded thumbnail caching (surviving restarts via persisted ~200px thumbnails).
 * **Bubble Memory & Floating Window Host**:
   * Lightweight overlay host allowing book cards, quick notes, and dictionary popups to float above active views without reloading the page or leaking memory.
 
@@ -81,16 +85,18 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 
 ## Module 3: Content Sanitizer & Deep Content Search
 
-* **EPUB Ingestion Sanitizer**:
-  * Automatic background cleaning of imported EPUBs:
-    * Strips toxic hardcoded CSS (e.g. forced 8px fonts, fixed margins).
+* **EPUB Ingestion Sanitizer Pipeline**:
+  * Automatic background cleaning of imported EPUBs upon drag-and-drop:
+    * Unzips EPUB archive.
+    * Strips toxic hardcoded CSS (e.g. forced 8px fonts, fixed margins, forced color overrides).
     * Repairs broken XML syntax.
     * Auto-generates Table of Contents from `<h1>`/`<h2>` headings if the manifest lacks one.
     * Pre-extracts cover images into the thumbnail cache.
+    * Repacks pristine archive.
 * **Folder-Watch Auto-Import ("Drop Folder")**:
   * Background directory watcher monitoring a configured folder (e.g. `~/Downloads/Books`) to silently import and sanitize new files into the library.
 * **Library-Wide Deep Content Search (Tantivy FTS)**:
-  * Blazing fast offline full-text search engine indexing the complete text of all books.
+  * Blazing fast offline full-text search engine (powered by Rust's `tantivy`) indexing the complete text of all books.
   * Instant (10–20ms) queries across tens of thousands of books for character names, quotes, or themes.
 * **In-Book Text Search (`Ctrl+F`)**:
   * Live in-book search with highlighted match positions, match counters, and rapid next/previous traversal.
@@ -99,14 +105,15 @@ Part 1 focuses entirely on building a **blazing fast, fully capable, robust offl
 
 ## Module 4: Offline Library Management & Metadata Editors
 
-* **Inline Metadata Editing**:
-  * Seamless inline editing directly on the Book Details page: clicking a title, author name, or tag switches it to an inline entry and immediately saves changes.
-* **Dedicated Metadata Editor**:
-  * Full-screen editing route for detailed book metadata: series index, publisher, publication date, custom cover assignment, and tag management.
+* **Interactive Inline Metadata Editing (`book.rs`)**:
+  * Seamless inline editing directly on the Book Details page: clicking Title, Author, or series wraps labels in a `gtk::Stack` overlapping with a `gtk::Entry` box to save instantly on Enter.
+  * Tag FlowBox features a permanent `[ + ]` pill to open a mini inline entry to quickly append tags.
+* **Dedicated Metadata Editor & Fetcher Page**:
+  * Full-screen editing route for detailed book metadata: series index, publisher, publication date, custom cover assignment, edition comparison, and tag management.
 * **Author Pages**:
   * Dedicated author hub displaying author biographies, personal notes, and all associated books grouped by series and release date.
 * **Series Management ("Cover Stacks")**:
-  * Multi-book series visually collapse into stacked cover cards in the library grid to prevent clutter.
+  * Multi-book series visually collapse into stacked cover cards (showing Book 1 with a subtle stacked-paper effect behind it) in the library grid to prevent clutter.
   * Clicking a stack expands all books in sequential reading order.
 * **Custom & Smart Shelves**:
   * **Manual Shelves**: Curated collections and reading playlists.

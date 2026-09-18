@@ -121,6 +121,12 @@ glib = "0.22"
 gio = { version = "0.22", package = "gio" }
 kalam-reader = { path = "crates/kalam-reader" }
 
+# Engine diagnostics. The reading engine reports through the `log` facade,
+# which discards everything unless a logger is installed — see `src/logging.rs`.
+# Nothing is written unless the user sets RUST_LOG, so a normal launch is
+# unchanged. The `log` crate itself is already pulled in by the engine crates.
+env_logger = "0.11"
+
 # Library / persistence
 rusqlite = { version = "0.32", features = ["bundled", "trace"] }
 uuid = { version = "1", features = ["v4"] }

@@ -17,6 +17,7 @@ mod export;
 mod epub_writer;
 mod icons;
 mod libraries;
+mod logging;
 mod metadata;
 mod models;
 mod notify;
@@ -93,6 +94,18 @@ fn main() {
         eprintln!("kalam: failed to create data directories: {err}");
         crate::notify::error("Could not create Kalam's data folders", &err.to_string());
     }
+
+    // Give the reading engine somewhere to put its messages. The engine logs
+    // through the `log` facade, which silently discards everything unless a
+    // logger is installed — and none was, so 17 call sites across the reading
+    // crates were writing into nothing. The most useful of them is
+    // `Session::open`, which reports how long a book took to open and how much
+    // of that was the font scan.
+    //
+    // This is a no-op unless the user sets RUST_LOG: no logger, no file, no
+    // output. Placed here rather than at the top of `main()` so the folders it
+    // writes into are known to exist, and because nothing above this line logs.
+    logging::init();
 
     // Open the catalog **once**, here, and hand the same handle to everything
     // that needs it.

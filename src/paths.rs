@@ -124,6 +124,16 @@ pub fn shared_data_dir() -> PathBuf {
     legacy_data_dir()
 }
 
+/// `~/.local/share/kalam/kalam.log`
+///
+/// In the shared location rather than the active library's folder: a log is
+/// about the program, not about one collection of books, so it stays in the
+/// same place whichever library is open. Only written when `RUST_LOG` is set —
+/// see `crate::logging`.
+pub fn log_file() -> PathBuf {
+    shared_data_dir().join("kalam.log")
+}
+
 /// `~/.local/share/kalam/cache/thumbs` — persistent cover thumbnails (A0 step 3).
 ///
 /// Unlike the in-memory `COVER_CACHE` (which dies at relaunch), these stay on

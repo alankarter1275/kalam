@@ -232,9 +232,20 @@ bulk editing. Fixing it later means rewriting all four.
   `src/downloads.rs` currently uses bare `thread::spawn` and six
   `lock().unwrap()` calls — that is precisely the cascade-panic this file
   exists to prevent.
-- **Install a logger.** The engine makes 17 `log::` calls that currently go
-  nowhere, and the app has 83 `eprintln!` sites — all invisible when launched
-  from the `.desktop` file, which is the normal way to launch it.
+- ~~**Install a logger.**~~ **Done, 2026-09-19** (`src/logging.rs`). The engine
+  makes 17 `log::` calls that were discarded because no logger was installed;
+  they now go to the terminal and to `~/.local/share/kalam/kalam.log` when
+  `RUST_LOG` is set, and nowhere at all when it is not. The app's own 83
+  `eprintln!` sites are a separate, larger job and are still invisible.
+- **Measure what opening a book costs.** Now possible, because the engine was
+  always timing it and the logger can finally show it: `RUST_LOG=info kalam`,
+  then read the log. The line gives total open time and how much of it was the
+  font scan. **This number decides whether the next item is needed at all** —
+  see [Bubbles](#bubbles--multiple-books-open-at-once).
+- **Share one font system across sessions** — *only if the measurement above
+  says the scan dominates.* Today every `Session::open` runs
+  `build_font_system`, which scans the whole system font database again. With
+  several books open that cost is paid several times.
 - **Fix `paths.rs::home_dir()`.** It reads only `$HOME` and falls back to
   `PathBuf::from(".")`, so with `HOME` unset the app creates a `kalam/` folder
   in whatever directory it was started from.
@@ -285,6 +296,12 @@ later phase; `cargo build` is clean of dead dependencies.
 
 **Work:**
 
+- **Bubbles.** Several books open at once as stacked circles over any screen in
+  the app; tap one to read it in a floating window. Full design, including what
+  has to be measured first, is in
+  [Bubbles](#bubbles--multiple-books-open-at-once). This is the largest single
+  item in the phase, and it is gated on Phase 1's measurement — **do not start
+  it before that number is known.**
 - **Dictionary: arrow-key sense-walk.** The lookup itself works — select a
   word, press `d`, and `LookUpSelection` at `src/pages/reader/mod.rs:1517`
   opens the card. What is gone is moving between meanings with ↑/↓ and pressing
@@ -474,6 +491,121 @@ per card. See `ci-logs/scale-2000-comparison.txt`.
 **Deliberately last.** Every phase above adds screens, so restyling now means
 restyling again later. Home, Library, Details, Reader, Settings and the author
 hub, once.
+
+---
+
+## Bubbles — multiple books open at once
+
+**A vital part of Part 1.** Engine work in Phase 1, the bubbles themselves in
+Phase 2. This section is the design, recorded so it does not evaporate the way
+the original entry did.
+
+The only earlier record of this was one line in `docs/conversation.md`:
+*"Bubble Memory: Single WebKit process SPA for multiple open books. In-app
+`gtk::Overlay` floating chat head outside reader."* Half of that is dead — there
+is no WebKit process any more. The other half is what this section expands.
+
+### What it is
+
+Android-style bubbles. Open several books and they sit as **stacked circles on
+top of whatever you are doing** — library, settings, analytics, anywhere in the
+app. Tap one and it expands into a floating reading window while the others line
+up along the top. You can open a book *straight into* a bubble from the library,
+and you can minimize the book you are reading *back into* a bubble.
+
+In-app only. A separate always-on-top window would fight a tiling compositor,
+and `ARCH.md` records that Kalam already hit exactly that problem with dialogs —
+which is why the in-app float layer exists at all.
+
+### Two readers, and the full one loses nothing
+
+This is the constraint that keeps the feature buildable.
+
+| | **Full reader** | **Bubble reader** |
+|---|---|---|
+| Where | The page, as today | A floating window |
+| Left sidebar | TOC **and Settings** | TOC only |
+| Right sidebar | **Highlights, Bookmarks, Words** | none |
+| Floating pills | **all of them** — selection chip, highlight colours, dictionary popup, quote/copy | none |
+| Annotations, search, bookmarks | **all there** | none |
+| Status | **unchanged; nothing is removed** | new, thin |
+
+The full reader is 5,845 lines across 12 files with five sidebar tabs. The
+bubble reader keeps one of those five.
+
+Worth being honest about *why* that helps, because the obvious reason is not the
+real one. **It is not a memory saving** — memory lives in the engine's book
+object (fonts, parsed book, layout caches), not in the sidebars, which are
+ordinary widgets over database rows. The saving is complexity: a small floating
+window cannot fit the full chrome anyway, and a bubble reader that wanted the
+full feature set would mean maintaining 5,845 lines twice, forever. Instead the
+reading surface becomes one component with two shells around it.
+
+### The memory design
+
+The engine already has the machinery, in `crates/chapbook-reader/src/cache.rs`:
+
+| Engine call | What it does |
+|---|---|
+| `Session::suspend()` | Drops every cache except the page on screen; the session stays usable |
+| `Session::release_caches()` | The same, callable directly |
+| `Session::set_cache_budget(bytes)` | A memory cap, changeable at runtime, evicting immediately |
+| `Session::cache_bytes()` | What is actually held |
+
+The default budget is **192 MB per book**, and the comment beside it notes that
+before the budget existed the answer was *"everything, forever"* — measured at
+**676 MB after forty comic pages**. Someone already fought this fight.
+
+So three states, and only one of them is expensive:
+
+| State | Holds | Cost | How many |
+|---|---|---|---|
+| **Bubble** | Book id, cover thumbnail, position — all already database rows | Kilobytes | As many as you like |
+| **Warm** | Book opened, budget trimmed, suspended | The fixed open cost | One or two |
+| **Reading** | Full cache budget, drawing | Up to its budget | One |
+
+**The key rule: a bubble holds no book.** It is a bookmark, not a reader.
+
+### The one thing that must be measured first
+
+`suspend()` releases the caches but **not the fixed cost of opening**, which is
+paid again for every book:
+
+1. `Session::open` calls `build_font_system`, which runs `db.load_system_fonts()`
+   — a scan of the **whole system font database**, once per open book.
+2. The book is parsed.
+
+Ten warm books means ten font scans and ten parses. That is the lag risk.
+
+The candidate fix is to **share one font system across all sessions** instead of
+each session owning its own. Whether that is worth doing depends entirely on how
+much of the open time the scan is — and **that has not been measured.**
+
+The engine already times it. `crates/chapbook-reader/src/open.rs` logs:
+
+```text
+opened "Some Book" in 214 ms (fonts: 312 faces, 188 ms)
+```
+
+Those messages were discarded because no logger was installed. **A logger is now
+installed** (`src/logging.rs`, 2026-09-19), so the number is available:
+
+```text
+RUST_LOG=info kalam
+```
+
+Then read `~/.local/share/kalam/kalam.log`. If the font scan is a few
+milliseconds, bubbles need no engine change at all. If it is hundreds, the
+shared font system becomes the centrepiece of Phase 1. **Do not design past this
+point until the number is known.**
+
+### Recorded decisions
+
+- Bubbles live **inside the Kalam window**, not as OS windows.
+- One expanded at a time, others lined up — Android's behaviour.
+- Bubble face: **the book cover with a thin progress ring** around it.
+- The bubble reader is reading surface plus a **TOC-only sidebar**.
+- The full reader **keeps every feature it has today**.
 
 ---
 
@@ -776,6 +908,7 @@ top-to-bottom like a journal.
 | 2026-09-18 | **Deleted the duplicate workflow copy and the manual-handoff machinery around it.** The owner granted the GitHub App GitHub's `workflows` permission, so the agent edits `.github/workflows/ci.yml` directly and pushes it — no copy for the user to install. `docs/ci/github-actions-ci.yml` is gone, and with it the three "ACTION NEEDED (2026-09-04)" sections in `docs/ci/README.md`, the "Working agreement (manual CI handoff)" table, and the paste-and-push instructions; every one of them existed only to route a workflow change through the user's account. The *reasoning* behind those sections was worth keeping and is now a short "Design decisions worth keeping" section instead: why rustfmt reports rather than pushes (a rejected push failed four runs for a reason unrelated to the code), why clippy and the test step are `continue-on-error` with a separate fail step (so the publish step still runs and the log explaining the failure is not skipped), and why the toolchain is left unpinned. The drift was the argument: a second copy you must remember to re-sync had already diverged by 134 lines, and the file that actually runs is the one an agent reads |
 | 2026-09-18 | **The `--workspace` fix went green, and it took four rounds — every failure was exactly what the fix was built to expose.** Run `35364884201`: **52 test binaries, 751 tests passed, 0 failed, 6 ignored, no panics.** Before the fix, one test binary ran. Round 1 (`a4c4d54`) → compile error: `chapbook_paint::Selection` had gained a `style: SelectionStyle` field and `crates/chapbook-layout/tests/pagination.rs` was never updated, because nothing compiled it. That is the precise failure mode `--workspace` exists to catch: a struct changes in `src/`, and a test file that no build ever touched drifts behind it silently. Fixed at :1433 and :1528 with `SelectionStyle::Band` spelled out rather than `::default()`, because both tests assert on a `DisplayOp::Band` and a future change to the default arm must not quietly change what they check. Round 2 (`bba2e00`) → 11 clippy findings in `kalam-reader/src/view.rs`, also never linted: ten `explicit_auto_deref` (`&mut *s` on a `RefMut<Session>`, where `&mut s` auto-derefs identically) and one `unnecessary_cast` (`(single_w * scale) as f32` where both are already `f32`, verified from the declarations at :1296 and :1275 rather than taken on the lint's word). Round 3 (`bb43750`) → 8 findings in the root package, and these are **new lints, not new code**: the workflow installs `dtolnay/rust-toolchain@stable` unpinned, and its own comment already warned "a new Rust release that adds a lint can turn this red without the code changing." All eight mechanical — a `map_err` converting `ImageError` to itself, an if-let-Ok that is `.ok()`, `% 2 == 0` that is `is_multiple_of(2)`, a `let _ =` on a function returning `()`, two blank lines between a doc comment and its `fn`, a collapsible `if`, and `map_or(false, f)` that is `is_some_and(f)`. **Round 4 also found a real bug the tests could not see:** the smoke-test log carried `Gtk-WARNING: Theme parser warning: Unterminated block at end of document`. `resources/style.css` was **truncated mid-rule** — 4330 lines, braces unbalanced by one, ending at `.kalam-reader-location-text { font-size: 0.78rem;` with no closing brace. Pre-existing since `29788b4`, not introduced here. GTK drops an unterminated rule entirely, and the class *is* live (`src/pages/reader/mod.rs:148`), so the reader's location text has been rendering with no `font-size` at all. Closed the block; both CSS files now balance. **This is the second thing the slimmed CI caught that the build job could not** — which is the argument for keeping the smoke test rather than cutting it to nothing |
 | 2026-09-19 | **Part 1 reorganised from six modules into eight phases.** A module list says what is wanted; it does not say what to do next. Phases are a queue, each with a "Done when" line. The phases alternate invisible/visible on purpose: the async service layer is genuinely load-bearing and must come first, but doing *all* the groundwork before anything appears on screen means six months with no way to tell whether an abstraction is right. PDF dropped to a deferred section — the owner reads EPUB, PDFs rarely. Also corrected a false claim from the previous row: the reader binds twelve keyboard shortcuts, not just Ctrl+F and Escape, so dictionary lookup by selection already works. |
+| 2026-09-19 | **Bubbles designed; logger installed to make the deciding number visible.** The owner described Android-style bubbles: several books open at once as stacked circles over any screen, tapping one opening a floating reader, with books openable straight into a bubble and minimizable back into one. The only prior record was one line in `docs/conversation.md` — half of it dead, since it assumed a shared WebKit process. Recorded decisions: in-app only; one expanded at a time with the others lined up; cover art with a progress ring; the bubble reader is a reading surface plus a TOC-only sidebar; **the full reader keeps every feature it has today** (its 5,845 lines and five sidebar tabs are untouched). The engine already has the memory machinery this needs — `Session::suspend`, `set_cache_budget`, `cache_bytes`, and a 192 MB default budget whose comment records 676 MB after forty comic pages before it existed. The open question is the *fixed* cost, which `suspend()` does not release: `Session::open` runs `build_font_system` → `db.load_system_fonts()`, a whole-system font scan, once per book. `open.rs` has always timed that split and logged it, but **no logger was installed, so all 17 engine `log::` calls were discarded.** Installed one (`src/logging.rs`, `env_logger`): writes to stderr *and* `~/.local/share/kalam/kalam.log` because a `.desktop` launch has no terminal, and is a complete no-op unless `RUST_LOG` is set, so a normal launch is unchanged. Three tests: the tee reports the file and not the terminal, an unwritable path degrades to `None` rather than panicking, and the log lives in the shared dir so it does not move when the library changes. **The shared-font-system change is deliberately not built** — it is only worth doing if the measurement says the scan dominates, and nobody has measured it yet |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

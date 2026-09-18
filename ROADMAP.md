@@ -168,9 +168,9 @@ a year.
 | Full-text library search | not started | `tantivy` is not a dependency |
 | EPUB editor | not started | — |
 
-**Test baseline (run `35364884201`, re-confirmed `35367511432`):** 52 test
-binaries, **751 tests passed, 0 failed**, 6 ignored, no panics. Before
-`--workspace` was added on 2026-09-18, one test binary ran.
+**Test baseline (run `35399375314`):** 52 test binaries, **750 tests passed, 0
+failed**, 6 ignored, no panics. Before `--workspace` was added on 2026-09-18, one
+test binary ran.
 
 ---
 

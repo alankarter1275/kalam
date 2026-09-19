@@ -105,10 +105,10 @@ You do **not** need to build between small commits. Only at phase boundaries.
 
 Raised, deliberately not decided, and **not** dropped.
 
-- **Multiple books/readers open at once** (raised 2026-09-04). Reading two
-  things side by side, or keeping several open and switching. Touches the
-  reader, routing, and reading-session bookkeeping (two open books must not both
-  count reading time). **Discuss before designing.**
+- ~~**Multiple books/readers open at once**~~ **Resolved — it is item 2.12.**
+  Raised 2026-09-04 as "discuss before designing", then discussed and designed
+  on 2026-09-19: the bubbles. Design and recorded decisions are in
+  [Bubbles](#bubbles--multiple-books-open-at-once).
 
 ### Non-goals (whole project)
 
@@ -202,6 +202,29 @@ Three reasons:
 Each phase below ends with **"Done when"**. A phase is not finished when the
 code is written; it is finished when that line is true.
 
+### Every work item has a permanent number
+
+Items are numbered `1.1`, `2.4`, and so on. **The numbers never change.**
+Finished items keep their number and are struck through; new items are
+appended at the end of their phase with the next free number. Renumbering
+would break every reference anyone has made to an item.
+
+Two rules follow from that, and they are the point of the numbering:
+
+- **Work goes in number order.** Take the lowest unfinished number in the
+  current phase. If an item is blocked, say so and move to the next one —
+  do not quietly skip ahead to something more interesting.
+- **Nothing is built that is not on this list.** When something new comes up
+  mid-phase — a defect, a good idea, a "while we're in here" — it gets a
+  number and a place *before* it gets written. This is the rule that stops
+  the plan drifting, and it exists because that is exactly what happened
+  before: work was done because it felt urgent at the time, and a year later
+  nobody could say what was finished.
+
+The exception is a defect in code being touched *right now*, where leaving it
+would be worse than fixing it. Fix it, then give it a number in the changelog
+row for that commit so the record still accounts for it.
+
 ---
 
 ### Phase 1 — Foundations
@@ -217,72 +240,93 @@ bulk editing. Fixing it later means rewriting all four.
 
 **Work:**
 
-- **Write the engine damage list.** Replacing WebKit with `kalam-reader` broke
-  things built on top of it. Until there is a written list of what is broken,
-  "the migration is done" is not a claim anyone can check. Go through the
-  reader, the dictionary, the export paths and the sidebar; write down every
-  gap. **This list is the input to Phase 2** — several items below came from an
-  early pass at it and may be incomplete.
-- **Make `LibraryService` asynchronous.** It was designed for this and is
+- ~~**1.1 — Write the engine damage list.**~~ **Done, 2026-09-19.** The audit
+  is the numbered list that follows in Phase 2 — items 2.1 through 2.11 came
+  out of it. What it found, in short: three things broken today (text PDFs,
+  the dictionary's keyboard, its tests), four engine features with no control
+  for them, and five documents that describe an app that no longer exists.
+  **One gap the audit cannot close:** it was done by reading the code, not by
+  running the app. Anything that only misbehaves when clicked is still
+  unfound, and will be numbered as it turns up.
+- **1.2 — Make `LibraryService` asynchronous.** It was designed for this and is
   currently synchronous, so this is finishing a design, not starting one. No UI
   component may run blocking SQLite on the main thread.
-- **Route background work through `src/tasks.rs`.** It already exists with
+- **1.3 — Route background work through `src/tasks.rs`.** It already exists with
   poison-safe locking. Imports, batch metadata fetching, index rebuilds and
   patch baking go through it, with progress and cancellation. Note that
   `src/downloads.rs` currently uses bare `thread::spawn` and six
   `lock().unwrap()` calls — that is precisely the cascade-panic this file
   exists to prevent.
-- ~~**Install a logger.**~~ **Done, 2026-09-19** (`src/logging.rs`). The engine
+- ~~**1.4 — Install a logger.**~~ **Done, 2026-09-19** (`src/logging.rs`). The engine
   makes 17 `log::` calls that were discarded because no logger was installed;
   they now go to the terminal and to `~/.local/share/kalam/kalam.log` when
   `RUST_LOG` is set, and nowhere at all when it is not. The app's own 83
   `eprintln!` sites are a separate, larger job and are still invisible.
-- ~~**Measure what opening a book costs.**~~ **Done, 2026-09-19.** Measured on
+- ~~**1.5 — Measure what opening a book costs.**~~ **Done, 2026-09-19.** Measured on
   the owner's Arch machine across four books. Results and what they settle are
   in [Bubbles](#bubbles--multiple-books-open-at-once).
-- ~~**Share one font system across sessions.**~~ **Decided against, 2026-09-19 —
+- ~~**1.6 — Share one font system across sessions.**~~ **Decided against, 2026-09-19 —
   not needed.** The measurement says the font scan is **1–5 ms** out of a 32–78
   ms open. Sharing it would save milliseconds and add a real complexity cost.
   Left as-is on purpose; see the table in
   [Bubbles](#bubbles--multiple-books-open-at-once) before revisiting.
-- **Fix `paths.rs::home_dir()`.** It reads only `$HOME` and falls back to
+- **1.7 — Fix `paths.rs::home_dir()`.** It reads only `$HOME` and falls back to
   `PathBuf::from(".")`, so with `HOME` unset the app creates a `kalam/` folder
   in whatever directory it was started from.
-- **Batch of small, safe fixes**, each a few minutes:
-  - Delete three unused dependencies from the root `Cargo.toml`: `toml`,
+- **1.8 — Batch of small, safe fixes**, each a few minutes:
+  - **1.8a** Delete three unused dependencies from the root `Cargo.toml`: `toml`,
     `urlencoding`, `scraper`.
-  - Delete or fix `src/plugins/mod.rs`. It imports `wasmtime`, which is in
+  - **1.8b** Delete or fix `src/plugins/mod.rs`. It imports `wasmtime`, which is in
     neither `Cargo.toml` nor `Cargo.lock`; it only survives because
     `// mod plugins;` is commented out in `src/main.rs`.
-  - Rename one of `src/epub_write.rs` / `src/epub_writer.rs`. They are
+  - **1.8c** Rename one of `src/epub_write.rs` / `src/epub_writer.rs`. They are
     unrelated files with near-identical names.
-  - Install the icon at the right size. The `Makefile` puts a 128×128
+  - **1.8d** Install the icon at the right size. The `Makefile` puts a 128×128
     `assets/logo.png` into `icons/hicolor/512x512/apps/`; a 2048×2048 source
     exists at `docs/design/logo_transparent.png`.
-  - Make "Open with Kalam" work: add `MimeType` to the `.desktop` file, add
+  - **1.8e** Make "Open with Kalam" work: add `MimeType` to the `.desktop` file, add
     `%f` to `Exec`, and parse `argv` in `main.rs`. None of the three exist.
-  - Add a `LICENSE` file at the repository root. `Cargo.toml` already says
+  - **1.8f** Add a `LICENSE` file at the repository root. `Cargo.toml` already says
     `GPL-3.0-or-later`; the file is just missing.
-  - Work through the 90 `#[allow(dead_code)]` attributes, 5 of them
+  - **1.8g** Work through the 90 `#[allow(dead_code)]` attributes, 5 of them
     module-wide. CI's `-D warnings` was added specifically to catch dead code
     and these suppress it wholesale.
-- **Write the app-level guardrails.** `crates/kalam-reader` inherits strict
+  - **1.8h** Rename `src/pages/reader/js_bridge.rs`. The name is a leftover from
+    WebKit; the file is now the dictionary popover, as its own doc comment
+    says. Two `use` sites to update (`reader/lists.rs`, `reader/mod.rs`).
+  - **1.8i** Fix the doc comment in `src/timing.rs`, which still describes
+    handing chapters to WebKit.
+- **1.9 — Write the app-level guardrails.** `crates/kalam-reader` inherits strict
   boundaries from upstream, which is a large part of why that code stayed clean.
   **`src/` has no equivalent.** `docs/WORKING.md` states four invariants and only
   one (zero `unwrap`) is actually checkable. Add the other three as tests that
   can fail: `Arc<Catalog>` in `src/pages/`, and no literal hex colours outside
   `theme.rs`. See "Guidelines for the app half" in `docs/conversation.md`.
-- **Decide the upstream relationship.** `docs/kalam/UPSTREAM.md` describes
+- **1.10 — Decide the upstream relationship.** `docs/kalam/UPSTREAM.md` describes
   cherry-picking fixes monthly from the original chapbook repository, but the
   engine crates are now ordinary workspace members that Kalam edits directly.
   Editing in place and pulling from upstream at the same time produces
   conflicts. Either stop tracking upstream, or keep a clean boundary between
   files we edit and files we do not.
+- **1.11 — Correct the documents that describe an app that no longer exists.**
+  Found by the audit. These are not cosmetic: a README that overstates what
+  is finished is how this project came to believe the downloads hub was
+  shipped when it is not.
+  - **README claims P6 and P7 were "built together".** There is **zero**
+    `impl Source` in the repository, and `SourceManager` holds an empty
+    `Vec`. The downloads hub does not exist. It belongs in Part 2.
+  - **README claims "P8 / P9 Comics and manga — next".** Comics already
+    shipped (1,685 lines) and the P9 manga track was folded into them.
+  - **README's status table predates the engine swap** and describes a WebKit
+    app throughout.
+  - While in there: `docs/conversation.md` §20 still recommends Poppler for
+    PDF rendering; §22 reverses that to MuPDF and §20 was never edited.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`
 launch; the damage list exists and is either empty or fully accounted for in a
-later phase; `cargo build` is clean of dead dependencies.
+later phase; `cargo build` is clean of dead dependencies; and the README's
+status table survives a line-by-line check against the code.
 
 ---
 
@@ -295,33 +339,68 @@ later phase; `cargo build` is clean of dead dependencies.
 
 **Work:**
 
-- **Bubbles.** Several books open at once as stacked circles over any screen in
-  the app; tap one to read it in a floating window. Full design, including what
-  has to be measured first, is in
-  [Bubbles](#bubbles--multiple-books-open-at-once). This is the largest single
-  item in the phase, and it is gated on Phase 1's measurement — **do not start
-  it before that number is known.**
-- **Dictionary: arrow-key sense-walk.** The lookup itself works — select a
+The order below is deliberate. The dictionary comes first because it is the
+oldest thing that is broken and the one that turns a daily action — looking up
+a word — into a dead end. Bubbles come last: they are the largest item, and
+they need 1.2's asynchronous service layer underneath them.
+
+- **2.1 — Dictionary: arrow-key sense-walk.** The lookup itself works — select a
   word, press `d`, and `LookUpSelection` at `src/pages/reader/mod.rs:1517`
   opens the card. What is gone is moving between meanings with ↑/↓ and pressing
   Enter to save the one you are on. There is no `k-def-focus` and no
   focused-sense concept anywhere in `src/`; this is new GTK work.
-- **Dictionary: rebuild the tests.** The old 55-check jsdom harness is gone and
+- **2.2 — Dictionary: rebuild the tests.** The old 55-check jsdom harness is gone and
   cannot be rebuilt as JavaScript. Rewrite the equivalent coverage as Rust
   tests against the engine.
-- **Text layout toggles.** The engine already hyphenates and justifies — there
-  is simply no user-facing switch for either yet.
-- **Footnotes.** Clicking `[1]` opens an instant popover or jumps to the note.
-- **"Jump back" history.** An instant return after jumping to a footnote, TOC
+- **2.3 — Font picker.** The engine already supports it and already knows what
+  to offer: `ReadingSettings::font_family` takes a family,
+  `Session::set_font_family` applies one (`chapbook-reader/src/nav.rs:115`),
+  and `Session::font_families` returns the installed faces to offer
+  (`chapbook-reader/src/lib.rs:672`, covered by tests in `session.rs` and
+  `settings.rs`). **None of it is referenced anywhere in `src/`** — the
+  capability exists and no control reaches it. Add the picker to the settings
+  panel.
+- **2.4 — Text layout toggles.** Three engine settings with no user-facing
+  switch, each verified by grep against `src/`:
+  - **Justify.** `ReadingSettings::justify` exists but is never set. The nine
+    `justify` hits in `src/` are unrelated to it: eight are GTK label
+    alignment (`set_justify`) and one is an icon name.
+  - **Hyphenation.** The engine hyphenates (`chapbook-layout/src/hyphenate.rs`)
+    with no way to turn it off.
+  - **Publisher styles.** `ReadingSettings::publisher_styles` exists, zero
+    references in `src/`. The underlying engine bug was fixed upstream, so
+    this is only the missing switch.
+  - **Column width** is already exposed; these three join it.
+- **2.5 — Footnotes.** Clicking `[1]` opens an instant popover or jumps to the note.
+  The engine resolves internal links; nothing in `src/` handles them.
+- **2.6 — "Jump back" history.** An instant return after jumping to a footnote, TOC
   entry or search match.
-- **Dual-page view** in widescreen, plus continuous vertical scroll.
-- **Custom fonts folder** — drop `.ttf`/`.otf` in without a system install.
-- **Auto-hiding mouse cursor** after 2s, and configurable keybindings and
+- **2.7 — Dual-page toggle, plus continuous vertical scroll.** The engine already
+  shows facing pages above 900 px (`view.rs:911`) — **automatically, with no
+  way to switch it off.** Add the toggle rather than the behaviour.
+- **2.8 — Custom fonts folder** — drop `.ttf`/`.otf` in without a system install.
+- **2.9 — Auto-hiding mouse cursor** after 2s, and configurable keybindings and
   mouse-wheel sensitivity.
-- **Selection toolbar.** Double-click selects a word, triple-click a paragraph.
+- **2.10 — Selection toolbar.** Double-click selects a word, triple-click a paragraph.
   The teardrop handles exist (`crates/kalam-reader/src/handles.rs`). The
   toolbar needs highlight in five colours plus underline, quote, dictionary
   lookup and copy.
+- **2.11 — Make text PDFs readable.** Pulled forward out of
+  [Deferred — PDF](#deferred--pdf) on 2026-09-19, because PDF bubbles cannot
+  exist until text PDFs render. This is the *cheap* option only: default to the
+  existing reflow mode when a page has no embedded picture, and say so on
+  screen. Today `render_text_to_canvas` draws **a dark grey bar for every line
+  of text**, and page mode is the default (`reflow_mode: false` at
+  `src/pages/pdf_reader.rs:89`), so an ordinary text PDF opens as a page of
+  grey stripes. Real rendering — MuPDF — stays deferred.
+- **2.12 — Bubbles.** Several books open at once as stacked circles over any screen in
+  the app; tap one to read it in a floating window. Full design, including what
+  has to be measured first, is in
+  [Bubbles](#bubbles--multiple-books-open-at-once). This is the largest single
+  item in the phase. The measurement it was gated on is **done** (1.5); what it
+  still needs is 1.2's asynchronous service layer, which is why it sits last.
+  Per-book cache budgets come with it — `set_cache_budget` already exists, only
+  the call is missing.
 
 **What already survived.** The dictionary overhaul shipped ten phases under
 WebKit; most of it is SQLite and is intact — the headword index, WordNet
@@ -335,7 +414,8 @@ one test rewrite, not a redo.
 2026-09-18 and the engine API deleted so it cannot return by accident.
 
 **Done when:** a full read of a real EPUB — with a footnote, a looked-up word
-saved to vocabulary, and a jump back from the TOC — needs no workaround.
+saved to vocabulary using the keyboard, a font changed from the picker, and a
+jump back from the TOC — needs no workaround.
 
 ---
 
@@ -655,14 +735,18 @@ ordinary text PDF shows a page of grey stripes.**
 
 Two options, in order of cost:
 
-1. **Cheap:** default to the existing reflow mode when a page has no embedded
-   picture, and say so on screen. A few hours. Makes text PDFs readable.
+1. ~~**Cheap:** default to the existing reflow mode when a page has no embedded
+   picture, and say so on screen. A few hours. Makes text PDFs readable.~~
+   **Moved into Part 1 on 2026-09-19 — it is item 2.11.** Reason: PDF bubbles
+   are wanted, and they cannot exist while text PDFs render as grey stripes.
+   This was the tension between "PDFs are rare" and "PDFs get bubbles", and
+   the resolution is to pay the few hours and leave real rendering deferred.
 2. **Real:** add a rendering library. **The decision is MuPDF** — 8.7 ms/page
    against Poppler's 14.6, and it won the one rigorous eight-engine fidelity
    study. The `mupdf` crate compiles the library from vendored source, so it
    needs a C/C++ toolchain, `libclang` and fontconfig headers, and it **must
    set `default-features = false`** or it pulls in XPS, SVG, EPUB, HTML, OCR,
-   Brotli and DOCX. Reasoning in `docs/conversation.md` §22.
+   Brotli and DOCX. Reasoning in `docs/conversation.md` §22. **Still deferred.**
 
 **Comics and manga** are a separate track and are already shipped (1,685
 lines). Not deferred. Wishlist items from the old plan, if ever: automatic
@@ -675,10 +759,11 @@ for faded scans, and a remaster tool for upscaling low-resolution scans.
 
 Raised, deliberately not decided, and **not** dropped.
 
-- **Multiple books open at once** (raised 2026-09-04). Reading two things side
-  by side, or keeping several open and switching. Touches the reader, routing
-  and reading-session bookkeeping — two open books must not both count reading
-  time. **Discuss before designing.**
+- ~~**Multiple books open at once**~~ **Resolved — item 2.12.** Raised
+  2026-09-04, designed 2026-09-19 as the bubbles; see
+  [Bubbles](#bubbles--multiple-books-open-at-once). The reading-time question
+  it raised is still open and travels with 2.12: two open books must not both
+  count reading time.
 - **Chapter-level → page-level cache eviction.** *A tripwire, not a task.*
   Eviction drops whole chapters, so a 141-page chapter is held as one lump
   whether you are looking at page 1 or page 141. That was a real problem when
@@ -950,6 +1035,7 @@ top-to-bottom like a journal.
 | 2026-09-19 | **Measured what opening a book costs; the expected engine change turned out not to be needed.** Four books on the owner's Arch machine via the new logger. The font scan — the whole reason a shared font system was on the table — is **1–5 ms** out of a 32–78 ms open, with 8 faces. **Decision: do not build it.** What the numbers show instead: opening plus the once-per-book chapter character count puts a book ready-to-read at 100–220 ms, and first paint is 53–183 ms, which *confirms* the rule that a bubble must hold no book. Chapter layout ranges from 4 ms to **603 ms**, the slow cases being image-heavy (141 pages / 194 images in 547 ms; 603 ms with 487 images). **Memory, not time, is the constraint**: single-chapter caches measured at 34 MB, 37 MB, 13 MB and 12 MB against a 192 MB-per-session default budget, so bubbles must call `set_cache_budget` down hard on every book not being read and `suspend()` the rest. Net engine work for bubbles: **use the cache controls that already exist, add nothing.** Also silenced a warning that was burying the log — `xml5ever` 0.39.0 (third-party) warns once per parsed document that it does not implement `stop_parsing` for XML5, hundreds of times per book; held to `error` in `src/logging.rs`, liftable with `RUST_LOG=info,xml5ever=warn` because a suppression that cannot be turned off is a trap |
 | 2026-09-19 | **Chapter images now decode to the size a page can draw — measured 71% less memory.** Every `<img>` in an EPUB chapter was decoded at full native resolution with no knowledge of how big it would be shown; `collect_images` took no page size even though `PageMetrics` was in scope at its one production call site. Raw RGBA costs 4 bytes a pixel, so a 3000x4000 scan is 48 MB decoded while occupying at most the reading column. `collect_images` now takes a max edge and scales anything larger down, preserving aspect ratio; the caller passes `content_width * dpi_scale`. **Measured on the owner's Arch machine, *The Dragonet Prophecy*:** four chapters went from 85,082 KB to 24,361 KB — 83.1 MB to 23.8 MB, **71% less**. The engine's own `images:` line reports 77.1 MB decoded against 17.9 MB kept. **The number that matters is that the cache now fits**: those four chapters were 2.6x over the 32 MB budget before, so an image-heavy book sat permanently over budget and re-decoded on scroll at the 77-120 ms/page the engine measures; they are now under it. Cost is not zero — the resize stage added ~50 ms on small-image chapters (ch 7: 49 to 106 ms) while *reducing* it on large ones (ch 6: 487 to 385 ms, because `ImageStore::insert` premultiplies every stored pixel, so fewer pixels is less work there). An image that already fits is returned as the same bytes, not resized to the same size, so a no-op resize cannot shift a byte-exact golden; every fixture image is 64x48 or 120x60, so goldens are unaffected — which also means they cover none of this, hence six unit tests on the shrink. Text-only books are untouched: *Immortals of Meluha* logs no `images:` line at all. Two call sites outside `crates/` were missed on the first push and broke `chapbook-cli`; `--all-targets` compiles examples too, so grepping one directory is not enough. Comics deliberately untouched — they decode on a background loader with no page metrics, and they zoom, so shrinking a comic page to fit would soften a zoomed one. The disk page cache is now very unlikely to be needed |
 | 2026-09-19 | **Lazy loading audited; most of it already exists, so only the gaps are planned.** Asked whether chapters could load and unload on demand. Verified rather than assumed: **they already do.** `layout_unit` builds a chapter only when asked, `evict_keeping` drops the least-recently-read ones under the byte budget while pinning the chapter on screen and the visible ones, `prefetch_one` reaches exactly one adjacent chapter, and `suspend()` drops everything but the page showing. Three real gaps: eviction is per *chapter* not per page (a 141-page chapter is one lump); there is one budget for one book where bubbles need one per state; and the chapter character count runs eagerly on open (30-147 ms) when it is only needed on first use. **Per-book budgets go to Phase 2 with the bubbles** — `set_cache_budget` already exists, only the call is missing. **Page-level eviction is recorded as a tripwire, not a task**: it was worth doing when such a chapter cached 34 MB against a 32 MB budget, and the image fix put the same chapter at 13 MB, under budget on its own. Building it now would repeat the shared-font-system mistake — solving a problem the previous fix dissolved. The check is written down so the tripwire is testable: a `laid out unit N` line above 32,768 KB. Eager char count goes to Phase 7. Also corrected a stale figure in the Bubbles section: it said the budget was 192 MB per book, which is the *engine* default; `kalam-reader` overrides it to 32 MB and that is what runs |
+| 2026-09-19 | **Full Part 1 audit: every work item is now permanently numbered, and eleven items were found that the plan did not have.** The owner asked for an extremely thorough check of everything that must be finished before Part 2 — including breakage left over from earlier sessions — with the report first and the roadmap edit only after confirmation, so that work proceeds *in sequence* rather than haphazardly. The audit was done by reading the code, not from memory, and **one finding was caught as a false positive before it was reported**: a grep for reader preferences referenced only once flagged thirteen keys as dead settings, but `reader.ui.back_chip_size_px` and `reader.scrolled` are both read — the string appears once because the key is centralised in a `ReaderUiSetting` key function and a `PREF_SCROLLED` constant respectively. Good design, bad grep; not reported. **What the audit actually found.** Three things broken today: text PDFs paint a grey bar per line with page mode the default (`reflow_mode: false`, `pdf_reader.rs:89`); the dictionary popup has no keyboard at all — no `k-def-focus`, no focused-sense concept anywhere in `src/`, so you can open a card but not move between meanings or save one; and its 55-test jsdom harness is gone. **Four engine settings exist with no control for them**, each confirmed by grep: `font_family` and `publisher_styles` have **zero** references in `src/`; the nine `justify` hits are all GTK label alignment, not `ReadingSettings::justify`; and hyphenation runs in the engine with no switch. `Session::font_families` already returns the installed faces, so the font picker is missing only its UI. **Five documents describe an app that no longer exists**, which is the finding with the longest shadow: the README claims P6 and P7 shipped together when there is **zero** `impl Source` and `SourceManager` holds an empty `Vec`; it claims comics are "next" when they shipped at 1,685 lines; its status table predates the engine swap entirely; `js_bridge.rs` is the dictionary popover under a WebKit name; and `conversation.md` §20 still recommends Poppler where §22 chose MuPDF. **Reachability came back clean** — `NavItem` hides three routes (Downloads, RemoteBrowse, Fanfiction) that are all Part 2, all eight `LibrarySection` variants are routed, and `PlaceholderPageModel` is only on the error paths. **Two placements follow from the owner's decisions.** The cheap PDF fix moved *out* of Deferred into Part 1 as 2.11, because PDF bubbles were wanted and cannot exist over grey stripes — the tension between "PDFs are rare" and "PDFs get bubbles", resolved by paying a few hours and leaving MuPDF deferred. The dictionary keyboard became 2.1, ahead of bubbles at 2.12, as the oldest breakage; bubbles moved last because they need 1.2's async layer. **The numbering is the actual deliverable**: numbers never change, finished items keep theirs struck through, and nothing is built that is not on the list — a new want gets a number and a place *before* it gets written, with one exception for a defect in code being touched right now, which gets a number in its commit's changelog row. That rule exists because drifting is precisely what happened before. Also resolved two stale duplicates that both said "discuss before designing" about multiple books open, which was designed the same week |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

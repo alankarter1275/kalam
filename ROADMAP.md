@@ -248,9 +248,39 @@ bulk editing. Fixing it later means rewriting all four.
   **One gap the audit cannot close:** it was done by reading the code, not by
   running the app. Anything that only misbehaves when clicked is still
   unfound, and will be numbered as it turns up.
-- **1.2 — Make `LibraryService` asynchronous.** It was designed for this and is
-  currently synchronous, so this is finishing a design, not starting one. No UI
-  component may run blocking SQLite on the main thread.
+- **1.2 — Move blocking SQLite off the UI thread.** *Renamed 2026-09-19. The
+  original wording — "make `LibraryService` asynchronous" — was wrong, and
+  following it literally would have contradicted a decision already recorded in
+  the code.* `src/tasks.rs` has a section headed **"No tokio"**: `thread::spawn`
+  + `async-channel` + the GLib main loop, because relm4 is already the actor
+  framework and a second runtime is a second scheduler fighting the first.
+  Making the service `async fn` would require exactly that second runtime.
+  **What the code was actually designed for** is the opposite shape, and it is
+  already built: the methods stay synchronous, they return plain owned `Send`
+  snapshots, and the *caller* runs them on a worker via `tasks::spawn`.
+  `service.rs` says so — "the same call can later run on a worker thread and be
+  handed back to the UI, without touching the page" — and
+  `snapshots_are_send()` asserts `Send` on the service and all 12 snapshots so
+  a future edit cannot quietly break the promise.
+
+  **The gap is that nobody is using it.** Measured this turn: **92** service
+  call sites across `src/pages/`, of which **2** are near a `tasks::spawn`.
+  They sit in `init()` and `reload()` — both UI-thread paths. The work is
+  routing those calls, not rewriting the service.
+
+  Split in two, because converting all 92 blind would be the shared-font-system
+  mistake again — a large change with a loading state on every page, justified
+  by no measurement. There is **no** timing data for any service call today.
+  - **1.2a — Measure what a service call costs.** Instrument all 16 snapshot
+    methods through the existing `timing` harness so one run on the Arch
+    machine prints a per-query cost. No behaviour change.
+  - **1.2b — Convert the calls that actually block.** Route those through
+    `tasks::spawn` with a loading state; leave sub-10 ms reads on the UI
+    thread, where a thread round-trip would cost more than the query. Which
+    ones is decided by 1.2a's log, not by guessing.
+
+  **Done when 1.2a is:** `KALAM_TIMING=1 kalam`, click through the pages, and a
+  `[timing] service_*` line exists for every snapshot method.
 - **1.3 — Route background work through `src/tasks.rs`.** It already exists with
   poison-safe locking. Imports, batch metadata fetching, index rebuilds and
   patch baking go through it, with progress and cancellation. Note that

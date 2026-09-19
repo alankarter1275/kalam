@@ -25,9 +25,12 @@
 //!                   first run (it imports the bundled packs), and
 //!                   `startup_first_page` scales with library size.
 //!   book_open     → EPUB parsed and the reader initialised
-//!   chapter_load  → chapter HTML handed to WebKit *until* WebKit finished
-//!                   rendering it — i.e. the whole chapter turn
+//!   chapter_load  → chapter HTML laid out by `kalam-reader` *until* the page
+//!                   was painted — i.e. the whole chapter turn
 //!   dict_lookup   → dictionary search returned
+//!   service_*     → one `LibraryService` snapshot query, one line per call,
+//!                   so "which read blocks the UI thread" is answered by a log
+//!                   rather than by guessing (roadmap 1.2a)
 //!
 //! Note that a span prints **one** line, under the label it was opened with,
 //! when it ends. `chapter_load` therefore reports the full load→rendered
@@ -77,6 +80,53 @@ pub fn note(label: &'static str, value: usize) {
         return;
     }
     println!("[timing] {label:<18} {value:>8}");
+}
+
+/// Print a duration the caller measured itself, e.g. one service query.
+///
+/// This is the half of the module that does not need a matching pair of calls:
+/// [`measure`] starts a [`Guard`] whose `Drop` reports the elapsed time, so an
+/// early `return` cannot leave a span open and no `*_end` call can be forgotten.
+/// No-op unless `KALAM_TIMING=1`.
+pub fn duration(label: &'static str, d: std::time::Duration) {
+    if !enabled() {
+        return;
+    }
+    println!("[timing] {label:<18} {:>8.1} ms", d.as_secs_f64() * 1000.0);
+}
+
+/// Measures the scope it is bound to and prints on drop. Returned by
+/// [`measure`].
+///
+/// Bind it with a name — `let _t = timing::measure("service_home");`. Binding
+/// it to `_` instead drops it immediately and reports ~0 ms, which reads as a
+/// fast query and is the one way to use this wrong silently.
+#[must_use = "dropping this immediately reports ~0 ms; bind it to a name"]
+pub struct Guard {
+    label: &'static str,
+    start: Instant,
+}
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        duration(self.label, self.start.elapsed());
+    }
+}
+
+/// Start timing `label`. Costs one `Instant::now()` and prints nothing unless
+/// `KALAM_TIMING=1`.
+///
+/// ```ignore
+/// pub fn home(&self) -> HomeSnapshot {
+///     let _t = crate::timing::measure("service_home");
+///     ...
+/// }
+/// ```
+pub fn measure(label: &'static str) -> Guard {
+    Guard {
+        label,
+        start: Instant::now(),
+    }
 }
 
 /// Begin a named span (e.g. "book_open"). If a span with the same label is

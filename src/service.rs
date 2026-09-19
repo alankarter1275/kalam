@@ -260,6 +260,7 @@ impl LibraryService {
 
     /// Home: counts strip, continue row, reading-list peek, recently added.
     pub fn home(&self) -> HomeSnapshot {
+        let _t = crate::timing::measure("service_home");
         let mut errors = Errors::new();
         let stats = take(self.catalog.library_stats(), "library stats", &mut errors);
         // Bounded on purpose: Home shows a dozen covers, not the whole library.
@@ -286,6 +287,7 @@ impl LibraryService {
 
     /// Analytics: totals, streaks, goal progress, this week's activity.
     pub fn analytics(&self) -> AnalyticsSnapshot {
+        let _t = crate::timing::measure("service_analytics");
         let mut errors = Errors::new();
         AnalyticsSnapshot {
             stats: take(self.catalog.library_stats(), "library stats", &mut errors),
@@ -301,6 +303,7 @@ impl LibraryService {
     /// The tag cloud.
     /// Everything the reader loads when a book opens.
     pub fn reader(&self, book_id: i64) -> ReaderSnapshot {
+        let _t = crate::timing::measure("service_reader");
         let mut errors = Errors::new();
         let cat = &self.catalog;
         ReaderSnapshot {
@@ -322,6 +325,7 @@ impl LibraryService {
 
     /// The book page's stats strip and timeline, in one call.
     pub fn book_stats(&self, book_id: i64, days: i64, session_limit: usize) -> BookStatsSnapshot {
+        let _t = crate::timing::measure("service_book_stats");
         let mut errors = Errors::new();
         let cat = &self.catalog;
         let progress: Option<(usize, f64)> = take(
@@ -366,6 +370,7 @@ impl LibraryService {
     /// The books read is skipped when the shelf itself is missing, so a
     /// deleted shelf produces one clear outcome instead of two vague ones.
     pub fn shelf_detail(&self, shelf_id: i64, sort: SortKey, query: &str) -> ShelfDetailSnapshot {
+        let _t = crate::timing::measure("service_shelf_detail");
         let mut errors = Errors::new();
         let shelf: Option<Shelf> = take(self.catalog.get_shelf(shelf_id), "shelf", &mut errors);
         let books = match &shelf {
@@ -385,6 +390,7 @@ impl LibraryService {
 
     /// Everything the book float panel shows, in one call.
     pub fn book_detail(&self, book_id: i64) -> BookDetailSnapshot {
+        let _t = crate::timing::measure("service_book_detail");
         let mut errors = Errors::new();
         BookDetailSnapshot {
             book: take(self.catalog.get_book(book_id), "book", &mut errors),
@@ -408,6 +414,7 @@ impl LibraryService {
     /// The counts deliberately cover the whole table, not just the page's
     /// 500-row display cap, so the header stays true for large vocabularies.
     pub fn words(&self, query: &str, known: Option<bool>) -> WordsSnapshot {
+        let _t = crate::timing::measure("service_words");
         let mut errors = Errors::new();
         let words = take(
             self.catalog.list_saved_words(query, known),
@@ -433,6 +440,7 @@ impl LibraryService {
     /// that is a missing book, not a failed read, and the page already has
     /// wording for it.
     pub fn quotes(&self, query: &str) -> QuotesSnapshot {
+        let _t = crate::timing::measure("service_quotes");
         let mut errors = Errors::new();
         let annos: Vec<Annotation> = take(
             self.catalog.list_all_quotes(query),
@@ -456,6 +464,7 @@ impl LibraryService {
     /// `feed_limit` is doubled internally the way the page does it: the feed
     /// merges events with sessions and then trims, so both sides need slack.
     pub fn dashboard(&self, feed_limit: usize) -> DashboardSnapshot {
+        let _t = crate::timing::measure("service_dashboard");
         let mut errors = Errors::new();
         let cat = &self.catalog;
         DashboardSnapshot {
@@ -485,6 +494,7 @@ impl LibraryService {
 
     /// History page: reading events, optionally filtered by kind and text.
     pub fn history(&self, kind: Option<EventKind>, query: &str, limit: usize) -> HistorySnapshot {
+        let _t = crate::timing::measure("service_history");
         let mut errors = Errors::new();
         HistorySnapshot {
             events: take(
@@ -498,6 +508,7 @@ impl LibraryService {
 
     /// Lookup History page: the dictionary lookup log.
     pub fn lookup_history(&self, query: &str, limit: usize) -> LookupHistorySnapshot {
+        let _t = crate::timing::measure("service_lookup_history");
         let mut errors = Errors::new();
         LookupHistorySnapshot {
             lookups: take(
@@ -511,6 +522,7 @@ impl LibraryService {
 
     /// All books page: the whole library, filtered by `query` and sorted.
     pub fn all_books(&self, sort: SortKey, query: &str) -> AllBooksSnapshot {
+        let _t = crate::timing::measure("service_all_books");
         let mut errors = Errors::new();
         AllBooksSnapshot {
             books: take(self.catalog.list_books(sort, query), "books", &mut errors),
@@ -520,6 +532,7 @@ impl LibraryService {
 
     /// Shelves page: every shelf, ordered as stored.
     pub fn shelves(&self) -> ShelvesSnapshot {
+        let _t = crate::timing::measure("service_shelves");
         let mut errors = Errors::new();
         ShelvesSnapshot {
             shelves: take(self.catalog.list_shelves(), "shelves", &mut errors),
@@ -529,6 +542,7 @@ impl LibraryService {
 
     /// Reading list page: the ordered queue.
     pub fn reading_list(&self) -> ReadingListSnapshot {
+        let _t = crate::timing::measure("service_reading_list");
         let mut errors = Errors::new();
         ReadingListSnapshot {
             entries: take(
@@ -541,6 +555,7 @@ impl LibraryService {
     }
 
     pub fn tags(&self) -> TagsSnapshot {
+        let _t = crate::timing::measure("service_tags");
         let mut errors = Errors::new();
         TagsSnapshot {
             tags: take(self.catalog.list_tags_with_counts(), "tags", &mut errors),
@@ -550,6 +565,7 @@ impl LibraryService {
 
     /// Books carrying `tag`, in `sort` order.
     pub fn tag_books(&self, tag: &str, sort: SortKey) -> TagBooksSnapshot {
+        let _t = crate::timing::measure("service_tag_books");
         let mut errors = Errors::new();
         TagBooksSnapshot {
             books: take(

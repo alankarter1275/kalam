@@ -275,31 +275,63 @@ bulk editing. Fixing it later means rewriting all four.
   - ~~**1.2a — Measure what a service call costs.**~~ **Done, 2026-09-19.** All
     16 snapshot methods instrumented via `timing::measure`, measured on the
     owner's Arch machine. Results below.
-  - ~~**1.2b — Convert the calls that actually block.**~~ **Not needed —
-    decided against, 2026-09-19.** Measured, every query is fast:
+  - **1.2b — Make the pages stop doing database work.** *Reopened 2026-09-19
+    after being wrongly closed the same day.* It was closed on the grounds
+    that every query is fast — and that reasoning was wrong in two ways, both
+    worth keeping on record.
 
-    | Query | ms | Query | ms |
-    |---|---|---|---|
-    | `dashboard` | **10.8** | `tag_books` | 1.5, 0.9 |
-    | `home` | 8.4, 2.6 | `tags` | 1.4, 1.2, 1.1 |
-    | `all_books` | 4.7 | `quotes` | 0.9 |
-    | `history` | 2.6 | `book_detail` | 0.7 |
-    | | | `shelves` | 0.5 |
-    | | | `reading_list` | 0.5 |
-    | | | `analytics` | 0.3 |
-    | | | `reader` | 0.3 |
+    **First, it answered a question that was never asked.** The Yazi philosophy
+    in `docs/conversation.md` §3 is *"don't make the UI fast — make it never
+    wait"*, and its first rule is *"the UI never does work."* That is a
+    statement about architecture, not about milliseconds. Closing the item
+    because the queries are cheap today mistook a measurement for a decision.
 
-    **Worst case 10.8 ms, median about 1.2 ms.** A thread round-trip plus a
-    loading state would cost more than the query it replaces, so all 92 call
-    sites stay on the UI thread. Four methods were not visited (`words`,
-    `lookup_history`, `book_stats`, `shelf_detail`); they read the same tables
-    at the same scale and are not worth a second round trip to confirm.
+    **Second, the measurement was taken at the wrong scale.** The library is
+    **150 books** (`grid_cards_total 150`); Phase 7's target is **2,000**.
+    `all_books()` returning 150 rows in 4.7 ms says nothing about 2,000 rows,
+    and the queries that scale with library size — `all_books`, `dashboard`,
+    `history`, `words`, `quotes`, `tag_books` — are exactly the ones that will
+    stop being cheap. Measuring at 7.5% of the design scale and concluding
+    "not needed" does not survive the roadmap's own goal.
 
-    **This is the second time measurement dissolved a planned task** — the
-    first was the shared font system. The rule holds: measure first.
+    The measurements stay valid and are kept below; what changes is the
+    conclusion drawn from them.
 
-    The `Send` guarantee stays load-bearing for 1.3, which does have long work
-    to route. `snapshots_are_send()` stays.
+    | Query | ms at 150 books | Scales with library? |
+    |---|---|---|
+    | `dashboard` | **10.8** | yes |
+    | `home` | 8.4, 2.6 | yes |
+    | `all_books` | 4.7 | **yes — the worst case at scale** |
+    | `history` | 2.6 | yes |
+    | `tag_books` | 1.5, 0.9 | yes |
+    | `tags` | 1.4, 1.2, 1.1 | yes |
+    | `quotes` | 0.9 | yes |
+    | `book_detail` | 0.7 | no |
+    | `shelves` | 0.5 | no |
+    | `reading_list` | 0.5 | no |
+    | `analytics` | 0.3 | no |
+    | `reader` | 0.3 | no |
+
+    **Three design questions must be answered before converting anything,**
+    because converting 92 call sites without them would make the app feel
+    worse, not better:
+    - **No flash of empty state.** A page whose query round-trips must keep
+      showing what it already has and refresh in place, not clear and refill.
+      Yazi gets away with loading states because its operations are genuinely
+      slow; a 1 ms query behind a blank frame is a regression.
+    - **Convert by scaling risk, not uniformly.** The eight queries marked
+      "yes" above are the ones that hurt at 2,000 books. The constant-time
+      ones (`shelves`, `reading_list`, `analytics`, `reader`, `book_detail`)
+      can stay — that is a principled exception, not drift, and it should be
+      written down as one.
+    - **A cache belongs in the service layer.** `service.rs`'s own doc names
+      "no single place to put caching" as one of the three problems it was
+      written to solve, and there is still no cache. With one, a revisit is
+      instant and the async hop is invisible.
+
+    The `Send` guarantee is already load-bearing here: `snapshots_are_send()`
+    asserts `Send` on the service and all 12 snapshots, which is exactly what
+    handing them across a thread requires.
 - **1.3 — Route background work through `src/tasks.rs`.** It already exists with
   poison-safe locking. Imports, batch metadata fetching, index rebuilds and
   patch baking go through it, with progress and cancellation. Note that
@@ -528,6 +560,41 @@ bulk editing. Fixing it later means rewriting all four.
   afterwards had to resolve against a theme marked dirty; with the call moved
   out, those lookups hit a clean cache. Not measured — if `AppModel::init` is
   ever optimised, this is worth confirming rather than assuming.
+
+- **1.14 — Give the background work a visible task manager.** *Added
+  2026-09-19.* The machinery is already built and already used — **27
+  `tasks::spawn` call sites** across imports, metadata fetching, thumbnails,
+  dictionary install and downloads, each with progress and a cancellation
+  flag. What does not exist is any way to *see* it: `running_count()` and
+  `cancel_all()` are referenced in exactly one place, `src/app.rs:876-877`,
+  and both run **at exit**. So work happens in the background with no panel,
+  no queue, no per-task cancel — the app reports how many tasks were
+  abandoned when it closes, and that is all.
+  Yazi's second idea is *"a task system: heavy operations become background
+  tasks with progress, cancellation, queue; UI shows progress bars, never
+  blocks"*, and its UI has a task manager for exactly this. Half of that
+  sentence is done here; the half the user can see is not.
+  This pairs with 1.2b rather than competing with it: 1.2b puts more work on
+  workers, which makes an invisible queue worse, not better.
+  **Done when:** there is a place in the UI that lists running and recent
+  tasks with progress, and a task can be cancelled from it.
+- **1.15 — Warm the file cache at login so the first launch is a warm one.**
+  *Added 2026-09-19, owner-approved.* Cold start is ~9.9 s against ~762 ms
+  warm, and the whole difference is reading from a spinning disk — no code
+  change makes that faster. But the owner's own runs prove the fix: cold
+  10,884 ms, then 762 ms on the very next launch with nothing recompiled.
+  Something that reads Kalam's binary, its shared libraries and the catalog
+  database into the page cache shortly after login turns the first click into
+  a warm one. It does not reduce the work; it moves it to a moment nobody is
+  waiting through.
+  **Test before automating:** run the warm-up by hand after a reboot, before
+  opening Kalam, and confirm the launch is ~760 ms. Only then make it a
+  systemd user unit or autostart entry.
+  **Honest caveat to record now:** with 4 GB of RAM, opening a browser first
+  may evict what was just warmed, so this will not hold every time. It is a
+  mitigation, not a fix — the fix is faster storage.
+  **Done when:** a launch immediately after a reboot measures close to the
+  warm figure, and it survives a reboot without the owner doing anything.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`

@@ -138,7 +138,14 @@ fn load_chapter_assets(
             }
         }
     }
-    chapbook_layout::collect_images(doc, Some(fonts), |href| {
+    // `None` for the maximum edge, deliberately: this tool renders for
+    // inspection and for the golden images, where full fidelity is the point
+    // and a page size is not in scope. The consequence is that the goldens do
+    // **not** cover the downsampling the app does at
+    // `chapbook-reader/src/layout.rs` — that path is covered by the unit tests
+    // on `shrink_to_edge` instead. Every fixture image is 64x48 or 120x60, so
+    // the two paths agree on the fixtures regardless.
+    chapbook_layout::collect_images(doc, Some(fonts), None, |href| {
         book.resource(chapter_href, href).ok().map(|r| r.data)
     })
 }

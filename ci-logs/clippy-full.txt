@@ -9,8 +9,8 @@ not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m glib v0.22.10
 [1m[92m  Downloaded[0m gio v0.22.10
+[1m[92m  Downloaded[0m glib v0.22.10
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
 [1m[92m    Checking[0m glib v0.22.10
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
@@ -22,8 +22,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m gio v0.22.10
 [1m[92m    Checking[0m cairo-rs v0.22.9
 [1m[92m    Checking[0m graphene-rs v0.22.8
-[1m[92m    Checking[0m gdk-pixbuf v0.22.0
 [1m[92m    Checking[0m pango v0.22.9
+[1m[92m    Checking[0m gdk-pixbuf v0.22.0
 [1m[92m    Checking[0m gdk4 v0.11.4
 [1m[92m    Checking[0m gsk4 v0.11.4
 [1m[92m    Checking[0m gtk4 v0.11.4
@@ -33,4 +33,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m relm4 v0.11.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 44.21s
+src/pages/task_manager.rs:90:17: [1m[91merror[0m: expected `,`
+src/pages/task_manager.rs:101:17: [1m[91merror[0m: expected `,`
+src/pages/task_manager.rs:106:17: [1m[91merror[0m: expected `,`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors

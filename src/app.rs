@@ -1365,6 +1365,14 @@ impl Component for AppModel {
             }
         }
 
+        // Roadmap 1.12: `AppModel::init` is the last thing `main()` can reach,
+        // and everything after it is GTK realizing the window — creating the
+        // native surface and compiling shaders. Marking the boundary here
+        // splits the tail of a cold start in two, which the first run of these
+        // spans could not: 5.8 s sat inside `app.run` with no idea which half
+        // of it was widget building and which was GTK.
+        crate::timing::now("init_done");
+
         ComponentParts { model, widgets }
     }
 

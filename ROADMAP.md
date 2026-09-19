@@ -391,6 +391,39 @@ bulk editing. Fixing it later means rewriting all four.
   build 48 of 150 book cards on All Books, against 7.1 ms for 2,000 cards in
   the benchmark. That discrepancy is Phase 7's problem, not this item's.
 
+  **Second run, 2026-09-19 — the `main()` half is now fully attributed, and the
+  instrumentation checked itself:** the six spans sum to 5,063.4 ms against a
+  `pre_run` marker of 5,063.7 ms, so **0.3 ms** of everything before `app.run`
+  is unaccounted. On a 10,883.9 ms cold start:
+
+  | Where | ms | Share |
+  |---|---|---|
+  | **inside `app.run`, unattributed** | **5,289.6** | **48.6%** |
+  | `startup_db_open` | 2,049.0 | 18.8% |
+  | `startup_gtk_init` | 1,826.1 | 16.8% |
+  | `startup_icons` | 859.4 | 7.9% |
+  | `startup_first_page` | 527.4 | 4.8% |
+  | `startup_theme` | 145.1 | 1.3% |
+  | `startup_libraries` | 119.3 | 1.1% |
+  | `startup_style` | 64.5 | 0.6% |
+  | `startup_dicts` | 0.7 | — |
+
+  Two things stand out. **`startup_icons` is 859.4 ms for four tiny SVG files**
+  that are not even rewritten after the first run — so the cost is in the GTK
+  calls, and `IconTheme::add_search_path` (which rescans the theme) is the
+  likely one. **`startup_db_open` is 2.0 s** and is now the largest single
+  *named* cost; `Catalog::open` runs `migrate()` on every start.
+  Neither is fixed yet, because neither is confirmed at the line level.
+
+  **Remaining: the 5,289.6 ms inside `app.run`**, which is 48.6% of the whole
+  start and still belongs to nothing. `AppModel::init` is 306 lines building
+  the whole widget tree, and after it GTK realizes the window. An
+  `init_done` marker now sits at the end of `init`, so the next run splits that
+  into "building the widgets" and "GTK creating the surface and compiling
+  shaders" — the latter can genuinely cost seconds on Intel integrated
+  graphics, and telling those apart is the difference between something we can
+  fix and something we cannot.
+
   **Done when:** `KALAM_TIMING=1` on the Arch machine accounts for essentially
   all of the gap between `timing::start()` and `window_shown`.
 

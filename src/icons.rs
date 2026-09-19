@@ -32,6 +32,10 @@ pub fn labelled(icon_name: &str, pixel_size: i32, label: &str, spacing: i32) -> 
 /// guaranteed to be available across all desktop environments without missing
 /// glyph fallbacks.
 pub fn init() {
+    // Roadmap 1.12: the two halves of this function cost very different
+    // amounts and the combined `startup_icons` span could not say which was
+    // which — it measured 859 ms for four tiny SVG files.
+    crate::timing::span("icons_write");
     let icons_base = crate::paths::legacy_data_dir().join("icons");
     let actions_dir = icons_base.join("hicolor/scalable/actions");
     if let Err(e) = std::fs::create_dir_all(&actions_dir) {
@@ -64,10 +68,15 @@ pub fn init() {
             let _ = std::fs::write(&dest, content);
         }
     }
+    crate::timing::span_end("icons_write");
 
+    // `add_search_path` makes GTK rescan the icon theme, which is the likely
+    // cost — but this span exists to find that out rather than assume it.
+    crate::timing::span("icons_theme");
     if let Some(display) = gtk::gdk::Display::default() {
         let theme = gtk::IconTheme::for_display(&display);
         theme.add_search_path(&icons_base);
     }
+    crate::timing::span_end("icons_theme");
 }
 

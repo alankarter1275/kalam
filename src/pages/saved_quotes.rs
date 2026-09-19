@@ -166,7 +166,7 @@ impl Component for SavedQuotesModel {
             }
             SavedQuotesMsg::Export => {
                 let exported = export_quotes_markdown(&self.quotes);
-                let out_path = dirs::home_dir()
+                let out_path = crate::paths::home_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("Quotes.md");
                 let count = self.quotes.len();
@@ -422,7 +422,7 @@ pub fn export_all_quotes_markdown(
         })
         .collect();
     let markdown = export_quotes_markdown(&quotes);
-    let out_path = dirs::home_dir()
+    let out_path = crate::paths::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("Quotes.md");
     std::fs::write(&out_path, markdown).map_err(|e| format!("{e}"))?;
@@ -474,9 +474,4 @@ fn chrono_like_now() -> String {
     format!("{secs}")
 }
 
-mod dirs {
-    use std::path::PathBuf;
-    pub fn home_dir() -> Option<PathBuf> {
-        std::env::var_os("HOME").map(PathBuf::from)
-    }
-}
+

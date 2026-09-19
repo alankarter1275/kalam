@@ -39,7 +39,20 @@ pub fn legacy_data_dir() -> PathBuf {
         .unwrap_or_else(|| {
             home_dir()
                 .map(|h| h.join(".local/share"))
-                .unwrap_or_else(|| PathBuf::from("."))
+                .unwrap_or_else(|| {
+                    // Neither `$HOME` nor the password database produced a
+                    // home. Starting up in the current directory still beats
+                    // refusing to run, but this used to happen silently —
+                    // which is how a library ends up somewhere its owner
+                    // cannot find. Say where it went.
+                    log::error!(
+                        "no home directory found; storing the library in the current directory ({})",
+                        std::env::current_dir()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|_| "unknown".into())
+                    );
+                    PathBuf::from(".")
+                })
         });
     base.join("kalam")
 }
@@ -158,8 +171,88 @@ pub fn thumbnail_for_cover(cover: &Path) -> Option<PathBuf> {
     Some(thumbnail_path(uuid))
 }
 
+/// The user's home directory.
+///
+/// Roadmap 1.7. This used to read `$HOME` and nothing else, and every one of
+/// its dozen-odd callers fell back to `"."` — so with `HOME` unset (cron, a
+/// systemd unit, `sudo` without `-E`, a minimal container) Kalam created its
+/// entire library in whatever directory it happened to be started from,
+/// silently. Reading the password database is what every other tool on Linux
+/// does, and it means "no home directory" now describes a machine that
+/// genuinely has none rather than one where an environment variable was
+/// missing.
+///
+/// Split into [`resolve_home`] so the precedence is testable without mutating
+/// the process environment, which is not safe while other tests are running.
 pub(crate) fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    resolve_home(std::env::var_os("HOME").as_deref())
+}
+
+/// `$HOME` when it is set and non-empty, otherwise the password database.
+fn resolve_home(env_home: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    // An empty `$HOME` counts as unset. `PathBuf::from("")` joins to a
+    // relative path, which is the original bug wearing a different hat.
+    if let Some(h) = env_home {
+        if !h.is_empty() {
+            return Some(PathBuf::from(h));
+        }
+    }
+    passwd_home_dir()
+}
+
+/// The home directory from the password database, via `getpwuid_r`.
+///
+/// This is the lookup `$HOME` is supposed to mirror, so going to the source is
+/// what makes the function work when the variable is missing. The `_r` form
+/// is not optional pedantry: plain `getpwuid` fills a static buffer, and
+/// `home_dir` is reachable from worker threads now that pages query on
+/// background tasks — concurrent calls would race over that buffer.
+fn passwd_home_dir() -> Option<PathBuf> {
+    // SAFETY: `getuid` takes no arguments and cannot fail.
+    let uid = unsafe { libc::getuid() };
+
+    // Scratch space libc writes into: `pwd` receives the struct, `buf` the
+    // strings its fields point at. `MaybeUninit` rather than `zeroed` because
+    // a failed lookup leaves `pwd` untouched and reading it would be a lie.
+    let mut buf = vec![0u8; 4096];
+    let mut pwd = std::mem::MaybeUninit::<libc::passwd>::uninit();
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+
+    // SAFETY: `pwd.as_mut_ptr()` is a valid writable `passwd` and `buf` a
+    // valid writable buffer of exactly `buf.len()` bytes; both outlive the
+    // call, which writes only within them. `result` is set to either a pointer
+    // into `pwd` or null. Nothing escapes the function — `pw_dir` is copied
+    // into an owned `PathBuf` below, before `buf` and `pwd` are dropped.
+    let rc = unsafe {
+        libc::getpwuid_r(
+            uid,
+            pwd.as_mut_ptr(),
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+            buf.len(),
+            &mut result,
+        )
+    };
+
+    // `rc != 0` is a lookup error; a null `result` means no entry for this
+    // uid. Either way `pwd` may be uninitialised, so it must not be read.
+    if rc != 0 || result.is_null() {
+        return None;
+    }
+
+    // SAFETY: a non-null `result` means libc initialised `pwd` and pointed
+    // `result` at it, and both are still alive here. `pw_dir` is a
+    // NUL-terminated C string owned by libc — copied, never freed.
+    let dir = unsafe { (*result).pw_dir };
+    if dir.is_null() {
+        return None;
+    }
+    // SAFETY: `dir` is a valid NUL-terminated C string per `passwd`'s contract.
+    let path = PathBuf::from(unsafe { std::ffi::CStr::from_ptr(dir) }.to_string_lossy());
+    if path.as_os_str().is_empty() {
+        None
+    } else {
+        Some(path)
+    }
 }
 
 pub fn ensure_data_dirs() -> std::io::Result<()> {
@@ -252,4 +345,55 @@ fn dir_size(path: &std::path::Path) -> u64 {
             Err(_) => 0,
         })
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    // These test `resolve_home` rather than `home_dir` on purpose: the
+    // precedence is the part with logic in it, and driving it through
+    // `std::env::set_var` would race every other test in the binary, since
+    // the environment is process-wide and tests run in parallel.
+
+    #[test]
+    fn resolve_home_prefers_the_environment_value() {
+        let got = resolve_home(Some(OsStr::new("/srv/books")));
+        assert_eq!(got.as_deref(), Some(Path::new("/srv/books")));
+    }
+
+    #[test]
+    fn resolve_home_does_not_second_guess_a_relative_home() {
+        // A relative `$HOME` is almost certainly a mistake, but overriding it
+        // would mean disagreeing with whatever set it. Trust the environment;
+        // the fallback exists for a *missing* value, not a surprising one.
+        let got = resolve_home(Some(OsStr::new("relative/home")));
+        assert_eq!(got.as_deref(), Some(Path::new("relative/home")));
+    }
+
+    #[test]
+    fn resolve_home_treats_an_empty_home_as_unset() {
+        // The case the fix is for: `PathBuf::from("")` joins to a relative
+        // path, so returning it would reproduce the original bug in a
+        // different shape. Empty must fall through to the password database.
+        let got = resolve_home(Some(OsStr::new("")));
+        assert!(
+            got.is_some_and(|p| !p.as_os_str().is_empty()),
+            "an empty $HOME should fall through to getpwuid_r, got {got:?}"
+        );
+    }
+
+    #[test]
+    fn resolve_home_falls_back_to_the_password_database() {
+        // The uid running the tests has a passwd entry on the platforms Kalam
+        // targets. This asserts the fallback works at all. It deliberately
+        // does not assert the value, or that it is absolute: both depend on
+        // the machine, and a test that fails only on someone else's laptop
+        // costs more than it checks.
+        assert!(
+            resolve_home(None).is_some(),
+            "getpwuid_r returned no home for the current uid"
+        );
+    }
 }

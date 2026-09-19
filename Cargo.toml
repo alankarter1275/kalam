@@ -127,6 +127,9 @@ kalam-reader = { path = "crates/kalam-reader" }
 # unchanged.
 env_logger = "0.11"
 log = "0.4"
+# Already in the dependency tree transitively, so this adds nothing to build
+# or binary size. Used only by `paths::home_dir` for `getpwuid_r`.
+libc = "0.2"
 
 # Library / persistence
 rusqlite = { version = "0.32", features = ["bundled", "trace"] }

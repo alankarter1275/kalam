@@ -563,14 +563,7 @@ fn saved_words_anki_tsv(words: &[SavedWord]) -> String {
     out
 }
 
-/// Tiny home-directory helper (same private shim as saved_quotes.rs — the
-/// `dirs` crate is not a dependency of this project).
-mod dirs {
-    use std::path::PathBuf;
-    pub fn home_dir() -> Option<PathBuf> {
-        std::env::var_os("HOME").map(PathBuf::from)
-    }
-}
+
 
 /// Export every saved word to `~/SavedWords.csv`. Shared shape with the
 /// ~/Quotes.md export: fixed home path, count + path returned for a toast.
@@ -579,7 +572,7 @@ pub fn export_saved_words_csv(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf)
         .list_saved_words("", None)
         .map_err(|e| format!("{e}"))?;
     let csv = saved_words_csv(&words);
-    let out_path = dirs::home_dir()
+    let out_path = crate::paths::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("SavedWords.csv");
     std::fs::write(&out_path, csv).map_err(|e| format!("{e}"))?;
@@ -593,7 +586,7 @@ pub fn export_saved_words_anki(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf
         .list_saved_words("", None)
         .map_err(|e| format!("{e}"))?;
     let tsv = saved_words_anki_tsv(&words);
-    let out_path = dirs::home_dir()
+    let out_path = crate::paths::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("SavedWords-Anki.txt");
     std::fs::write(&out_path, tsv).map_err(|e| format!("{e}"))?;

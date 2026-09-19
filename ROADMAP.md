@@ -493,9 +493,35 @@ bulk editing. Fixing it later means rewriting all four.
   ms open. Sharing it would save milliseconds and add a real complexity cost.
   Left as-is on purpose; see the table in
   [Bubbles](#bubbles--multiple-books-open-at-once) before revisiting.
-- **1.7 — Fix `paths.rs::home_dir()`.** It reads only `$HOME` and falls back to
-  `PathBuf::from(".")`, so with `HOME` unset the app creates a `kalam/` folder
-  in whatever directory it was started from.
+- ~~**1.7 — Fix `paths.rs::home_dir()`.**~~ **Done, 2026-09-19.** It read only
+  `$HOME` and fell back to `PathBuf::from(".")`, so with `HOME` unset the app
+  created a `kalam/` folder in whatever directory it was started from.
+  Now: `$HOME` when set and non-empty, otherwise `getpwuid_r`. An empty `$HOME`
+  counts as unset, because `PathBuf::from("")` joins to a relative path and
+  would reproduce the bug in a different shape.
+  - **Three copies, not one.** `pages/saved_quotes.rs` and `pages/saved_words.rs`
+    each had a private `mod dirs` shim containing the identical one-liner —
+    named as though it were the `dirs` crate, which is not a dependency. Both
+    deleted and repointed, so the bug has one home instead of three.
+  - **`getpwuid_r`, not `getpwuid`.** The plain form fills a static buffer, and
+    `home_dir` became reachable from worker threads when 1.2b moved page
+    queries onto background tasks — concurrent calls would race over it. Worth
+    noting that 1.2b is what made this matter.
+  - **The signature was checked against docs.rs rather than remembered**, and
+    that mattered: glibc's `getpwuid_r` takes **five** arguments, the first
+    draft used the four-argument BSD form, and CI rejected it. Same lesson as
+    the `From<Cow<str>>` error in the follow-up commit — both were assumed
+    APIs, both caught by the build.
+  - **The `"."` fallback stays** — refusing to start would be worse — but
+    `legacy_data_dir` now logs an error naming the directory. Silent is what
+    let a library end up somewhere nobody could find.
+  - **Four tests, all confirmed running by name** (766 passed, up from 762).
+    They drive `resolve_home` directly rather than mutating the environment,
+    which is process-wide and would race every other test in the binary. They
+    deliberately do not assert the resolved value or that it is absolute —
+    both depend on the machine running them.
+  - `libc` promoted to a direct dependency; already in the tree transitively,
+    so no change to build time or binary size.
 - **1.8 — Batch of small, safe fixes**, each a few minutes:
   - **1.8a** Delete three unused dependencies from the root `Cargo.toml`: `toml`,
     `urlencoding`, `scraper`.

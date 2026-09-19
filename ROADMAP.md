@@ -332,12 +332,43 @@ bulk editing. Fixing it later means rewriting all four.
     The `Send` guarantee is already load-bearing here: `snapshots_are_send()`
     asserts `Send` on the service and all 12 snapshots, which is exactly what
     handing them across a thread requires.
-- **1.3 — Route background work through `src/tasks.rs`.** It already exists with
-  poison-safe locking. Imports, batch metadata fetching, index rebuilds and
-  patch baking go through it, with progress and cancellation. Note that
-  `src/downloads.rs` currently uses bare `thread::spawn` and six
-  `lock().unwrap()` calls — that is precisely the cascade-panic this file
-  exists to prevent.
+- ~~**1.3 — Route background work through `src/tasks.rs`.**~~ **Done, 2026-09-19
+  — the migration had largely already happened.** Audited rather than assumed:
+  there are **27 `tasks::spawn` call sites** across imports, metadata fetching,
+  thumbnails, dictionary install and downloads-adjacent work, so the pattern is
+  established. What was actually left was three bare `std::thread::spawn`
+  calls, and only one of them was a defect:
+  - **`src/downloads.rs` — converted, and this was the real work.** One bare
+    `thread::spawn` plus **six `lock().unwrap()`** calls on the job map. A
+    worker panicking while holding that lock poisons it, and `.unwrap()` would
+    then fail on *every* later read — including the UI thread drawing the
+    download list, so one crashed download took the page down with it. Now
+    routed through `tasks::spawn` behind a poison-tolerant `locked()` helper
+    (the same recovery `tasks.rs` uses), with the cancellation flag checked
+    **between chapters** so a cancelled download never leaves a half-built
+    EPUB. Added `JobStatus::Cancelled` — distinct from `Failed`, because
+    stopping on purpose is not the same claim as something going wrong — and
+    its two UI match arms (`app.rs`, `pages/downloads.rs`). Two tests: the
+    poison case that used to panic, and the ordinary path to prove `locked`
+    is not only a workaround.
+  - **`src/metadata/mod.rs:273` — deliberately left as a parallel map.** It
+    spawns one thread per provider and joins them all inside a synchronous
+    call whose whole contract is *returning* merged results; making it a
+    background task would change what it means. Recorded here as a principled
+    exception so it does not read as drift. It did get one real fix: a
+    **panicking** provider was swallowed by `Err(_) => {}`, so a crash looked
+    identical to "no matches". The source id is now taken *before* spawning —
+    `join()` returns nothing but the panic payload, so the provider's name
+    would otherwise be lost with it — and reported as an error.
+  - **`src/notify.rs:529` — not production.** It is inside a test that
+    asserts a worker's notification crosses to the main thread. Left alone.
+
+  Two of the subsystems 1.3 named do not exist yet: **index rebuilds**
+  (`tantivy` full-text search is unshipped) and **patch baking** (the EPUB
+  editor is Phase 6). They inherit this pattern when they are built.
+  **The cancel *button* is not part of this item** — cancellation now works
+  and `cancel_all()` reaches downloads, but there is still no UI to trigger
+  one. That is 1.14.
 - ~~**1.4 — Install a logger.**~~ **Done, 2026-09-19** (`src/logging.rs`). The engine
   makes 17 `log::` calls that were discarded because no logger was installed;
   they now go to the terminal and to `~/.local/share/kalam/kalam.log` when
@@ -561,8 +592,29 @@ bulk editing. Fixing it later means rewriting all four.
   out, those lookups hit a clean cache. Not measured — if `AppModel::init` is
   ever optimised, this is worth confirming rather than assuming.
 
-- **1.14 — Give the background work a visible task manager.** *Added
-  2026-09-19.* The machinery is already built and already used — **27
+  **Renderer test, 2026-09-19 — `GSK_RENDERER=cairo` rejected.** Half the cold
+  penalty was suspected to be GTK compiling shaders, so the software renderer
+  was measured against the GL one, three runs each:
+
+  | | run 1 | run 2 | run 3 |
+  |---|---|---|---|
+  | Cairo | 727.3 | 612.9 | 612.9 |
+  | GL (default) | **3,302.9** | 710.4 | 711.6 |
+
+  **Steady state: Cairo ~613 ms against GL's ~711 ms.** The ranges overlap and
+  the gap is ~100 ms, which is not worth giving up GPU acceleration for — so
+  the renderer stays GL. **Rejected, not deferred.**
+  The more useful number is GL's *first* run at **3,302.9 ms** against 711 ms
+  after: roughly **2.6 s of one-time graphics setup** that later runs do not
+  pay. That is consistent with the shader hypothesis, offered as an inference,
+  and it matters for **1.15** — whatever warms the cache at login should warm
+  the graphics stack too, not just the files.
+  Also worth recording: the earlier single Cairo reading of 4,447.3 ms was not
+  comparable to anything. It was one run, of unknown cache state, and drawing
+  a conclusion from it would have been the same mistake as the 2 s database
+  open.
+
+- **1.14 — Give the background work a visible task manager.** *Added  2026-09-19.* The machinery is already built and already used — **27
   `tasks::spawn` call sites** across imports, metadata fetching, thumbnails,
   dictionary install and downloads, each with progress and a cancellation
   flag. What does not exist is any way to *see* it: `running_count()` and

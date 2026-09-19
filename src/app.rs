@@ -1290,6 +1290,7 @@ impl Component for AppModel {
                             crate::downloads::JobStatus::Downloading { chapter_idx, total } => format!("Downloading {chapter_idx}/{total}"),
                             crate::downloads::JobStatus::Packaging => "Packaging EPUB...".to_string(),
                             crate::downloads::JobStatus::Done => "✓ Completed".to_string(),
+                            crate::downloads::JobStatus::Cancelled => "Cancelled".to_string(),
                             crate::downloads::JobStatus::Failed(e) => format!("Failed: {e}"),
                         };
                         let status_lbl = gtk::Label::new(Some(&status_str));

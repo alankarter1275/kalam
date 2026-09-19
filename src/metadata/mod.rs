@@ -267,22 +267,33 @@ pub fn search_all(
 
     // One thread per source: two sequential HTTP round trips would otherwise
     // double the wait for no reason.
+    //
+    // Roadmap 1.3: this stays a parallel map rather than becoming a
+    // `tasks::spawn` task, deliberately. It is called synchronously and its
+    // whole contract is *returning* the merged results, so turning it into a
+    // background task would change what it means. What it does need is the
+    // same honesty about failure as everywhere else.
     let mut handles = Vec::new();
     for source in sources {
         let query = query.to_string();
-        handles.push(std::thread::spawn(move || {
-            let id = source.id();
-            (id, source.search(&query, limit))
-        }));
+        // Take the id before spawning. If the worker panics, `join` hands
+        // back nothing but the panic payload and the provider's name would be
+        // lost with it — and the UI is supposed to say *which* service failed.
+        let id = source.id();
+        handles.push((id, std::thread::spawn(move || source.search(&query, limit))));
     }
 
     let mut all = Vec::new();
     let mut errors = Vec::new();
-    for handle in handles {
+    for (id, handle) in handles {
         match handle.join() {
-            Ok((_, Ok(list))) => all.extend(list),
-            Ok((id, Err(err))) => errors.push((id, err.to_string())),
-            Err(_) => {}
+            Ok(Ok(list)) => all.extend(list),
+            Ok(Err(err)) => errors.push((id, err.to_string())),
+            // A panic, not a failed lookup — reported rather than dropped.
+            // Silently swallowing it makes a crashed provider look like a
+            // provider that found nothing, and "Open Library had no match" is
+            // a different claim from "Open Library crashed".
+            Err(_) => errors.push((id, "the lookup thread panicked".to_string())),
         }
     }
 

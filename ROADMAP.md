@@ -248,8 +248,8 @@ bulk editing. Fixing it later means rewriting all four.
   **One gap the audit cannot close:** it was done by reading the code, not by
   running the app. Anything that only misbehaves when clicked is still
   unfound, and will be numbered as it turns up.
-- **1.2 — Move blocking SQLite off the UI thread.** *(1.2a measured; 1.2b
-  closed then **reopened** the same day — see below.)* *Renamed 2026-09-19. The
+- ~~**1.2 — Move blocking SQLite off the UI thread.**~~ **Done, 2026-09-19.**
+  *(1.2a measured; 1.2b closed then **reopened** the same day, then built.)* *Renamed 2026-09-19. The
   original wording — "make `LibraryService` asynchronous" — was wrong, and
   following it literally would have contradicted a decision already recorded in
   the code.* `src/tasks.rs` has a section headed **"No tokio"**: `thread::spawn`
@@ -275,10 +275,11 @@ bulk editing. Fixing it later means rewriting all four.
   - ~~**1.2a — Measure what a service call costs.**~~ **Done, 2026-09-19.** All
     16 snapshot methods instrumented via `timing::measure`, measured on the
     owner's Arch machine. Results below.
-  - **1.2b — Make the pages stop doing database work.** *Reopened 2026-09-19
-    after being wrongly closed the same day.* It was closed on the grounds
-    that every query is fast — and that reasoning was wrong in two ways, both
-    worth keeping on record.
+  - ~~**1.2b — Make the pages stop doing database work.**~~ **Done,
+    2026-09-19.** *Reopened 2026-09-19 after being wrongly closed the same
+    day, then built and confirmed by the owner.* It was originally closed on
+    the grounds that every query is fast — and that reasoning was wrong in two
+    ways, both worth keeping on record.
 
     **First, it answered a question that was never asked.** The Yazi philosophy
     in `docs/conversation.md` §3 is *"don't make the UI fast — make it never

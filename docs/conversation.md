@@ -194,13 +194,25 @@ started.
 
 ### What Yazi's shape looks like in Kalam
 
-| Yazi | Kalam equivalent | Status |
-|---|---|---|
-| `yazi-core` (pure logic, no UI) | `src/db/` | ✅ done |
-| Event bus | relm4 components | ✅ done |
-| Task system (progress + cancel) | **`src/tasks.rs` TaskManager** | ❌ missing |
-| Preloaders (preview cache) | **cover preloader + chapter preloader** | ❌ missing |
-| Thin UI that only renders state | **pages still do their own DB calls** | ❌ missing |
+| Yazi | Kalam equivalent | Status then | Status now |
+|---|---|---|---|
+| `yazi-core` (pure logic, no UI) | `src/db/` | ✅ done | ✅ done |
+| Event bus | relm4 components | ✅ done | ✅ done |
+| Task system (progress + cancel) | **`src/tasks.rs` TaskManager** | ❌ missing | ✅ **built** |
+| Preloaders (preview cache) | **cover preloader + chapter preloader** | ❌ missing | ✅ **built** |
+| Thin UI that only renders state | **pages still do their own DB calls** | ❌ missing | ✅ **built** |
+
+> **Status column corrected 2026-09-19.** The "Status then" column is what was
+> true when this conversation happened; every one of the three ❌ rows has
+> since been built, and leaving them marked missing was actively misleading.
+> What exists now: `src/tasks.rs` (332 lines, 35 `tasks::spawn` call sites,
+> progress reporting and cancellation), `src/preload.rs` (390 lines, cover
+> preloading), `src/service.rs` (1,278 lines, 18 snapshot methods), and thin
+> pages for every query that grows with library size — roadmap **1.2b**.
+> The honest caveat on that last row: a page's *first* read in `init` is still
+> synchronous by deliberate decision, and the bounded queries (shelves,
+> reading list, analytics, reader, book detail) were left alone because
+> converting them buys nothing. See 1.2b for the reasoning.
 
 The missing pieces:
 
@@ -262,12 +274,20 @@ The missing pieces:
 
 ### Where we'd start on Monday
 
+> **All five of these are done as of 2026-09-19** — kept as written because it
+> records the order the work was argued for, not because it is still a plan.
+
 1. `LibraryService` behind the existing `Catalog` — pages ask, service
-   answers. (Weeks, mostly mechanical.)
-2. Cover preloader + thumbnail persistence — fastest visible win.
-3. Task manager for import/rebuild/metadata.
-4. Grid virtualization — now *easy*, because the service layer feeds it.
-5. Then the renderer conversation.
+   answers. (Weeks, mostly mechanical.) — **done**, `src/service.rs`.
+2. Cover preloader + thumbnail persistence — fastest visible win. — **done**,
+   `src/preload.rs` plus `paths::thumbs_dir()`.
+3. Task manager for import/rebuild/metadata. — **done**, `src/tasks.rs`;
+   downloads routed through it in **1.3**.
+4. Grid virtualization — now *easy*, because the service layer feeds it. —
+   **done**; the windowed grid holds 2,000 books at 247 MB / 7.1 ms against
+   352 MB / 139.7 ms before.
+5. Then the renderer conversation. — **settled**: `kalam-engine` replaced
+   WebKit. See the reader chapters below.
 
 **Closing thought:** Yazi's real secret isn't speed — it's that **the
 architecture makes speed inevitable**. Every decision pushes work away from

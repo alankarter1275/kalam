@@ -247,7 +247,13 @@ fn passwd_home_dir() -> Option<PathBuf> {
         return None;
     }
     // SAFETY: `dir` is a valid NUL-terminated C string per `passwd`'s contract.
-    let path = PathBuf::from(unsafe { std::ffi::CStr::from_ptr(dir) }.to_string_lossy());
+    //
+    // Taken as raw bytes rather than `to_string_lossy`: a Unix path is bytes
+    // and not necessarily UTF-8, and a lossy conversion would swap an unusual
+    // byte for U+FFFD and hand back a path that does not exist.
+    use std::os::unix::ffi::OsStrExt;
+    let bytes = unsafe { std::ffi::CStr::from_ptr(dir) }.to_bytes();
+    let path = PathBuf::from(std::ffi::OsStr::from_bytes(bytes));
     if path.as_os_str().is_empty() {
         None
     } else {
@@ -378,8 +384,10 @@ mod tests {
         // path, so returning it would reproduce the original bug in a
         // different shape. Empty must fall through to the password database.
         let got = resolve_home(Some(OsStr::new("")));
+        // `as_ref` so the assertion borrows rather than consumes `got`, which
+        // the failure message below still needs.
         assert!(
-            got.is_some_and(|p| !p.as_os_str().is_empty()),
+            got.as_ref().is_some_and(|p| !p.as_os_str().is_empty()),
             "an empty $HOME should fall through to getpwuid_r, got {got:?}"
         );
     }

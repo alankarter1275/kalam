@@ -248,7 +248,8 @@ bulk editing. Fixing it later means rewriting all four.
   **One gap the audit cannot close:** it was done by reading the code, not by
   running the app. Anything that only misbehaves when clicked is still
   unfound, and will be numbered as it turns up.
-- **1.2 — Move blocking SQLite off the UI thread.** *Renamed 2026-09-19. The
+- ~~**1.2 — Move blocking SQLite off the UI thread.**~~ **Closed, 2026-09-19 —
+  both sub-items resolved: 1.2a measured, 1.2b found unnecessary.** *Renamed 2026-09-19. The
   original wording — "make `LibraryService` asynchronous" — was wrong, and
   following it literally would have contradicted a decision already recorded in
   the code.* `src/tasks.rs` has a section headed **"No tokio"**: `thread::spawn`
@@ -369,7 +370,8 @@ bulk editing. Fixing it later means rewriting all four.
     app throughout.
   - While in there: `docs/conversation.md` §20 still recommends Poppler for
     PDF rendering; §22 reverses that to MuPDF and §20 was never edited.
-- **1.12 — Attribute the unmeasured part of cold start.** *Added 2026-09-19
+- ~~**1.12 — Attribute the unmeasured part of cold start.**~~ **Done, 2026-09-19** —
+  every millisecond now has an owner. *Added 2026-09-19
   from the 1.2a run, which measured this by accident.* The log reports
   **`window_shown` = 9,166.6 ms** — nine seconds from process start to the
   window appearing. The three startup spans account for only **2,410 ms** of
@@ -462,7 +464,8 @@ bulk editing. Fixing it later means rewriting all four.
   **Done when:** `KALAM_TIMING=1` on the Arch machine accounts for essentially
   all of the gap between `timing::start()` and `window_shown`. **Met** — 0.3 ms
   unaccounted before `app.run`, and `init_done` splits the rest.
-- **1.13 — Take the 496 ms icon-theme rescan off the startup path.** Follows
+- ~~**1.13 — Take the 496 ms icon-theme rescan off the startup path.**~~ **Done,
+  2026-09-19 — warm start is 44% faster.** Follows
   directly from 1.12, which measured it at **493–505 ms warm — 36% of the whole
   start** — with `icons_write` at 0.1 ms proving the cost is GTK's icon theme,
   not the files. `IconTheme::add_search_path` makes GTK rescan every icon
@@ -503,8 +506,28 @@ bulk editing. Fixing it later means rewriting all four.
   adding a path is a cheap invalidation. If that is right, the 496 ms was never
   inherent to having two custom icons — it was the cost of doing it early.
   `window_shown` on this run was 9,910.6 ms, but that is **cold** and cold runs
-  have ranged 8,871–10,884 ms, so it supports no conclusion. **The warm number
-  is still needed.**
+  have ranged 8,871–10,884 ms, so it supports no conclusion.
+
+  **Warm confirmation, 2026-09-19 — four runs, and the owner confirmed the
+  highlight and quote buttons still show their own icons.**
+
+  | | before (3 runs) | after (4 runs) | change |
+  |---|---|---|---|
+  | `pre_run` — all of `main()` | 686.9 | 224.6 | **−462.2** |
+  | `AppModel::init` | 567.5 | 424.9 | **−142.6** |
+  | GTK realize | 111.1 | 112.5 | +1.4 |
+  | **`window_shown`** | **1,365.5** | **762.1** | **−603.4 (44% faster)** |
+
+  Per-run `window_shown` after: 718.1, 719.8, 762.8, 847.6 ms — spread 129.5 ms,
+  wider than the 14 ms before, and `startup_gtk_init` alone ranged 100–191 ms
+  across those runs, so the extra variance looks like GTK initialisation
+  rather than anything this change did.
+  **The 142.6 ms saved inside `AppModel::init` was not predicted and is not
+  explained.** The plausible reading, offered as an inference: `add_search_path`
+  invalidates the icon theme, so every `from_icon_name` during widget building
+  afterwards had to resolve against a theme marked dirty; with the call moved
+  out, those lookups hit a clean cache. Not measured — if `AppModel::init` is
+  ever optimised, this is worth confirming rather than assuming.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`
@@ -733,17 +756,37 @@ that gate CI, and they are not `#[ignore]`d.
 
 **Work:**
 
-- Fix the remaining bottlenecks, notably opening latency on floating book
-  cards and detail views.
-- **Floating window host.** Book cards, quick notes and dictionary popups float
-  above the active view without reloading the page or leaking memory.
-- Extend the perf budgets to the new subsystems from Phases 3–6.
-- **Defer the chapter character count.** Opening a book walks every chapter to
+Numbered from 2026-09-19, when 1.12 and 1.13 handed this phase two measured
+findings. Nothing here has been started, so numbering the pre-existing items
+breaks no reference.
+
+- **7.1 — Fix the remaining bottlenecks**, notably opening latency on floating
+  book cards and detail views.
+- **7.2 — Floating window host.** Book cards, quick notes and dictionary popups
+  float above the active view without reloading the page or leaking memory.
+- **7.3 — Extend the perf budgets** to the new subsystems from Phases 3–6.
+- **7.4 — Defer the chapter character count.** Opening a book walks every chapter to
   count its characters, so a locator can become a progress percentage —
   measured at 30–147 ms depending on the book, paid before the first page
   draws. It is only needed when something asks for a percentage, so it could be
   built on first use instead. Low value on its own; it belongs here rather than
   in a phase of its own.
+- **7.5 — Break down `AppModel::init`.** *From 1.13, 2026-09-19.* After the icon
+  rescan moved off the startup path, warm start is **762 ms** and
+  `AppModel::init` is **424.9 ms of it — 56%**. It is 306 lines building the
+  whole widget tree in one go, and nothing inside it is measured yet, so the
+  first step is spans around its major blocks, not optimisation. Everything
+  else in a warm start is now small: `startup_gtk_init` 136.5 ms (not ours),
+  GTK realize 112.5 ms (probably not fixable), `startup_style` 52.5 ms,
+  `startup_db_open` 9.0 ms, `startup_first_page` 8.0 ms.
+  Note the unexplained 142.6 ms that 1.13 removed from this function as a side
+  effect — recorded there, and worth confirming rather than assuming if this is
+  ever touched.
+- **7.6 — Explain the `grid_build` discrepancy.** *From 1.12, 2026-09-19.*
+  `grid_build` measured **260.2 ms** to build 48 of 150 book cards on All
+  Books, while the benchmark builds 2,000 cards in 7.1 ms. Either the benchmark
+  is not measuring what the app does, or the app is doing 35× more work per
+  card than it should. Worth resolving before trusting either number.
 
 **Done when:** a 2,000-book library opens in under a second, scrolling never
 drops a frame on a mid-range machine, and every subsystem added in Phases 3–6
@@ -1221,6 +1264,7 @@ top-to-bottom like a journal.
 | 2026-09-19 | **Lazy loading audited; most of it already exists, so only the gaps are planned.** Asked whether chapters could load and unload on demand. Verified rather than assumed: **they already do.** `layout_unit` builds a chapter only when asked, `evict_keeping` drops the least-recently-read ones under the byte budget while pinning the chapter on screen and the visible ones, `prefetch_one` reaches exactly one adjacent chapter, and `suspend()` drops everything but the page showing. Three real gaps: eviction is per *chapter* not per page (a 141-page chapter is one lump); there is one budget for one book where bubbles need one per state; and the chapter character count runs eagerly on open (30-147 ms) when it is only needed on first use. **Per-book budgets go to Phase 2 with the bubbles** — `set_cache_budget` already exists, only the call is missing. **Page-level eviction is recorded as a tripwire, not a task**: it was worth doing when such a chapter cached 34 MB against a 32 MB budget, and the image fix put the same chapter at 13 MB, under budget on its own. Building it now would repeat the shared-font-system mistake — solving a problem the previous fix dissolved. The check is written down so the tripwire is testable: a `laid out unit N` line above 32,768 KB. Eager char count goes to Phase 7. Also corrected a stale figure in the Bubbles section: it said the budget was 192 MB per book, which is the *engine* default; `kalam-reader` overrides it to 32 MB and that is what runs |
 | 2026-09-19 | **Full Part 1 audit: every work item is now permanently numbered, and eleven items were found that the plan did not have.** The owner asked for an extremely thorough check of everything that must be finished before Part 2 — including breakage left over from earlier sessions — with the report first and the roadmap edit only after confirmation, so that work proceeds *in sequence* rather than haphazardly. The audit was done by reading the code, not from memory, and **one finding was caught as a false positive before it was reported**: a grep for reader preferences referenced only once flagged thirteen keys as dead settings, but `reader.ui.back_chip_size_px` and `reader.scrolled` are both read — the string appears once because the key is centralised in a `ReaderUiSetting` key function and a `PREF_SCROLLED` constant respectively. Good design, bad grep; not reported. **What the audit actually found.** Three things broken today: text PDFs paint a grey bar per line with page mode the default (`reflow_mode: false`, `pdf_reader.rs:89`); the dictionary popup has no keyboard at all — no `k-def-focus`, no focused-sense concept anywhere in `src/`, so you can open a card but not move between meanings or save one; and its 55-test jsdom harness is gone. **Four engine settings exist with no control for them**, each confirmed by grep: `font_family` and `publisher_styles` have **zero** references in `src/`; the nine `justify` hits are all GTK label alignment, not `ReadingSettings::justify`; and hyphenation runs in the engine with no switch. `Session::font_families` already returns the installed faces, so the font picker is missing only its UI. **Five documents describe an app that no longer exists**, which is the finding with the longest shadow: the README claims P6 and P7 shipped together when there is **zero** `impl Source` and `SourceManager` holds an empty `Vec`; it claims comics are "next" when they shipped at 1,685 lines; its status table predates the engine swap entirely; `js_bridge.rs` is the dictionary popover under a WebKit name; and `conversation.md` §20 still recommends Poppler where §22 chose MuPDF. **Reachability came back clean** — `NavItem` hides three routes (Downloads, RemoteBrowse, Fanfiction) that are all Part 2, all eight `LibrarySection` variants are routed, and `PlaceholderPageModel` is only on the error paths. **Two placements follow from the owner's decisions.** The cheap PDF fix moved *out* of Deferred into Part 1 as 2.11, because PDF bubbles were wanted and cannot exist over grey stripes — the tension between "PDFs are rare" and "PDFs get bubbles", resolved by paying a few hours and leaving MuPDF deferred. The dictionary keyboard became 2.1, ahead of bubbles at 2.12, as the oldest breakage; bubbles moved last because they need 1.2's async layer. **The numbering is the actual deliverable**: numbers never change, finished items keep theirs struck through, and nothing is built that is not on the list — a new want gets a number and a place *before* it gets written, with one exception for a defect in code being touched right now, which gets a number in its commit's changelog row. That rule exists because drifting is precisely what happened before. Also resolved two stale duplicates that both said "discuss before designing" about multiple books open, which was designed the same week |
 | 2026-09-19 | **Started Phase 1 at 1.2 and immediately found the item itself was wrong; measurement then cancelled the work it described.** Beginning an item is how you find out whether it was written correctly. **"Make `LibraryService` asynchronous" contradicted a decision already recorded in the code**: `src/tasks.rs` has a section headed *"No tokio"* — `thread::spawn` + `async-channel` + the GLib main loop, because relm4 is already the actor framework and a second runtime is a second scheduler fighting the first. Making the service `async fn` requires exactly that runtime. The design that *was* built is the opposite shape and is already complete: methods stay synchronous, return `Send` snapshots, and the *caller* runs them on a worker via `tasks::spawn` — `service.rs` says so, and `snapshots_are_send()` asserts `Send` on the service and all 12 snapshots so a future edit cannot quietly break it. The real gap is that nobody uses it: **92** service call sites across `src/pages/`, of which **2** are near a `tasks::spawn`, sitting in `init()` and `reload()` — both UI-thread paths. Rather than convert 92 blind, 1.2a instrumented all 16 snapshot methods through the existing `timing` harness (`measure` returns a `Guard` that reports via `Drop`, so an early return cannot leave a span open and no `_end` call can be forgotten; `#[must_use]` plus CI's `-D warnings` is the enforcement against binding it to `_`, which would report ~0 ms and read as a fast query — the one way to get this wrong silently). **The owner's log then cancelled 1.2b outright: worst case 10.8 ms (`dashboard`), median about 1.2 ms.** A thread round-trip plus a loading state would cost more than the query it replaces, so all 92 stay on the UI thread. Four methods were never visited; they read the same tables at the same scale. **This is the second time measurement dissolved a planned task** — the shared font system was the first — and the standing rule holds. **The log's worst number was an accident of that instrumentation: `window_shown` = 9,166.6 ms**, and the three existing startup spans accounted for only 2,410 ms of it. **6,757 ms — 74% of a nine-second cold start — was attributed to nothing**, in the one place the user feels first. That is new item **1.12**: instrument `main()`'s uninstrumented blocks plus a `pre_run` marker, which splits the gap into "before `app.run`" and "inside `AppModel::init` and GTK's first realize" in a single run — `app.run` never returns, so it cannot be spanned, and the marker is the last instant `main()` can time. Fixes follow in Phase 7. The same log also showed `grid_build` at 260.2 ms for 48 of 150 cards against 7.1 ms for 2,000 in the benchmark, recorded under 1.12 as a Phase 7 question. **Also recovered from the recurring moved-base fault**: HEAD had silently fallen back to the branch point `29788b4`, so the first `git diff` showed `mod logging;` and `logging::init()` as additions — code that had been committed and pushed turns earlier. Nothing was lost; the working tree held every change. Recovery was `git reset FETCH_HEAD` (mixed), which re-points HEAD and the index *without touching the working tree*, leaving only the two genuinely-changed files, followed by `git checkout -- ci-logs/` to discard stale generated logs rather than push them over fresh ones. Worth recording because the symptom is alarming and the fix is not what it looks like: `--hard` or `stash` would both have destroyed work here |
+| 2026-09-19 | **Warm start is 44% faster — 1,366 ms to 762 ms — from moving one line off the startup path.** The owner ran the instrumented build four times cold-then-warm and the sequence of findings mattered more than any of them. **The nine-second cold start was not a defect**: it was a cold OS page cache on a spinning disk, and `startup_db_open` proved it — 2,049–2,593 ms cold against **9 ms warm**. Two alarms were withdrawn on that evidence. What survived was `icons_theme` at 493–505 ms warm, 36% of the start, with `icons_write` at **0.1 ms** proving the cost was GTK rescanning every icon theme on the system rather than writing the files. Two of the four icons turned out to be **dead** — `kalam-dictionary-symbolic` and `kalam-copy-symbolic` have zero references, the toolbar having switched to `accessories-dictionary-symbolic` and `edit-copy-symbolic` and left the custom SVGs orphaned on disk — and the two survivors are used only by the reader's selection toolbar, so nothing at startup draws them. Moving `icons::init()` to an idle callback behind a `OnceLock`, with the toolbar calling it as a fallback, produced **more than the predicted saving**: `icons_theme` fell from 496 ms to **4.3–5.9 ms**, so the rescan did not merely move, it became cheap — most likely because `add_search_path` before GTK had loaded any theme forced a full load of every theme, whereas afterwards it is a cheap invalidation. Recorded as an inference. Measured over three before and four after runs: `pre_run` 686.9 → 224.6, `AppModel::init` 567.5 → 424.9, GTK realize unchanged at ~112, **`window_shown` 1,365.5 → 762.1**. The owner confirmed the highlight and quote icons still render, which was the one risk. **The unexplained part is recorded rather than papered over**: `AppModel::init` also lost 142.6 ms, which nothing predicted — plausibly because `add_search_path` invalidates the theme and every `from_icon_name` during widget building then resolved against a dirty one. **The method is the point of the row.** Three of the four biggest numbers this week turned out to be measurement artifacts or misattributions, and each was caught by refusing to accept the first reading: a 2 s database open that was 9 ms warm, a 527 ms first page that was 8 ms warm, and a 496 ms icon load that was 6 ms when asked later. Cold runs ranged 8,871–10,884 ms while warm runs agreed within 14 ms, so the warm number is the only one that measures code. Clippy failed one push on the way — a `redundant_closure` written as a hedge against type inference, which `-D warnings` turns into a build error. **Phase 7 is numbered 7.1–7.6** and takes the two remaining findings: `AppModel::init` at 424.9 ms, now 56% of a warm start, and a `grid_build` of 260.2 ms for 48 cards against a benchmark's 7.1 ms for 2,000 |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

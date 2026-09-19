@@ -1586,6 +1586,7 @@ Implemented local comic archive reading and interactive Relm4 comics viewer comp
 ## Master Roadmap Redux & Architecture (Sept 8)
 - **Two Worlds UI:** Offline Tranquil Library default vs Online Hub.
 - **Bubble Memory:** Single WebKit process SPA for multiple open books. In-app `gtk::Overlay` floating chat head outside reader.
+  *(2026-09-19: expanded into a real design in §23. The WebKit half of this line is dead — there is no shared web process any more.)*
 - **Inline EPUB Editing:** Non-destructive sidecar patches in `kalam.json`.
 - **PDF Engine:** Zathura-style smart-crop default, Reflow toggle.
 - **Scrapers & Metadata:** WebAssembly (Wasm) plugin ecosystem replacing Lua.
@@ -1652,7 +1653,6 @@ matterting.
 **Not decided here.** This records the analysis and a recommendation; the
 choice is the owner's, and nothing has been changed in `Cargo.toml`.
 
-*Last updated: 2026-09-18.*
 
 ---
 
@@ -1749,7 +1749,6 @@ the `unwrap` one, the `Arc<Catalog>`-in-pages one, and the literal-hex one —
 plus a short prose list of the anti-bloat rules in `docs/WORKING.md`. That is
 less documentation than the engine has and more enforcement.
 
-*Last updated: 2026-09-18.*
 
 ---
 
@@ -1821,4 +1820,162 @@ author.
    for sources that need a selector. That is a tiered design, not a
    contradiction, and the existing scaffolding already half-supports it.
 
-*Last updated: 2026-09-18.*
+
+---
+
+## 23. Bubbles — multiple books open at once (2026-09-19)
+
+**Status: ✅ design accepted, 🔶 not built.** Part 1, Phase 2.
+
+**Asked:** *"you know about android 17 bubble feature? how you can have
+multiple apps kind of floating on the screen all the time? and move them
+around? ... opening multiple books all at once, and then they look like stacked
+bubbles on top of each other on the screen, despite wherever I am, and clicking
+them open them in a floating window, all the books lined up on the top."*
+
+The only prior record was the one line in *Master Roadmap Redux* above. Half of
+it was dead on arrival — it assumed a single WebKit process holding several
+books, and there is no WebKit any more.
+
+### Accepted
+
+- **Android-style stacked bubbles**, over any screen in the app. Tap one to
+  read it in a floating window; the rest line up along the top.
+- **In-app only**, never an OS window. A separate always-on-top window fights a
+  tiling compositor, and Kalam already hit exactly that with dialogs — which is
+  why the in-app float layer exists at all.
+- **Open into a bubble** straight from the library, and **minimize back** into
+  one from the reader.
+- **Bubble face:** the cover with a thin progress ring.
+- **A bubble holds no book.** It is a bookmark — book id, cover thumbnail,
+  position, all already database rows. The book is built on tap. This is the
+  load-bearing rule: opening a book is 100–220 ms, far too slow to do for ten
+  bubbles at startup and far too much memory to hold.
+- **Three states:** bubble (kilobytes) · warm (opened, budget trimmed,
+  suspended — one or two) · reading (full budget — one).
+- **All three readers are bubble-eligible** — EPUB, PDF and comics — and all
+  three also serve online content later: the EPUB reader for fanfiction and
+  AO3, the comics reader for manga. The online half is Part 2; the bubble
+  architecture is Part 1.
+
+### The constraint that keeps it buildable
+
+**Two readers, and the full one loses nothing.**
+
+| | Full reader | Bubble reader |
+|---|---|---|
+| Left sidebar | TOC **and Settings** | TOC only |
+| Right sidebar | **Highlights, Bookmarks, Words** | none |
+| Floating pills | **all** — selection chip, highlight colours, dictionary popup, quote/copy | none |
+| Status | **unchanged; nothing removed** | new, thin |
+
+The full reader is 5,845 lines across 12 files with five sidebar tabs; the
+bubble reader keeps one of the five.
+
+Worth recording *why* that helps, because the obvious reason is not the real
+one. **It is not a memory saving** — memory lives in the engine's book object,
+not in the sidebars, which are ordinary widgets over database rows. The saving
+is complexity: a small floating window cannot fit the full chrome anyway, and a
+bubble reader wanting the full feature set would mean maintaining 5,845 lines
+twice forever. Instead the reading surface becomes one component with two
+shells.
+
+### Not decided
+
+- How strict a background book's budget should be. That number should be picked
+  after the bubbles exist and can be felt, not before.
+
+---
+
+## 24. Reader memory — measured, with two ideas rejected (2026-09-19)
+
+**Trigger:** the owner's hardware — **4 GB RAM, 1 TB HDD, Pentium Silver
+N5030, Intel UHD 605.** Constraints that make the engine's defaults worth
+questioning.
+
+### ✅ Chapter images now decode to the size a page can draw
+
+Every `<img>` was decoded at full native resolution. `collect_images` took no
+page size even though `PageMetrics` was in scope at its one production call
+site. Raw RGBA costs 4 bytes a pixel, so a 3000×4000 scan is 48 MB decoded
+while occupying at most the reading column.
+
+Measured on the owner's machine, *The Dragonet Prophecy*: four chapters went
+from **85,082 KB to 24,361 KB — 83.1 MB to 23.8 MB, 71% less**. The engine
+reports 77.1 MB decoded against 17.9 MB kept.
+
+**The number that matters is not the percentage, it is that the cache now
+fits.** Those chapters were 2.6× over the 32 MB budget before, so an
+image-heavy book sat permanently over budget and re-decoded on scroll at the
+77–120 ms/page the engine measures.
+
+Cost is not zero: the resize added ~50 ms on small-image chapters while
+*reducing* it on large ones (487 → 385 ms), because `ImageStore::insert`
+premultiplies every stored pixel, so fewer pixels is less work there.
+
+### ✅ Which budget is actually in force
+
+Worth pinning down, because reading the code gave the wrong answer once. The
+*engine's* `DEFAULT_CACHE_BUDGET` is **192 MB**. `kalam-reader` overrides it
+with **32 MB**, and the comment beside it says it was chosen *"on a machine
+with 4 GB in total"* — the target machine. Kalam runs at 32 MB, confirmed by
+log rather than by reading.
+
+### ~~Shared font system across sessions~~ — rejected, not needed
+
+**Proposed:** every `Session::open` runs `build_font_system`, which scans the
+whole system font database again, so with several books open the cost is paid
+several times. Sharing one seemed likely to be the centrepiece of the engine
+work for bubbles.
+
+**Rejected on measurement.** Four books, all reporting **8 faces**: the scan is
+**1–5 ms** out of a 32–78 ms open. Sharing it would save milliseconds and cost
+real complexity. The engine already times this split and always has — the
+number was invisible only because no logger was installed.
+
+This is the reason the logger was built before the design was settled: *the
+measurement existed and nobody could see it.*
+
+### ~~Disk-backed page cache~~ — rejected for now, probably unnecessary
+
+**Proposed:** a weak CPU and a 1 TB drive argue for trading decode time for
+disk reads — decode a page once, write it downsampled, read it back rather than
+re-decoding. Genuinely the right trade *on this hardware*.
+
+**Held off rather than refused.** It was justified when a chapter cached 34 MB
+against a 32 MB budget and eviction meant constant re-decoding. The image fix
+put the same chapter at 13 MB, under budget on its own, so the thrash it was
+answering largely stopped. Revisit only if re-decodes show up again.
+
+### ✅ Lazy loading mostly already exists
+
+Asked whether chapters could load and unload on demand. **They already do:**
+`layout_unit` builds a chapter only when asked; `evict_keeping` drops the
+least-recently-read under the budget while pinning the current and visible
+chapters; `prefetch_one` reaches exactly one adjacent chapter; `suspend()`
+drops everything but the page on screen.
+
+Three real gaps: eviction is per *chapter* not per page; there is one budget
+for one book where bubbles need one per state; and the chapter character count
+runs eagerly on open (30–147 ms).
+
+### ✅ Page-level eviction — a tripwire, not a task
+
+Holding a 141-page chapter as one lump was a real problem when it cached 34 MB
+against a 32 MB budget. The same chapter is now **13 MB and fits on its own**.
+**Do not build this until a single chapter again exceeds the budget.** The
+check, so the tripwire is testable rather than a matter of opinion:
+`RUST_LOG=info kalam`, open an illustrated book, look for a
+`laid out unit N (... KB)` line above 32,768.
+
+### The meta-lesson
+
+Three confident claims about this codebase turned out to be wrong in one week,
+all from reading code and reporting it as fact: that the reader had only two
+keyboard shortcuts, that the cache budget was 192 MB, and that the font scan
+might dominate open time. The first two were corrected by reading more
+carefully; the third by measuring. **Where a number decides a design, log the
+number rather than inferring it.** That is why the logger landed before the
+bubble design was settled, and why the image fix reports its own savings.
+
+*Last updated: 2026-09-19.*

@@ -397,6 +397,51 @@ bulk editing. Fixing it later means rewriting all four.
     exercises the new path**: the async reply needs a GTK main loop, so what
     is verified is that it compiles and that the types are right, not that the
     list refreshes. Only running the app shows that.
+
+    **Rolled out, 2026-09-19 — owner confirmed the pilot, CI `35434414790`
+    green (762 tests, 0 clippy findings).** The same shape now covers every
+    search- and sort-driven reload: **history** (search, filter, clear,
+    refresh), **saved quotes** (search, delete, save note, refresh), the **tag
+    cloud** (re-read after rename, merge, delete) and **one tag's books** (sort
+    change). Four more pages, all confirmed by reading their call sites rather
+    than assumed.
+
+    Reading them turned up three things the pilot had not shown:
+    - **Two more pages blanked on a read error.** `saved_quotes` called
+      `quotes.clear()`; `history` assigned `snap.events` unconditionally, which
+      is empty on error, so the feed cleared the same way. Same bug, two more
+      copies — which suggests checking for it in the remaining seven rather
+      than assuming `all_books` was the only one.
+    - **`saved_quotes` rebuilt its list inline right after `reload()`.** With
+      the read now asynchronous that would have drawn the list the query had
+      not replaced yet, so the rebuild moved into the `Loaded` handler. A side
+      effect worth noting: `SaveNote` reloaded without ever rebuilding, so the
+      list did not update after saving a note until the next message arrived.
+      It does now — a latent bug the conversion happened to fix.
+    - **The tag cloud's re-reads follow a write, and the write is still
+      synchronous.** Moving writes off the UI thread is a separate and larger
+      change; only the re-read moved, which is the part that counts every tag
+      across the library and so the part that grows.
+
+    `HistorySnapshot` joined `snapshots_are_send()`. The snapshots for pages
+    that stay synchronous deliberately did **not** — asserting `Send` on a type
+    that never crosses a thread proves nothing and would read as coverage it
+    is not.
+
+    **Still synchronous by design: every page's first read in `init`.** Each
+    carries a comment saying so. The page is not on screen yet, so there is
+    nothing visible to freeze and no list to preserve, and making it
+    asynchronous would draw an empty view and then fill it. Revisit when a
+    large library makes those reads measurable. `dashboard` (`library.rs:76`)
+    has no reload path at all — it is read once at init and never refreshed —
+    so it is entirely covered by this exception, not partially converted.
+
+    **Not converted, and not missing:** `analytics`, `reading_list` and
+    `shelf_detail` each keep their own synchronous `reload()` — those are three
+    of the bounded queries in the table above. `saved_words` calls `words()`,
+    the unmeasured query, and should be timed before it is classified.
+    `comics` has a `reload()` too but reads through `catalog()` directly
+    rather than a service snapshot, so it is outside this change either way.
 - ~~**1.3 — Route background work through `src/tasks.rs`.**~~ **Done, 2026-09-19
   — the migration had largely already happened.** Audited rather than assumed:
   there are **27 `tasks::spawn` call sites** across imports, metadata fetching,

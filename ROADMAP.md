@@ -522,29 +522,57 @@ bulk editing. Fixing it later means rewriting all four.
     both depend on the machine running them.
   - `libc` promoted to a direct dependency; already in the tree transitively,
     so no change to build time or binary size.
-- **1.8 — Batch of small, safe fixes**, each a few minutes:
-  - **1.8a** Delete three unused dependencies from the root `Cargo.toml`: `toml`,
-    `urlencoding`, `scraper`.
-  - **1.8b** Delete or fix `src/plugins/mod.rs`. It imports `wasmtime`, which is in
-    neither `Cargo.toml` nor `Cargo.lock`; it only survives because
-    `// mod plugins;` is commented out in `src/main.rs`.
-  - **1.8c** Rename one of `src/epub_write.rs` / `src/epub_writer.rs`. They are
-    unrelated files with near-identical names.
-  - **1.8d** Install the icon at the right size. The `Makefile` puts a 128×128
-    `assets/logo.png` into `icons/hicolor/512x512/apps/`; a 2048×2048 source
-    exists at `docs/design/logo_transparent.png`.
-  - **1.8e** Make "Open with Kalam" work: add `MimeType` to the `.desktop` file, add
-    `%f` to `Exec`, and parse `argv` in `main.rs`. None of the three exist.
-  - **1.8f** Add a `LICENSE` file at the repository root. `Cargo.toml` already says
-    `GPL-3.0-or-later`; the file is just missing.
-  - **1.8g** Work through the 90 `#[allow(dead_code)]` attributes, 5 of them
-    module-wide. CI's `-D warnings` was added specifically to catch dead code
-    and these suppress it wholesale.
-  - **1.8h** Rename `src/pages/reader/js_bridge.rs`. The name is a leftover from
-    WebKit; the file is now the dictionary popover, as its own doc comment
-    says. Two `use` sites to update (`reader/lists.rs`, `reader/mod.rs`).
-  - **1.8i** Fix the doc comment in `src/timing.rs`, which still describes
-    handing chapters to WebKit.
+- **1.8 — Batch of small, safe fixes.** *Six of nine done, 2026-09-19. The
+  roadmap assumed "a few minutes" each; that held for six and was wrong for
+  two, which is why 1.8g became its own item and 1.8e is still open.*
+  - ~~**1.8a** Delete three unused dependencies from the root `Cargo.toml`:
+    `toml`, `urlencoding`, `scraper`.~~ **Done.** Confirmed zero uses across
+    `src/`, `crates/` *and* `tools/` before removing — the earlier mistake of
+    grepping only `crates/` is what broke `chapbook-cli` once already.
+  - ~~**1.8b** Delete or fix `src/plugins/mod.rs`.~~ **Done — archived, not
+    deleted.** Moved to `docs/archive/plugins-mod.rs`. It imported `wasmtime`,
+    which is in neither manifest nor lock, and survived only because
+    `// mod plugins;` was commented out in `main.rs`: dead code sitting in the
+    build tree looking live. Archived because WASM plugins are Part 2 and the
+    design in it is worth keeping somewhere obvious; the commented `mod` line
+    is gone since it now points at nothing.
+  - ~~**1.8c** Rename one of `src/epub_write.rs` / `src/epub_writer.rs`.~~
+    **Done — `epub_write.rs` → `epub_metadata.rs`.** It writes metadata back
+    into an existing EPUB; `epub_writer.rs` builds new ones. This one was
+    renamed rather than the other because the new name says what the file
+    does, and all 17 call sites share one mechanical `crate::epub_write::`
+    prefix. 15 of the module's own tests confirmed still running by name.
+  - ~~**1.8d** Install the icon at the right size.~~ **Done.**
+    `assets/logo-512.png` generated from the 2048 px master and the `Makefile`
+    installs that. `logo.png` stays at 128 **deliberately**: it is also
+    embedded in the About dialog via `include_bytes!` (`app.rs:1503`), where
+    512 would be wasted bytes in the binary.
+  - **1.8e** Make "Open with Kalam" work: add `MimeType` to the `.desktop`
+    file, add `%f` to `Exec`, and parse `argv` in `main.rs`. None of the three
+    exist — verified again 2026-09-19. **Still open**, and it is not really in
+    the same class as the others: it adds behaviour rather than fixing
+    something wrong, and it needs a decision about what opening a file should
+    do (import then open? open if already imported?).
+  - ~~**1.8f** Add a `LICENSE` file at the repository root.~~ **Done, but not
+    as written.** The item assumed `Cargo.toml` said `GPL-3.0-or-later` and
+    the file was merely missing. Checking found **two** declarations: the app
+    said GPL-3.0-or-later while the seven `chapbook-*` engine crates said MIT
+    OR Apache-2.0. **Owner's decision: a personal project with no license at
+    all**, which under copyright default means all rights reserved. So all 12
+    license lines across 11 manifests were removed and **no** `LICENSE` file
+    added. The dependency direction was checked first and is clean — GPL code
+    depends on permissive code, never the reverse — so the old arrangement was
+    legally coherent, just accidental.
+  - **1.8g → moved to its own item, see 1.16.** The count is 85, not 90, with
+    5 module-wide. Working through them means deciding for each whether the
+    code should be deleted, wired up, or genuinely kept — a real pass, not a
+    few minutes. Split out rather than rushed alongside the mechanical fixes.
+  - ~~**1.8h** Rename `src/pages/reader/js_bridge.rs`.~~ **Done —
+    `dictionary_popover.rs`.** The file's own doc comment already explained
+    that the WebKit bridge was gone and what remained is the dictionary query
+    and the popover. Both `use` sites updated.
+  - ~~**1.8i** Fix the doc comment in `src/timing.rs`, which still describes
+    handing chapters to WebKit.~~ **Done.**
 - **1.9 — Write the app-level guardrails.** `crates/kalam-reader` inherits strict
   boundaries from upstream, which is a large part of why that code stayed clean.
   **`src/` has no equivalent.** `docs/WORKING.md` states four invariants and only
@@ -784,6 +812,23 @@ bulk editing. Fixing it later means rewriting all four.
   mitigation, not a fix — the fix is faster storage.
   **Done when:** a launch immediately after a reboot measures close to the
   warm figure, and it survives a reboot without the owner doing anything.
+
+- **1.16 — Work through the `#[allow(dead_code)]` suppressions.** *Split out
+  of 1.8g, 2026-09-19.* **85** of them, **5** module-wide (`#!`), which each
+  hide an entire module rather than one item.
+  **Why it is its own item and not a few minutes.** CI runs clippy with
+  `-D warnings` specifically so dead code fails the build, and every one of
+  these switches that check off locally. Removing a suppression is not a
+  deletion — it forces a decision about the code underneath, and the three
+  answers are different work: delete it, wire it up because it was meant to be
+  used, or keep it and say why. Some will turn out to be genuinely
+  forward-looking (the engine's suspend/release hooks); some will be leftovers
+  from the WebKit removal, like `js_bridge` was.
+  **Order:** the 5 module-wide ones first, since each of those hides the most,
+  then the rest. Expect real deletions to follow, which is the point.
+  **Done when:** the count is materially lower, every survivor has a written
+  reason rather than a bare attribute, and clippy's dead-code check is
+  actually running over the code again.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`

@@ -1900,6 +1900,7 @@ dependencies = [
  "image",
  "kalam-reader",
  "libadwaita",
+ "log",
  "lopdf",
  "quick-xml 0.37.5",
  "relm4",

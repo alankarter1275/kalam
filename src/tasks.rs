@@ -412,6 +412,25 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
+    /// Held while a test touches the process-wide registry or finished list.
+    ///
+    /// Not optional, and the reason is a real false positive: tests share a
+    /// process and run in parallel, and `the_recent_list_is_bounded` clears the
+    /// finished list both before and after its assertions. Dropped between
+    /// another test's `finish()` and its `recent()` read, that produced a
+    /// failure reading exactly like the bug it was written to catch — a task
+    /// that finished and never appeared in the panel. The product was fine;
+    /// the test was racing its neighbour.
+    static TEST_LOCK: Mutex<()> = Mutex::new(const { Mutex::new(()) });
+
+    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+        match TEST_LOCK.lock() {
+            Ok(guard) => guard,
+            // A panic in one test must not make the rest unrunnable.
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
     /// Build a reporter without going through `spawn`, which needs a GLib main
     /// context and therefore cannot run in CI (no display).
     fn reporter() -> (Reporter, async_channel::Receiver<Update>, Arc<AtomicBool>) {
@@ -496,6 +515,7 @@ mod tests {
 
     #[test]
     fn cancel_all_flags_every_registered_task() {
+        let _guard = test_guard();
         // Uses the real registry, so clean up after itself rather than
         // assuming it starts empty -- tests share the process.
         let before = running_count();
@@ -514,6 +534,7 @@ mod tests {
 
     #[test]
     fn cancel_reaches_one_task_and_leaves_the_others_running() {
+        let _guard = test_guard();
         // The whole point of 1.14: cancelling the download you did not mean to
         // start must not also cancel the thumbnail rebuild.
         let before = running_count();
@@ -532,6 +553,7 @@ mod tests {
 
     #[test]
     fn cancelling_twice_is_harmless() {
+        let _guard = test_guard();
         let before = running_count();
         register_fake(90_021, "cancel me twice");
         assert!(cancel(90_021));
@@ -544,6 +566,7 @@ mod tests {
 
     #[test]
     fn the_panel_sees_labels_and_progress() {
+        let _guard = test_guard();
         let before = running_count();
         register_fake(90_031, "Importing EPUBs");
         set_progress(
@@ -568,6 +591,7 @@ mod tests {
 
     #[test]
     fn finishing_moves_a_task_to_the_recent_list() {
+        let _guard = test_guard();
         let before = running_count();
         register_fake(90_041, "Downloading a chapter");
         cancel(90_041);
@@ -584,6 +608,7 @@ mod tests {
 
     #[test]
     fn the_recent_list_is_bounded() {
+        let _guard = test_guard();
         // Unbounded would grow for the life of the process, and this list is
         // only there to say "that just happened".
         locked_finished(VecDeque::clear);
@@ -626,6 +651,7 @@ mod tests {
     /// seconds instead of hanging CI until it times out.
     #[test]
     fn a_task_that_ran_lands_in_the_recent_list() {
+        let _guard = test_guard();
         const LABEL: &str = "headless registry test";
 
         let done = Rc::new(Cell::new(false));
@@ -692,6 +718,7 @@ mod tests {
 
     #[test]
     fn a_poisoned_registry_does_not_take_the_next_task_down() {
+        let _guard = test_guard();
         // One task panicking must not turn every later task into a crash.
         let _ = std::panic::catch_unwind(|| {
             locked(|_| panic!("worker exploded while holding the lock"));

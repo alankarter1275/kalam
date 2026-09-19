@@ -353,6 +353,16 @@ jobs:
           BOOKS=139 OUT=ci-shots-reader SETTLE=25 ROUTE=read-1 \
             docs/ci/screenshot.sh
 
+      # The task manager's whole job is showing state that only exists while
+      # something is running, so a shot of it over a quiet library proves
+      # little about the interesting case. What it does prove is the part no
+      # unit test can reach: the route resolves, the component builds, and the
+      # two empty states render instead of panicking.
+      - name: open the task manager and report
+        run: |
+          BOOKS=139 OUT=ci-shots-tasks SETTLE=20 ROUTE=tasks \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -366,9 +376,12 @@ jobs:
           cp ci-shots-reader/report.txt ci-logs/reader-latest.txt 2>/dev/null \
             || echo "(no reader report produced)" > ci-logs/reader-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-latest.txt
+          cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
+            || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/reader-latest.txt
+          git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt
           git commit -m "ci: publish smoke-test report [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true

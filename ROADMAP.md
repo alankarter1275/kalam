@@ -318,20 +318,55 @@ bulk editing. Fixing it later means rewriting all four.
     - **No flash of empty state.** A page whose query round-trips must keep
       showing what it already has and refresh in place, not clear and refill.
       Yazi gets away with loading states because its operations are genuinely
-      slow; a 1 ms query behind a blank frame is a regression.
-    - **Convert by scaling risk, not uniformly.** The eight queries marked
-      "yes" above are the ones that hurt at 2,000 books. The constant-time
-      ones (`shelves`, `reading_list`, `analytics`, `reader`, `book_detail`)
-      can stay — that is a principled exception, not drift, and it should be
-      written down as one.
-    - **A cache belongs in the service layer.** `service.rs`'s own doc names
-      "no single place to put caching" as one of the three problems it was
-      written to solve, and there is still no cache. With one, a revisit is
-      instant and the async hop is invisible.
+      slow; a 1 ms query behind a blank frame is a regression. Concretely:
+      today a page asks and blocks for ~1 ms, which is invisible. Moving the
+      question to a worker creates a moment with no answer, and clearing the
+      view for that moment would replace something instant with a flicker.
+      The page keeps its current snapshot and swaps it when the reply lands.
+    - **Convert by scaling risk, not uniformly.** Seven of the measured
+      queries grow with library size — `all_books`, `dashboard`, `home`,
+      `history`, `tag_books`, `tags`, `quotes`. Five do not: `shelves`,
+      `reading_list`, `analytics`, `reader`, `book_detail` are bounded by
+      shelves, or by one book, and cost the same at 5,000 books as at 150.
+      Moving those buys nothing and costs a loading state. **The exception is
+      written here so it reads as a decision and not as unfinished work.**
+      Three queries were never measured (`words`, `lookup_history`,
+      `book_stats`); `words` and `lookup_history` grow with vocabulary rather
+      than library size and should be measured before being classified, not
+      assumed. `shelf_detail` is bounded by one shelf.
+    - ~~**A cache belongs in the service layer.**~~ **Deferred, 2026-09-19.**
+      Refresh-in-place already removes the visible delay a cache would hide,
+      which makes the cache an optimisation rather than a requirement. Against
+      that, a cache carries a corruption-flavoured failure mode: getting
+      invalidation wrong means showing books that were deleted. `service.rs`'s
+      own doc does name "no single place to put caching" as one of the three
+      problems it was written to solve, so this is a real gap — but it is
+      revisited only if the pilot or a later measurement shows a page that
+      feels slow without it. Same rule that retired the shared font system and
+      the Cairo renderer.
+
+    **Plan: one page as a pilot, then roll out.** Converting 92 call sites
+    before the pattern is proven is how a mistake gets repeated 92 times. The
+    pilot is **All Books** — the query that scales worst (`all_books`, 4.7 ms
+    at 150 books, 4 call sites in `src/pages/all_books.rs`).
+    1. `all_books()` runs on a worker via `tasks::spawn`.
+    2. The page keeps rendering its current list while the query runs.
+    3. The new snapshot replaces it on arrival; a failed read keeps the old
+       list and surfaces the error rather than blanking the grid.
+    Then the owner runs it. **The success criterion is that it feels
+    identical** — this change is about never blocking, not about being faster,
+    and a pilot that feels slower has failed even if the code is correct. Only
+    then do the other seven.
 
     The `Send` guarantee is already load-bearing here: `snapshots_are_send()`
     asserts `Send` on the service and all 12 snapshots, which is exactly what
     handing them across a thread requires.
+
+    **Note on page ownership.** Each page builds its own `LibraryService`
+    (`LibraryService::new(catalog)` in `all_books.rs:261`), so nothing is
+    shared between pages today. That is fine for the pilot and is one more
+    reason the cache is deferred: a useful cache would have to be shared
+    process-wide, which is a larger change than the pilot needs.
 - ~~**1.3 — Route background work through `src/tasks.rs`.**~~ **Done, 2026-09-19
   — the migration had largely already happened.** Audited rather than assumed:
   there are **27 `tasks::spawn` call sites** across imports, metadata fetching,

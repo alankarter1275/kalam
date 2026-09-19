@@ -424,8 +424,66 @@ bulk editing. Fixing it later means rewriting all four.
   graphics, and telling those apart is the difference between something we can
   fix and something we cannot.
 
+  **Third round, 2026-09-19 — item complete, and the headline number was
+  wrong.** The owner ran it four times back to back and the first was an
+  outlier: **the 8.9–10.9 s figures were a cold OS page cache on a spinning
+  HDD, not a code defect.** Three warm runs agree within 14 ms:
+
+  | | warm 1 | warm 2 | warm 3 |
+  |---|---|---|---|
+  | `window_shown` | 1,357.8 | 1,366.6 | 1,372.1 |
+  | `init_done` | 1,246.0 | 1,255.0 | 1,262.2 |
+  | `pre_run` | 682.0 | 690.8 | 687.9 |
+
+  Warm start is **~1.36 s**, and it is now fully accounted for — the six
+  `main()` spans sum to within **0.3 ms** of `pre_run` on every run:
+
+  | Where | ms | Share | Fixable? |
+  |---|---|---|---|
+  | `AppModel::init` (widget tree) | 564–574 | 41% | yes — needs one more round of spans |
+  | **`icons_theme`** | **493–505** | **36%** | **yes — see 1.13** |
+  | GTK realize | 110–112 | 8% | probably not |
+  | `startup_gtk_init` | 101 | 7% | no |
+  | `startup_style` | 50–57 | 4% | no |
+  | `startup_theme` | 25–27 | 2% | no |
+  | `startup_db_open` | **8.9–9.5** | <1% | nothing to fix |
+  | `startup_first_page` | 7.9–8.6 | <1% | nothing to fix |
+  | `startup_libraries` | 0.2 | — | — |
+
+  **Two of the earlier alarms were cold-cache artifacts and are withdrawn.**
+  `startup_db_open` is 2,049–2,311 ms cold and **9 ms warm** — `migrate()` is
+  not slow, reading the file from a cold disk is. `startup_first_page` is
+  527 ms cold and 8 ms warm. The cold figures are still worth knowing (first
+  launch after a reboot really does take ~9 s) but there is no code to change.
+
+  **`icons_write` measures 0.1 ms**, which confirms the 859/496 ms was never
+  about writing four small SVGs. It is the GTK icon-theme rescan, as suspected.
+
   **Done when:** `KALAM_TIMING=1` on the Arch machine accounts for essentially
-  all of the gap between `timing::start()` and `window_shown`.
+  all of the gap between `timing::start()` and `window_shown`. **Met** — 0.3 ms
+  unaccounted before `app.run`, and `init_done` splits the rest.
+- **1.13 — Take the 496 ms icon-theme rescan off the startup path.** Follows
+  directly from 1.12, which measured it at **493–505 ms warm — 36% of the whole
+  start** — with `icons_write` at 0.1 ms proving the cost is GTK's icon theme,
+  not the files. `IconTheme::add_search_path` makes GTK rescan every icon
+  theme on the system to pick up four small SVGs.
+  Two findings make this safe to move:
+  - **Two of the four icons are dead.** `kalam-dictionary-symbolic` and
+    `kalam-copy-symbolic` have **zero** references anywhere outside `icons.rs`;
+    they are written to disk on every machine and never drawn. The other two
+    are used only by the reader's selection toolbar
+    (`src/pages/reader/engine.rs:312` and `:347`).
+  - **Nothing at startup needs them.** No icon is drawn before the reader is
+    opened, so the rescan is pure wait on the critical path.
+  The fix: make `icons::init()` idempotent behind a `OnceLock`, schedule it as
+  an idle callback once the window is up, and have the toolbar builder call it
+  too. The idle callback runs within a few milliseconds of the window being
+  drawn — long before anyone can open a book and select text — so in practice
+  the cost moves off the path entirely; and if it somehow has not run, the
+  toolbar forces it and behaviour is exactly what it is today. Delete the two
+  dead icons while in there.
+  **Done when:** `window_shown` drops by roughly 490 ms warm, and the highlight
+  and quote buttons still show their own icons rather than a fallback glyph.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`

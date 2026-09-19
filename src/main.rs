@@ -50,10 +50,14 @@ fn main() {
     let app = RelmApp::new("app.kalam.Kalam");
     timing::span_end("startup_gtk_init");
 
-    // Initialize custom symbolic icons (highlights, quotes, dictionary, copy)
-    timing::span("startup_icons");
-    icons::init();
-    timing::span_end("startup_icons");
+    // Roadmap 1.13: this used to cost 493–505 ms *before the first paint* —
+    // GTK rescanning every icon theme on the system to pick up two SVGs, while
+    // the SVGs themselves write in 0.1 ms. Nothing draws one of them until the
+    // reader is opened, so schedule it for the first idle moment after the
+    // window is up. `icons::init` is idempotent and the reader's toolbar calls
+    // it too, so the worst case is the old cost in the old place rather than
+    // the icons turning into fallback glyphs.
+    gtk::glib::idle_add_local_once(|| icons::init());
 
     // Dark baseline via Adwaita (GtkSettings prefer-dark is unsupported with libadwaita).
     timing::span("startup_style");

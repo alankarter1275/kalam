@@ -18,18 +18,29 @@
 //! Then read the `[timing]` lines. They mark the boundaries A0 cares about:
 //!   window_shown  → first window drawn, measured from process start
 //!                   (cold start; a `now` snapshot, not a span)
-//!   startup_gtk_init / startup_icons / startup_style / startup_libraries /
-//!   startup_db_open / startup_theme / startup_dicts / startup_first_page
+//!   startup_gtk_init / startup_style / startup_libraries / startup_db_open /
+//!   startup_theme / startup_dicts / startup_first_page
 //!                 → the pieces of work that run before first paint, so a slow
 //!                   `window_shown` can be attributed rather than guessed at.
 //!                   `startup_dicts` is large only on the very first run (it
 //!                   imports the bundled packs) and `startup_first_page`
 //!                   scales with library size. The rest were added by roadmap
 //!                   1.12 after a nine-second cold start turned out to have
-//!                   only 2.4 of its 9.2 seconds attributed to anything.
+//!                   only 2.4 of its 9.2 seconds attributed to anything — and
+//!                   then turned out to be a cold OS page cache, with the warm
+//!                   start at 1.36 s.
+//!   icons_write / icons_theme
+//!                 → registering Kalam's own two symbolic icons. Written in
+//!                   0.1 ms; the theme rescan that follows cost 493–505 ms,
+//!                   which is why roadmap 1.13 moved it to an idle callback
+//!                   after the window is up. These now appear *after*
+//!                   `window_shown`.
 //!   pre_run       → last instant `main()` can time, because `app.run` never
 //!                   returns. `window_shown - pre_run` is therefore the cost
 //!                   of `AppModel::init` plus GTK's first realize.
+//!   init_done     → the boundary between those two: `init_done - pre_run` is
+//!                   `AppModel::init` building the widget tree, and
+//!                   `window_shown - init_done` is GTK creating the surface.
 //!   book_open     → EPUB parsed and the reader initialised
 //!   chapter_load  → chapter HTML laid out by `kalam-reader` *until* the page
 //!                   was painted — i.e. the whole chapter turn

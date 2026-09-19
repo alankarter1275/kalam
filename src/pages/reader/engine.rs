@@ -306,6 +306,13 @@ pub(crate) fn build_selection_chip(
     rect: &gtk::gdk::Rectangle,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
+    // Roadmap 1.13: the two custom icons below resolve through the icon theme,
+    // which `main()` now populates on an idle callback instead of before the
+    // first paint. This is a no-op once that has run; if it somehow has not,
+    // the rescan happens here — the old cost in the old place — rather than
+    // the buttons showing a fallback glyph.
+    crate::icons::init();
+
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
     row.add_css_class("k-sel-toolbar");
 

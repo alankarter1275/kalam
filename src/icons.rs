@@ -1,4 +1,5 @@
 use gtk::prelude::*;
+use std::sync::OnceLock;
 
 /// One symbolic icon from the current icon theme.
 pub fn symbolic(name: &str, pixel_size: i32) -> gtk::Image {
@@ -28,13 +29,29 @@ pub fn labelled(icon_name: &str, pixel_size: i32, label: &str, spacing: i32) -> 
     row
 }
 
+/// Whether [`init`] has already done its work.
+///
+/// `OnceLock` rather than a `bool` because two callers reach this — the idle
+/// callback in `main()` and the reader's toolbar — and both must be safe
+/// whichever runs first.
+static INSTALLED: OnceLock<()> = OnceLock::new();
+
 /// Register custom Kalam symbolic icons with GTK's icon theme so they are
-/// guaranteed to be available across all desktop environments without missing
-/// glyph fallbacks.
+/// available across all desktop environments without missing glyph fallbacks.
+///
+/// **Idempotent, and deliberately no longer on the startup path.** The
+/// icon-theme rescan this triggers measured **493–505 ms warm — 36% of a
+/// 1.36 s start** — while writing the SVGs themselves measured **0.1 ms**, so
+/// the cost is GTK rescanning every icon theme on the system, not these files.
+/// Nothing draws one of these icons until the reader is opened, so `main()`
+/// schedules this for the first idle moment after the window is up (roadmap
+/// 1.13). The toolbar calls it as well, so if that has somehow not run yet the
+/// cost lands exactly where it used to rather than the icons going missing.
 pub fn init() {
-    // Roadmap 1.12: the two halves of this function cost very different
-    // amounts and the combined `startup_icons` span could not say which was
-    // which — it measured 859 ms for four tiny SVG files.
+    INSTALLED.get_or_init(install);
+}
+
+fn install() {
     crate::timing::span("icons_write");
     let icons_base = crate::paths::legacy_data_dir().join("icons");
     let actions_dir = icons_base.join("hicolor/scalable/actions");
@@ -51,14 +68,6 @@ pub fn init() {
         (
             "kalam-quote-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4.583 17.321c1.69 -1.524 2.877 -3.154 3.325 -4.821h-3.908c-.552 0 -1 -.448 -1 -1v-6c0 -.552 .448 -1 1 -1h6c.552 0 1 .448 1 1v6.764c0 3.208 -1.896 6.046 -4.823 7.557c-.49 .253 -1.092 .053 -1.345 -.437s-.053 -1.092 .437 -1.345l.309 -.159zm11 0c1.69 -1.524 2.877 -3.154 3.325 -4.821h-3.908c-.552 0 -1 -.448 -1 -1v-6c0 -.552 .448 -1 1 -1h6c.552 0 1 .448 1 1v6.764c0 3.208 -1.896 6.046 -4.823 7.557c-.49 .253 -1.092 .053 -1.345 -.437s-.053 -1.092 .437 -1.345l.309 -.159z" /></svg>"#,
-        ),
-        (
-            "kalam-dictionary-symbolic.svg",
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4v16h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h12z" /><path d="M19 16h-12a2 2 0 0 0 -2 2" /><path d="M9 8h6" /></svg>"#,
-        ),
-        (
-            "kalam-copy-symbolic.svg",
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z" /><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" /></svg>"#,
         ),
     ];
 

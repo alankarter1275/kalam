@@ -18,12 +18,18 @@
 //! Then read the `[timing]` lines. They mark the boundaries A0 cares about:
 //!   window_shown  → first window drawn, measured from process start
 //!                   (cold start; a `now` snapshot, not a span)
-//!   startup_db_open / startup_dicts / startup_first_page
-//!                 → the three pieces of work that run before first paint,
-//!                   so a slow `window_shown` can be attributed rather than
-//!                   guessed at. `startup_dicts` is large only on the very
-//!                   first run (it imports the bundled packs), and
-//!                   `startup_first_page` scales with library size.
+//!   startup_gtk_init / startup_icons / startup_style / startup_libraries /
+//!   startup_db_open / startup_theme / startup_dicts / startup_first_page
+//!                 → the pieces of work that run before first paint, so a slow
+//!                   `window_shown` can be attributed rather than guessed at.
+//!                   `startup_dicts` is large only on the very first run (it
+//!                   imports the bundled packs) and `startup_first_page`
+//!                   scales with library size. The rest were added by roadmap
+//!                   1.12 after a nine-second cold start turned out to have
+//!                   only 2.4 of its 9.2 seconds attributed to anything.
+//!   pre_run       → last instant `main()` can time, because `app.run` never
+//!                   returns. `window_shown - pre_run` is therefore the cost
+//!                   of `AppModel::init` plus GTK's first realize.
 //!   book_open     → EPUB parsed and the reader initialised
 //!   chapter_load  → chapter HTML laid out by `kalam-reader` *until* the page
 //!                   was painted — i.e. the whole chapter turn

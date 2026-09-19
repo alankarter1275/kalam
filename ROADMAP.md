@@ -271,16 +271,34 @@ bulk editing. Fixing it later means rewriting all four.
   Split in two, because converting all 92 blind would be the shared-font-system
   mistake again — a large change with a loading state on every page, justified
   by no measurement. There is **no** timing data for any service call today.
-  - **1.2a — Measure what a service call costs.** Instrument all 16 snapshot
-    methods through the existing `timing` harness so one run on the Arch
-    machine prints a per-query cost. No behaviour change.
-  - **1.2b — Convert the calls that actually block.** Route those through
-    `tasks::spawn` with a loading state; leave sub-10 ms reads on the UI
-    thread, where a thread round-trip would cost more than the query. Which
-    ones is decided by 1.2a's log, not by guessing.
+  - ~~**1.2a — Measure what a service call costs.**~~ **Done, 2026-09-19.** All
+    16 snapshot methods instrumented via `timing::measure`, measured on the
+    owner's Arch machine. Results below.
+  - ~~**1.2b — Convert the calls that actually block.**~~ **Not needed —
+    decided against, 2026-09-19.** Measured, every query is fast:
 
-  **Done when 1.2a is:** `KALAM_TIMING=1 kalam`, click through the pages, and a
-  `[timing] service_*` line exists for every snapshot method.
+    | Query | ms | Query | ms |
+    |---|---|---|---|
+    | `dashboard` | **10.8** | `tag_books` | 1.5, 0.9 |
+    | `home` | 8.4, 2.6 | `tags` | 1.4, 1.2, 1.1 |
+    | `all_books` | 4.7 | `quotes` | 0.9 |
+    | `history` | 2.6 | `book_detail` | 0.7 |
+    | | | `shelves` | 0.5 |
+    | | | `reading_list` | 0.5 |
+    | | | `analytics` | 0.3 |
+    | | | `reader` | 0.3 |
+
+    **Worst case 10.8 ms, median about 1.2 ms.** A thread round-trip plus a
+    loading state would cost more than the query it replaces, so all 92 call
+    sites stay on the UI thread. Four methods were not visited (`words`,
+    `lookup_history`, `book_stats`, `shelf_detail`); they read the same tables
+    at the same scale and are not worth a second round trip to confirm.
+
+    **This is the second time measurement dissolved a planned task** — the
+    first was the shared font system. The rule holds: measure first.
+
+    The `Send` guarantee stays load-bearing for 1.3, which does have long work
+    to route. `snapshots_are_send()` stays.
 - **1.3 — Route background work through `src/tasks.rs`.** It already exists with
   poison-safe locking. Imports, batch metadata fetching, index rebuilds and
   patch baking go through it, with progress and cancellation. Note that
@@ -351,6 +369,30 @@ bulk editing. Fixing it later means rewriting all four.
     app throughout.
   - While in there: `docs/conversation.md` §20 still recommends Poppler for
     PDF rendering; §22 reverses that to MuPDF and §20 was never edited.
+- **1.12 — Attribute the unmeasured part of cold start.** *Added 2026-09-19
+  from the 1.2a run, which measured this by accident.* The log reports
+  **`window_shown` = 9,166.6 ms** — nine seconds from process start to the
+  window appearing. The three startup spans account for only **2,410 ms** of
+  it: `startup_db_open` **2,114.9**, `startup_first_page` 294.4,
+  `startup_dicts` 0.6. **6,757 ms — 74% of the wait — is not attributed to
+  anything.**
+  This is the worst number in the whole log and the one the user feels first,
+  and there is no way to fix it while it is invisible. Candidates, none of
+  them yet confirmed: GTK and Adwaita initialisation, `icons::init()`, the
+  library registry checks, `theme::current` (an uninstrumented database read)
+  and `theme::apply`, all the widget building in `AppModel::init` outside the
+  `startup_first_page` span, and GTK's first realize — which compiles shaders
+  on Intel integrated graphics and can cost seconds on its own.
+  The work is to instrument those, not to fix them: spans around each block in
+  `main()` plus a `pre_run` marker, which splits the gap into "before
+  `app.run`" and "inside `AppModel::init` and realize" in one run. Fixes follow
+  in Phase 7 once the log says where the time is.
+  Separately worth noting from the same log: `grid_build` took **260.2 ms** to
+  build 48 of 150 book cards on All Books, against 7.1 ms for 2,000 cards in
+  the benchmark. That discrepancy is Phase 7's problem, not this item's.
+
+  **Done when:** `KALAM_TIMING=1` on the Arch machine accounts for essentially
+  all of the gap between `timing::start()` and `window_shown`.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`
@@ -1066,6 +1108,7 @@ top-to-bottom like a journal.
 | 2026-09-19 | **Chapter images now decode to the size a page can draw — measured 71% less memory.** Every `<img>` in an EPUB chapter was decoded at full native resolution with no knowledge of how big it would be shown; `collect_images` took no page size even though `PageMetrics` was in scope at its one production call site. Raw RGBA costs 4 bytes a pixel, so a 3000x4000 scan is 48 MB decoded while occupying at most the reading column. `collect_images` now takes a max edge and scales anything larger down, preserving aspect ratio; the caller passes `content_width * dpi_scale`. **Measured on the owner's Arch machine, *The Dragonet Prophecy*:** four chapters went from 85,082 KB to 24,361 KB — 83.1 MB to 23.8 MB, **71% less**. The engine's own `images:` line reports 77.1 MB decoded against 17.9 MB kept. **The number that matters is that the cache now fits**: those four chapters were 2.6x over the 32 MB budget before, so an image-heavy book sat permanently over budget and re-decoded on scroll at the 77-120 ms/page the engine measures; they are now under it. Cost is not zero — the resize stage added ~50 ms on small-image chapters (ch 7: 49 to 106 ms) while *reducing* it on large ones (ch 6: 487 to 385 ms, because `ImageStore::insert` premultiplies every stored pixel, so fewer pixels is less work there). An image that already fits is returned as the same bytes, not resized to the same size, so a no-op resize cannot shift a byte-exact golden; every fixture image is 64x48 or 120x60, so goldens are unaffected — which also means they cover none of this, hence six unit tests on the shrink. Text-only books are untouched: *Immortals of Meluha* logs no `images:` line at all. Two call sites outside `crates/` were missed on the first push and broke `chapbook-cli`; `--all-targets` compiles examples too, so grepping one directory is not enough. Comics deliberately untouched — they decode on a background loader with no page metrics, and they zoom, so shrinking a comic page to fit would soften a zoomed one. The disk page cache is now very unlikely to be needed |
 | 2026-09-19 | **Lazy loading audited; most of it already exists, so only the gaps are planned.** Asked whether chapters could load and unload on demand. Verified rather than assumed: **they already do.** `layout_unit` builds a chapter only when asked, `evict_keeping` drops the least-recently-read ones under the byte budget while pinning the chapter on screen and the visible ones, `prefetch_one` reaches exactly one adjacent chapter, and `suspend()` drops everything but the page showing. Three real gaps: eviction is per *chapter* not per page (a 141-page chapter is one lump); there is one budget for one book where bubbles need one per state; and the chapter character count runs eagerly on open (30-147 ms) when it is only needed on first use. **Per-book budgets go to Phase 2 with the bubbles** — `set_cache_budget` already exists, only the call is missing. **Page-level eviction is recorded as a tripwire, not a task**: it was worth doing when such a chapter cached 34 MB against a 32 MB budget, and the image fix put the same chapter at 13 MB, under budget on its own. Building it now would repeat the shared-font-system mistake — solving a problem the previous fix dissolved. The check is written down so the tripwire is testable: a `laid out unit N` line above 32,768 KB. Eager char count goes to Phase 7. Also corrected a stale figure in the Bubbles section: it said the budget was 192 MB per book, which is the *engine* default; `kalam-reader` overrides it to 32 MB and that is what runs |
 | 2026-09-19 | **Full Part 1 audit: every work item is now permanently numbered, and eleven items were found that the plan did not have.** The owner asked for an extremely thorough check of everything that must be finished before Part 2 — including breakage left over from earlier sessions — with the report first and the roadmap edit only after confirmation, so that work proceeds *in sequence* rather than haphazardly. The audit was done by reading the code, not from memory, and **one finding was caught as a false positive before it was reported**: a grep for reader preferences referenced only once flagged thirteen keys as dead settings, but `reader.ui.back_chip_size_px` and `reader.scrolled` are both read — the string appears once because the key is centralised in a `ReaderUiSetting` key function and a `PREF_SCROLLED` constant respectively. Good design, bad grep; not reported. **What the audit actually found.** Three things broken today: text PDFs paint a grey bar per line with page mode the default (`reflow_mode: false`, `pdf_reader.rs:89`); the dictionary popup has no keyboard at all — no `k-def-focus`, no focused-sense concept anywhere in `src/`, so you can open a card but not move between meanings or save one; and its 55-test jsdom harness is gone. **Four engine settings exist with no control for them**, each confirmed by grep: `font_family` and `publisher_styles` have **zero** references in `src/`; the nine `justify` hits are all GTK label alignment, not `ReadingSettings::justify`; and hyphenation runs in the engine with no switch. `Session::font_families` already returns the installed faces, so the font picker is missing only its UI. **Five documents describe an app that no longer exists**, which is the finding with the longest shadow: the README claims P6 and P7 shipped together when there is **zero** `impl Source` and `SourceManager` holds an empty `Vec`; it claims comics are "next" when they shipped at 1,685 lines; its status table predates the engine swap entirely; `js_bridge.rs` is the dictionary popover under a WebKit name; and `conversation.md` §20 still recommends Poppler where §22 chose MuPDF. **Reachability came back clean** — `NavItem` hides three routes (Downloads, RemoteBrowse, Fanfiction) that are all Part 2, all eight `LibrarySection` variants are routed, and `PlaceholderPageModel` is only on the error paths. **Two placements follow from the owner's decisions.** The cheap PDF fix moved *out* of Deferred into Part 1 as 2.11, because PDF bubbles were wanted and cannot exist over grey stripes — the tension between "PDFs are rare" and "PDFs get bubbles", resolved by paying a few hours and leaving MuPDF deferred. The dictionary keyboard became 2.1, ahead of bubbles at 2.12, as the oldest breakage; bubbles moved last because they need 1.2's async layer. **The numbering is the actual deliverable**: numbers never change, finished items keep theirs struck through, and nothing is built that is not on the list — a new want gets a number and a place *before* it gets written, with one exception for a defect in code being touched right now, which gets a number in its commit's changelog row. That rule exists because drifting is precisely what happened before. Also resolved two stale duplicates that both said "discuss before designing" about multiple books open, which was designed the same week |
+| 2026-09-19 | **Started Phase 1 at 1.2 and immediately found the item itself was wrong; measurement then cancelled the work it described.** Beginning an item is how you find out whether it was written correctly. **"Make `LibraryService` asynchronous" contradicted a decision already recorded in the code**: `src/tasks.rs` has a section headed *"No tokio"* — `thread::spawn` + `async-channel` + the GLib main loop, because relm4 is already the actor framework and a second runtime is a second scheduler fighting the first. Making the service `async fn` requires exactly that runtime. The design that *was* built is the opposite shape and is already complete: methods stay synchronous, return `Send` snapshots, and the *caller* runs them on a worker via `tasks::spawn` — `service.rs` says so, and `snapshots_are_send()` asserts `Send` on the service and all 12 snapshots so a future edit cannot quietly break it. The real gap is that nobody uses it: **92** service call sites across `src/pages/`, of which **2** are near a `tasks::spawn`, sitting in `init()` and `reload()` — both UI-thread paths. Rather than convert 92 blind, 1.2a instrumented all 16 snapshot methods through the existing `timing` harness (`measure` returns a `Guard` that reports via `Drop`, so an early return cannot leave a span open and no `_end` call can be forgotten; `#[must_use]` plus CI's `-D warnings` is the enforcement against binding it to `_`, which would report ~0 ms and read as a fast query — the one way to get this wrong silently). **The owner's log then cancelled 1.2b outright: worst case 10.8 ms (`dashboard`), median about 1.2 ms.** A thread round-trip plus a loading state would cost more than the query it replaces, so all 92 stay on the UI thread. Four methods were never visited; they read the same tables at the same scale. **This is the second time measurement dissolved a planned task** — the shared font system was the first — and the standing rule holds. **The log's worst number was an accident of that instrumentation: `window_shown` = 9,166.6 ms**, and the three existing startup spans accounted for only 2,410 ms of it. **6,757 ms — 74% of a nine-second cold start — was attributed to nothing**, in the one place the user feels first. That is new item **1.12**: instrument `main()`'s uninstrumented blocks plus a `pre_run` marker, which splits the gap into "before `app.run`" and "inside `AppModel::init` and GTK's first realize" in a single run — `app.run` never returns, so it cannot be spanned, and the marker is the last instant `main()` can time. Fixes follow in Phase 7. The same log also showed `grid_build` at 260.2 ms for 48 of 150 cards against 7.1 ms for 2,000 in the benchmark, recorded under 1.12 as a Phase 7 question. **Also recovered from the recurring moved-base fault**: HEAD had silently fallen back to the branch point `29788b4`, so the first `git diff` showed `mod logging;` and `logging::init()` as additions — code that had been committed and pushed turns earlier. Nothing was lost; the working tree held every change. Recovery was `git reset FETCH_HEAD` (mixed), which re-points HEAD and the index *without touching the working tree*, leaving only the two genuinely-changed files, followed by `git checkout -- ci-logs/` to discard stale generated logs rather than push them over fresh ones. Worth recording because the symptom is alarming and the fix is not what it looks like: `--hard` or `stash` would both have destroyed work here |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

@@ -46,14 +46,20 @@ fn main() {
     timing::start();
 
     // RelmApp::new initializes GTK; only touch Adwaita/GTK after that.
+    timing::span("startup_gtk_init");
     let app = RelmApp::new("app.kalam.Kalam");
+    timing::span_end("startup_gtk_init");
 
     // Initialize custom symbolic icons (highlights, quotes, dictionary, copy)
+    timing::span("startup_icons");
     icons::init();
+    timing::span_end("startup_icons");
 
     // Dark baseline via Adwaita (GtkSettings prefer-dark is unsupported with libadwaita).
+    timing::span("startup_style");
     let style = adw::StyleManager::default();
     style.set_color_scheme(adw::ColorScheme::ForceDark);
+    timing::span_end("startup_style");
 
     // P6.5: put the pre-existing library into the library list, if it is not
     // there already. Must run before anything calls `paths::data_dir()`, which
@@ -63,6 +69,7 @@ fn main() {
     // in Settings — the app falls back to that folder, so everything works,
     // but Open and Forget would apply to every library except theirs, and
     // adding a second would make the first seem to disappear.
+    timing::span("startup_libraries");
     libraries::adopt_legacy_library_if_needed();
 
     // If the selected library's folder is gone -- unplugged drive, unmounted
@@ -94,6 +101,7 @@ fn main() {
         eprintln!("kalam: failed to create data directories: {err}");
         crate::notify::error("Could not create Kalam's data folders", &err.to_string());
     }
+    timing::span_end("startup_libraries");
 
     // Give the reading engine somewhere to put its messages. The engine logs
     // through the `log` facade, which silently discards everything unless a
@@ -150,11 +158,20 @@ fn main() {
     // KALAM_NO_CSS=1 skips the stylesheet entirely. Kept as a diagnostic: it is
     // how the pixman scrollbar bug was finally pinned on this file rather than
     // on GTK, after several wrong guesses.
+    timing::span("startup_theme");
     if std::env::var_os("KALAM_NO_CSS").is_none() {
         theme::apply(&theme::current(&catalog));
     } else {
         eprintln!("kalam: KALAM_NO_CSS set — running with stock GTK styling");
     }
+    timing::span_end("startup_theme");
+
+    // Roadmap 1.12: `app.run` never returns, so it cannot be spanned. This
+    // marker is the last instant that can be timed, and it splits the gap
+    // between here and `window_shown` into "inside `AppModel::init` and GTK's
+    // first realize" -- which the 1.2a log showed to be most of a nine-second
+    // cold start, with none of it attributed to anything.
+    timing::now("pre_run");
 
     app.run::<AppModel>(catalog);
 }

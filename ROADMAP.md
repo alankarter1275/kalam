@@ -248,8 +248,8 @@ bulk editing. Fixing it later means rewriting all four.
   **One gap the audit cannot close:** it was done by reading the code, not by
   running the app. Anything that only misbehaves when clicked is still
   unfound, and will be numbered as it turns up.
-- ~~**1.2 — Move blocking SQLite off the UI thread.**~~ **Closed, 2026-09-19 —
-  both sub-items resolved: 1.2a measured, 1.2b found unnecessary.** *Renamed 2026-09-19. The
+- **1.2 — Move blocking SQLite off the UI thread.** *(1.2a measured; 1.2b
+  closed then **reopened** the same day — see below.)* *Renamed 2026-09-19. The
   original wording — "make `LibraryService` asynchronous" — was wrong, and
   following it literally would have contradicted a decision already recorded in
   the code.* `src/tasks.rs` has a section headed **"No tokio"**: `thread::spawn`

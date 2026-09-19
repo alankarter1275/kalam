@@ -177,6 +177,7 @@ impl TagsModel {
         let catalog = self.catalog.clone();
         let done = sender.clone();
         crate::tasks::spawn(
+            "Loading tags",
             move |_reporter| LibraryService::new(catalog).tags(),
             // One query, not a sequence of steps, so nothing to report.
             |_update| {},
@@ -602,6 +603,7 @@ impl TagBooksModel {
         let sort = self.sort;
         let done = sender.clone();
         crate::tasks::spawn(
+            "Loading tagged books",
             move |_reporter| LibraryService::new(catalog).tag_books(&tag, sort),
             // One query, not a sequence of steps, so nothing to report.
             |_update| {},

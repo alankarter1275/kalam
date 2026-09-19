@@ -81,6 +81,7 @@ pub fn spawn_import(
 ) {
     let total = paths.len();
     crate::tasks::spawn(
+        "Importing EPUBs",
         move |reporter| {
             let mut tally = ImportTally::default();
             let mut failures: Vec<(String, String)> = Vec::new();
@@ -729,6 +730,7 @@ impl AllBooksModel {
         let query = self.query.clone();
         let done = sender.clone();
         crate::tasks::spawn(
+            "Loading books",
             move |_reporter| {
                 // A fresh service rather than moving this page's own: `new`
                 // only clones an `Arc`, the page's handle stays untouched, and

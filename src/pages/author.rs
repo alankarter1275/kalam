@@ -237,6 +237,7 @@ fn spawn_author_fetch(
     // the window closes.
     let tx = sender.input_sender().clone();
     crate::tasks::spawn(
+        "Fetching author photo",
         move |_reporter| author::fetch_and_cache_author(&catalog, &author_name, &owned_books),
         |_update| {},
         move |result| {

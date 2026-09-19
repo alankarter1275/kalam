@@ -27,6 +27,7 @@ use crate::pages::{downloads::DownloadsModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
     tags::{TagBooksModel, TagBooksOut, TagsModel, TagsOut},
+    task_manager::TaskManagerModel,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -86,6 +87,7 @@ enum PageSlot {
     Tags(Controller<TagsModel>),
     TagBooks(Controller<TagBooksModel>),
     Analytics(Controller<AnalyticsModel>),
+    TaskManager(Controller<TaskManagerModel>),
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
@@ -116,6 +118,7 @@ impl PageSlot {
             PageSlot::Tags(c) => c.widget().clone().upcast(),
             PageSlot::TagBooks(c) => c.widget().clone().upcast(),
             PageSlot::Analytics(c) => c.widget().clone().upcast(),
+            PageSlot::TaskManager(c) => c.widget().clone().upcast(),
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
@@ -472,6 +475,12 @@ impl AppModel {
             Route::LibrarySection(LibrarySection::Analytics) => {
                 let ctrl = AnalyticsModel::builder().launch(catalog.clone()).detach();
                 PageSlot::Analytics(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::TaskManager) => {
+                // Takes no catalog: this page reads the task registry, which
+                // is process-wide, not per-library.
+                let ctrl = TaskManagerModel::builder().launch(()).detach();
+                PageSlot::TaskManager(ctrl)
             }
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
                 let ctrl = ShelvesGridModel::builder().launch(catalog.clone()).forward(
@@ -1083,6 +1092,7 @@ impl Component for AppModel {
         let backfill_catalog = catalog.clone();
         crate::thumbs::invalidate_backfill_marker(&backfill_catalog);
         crate::tasks::spawn(
+            "Rebuilding cover thumbnails",
             move |reporter| crate::thumbs::backfill_missing(&backfill_catalog, &reporter),
             // Only interesting under KALAM_TIMING=1: a first launch over a big
             // library can spend a while here, and without a progress line
@@ -1114,6 +1124,7 @@ impl Component for AppModel {
         // failure of both.
         let dict_catalog = catalog.clone();
         crate::tasks::spawn(
+            "Checking dictionary packs",
             move |_reporter| {
                 // No cancel check inside: the unit of work is a whole pack,
                 // and abandoning one half-imported would leave the pref unset
@@ -1617,6 +1628,7 @@ fn route_by_name(name: &str) -> Option<Route> {
         "lookup-history" => Route::LibrarySection(LibrarySection::LookupHistory),
         "tags" => Route::LibrarySection(LibrarySection::Tags),
         "analytics" => Route::LibrarySection(LibrarySection::Analytics),
+        "tasks" => Route::LibrarySection(LibrarySection::TaskManager),
         _ => return None,
     };
     Some(route)

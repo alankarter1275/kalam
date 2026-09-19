@@ -565,6 +565,7 @@ fn open_editor_inner(
                                 let tx2 = tx2.clone();
                                 let cover_ref = cover_ref.clone();
                                 crate::tasks::spawn(
+                                    "Fetching cover",
                                     move |_reporter| match metadata::fetch_cover(&cover_ref) {
                                         Ok(b) => FetchMsg::CoverReady(b),
                                         Err(e) => FetchMsg::CoverFailed(e.to_string()),
@@ -629,6 +630,7 @@ fn open_editor_inner(
             // Through the seam (A0 step 4) so it is cancelled at shutdown
             // rather than left holding an open socket.
             crate::tasks::spawn(
+                "Searching metadata",
                 move |_reporter| {
                     let (list, errors) = metadata::search_all(sources, &query, 10);
                     if list.is_empty() && !errors.is_empty() {
@@ -682,6 +684,7 @@ fn open_editor_inner(
             let tx = tx.clone();
             let sources = metadata::enabled_sources(&catalog_c);
             crate::tasks::spawn(
+                "Searching metadata",
                 move |reporter| {
                     let (list, errors) = metadata::search_all(sources, &query, 12);
                     // Fetch small thumbnails so the grid appears quickly; the
@@ -1046,6 +1049,7 @@ fn rebuild_results(
                     // Was a worker + its own channel + a local future, three
                     // pieces to say "fetch this and set a label". One call now.
                     crate::tasks::spawn(
+                        "Fetching description",
                         move |_reporter| {
                             let source: Box<dyn metadata::MetadataSource> = match id {
                                 metadata::SourceId::OpenLibrary => {
@@ -1073,6 +1077,7 @@ fn rebuild_results(
                 if let Some(cover_ref) = c.cover.clone() {
                     let tx = tx.clone();
                     crate::tasks::spawn(
+                        "Fetching cover",
                         move |_reporter| match metadata::fetch_cover(&cover_ref) {
                             Ok(bytes) => FetchMsg::CoverReady(bytes),
                             Err(err) => FetchMsg::CoverFailed(err.to_string()),

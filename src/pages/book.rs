@@ -778,6 +778,7 @@ impl Component for BookPageModel {
                         let s = sender.clone();
                         crate::notify::info("Remastering comic...", &format!("Rescaling {} with Lanczos3 filter", title));
                         crate::tasks::spawn(
+                            format!("Remastering {title}"),
                             move |reporter| -> anyhow::Result<()> {
                                 let tmp = path.with_extension("remastered.cbz");
                                 crate::comics::remaster_comic_cbz(&path, &tmp, 2.0, |done, total| {

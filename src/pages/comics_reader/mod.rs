@@ -93,6 +93,7 @@ impl ComicsReaderModel {
             let s = sender.clone();
             let prov = provider.clone();
             crate::tasks::spawn(
+                "Loading comic pages",
                 move |_| -> Option<gdk::Texture> {
                     let b = prov.fetch_page(idx).ok()?;
                     if let Ok(img) = image::load_from_memory(&b) {

@@ -148,6 +148,8 @@ pub enum LibrarySection {
     LookupHistory,
     Tags,
     Analytics,
+    /// Roadmap 1.14: what is running in the background, and how to stop it.
+    TaskManager,
 }
 
 impl LibrarySection {
@@ -164,6 +166,7 @@ impl LibrarySection {
         LibrarySection::LookupHistory,
         LibrarySection::Tags,
         LibrarySection::Analytics,
+        LibrarySection::TaskManager,
     ];
 
     #[allow(dead_code)]
@@ -177,6 +180,7 @@ impl LibrarySection {
             LibrarySection::LookupHistory => "edit-find-symbolic",
             LibrarySection::Tags => "tag-symbolic",
             LibrarySection::Analytics => "view-bar-symbolic",
+            LibrarySection::TaskManager => "system-run-symbolic",
         }
     }
 }

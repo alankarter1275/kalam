@@ -35,6 +35,7 @@ pub mod shelf_detail;
 pub mod shelf_editor;
 pub mod shelves_grid;
 pub mod tags;
+pub mod task_manager;
 pub mod browse;
 pub mod remote_detail;
 pub mod downloads;

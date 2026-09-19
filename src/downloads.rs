@@ -98,6 +98,7 @@ impl DownloadManager {
         // can run for minutes, so it is the one that most needs to be
         // stoppable.
         crate::tasks::spawn(
+            format!("Downloading {title}"),
             move |reporter| {
                 // Take the error apart before taking the lock, so a formatting
                 // panic cannot poison the map on the way to reporting one.

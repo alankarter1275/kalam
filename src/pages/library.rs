@@ -951,6 +951,11 @@ fn quick_links(sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
             LibrarySection::Analytics,
             "Reading stats, charts and streaks",
         ),
+        (
+            "Tasks",
+            LibrarySection::TaskManager,
+            "What is running in the background, and how to stop it",
+        ),
     ];
 
     for (label, target, tip) in targets {

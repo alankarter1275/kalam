@@ -283,6 +283,7 @@ fn start_fetch(
     let cat = catalog.clone();
 
     crate::tasks::spawn(
+        "Fetching series covers",
         move |_reporter| fetch_and_cache(&cat, &name, &key),
         |_update| {},
         move |result| {

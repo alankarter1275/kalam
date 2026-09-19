@@ -228,6 +228,7 @@ impl HistoryModel {
         let query = self.query.clone();
         let done = sender.clone();
         crate::tasks::spawn(
+            "Loading history",
             move |_reporter| {
                 LibraryService::new(catalog).history(filter, &query, PAGE_LIMIT)
             },

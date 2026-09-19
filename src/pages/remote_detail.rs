@@ -269,6 +269,7 @@ impl Component for RemoteDetailModel {
                     let r_id = self.remote_id.clone();
 
                     crate::tasks::spawn(
+                        "Loading details",
                         move |_reporter| {
                             let details = source.get_details(&r_id)?;
                             let chapters = source.get_chapters(&r_id)?;
@@ -294,6 +295,7 @@ impl Component for RemoteDetailModel {
                     let u = url.clone();
                     let pic = widgets.cover_pic.clone();
                     crate::tasks::spawn(
+                        "Loading cover",
                         move |_| source.fetch_image(&u).ok(),
                         |_| {},
                         move |bytes| {
@@ -442,6 +444,7 @@ impl Component for RemoteDetailModel {
                                                 let book_id = b.id;
 
                                                 crate::tasks::spawn(
+                                                    "Downloading chapter",
                                                     move |_| -> anyhow::Result<i64> {
                                                         let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
                                                         let content = source.get_chapter_content(&chap_id)?;
@@ -497,6 +500,7 @@ impl Component for RemoteDetailModel {
                         let target_idx = chapters.iter().position(|c| c.chapter_id == chap_id).unwrap_or(0);
 
                         crate::tasks::spawn(
+                            "Downloading chapter",
                             move |_| -> anyhow::Result<i64> {
                                 let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
                                 let content = source.get_chapter_content(&chap_id)?;

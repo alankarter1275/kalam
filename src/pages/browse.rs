@@ -80,6 +80,7 @@ impl BrowseModel {
             let page_num = self.page;
             let q = self.query.clone();
             crate::tasks::spawn(
+                "Searching",
                 move |_| source.search(&q, page_num, &filters),
                 |_| {},
                 move |res| match res {
@@ -308,6 +309,7 @@ impl Component for BrowseModel {
                         let remote_id = res.remote_id.clone();
                         let s = sender.input_sender().clone();
                         crate::tasks::spawn(
+                            "Loading cover",
                             move |_| source.fetch_image(&url),
                             |_| {},
                             move |res| {

@@ -188,6 +188,7 @@ fn rebuild_comics_view(model: &ComicsModel, sender: &ComponentSender<ComicsModel
                 let url = cover_url.clone();
                 let pic_weak = pic.downgrade();
                 crate::tasks::spawn(
+                    "Loading comic cover",
                     move |_| -> anyhow::Result<Vec<u8>> {
                         let mut reader = ureq::get(&url)
                             .set("User-Agent", "Mozilla/5.0")

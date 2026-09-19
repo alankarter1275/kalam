@@ -135,6 +135,7 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
         return;
     }
     crate::tasks::spawn_stream(
+        "Preloading covers",
         move |reporter, emit| {
             for (i, cover) in covers.into_iter().enumerate() {
                 // Cheap to check and worth checking: closing the page should

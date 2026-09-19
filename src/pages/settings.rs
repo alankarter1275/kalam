@@ -419,6 +419,7 @@ impl Component for SettingsPageModel {
                                 let catalog = catalog_clone.clone();
                                 let done_sender = sender_clone.clone();
                                 crate::tasks::spawn(
+                                    "Importing dictionary",
                                     move |reporter| {
                                         // Worker thread: no GTK, no notify. The
                                         // outcome is returned as plain data and

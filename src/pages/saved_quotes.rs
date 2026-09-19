@@ -260,6 +260,7 @@ impl SavedQuotesModel {
         let query = self.query.clone();
         let done = sender.clone();
         crate::tasks::spawn(
+            "Loading quotes",
             move |_reporter| LibraryService::new(catalog).quotes(&query),
             // One query, not a sequence of steps, so nothing to report.
             |_update| {},

@@ -635,6 +635,10 @@ mod tests {
         assert_send::<ShelfDetailSnapshot>();
         assert_send::<BookStatsSnapshot>();
         assert_send::<ReaderSnapshot>();
+        // Added when `all_books` became the 1.2b pilot: it now crosses a
+        // thread boundary, so the property has to be compile-checked rather
+        // than assumed.
+        assert_send::<AllBooksSnapshot>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();

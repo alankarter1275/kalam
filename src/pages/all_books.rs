@@ -1,6 +1,6 @@
 use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
-use crate::service::LibraryService;
+use crate::service::{AllBooksSnapshot, LibraryService};
 use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable};
 use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
@@ -29,6 +29,12 @@ pub enum AllBooksMsg {
     },
     /// The whole import finished.
     ImportFinished(ImportTally),
+    /// A background book-list query finished.
+    ///
+    /// Carries the generation it was started with, so a slow reply from an
+    /// older query cannot land after a newer one and put the wrong list on
+    /// screen — which typing quickly into the search box makes easy to hit.
+    BooksLoaded { gen: u64, snap: AllBooksSnapshot },
     ToggleSelectionMode,
     ToggleSelectBook(i64),
     SelectAll,
@@ -127,6 +133,10 @@ pub struct AllBooksModel {
     importing: bool,
     selection_mode: bool,
     selected_books: HashSet<i64>,
+    /// Monotonic counter for book-list queries. Each request stamps the value
+    /// it was started with, and a reply that no longer matches has been
+    /// superseded and is dropped.
+    reload_gen: u64,
 }
 
 #[relm4::component(pub)]
@@ -259,6 +269,13 @@ impl Component for AllBooksModel {
     ) -> ComponentParts<Self> {
         let sort = SortKey::Added;
         let service = LibraryService::new(catalog);
+        // Deliberately still synchronous, and the one blocking read left on
+        // this page. At this point the page is not on screen, so there is no
+        // visible UI to freeze and no existing list to preserve — making it
+        // asynchronous would render an empty grid and then fill it, which is
+        // a worse first impression than waiting a few milliseconds. Revisit
+        // when a large library makes this measurable. Everything *after* the
+        // page exists goes through `reload`, which is a worker.
         let snap = service.all_books(sort, "");
         let status = match snap.errors.first() {
             Some(err) => format!("Database error: {err}"),
@@ -274,6 +291,7 @@ impl Component for AllBooksModel {
             importing: false,
             selection_mode: false,
             selected_books: HashSet::new(),
+            reload_gen: 0,
         };
         let widgets = view_output!();
 
@@ -325,7 +343,7 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::ImportFinished(tally) => {
                 self.importing = false;
-                self.reload();
+                self.reload(&sender);
 
                 if tally.imported > 0 {
                     crate::notify::success(
@@ -340,15 +358,36 @@ impl Component for AllBooksModel {
 
                 self.status = import_summary(&tally);
             }
+            AllBooksMsg::BooksLoaded { gen, snap } => {
+                // Drop a reply an older query produced. Typing quickly starts
+                // several, and without this a slow early result can land after
+                // a fast later one and put the wrong list on screen.
+                if gen != self.reload_gen {
+                    return;
+                }
+                match snap.errors.first() {
+                    // Keep the list already on screen. Clearing it, as the
+                    // synchronous version did, turns a failed read into
+                    // something that looks like data loss.
+                    Some(err) => self.status = format!("Database error: {err}"),
+                    None => {
+                        let n = snap.books.len();
+                        self.books = snap.books;
+                        if !self.status.starts_with("Import done") {
+                            self.status = status_line(n, &self.query);
+                        }
+                    }
+                }
+            }
             AllBooksMsg::SearchChanged(q) => {
                 self.query = q;
                 self.status.clear();
-                self.reload();
+                self.reload(&sender);
             }
             AllBooksMsg::SortChanged(sort) => {
                 self.sort = sort;
                 self.status.clear();
-                self.reload();
+                self.reload(&sender);
             }
             AllBooksMsg::ToggleSelectionMode => {
                 self.selection_mode = !self.selection_mode;
@@ -584,7 +623,7 @@ impl Component for AllBooksModel {
                     );
                     self.selected_books.clear();
                     self.selection_mode = false;
-                    self.reload();
+                    self.reload(&sender);
                 }
             }
             AllBooksMsg::PickFiles => {
@@ -673,18 +712,34 @@ impl Component for AllBooksModel {
 }
 
 impl AllBooksModel {
-    fn reload(&mut self) {
-        let snap = self.service.all_books(self.sort, &self.query);
-        if let Some(err) = snap.errors.first() {
-            self.books.clear();
-            self.status = format!("Database error: {err}");
-            return;
-        }
-        let n = snap.books.len();
-        self.books = snap.books;
-        if !self.status.starts_with("Import done") {
-            self.status = status_line(n, &self.query);
-        }
+    /// Ask for the book list on a worker thread.
+    ///
+    /// Roadmap 1.2b pilot. `all_books` is one of the queries whose cost grows
+    /// with library size, and this is called on **every keystroke** of the
+    /// search box, so it is the worst place on this page to block the UI
+    /// thread. The grid keeps whatever it is already showing and swaps the
+    /// list in when the reply lands — clearing it for the round trip would
+    /// replace something instant with a flicker, which is the one way this
+    /// change could make the app feel worse rather than merely safer.
+    fn reload(&mut self, sender: &ComponentSender<Self>) {
+        self.reload_gen += 1;
+        let gen = self.reload_gen;
+        let catalog = self.service.catalog().clone();
+        let sort = self.sort;
+        let query = self.query.clone();
+        let done = sender.clone();
+        crate::tasks::spawn(
+            move |_reporter| {
+                // A fresh service rather than moving this page's own: `new`
+                // only clones an `Arc`, the page's handle stays untouched, and
+                // `AllBooksSnapshot` is `Send` — asserted by
+                // `snapshots_are_send` — so the reply crosses back safely.
+                LibraryService::new(catalog).all_books(sort, &query)
+            },
+            // Nothing to report: this is one query, not a sequence of steps.
+            |_update| {},
+            move |snap| done.input(AllBooksMsg::BooksLoaded { gen, snap }),
+        );
     }
 }
 

@@ -217,19 +217,28 @@ fn count_prod_panics(text: &str) -> usize {
             pending = true;
         }
 
-        let in_test = suppress_below.is_some_and(|d| depth >= d);
+        let opens = line.matches('{').count() as i32;
+        let closes = line.matches('}').count() as i32;
+
+        // This has to be decided *before* counting, not after. A single-line
+        // item such as `pub fn helper() { x.unwrap(); }` opens and closes on
+        // the same line, so setting suppression afterwards cleared it again
+        // before the line was ever looked at — and the first version of this
+        // counted it. The test below caught that on its first run in CI.
+        let starts_test_item = pending && opens > 0;
+        if starts_test_item {
+            suppress_below = Some(depth + 1);
+            pending = false;
+        }
+
+        // `depth` is still the pre-line depth here, which is why a line that
+        // starts the item needs the explicit `|| starts_test_item`.
+        let in_test = suppress_below.is_some_and(|d| depth >= d) || starts_test_item;
         if !in_test && !trimmed.starts_with("//") {
             n += line.matches(".unwrap()").count();
             n += line.matches(".expect(").count();
         }
 
-        let opens = line.matches('{').count() as i32;
-        let closes = line.matches('}').count() as i32;
-
-        if pending && opens > 0 {
-            suppress_below = Some(depth + 1);
-            pending = false;
-        }
         depth += opens - closes;
         if suppress_below.is_some_and(|d| depth < d) {
             suppress_below = None;

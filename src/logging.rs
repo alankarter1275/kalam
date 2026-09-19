@@ -37,6 +37,16 @@
 //!
 //! The file is appended to, never truncated, so a run that crashed still has
 //! its earlier lines.
+//!
+//! ## What is silenced
+//!
+//! `xml5ever` warns on every document it parses that it does not implement
+//! `stop_parsing` for XML5 — hundreds of times per book, burying everything
+//! else. It is held to `error`. Name it in `RUST_LOG` to bring it back:
+//!
+//! ```text
+//! RUST_LOG=info,xml5ever=warn kalam
+//! ```
 
 use std::io::Write;
 use std::path::Path;
@@ -68,20 +78,48 @@ impl Write for Tee {
     }
 }
 
+/// Modules whose warnings are noise rather than problems.
+///
+/// `xml5ever` warns, once for every document it parses, that it does not
+/// implement `stop_parsing` for XML5. That is a true statement about a feature
+/// nobody asked for — and it fired hundreds of times across a single book,
+/// which buried the engine's own timings. Those timings are the reason the
+/// logger exists, so a message that drowns them defeats the point.
+///
+/// Suppressed rather than fixed, because it is not a bug and the crate is not
+/// ours. Held to `Error` rather than `Off` so a real problem still surfaces.
+const QUIET: &[(&str, log::LevelFilter)] = &[("xml5ever", log::LevelFilter::Error)];
+
+/// Whether `module` should get its default suppression.
+///
+/// False when the user named it in `RUST_LOG` — `RUST_LOG=xml5ever=warn` is a
+/// deliberate request to see those warnings, and a suppression that cannot be
+/// lifted is a trap. Split out from `init` so the rule is testable without
+/// installing a process-wide logger.
+fn should_quiet(rust_log: &str, module: &str) -> bool {
+    !rust_log.contains(module)
+}
+
 /// Install the logger. Call once, early in `main()`, before anything can log.
 ///
 /// Returns without doing anything when `RUST_LOG` is unset, which is the
 /// default: no file is created and no logger is installed, so a normal launch
 /// is byte-for-byte what it was before.
 pub fn init() {
-    if std::env::var_os("RUST_LOG").is_none() {
+    let Some(rust_log) = std::env::var_os("RUST_LOG") else {
         return;
-    }
+    };
+    let rust_log = rust_log.to_string_lossy().into_owned();
 
     let path = crate::paths::log_file();
     // `Env::default()` reads `RUST_LOG`, which the guard above has already
     // established is set.
     let mut builder = env_logger::Builder::from_env(env_logger::Env::default());
+    for (module, level) in QUIET {
+        if should_quiet(&rust_log, module) {
+            builder.filter(Some(module), *level);
+        }
+    }
     builder.format_timestamp_millis();
 
     match open_log_file(&path) {
@@ -120,8 +158,31 @@ fn open_log_file(path: &Path) -> Option<std::fs::File> {
 
 #[cfg(test)]
 mod tests {
-    use super::{open_log_file, Tee};
+    use super::{open_log_file, should_quiet, Tee};
     use std::io::Write;
+
+    /// The suppression must be liftable. A filter the user cannot turn back on
+    /// is how a real problem hides forever, so naming the module in `RUST_LOG`
+    /// has to win over the default.
+    #[test]
+    fn naming_a_module_in_rust_log_lifts_its_suppression() {
+        assert!(
+            should_quiet("info", "xml5ever"),
+            "an ordinary RUST_LOG should get the quiet default"
+        );
+        assert!(
+            should_quiet("kalam_reader=debug", "xml5ever"),
+            "naming a different module should not lift this one"
+        );
+        assert!(
+            !should_quiet("xml5ever=warn", "xml5ever"),
+            "asking for the module by name is a deliberate request to see it"
+        );
+        assert!(
+            !should_quiet("info,xml5ever=trace", "xml5ever"),
+            "the module can appear anywhere in the spec"
+        );
+    }
 
     /// The one thing `Tee` gets wrong easily: reporting success based on the
     /// terminal when the file is what matters. A closed stderr must not turn a

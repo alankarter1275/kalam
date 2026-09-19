@@ -37,7 +37,10 @@ install: build
 	install -d "$(DESTDIR)$(DATADIR)/applications"
 	install -m 644 resources/$(APPID).desktop "$(DESTDIR)$(DATADIR)/applications/$(APPID).desktop"
 	install -d "$(DESTDIR)$(DATADIR)/icons/hicolor/512x512/apps"
-	install -m 644 assets/logo.png "$(DESTDIR)$(DATADIR)/icons/hicolor/512x512/apps/$(APPID).png"
+	# 512x512, downscaled from the 2048px master. Not assets/logo.png, which is
+	# 128x128 and embedded in the About dialog: a directory named 512x512 has
+	# to contain a 512x512 image or the icon theme misreports its size.
+	install -m 644 assets/logo-512.png "$(DESTDIR)$(DATADIR)/icons/hicolor/512x512/apps/$(APPID).png"
 
 uninstall:
 	rm -f "$(DESTDIR)$(BINDIR)/kalam"

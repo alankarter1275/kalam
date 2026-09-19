@@ -2,7 +2,7 @@
 
 use super::chapter::chapter_label;
 use super::chrome::connect_hover_zone;
-use super::js_bridge::truncate_def;
+use super::dictionary_popover::truncate_def;
 use super::mod_model::ReaderModel;
 use super::types::*;
 use crate::db::{Annotation, HighlightColor, SavedWord};

@@ -3,7 +3,7 @@
 mod chapter;
 mod chrome;
 mod engine;
-mod js_bridge;
+mod dictionary_popover;
 mod lists;
 mod mod_model;
 mod panels;

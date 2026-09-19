@@ -1332,7 +1332,7 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
                         "Library backed up",
                         &format!(
                             "{} · {}",
-                            crate::epub_write::human_size(size),
+                            crate::epub_metadata::human_size(size),
                             path.display()
                         ),
                     ),
@@ -1353,7 +1353,7 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
     let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     right.set_valign(gtk::Align::Center);
     let size = crate::paths::reader_cache_size();
-    let cache_badge = chip_label(&crate::epub_write::human_size(size), "kalam-chip-neutral");
+    let cache_badge = chip_label(&crate::epub_metadata::human_size(size), "kalam-chip-neutral");
     right.append(&cache_badge);
     let clear = gtk::Button::with_label("Clear cache");
     clear.add_css_class("kalam-btn-danger");
@@ -1362,13 +1362,13 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
         let cache_badge = cache_badge.clone();
         clear.connect_clicked(move |btn| {
             let (files, freed) = crate::paths::clear_reader_cache();
-            cache_badge.set_label(&format!("Freed {}", crate::epub_write::human_size(freed)));
+            cache_badge.set_label(&format!("Freed {}", crate::epub_metadata::human_size(freed)));
             crate::notify::info(
                 "Reader cache cleared",
                 &format!(
                     "Removed {files} file{} · freed {}",
                     if files == 1 { "" } else { "s" },
-                    crate::epub_write::human_size(freed)
+                    crate::epub_metadata::human_size(freed)
                 ),
             );
             btn.set_sensitive(false);
@@ -1588,7 +1588,7 @@ fn rebuild_dicts(
 
 /// Toggle for writing metadata back into the EPUB itself, and deleting backups.
 fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    use crate::epub_write::{set_write_enabled, write_enabled};
+    use crate::epub_metadata::{set_write_enabled, write_enabled};
 
     while let Some(child) = host.first_child() {
         host.remove(&child);
@@ -1610,7 +1610,7 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     right.set_valign(gtk::Align::Center);
-    let backups = crate::epub_write::list_backups();
+    let backups = crate::epub_metadata::list_backups();
     let total: u64 = backups.iter().map(|(_, size)| size).sum();
     let summary_text = if backups.is_empty() {
         "No originals kept".to_string()
@@ -1619,7 +1619,7 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
             "{} original{} · {}",
             backups.len(),
             if backups.len() == 1 { "" } else { "s" },
-            crate::epub_write::human_size(total)
+            crate::epub_metadata::human_size(total)
         )
     };
     let summary = chip_label(&summary_text, "kalam-chip-neutral");
@@ -1630,18 +1630,18 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
     {
         let summary = summary.clone();
         clean.connect_clicked(move |btn| {
-            let (count, freed) = crate::epub_write::delete_backups();
+            let (count, freed) = crate::epub_metadata::delete_backups();
             summary.set_label(&format!(
                 "Deleted {count} backup{}, freed {}.",
                 if count == 1 { "" } else { "s" },
-                crate::epub_write::human_size(freed)
+                crate::epub_metadata::human_size(freed)
             ));
             crate::notify::info(
                 "Original backups deleted",
                 &format!(
                     "Removed {count} backup{} · freed {}",
                     if count == 1 { "" } else { "s" },
-                    crate::epub_write::human_size(freed)
+                    crate::epub_metadata::human_size(freed)
                 ),
             );
             btn.set_sensitive(false);

@@ -18,7 +18,6 @@ members = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.92"
-license = "MIT OR Apache-2.0"
 authors = ["Jeffrey T. Peckham <abic@ophymx.com>"]
 repository = "https://github.com/ophymx/chapbook"
 readme = "README.md"
@@ -102,7 +101,6 @@ name = "kalam"
 version = "0.1.0"
 edition = "2021"
 description = "Kalam — a lightweight personal ebook manager and reader for Linux"
-license = "GPL-3.0-or-later"
 authors = ["Kalam Contributors"]
 repository = "https://github.com/alankarter1275/calibre-alt"
 default-run = "kalam"
@@ -151,9 +149,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 roxmltree = "0.20"
 quick-xml = "0.37"
 flate2 = "1"
-scraper = "0.27.0"
-toml = "1.1.5"
-urlencoding = "2.1.3"
 epub-builder = "0.8.3"
 
 # PDF

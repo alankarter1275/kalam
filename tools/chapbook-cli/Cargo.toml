@@ -4,7 +4,6 @@ description = "Development CLI exercising each stage of the chapbook pipeline"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
 repository.workspace = true
 authors.workspace = true
 

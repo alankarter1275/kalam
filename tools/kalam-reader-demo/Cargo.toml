@@ -4,7 +4,6 @@ description = "A bare window around kalam-reader's ReaderView, for trying the wi
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "GPL-3.0-or-later"
 repository = "https://github.com/alankarter1275/kalam-engine"
 
 [[bin]]

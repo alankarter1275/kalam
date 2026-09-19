@@ -243,7 +243,7 @@ fn parse_epub_meta(path: &Path) -> Result<OpfMeta> {
     Ok(meta)
 }
 
-/// Locate the OPF inside an EPUB. Exposed for the writer in `epub_write`.
+/// Locate the OPF inside an EPUB. Exposed for the writer in `epub_metadata`.
 pub fn find_opf_path_pub<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>) -> Result<String> {
     find_opf_path(archive)
 }

@@ -1256,7 +1256,7 @@ impl Component for AppModel {
             if freed > 1024 * 1024 {
                 crate::notify::info(
                     "Cleaned up reader cache",
-                    &format!("Freed {}", crate::epub_write::human_size(freed)),
+                    &format!("Freed {}", crate::epub_metadata::human_size(freed)),
                 );
             }
         }

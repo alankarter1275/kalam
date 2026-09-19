@@ -200,10 +200,10 @@ fn sources_under(dir: &Path) -> Vec<(PathBuf, String)> {
 /// function.
 fn count_prod_panics(text: &str) -> usize {
     let mut depth: i32 = 0;
-    /// While `Some(d)`, lines at depth `>= d` are inside a test item.
+    // While `Some(d)`, lines at depth `>= d` are inside a test item.
     let mut suppress_below: Option<i32> = None;
-    /// A test attribute was seen; the next opening brace starts the item it
-    /// annotates.
+    // A test attribute was seen; the next opening brace starts the item it
+    // annotates.
     let mut pending = false;
     let mut n = 0;
 

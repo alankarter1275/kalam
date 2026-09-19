@@ -485,6 +485,27 @@ bulk editing. Fixing it later means rewriting all four.
   **Done when:** `window_shown` drops by roughly 490 ms warm, and the highlight
   and quote buttons still show their own icons rather than a fallback glyph.
 
+  **First result, 2026-09-19 (cold run — warm confirmation still pending).**
+  The ordering is right: `icons_write` and `icons_theme` now print **after**
+  `window_shown`, so the rescan is off the pre-paint path as designed. And the
+  effect was larger than predicted:
+
+  | | before | after |
+  |---|---|---|
+  | `icons_theme` | 788.0 cold / 493–505 warm | **5.9** |
+  | `icons_write` | 0.1 | 22.3 |
+
+  **`icons_theme` fell from 493–505 ms to 5.9 ms — it did not merely move, it
+  became cheap.** The likely reason, offered as an inference rather than
+  something measured: called during startup, `add_search_path` arrived before
+  GTK had loaded any icon theme, so it triggered a full load of every theme on
+  the system; called after the window is up, the theme is already loaded and
+  adding a path is a cheap invalidation. If that is right, the 496 ms was never
+  inherent to having two custom icons — it was the cost of doing it early.
+  `window_shown` on this run was 9,910.6 ms, but that is **cold** and cold runs
+  have ranged 8,871–10,884 ms, so it supports no conclusion. **The warm number
+  is still needed.**
+
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`
 launch; the damage list exists and is either empty or fully accounted for in a

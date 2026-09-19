@@ -19,4 +19,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 8.95s
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.07s

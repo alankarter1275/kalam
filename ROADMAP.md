@@ -474,6 +474,12 @@ that gate CI, and they are not `#[ignore]`d.
 - **Floating window host.** Book cards, quick notes and dictionary popups float
   above the active view without reloading the page or leaking memory.
 - Extend the perf budgets to the new subsystems from Phases 3–6.
+- **Defer the chapter character count.** Opening a book walks every chapter to
+  count its characters, so a locator can become a progress percentage —
+  measured at 30–147 ms depending on the book, paid before the first page
+  draws. It is only needed when something asks for a percentage, so it could be
+  built on first use instead. Low value on its own; it belongs here rather than
+  in a phase of its own.
 
 **Done when:** a 2,000-book library opens in under a second, scrolling never
 drops a frame on a mid-range machine, and every subsystem added in Phases 3–6
@@ -551,9 +557,20 @@ The engine already has the machinery, in `crates/chapbook-reader/src/cache.rs`:
 | `Session::set_cache_budget(bytes)` | A memory cap, changeable at runtime, evicting immediately |
 | `Session::cache_bytes()` | What is actually held |
 
-The default budget is **192 MB per book**, and the comment beside it notes that
-before the budget existed the answer was *"everything, forever"* — measured at
-**676 MB after forty comic pages**. Someone already fought this fight.
+**Which budget is in force is worth being precise about, because there are
+two.** The *engine's* `DEFAULT_CACHE_BUDGET` is 192 MB, sized for comics on a
+phone, and its comment records that before the budget existed the answer was
+*"everything, forever"* — measured at **676 MB after forty comic pages**. But
+`kalam-reader` overrides it with its own 32 MB, chosen explicitly for a machine
+with 4 GB in total, and that is what Kalam actually runs at. Confirmed by log
+rather than by reading: `opening ... with a 32 MB cache budget`.
+
+**Per-book budgets are the one piece of this that does not exist yet.** There is
+one budget for one open book. Bubbles need it to vary by state — the book being
+read gets the full 32 MB, a warm one gets a couple, a bubble gets nothing
+because it holds no book. `set_cache_budget` already does the work; what is
+missing is Kalam calling it as books change state. That is a Phase 2 task, and
+it is small.
 
 So three states, and only one of them is expensive:
 
@@ -662,6 +679,14 @@ Raised, deliberately not decided, and **not** dropped.
   by side, or keeping several open and switching. Touches the reader, routing
   and reading-session bookkeeping — two open books must not both count reading
   time. **Discuss before designing.**
+- **Chapter-level → page-level cache eviction.** *A tripwire, not a task.*
+  Eviction drops whole chapters, so a 141-page chapter is held as one lump
+  whether you are looking at page 1 or page 141. That was a real problem when
+  such a chapter cached 34 MB against a 32 MB budget; after images started
+  decoding to display size the same chapter is **13 MB and fits on its own**.
+  **Do not build this until a single chapter again exceeds the budget.** To
+  check: `RUST_LOG=info kalam`, open an illustrated book, and look for a
+  `laid out unit N (... KB)` line above 32,768.
 - **Upstream relationship** — see Phase 1. Needs an answer before Phase 6.
 - **Toolchain pinning.** `.github/workflows/ci.yml` uses
   `dtolnay/rust-toolchain@stable` unpinned, so a new Rust release can break a
@@ -924,6 +949,7 @@ top-to-bottom like a journal.
 | 2026-09-19 | **Bubbles designed; logger installed to make the deciding number visible.** The owner described Android-style bubbles: several books open at once as stacked circles over any screen, tapping one opening a floating reader, with books openable straight into a bubble and minimizable back into one. The only prior record was one line in `docs/conversation.md` — half of it dead, since it assumed a shared WebKit process. Recorded decisions: in-app only; one expanded at a time with the others lined up; cover art with a progress ring; the bubble reader is a reading surface plus a TOC-only sidebar; **the full reader keeps every feature it has today** (its 5,845 lines and five sidebar tabs are untouched). The engine already has the memory machinery this needs — `Session::suspend`, `set_cache_budget`, `cache_bytes`, and a 192 MB default budget whose comment records 676 MB after forty comic pages before it existed. The open question is the *fixed* cost, which `suspend()` does not release: `Session::open` runs `build_font_system` → `db.load_system_fonts()`, a whole-system font scan, once per book. `open.rs` has always timed that split and logged it, but **no logger was installed, so all 17 engine `log::` calls were discarded.** Installed one (`src/logging.rs`, `env_logger`): writes to stderr *and* `~/.local/share/kalam/kalam.log` because a `.desktop` launch has no terminal, and is a complete no-op unless `RUST_LOG` is set, so a normal launch is unchanged. Three tests: the tee reports the file and not the terminal, an unwritable path degrades to `None` rather than panicking, and the log lives in the shared dir so it does not move when the library changes. **The shared-font-system change is deliberately not built** — it is only worth doing if the measurement says the scan dominates, and nobody has measured it yet |
 | 2026-09-19 | **Measured what opening a book costs; the expected engine change turned out not to be needed.** Four books on the owner's Arch machine via the new logger. The font scan — the whole reason a shared font system was on the table — is **1–5 ms** out of a 32–78 ms open, with 8 faces. **Decision: do not build it.** What the numbers show instead: opening plus the once-per-book chapter character count puts a book ready-to-read at 100–220 ms, and first paint is 53–183 ms, which *confirms* the rule that a bubble must hold no book. Chapter layout ranges from 4 ms to **603 ms**, the slow cases being image-heavy (141 pages / 194 images in 547 ms; 603 ms with 487 images). **Memory, not time, is the constraint**: single-chapter caches measured at 34 MB, 37 MB, 13 MB and 12 MB against a 192 MB-per-session default budget, so bubbles must call `set_cache_budget` down hard on every book not being read and `suspend()` the rest. Net engine work for bubbles: **use the cache controls that already exist, add nothing.** Also silenced a warning that was burying the log — `xml5ever` 0.39.0 (third-party) warns once per parsed document that it does not implement `stop_parsing` for XML5, hundreds of times per book; held to `error` in `src/logging.rs`, liftable with `RUST_LOG=info,xml5ever=warn` because a suppression that cannot be turned off is a trap |
 | 2026-09-19 | **Chapter images now decode to the size a page can draw — measured 71% less memory.** Every `<img>` in an EPUB chapter was decoded at full native resolution with no knowledge of how big it would be shown; `collect_images` took no page size even though `PageMetrics` was in scope at its one production call site. Raw RGBA costs 4 bytes a pixel, so a 3000x4000 scan is 48 MB decoded while occupying at most the reading column. `collect_images` now takes a max edge and scales anything larger down, preserving aspect ratio; the caller passes `content_width * dpi_scale`. **Measured on the owner's Arch machine, *The Dragonet Prophecy*:** four chapters went from 85,082 KB to 24,361 KB — 83.1 MB to 23.8 MB, **71% less**. The engine's own `images:` line reports 77.1 MB decoded against 17.9 MB kept. **The number that matters is that the cache now fits**: those four chapters were 2.6x over the 32 MB budget before, so an image-heavy book sat permanently over budget and re-decoded on scroll at the 77-120 ms/page the engine measures; they are now under it. Cost is not zero — the resize stage added ~50 ms on small-image chapters (ch 7: 49 to 106 ms) while *reducing* it on large ones (ch 6: 487 to 385 ms, because `ImageStore::insert` premultiplies every stored pixel, so fewer pixels is less work there). An image that already fits is returned as the same bytes, not resized to the same size, so a no-op resize cannot shift a byte-exact golden; every fixture image is 64x48 or 120x60, so goldens are unaffected — which also means they cover none of this, hence six unit tests on the shrink. Text-only books are untouched: *Immortals of Meluha* logs no `images:` line at all. Two call sites outside `crates/` were missed on the first push and broke `chapbook-cli`; `--all-targets` compiles examples too, so grepping one directory is not enough. Comics deliberately untouched — they decode on a background loader with no page metrics, and they zoom, so shrinking a comic page to fit would soften a zoomed one. The disk page cache is now very unlikely to be needed |
+| 2026-09-19 | **Lazy loading audited; most of it already exists, so only the gaps are planned.** Asked whether chapters could load and unload on demand. Verified rather than assumed: **they already do.** `layout_unit` builds a chapter only when asked, `evict_keeping` drops the least-recently-read ones under the byte budget while pinning the chapter on screen and the visible ones, `prefetch_one` reaches exactly one adjacent chapter, and `suspend()` drops everything but the page showing. Three real gaps: eviction is per *chapter* not per page (a 141-page chapter is one lump); there is one budget for one book where bubbles need one per state; and the chapter character count runs eagerly on open (30-147 ms) when it is only needed on first use. **Per-book budgets go to Phase 2 with the bubbles** — `set_cache_budget` already exists, only the call is missing. **Page-level eviction is recorded as a tripwire, not a task**: it was worth doing when such a chapter cached 34 MB against a 32 MB budget, and the image fix put the same chapter at 13 MB, under budget on its own. Building it now would repeat the shared-font-system mistake — solving a problem the previous fix dissolved. The check is written down so the tripwire is testable: a `laid out unit N` line above 32,768 KB. Eager char count goes to Phase 7. Also corrected a stale figure in the Bubbles section: it said the budget was 192 MB per book, which is the *engine* default; `kalam-reader` overrides it to 32 MB and that is what runs |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

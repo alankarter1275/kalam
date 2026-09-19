@@ -889,22 +889,33 @@ bulk editing. Fixing it later means rewriting all four.
   a conclusion from it would have been the same mistake as the 2 s database
   open.
 
-- **1.14 — Give the background work a visible task manager.** *Added  2026-09-19.* The machinery is already built and already used — **27
-  `tasks::spawn` call sites** across imports, metadata fetching, thumbnails,
-  dictionary install and downloads, each with progress and a cancellation
-  flag. What does not exist is any way to *see* it: `running_count()` and
-  `cancel_all()` are referenced in exactly one place, `src/app.rs:876-877`,
-  and both run **at exit**. So work happens in the background with no panel,
-  no queue, no per-task cancel — the app reports how many tasks were
-  abandoned when it closes, and that is all.
-  Yazi's second idea is *"a task system: heavy operations become background
-  tasks with progress, cancellation, queue; UI shows progress bars, never
-  blocks"*, and its UI has a task manager for exactly this. Half of that
-  sentence is done here; the half the user can see is not.
-  This pairs with 1.2b rather than competing with it: 1.2b puts more work on
-  workers, which makes an invisible queue worse, not better.
+- ~~**1.14 — Give the background work a visible task manager.**~~ **Done,
+  2026-09-19** (`src/pages/task_manager.rs`, CI run `35459996093` green, 776
+  tests). The machinery was already there — **28 `tasks::spawn` call sites**,
+  not the 27 this entry claimed — but the registry stored only an id and a
+  cancel flag, so there was nothing to look at. Entries now carry a **label**
+  and the latest progress, plus a bounded list of the last 20 finished tasks.
+  `spawn`/`spawn_stream` take a label as their first argument and all 28 call
+  sites name the operation in plain words; the three that act on a named thing
+  use it (`Downloading {title}`, `Remastering {title}`).
+  The new API is `cancel(id)`, `tasks()`, `recent()`, `clear_finished()`.
+  **`cancel(id)` is the actual point of the item**: before this, the only
+  answer to "can I stop this?" was closing the window, which called
+  `cancel_all()` and took the thumbnail rebuild down with the download.
+  Progress is written to the registry **from the main thread** by the reader
+  that already receives the updates — workers never take that lock, so a
+  worker cannot block the UI by holding it.
+  The page lists running tasks with a progress bar and a Cancel button, then
+  recently finished ones marked Finished or Cancelled. It polls every 500 ms
+  via `timeout_add_local`. A progress bar is drawn **only when the task
+  reported a total** — an empty bar reads as "stuck", which is worse than no
+  bar. Fast queries from 1.2b are added and removed between ticks, so they
+  never appear; this page is for work you wait on.
+  **Not verified by CI:** the page renders, but CI does not exercise the async
+  path or the UI. **The owner has not yet looked at it.**
   **Done when:** there is a place in the UI that lists running and recent
-  tasks with progress, and a task can be cancelled from it.
+  tasks with progress, and a task can be cancelled from it. *(Met on paper;
+  pending the owner opening it.)*
 - **1.15 — Warm the file cache at login so the first launch is a warm one.**
   *Added 2026-09-19, owner-approved.* Cold start is ~9.9 s against ~762 ms
   warm, and the whole difference is reading from a spinning disk — no code

@@ -199,14 +199,17 @@ started.
 | `yazi-core` (pure logic, no UI) | `src/db/` | ✅ done | ✅ done |
 | Event bus | relm4 components | ✅ done | ✅ done |
 | Task system (progress + cancel) | **`src/tasks.rs` TaskManager** | ❌ missing | ✅ **built** |
+| Task manager the user can *see* | **`src/pages/task_manager.rs`** | ❌ missing | ✅ **built (1.14)** |
 | Preloaders (preview cache) | **cover preloader + chapter preloader** | ❌ missing | ✅ **built** |
 | Thin UI that only renders state | **pages still do their own DB calls** | ❌ missing | ✅ **built** |
 
 > **Status column corrected 2026-09-19.** The "Status then" column is what was
 > true when this conversation happened; every one of the three ❌ rows has
 > since been built, and leaving them marked missing was actively misleading.
-> What exists now: `src/tasks.rs` (332 lines, 35 `tasks::spawn` call sites,
-> progress reporting and cancellation), `src/preload.rs` (390 lines, cover
+> What exists now: `src/tasks.rs` (621 lines, **28** `tasks::spawn` call sites —
+> the figure of 35 quoted here counted doc-comment mentions as well as calls),
+> progress reporting, per-task cancellation and a registry the UI can read;
+> `src/preload.rs` (390 lines, cover
 > preloading), `src/service.rs` (1,278 lines, 18 snapshot methods), and thin
 > pages for every query that grows with library size — roadmap **1.2b**.
 > The honest caveat on that last row: a page's *first* read in `init` is still
@@ -221,9 +224,13 @@ The missing pieces:
    directly and start *asking*. Moving queries off the UI thread becomes a
    change in one place, not in every page. Most Yazi-like thing we can do;
    makes everything after it easy.
-2. **A task manager.** Import, dictionary rebuild, metadata fetch, EPUB
-   conversion → tasks with progress + cancellation. Metadata fetch already
-   half-does this; extend to everything slow.
+2. ~~**A task manager.**~~ **Done as roadmap 1.14, 2026-09-19.** Import,
+   dictionary rebuild, metadata fetch and downloads are all tasks with
+   progress and cancellation, and there is now a page that lists them and can
+   stop one of them. What this item did not anticipate: the machinery was
+   already complete, and the missing half was that the registry stored only an
+   id and a cancel flag — nothing a panel could display. The work was naming
+   each task and keeping its latest progress somewhere readable.
 3. **Preloaders.** Cover preloader: rows 1–30 visible → worker decodes
    31–60 in background; scroll down and everything's already there.
    Reader: preload the *next chapter* while reading the current one —

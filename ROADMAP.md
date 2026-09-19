@@ -670,19 +670,44 @@ bulk editing. Fixing it later means rewriting all four.
   upstream" — real bugs in the original project, one being a reading setting
   the author persisted but never read — stay recorded in `UPSTREAM.md` rather
   than becoming issues or pull requests.
-- **1.11 — Correct the documents that describe an app that no longer exists.**
-  Found by the audit. These are not cosmetic: a README that overstates what
-  is finished is how this project came to believe the downloads hub was
-  shipped when it is not.
-  - **README claims P6 and P7 were "built together".** There is **zero**
-    `impl Source` in the repository, and `SourceManager` holds an empty
-    `Vec`. The downloads hub does not exist. It belongs in Part 2.
-  - **README claims "P8 / P9 Comics and manga — next".** Comics already
-    shipped (1,685 lines) and the P9 manga track was folded into them.
-  - **README's status table predates the engine swap** and describes a WebKit
-    app throughout.
-  - While in there: `docs/conversation.md` §20 still recommends Poppler for
-    PDF rendering; §22 reverses that to MuPDF and §20 was never edited.
+- ~~**1.11 — Correct the documents that describe an app that no longer
+  exists.**~~ **Done, 2026-09-19.** These were not cosmetic: a README that
+  overstates what is finished is how this project came to believe the downloads
+  hub was shipped when it is not.
+  - ~~**README claims P6 and P7 were "built together".**~~ **Corrected.** The
+    precise position, verified rather than assumed: there is **no**
+    `impl Source` anywhere and `SourceManager::new()` builds an empty `Vec`, so
+    the browse route wired to `source_id: "ao3"` resolves to nothing. But the
+    plumbing is genuinely real — a job queue with progress and cancellation
+    (`src/downloads.rs`, made properly asynchronous in 1.3), a downloads page,
+    and a live route. Saying "does not exist" would have been as wrong as
+    saying "built"; the row now says the machinery exists and the content
+    sources do not. Part 2.
+  - ~~**README claims "P8 / P9 Comics and manga — next".**~~ **Corrected.**
+    Comics shipped — 1,685 lines across `src/comics.rs` and
+    `src/pages/comics_reader/` — and the separate P9 manga track was folded
+    into it. The "What works now" list also called comics a placeholder in the
+    same document that is otherwise accurate about the reader, so both places
+    were fixed.
+  - **README's WebKit claims were already correct and were left alone.** The
+    item said the status table "describes a WebKit app throughout", but
+    checking found four WebKit mentions, all of them accurate — the reader
+    bullet says "no WebKit, no JavaScript", and the build section explains that
+    WebKitGTK has not been a dependency since the swap. **The roadmap entry was
+    stale, not the README.** Worth recording because the reflex would have been
+    to "fix" text that was right.
+  - ~~**`docs/conversation.md` §20 recommends Poppler while §22 chose
+    MuPDF.**~~ **Corrected by annotation, not rewriting.** §20's reasoning was
+    sound on the criterion it was given ("lightweight") and §22 changed the
+    criterion to rendering quality. A superseded note points at §22 and says
+    why; the original argument stays, because deleting it would hide that the
+    decision was a change of criterion rather than a correction.
+  - **Also fixed, found while in there:** the repository has **two** files
+    named `WORKING.md` — `docs/WORKING.md` (62 lines, the invariants and the
+    1.9 ratchets) and `docs/kalam/WORKING.md` (321 lines, the agent-facing
+    guide). They do not overlap in content, but the names collide and it is
+    easy to edit the wrong one; 1.9 added rules to the shorter of the two.
+    Each now opens with a pointer to the other.
 - ~~**1.12 — Attribute the unmeasured part of cold start.**~~ **Done, 2026-09-19** —
   every millisecond now has an owner. *Added 2026-09-19
   from the 1.2a run, which measured this by accident.* The log reports

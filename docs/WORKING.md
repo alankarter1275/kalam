@@ -2,6 +2,14 @@
 
 This document outlines the strict developer invariants and repository guidelines for **Kalam**. All developers and automated coding agents modifying this codebase must adhere to these rules without exception.
 
+> **There are two files named `WORKING.md` in this repository.** This one
+> (`docs/WORKING.md`) is the short list of invariants and guardrails. The
+> other, [`docs/kalam/WORKING.md`](./kalam/WORKING.md), is the much longer
+> agent-facing guide: hard rules, the build and CI loop, a repository map,
+> design decisions not to undo, and how a working round goes. They do not
+> overlap in content, but the names collide — check which one you have open
+> before editing.
+
 ---
 
 ## 1. Core Invariants

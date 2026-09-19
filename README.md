@@ -95,7 +95,9 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   from disk, and **Open Library** search that stages results for review
 - **Ratings & goals**: half-star ratings, yearly reading goal, daily streak
 - Float detail panel (Suwayomi-style); Read opens the viewer
-- AO3 / comics / downloads still placeholders
+- **Comics** reader (image pager) — shipped
+- **AO3 / fanfiction browsing and the downloads hub are shells.** The routes and
+  the job queue exist; there is no content source behind them. Part 2
 
 ## Phase overview
 
@@ -111,8 +113,8 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
 | A0 (architecture) | ✅ **done** except the plugin seam. Measured (`perf.rs` / `timing.rs`) · `LibraryService` seam · cover thumbnails · task manager · preloaders · **windowed book grid** (2,000 books: 502 MB → 247 MB, 434 ms → 12 ms) · perf budgets in CI that assert **query counts**, not milliseconds. The plugin-host seam is designed in `docs/archive/source-seam.md` and lands with its first implementation (Part 2) |
 | **P6.5** | **Libraries** ✅ — choose the folder, keep several, switch between them (restarts), copy one to another machine and it opens. App settings stay shared; dictionaries are not duplicated per library. Every book folder keeps a `kalam.json` backup of its details, tags, highlights and reading position |
-| P8 / P9 | Comics and manga — **next**. Image pager, then the same `Source` trait with MangaDex |
-| P6 + P7 | Downloads hub **and** the fiction client, **built together** (combined 2026-09-04): a queue with nothing to download is a shell. Browsing client for AO3 / Royal Road / Literotica / FFN — browse, filter, author pages, read online, download, auto-update |
+| P8 | **Comics** ✅ — image pager, 1,685 lines (`src/comics.rs`, `src/pages/comics_reader/`). The separate P9 manga track was folded into it rather than built alongside |
+| P6 + P7 | Downloads hub and the fiction client — **not built.** The plumbing is real and does work: a job queue with progress and cancellation (`src/downloads.rs`), a downloads page, and a browse route wired to `source_id: "ao3"`. **But there is no `impl Source` anywhere in the repository and `SourceManager::new()` builds an empty `Vec`**, so the browse route resolves to nothing and the queue has nothing to queue. This row previously said "built together", which is how the project came to believe it was finished. **It is Part 2 work.** |
 | P10–P12 | PDF, tools, Lua plugins — see ROADMAP |
 | UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float ✅ · the remaining screens are **deliberately last** (moved 2026-09-04): every phase above adds screens, so restyling now means restyling again later |
 

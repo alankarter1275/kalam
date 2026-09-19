@@ -1,5 +1,11 @@
 # Working in this repository — for AI agents
 
+> **There are two files named `WORKING.md` in this repository.** This one is
+> the agent-facing guide. The other,
+> [`docs/WORKING.md`](../WORKING.md), is the short list of developer
+> invariants and the CI ratchet tests that enforce them — read that one for
+> what must never be broken, and this one for how to work here.
+
 Audience: an AI coding agent (or a human engineer) starting a session on
 this repo. It is deliberately technical. The owner's plain-language
 document is [`PLAN.md`](PLAN.md); read that for *why*. This file is

@@ -1656,6 +1656,15 @@ PDF is a hostile format to do it in.
 
 ### Recommendation
 
+> **Superseded by §22, 2026-09-18 — the engine chosen was MuPDF.** This
+> recommendation stood for about a day. What reversed it was rendering
+> *quality* rather than install weight: in the benchmarks compared in §22,
+> MuPDF measured 8.7 ms/page at 81 MB against Poppler's 14.6 ms at 148 MB,
+> with better fidelity on transparency and CJK, and licence was explicitly
+> ruled out of scope for a personal app. The reasoning below is kept because it
+> was sound on the criterion it was given — "lightweight" — and the change was
+> a change of criterion, not a correction. Read §22 for the decision.
+
 **Poppler**, for the stated goals of lightweight, fast and not bloated:
 
 1. Kalam is already GTK4 + GLib, so Poppler adds no new *kind* of dependency.
@@ -1668,7 +1677,7 @@ PDF is a hostile format to do it in.
 PDFium becomes the right answer if Kalam ever needs to run where Poppler is
 not available (Flatpak sandbox without the runtime, or a non-GNOME distro
 image). MuPDF only if AGPL stops being a concern and build time stops
-matterting.
+mattering.
 
 **Not decided here.** This records the analysis and a recommendation; the
 choice is the owner's, and nothing has been changed in `Cargo.toml`.

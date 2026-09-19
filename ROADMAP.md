@@ -596,12 +596,44 @@ bulk editing. Fixing it later means rewriting all four.
     and the popover. Both `use` sites updated.
   - ~~**1.8i** Fix the doc comment in `src/timing.rs`, which still describes
     handing chapters to WebKit.~~ **Done.**
-- **1.9 — Write the app-level guardrails.** `crates/kalam-reader` inherits strict
-  boundaries from upstream, which is a large part of why that code stayed clean.
-  **`src/` has no equivalent.** `docs/WORKING.md` states four invariants and only
-  one (zero `unwrap`) is actually checkable. Add the other three as tests that
-  can fail: `Arc<Catalog>` in `src/pages/`, and no literal hex colours outside
-  `theme.rs`. See "Guidelines for the app half" in `docs/conversation.md`.
+- ~~**1.9 — Write the app-level guardrails.**~~ **Done, 2026-09-19.**
+  `crates/kalam-reader` inherits strict boundaries from upstream, which is a
+  large part of why that code stayed clean; `src/` had no equivalent, and what
+  did exist was prose in `docs/WORKING.md`. Built as **three ratchet tests** in
+  `tests/guardrails.rs` (a ratchet asserts a violation count never *rises*),
+  per the recommendation in `docs/conversation.md` §21.
+  | Rule | Ratchet |
+  |---|---|
+  | No `unwrap()`/`expect()` in production code | **12** |
+  | Pages hold `Arc<Catalog>` rather than asking `LibraryService` | **58** occurrences, 22 files |
+  | Literal hex colours in `resources/style.css` | **184** |
+  - **Every number was measured fresh.** §21's table (2026-09-18) is wrong in
+    all three: it said 6 unwraps "all in `downloads.rs`" — that file was
+    rewritten and now has none in production, and the real 12 sit mostly in
+    `perf.rs` (4, a headless harness) and `db/dictionaries.rs` (3); it said
+    "many" for `Arc<Catalog>`; and it said "unknown, small" for hex colours
+    when the stylesheet has 184 and `theme.rs` duplicates 169 of them. That
+    duplication is the real finding and is not fixed by a ratchet, only
+    stopped from growing.
+  - **The first measurement was itself wrong and was caught before shipping.**
+    Cutting each file at its first `#[cfg(test)]` both over-counted `perf.rs`,
+    whose tests are top-level `#[test]` functions rather than a module, and
+    silently skipped most of `db.rs`, which applies `#[cfg(test)]` to a single
+    function at `:524`. The scanner now walks brace depth and suppresses
+    exactly the annotated item.
+  - **A second scanner bug survived to CI and was caught by the scanner's own
+    test.** A single-line item (`pub fn helper() { x.unwrap(); }`) opens and
+    closes on one line, so suppression was set and cleared before the line was
+    counted. The ratchet number is unchanged at 12 — no real file has that
+    shape — so the bug was latent, and would have started lying the day someone
+    wrote a one-line test helper above production code. **This is the direct
+    payoff of testing the scanner rather than trusting it.**
+  - `docs/WORKING.md` gains the anti-bloat rules §21 recommended, and its §1
+    now says plainly that the no-`unwrap` rule is broken in 12 places and
+    enforced as a ratchet, rather than stating an absolute nobody checks.
+  - **Env-var ceiling recorded as five `KALAM_*` switches** (plus `RUST_LOG`),
+    with a note that it already slipped by one since that count was first
+    written down — which is the argument for writing the ceiling down at all.
 - **1.10 — Decide the upstream relationship.** `docs/kalam/UPSTREAM.md` describes
   cherry-picking fixes monthly from the original chapbook repository, but the
   engine crates are now ordinary workspace members that Kalam edits directly.

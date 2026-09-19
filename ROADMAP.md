@@ -367,6 +367,36 @@ bulk editing. Fixing it later means rewriting all four.
     shared between pages today. That is fine for the pilot and is one more
     reason the cache is deferred: a useful cache would have to be shared
     process-wide, which is a larger change than the pilot needs.
+
+    **Pilot built, 2026-09-19 — awaiting the owner's verdict.** `reload()` now
+    hands the query to `tasks::spawn` and returns immediately; the grid keeps
+    what it is showing and swaps the list on arrival. Three details that were
+    not in the original plan and came out of writing it:
+    - **Replies carry a generation counter and stale ones are dropped.**
+      `SearchChanged` fires on *every keystroke*, so typing quickly starts
+      several queries; without this a slow early result could land after a
+      fast later one and put the wrong list on screen. This is the bug the
+      design review did not anticipate and only surfaced when the call sites
+      were read.
+    - **A failed read now keeps the list and reports the error.** The
+      synchronous version called `books.clear()`, which turned a failed read
+      into something that looks like data loss.
+    - **`AllBooksSnapshot` was added to `snapshots_are_send()`.** It now
+      crosses a thread, so the property is compile-checked; it was not in the
+      list before. Worth checking for each of the remaining seven.
+
+    `init()` keeps its synchronous read deliberately — the page is not on
+    screen yet, so there is nothing visible to freeze and no list to preserve,
+    and making it asynchronous would draw an empty grid and then fill it. It
+    is the one blocking read left on this page and is marked for revisit once
+    a large library makes it measurable.
+
+    **What CI proved and what it did not.** Run `35432889032` is green —
+    clippy, 762 tests, both builds — and `snapshots_are_send` ran with the new
+    type in it, so the snapshot genuinely can cross a thread. **But no test
+    exercises the new path**: the async reply needs a GTK main loop, so what
+    is verified is that it compiles and that the types are right, not that the
+    list refreshes. Only running the app shows that.
 - ~~**1.3 — Route background work through `src/tasks.rs`.**~~ **Done, 2026-09-19
   — the migration had largely already happened.** Audited rather than assumed:
   there are **27 `tasks::spawn` call sites** across imports, metadata fetching,

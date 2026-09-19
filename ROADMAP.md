@@ -950,6 +950,47 @@ bulk editing. Fixing it later means rewriting all four.
   **Done when:** the count is materially lower, every survivor has a written
   reason rather than a bare attribute, and clippy's dead-code check is
   actually running over the code again.
+- **1.17 — Make the task manager reachable.** *Added 2026-09-19, owner-requested
+  after using 1.14.* 1.14 built the page and then filed it under **My library →
+  Tasks**, which is two clicks to answer the one question the page exists for:
+  *"is it still going?"* A task manager you have to navigate to is not a task
+  manager.
+  Three parts, all owner-specified:
+  1. **A sidebar button next to Settings**, in `bottom_nav` — the rail already
+     holds a hidden `download_indicator` MenuButton of exactly this shape, so
+     the pattern is proven and currently switched off.
+  2. **A badge on it.** A tick mark when nothing is running; the running count
+     when something is; **a distinct mark when a recent task failed**, because
+     the toast that reports a failure disappears and the failure should not
+     disappear with it.
+  3. **`w` toggles a floating dialog**, matching yazi. The dialog shows only
+     what is running, with progress and a cancel button, and `w` again closes
+     it. Clicking the sidebar button instead opens the **full page**, the same
+     way Home and Settings do. Two different affordances, deliberately: glance
+     versus inspect.
+  **`w` is scoped to outside the reader.** Inside the reader `w` already means
+  "show saved Words" (`src/pages/reader/mod.rs:1087`), and the reader hides the
+  sidebar entirely — so while reading, there is currently no way to reach the
+  task manager at all. The owner chose to leave the reader's binding alone and
+  accept that gap rather than move a key they already use. **Recorded as a
+  known hole, not an oversight.**
+  **Pause was asked about and is not being built.** Cancellation here is
+  cooperative — a worker checks a flag between units of work. A pause flag is
+  the same mechanism, but most of these tasks are mid-HTTP-request or holding
+  an open database handle when you would press it, and blocking there means
+  holding a socket or a lock indefinitely. It is possible and it is a bad
+  idea; the owner's own phrasing left this open.
+  **Done when:** the badge is visible from anywhere outside the reader and is
+  correct within a second of a task starting or finishing; `w` opens and closes
+  the dialog; clicking the button opens the page.
+- ~~**1.18 — The comic upscaler offers itself to books it cannot work on.**~~
+  **Done, 2026-09-19.** Found by the owner: the Remaster button was drawn
+  unconditionally in `book.rs` and `book_float.rs`, so it appeared on EPUBs and
+  PDFs too. The guard existed but sat at the *click* — pressing it on an EPUB
+  produced a "Not a comic" toast. A control that can only fail should not be
+  drawn. Visibility now follows the format, in both the page and the float,
+  including when the book has been removed underneath you. The toast guard
+  stays as a backstop.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`

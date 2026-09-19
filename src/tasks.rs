@@ -409,6 +409,8 @@ pub fn running_count() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     /// Build a reporter without going through `spawn`, which needs a GLib main
     /// context and therefore cannot run in CI (no display).
@@ -605,6 +607,82 @@ mod tests {
             "the oldest were dropped, not the newest"
         );
         locked_finished(VecDeque::clear);
+    }
+
+    /// A task that actually ran must be *visible* afterwards.
+    ///
+    /// The other tests here poke the registry directly, which proves the
+    /// registry works but not that `spawn` reaches it — and "reaches it" is
+    /// the half the owner found broken: an import finished and never showed up
+    /// in the list. So this drives the real thing: a real `spawn`, a real
+    /// worker thread, a real main context, and then looks at what the panel
+    /// would see.
+    ///
+    /// Needs no display. A GLib main context is not GTK, so this runs in the
+    /// ordinary `cargo test` step rather than only in the headless-sway smoke
+    /// test — which matters, because that smoke job is `continue-on-error`.
+    ///
+    /// The poll loop is bounded so a regression fails the test in a few
+    /// seconds instead of hanging CI until it times out.
+    #[test]
+    fn a_task_that_ran_lands_in_the_recent_list() {
+        const LABEL: &str = "headless registry test";
+
+        let done = Rc::new(Cell::new(false));
+        let progress = Rc::new(Cell::new(false));
+        let value = Rc::new(Cell::new(0u32));
+
+        let (done_in, progress_in, value_in) = (done.clone(), progress.clone(), value.clone());
+
+        // The default context, because `spawn_future_local` resolves against
+        // the thread-default and falls back to it, and `block_on` is what
+        // iterates it. Anything else and the future would be spawned onto a
+        // context nobody was running.
+        let ctx = gtk::glib::MainContext::default();
+        ctx.block_on(async move {
+            spawn(
+                LABEL,
+                |reporter| {
+                    reporter.step(1, 2, "halfway");
+                    42u32
+                },
+                move |_| progress_in.set(true),
+                move |v| {
+                    value_in.set(v);
+                    done_in.set(true);
+                },
+            );
+
+            for _ in 0..500 {
+                if done.get() && !tasks().iter().any(|t| t.label == LABEL) {
+                    break;
+                }
+                gtk::glib::timeout_future(std::time::Duration::from_millis(10)).await;
+            }
+        });
+
+        assert_eq!(value.get(), 42, "the result never reached on_done");
+        assert!(done.get(), "on_done never ran, so the future did not finish");
+        assert!(
+            progress.get(),
+            "the progress report never reached the main thread"
+        );
+        assert!(
+            recent().iter().any(|t| t.label == LABEL),
+            "the task finished but never reached the recent list — the panel \
+             would show nothing, which is what the owner reported"
+        );
+        assert!(
+            !tasks().iter().any(|t| t.label == LABEL),
+            "the task finished but is still listed as running"
+        );
+        assert!(
+            recent().iter().any(|t| t.label == LABEL && !t.cancelled),
+            "the task was recorded as cancelled when it was not"
+        );
+
+        // Clean up: the recent list is process-wide and other tests read it.
+        locked_finished(|list| list.retain(|t| t.label != LABEL));
     }
 
     #[test]

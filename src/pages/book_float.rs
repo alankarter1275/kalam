@@ -880,6 +880,7 @@ fn fill(
 
     let Some(book) = model.book.as_ref() else {
         widgets.header_title.set_label("Book not found");
+        widgets.remaster_btn.set_visible(false);
         widgets.series_val.set_visible(false);
         widgets.description.set_label("This book was removed.");
         widgets.progress_pct.set_label("");
@@ -893,6 +894,15 @@ fn fill(
             .append(&build_cover_display(None, false, sender));
         return;
     };
+
+    // The upscaler rewrites a CBZ in place, so it only exists for comic
+    // archives. On an EPUB or PDF there was nothing for it to do: the button
+    // was drawn unconditionally and clicking it could only produce a
+    // "Not a comic" toast. Hide it instead.
+    widgets.remaster_btn.set_visible(matches!(
+        book.format,
+        crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+    ));
 
     widgets.header_title.set_label(&book.title);
     // The label ellipsises, so the full title has to stay reachable.

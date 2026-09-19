@@ -1654,6 +1654,7 @@ fn known_route_names() -> Vec<&'static str> {
         "lookup-history",
         "tags",
         "analytics",
+        "tasks",
     ]
 }
 

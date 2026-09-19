@@ -272,6 +272,7 @@ impl Component for BookPageModel {
                                     connect_clicked => BookPageMsg::ToggleFinished,
                                 },
 
+                                #[name = "remaster_btn"]
                                 gtk::Button {
                                     add_css_class: "kalam-icon-btn",
                                     set_focus_on_click: false,
@@ -884,8 +885,17 @@ impl BookPageModel {
             fill_rating(&widgets.rating_host, book, sender);
             fill_tags(&widgets.tags_flow, book, sender);
             fill_description(&widgets.description, book);
+            // The upscaler rewrites a CBZ in place, so it only exists for
+            // comic archives. On an EPUB or PDF there was nothing for it to
+            // do: the button was drawn unconditionally and clicking it could
+            // only produce a "Not a comic" toast. Hide it instead.
+            widgets.remaster_btn.set_visible(matches!(
+                book.format,
+                crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+            ));
         } else {
             widgets.title.set_label("Book not found");
+            widgets.remaster_btn.set_visible(false);
             widgets
                 .description
                 .set_label("This book was removed or does not exist.");

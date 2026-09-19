@@ -8,33 +8,15 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
-[1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m bitflags v1.3.2
-[1m[92m  Downloaded[0m defmt v1.1.1
-[1m[92m  Downloaded[0m defmt-macros v1.1.1
-[1m[92m  Downloaded[0m defmt-parser v1.0.0
-[1m[92m  Downloaded[0m env_logger v0.11.11
-[1m[92m  Downloaded[0m env_filter v2.0.0
-[1m[92m  Downloaded[0m jiff-core v0.1.1
-[1m[92m  Downloaded[0m jiff v0.2.37
-[1m[92m  Downloaded[0m regex v1.13.1
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
-[1m[92m    Checking[0m regex-automata v0.4.18
-[1m[92m    Checking[0m jiff-core v0.1.1
-[1m[92m    Checking[0m jiff v0.2.37
-[1m[92m    Checking[0m globset v0.4.20
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
-[1m[92m    Checking[0m insta v1.48.0
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
-[1m[92m    Checking[0m regex v1.13.1
-[1m[92m    Checking[0m env_filter v2.0.0
-[1m[92m    Checking[0m env_logger v0.11.11
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.53s
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 8.51s

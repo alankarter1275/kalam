@@ -522,9 +522,9 @@ bulk editing. Fixing it later means rewriting all four.
     both depend on the machine running them.
   - `libc` promoted to a direct dependency; already in the tree transitively,
     so no change to build time or binary size.
-- **1.8 — Batch of small, safe fixes.** *Six of nine done, 2026-09-19. The
-  roadmap assumed "a few minutes" each; that held for six and was wrong for
-  two, which is why 1.8g became its own item and 1.8e is still open.*
+- **1.8 — Batch of small, safe fixes.** *Closed 2026-09-19: seven done, one
+  deliberately skipped, one moved to 1.16. The roadmap assumed "a few minutes"
+  each; that held for most and was wrong for two.*
   - ~~**1.8a** Delete three unused dependencies from the root `Cargo.toml`:
     `toml`, `urlencoding`, `scraper`.~~ **Done.** Confirmed zero uses across
     `src/`, `crates/` *and* `tools/` before removing — the earlier mistake of
@@ -547,12 +547,35 @@ bulk editing. Fixing it later means rewriting all four.
     installs that. `logo.png` stays at 128 **deliberately**: it is also
     embedded in the About dialog via `include_bytes!` (`app.rs:1503`), where
     512 would be wasted bytes in the binary.
-  - **1.8e** Make "Open with Kalam" work: add `MimeType` to the `.desktop`
-    file, add `%f` to `Exec`, and parse `argv` in `main.rs`. None of the three
-    exist — verified again 2026-09-19. **Still open**, and it is not really in
-    the same class as the others: it adds behaviour rather than fixing
-    something wrong, and it needs a decision about what opening a file should
-    do (import then open? open if already imported?).
+  - **1.8e — Deliberately not done, 2026-09-19.** Make "Open with Kalam" work:
+    add `MimeType` to the `.desktop` file, add `%f` to `Exec`, parse `argv` in
+    `main.rs`. None of the three exist. **Owner's decision: skip it.** The
+    owner works from yazi rather than double-clicking, and the entry point is
+    therefore `Enter` → `xdg-open` (yazi's own default Linux opener is
+    `xdg-open "$1"`) → MIME lookup → the `.desktop` file → `Exec` → `argv`.
+    Same chain, so the fix would still have applied — it is simply not worth
+    doing for this workflow.
+    **Recorded because it is larger than those three bullet points.**
+    `Catalog::open()` runs at `main.rs:137`, *before* `app.run()` at `:179`,
+    and Kalam has no single-instance guard of its own. If GTK's application-ID
+    registration gives single-instance semantics — **unchecked against
+    relm4's source** — then a second launch opened the database, handed off to
+    the running instance, and exited, dropping the file. Reaching an
+    already-open window means handling GTK's file-open signal inside the
+    application lifecycle, not reading `argv` in `main()`.
+    **Owner's stated preference for whenever this is revisited:** do not import
+    the book, just open it — but reading history and progress should still be
+    recorded. **That collides with the schema as it stands:**
+    `reading_events.book_id` is `INTEGER NOT NULL REFERENCES books(id) ON
+    DELETE CASCADE` (`db.rs:692`), so no history can exist for a book with no
+    row in `books`. Two ways out, both worth deciding before building:
+    - Make `book_id` nullable — a schema bump from `SCHEMA_VERSION` 14, and
+      there is precedent: the v14 dictionary-lookup table made `book_id`
+      nullable for exactly this reason, because sidebar searches log lookups
+      not tied to a book.
+    - Create a lightweight row in `books` pointing at the original file rather
+      than a copied library file. History, progress and quotes then work
+      unchanged, but the grid has to decide whether to show it.
   - ~~**1.8f** Add a `LICENSE` file at the repository root.~~ **Done, but not
     as written.** The item assumed `Cargo.toml` said `GPL-3.0-or-later` and
     the file was merely missing. Checking found **two** declarations: the app

@@ -1,0 +1,92 @@
+=== kalam screenshot run ===
+books=139 out=ci-shots-tasks settle=20
+binary: 41314392 bytes
+
+=== seeding 139 books ===
+seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5676.sock
+sway up: {
+  "human_readable": "1.11",
+  "variant": "sway",
+  "major": 1,
+  "minor": 11,
+  "patch": 0,
+  "loaded_config_file_name
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+requested route: tasks
+windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
+toplevel windows seen: 1
+  shot: 01-tasks (40929 bytes)
+focused: 1
+  shot: 02-tasks-settling (40929 bytes)
+  shot: 03-tasks-settled (40929 bytes)
+navigation: app accepted route 'tasks'
+navigation: 'tasks' is not a grid page; no grid_build expected
+  shot: 04-home-for-comparison (67777 bytes)
+navigation: 'tasks' differs from Home -- the page really did change
+navigation: OK -- the images below are 'tasks'
+
+=== timing lines from the app ===
+  [timing] startup_gtk_init       48.2 ms
+  [timing] startup_style          36.5 ms
+  [timing] startup_libraries       0.1 ms
+  [timing] startup_db_open         3.5 ms
+  [timing] startup_theme           7.6 ms
+  [timing] pre_run                96.1 ms
+  [timing] startup_dicts           0.1 ms
+  [timing] service_home            0.5 ms
+  [timing] covers_queued            11
+  [timing] startup_first_page      1.7 ms
+  [timing] init_done             100.2 ms
+  [timing] window_shown          103.7 ms
+  [timing] page_cache_miss           1
+  [timing] icons_write             0.0 ms
+  [timing] icons_theme             0.1 ms
+  [timing] thumbs_backfilled        50
+  [timing] thumbs_backfilled       100
+  [timing] thumbs_backfilled       130
+  [timing] thumbs_backfill_done      130
+
+=== did the covers actually load? ===
+  01-tasks.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
+  02-tasks-settling.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
+  03-tasks-settled.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
+  04-home-for-comparison.png: 1600x1000  coloured=17.3%  lit=100.0%
+  (numbers only -- no threshold is enforced yet; see the docstring)
+
+=== screenshot fingerprints ===
+  cd8dfe8d0f3157ad22a3c14d49b1543b  ci-shots-tasks/01-tasks.png
+  cd8dfe8d0f3157ad22a3c14d49b1543b  ci-shots-tasks/02-tasks-settling.png
+  cd8dfe8d0f3157ad22a3c14d49b1543b  ci-shots-tasks/03-tasks-settled.png
+  195a1ec4b12fd29b083973878ca73cac  ci-shots-tasks/04-home-for-comparison.png
+
+=== app stderr (non-timing lines) ===
+  
+  (kalam:5713): Gtk-WARNING **: 20:09:30.179: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  kalam: KALAM_ROUTE=tasks — navigating
+
+=== peak memory ===
+books=139 peak_rss_kb=86292 peak_rss_mb=84
+
+=== shutting down ===
+
+=== artifacts ===
+  total 220
+  drwxr-xr-x  2 runner runner  4096 Sep 19 20:10 .
+  drwxr-xr-x 20 runner runner  4096 Sep 19 20:09 ..
+  -rw-r--r--  1 runner runner 40929 Sep 19 20:09 01-tasks.png
+  -rw-r--r--  1 runner runner 40929 Sep 19 20:09 02-tasks-settling.png
+  -rw-r--r--  1 runner runner 40929 Sep 19 20:10 03-tasks-settled.png
+  -rw-r--r--  1 runner runner 67777 Sep 19 20:10 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 19 20:09 grim.log
+  -rw-r--r--  1 runner runner  1051 Sep 19 20:10 kalam-home.log
+  -rw-r--r--  1 runner runner  1091 Sep 19 20:09 kalam.log
+  -rw-r--r--  1 runner runner  3099 Sep 19 20:10 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 19 20:09 sway.log
+  -rw-r--r--  1 runner runner  7184 Sep 19 20:09 tree.json
+--- run 35466001265 ---

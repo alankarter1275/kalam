@@ -421,7 +421,7 @@ mod tests {
     /// failure reading exactly like the bug it was written to catch — a task
     /// that finished and never appeared in the panel. The product was fine;
     /// the test was racing its neighbour.
-    static TEST_LOCK: Mutex<()> = Mutex::new(const { Mutex::new(()) });
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {
         match TEST_LOCK.lock() {

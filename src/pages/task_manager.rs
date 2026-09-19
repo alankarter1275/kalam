@@ -51,6 +51,16 @@ pub struct TaskManagerModel {
     running_list: gtk::ListBox,
     recent_header: gtk::Box,
     recent_list: gtk::ListBox,
+    /// Held for the page's lifetime, not used.
+    ///
+    /// Whether dropping a `SourceId` detaches its source is not something this
+    /// codebase has ever settled: `reader/mod.rs` stores all four of its timers
+    /// and removes them by hand, while `downloads.rs` drops one — and that page
+    /// is hidden, so nobody has ever seen its 800 ms poll run. Rather than
+    /// inherit that ambiguity in the one loop the whole panel depends on, keep
+    /// the handle. A tick that stopped silently would leave this page frozen on
+    /// whatever it last read, which is indistinguishable from "nothing running".
+    _tick: gtk::glib::SourceId,
 }
 
 #[relm4::component(pub)]
@@ -119,6 +129,18 @@ impl Component for TaskManagerModel {
     ) -> ComponentParts<Self> {
         let widgets = view_output!();
 
+        // Started before the model exists because the model holds its handle.
+        // A repeating tick on the GLib main loop — no tokio, per the standing
+        // rule in `tasks.rs`.
+        let tick_sender = sender.input_sender().clone();
+        let tick = gtk::glib::timeout_add_local(TICK, move || {
+            match tick_sender.send(TaskManagerMsg::Tick) {
+                Ok(()) => gtk::glib::ControlFlow::Continue,
+                // Fails once the page is gone, which is what ends the loop.
+                Err(_) => gtk::glib::ControlFlow::Break,
+            }
+        });
+
         let model = TaskManagerModel {
             running: tasks::tasks(),
             recent: tasks::recent(),
@@ -126,6 +148,7 @@ impl Component for TaskManagerModel {
             running_list: widgets.running_list.clone(),
             recent_header: widgets.recent_header.clone(),
             recent_list: widgets.recent_list.clone(),
+            _tick: tick,
         };
 
         // The "Recently finished" header is built here rather than in `view!`
@@ -148,18 +171,6 @@ impl Component for TaskManagerModel {
         model.recent_header.append(&clear);
 
         model.render(&sender);
-
-        // A repeating tick on the GLib main loop. No tokio, per the standing
-        // rule in `tasks.rs`: relm4 is already the actor framework, and a
-        // second scheduler would only fight the first.
-        let tick_sender = sender.input_sender().clone();
-        gtk::glib::timeout_add_local(TICK, move || {
-            match tick_sender.send(TaskManagerMsg::Tick) {
-                Ok(()) => gtk::glib::ControlFlow::Continue,
-                // Fails once the page is gone, which is what ends the loop.
-                Err(_) => gtk::glib::ControlFlow::Break,
-            }
-        });
 
         ComponentParts { model, widgets }
     }

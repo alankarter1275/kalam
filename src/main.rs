@@ -57,7 +57,7 @@ fn main() {
     // window is up. `icons::init` is idempotent and the reader's toolbar calls
     // it too, so the worst case is the old cost in the old place rather than
     // the icons turning into fallback glyphs.
-    gtk::glib::idle_add_local_once(|| icons::init());
+    gtk::glib::idle_add_local_once(icons::init);
 
     // Dark baseline via Adwaita (GtkSettings prefer-dark is unsupported with libadwaita).
     timing::span("startup_style");

@@ -75,7 +75,22 @@ pub(crate) fn open_engine(
     prefs: KalamPrefs,
 ) -> Result<ReaderView, kalam_reader::ChapbookError> {
     crate::timing::span("book_open");
-    let view = ReaderView::open(file_path, prefs, &ReaderOptions::default());
+    let options = ReaderOptions::default();
+    // Say what the cache ceiling actually is instead of leaving it to be
+    // inferred through two layers of defaults — the engine's own is 192 MB,
+    // but `kalam-reader` overrides it with a 32 MB figure chosen for a 4 GB
+    // machine, and reading the code is not the same as seeing the number.
+    // With RUST_LOG=info this is the line that answers "how much is one
+    // open book allowed to hold".
+    log::info!(
+        "opening {} with a {} MB cache budget",
+        file_path.display(),
+        options
+            .cache_budget
+            .unwrap_or(kalam_reader::DEFAULT_CACHE_BUDGET)
+            / (1024 * 1024)
+    );
+    let view = ReaderView::open(file_path, prefs, &options);
     crate::timing::span_end("book_open");
     view
 }

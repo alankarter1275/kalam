@@ -119,7 +119,7 @@ impl Component for TaskManagerModel {
     ) -> ComponentParts<Self> {
         let widgets = view_output!();
 
-        let mut model = TaskManagerModel {
+        let model = TaskManagerModel {
             running: tasks::tasks(),
             recent: tasks::recent(),
             status: widgets.status.clone(),

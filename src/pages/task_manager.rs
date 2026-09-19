@@ -85,7 +85,7 @@ impl Component for TaskManagerModel {
                         add_css_class: "kalam-page-sub",
                         set_halign: gtk::Align::Start,
                     },
-                }
+                },
 
                 gtk::Label {
                     set_label: "Running",
@@ -96,13 +96,13 @@ impl Component for TaskManagerModel {
                 gtk::ListBox {
                     add_css_class: "kalam-card",
                     set_selection_mode: gtk::SelectionMode::None,
-                }
+                },
 
                 #[name = "recent_header"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 8,
-                }
+                },
                 #[name = "recent_list"]
                 gtk::ListBox {
                     add_css_class: "kalam-card",

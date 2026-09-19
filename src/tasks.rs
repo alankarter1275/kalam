@@ -632,7 +632,12 @@ mod tests {
         let progress = Rc::new(Cell::new(false));
         let value = Rc::new(Cell::new(0u32));
 
-        let (done_in, progress_in, value_in) = (done.clone(), progress.clone(), value.clone());
+        // Three sets, because `block_on` takes the async block by value: the
+        // two callbacks and the poll loop each need their own clone moved in,
+        // and the originals have to survive outside so the assertions after
+        // `block_on` can read them.
+        let (done_cb, progress_cb, value_cb) = (done.clone(), progress.clone(), value.clone());
+        let done_poll = done.clone();
 
         // The default context, because `spawn_future_local` resolves against
         // the thread-default and falls back to it, and `block_on` is what
@@ -646,15 +651,15 @@ mod tests {
                     reporter.step(1, 2, "halfway");
                     42u32
                 },
-                move |_| progress_in.set(true),
+                move |_| progress_cb.set(true),
                 move |v| {
-                    value_in.set(v);
-                    done_in.set(true);
+                    value_cb.set(v);
+                    done_cb.set(true);
                 },
             );
 
             for _ in 0..500 {
-                if done.get() && !tasks().iter().any(|t| t.label == LABEL) {
+                if done_poll.get() && !tasks().iter().any(|t| t.label == LABEL) {
                     break;
                 }
                 gtk::glib::timeout_future(std::time::Duration::from_millis(10)).await;

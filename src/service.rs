@@ -639,6 +639,12 @@ mod tests {
         // thread boundary, so the property has to be compile-checked rather
         // than assumed.
         assert_send::<AllBooksSnapshot>();
+        // History joins them in the same 1.2b pass. Deliberately *not* the
+        // snapshots for pages that stay synchronous (shelves, reading list,
+        // analytics, reader, book detail) — asserting `Send` on a type that
+        // never crosses a thread proves nothing and reads as coverage it
+        // isn't.
+        assert_send::<HistorySnapshot>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();

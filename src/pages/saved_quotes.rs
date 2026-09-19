@@ -1,6 +1,6 @@
 use crate::db::{Annotation, Catalog};
 use crate::models::Book;
-use crate::service::LibraryService;
+use crate::service::{LibraryService, QuotesSnapshot};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -20,6 +20,9 @@ pub enum SavedQuotesMsg {
     ExportAllData,
     Refresh,
     SaveNote { id: i64, note: String },
+    /// A background quotes query finished. Carries the generation it was
+    /// started with so a superseded reply cannot overwrite a newer one.
+    Loaded { gen: u64, snap: QuotesSnapshot },
 }
 
 pub struct SavedQuotesModel {
@@ -27,6 +30,9 @@ pub struct SavedQuotesModel {
     query: String,
     quotes: Vec<(Annotation, Option<Book>)>,
     status: String,
+    /// Stamps each query so stale replies can be dropped. See
+    /// [`SavedQuotesMsg::Loaded`].
+    reload_gen: u64,
 }
 
 #[relm4::component(pub)]
@@ -113,16 +119,23 @@ impl Component for SavedQuotesModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let service = LibraryService::new(catalog);
+        // Synchronous first read, as on the other pages: the page is not on
+        // screen yet, so there is nothing visible to freeze and no list to
+        // preserve. Every later read goes through `reload`, which is a worker.
+        let snap = service.quotes("");
+        let status = match snap.errors.first() {
+            Some(e) => format!("DB error: {e}"),
+            None => status_line(snap.quotes.len(), ""),
+        };
         let model = SavedQuotesModel {
-            service: LibraryService::new(catalog),
+            service,
             query: String::new(),
-            quotes: Vec::new(),
-            status: String::new(),
+            quotes: snap.quotes,
+            status,
+            reload_gen: 0,
         };
         let widgets = view_output!();
-        // initial load
-        let mut model = model;
-        model.reload();
         rebuild(&widgets.list_box, &model.quotes, &sender);
         widgets.status_label.set_label(&model.status);
         ComponentParts { model, widgets }
@@ -138,9 +151,9 @@ impl Component for SavedQuotesModel {
         match msg {
             SavedQuotesMsg::SearchChanged(q) => {
                 self.query = q;
-                self.reload();
-                rebuild(&widgets.list_box, &self.quotes, &sender);
-                widgets.status_label.set_label(&self.status);
+                // The rebuild moved into `Loaded`: rebuilding here would draw
+                // the list the query has not replaced yet.
+                self.reload(&sender);
             }
             SavedQuotesMsg::Delete(id) => {
                 crate::notify::outcome_info(
@@ -149,9 +162,7 @@ impl Component for SavedQuotesModel {
                     "",
                     "Could not delete the quote",
                 );
-                self.reload();
-                rebuild(&widgets.list_box, &self.quotes, &sender);
-                widgets.status_label.set_label(&self.status);
+                self.reload(&sender);
             }
             SavedQuotesMsg::Export => {
                 let exported = export_quotes_markdown(&self.quotes);
@@ -208,10 +219,27 @@ impl Component for SavedQuotesModel {
                     "",
                     "Could not save your note",
                 );
-                self.reload();
+                self.reload(&sender);
             }
-            SavedQuotesMsg::Refresh => {
-                self.reload();
+            SavedQuotesMsg::Refresh => self.reload(&sender),
+            SavedQuotesMsg::Loaded { gen, snap } => {
+                // Drop a reply an older query produced.
+                if gen != self.reload_gen {
+                    return;
+                }
+                // Failures are reported in the status line rather than a
+                // toast, as this page has always done, in the wording it
+                // already used. But a failed read no longer clears the list —
+                // the synchronous version did, which made a read error look
+                // like every quote had been deleted.
+                self.status = match snap.errors.first() {
+                    Some(e) => format!("DB error: {e}"),
+                    None => {
+                        let n = snap.quotes.len();
+                        self.quotes = snap.quotes;
+                        status_line(n, &self.query)
+                    }
+                };
                 rebuild(&widgets.list_box, &self.quotes, &sender);
                 widgets.status_label.set_label(&self.status);
             }
@@ -221,30 +249,40 @@ impl Component for SavedQuotesModel {
 }
 
 impl SavedQuotesModel {
-    fn reload(&mut self) {
-        let snap = self.service.quotes(&self.query);
-        // This page has always reported failures in its status line rather
-        // than a toast; keep that, and keep the wording it already used.
-        if let Some(e) = snap.errors.first() {
-            self.quotes.clear();
-            self.status = format!("DB error: {e}");
-            return;
-        }
-        let n = snap.quotes.len();
-        self.quotes = snap.quotes;
-        if self.query.trim().is_empty() {
-            self.status = if n == 0 {
-                "No saved quotes yet — highlight or save quotes while reading.".into()
-            } else {
-                format!("{n} quote{} saved", if n == 1 { "" } else { "s" })
-            };
+    /// Ask for the saved quotes on a worker thread (roadmap 1.2b).
+    ///
+    /// The list keeps what it is showing and swaps on arrival, so typing in
+    /// the search box never blanks it while the query runs.
+    fn reload(&mut self, sender: &ComponentSender<Self>) {
+        self.reload_gen += 1;
+        let gen = self.reload_gen;
+        let catalog = self.service.catalog().clone();
+        let query = self.query.clone();
+        let done = sender.clone();
+        crate::tasks::spawn(
+            move |_reporter| LibraryService::new(catalog).quotes(&query),
+            // One query, not a sequence of steps, so nothing to report.
+            |_update| {},
+            move |snap| done.input(SavedQuotesMsg::Loaded { gen, snap }),
+        );
+    }
+}
+
+/// The status line for a completed read. Shared by the synchronous first read
+/// in `init` and by the asynchronous ones, so the two cannot drift apart.
+fn status_line(n: usize, query: &str) -> String {
+    if query.trim().is_empty() {
+        if n == 0 {
+            "No saved quotes yet — highlight or save quotes while reading.".into()
         } else {
-            self.status = format!(
-                "{n} result{} for \"{}\"",
-                if n == 1 { "" } else { "s" },
-                self.query
-            );
+            format!("{n} quote{} saved", if n == 1 { "" } else { "s" })
         }
+    } else {
+        format!(
+            "{n} result{} for \"{}\"",
+            if n == 1 { "" } else { "s" },
+            query
+        )
     }
 }
 

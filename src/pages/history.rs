@@ -1,7 +1,7 @@
 //! P4 — History: the append-only reading event log.
 
 use crate::db::{Catalog, EventKind, ReadingEvent};
-use crate::service::LibraryService;
+use crate::service::{HistorySnapshot, LibraryService};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -19,6 +19,9 @@ pub enum HistoryMsg {
     FilterChanged(Option<EventKind>),
     Clear,
     Refresh,
+    /// A background history query finished. Carries the generation it was
+    /// started with so a superseded reply cannot overwrite a newer one.
+    Loaded { gen: u64, snap: HistorySnapshot },
 }
 
 pub struct HistoryModel {
@@ -26,6 +29,9 @@ pub struct HistoryModel {
     events: Vec<ReadingEvent>,
     query: String,
     filter: Option<EventKind>,
+    /// Stamps each query so stale replies can be dropped. See
+    /// [`HistoryMsg::Loaded`].
+    reload_gen: u64,
 }
 
 #[relm4::component(pub)]
@@ -121,6 +127,9 @@ impl Component for HistoryModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let service = LibraryService::new(catalog);
+        // Synchronous, like the other pages' first read: the page is not on
+        // screen yet, so there is no visible UI to freeze and no feed to
+        // preserve. See the note in `all_books.rs::init` for the reasoning.
         let snap = service.history(None, "", PAGE_LIMIT);
         report_errors(&snap.errors);
         let model = HistoryModel {
@@ -128,6 +137,7 @@ impl Component for HistoryModel {
             events: snap.events,
             query: String::new(),
             filter: None,
+            reload_gen: 0,
         };
         let widgets = view_output!();
 
@@ -167,11 +177,11 @@ impl Component for HistoryModel {
         match msg {
             HistoryMsg::SearchChanged(q) => {
                 self.query = q;
-                self.reload();
+                self.reload(&sender);
             }
             HistoryMsg::FilterChanged(kind) => {
                 self.filter = kind;
-                self.reload();
+                self.reload(&sender);
             }
             HistoryMsg::Clear => {
                 // `self.events` is the *filtered* view, so its length would
@@ -182,9 +192,22 @@ impl Component for HistoryModel {
                     "Every reading event was removed",
                     "Could not clear the history",
                 );
-                self.reload();
+                self.reload(&sender);
             }
-            HistoryMsg::Refresh => self.reload(),
+            HistoryMsg::Refresh => self.reload(&sender),
+            HistoryMsg::Loaded { gen, snap } => {
+                // Drop a reply an older query produced.
+                if gen != self.reload_gen {
+                    return;
+                }
+                if snap.errors.is_empty() {
+                    self.events = snap.events;
+                } else {
+                    // Keep the feed on screen — a failed read is not an empty
+                    // history — but still say what happened.
+                    report_errors(&snap.errors);
+                }
+            }
         }
         rebuild(&widgets.list, &self.events, &sender);
         self.update_view(widgets, sender);
@@ -192,10 +215,26 @@ impl Component for HistoryModel {
 }
 
 impl HistoryModel {
-    fn reload(&mut self) {
-        let snap = self.service.history(self.filter, &self.query, PAGE_LIMIT);
-        report_errors(&snap.errors);
-        self.events = snap.events;
+    /// Ask for the event log on a worker thread (roadmap 1.2b).
+    ///
+    /// Same shape as the All Books pilot: the feed keeps what it is showing
+    /// and swaps on arrival, so a filter change or a keystroke never blanks
+    /// the list while the query runs.
+    fn reload(&mut self, sender: &ComponentSender<Self>) {
+        self.reload_gen += 1;
+        let gen = self.reload_gen;
+        let catalog = self.service.catalog().clone();
+        let filter = self.filter;
+        let query = self.query.clone();
+        let done = sender.clone();
+        crate::tasks::spawn(
+            move |_reporter| {
+                LibraryService::new(catalog).history(filter, &query, PAGE_LIMIT)
+            },
+            // One query, not a sequence of steps, so nothing to report.
+            |_update| {},
+            move |snap| done.input(HistoryMsg::Loaded { gen, snap }),
+        );
     }
 }
 

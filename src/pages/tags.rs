@@ -2,7 +2,7 @@
 
 use crate::db::{Catalog, SortKey};
 use crate::models::Book;
-use crate::service::LibraryService;
+use crate::service::{LibraryService, TagBooksSnapshot, TagsSnapshot};
 use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -25,12 +25,18 @@ pub enum TagsMsg {
     RenameTag { old_name: String, new_name: String },
     MergeTag { source_tag: String, target_tag: String },
     DeleteTag { tag_name: String },
+    /// A background tag-cloud query finished. Carries the generation it was
+    /// started with so a superseded reply cannot overwrite a newer one.
+    Loaded { gen: u64, snap: TagsSnapshot },
 }
 
 pub struct TagsModel {
     catalog: Arc<Catalog>,
     tags: Vec<(String, i64)>,
     query: String,
+    /// Stamps each query so stale replies can be dropped. See
+    /// [`TagsMsg::Loaded`].
+    reload_gen: u64,
 }
 
 #[relm4::component(pub)]
@@ -90,12 +96,16 @@ impl Component for TagsModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        // Synchronous first read, as on the other pages: the page is not on
+        // screen yet, so there is nothing visible to freeze and no cloud to
+        // preserve. Every later read goes through `reload`, a worker.
         let snap = LibraryService::new(catalog.clone()).tags();
         report_errors(&snap.errors);
         let model = TagsModel {
             catalog,
             tags: snap.tags,
             query: String::new(),
+            reload_gen: 0,
         };
         let widgets = view_output!();
         rebuild(&widgets.cloud, &model.visible(), &sender);
@@ -117,9 +127,7 @@ impl Component for TagsModel {
                 } else {
                     crate::notify::success("Tag renamed", &format!("Renamed #{old_name} to #{new_name}"));
                 }
-                let snap = LibraryService::new(self.catalog.clone()).tags();
-                report_errors(&snap.errors);
-                self.tags = snap.tags;
+                self.reload(&sender);
             }
             TagsMsg::MergeTag { source_tag, target_tag } => {
                 if let Err(err) = self.catalog.merge_tags(&source_tag, &target_tag) {
@@ -127,9 +135,7 @@ impl Component for TagsModel {
                 } else {
                     crate::notify::success("Tags merged", &format!("Merged #{source_tag} into #{target_tag}"));
                 }
-                let snap = LibraryService::new(self.catalog.clone()).tags();
-                report_errors(&snap.errors);
-                self.tags = snap.tags;
+                self.reload(&sender);
             }
             TagsMsg::DeleteTag { tag_name } => {
                 if let Err(err) = self.catalog.delete_tag(&tag_name) {
@@ -137,9 +143,20 @@ impl Component for TagsModel {
                 } else {
                     crate::notify::success("Tag deleted", &format!("Deleted tag #{tag_name}"));
                 }
-                let snap = LibraryService::new(self.catalog.clone()).tags();
-                report_errors(&snap.errors);
-                self.tags = snap.tags;
+                self.reload(&sender);
+            }
+            TagsMsg::Loaded { gen, snap } => {
+                // Drop a reply an older query produced.
+                if gen != self.reload_gen {
+                    return;
+                }
+                if snap.errors.is_empty() {
+                    self.tags = snap.tags;
+                } else {
+                    // Keep the cloud on screen; a failed read is not a
+                    // library with no tags.
+                    report_errors(&snap.errors);
+                }
             }
         }
         rebuild(&widgets.cloud, &self.visible(), &sender);
@@ -148,6 +165,25 @@ impl Component for TagsModel {
 }
 
 impl TagsModel {
+    /// Re-read the tag cloud on a worker thread (roadmap 1.2b).
+    ///
+    /// The write that prompted this still happens on the UI thread — moving
+    /// writes off it is a separate and larger change — but the re-read is the
+    /// part that counts every tag across the whole library, and so the part
+    /// that grows with the collection.
+    fn reload(&mut self, sender: &ComponentSender<Self>) {
+        self.reload_gen += 1;
+        let gen = self.reload_gen;
+        let catalog = self.catalog.clone();
+        let done = sender.clone();
+        crate::tasks::spawn(
+            move |_reporter| LibraryService::new(catalog).tags(),
+            // One query, not a sequence of steps, so nothing to report.
+            |_update| {},
+            move |snap| done.input(TagsMsg::Loaded { gen, snap }),
+        );
+    }
+
     fn visible(&self) -> Vec<(String, i64)> {
         let q = self.query.trim().to_lowercase();
         if q.is_empty() {
@@ -404,6 +440,9 @@ pub enum TagBooksOut {
 #[derive(Debug)]
 pub enum TagBooksMsg {
     SortChanged(SortKey),
+    /// A background tag-books query finished. Carries the generation it was
+    /// started with so a superseded reply cannot overwrite a newer one.
+    Loaded { gen: u64, snap: TagBooksSnapshot },
 }
 
 pub struct TagBooksModel {
@@ -411,6 +450,9 @@ pub struct TagBooksModel {
     tag: String,
     books: Vec<Book>,
     sort: SortKey,
+    /// Stamps each query so stale replies can be dropped. See
+    /// [`TagBooksMsg::Loaded`].
+    reload_gen: u64,
 }
 
 #[relm4::component(pub)]
@@ -480,6 +522,9 @@ impl Component for TagBooksModel {
     ) -> ComponentParts<Self> {
         let sort = SortKey::Title;
         let service = LibraryService::new(catalog);
+        // Synchronous first read, as on the other pages: the page is not on
+        // screen yet, so there is nothing visible to freeze and no grid to
+        // preserve. The sort change goes through `reload`, which is a worker.
         let snap = service.tag_books(&tag, sort);
         report_errors(&snap.errors);
         let model = TagBooksModel {
@@ -487,6 +532,7 @@ impl Component for TagBooksModel {
             tag,
             books: snap.books,
             sort,
+            reload_gen: 0,
         };
         let widgets = view_output!();
         widgets.title.set_label(&format!("#{}", model.tag));
@@ -522,13 +568,45 @@ impl Component for TagBooksModel {
         match msg {
             TagBooksMsg::SortChanged(sort) => {
                 self.sort = sort;
-                let snap = self.service.tag_books(&self.tag, sort);
-                report_errors(&snap.errors);
-                self.books = snap.books;
+                self.reload(&sender);
+            }
+            TagBooksMsg::Loaded { gen, snap } => {
+                // Drop a reply an older query produced — clicking through the
+                // sort buttons quickly starts several.
+                if gen != self.reload_gen {
+                    return;
+                }
+                if snap.errors.is_empty() {
+                    self.books = snap.books;
+                } else {
+                    // Keep the grid on screen rather than blanking it.
+                    report_errors(&snap.errors);
+                }
             }
         }
         rebuild_books(&widgets.list, &self.books, &sender);
         self.update_view(widgets, sender);
+    }
+}
+
+impl TagBooksModel {
+    /// Ask for one tag's books on a worker thread (roadmap 1.2b).
+    ///
+    /// The grid keeps what it is showing and swaps on arrival, so clicking
+    /// through the sort buttons never blanks it while the query runs.
+    fn reload(&mut self, sender: &ComponentSender<Self>) {
+        self.reload_gen += 1;
+        let gen = self.reload_gen;
+        let catalog = self.service.catalog().clone();
+        let tag = self.tag.clone();
+        let sort = self.sort;
+        let done = sender.clone();
+        crate::tasks::spawn(
+            move |_reporter| LibraryService::new(catalog).tag_books(&tag, sort),
+            // One query, not a sequence of steps, so nothing to report.
+            |_update| {},
+            move |snap| done.input(TagBooksMsg::Loaded { gen, snap }),
+        );
     }
 }
 

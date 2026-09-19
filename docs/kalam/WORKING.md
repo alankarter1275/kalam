@@ -311,9 +311,11 @@ closed without this list being updated.
   exemption in `dom/parse.rs` — xml5ever 0.39 reports `xml:lang` + `lang`
   as a duplicate (R17). **Still open: all three are at 0.39** in the
   workspace root.
-- Monthly upstream review (`UPSTREAM.md`); last done 2026-09-10. **Note that
-  this is now harder, not easier:** the engine crates are ordinary workspace
-  members that Kalam edits in place, so upstream cherry-picks conflict with
-  local edits. Decide whether upstream tracking is still wanted — see the
-  "Upstream relationship" item in `docs/offline-roadmap.md`.
+- ~~Monthly upstream review (`UPSTREAM.md`).~~ **Ended 2026-09-19.** The
+  decision this bullet was waiting on has been made: Kalam no longer tracks
+  upstream. It ran once, on 2026-09-10, and took nothing. The concern recorded
+  here was correct — the engine crates are ordinary workspace members that
+  Kalam edits in place, so cherry-picks conflicted with local edits across 74
+  inherited files. Provenance and the full list of those edits are in
+  `docs/kalam/UPSTREAM.md`.
 

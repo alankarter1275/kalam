@@ -149,11 +149,16 @@ deleted: the `cbz`, `pdf` and `opds` features are gone, and the internal
 `_comic` and `_image-book` features stay declared but are never enabled, so
 the code behind their `#[cfg]`s does not build. The files are left
 byte-identical to upstream on purpose, so cherry-picking upstream fixes stays
-cheap (`docs/kalam/UPSTREAM.md`).
+cheap.
 
-**Do not "clean this up" by deleting the variants.** It breaks upstream
-cherry-picks for no gain. If you need to assert the boundary, assert it on the
-feature list, not on the enum.
+**That reason no longer applies** — Kalam stopped tracking upstream on
+2026-09-19 (`UPSTREAM.md`), so there are no cherry-picks left to stay cheap
+for. The variants could now be deleted like any other dead code. They have not
+been, because that is a code change and belongs under the dead-code pass
+(roadmap 1.16), not in a documentation decision.
+
+**So: do not "clean this up" as a drive-by.** If the variants go, they go as
+part of 1.16, deliberately, with the `#[cfg]` sites that reference them.
 
 ---
 

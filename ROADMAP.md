@@ -634,12 +634,42 @@ bulk editing. Fixing it later means rewriting all four.
   - **Env-var ceiling recorded as five `KALAM_*` switches** (plus `RUST_LOG`),
     with a note that it already slipped by one since that count was first
     written down — which is the argument for writing the ceiling down at all.
-- **1.10 — Decide the upstream relationship.** `docs/kalam/UPSTREAM.md` describes
-  cherry-picking fixes monthly from the original chapbook repository, but the
-  engine crates are now ordinary workspace members that Kalam edits directly.
-  Editing in place and pulling from upstream at the same time produces
-  conflicts. Either stop tracking upstream, or keep a clean boundary between
-  files we edit and files we do not.
+- ~~**1.10 — Decide the upstream relationship.**~~ **Decided 2026-09-19: Kalam
+  no longer tracks upstream.** `docs/kalam/UPSTREAM.md` described cherry-picking
+  fixes monthly from `ophymx/chapbook`, but the engine crates are ordinary
+  workspace members that Kalam edits in place.
+  **The evidence for stopping, measured rather than assumed.** Kalam has
+  modified **74 inherited files** — the engine's own library and database layer
+  removed, one file deleted outright, a theme system added that upstream does
+  not have. `UPSTREAM.md` itself already singled out
+  `chapbook-reader/src/open.rs` as "the file most likely to conflict on a
+  cherry-pick." Against that cost, the routine **ran exactly once** (2026-09-10,
+  range `ab14cb7..7ace24a`, PRs #32–#36, 42 files) and took **nothing**:
+  upstream was working on phone and Windows shells, FFI/JNI, OPDS bindings and
+  Swift/.NET surfaces. Real upkeep, zero yield.
+  **What changed.** `UPSTREAM.md` rewritten from a 198-line monthly procedure
+  into a 136-line provenance note. The 74-row table of inherited-file edits is
+  **kept**, reframed: it no longer predicts merge conflicts, but it does record
+  how this engine differs from the one imported, which is worth having when
+  debugging. Nothing is lost — the upstream history was merged with
+  `--allow-unrelated-histories`, so a specific fix can still be found and
+  brought over by hand; there is just no standing obligation to look.
+  **Four other documents stated the routine as still live and were corrected:**
+  `PLAN.md` (its companion-doc list, the §3 premise, and step 7 "Monthly"),
+  `docs/kalam/WORKING.md` (the pending-decision bullet, which also pointed at an
+  "Upstream relationship" item in `docs/offline-roadmap.md` that does not exist),
+  and `docs/kalam/RESTRICTIONS.md`. That last one is worth noting: it told
+  readers to keep dead format variants byte-identical *so cherry-picks stay
+  cheap*, which is no longer a reason. It now says they could be deleted, but
+  as part of **1.16** rather than as a drive-by, since removing them means
+  touching the `#[cfg]` sites that reference them.
+  `docs/kalam/RESEARCH.md` was deliberately **left alone** — it is a dated log
+  of what was believed when each decision was made, and rewriting it would make
+  it less useful.
+  **Owner's other decision:** the five changes marked "candidate to send
+  upstream" — real bugs in the original project, one being a reading setting
+  the author persisted but never read — stay recorded in `UPSTREAM.md` rather
+  than becoming issues or pull requests.
 - **1.11 — Correct the documents that describe an app that no longer exists.**
   Found by the audit. These are not cosmetic: a README that overstates what
   is finished is how this project came to believe the downloads hub was

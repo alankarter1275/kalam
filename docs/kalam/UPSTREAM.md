@@ -1,114 +1,57 @@
-# Keeping up with Chapbook
+# Chapbook: where the engine came from
 
-We forked Chapbook but want its bug fixes. This is the routine. Once a
-month is plenty. Each step is a command you can paste.
+**We no longer track upstream.** Decided 2026-09-19.
 
-## The facts
+The reading engine in `crates/chapbook-*` was not written for Kalam. It was
+imported wholesale from [ophymx/chapbook](https://github.com/ophymx/chapbook),
+and this file used to describe a monthly routine for pulling the author's bug
+fixes back in. That routine is retired.
+
+## Why
+
+Kalam has modified **74 inherited files** — the table below. The engine's own
+library and database layer was removed because Kalam has its own, one file was
+deleted outright, and a theme system was added that upstream does not have.
+The previous version of this document already singled out
+`crates/chapbook-reader/src/open.rs` as *"the file most likely to conflict on
+a cherry-pick."*
+
+Editing files in place while also pulling the author's changes to the same
+files means resolving conflicts by hand, every month, indefinitely — and the
+routine ran exactly once. On 2026-09-10 it reviewed `ab14cb7..7ace24a` (PRs
+#32–#36, 42 files) and took **nothing**: upstream's work was phone and Windows
+shells, FFI/JNI navigation, OPDS catalogue bindings and Swift/.NET surfaces,
+none of which Kalam has. The upkeep was real and the yield was zero.
+
+The old document's closing section already contained the answer: *"Nothing
+breaks. The last version we took keeps working forever; we simply stop doing
+the review. That is the point of owning the copy."* This is that.
+
+## Provenance
 
 | | |
 |---|---|
-| Upstream repo | https://github.com/ophymx/chapbook |
+| Upstream | https://github.com/ophymx/chapbook |
 | Imported at | commit `ab14cb78d2f7e63e8e2f7bc066bfc8ee57318cc9`, 2026-09-07 |
-| How it was imported | `git merge --allow-unrelated-histories` — the full history is in this repo |
-| Last reviewed up to | `7ace24a` (upstream `main`, 2026-09-10) *(update this line every time you finish a review)* |
+| How | `git merge --allow-unrelated-histories` — the full upstream history is in this repository, so `git log` on an engine file still shows where it came from |
+| Reviews done | One: 2026-09-10, range `ab14cb7..7ace24a`, nothing taken |
+| Tracking ended | 2026-09-19 |
 
-Because the history was merged rather than copied, Git knows exactly which
-upstream commits we already have. That is what makes everything below
-one-liners.
+Nothing is lost by this. The history is still here, so if a specific upstream
+fix is ever wanted it can be found and brought over by hand — there is simply
+no standing obligation to go looking.
 
-## One-time setup (per clone)
+Five of Kalam's own changes below are marked *"Candidate to send upstream."*
+They are real bugs in the original project; one is a reading setting the
+author persisted but never read. The owner's decision is to leave them
+recorded here rather than open issues or pull requests.
 
-```sh
-git remote add upstream https://github.com/ophymx/chapbook.git
-```
+## What Kalam changed inside inherited files
 
-## The monthly review
-
-**1. Fetch what's new.**
-
-```sh
-git fetch upstream main
-```
-
-**2. List the commits we don't have yet, but only the ones touching crates
-we kept.** This ignores everything about Android, iOS, Windows, PDF,
-comics, catalogs, sync — i.e. most of the noise.
-
-```sh
-git log --format='%h  %ad  %s' --date=short --reverse HEAD..upstream/main -- \
-    crates/chapbook-core crates/chapbook-epub crates/chapbook-layout \
-    crates/chapbook-paint crates/chapbook-render-tinyskia \
-    crates/chapbook-reader crates/chapbook-viewer-gtk tools/chapbook-cli \
-    fixtures/epub fixtures/render fixtures/fonts docs
-```
-
-Empty output means nothing to do this month. Update the "last reviewed"
-line above and stop.
-
-**3. Sort each commit.** Read the message; the author writes long,
-explanatory ones. Ask: *is this a fix or improvement to something we
-kept?* Three buckets:
-
-| Bucket | Example | Action |
-|---|---|---|
-| **Take** | "Fix a page break landing inside a heading", "Handle an EPUB whose spine points at a missing file" | cherry-pick it (step 4) |
-| **Skip** | Anything about e-ink, Android, iOS, Windows, WASM, PDF, CBZ, OPDS, sync, GPU | nothing |
-| **Unsure** | It touches `chapbook-reader` but mentions comics | look at the diff: `git show <hash> --stat`. If it only touches files we deleted, skip. If mixed, cherry-pick and delete the parts that don't apply. |
-
-**4. Bring a commit over.**
-
-```sh
-git cherry-pick -x <hash>
-```
-
-The `-x` writes "(cherry picked from commit …)" into the message so we
-always know where it came from. Three things can happen:
-
-- **Applies cleanly.** Run the gate, commit is already made. Done.
-- **Conflict in a file we deleted.** Git says something like
-  `CONFLICT (modify/delete)`. That part of the fix is for a crate we
-  removed. Resolve with `git rm <that file>` and `git cherry-pick --continue`.
-- **Conflict inside a file we kept.** This means we changed that file
-  ourselves — which §3 of `PLAN.md` says to avoid, and this is why. Open
-  the file, look for the `<<<<<<<` markers, keep both sides' intent, remove
-  the markers, `git add` it, `git cherry-pick --continue`. If it is a mess,
-  `git cherry-pick --abort` and note the hash in the "deferred" list below
-  instead of fighting it.
-
-**5. Run the gate** after each cherry-pick, or after a batch:
-
-```sh
-cargo fmt --all --check && cargo clippy --workspace --all-targets && cargo test --workspace
-```
-
-If a test fails after a cherry-pick, the fix depended on another upstream
-commit you skipped. `git log --oneline <hash>~5..<hash>` shows its
-neighbours; usually the missing one is right before it.
-
-**6. Update the "last reviewed" line** at the top of this file, add a
-row to the review log below (what upstream did, what was taken), add an
-entry to [`RESEARCH.md`](RESEARCH.md) if anything was investigated in
-depth, and commit.
-
-## Deferred
-
-Upstream commits we wanted but could not take cleanly. Revisit when there
-is time; delete the line if it stops mattering.
-
-*(none yet)*
-
-## Review log
-
-One line per review: what upstream did, what we took.
-
-| Date | Upstream range | What changed there | Taken |
-|---|---|---|---|
-| 2026-09-10 | `ab14cb7..7ace24a` (PRs #32–#36, 42 files) | Phone and Windows shells: FFI/JNI navigation and OPDS catalog bindings, Swift reader surface, .NET parity, vello GPU test gating. In crates we kept, only `chapbook-reader`: a new `pub fn open_publication(path)` (open a file as a `Publication` without a session, for an importer) and a re-export of `chapbook_opds` behind the `opds` feature. No bug fixes; nothing touches layout, EPUB parsing, positions, highlights or rendering. | Nothing. Kalam has its own importer and the engine has no OPDS. Take `open_publication` later only if Kalam's import wants the engine to read metadata. |
-
-## Things we changed inside inherited files
-
-Kept short on purpose — see `PLAN.md` §3. Every entry here is a future
-conflict. Prefix such commits with `kalam:`.
+Kept because it records how this engine differs from the one that was
+imported, which is worth knowing when debugging it. It no longer predicts
+merge conflicts, because there is nothing left to merge with. The `kalam:`
+commit prefix is still worth using, since it makes these changes findable.
 
 | File | What | Why |
 |---|---|---|
@@ -191,8 +134,3 @@ New files inside inherited crates (no conflict risk, listed for completeness):
 | `crates/chapbook-reader/tests/scroll.rs` | Ten tests over that surface on `long.epub` |
 | `crates/chapbook-reader/src/host_position.rs` | The whole-book char count moved out of `unit_char_context` into `pub fn chapter_char_counts()`, which it now calls; the count is timed at `info` | The scrolling widget (round H) guesses unmeasured chapters' heights from their lengths; same pass, shared |
 | `crates/chapbook-reader/src/scroll.rs` | `line_at_page()`, `line_rect_at_page()`, `speakable_page_of()` | Round H: keeping the reading line on the same text across a relayout, and tap-to-look-up on any band |
-
-## If upstream goes quiet or goes a direction we dislike
-
-Nothing breaks. The last version we took keeps working forever; we simply
-stop doing the review. That is the point of owning the copy.

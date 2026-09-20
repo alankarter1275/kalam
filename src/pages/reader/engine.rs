@@ -829,4 +829,64 @@ mod tests {
         assert!(range_from_json("epubcfi(/6/4!/4/2/1:0)").is_none());
         assert!(range_from_json("{\"kalam_locator\":2}").is_none());
     }
+
+    fn entry(word: &str) -> crate::db::EntryData {
+        crate::db::EntryData {
+            word: word.to_string(),
+            senses: vec![
+                crate::db::Sense {
+                    number: 1,
+                    pos: Some("noun".into()),
+                    def: "a feeling".into(),
+                    example: Some("an air of it".into()),
+                },
+                crate::db::Sense {
+                    number: 2,
+                    pos: None,
+                    def: "a mood".into(),
+                    example: Some(String::new()),
+                },
+            ],
+            pos: vec!["noun".into(), "adjective".into()],
+            synonyms: vec!["sorrow".into()],
+            antonyms: vec!["joy".into()],
+            idioms: vec![("in a mood".into(), "sad".into())],
+            suggestions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn card_joins_word_level_pos_with_middots() {
+        let card = DictCard::from_entry(&entry("melancholy"), Some("/m/".into()), false, None);
+        assert_eq!(card.word, "melancholy");
+        assert_eq!(card.pos.as_deref(), Some("noun \u{00b7} adjective"));
+        assert_eq!(card.pronunciation.as_deref(), Some("/m/"));
+    }
+
+    #[test]
+    fn card_pos_is_none_when_entry_has_no_pos() {
+        let mut data = entry("x");
+        data.pos.clear();
+        let card = DictCard::from_entry(&data, None, false, None);
+        assert!(card.pos.is_none());
+    }
+
+    #[test]
+    fn card_maps_senses_drops_empty_examples_and_marks_hint() {
+        let card = DictCard::from_entry(&entry("m"), None, false, Some(1));
+        assert_eq!(card.senses.len(), 2);
+        assert_eq!(card.senses[0].example.as_deref(), Some("an air of it"));
+        assert!(!card.senses[0].hinted);
+        assert_eq!(card.senses[1].example, None, "empty example is dropped");
+        assert!(card.senses[1].hinted, "hint index lands on sense 1");
+    }
+
+    #[test]
+    fn card_carries_synonyms_antonyms_idioms_and_saved() {
+        let card = DictCard::from_entry(&entry("m"), None, true, None);
+        assert_eq!(card.synonyms, vec!["sorrow".to_string()]);
+        assert_eq!(card.antonyms, vec!["joy".to_string()]);
+        assert_eq!(card.idioms, vec![("in a mood".into(), "sad".into())]);
+        assert!(card.saved);
+    }
 }

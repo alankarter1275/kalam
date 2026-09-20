@@ -1,0 +1,39 @@
+# Manual test checklist
+
+Things that are built and CI-verified (compile / clippy / unit tests) but still
+need a real run on your machine. Work through these when a build is ready, and
+tick them off. The agent will remind you about this list.
+
+## Dictionary & annotations polish (Phase 2 plan)
+- [ ] Look up a word — popup matches the v3 mockup: dark rounded card, serif
+      word, mono pronunciation, purple part-of-speech pill, numbered
+      definitions with italic examples, blue synonym / red antonym chips,
+      idiom cards, bottom fade.
+- [ ] Synonym / antonym chips are tappable and re-look-up that word.
+- [ ] "Show N more" expands extra definitions.
+- [ ] Bookmark (save) button works and shows the saved state.
+- [ ] 🔊 audio button speaks the word (needs `espeak-ng` or `spd-say`
+      installed; otherwise it should toast which one to install).
+
+## Reader chrome
+- [ ] The bottom page pill (← 10 / 140 title →) now **floats** with a gap above
+      the bottom edge instead of hugging it.
+
+## Highlights / notes export (#5 part 1)
+- [ ] Reader → Highlights panel → **Export** writes `~/Highlights.md`.
+- [ ] The file lists highlights, quotes and notes with chapter + note text.
+- [ ] A success toast shows the count and path.
+
+## Spaced-repetition review (#5 part 2)
+- [ ] Library → **Review** quick-link opens the review page.
+- [ ] With saved words: a word shows; *Show definition* reveals it;
+      **Again / Good / Easy** advance to the next card.
+- [ ] "Again" brings the word back soon (~10 min); Good/Easy push it out days.
+- [ ] With nothing due: "All caught up — nothing due right now."
+- [ ] With no saved words at all: the hint to save some words first.
+
+## Carried over from earlier work (re-verify if you haven't)
+- [ ] Splash screen shows the brand on cold start (no blank window).
+- [ ] Home appears first; heavy chores run after first paint.
+- [ ] Bulk import expands to show every imported book name.
+- [ ] Each delete shows up as its own task in the task manager.

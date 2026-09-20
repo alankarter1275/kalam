@@ -56,6 +56,11 @@ tick them off. The agent will remind you about this list.
       side"** off: one page, full width, at any window size. Turning a page
       moves one page, not two. It survives restart. Narrow the window with
       it on and the spread should still give way to one page.
+- [ ] **2.8 Fonts folder:** Reader → Settings → Reading → Type → **Fonts
+      folder → Open** opens `~/.local/share/kalam/fonts` in your file
+      manager. Copy a `.ttf` or `.otf` in there, **close and reopen the
+      book**, and the new face should be in the Typeface picker and render.
+      Without any files dropped in, nothing should change or slow down.
 
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).

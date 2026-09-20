@@ -1159,6 +1159,16 @@ they need 1.2's asynchronous service layer underneath them.
     until they ask for it to. Continuous vertical scroll — the other half of
     this item — already shipped earlier as `reader.scrolled`.
 - **2.8 — Custom fonts folder** — drop `.ttf`/`.otf` in without a system install.
+  - **Done 2026-09-21:** `~/.local/share/kalam/fonts`, scanned recursively
+    when a book opens (`ReaderOptions::fonts_dir` → `Faces::Dir`) and offered
+    by the 2.3 typeface picker. It sits under the shared root rather than per
+    library, for the reason `dictionaries_dir` gives: a typeface belongs to
+    the installation. The folder loads *after* the bundled faces, so a name
+    Literata or Noto Sans already answers keeps the face that shipped, and
+    anything dropped in simply joins the picker. Settings → Reading → Type
+    has a "Fonts folder" row with an Open button, and says plainly that new
+    faces appear on the next book open — faces are read at open, not per
+    page turn.
 - **2.9 — Auto-hiding mouse cursor** after 2s, and configurable keybindings and
   mouse-wheel sensitivity.
 - **2.10 — Selection toolbar.** Double-click selects a word, triple-click a paragraph.

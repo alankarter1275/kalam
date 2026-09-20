@@ -211,7 +211,7 @@ impl TaskManagerModel {
     fn render(&self, sender: &ComponentSender<Self>) {
         self.status.set_label(&status_line(&self.running, &self.recent));
         let s = sender.input_sender().clone();
-        let on_cancel: Rc<dyn Fn(u64)> =
+        let on_cancel: CancelFn =
             Rc::new(move |id| {
                 s.send(TaskManagerMsg::Cancel(id)).ok();
             });
@@ -234,6 +234,13 @@ impl TaskManagerModel {
         }
     }
 }
+
+/// What to do when a task's Cancel button is pressed.
+///
+/// Named rather than written out because the bare `Rc<dyn Fn(u64)>` inside an
+/// `Option` tuple trips `clippy::type_complexity` — the same reason
+/// `pages::SelfRebuild` exists.
+pub(crate) type CancelFn = Rc<dyn Fn(u64)>;
 
 /// What the sidebar button shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,7 +318,7 @@ pub(crate) fn apply_badge(btn: &gtk::Button, state: Badge) {
 /// honest, and one timer in one place is easier to reason about than two —
 /// especially after the task *page* turned out to depend on a handle nobody
 /// was keeping alive.
-pub(crate) fn build_tasks_dialog(on_cancel: Rc<dyn Fn(u64)>) -> (gtk::Box, gtk::Box) {
+pub(crate) fn build_tasks_dialog(on_cancel: CancelFn) -> (gtk::Box, gtk::Box) {
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 10);
     panel.add_css_class("kalam-float-panel");
     panel.set_margin_all(16);
@@ -331,7 +338,7 @@ pub(crate) fn build_tasks_dialog(on_cancel: Rc<dyn Fn(u64)>) -> (gtk::Box, gtk::
 }
 
 /// Refill the `w` dialog's list. Called on every app tick while it is open.
-pub(crate) fn fill_tasks_dialog(list: &gtk::Box, on_cancel: &Rc<dyn Fn(u64)>) {
+pub(crate) fn fill_tasks_dialog(list: &gtk::Box, on_cancel: &CancelFn) {
     clear_box(list);
     let running = tasks::tasks();
     if running.is_empty() {
@@ -378,7 +385,7 @@ fn empty_row(text: &str) -> gtk::ListBoxRow {
 /// Builds the *content*, not a `ListBoxRow`: the page wraps it in a row, the
 /// `w` dialog appends it straight to a plain box, and a `ListBoxRow` outside a
 /// `ListBox` is a widget that renders as nothing.
-pub(crate) fn running_row(task: &TaskInfo, on_cancel: &Rc<dyn Fn(u64)>) -> gtk::Box {
+pub(crate) fn running_row(task: &TaskInfo, on_cancel: &CancelFn) -> gtk::Box {
     let col = gtk::Box::new(gtk::Orientation::Vertical, 4);
     col.set_margin_all(12);
 

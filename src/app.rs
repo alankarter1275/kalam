@@ -189,7 +189,7 @@ pub struct AppModel {
     /// widget twice a second.
     tasks_badge: crate::pages::task_manager::Badge,
     /// The `w` dialog's row host and its cancel callback, while it is open.
-    tasks_dialog: Option<(gtk::Box, std::rc::Rc<dyn Fn(u64)>)>,
+    tasks_dialog: Option<(gtk::Box, crate::pages::task_manager::CancelFn)>,
     /// Held, not used — hence the underscore, which is what exempts a field
     /// from the dead-code lint that `-D warnings` turns into a build failure.
     /// Dropping a `SourceId` is not documented to detach its source and this
@@ -260,7 +260,7 @@ impl AppModel {
         self.close_floating();
 
         let s = sender.input_sender().clone();
-        let on_cancel: std::rc::Rc<dyn Fn(u64)> = std::rc::Rc::new(move |id| {
+        let on_cancel: crate::pages::task_manager::CancelFn = std::rc::Rc::new(move |id| {
             crate::tasks::cancel(id);
             // Repaint now rather than waiting for the next tick, so the row
             // responds to the click instead of half a second later.

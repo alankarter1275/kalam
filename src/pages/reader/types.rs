@@ -139,7 +139,7 @@ pub enum ReaderMsg {
     /// Roadmap 2.9: how far one wheel notch scrolls.
     WheelStepDelta(i32),
     /// Roadmap 2.9: a reader moved an action to a different key.
-    SetKeyBinding(super::keybinds::ReaderAction, u32, bool),
+    SetKeyBinding(super::keybinds::ReaderAction, gtk::gdk::Key, bool),
     /// Roadmap 2.9: every action back on the key it shipped with.
     ResetKeyBindings,
     /// Roadmap 2.8: open the folder a reader drops typefaces into.

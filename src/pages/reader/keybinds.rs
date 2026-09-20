@@ -6,6 +6,12 @@
 //! What lives here is Kalam's actions, the ones worth moving to a key that
 //! suits the hand on the keyboard.
 //!
+//! A key is held by the name the toolkit gives it — `d`, `plus`,
+//! `BackSpace` — which is what [`gdk::Key::name`] returns and what the
+//! reader's own key handling already matches on. Names round-trip through a
+//! preference with no lookup table of my own, and they make Shift+D the same
+//! key as d rather than a second spelling to remember.
+//!
 //! One action, one key. Binding a key that another action holds takes it
 //! from that action, because a key that does two things does neither
 //! predictably.
@@ -91,26 +97,24 @@ impl ReaderAction {
 
     /// What the key did before it was editable.
     fn default_binding(self) -> KeyBinding {
-        match self {
-            ReaderAction::Define => KeyBinding::plain(gdk::Key::d),
-            ReaderAction::NextChapter => KeyBinding::plain(gdk::Key::n),
-            ReaderAction::PrevChapter => KeyBinding::plain(gdk::Key::p),
-            ReaderAction::FontUp => KeyBinding::plain(gdk::Key::plus),
-            ReaderAction::FontDown => KeyBinding::plain(gdk::Key::minus),
-            ReaderAction::Contents => KeyBinding::plain(gdk::Key::t),
-            ReaderAction::Settings => KeyBinding::plain(gdk::Key::s),
-            ReaderAction::Highlights => KeyBinding::plain(gdk::Key::h),
-            ReaderAction::Words => KeyBinding::plain(gdk::Key::w),
-            ReaderAction::Bookmark => KeyBinding::plain(gdk::Key::b),
-            ReaderAction::JumpBack => KeyBinding::plain(gdk::Key::BackSpace),
+        let key = match self {
+            ReaderAction::Define => gdk::Key::d,
+            ReaderAction::NextChapter => gdk::Key::n,
+            ReaderAction::PrevChapter => gdk::Key::p,
+            ReaderAction::FontUp => gdk::Key::plus,
+            ReaderAction::FontDown => gdk::Key::minus,
+            ReaderAction::Contents => gdk::Key::t,
+            ReaderAction::Settings => gdk::Key::s,
+            ReaderAction::Highlights => gdk::Key::h,
+            ReaderAction::Words => gdk::Key::w,
+            ReaderAction::Bookmark => gdk::Key::b,
+            ReaderAction::JumpBack => gdk::Key::BackSpace,
             // Ctrl+F, as it has always been — and the one binding the
             // reader's key handler honours before it asks whether a text
             // field has focus, so search opens even from the search box.
-            ReaderAction::Search => KeyBinding {
-                keyval: gdk::Key::f,
-                ctrl: true,
-            },
-        }
+            ReaderAction::Search => return KeyBinding::ctrl(gdk::Key::f),
+        };
+        KeyBinding::plain(key)
     }
 
     /// The message this action sends.
@@ -137,20 +141,38 @@ impl ReaderAction {
 }
 
 /// A key, and whether Ctrl goes with it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct KeyBinding {
-    pub(crate) keyval: u32,
-    pub(crate) ctrl: bool,
+    /// The toolkit's name for the key: `d`, `plus`, `BackSpace`.
+    name: String,
+    ctrl: bool,
 }
 
 impl KeyBinding {
-    fn plain(keyval: u32) -> KeyBinding {
-        KeyBinding { keyval, ctrl: false }
+    pub(crate) fn plain(key: gdk::Key) -> KeyBinding {
+        KeyBinding {
+            name: key_name(key),
+            ctrl: false,
+        }
+    }
+
+    pub(crate) fn ctrl(key: gdk::Key) -> KeyBinding {
+        KeyBinding {
+            name: key_name(key),
+            ctrl: true,
+        }
+    }
+
+    /// From a captured press. `None` for a key the toolkit will not name,
+    /// which is not one a reader can be asked to press again.
+    pub(crate) fn capture(key: gdk::Key, ctrl: bool) -> Option<KeyBinding> {
+        let name = key.name()?.to_string();
+        Some(KeyBinding { name, ctrl })
     }
 
     /// How the settings panel shows it: "D", "+", "Backspace", "Ctrl+F".
     pub(crate) fn label(&self) -> String {
-        let name = display_name(self.keyval);
+        let name = display_name(&self.name);
         if self.ctrl {
             format!("Ctrl+{name}")
         } else {
@@ -158,16 +180,18 @@ impl KeyBinding {
         }
     }
 
-    /// As stored: `<ctrl>f`, `d`, `plus`. The GDK key name round-trips
-    /// through `keyval_from_name`, which is the point of using it.
+    /// Is this binding's key the one pressed, whatever Ctrl is doing?
+    pub(crate) fn is_key(&self, key: gdk::Key) -> bool {
+        key.name()
+            .is_some_and(|pressed| pressed.eq_ignore_ascii_case(&self.name))
+    }
+
+    /// As stored: `<ctrl>f`, `d`, `plus`.
     fn to_pref(&self) -> String {
-        let name = gdk::keyval_name(self.keyval)
-            .map(|n| n.to_string())
-            .unwrap_or_default();
         if self.ctrl {
-            format!("<ctrl>{name}")
+            format!("<ctrl>{}", self.name)
         } else {
-            name
+            self.name.clone()
         }
     }
 
@@ -179,38 +203,53 @@ impl KeyBinding {
         if name.is_empty() {
             return None;
         }
-        let keyval = gdk::keyval_from_name(name);
-        // `keyval_from_name` answers 0 for a name it does not know, which
-        // is not a key anyone can press.
-        (keyval != 0).then_some(KeyBinding { keyval, ctrl })
+        // `keyval_from_name` answers 0 for a name the toolkit does not
+        // know, which is not a key anyone can press.
+        (gdk::keyval_from_name(name) != 0).then_some(KeyBinding {
+            name: name.to_string(),
+            ctrl,
+        })
     }
 }
 
+/// The toolkit's name for a key, or nothing for one it will not name.
+fn key_name(key: gdk::Key) -> String {
+    key.name().map(|name| name.to_string()).unwrap_or_default()
+}
+
 /// A key name worth showing the way a keyboard writes it.
-fn display_name(keyval: u32) -> String {
-    match keyval {
-        gdk::Key::plus => "+".to_string(),
-        gdk::Key::equal => "=".to_string(),
-        gdk::Key::minus => "−".to_string(),
-        gdk::Key::BackSpace => "Backspace".to_string(),
-        gdk::Key::Return | gdk::Key::KP_Enter => "Enter".to_string(),
-        gdk::Key::Escape => "Escape".to_string(),
-        gdk::Key::space => "Space".to_string(),
-        gdk::Key::Tab => "Tab".to_string(),
-        _ => match gdk::keyval_name(keyval) {
-            Some(name) => {
-                let name = name.to_string();
-                let mut chars = name.chars();
-                match chars.next() {
-                    // One character is a letter or a digit: show it as the
-                    // capital on the key.
-                    Some(c) if name.chars().count() == 1 => c.to_uppercase().to_string(),
-                    Some(c) => format!("{}{}", c.to_uppercase(), chars.as_str()),
-                    None => "?".to_string(),
-                }
+fn display_name(name: &str) -> String {
+    match name {
+        "plus" => "+".to_string(),
+        "equal" => "=".to_string(),
+        "minus" => "−".to_string(),
+        "BackSpace" => "Backspace".to_string(),
+        "Return" | "KP_Enter" => "Enter".to_string(),
+        "Escape" => "Escape".to_string(),
+        "space" => "Space".to_string(),
+        "Tab" => "Tab".to_string(),
+        _ => {
+            let mut chars = name.chars();
+            match chars.next() {
+                // One character is a letter or a digit: show the capital
+                // that is on the key.
+                Some(c) if name.chars().count() == 1 => c.to_uppercase().to_string(),
+                Some(c) => format!("{}{}", c.to_uppercase(), chars.as_str()),
+                None => "?".to_string(),
             }
-            None => "?".to_string(),
-        },
+        }
+    }
+}
+
+/// `+` needs Shift on most layouts and `=` does not, and they are the same
+/// physical key. A binding on one answers the other unless the reader gave
+/// the other an action of its own, which keeps `=` making text larger as it
+/// did before any of this was editable.
+fn twin_of(name: &str) -> Option<&'static str> {
+    match name {
+        "plus" => Some("equal"),
+        "equal" => Some("plus"),
+        _ => None,
     }
 }
 
@@ -248,7 +287,7 @@ impl KeyBindings {
     pub(crate) fn binding(&self, action: ReaderAction) -> KeyBinding {
         self.map
             .get(&action)
-            .copied()
+            .cloned()
             .unwrap_or_else(|| action.default_binding())
     }
 
@@ -259,25 +298,22 @@ impl KeyBindings {
     }
 
     /// Which action this keypress runs, if any.
-    ///
-    /// `+` needs Shift on most layouts and `=` does not, and they are the
-    /// same physical key — so a binding on one answers the other unless the
-    /// reader gave the other an action of its own. That keeps `=` making
-    /// text larger, as it did before any of this was editable.
-    pub(crate) fn action_for(&self, keyval: u32, ctrl: bool) -> Option<ReaderAction> {
-        // Shift+D arrives as a different keyval from d and the table holds
-        // one spelling, so the press is folded onto it.
-        let keyval = gdk::keyval_to_lower(keyval);
-        let wanted = KeyBinding { keyval, ctrl };
-        let twin = match keyval {
-            gdk::Key::plus => Some(gdk::Key::equal),
-            gdk::Key::equal => Some(gdk::Key::plus),
-            _ => None,
-        };
+    pub(crate) fn action_for(&self, key: gdk::Key, ctrl: bool) -> Option<ReaderAction> {
         ReaderAction::ALL.into_iter().find(|action| {
             let held = self.binding(*action);
-            held == wanted
-                || twin.is_some_and(|twin| held == KeyBinding { keyval: twin, ctrl })
+            if held.ctrl == ctrl && held.is_key(key) {
+                return true;
+            }
+            match twin_of(&held.name) {
+                Some(twin) => {
+                    let twin = KeyBinding {
+                        name: twin.to_string(),
+                        ctrl: held.ctrl,
+                    };
+                    twin.ctrl == ctrl && twin.is_key(key)
+                }
+                None => false,
+            }
         })
     }
 
@@ -349,6 +385,20 @@ mod tests {
     }
 
     #[test]
+    fn an_uppercase_letter_is_the_same_key() {
+        let bindings = KeyBindings::defaults();
+        assert_eq!(
+            bindings.action_for(gdk::Key::D, false),
+            Some(ReaderAction::Define),
+            "Shift+D is the key that says d"
+        );
+        assert_eq!(
+            bindings.action_for(gdk::Key::N, false),
+            Some(ReaderAction::NextChapter)
+        );
+    }
+
+    #[test]
     fn equals_still_makes_text_larger() {
         let bindings = KeyBindings::defaults();
         assert_eq!(
@@ -370,19 +420,6 @@ mod tests {
     }
 
     #[test]
-    fn an_uppercase_letter_is_the_same_key() {
-        let bindings = KeyBindings::defaults();
-        assert_eq!(
-            bindings.action_for(gdk::Key::D, false),
-            Some(ReaderAction::Define)
-        );
-        assert_eq!(
-            bindings.action_for(gdk::Key::N, false),
-            Some(ReaderAction::NextChapter)
-        );
-    }
-
-    #[test]
     fn ctrl_is_part_of_the_key() {
         let bindings = KeyBindings::defaults();
         assert_eq!(
@@ -400,5 +437,13 @@ mod tests {
             assert!(!shown.is_empty(), "{} has no key to show", action.id());
             assert_ne!(shown, "?", "{} shows as an unknown key", action.id());
         }
+    }
+
+    #[test]
+    fn a_captured_key_becomes_a_binding() {
+        let captured = KeyBinding::capture(gdk::Key::BackSpace, true).expect("a nameable key");
+        assert_eq!(captured.label(), "Ctrl+Backspace");
+        assert_eq!(captured.to_pref(), "<ctrl>BackSpace");
+        assert_eq!(KeyBinding::from_pref(&captured.to_pref()), Some(captured));
     }
 }

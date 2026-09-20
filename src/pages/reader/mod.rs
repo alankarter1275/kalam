@@ -1075,18 +1075,14 @@ impl Component for ReaderModel {
         let keys = model.keybinds.clone();
         key.connect_key_pressed(move |controller, keyval, _, state| {
             use gtk::gdk::Key;
-            // Shift+D arrives as a different keyval from d and the table
-            // holds one spelling, so the press is folded onto it.
-            let keyval = gtk::gdk::keyval_to_lower(keyval);
             let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
             // Search is answered before the typing check, so Ctrl+F opens
             // search from inside the search box too — as it always did.
             if ctrl
-                && keyval
-                    == keys
-                        .borrow()
-                        .binding(keybinds::ReaderAction::Search)
-                        .keyval
+                && keys
+                    .borrow()
+                    .binding(keybinds::ReaderAction::Search)
+                    .is_key(keyval)
             {
                 s.input(ReaderMsg::ToggleSearch);
                 return gtk::glib::Propagation::Stop;
@@ -1504,10 +1500,13 @@ impl Component for ReaderModel {
                     refresh_controls = true;
                 }
             }
-            ReaderMsg::SetKeyBinding(action, keyval, ctrl) => {
+            ReaderMsg::SetKeyBinding(action, key, ctrl) => {
+                let Some(binding) = keybinds::KeyBinding::capture(key, ctrl) else {
+                    return;
+                };
                 {
                     let mut bindings = self.keybinds.borrow_mut();
-                    bindings.bind(action, keybinds::KeyBinding { keyval, ctrl });
+                    bindings.bind(action, binding);
                     bindings.save(self.service.catalog(), action);
                 }
                 refresh_controls = true;

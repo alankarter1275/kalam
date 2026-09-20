@@ -482,7 +482,9 @@ fn keybind_row(
                 return Propagation::Stop;
             }
             let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
-            let binding = KeyBinding { keyval, ctrl };
+            let Some(binding) = KeyBinding::capture(keyval, ctrl) else {
+                return Propagation::Stop;
+            };
             *shown.borrow_mut() = binding.label();
             button.set_label(&shown.borrow());
             let _ = tx.send(ReaderMsg::SetKeyBinding(action, keyval, ctrl));

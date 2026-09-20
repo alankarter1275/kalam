@@ -1,2 +1,30 @@
-(no tasks report produced)
---- run 35518428932 ---
+=== kalam screenshot run ===
+books=139 out=ci-shots-tasks settle=20
+binary: 41333624 bytes
+
+=== seeding 139 books ===
+seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5844.sock
+sway up: {
+  "human_readable": "1.11",
+  "variant": "sway",
+  "major": 1,
+  "minor": 11,
+  "patch": 0,
+  "loaded_config_file_name
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+requested route: tasks
+windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
+toplevel windows seen: 1
+  shot: 01-tasks (31204 bytes)
+focused: 1
+  shot: 02-tasks-settling (31204 bytes)
+  shot: 03-tasks-settled (31204 bytes)
+navigation: app accepted route 'tasks'
+navigation: 'tasks' is not a grid page; no grid_build expected
+--- run 35519538103 ---

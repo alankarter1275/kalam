@@ -1429,7 +1429,11 @@ impl Component for ReaderModel {
             }
             ReaderMsg::GoToNote(href) => {
                 engine::dismiss(self.note_popover.take());
-                self.with_view(|v| v.follow_link(&href));
+                // with_view's closure returns nothing; follow_link's bool
+                // answer is the reader's to keep.
+                self.with_view(|v| {
+                    v.follow_link(&href);
+                });
             }
             ReaderMsg::ClearNote => {
                 engine::dismiss(self.note_popover.take());

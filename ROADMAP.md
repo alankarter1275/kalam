@@ -1088,6 +1088,11 @@ they need 1.2's asynchronous service layer underneath them.
 - **2.2 — Dictionary: rebuild the tests.** The old 55-check jsdom harness is gone and
   cannot be rebuilt as JavaScript. Rewrite the equivalent coverage as Rust
   tests against the engine.
+  - **Done 2026-09-21:** dictionary coverage now lives in Rust — `src/db/dictionaries.rs`
+    (search, lemmatization, phrase lookup, pos parsing), `src/db/pronunciation.rs`
+    (IPA), plus engine-side `DictCard::from_entry` tests in
+    `src/pages/reader/engine.rs` (pos middot join, sense mapping + hint index,
+    syn/ant/idiom/saved passthrough). All pass in CI.
 - **2.3 — Font picker.** The engine already supports it and already knows what
   to offer: `ReadingSettings::font_family` takes a family,
   `Session::set_font_family` applies one (`chapbook-reader/src/nav.rs:115`),

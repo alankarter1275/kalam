@@ -110,7 +110,9 @@ pub(crate) fn build_reader_settings_panel(
         let selected = display.iter().position(|f| *f == current).unwrap_or(0) as u32;
 
         let strings: Vec<&str> = display.iter().map(|s| s.as_str()).collect();
-        let drop = gtk::DropDown::new(Some(gtk::StringList::new(&strings)), None);
+        let drop = gtk::DropDown::builder()
+            .model(&gtk::StringList::new(&strings))
+            .build();
         drop.set_valign(gtk::Align::Center);
 
         let ready = Rc::new(std::cell::Cell::new(false));

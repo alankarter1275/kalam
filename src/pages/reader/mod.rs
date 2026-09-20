@@ -551,6 +551,7 @@ impl Component for ReaderModel {
         let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
         let catalog_hyphenate = catalog.get_pref_i64("reader.hyphenate", 1) != 0;
         let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
+        let catalog_dual_page = catalog.get_pref_i64("reader.dual_page", 1) != 0;
         let scrolled = catalog.get_pref_i64(engine::PREF_SCROLLED, 0) != 0;
 
         // The engine opens the EPUB itself: one widget holds the book, and
@@ -654,6 +655,7 @@ impl Component for ReaderModel {
         let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
         let catalog_hyphenate = catalog.get_pref_i64("reader.hyphenate", 1) != 0;
         let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
+        let catalog_dual_page = catalog.get_pref_i64("reader.dual_page", 1) != 0;
         let font_families = view
             .as_ref()
             .map(|v| v.font_families())
@@ -702,6 +704,7 @@ impl Component for ReaderModel {
             catalog_justify,
             catalog_hyphenate,
             catalog_publisher,
+            catalog_dual_page,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -754,6 +757,7 @@ impl Component for ReaderModel {
             justify: catalog_justify,
             hyphenate: catalog_hyphenate,
             publisher_styles: catalog_publisher,
+            dual_page: catalog_dual_page,
             can_jump_back: false,
             back_depth: 0,
             selection_chip: None,
@@ -866,6 +870,9 @@ impl Component for ReaderModel {
             if model.scrolled {
                 view.set_mode(kalam_reader::ReadingMode::Scrolled);
             }
+            // Roadmap 2.7: the spread is a choice now, not a consequence
+            // of the window being wide.
+            view.set_dual_page(model.dual_page);
             scrollbar.set_visible(model.scrolled);
             model.strip_scrollbar = Some(scrollbar);
             view.widget().grab_focus();
@@ -1463,6 +1470,15 @@ impl Component for ReaderModel {
                 self.with_view(|v| {
                     v.go_back();
                 });
+            }
+            ReaderMsg::SetDualPage(on) => {
+                if on != self.dual_page {
+                    self.dual_page = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.dual_page", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_dual_page(on));
+                }
             }
             ReaderMsg::SwitchSettingsPane(pane) => {
                 if pane != self.settings_pane {

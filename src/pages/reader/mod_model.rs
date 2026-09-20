@@ -30,6 +30,8 @@ pub struct ReaderModel {
     pub(crate) justify: bool,
     pub(crate) hyphenate: bool,
     pub(crate) publisher_styles: bool,
+    /// Roadmap 2.7: facing pages when the window is wide enough.
+    pub(crate) dual_page: bool,
     /// The chip over the current selection and the dictionary popover,
     /// so they can be taken down again.
     /// Roadmap 2.6: the jump-back offer, standing while it is fresh.

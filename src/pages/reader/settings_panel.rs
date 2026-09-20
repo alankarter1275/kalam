@@ -29,6 +29,7 @@ pub(crate) fn build_reader_settings_panel(
     justify: bool,
     hyphenate: bool,
     publisher_styles: bool,
+    dual_page: bool,
 
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -170,7 +171,7 @@ pub(crate) fn build_reader_settings_panel(
     // Roadmap 2.4: the three engine text-layout switches that previously had
     // no user-facing control.
     let text_section = reader_settings_section("Text");
-    fn text_toggle(
+    fn setting_toggle(
         section: &gtk::Box,
         label: &str,
         on: bool,
@@ -192,15 +193,15 @@ pub(crate) fn build_reader_settings_panel(
         section.append(&row);
     }
     let input_tx = sender.input_sender();
-    text_toggle(&text_section, "Justify", justify, input_tx, ReaderMsg::SetJustify);
-    text_toggle(
+    setting_toggle(&text_section, "Justify", justify, input_tx, ReaderMsg::SetJustify);
+    setting_toggle(
         &text_section,
         "Hyphenation",
         hyphenate,
         input_tx,
         ReaderMsg::SetHyphenate,
     );
-    text_toggle(
+    setting_toggle(
         &text_section,
         "Publisher styles",
         publisher_styles,
@@ -226,6 +227,15 @@ pub(crate) fn build_reader_settings_panel(
     });
     mode_row.append(&mode_switch);
     mode_section.append(&mode_row);
+
+    // Roadmap 2.7: the spread was automatic and could not be turned off.
+    setting_toggle(
+        &mode_section,
+        "Two pages side by side",
+        dual_page,
+        input_tx,
+        ReaderMsg::SetDualPage,
+    );
     reading_page.append(&mode_section);
     reading_page.append(&reader_panel_divider());
 

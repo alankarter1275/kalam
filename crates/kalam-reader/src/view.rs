@@ -57,6 +57,11 @@ pub(crate) const MARGIN_TOP: f32 = 48.0;
 pub(crate) const MARGIN_BOTTOM: f32 = 40.0;
 const MARGIN_SIDE_MIN: f32 = 28.0;
 
+/// Facing pages need room for two columns worth reading. Below this the
+/// spread would be two narrow strips, so the reader shows one page —
+/// whatever the toggle says.
+const SPREAD_MIN_WIDTH_PX: i32 = 900;
+
 /// One wheel notch in scrolled mode, CSS px — three lines at Kalam's
 /// default 17 px × 1.8, which is what a browser moves too.
 const WHEEL_STEP: f32 = 92.0;
@@ -189,6 +194,9 @@ struct Inner {
     keys: KeyMap,
     zones: TapZones,
     mode: Cell<ReadingMode>,
+    /// Facing pages when there is room, or one page at a time. On by
+    /// default: what the reader has always done.
+    dual_page: Cell<bool>,
     /// The strip, in scrolled mode; `None` in paged mode and before the
     /// first scrolled draw.
     strip: RefCell<Option<Strip>>,
@@ -310,6 +318,7 @@ impl ReaderView {
                 keys,
                 zones,
                 mode: Cell::new(ReadingMode::Paged),
+                dual_page: Cell::new(true),
                 strip: RefCell::new(None),
                 pending_jump: Cell::new(false),
                 dragging: Cell::new(false),
@@ -348,6 +357,33 @@ impl ReaderView {
 
     pub fn mode(&self) -> ReadingMode {
         self.inner.mode.get()
+    }
+
+    /// Facing pages, or one page at a time (roadmap 2.7).
+    ///
+    /// On — the default, and all the reader has ever done — a window wide
+    /// enough shows two pages side by side. Off shows one page however
+    /// wide the window is.
+    pub fn set_dual_page(&self, on: bool) {
+        if self.inner.dual_page.replace(on) == on {
+            return;
+        }
+        // Page metrics are rebuilt from the width on every draw, so a
+        // redraw is the whole relayout. The left page of a spread is the
+        // session's page, which is where a single page picks up.
+        self.jumped();
+    }
+
+    pub fn dual_page(&self) -> bool {
+        self.inner.dual_page.get()
+    }
+
+    /// Whether the reader is showing facing pages at this width: paged
+    /// mode, the toggle on, and room for two columns worth reading.
+    fn spread_at(&self, width: i32) -> bool {
+        self.mode() == ReadingMode::Paged
+            && self.inner.dual_page.get()
+            && width > SPREAD_MIN_WIDTH_PX
     }
 
     /// Show the book one page at a time or as one strip. The reading
@@ -928,7 +964,7 @@ impl ReaderView {
                 _ => {}
             }
         }
-        if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+        if self.spread_at(self.area.width()) {
             if action == Action::NextPage {
                 let mut s = self.inner.session.borrow_mut();
                 let spine = s.spine();
@@ -993,11 +1029,11 @@ impl ReaderView {
     }
 
     /// Map widget (x, y) coordinates to (spine, page, local_x, local_y) in paged mode.
-    /// In dual-page spread (>900px), points on the right half map to page + 1 with local_x = x - single_w.
+    /// In a facing-page spread, points on the right half map to page + 1 with local_x = x - single_w.
     fn paged_point(&self, s: &mut Session, x: f32, y: f32) -> Option<(usize, usize, f32, f32)> {
         let spine = s.spine();
         let page = s.page();
-        if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+        if self.spread_at(self.area.width()) {
             let single_w = (self.area.width() as f32 / 2.0).floor();
             let page_count = s.page_extents(spine).len();
             if x >= single_w {
@@ -1030,7 +1066,7 @@ impl ReaderView {
                 })
                 .collect(),
             None => {
-                if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+                if self.spread_at(self.area.width()) {
                     let single_w = (self.area.width() as f32 / 2.0).floor();
                     let page_left = s.page();
                     let page_right = page_left + 1;
@@ -1337,7 +1373,7 @@ impl ReaderView {
             let pixmap = match view.mode() {
                 ReadingMode::Paged => {
                     let mut s = view.inner.session.borrow_mut();
-                    if width > 900 {
+                    if view.spread_at(width) {
                         let single_w = (width as f32 / 2.0).floor();
                         let side = ((single_w - prefs.column_px).max(0.0) / 2.0).max(MARGIN_SIDE_MIN);
                         let single_metrics = PageMetrics {

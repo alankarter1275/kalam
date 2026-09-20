@@ -54,6 +54,12 @@ pub struct PdfReaderModel {
     pub zoom_level: f32,
     pub smart_crop: bool,
     pub reflow_mode: bool,
+    /// Reflow was chosen for this page because it has no picture of its
+    /// own — the thing the on-screen notice explains (roadmap 2.11).
+    pub auto_reflow: bool,
+    /// The reader has used the reflow toggle this session, so the
+    /// per-page default no longer overrules them.
+    pub user_chose_reflow: bool,
     pub font_size: u32,
     pub reading_theme: ReadingTheme,
     pub line_height: f32,
@@ -87,6 +93,8 @@ impl PdfReaderModel {
             zoom_level: 1.0,
             smart_crop: true,
             reflow_mode: false,
+            auto_reflow: false,
+            user_chose_reflow: false,
             font_size: 16,
             reading_theme: ReadingTheme::Ink,
             line_height: 1.5,
@@ -99,7 +107,11 @@ impl PdfReaderModel {
         };
 
         if let Some(path) = file_path {
-            if let Ok(doc) = PdfDocument::open(&path) {
+            let opened = {
+                let _open = crate::timing::measure("pdf_open");
+                PdfDocument::open(&path)
+            };
+            if let Ok(doc) = opened {
                 model.total_pages = doc.page_count();
                 if saved_page > model.total_pages {
                     model.current_page = 1;
@@ -141,6 +153,28 @@ impl PdfReaderModel {
         );
         // refresh_for_book returns (); the old `let _ =` discarded nothing.
         crate::sidecar::refresh_for_book(&self.catalog, self.book_id);
+
+        // Roadmap 2.11: a page with a picture of its own is shown as that
+        // picture. A page without one has nothing to render — the old
+        // fallback drew a dark grey bar for every line of text — so its
+        // text is reflowed instead, and the toolbar says so.
+        let has_picture = self
+            .pdf_doc
+            .as_ref()
+            .is_some_and(|doc| doc.page_has_picture(self.current_page));
+        if !self.user_chose_reflow {
+            self.reflow_mode = !has_picture;
+        }
+        self.auto_reflow = self.reflow_mode && !has_picture;
+
+        // Two paths, two very different costs: one reads a page's text,
+        // the other builds a full-page bitmap. KALAM_TIMING=1 says which
+        // one ran and what it took.
+        let _page_timer = crate::timing::measure(if self.reflow_mode {
+            "pdf_page_reflow"
+        } else {
+            "pdf_page_image"
+        });
 
         if self.reflow_mode {
             // Extract and reflow text
@@ -301,6 +335,20 @@ impl Component for PdfReaderModel {
                 add_css_class: "kalam-reflow-toolbar",
                 #[watch]
                 set_visible: model.reflow_mode,
+
+                gtk::Label {
+                    // Roadmap 2.11: reflow is a fallback, not a feature the
+                    // reader turned on, so it explains itself.
+                    #[watch]
+                    set_label: if model.auto_reflow {
+                        "Reflowed text — this page has no image to show. Turn Text Reflow off for the raw page."
+                    } else {
+                        ""
+                    },
+                    #[watch]
+                    set_visible: model.auto_reflow,
+                    add_css_class: "dim-label",
+                },
 
                 gtk::Label {
                     set_label: "Theme:",
@@ -548,6 +596,7 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::ToggleReflow => {
                 self.reflow_mode = !self.reflow_mode;
+                self.user_chose_reflow = true;
                 self.render_current_page();
             }
             PdfReaderMsg::SetTheme(theme) => {

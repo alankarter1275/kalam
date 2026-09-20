@@ -250,6 +250,46 @@ impl PdfDocument {
     }
 
     /// Render PDF page image with optional Smart Crop applied.
+    /// Whether this page carries a picture of its own — a scan, or a page
+    /// whose text *is* an image.
+    ///
+    /// This is the question that decides how a page is shown (roadmap
+    /// 2.11): with a picture, show the picture; without one there is
+    /// nothing to render, so the text is reflowed instead of the old
+    /// fallback, which drew a grey bar for every line.
+    ///
+    /// Mirrors the resource walk in [`Self::render_page_image_uncropped`]
+    /// but decodes nothing, so asking costs a dictionary read rather than
+    /// an image decode — it is called on every page turn.
+    pub fn page_has_picture(&self, page_num: usize) -> bool {
+        if page_num == 0 || page_num > self.page_numbers.len() {
+            return false;
+        }
+        let pdf_page_num = self.page_numbers[page_num - 1];
+        let Some(page_id) = self.doc.get_pages().get(&pdf_page_num).copied() else {
+            return false;
+        };
+        let Ok(resources) = self.doc.get_page_resources(page_id) else {
+            return false;
+        };
+        let Some(resources_dict) = resources.0 else {
+            return false;
+        };
+        let Ok(xobjects) = resources_dict.get(b"XObject").and_then(|o| o.as_dict()) else {
+            return false;
+        };
+        xobjects.iter().any(|(_, obj)| {
+            let stream = if let Ok(ref_id) = obj.as_reference() {
+                self.doc.get_object(ref_id).and_then(|o| o.as_stream())
+            } else {
+                obj.as_stream()
+            };
+            stream
+                .and_then(|s| s.dict.get(b"Subtype").and_then(|t| t.as_name()))
+                .is_ok_and(|subtype| subtype == b"Image")
+        })
+    }
+
     pub fn render_page_image(&self, page_num: usize, smart_crop: bool) -> Result<DynamicImage> {
         let img = self.render_page_image_uncropped(page_num)?;
 
@@ -346,6 +386,53 @@ mod tests {
         assert!(ink_box.max_x >= 0.79);
         assert!(ink_box.min_y <= 0.30);
         assert!(ink_box.max_y >= 0.69);
+    }
+
+    // Reflow became the default way a text PDF is shown (roadmap 2.11),
+    // so the guess it makes about paragraphs is worth pinning down.
+    #[test]
+    fn reflow_joins_the_lines_of_one_paragraph() {
+        assert_eq!(
+            PdfDocument::reflow_text("A line that ends\nand another that finishes it."),
+            vec!["A line that ends and another that finishes it.".to_string()]
+        );
+    }
+
+    #[test]
+    fn reflow_splits_on_a_blank_line() {
+        assert_eq!(
+            PdfDocument::reflow_text("First paragraph\nstill first\n\nSecond paragraph"),
+            vec![
+                "First paragraph still first".to_string(),
+                "Second paragraph".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn reflow_mends_a_hyphen_broken_word() {
+        assert_eq!(
+            PdfDocument::reflow_text("The author was being delib-\nerate about it."),
+            vec!["The author was being deliberate about it.".to_string()]
+        );
+        // A dash at the end of a sentence is punctuation, not a break.
+        assert_eq!(
+            PdfDocument::reflow_text("He said -\nand meant it."),
+            vec!["He said - and meant it.".to_string()]
+        );
+    }
+
+    #[test]
+    fn reflow_drops_page_furniture() {
+        assert_eq!(
+            PdfDocument::reflow_text("Chapter 3\nThe real text.\n42"),
+            vec!["The real text.".to_string()]
+        );
+    }
+
+    #[test]
+    fn reflow_of_nothing_is_nothing() {
+        assert!(PdfDocument::reflow_text("   ").is_empty());
     }
 
     #[test]

@@ -1150,66 +1150,6 @@ impl Component for AppModel {
         // that were actually WebP/PNG bytes) get their thumbnails regenerated.
         // After this pass completes the marker is re-set to the book count and the
         // next launch skips as normal.
-        let backfill_catalog = catalog.clone();
-        crate::thumbs::invalidate_backfill_marker(&backfill_catalog);
-        crate::tasks::spawn_internal(
-            "Rebuilding cover thumbnails",
-            move |reporter| crate::thumbs::backfill_missing(&backfill_catalog, &reporter),
-            // Only interesting under KALAM_TIMING=1: a first launch over a big
-            // library can spend a while here, and without a progress line
-            // there was no way to tell a slow backfill from a stalled one.
-            |update| {
-                if update.done == update.total || update.done % 50 == 0 {
-                    crate::timing::note("thumbs_backfilled", update.done);
-                }
-            },
-            |generated| {
-                if generated > 0 {
-                    crate::timing::note("thumbs_backfill_done", generated);
-                }
-            },
-        );
-        // A0 step 4 leftover, finished here: the first run decompresses and
-        // imports ~6.8 MB of gzipped TSV packs, and it used to do that on this
-        // thread — before the window existed. A new user waited on it with
-        // nothing on screen to explain why.
-        //
-        // Off the seam now. Nothing on screen depends on it: the dictionary is
-        // read when the user looks a word up in the reader, which cannot
-        // happen before the window is even drawn. Later runs still early-out
-        // on a pref, so this is a no-op after the first launch.
-        //
-        // Not merged into the thumbnail task above, deliberately: two
-        // independent jobs sharing one worker means the slower one delays the
-        // other for no reason, and a failure in one would be reported as a
-        // failure of both.
-        let dict_catalog = catalog.clone();
-        crate::tasks::spawn_internal(
-            "Checking dictionary packs",
-            move |_reporter| {
-                // No cancel check inside: the unit of work is a whole pack,
-                // and abandoning one half-imported would leave the pref unset
-                // and the rows partly written. It is bounded work that ends on
-                // its own, so letting it finish is simpler and safer than
-                // making it interruptible.
-                crate::timing::span("startup_dicts");
-                let result = crate::dict::install_bundled_dictionaries(&dict_catalog);
-                crate::timing::span_end("startup_dicts");
-                // Send back a String rather than the error: anyhow::Error is
-                // not Send-safe to move across the seam here, and the message
-                // is all the UI needs.
-                result.err().map(|err| err.to_string())
-            },
-            |_update| {},
-            |failed: Option<String>| {
-                // Back on the main thread, so the toast is raised where the
-                // notification system can actually display it (pitfalls §4e).
-                if let Some(message) = failed {
-                    crate::notify::error("Could not install the bundled dictionaries", &message);
-                }
-            },
-        );
-
         let source_manager = crate::sources::global_source_manager();
         let dl_mgr = std::sync::Arc::new(crate::downloads::DownloadManager::new(source_manager.clone(), catalog.clone()));
         let _ = crate::downloads::DOWNLOAD_MANAGER.set(dl_mgr);
@@ -1462,9 +1402,15 @@ impl Component for AppModel {
         // A0 step 1: mark the first window as drawn (cold-start END). Realize is
         // the point GTK has produced the native window; it fires once. This is
         // a no-op unless KALAM_TIMING=1.
-        widgets
-            .main_window
-            .connect_realize(|_| crate::timing::now("window_shown"));
+        let housekeeping_catalog = model.catalog.clone();
+        widgets.main_window.connect_realize(move |_| {
+            crate::timing::now("window_shown");
+            // The splash has done its job the moment the real window draws,
+            // and the disk-hungry housekeeping may now begin without having
+            // raced the home screen's covers for the drive.
+            crate::splash::close();
+            start_housekeeping(&housekeeping_catalog);
+        });
 
         // `KALAM_ROUTE=<name>` navigates to a page once the window is up.
         //
@@ -1714,6 +1660,73 @@ fn sync_content_classes(content_host: &gtk::Box, route: &Route, show_back_chip: 
     } else {
         content_host.remove_css_class("kalam-content-with-back");
     }
+}
+
+/// Housekeeping that is useful but must not race the first paint for the
+/// disk: the thumbnail backfill and the bundled-dictionary check. Started
+/// only once the main window is on screen (`connect_realize`), so the home
+/// screen's covers win the drive on a slow disk.
+fn start_housekeeping(catalog: &std::sync::Arc<crate::db::Catalog>) {
+    let backfill_catalog = catalog.clone();
+    crate::thumbs::invalidate_backfill_marker(&backfill_catalog);
+    crate::tasks::spawn_internal(
+        "Rebuilding cover thumbnails",
+        move |reporter| crate::thumbs::backfill_missing(&backfill_catalog, &reporter),
+        // Only interesting under KALAM_TIMING=1: a first launch over a big
+        // library can spend a while here, and without a progress line
+        // there was no way to tell a slow backfill from a stalled one.
+        |update| {
+            if update.done == update.total || update.done % 50 == 0 {
+                crate::timing::note("thumbs_backfilled", update.done);
+            }
+        },
+        |generated| {
+            if generated > 0 {
+                crate::timing::note("thumbs_backfill_done", generated);
+            }
+        },
+    );
+    // A0 step 4 leftover, finished here: the first run decompresses and
+    // imports ~6.8 MB of gzipped TSV packs, and it used to do that on this
+    // thread — before the window existed. A new user waited on it with
+    // nothing on screen to explain why.
+    //
+    // Off the seam now. Nothing on screen depends on it: the dictionary is
+    // read when the user looks a word up in the reader, which cannot
+    // happen before the window is even drawn. Later runs still early-out
+    // on a pref, so this is a no-op after the first launch.
+    //
+    // Not merged into the thumbnail task above, deliberately: two
+    // independent jobs sharing one worker means the slower one delays the
+    // other for no reason, and a failure in one would be reported as a
+    // failure of both.
+    let dict_catalog = catalog.clone();
+    crate::tasks::spawn_internal(
+        "Checking dictionary packs",
+        move |_reporter| {
+            // No cancel check inside: the unit of work is a whole pack,
+            // and abandoning one half-imported would leave the pref unset
+            // and the rows partly written. It is bounded work that ends on
+            // its own, so letting it finish is simpler and safer than
+            // making it interruptible.
+            crate::timing::span("startup_dicts");
+            let result = crate::dict::install_bundled_dictionaries(&dict_catalog);
+            crate::timing::span_end("startup_dicts");
+            // Send back a String rather than the error: anyhow::Error is
+            // not Send-safe to move across the seam here, and the message
+            // is all the UI needs.
+            result.err().map(|err| err.to_string())
+        },
+        |_update| {},
+        |failed: Option<String>| {
+            // Back on the main thread, so the toast is raised where the
+            // notification system can actually display it (pitfalls §4e).
+            if let Some(message) = failed {
+                crate::notify::error("Could not install the bundled dictionaries", &message);
+            }
+        },
+    );
+
 }
 
 fn update_nav_styles(container: &gtk::Box, active: NavItem) {

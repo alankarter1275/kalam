@@ -29,6 +29,7 @@ mod service;
 mod shelf_rules;
 mod sidecar;
 mod sources;
+mod splash;
 mod style;
 mod tasks;
 mod theme;
@@ -63,6 +64,12 @@ fn main() {
     let style = adw::StyleManager::default();
     style.set_color_scheme(adw::ColorScheme::ForceDark);
     timing::span_end("startup_style");
+
+    // A branded splash before the remaining blocking startup work (catalogue
+    // open, first page), so the user is never left with a blank screen; pump
+    // it so GTK actually paints it before we block.
+    crate::splash::show();
+    crate::splash::pump();
 
     // P6.5: put the pre-existing library into the library list, if it is not
     // there already. Must run before anything calls `paths::data_dir()`, which

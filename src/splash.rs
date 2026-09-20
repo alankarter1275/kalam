@@ -15,7 +15,7 @@ use gtk::prelude::*;
 use std::cell::RefCell;
 
 thread_local! {
-    static SPLASH: RefCell<Option<gtk::Window>> = RefCell::new(None);
+    static SPLASH: RefCell<Option<gtk::Window>> = const { RefCell::new(None) };
 }
 
 const CSS: &str = "
@@ -33,7 +33,7 @@ window.kalam-splash { background: #0c110f; }
 /// Show the splash. Call once, right after GTK is initialised.
 pub fn show() {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(CSS);
+    provider.load_from_string(CSS);
     if let Some(display) = gtk::gdk::Display::default() {
         gtk::style_context_add_provider_for_display(
             &display,

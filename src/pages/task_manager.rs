@@ -501,16 +501,16 @@ fn recent_row(task: &FinishedTask) -> gtk::ListBoxRow {
         toggle.add_css_class("kalam-mini-btn");
         toggle.set_halign(gtk::Align::Start);
         toggle.set_label(&format!("Show all {n}"));
-        {
+        toggle.connect_clicked({
             let revealer = revealer.clone();
             let toggle = toggle.clone();
-            toggle.connect_clicked(move |_| {
+            move |_| {
                 let show = !revealer.is_child_revealed();
                 revealer.set_reveal_child(show);
                 let text = if show { "Hide".to_string() } else { format!("Show all {n}") };
                 toggle.set_label(&text);
-            });
-        }
+            }
+        });
         col.append(&toggle);
         col.append(&revealer);
     }

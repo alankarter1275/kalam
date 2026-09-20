@@ -956,6 +956,11 @@ fn quick_links(sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
             LibrarySection::TaskManager,
             "What is running in the background, and how to stop it",
         ),
+        (
+            "Review",
+            LibrarySection::Review,
+            "Spaced-repetition review of your saved words",
+        ),
     ];
 
     for (label, target, tip) in targets {

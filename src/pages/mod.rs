@@ -27,6 +27,7 @@ pub mod metadata_editor;
 pub mod placeholder;
 pub mod reader;
 pub mod reading_list;
+pub mod review;
 pub mod saved_quotes;
 pub mod saved_words;
 pub mod series_float;

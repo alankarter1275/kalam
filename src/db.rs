@@ -113,6 +113,21 @@ pub struct SavedWord {
     pub known: bool,
 }
 
+/// A saved word queued for spaced-repetition review (roadmap #5).
+pub struct ReviewCard {
+    pub id: i64,
+    pub word: String,
+    pub definition: String,
+}
+
+/// Current unix time in seconds, for the SRS schedule.
+fn now_epoch() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 /// Book identity attached to a saved quote — the library dashboard renders
 /// cover, book and author per quote card.
 #[derive(Debug, Clone)]
@@ -893,6 +908,10 @@ impl Catalog {
         // v13: saved_words.known — Phase 7 review status. Existing rows
         // default to 0 (unknown), so nothing needs a backfill.
         add_column_if_missing(&conn, "saved_words", "known", "INTEGER NOT NULL DEFAULT 0")?;
+        // Roadmap #5: spaced-repetition review state for saved words.
+        add_column_if_missing(&conn, "saved_words", "srs_due", "INTEGER NOT NULL DEFAULT 0")?;
+        add_column_if_missing(&conn, "saved_words", "srs_interval", "REAL NOT NULL DEFAULT 0")?;
+        add_column_if_missing(&conn, "saved_words", "srs_ease", "REAL NOT NULL DEFAULT 2.5")?;
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
@@ -912,6 +931,66 @@ impl Catalog {
                 )?;
             }
         }
+        Ok(())
+    }
+
+    /// Saved words that are due for spaced-repetition review, soonest first.
+    /// Words never reviewed (`srs_due = 0`) are always due.
+    pub fn due_review_words(&self, limit: i64) -> Result<Vec<ReviewCard>> {
+        let conn = self.conn();
+        let now = now_epoch();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, word, definition FROM saved_words
+             WHERE srs_due <= ?1
+             ORDER BY srs_due ASC, id ASC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![now, limit], |r| {
+            Ok(ReviewCard {
+                id: r.get(0)?,
+                word: r.get(1)?,
+                definition: r.get(2)?,
+            })
+        })?;
+        Ok(rows.flatten().collect())
+    }
+
+    /// How many saved words are currently due, for the header/badge.
+    pub fn due_review_count(&self) -> Result<i64> {
+        let conn = self.conn();
+        conn.query_row(
+            "SELECT COUNT(*) FROM saved_words WHERE srs_due <= ?1",
+            params![now_epoch()],
+            |r| r.get(0),
+        )
+    }
+
+    /// Record a spaced-repetition answer (0 = again, 1 = good, 2 = easy) with a
+    /// simple SM-2-style schedule and reschedule the word.
+    pub fn record_review(&self, id: i64, quality: i32) -> Result<()> {
+        let conn = self.conn();
+        let (interval, ease): (f64, f64) = conn.query_row(
+            "SELECT srs_interval, srs_ease FROM saved_words WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let (interval, ease) = match quality {
+            0 => (0.0, (ease - 0.2).max(1.3)),
+            1 => (if interval < 1.0 { 1.0 } else { interval * ease }, ease),
+            _ => (
+                if interval < 1.0 { 2.0 } else { interval * ease * 1.3 },
+                ease + 0.15,
+            ),
+        };
+        let due = if quality == 0 {
+            now_epoch() + 600 // "again" resurfaces in ten minutes
+        } else {
+            now_epoch() + (interval * 86_400.0) as i64
+        };
+        conn.execute(
+            "UPDATE saved_words SET srs_interval = ?1, srs_ease = ?2, srs_due = ?3 WHERE id = ?4",
+            params![interval, ease, due, id],
+        )?;
         Ok(())
     }
 

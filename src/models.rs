@@ -150,6 +150,8 @@ pub enum LibrarySection {
     Analytics,
     /// Roadmap 1.14: what is running in the background, and how to stop it.
     TaskManager,
+    /// Roadmap #5: spaced-repetition review of saved words.
+    Review,
 }
 
 impl LibrarySection {
@@ -167,6 +169,7 @@ impl LibrarySection {
         LibrarySection::Tags,
         LibrarySection::Analytics,
         LibrarySection::TaskManager,
+        LibrarySection::Review,
     ];
 
     #[allow(dead_code)] // section icons for those tabs
@@ -181,6 +184,7 @@ impl LibrarySection {
             LibrarySection::Tags => "tag-symbolic",
             LibrarySection::Analytics => "view-bar-symbolic",
             LibrarySection::TaskManager => "system-run-symbolic",
+            LibrarySection::Review => "media-playlist-repeat-symbolic",
         }
     }
 }

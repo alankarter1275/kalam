@@ -20,6 +20,7 @@ use crate::pages::{downloads::DownloadsModel,
     pdf_reader::{PdfReaderInit, PdfReaderModel, PdfReaderOut},
     reader::{ReaderModel, ReaderOut},
     reading_list::{ReadingListModel, ReadingListOut},
+    review::{ReviewModel, ReviewOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
     series_float::{SeriesFloatModel, SeriesFloatOut},
@@ -91,6 +92,7 @@ enum PageSlot {
     AllBooks(Controller<AllBooksModel>),
     SavedQuotes(Controller<SavedQuotesModel>),
     SavedWords(Controller<SavedWordsModel>),
+    Review(Controller<ReviewModel>),
     LookupHistory(Controller<LookupHistoryModel>),
     Shelves(Controller<ShelvesGridModel>),
     ShelfDetail(Controller<ShelfDetailModel>),
@@ -122,6 +124,7 @@ impl PageSlot {
             PageSlot::AllBooks(c) => c.widget().clone().upcast(),
             PageSlot::SavedQuotes(c) => c.widget().clone().upcast(),
             PageSlot::SavedWords(c) => c.widget().clone().upcast(),
+            PageSlot::Review(c) => c.widget().clone().upcast(),
             PageSlot::LookupHistory(c) => c.widget().clone().upcast(),
             PageSlot::Shelves(c) => c.widget().clone().upcast(),
             PageSlot::ShelfDetail(c) => c.widget().clone().upcast(),
@@ -497,6 +500,17 @@ impl AppModel {
                             }
                         });
                 PageSlot::SavedWords(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::Review) => {
+                let cat = catalog.clone();
+                let ctrl = ReviewModel::builder()
+                    .launch(cat)
+                    .forward(sender.input_sender(), |out| match out {
+                        ReviewOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                    });
+                PageSlot::Review(ctrl)
             }
             Route::LibrarySection(LibrarySection::LookupHistory) => {
                 let ctrl = LookupHistoryModel::builder()

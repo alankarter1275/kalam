@@ -1101,6 +1101,10 @@ they need 1.2's asynchronous service layer underneath them.
   `settings.rs`). **None of it is referenced anywhere in `src/`** — the
   capability exists and no control reaches it. Add the picker to the settings
   panel.
+  - **Done 2026-09-21:** a "Typeface" dropdown now sits in the reader's Type
+    settings, listing the engine's installed faces with a "Default" row. The
+    choice persists to `reader.font_family`, rides `KalamPrefs.font_family`
+    into the engine, and applies live (blank → bundled default).
 - **2.4 — Text layout toggles.** Three engine settings with no user-facing
   switch, each verified by grep against `src/`:
   - **Justify.** `ReadingSettings::justify` exists but is never set. The nine

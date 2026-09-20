@@ -32,6 +32,11 @@ tick them off. The agent will remind you about this list.
 - [ ] With nothing due: "All caught up — nothing due right now."
 - [ ] With no saved words at all: the hint to save some words first.
 
+## Roadmap 2.x
+- [ ] **2.3 Font picker:** Reader → Settings → Reading → "Typeface" dropdown
+      lists your installed fonts; picking one changes the body type live;
+      "Default" restores the bundled face. The choice survives restart.
+
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).
 - [ ] Home appears first; heavy chores run after first paint.

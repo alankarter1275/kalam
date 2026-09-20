@@ -20,6 +20,7 @@
 use crate::tasks::{self, FinishedTask, TaskInfo};
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::rc::Rc;
 
 /// How often the list re-reads the registry.
 ///
@@ -209,16 +210,22 @@ impl TaskManagerModel {
     /// to notice.
     fn render(&self, sender: &ComponentSender<Self>) {
         self.status.set_label(&status_line(&self.running, &self.recent));
+        let s = sender.input_sender().clone();
+        let on_cancel: Rc<dyn Fn(u64)> =
+            Rc::new(move |id| {
+                s.send(TaskManagerMsg::Cancel(id)).ok();
+            });
 
-        clear(&self.running_list);
+        clear_list(&self.running_list);
         if self.running.is_empty() {
             self.running_list.append(&empty_row("Nothing is running."));
         }
         for task in &self.running {
-            self.running_list.append(&running_row(task, sender));
+            let content = running_row(task, &on_cancel);
+            self.running_list.append(&as_list_row(&content));
         }
 
-        clear(&self.recent_list);
+        clear_list(&self.recent_list);
         if self.recent.is_empty() {
             self.recent_list.append(&empty_row("Nothing has finished yet."));
         }
@@ -228,25 +235,150 @@ impl TaskManagerModel {
     }
 }
 
-fn clear(list: &gtk::ListBox) {
+/// What the sidebar button shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Badge {
+    /// Nothing running, nothing went wrong.
+    Idle,
+    /// This many tasks running.
+    Running(usize),
+    /// Nothing running, but something recent failed and has not been
+    /// acknowledged. The toast that reported it is long gone by now.
+    Failed,
+}
+
+/// Read the registry the way the sidebar badge needs it.
+pub(crate) fn badge() -> Badge {
+    let running = tasks::tasks().len();
+    if running > 0 {
+        return Badge::Running(running);
+    }
+    if tasks::recent().iter().any(|t| t.failed) {
+        return Badge::Failed;
+    }
+    Badge::Idle
+}
+
+/// Swap the sidebar button's face to match [`Badge`].
+///
+/// The mark *is* the button's child rather than an overlay, because there is
+/// nothing to overlay: idle shows a tick, busy shows a count, failure shows a
+/// warning. Three mutually exclusive states, one slot.
+///
+/// Deliberately uses no new CSS. `resources/style.css` is under a ratchet
+/// (`tests/guardrails.rs`, 184 hex colours) and a badge does not justify
+/// spending any of that budget; the count inherits the nav button's own font.
+pub(crate) fn apply_badge(btn: &gtk::Button, state: Badge) {
+    match state {
+        Badge::Idle => {
+            let icon = crate::icons::symbolic_with_classes(
+                "object-select-symbolic",
+                18,
+                &["kalam-nav-icon"],
+            );
+            icon.set_halign(gtk::Align::Center);
+            icon.set_valign(gtk::Align::Center);
+            btn.set_child(Some(&icon));
+            btn.set_tooltip_text(Some("Tasks — nothing running"));
+        }
+        Badge::Running(n) => {
+            let label = gtk::Label::new(Some(&n.to_string()));
+            label.set_halign(gtk::Align::Center);
+            label.set_valign(gtk::Align::Center);
+            btn.set_child(Some(&label));
+            let noun = if n == 1 { "task" } else { "tasks" };
+            btn.set_tooltip_text(Some(&format!("{n} {noun} running")));
+        }
+        Badge::Failed => {
+            let icon = crate::icons::symbolic_with_classes(
+                "dialog-warning-symbolic",
+                18,
+                &["kalam-nav-icon"],
+            );
+            icon.set_halign(gtk::Align::Center);
+            icon.set_valign(gtk::Align::Center);
+            btn.set_child(Some(&icon));
+            btn.set_tooltip_text(Some("Tasks — something failed"));
+        }
+    }
+}
+
+/// Build the panel the `w` key opens.
+///
+/// Returns the panel and the box its rows go into, separately, so the caller
+/// can refill that box on its own timer. The dialog deliberately has **no
+/// timer of its own**: `AppModel` already ticks once to keep the sidebar badge
+/// honest, and one timer in one place is easier to reason about than two —
+/// especially after the task *page* turned out to depend on a handle nobody
+/// was keeping alive.
+pub(crate) fn build_tasks_dialog(on_cancel: Rc<dyn Fn(u64)>) -> (gtk::Box, gtk::Box) {
+    let panel = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    panel.add_css_class("kalam-float-panel");
+    panel.set_margin_all(16);
+
+    let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let title = gtk::Label::new(Some("Running tasks"));
+    title.add_css_class("kalam-title-small");
+    title.set_halign(gtk::Align::Start);
+    title.set_hexpand(true);
+    head.append(&title);
+
+    let list = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    panel.append(&head);
+    panel.append(&list);
+    fill_tasks_dialog(&list, &on_cancel);
+    (panel, list)
+}
+
+/// Refill the `w` dialog's list. Called on every app tick while it is open.
+pub(crate) fn fill_tasks_dialog(list: &gtk::Box, on_cancel: &Rc<dyn Fn(u64)>) {
+    clear_box(list);
+    let running = tasks::tasks();
+    if running.is_empty() {
+        list.append(&empty_label("Nothing is running."));
+        return;
+    }
+    for task in &running {
+        list.append(&running_row(task, on_cancel));
+    }
+}
+
+// Two of them because `remove` lives in `ListBoxExt` for one and `BoxExt` for
+// the other, and there is no shared trait carrying it.
+fn clear_list(list: &gtk::ListBox) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
 }
 
-fn empty_row(text: &str) -> gtk::ListBoxRow {
+fn clear_box(list: &gtk::Box) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+}
+
+fn empty_label(text: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(text));
     label.add_css_class("kalam-page-sub");
     label.set_margin_all(14);
     label.set_halign(gtk::Align::Start);
-    let row = gtk::ListBoxRow::new();
-    row.set_child(Some(&label));
-    row
+    label
+}
+
+fn empty_row(text: &str) -> gtk::ListBoxRow {
+    as_list_row(&empty_label(text))
 }
 
 /// One running task: a name, a progress bar when the task can count, and a
 /// way to stop it.
-fn running_row(task: &TaskInfo, sender: &ComponentSender<TaskManagerModel>) -> gtk::ListBoxRow {
+///
+/// Takes a callback rather than a `ComponentSender` because two different
+/// hosts build these rows — the full page and the `w` dialog — and only one of
+/// them is a component.
+/// Builds the *content*, not a `ListBoxRow`: the page wraps it in a row, the
+/// `w` dialog appends it straight to a plain box, and a `ListBoxRow` outside a
+/// `ListBox` is a widget that renders as nothing.
+pub(crate) fn running_row(task: &TaskInfo, on_cancel: &Rc<dyn Fn(u64)>) -> gtk::Box {
     let col = gtk::Box::new(gtk::Orientation::Vertical, 4);
     col.set_margin_all(12);
 
@@ -262,11 +394,9 @@ fn running_row(task: &TaskInfo, sender: &ComponentSender<TaskManagerModel>) -> g
     let cancel = gtk::Button::with_label("Cancel");
     cancel.add_css_class("kalam-secondary-btn");
     {
-        let s = sender.input_sender().clone();
+        let cb = on_cancel.clone();
         let id = task.id;
-        cancel.connect_clicked(move |_| {
-            s.send(TaskManagerMsg::Cancel(id)).ok();
-        });
+        cancel.connect_clicked(move |_| cb(id));
     }
     top.append(&cancel);
     col.append(&top);
@@ -292,8 +422,13 @@ fn running_row(task: &TaskInfo, sender: &ComponentSender<TaskManagerModel>) -> g
         col.append(&detail);
     }
 
+    col
+}
+
+/// Wrap row content for a `ListBox`.
+fn as_list_row(child: &impl IsA<gtk::Widget>) -> gtk::ListBoxRow {
     let row = gtk::ListBoxRow::new();
-    row.set_child(Some(&col));
+    row.set_child(Some(child));
     row
 }
 

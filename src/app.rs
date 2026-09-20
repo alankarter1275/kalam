@@ -33,6 +33,13 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
 
+/// How often the sidebar badge re-reads the task registry.
+///
+/// Half a second: quick enough that starting an import changes the badge
+/// before you look away, cheap enough to leave running forever. It reads a
+/// `Mutex<Vec<..>>` of single-digit length and nothing else.
+const TASK_TICK: std::time::Duration = std::time::Duration::from_millis(500);
+
 #[derive(Debug)]
 pub enum AppMsg {
     Navigate(NavItem),
@@ -46,6 +53,11 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
+    /// Toggle the `w` task dialog.
+    ToggleTasksFloat,
+    /// Re-read the task registry: refreshes the sidebar badge and, when the
+    /// `w` dialog is open, its rows. One tick drives both.
+    TasksTick,
     /// Open the series float from the book page's Series link.
     OpenSeriesFloat {
         series: String,
@@ -149,6 +161,9 @@ enum Floating {
     },
     /// Tags panel — a plain widget panel, nothing to keep alive.
     Tags,
+    /// The `w` task dialog. Holds the box its rows are drawn into so the
+    /// app-wide tick can repaint it.
+    Tasks,
 }
 
 pub struct AppModel {
@@ -167,6 +182,20 @@ pub struct AppModel {
     /// the UI lag: revisiting Home or Library reconstructed dozens of widgets
     /// and re-ran their queries. Cached pages are unparented rather than
     /// destroyed, so returning to one costs nothing.
+    /// The sidebar's task button. Its face is the badge: a tick when idle, a
+    /// count when busy, a warning when something recent failed.
+    tasks_btn: gtk::Button,
+    /// Last badge painted, so an unchanged state does not rebuild the child
+    /// widget twice a second.
+    tasks_badge: crate::pages::task_manager::Badge,
+    /// The `w` dialog's row host and its cancel callback, while it is open.
+    tasks_dialog: Option<(gtk::Box, std::rc::Rc<dyn Fn(u64)>)>,
+    /// Held, not used — hence the underscore, which is what exempts a field
+    /// from the dead-code lint that `-D warnings` turns into a build failure.
+    /// Dropping a `SourceId` is not documented to detach its source and this
+    /// codebase has never settled the question, so the one timer the badge
+    /// depends on keeps its handle.
+    _tasks_tick: gtk::glib::SourceId,
     cache: Vec<(String, PageSlot)>,
     /// Catalog write counter at the time each cached page was built. A cached
     /// page is only reused while this matches, so an import, delete or edit
@@ -219,6 +248,38 @@ impl AppModel {
         self.float_host.set_visible(false);
         self.float_scrim.set_visible(false);
         self.floating = None;
+        // Stop repainting rows into a box that is no longer on screen.
+        self.tasks_dialog = None;
+    }
+
+    /// Open the `w` task dialog: what is running right now, with progress and
+    /// a cancel button each. Deliberately narrower than the full page — no
+    /// "recently finished" list, no status line. It answers "what is happening
+    /// and can I stop it", and the sidebar button is how you get to the rest.
+    fn open_tasks_floating(&mut self, sender: &ComponentSender<Self>) {
+        self.close_floating();
+
+        let s = sender.input_sender().clone();
+        let on_cancel: std::rc::Rc<dyn Fn(u64)> = std::rc::Rc::new(move |id| {
+            crate::tasks::cancel(id);
+            // Repaint now rather than waiting for the next tick, so the row
+            // responds to the click instead of half a second later.
+            s.send(AppMsg::TasksTick).ok();
+        });
+
+        let (panel, list) = crate::pages::task_manager::build_tasks_dialog(on_cancel.clone());
+        panel.set_size_request(400, 320);
+        panel.set_hexpand(false);
+        panel.set_vexpand(false);
+        panel.set_halign(gtk::Align::Center);
+        panel.set_valign(gtk::Align::Center);
+        self.float_host.append(&panel);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        panel.grab_focus();
+
+        self.tasks_dialog = Some((list, on_cancel));
+        self.floating = Some(Floating::Tasks);
     }
 
     fn open_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
@@ -1180,6 +1241,25 @@ impl Component for AppModel {
         float_host.set_visible(false);
 
         let cache_token = catalog.change_token();
+        // Built before the model because the model owns both. Appended to the
+        // rail further down, once `widgets` exists.
+        let tasks_btn = gtk::Button::new();
+        tasks_btn.add_css_class("kalam-nav-btn");
+        tasks_btn.set_halign(gtk::Align::Center);
+        tasks_btn.set_hexpand(false);
+        tasks_btn.set_focus_on_click(false);
+        tasks_btn.set_widget_name("nav-Tasks");
+        let badge0 = crate::pages::task_manager::badge();
+        crate::pages::task_manager::apply_badge(&tasks_btn, badge0);
+
+        let tick_sender = sender.input_sender().clone();
+        let tasks_tick = gtk::glib::timeout_add_local(TASK_TICK, move || {
+            match tick_sender.send(AppMsg::TasksTick) {
+                Ok(()) => gtk::glib::ControlFlow::Continue,
+                Err(_) => gtk::glib::ControlFlow::Break,
+            }
+        });
+
         let model = AppModel {
             catalog,
             source_manager,
@@ -1190,6 +1270,10 @@ impl Component for AppModel {
             floating: None,
             float_scrim: float_scrim.clone(),
             float_host: float_host.clone(),
+            tasks_btn,
+            tasks_badge: badge0,
+            tasks_dialog: None,
+            _tasks_tick: tasks_tick,
             cache: Vec::new(),
             cache_token,
         };
@@ -1244,6 +1328,37 @@ impl Component for AppModel {
             gtk::glib::Propagation::Proceed
         });
         root.add_controller(close_float_key);
+
+        // `w` toggles the task dialog, matching yazi.
+        //
+        // Scoped away from the reader by doing nothing special: the reader
+        // binds `w` to its Words tab on its own widget, its controller runs
+        // first because key events travel up from the focused widget, and it
+        // returns `Stop`. So this never sees the keypress while reading --
+        // which is the owner's choice, recorded in roadmap 1.14 along with the
+        // consequence that the sidebar is hidden there too.
+        let tasks_key = gtk::EventControllerKey::new();
+        let s_tasks = sender.clone();
+        let key_root_tasks = root.clone();
+        tasks_key.connect_key_pressed(move |_, keyval, _, _| {
+            use gtk::gdk::Key;
+            if keyval != Key::w && keyval != Key::W {
+                return gtk::glib::Propagation::Proceed;
+            }
+            // Never swallow a letter someone is typing into a search box.
+            let focused = gtk::prelude::GtkWindowExt::focus(&key_root_tasks);
+            let typing = focused
+                .map(|w| {
+                    w.is::<gtk::Text>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>()
+                })
+                .unwrap_or(false);
+            if typing {
+                return gtk::glib::Propagation::Proceed;
+            }
+            s_tasks.input(AppMsg::ToggleTasksFloat);
+            gtk::glib::Propagation::Stop
+        });
+        root.add_controller(tasks_key);
 
         // From here on, any notify::* call lands on screen.
         crate::notify::attach(widgets.toast_host.clone());
@@ -1313,6 +1428,18 @@ impl Component for AppModel {
                 }
             }
         });
+
+        // Above Settings, on the same end of the rail. Prepended rather than
+        // appended so the order is Tasks then Settings; `bottom_nav` holds
+        // nothing else since Downloads was hidden.
+        {
+            let btn = model.tasks_btn.clone();
+            let s = sender.clone();
+            btn.connect_clicked(move |_| s.input(AppMsg::Push(Route::LibrarySection(
+                LibrarySection::TaskManager,
+            ))));
+            widgets.bottom_nav.prepend(&btn);
+        }
 
         for item in NavItem::ALL {
             let btn = make_nav_button(*item, *item == NavItem::Home);
@@ -1449,6 +1576,23 @@ impl Component for AppModel {
                     true,
                     &sender,
                 );
+            }
+            AppMsg::ToggleTasksFloat => {
+                if matches!(self.floating, Some(Floating::Tasks)) {
+                    self.close_floating();
+                } else {
+                    self.open_tasks_floating(&sender);
+                }
+            }
+            AppMsg::TasksTick => {
+                let state = crate::pages::task_manager::badge();
+                if state != self.tasks_badge {
+                    crate::pages::task_manager::apply_badge(&self.tasks_btn, state);
+                    self.tasks_badge = state;
+                }
+                if let Some((list, on_cancel)) = &self.tasks_dialog {
+                    crate::pages::task_manager::fill_tasks_dialog(list, on_cancel);
+                }
             }
             AppMsg::CloseBookDialog => {
                 // A shelves panel opened from the book float hands control

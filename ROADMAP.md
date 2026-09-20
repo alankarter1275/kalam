@@ -889,33 +889,64 @@ bulk editing. Fixing it later means rewriting all four.
   a conclusion from it would have been the same mistake as the 2 s database
   open.
 
-- ~~**1.14 — Give the background work a visible task manager.**~~ **Done,
-  2026-09-19** (`src/pages/task_manager.rs`, CI run `35459996093` green, 776
-  tests). The machinery was already there — **28 `tasks::spawn` call sites**,
-  not the 27 this entry claimed — but the registry stored only an id and a
-  cancel flag, so there was nothing to look at. Entries now carry a **label**
-  and the latest progress, plus a bounded list of the last 20 finished tasks.
-  `spawn`/`spawn_stream` take a label as their first argument and all 28 call
-  sites name the operation in plain words; the three that act on a named thing
-  use it (`Downloading {title}`, `Remastering {title}`).
-  The new API is `cancel(id)`, `tasks()`, `recent()`, `clear_finished()`.
-  **`cancel(id)` is the actual point of the item**: before this, the only
-  answer to "can I stop this?" was closing the window, which called
-  `cancel_all()` and took the thumbnail rebuild down with the download.
-  Progress is written to the registry **from the main thread** by the reader
-  that already receives the updates — workers never take that lock, so a
-  worker cannot block the UI by holding it.
-  The page lists running tasks with a progress bar and a Cancel button, then
-  recently finished ones marked Finished or Cancelled. It polls every 500 ms
-  via `timeout_add_local`. A progress bar is drawn **only when the task
-  reported a total** — an empty bar reads as "stuck", which is worse than no
-  bar. Fast queries from 1.2b are added and removed between ticks, so they
-  never appear; this page is for work you wait on.
-  **Not verified by CI:** the page renders, but CI does not exercise the async
-  path or the UI. **The owner has not yet looked at it.**
-  **Done when:** there is a place in the UI that lists running and recent
-  tasks with progress, and a task can be cancelled from it. *(Met on paper;
-  pending the owner opening it.)*
+- **1.14 — Give the background work a visible task manager.** *Added
+  2026-09-19.* The machinery was already there — **28 `tasks::spawn` call
+  sites**, not the 27 this entry claimed — but the registry stored only an id
+  and a cancel flag, so there was nothing to look at. Entries now carry a
+  **label**, the latest progress, and whether the work failed; there is a
+  bounded list of the last 20 finished tasks; and `spawn`/`spawn_stream` take a
+  label as their first argument, so all 28 call sites name the operation in
+  plain words. The three that act on a named thing use it (`Downloading
+  {title}`, `Remastering {title}`). The API is `cancel(id)`, `tasks()`,
+  `recent()`, `clear_finished()`, `Reporter::fail()`.
+  **Two halves, and the first one shipped alone.** The page came first
+  (`src/pages/task_manager.rs`) and was marked done on the strength of a green
+  CI run. The owner then found it was **two clicks away** — My library → Tasks —
+  and that importing a sub-5 MB EPUB finishes in a fraction of a second, so
+  there is no way to be watching the page when it happens. A task manager you
+  have to navigate to is not a task manager. **This bullet stays open until the
+  second half is in**, which is why the reachability work was folded back into
+  it rather than tracked as its own number: splitting it is what let the first
+  half be called finished.
+  The second half:
+  1. **A sidebar button** in `bottom_nav`, above Settings, following the shape
+     of the hidden `download_indicator`.
+  2. **Its face is the badge** — a tick when idle, the running count when busy,
+     a warning when something recent failed. One slot, three states, no
+     overlay. The warning matters because the toast that reports a failure is
+     gone in seconds; `Reporter::fail()` is how a worker says so, and only
+     tasks that can tell use it — import and dictionary install so far, which
+     is a gap rather than a lie.
+  3. **`w` toggles a floating dialog** showing only what is running, with
+     progress and a cancel button — narrower than the page on purpose.
+     Clicking the sidebar button opens the **full page**.
+  **`w` is scoped away from the reader** by doing nothing at all: the reader
+  binds `w` to its Words tab, its key controller runs first because key events
+  travel up from the focused widget, and it returns `Stop`. The owner chose to
+  leave that binding alone rather than move a key they already use. **The
+  consequence is recorded, not hidden: the reader hides the sidebar, so while
+  reading there is no way to reach the task manager at all.**
+  **Pause was asked about and is not being built.** Cancellation here is
+  cooperative — a worker checks a flag between units of work. A pause flag is
+  the same mechanism, but these tasks are mid-HTTP-request or holding a
+  database handle when you would press it, and blocking there means holding a
+  socket or a lock indefinitely. Possible, and a bad idea.
+  **A progress bar is drawn only when the task reported a total** — an empty
+  bar reads as "stuck", which is worse than no bar. Fast queries from 1.2b are
+  added and removed between ticks and never appear; this page is for work you
+  wait on.
+  **Open defect, not yet explained.** The owner imported books and nothing
+  appeared. The registry is proven sound by a test that drives a real `spawn`
+  end to end, and the page is proven to render by the headless-sway smoke run,
+  so the break is in the link between them. The page's refresh timer was
+  discarding its `SourceId`; that is fixed, but this entry does not claim the
+  bug is fixed with it. The badge and the dialog both read the registry off
+  the app-wide tick, so if the page is still wrong the badge will say so from
+  the home screen.
+  **Done when:** the badge is visible from anywhere outside the reader and is
+  right within a second of a task starting or finishing; `w` opens and closes
+  the dialog; clicking the button opens the page; and an import actually shows
+  up somewhere the owner can see it.
 - **1.15 — Warm the file cache at login so the first launch is a warm one.**
   *Added 2026-09-19, owner-approved.* Cold start is ~9.9 s against ~762 ms
   warm, and the whole difference is reading from a spinning disk — no code
@@ -950,39 +981,6 @@ bulk editing. Fixing it later means rewriting all four.
   **Done when:** the count is materially lower, every survivor has a written
   reason rather than a bare attribute, and clippy's dead-code check is
   actually running over the code again.
-- **1.17 — Make the task manager reachable.** *Added 2026-09-19, owner-requested
-  after using 1.14.* 1.14 built the page and then filed it under **My library →
-  Tasks**, which is two clicks to answer the one question the page exists for:
-  *"is it still going?"* A task manager you have to navigate to is not a task
-  manager.
-  Three parts, all owner-specified:
-  1. **A sidebar button next to Settings**, in `bottom_nav` — the rail already
-     holds a hidden `download_indicator` MenuButton of exactly this shape, so
-     the pattern is proven and currently switched off.
-  2. **A badge on it.** A tick mark when nothing is running; the running count
-     when something is; **a distinct mark when a recent task failed**, because
-     the toast that reports a failure disappears and the failure should not
-     disappear with it.
-  3. **`w` toggles a floating dialog**, matching yazi. The dialog shows only
-     what is running, with progress and a cancel button, and `w` again closes
-     it. Clicking the sidebar button instead opens the **full page**, the same
-     way Home and Settings do. Two different affordances, deliberately: glance
-     versus inspect.
-  **`w` is scoped to outside the reader.** Inside the reader `w` already means
-  "show saved Words" (`src/pages/reader/mod.rs:1087`), and the reader hides the
-  sidebar entirely — so while reading, there is currently no way to reach the
-  task manager at all. The owner chose to leave the reader's binding alone and
-  accept that gap rather than move a key they already use. **Recorded as a
-  known hole, not an oversight.**
-  **Pause was asked about and is not being built.** Cancellation here is
-  cooperative — a worker checks a flag between units of work. A pause flag is
-  the same mechanism, but most of these tasks are mid-HTTP-request or holding
-  an open database handle when you would press it, and blocking there means
-  holding a socket or a lock indefinitely. It is possible and it is a bad
-  idea; the owner's own phrasing left this open.
-  **Done when:** the badge is visible from anywhere outside the reader and is
-  correct within a second of a task starting or finishing; `w` opens and closes
-  the dialog; clicking the button opens the page.
 - ~~**1.18 — The comic upscaler offers itself to books it cannot work on.**~~
   **Done, 2026-09-19.** Found by the owner: the Remaster button was drawn
   unconditionally in `book.rs` and `book_float.rs`, so it appeared on EPUBs and

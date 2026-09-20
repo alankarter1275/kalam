@@ -447,6 +447,10 @@ impl Component for SettingsPageModel {
                                             },
                                         )
                                         .map_err(|e| format!("{e:#}"))
+                                        // The badge needs to know: the toast
+                                        // this raises on failure is gone in a
+                                        // few seconds.
+                                        .inspect_err(|_| reporter.fail())
                                     },
                                     // A dictionary pack can take a while. The
                                     // worker cannot raise a toast itself, so it

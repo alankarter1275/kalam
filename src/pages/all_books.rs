@@ -112,6 +112,11 @@ pub fn spawn_import(
                 }
                 reporter.step(i + 1, total, tally.last_title.clone());
             }
+            // The toast for each failure disappears; the task manager's badge
+            // does not. Say so here, where the count is known.
+            if tally.errors > 0 {
+                reporter.fail();
+            }
             (tally, failures)
         },
         move |update| on_step(update.done, update.total, update.detail),

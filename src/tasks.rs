@@ -69,6 +69,14 @@ pub struct FinishedTask {
     pub label: String,
     /// Whether it stopped because it was asked to.
     pub cancelled: bool,
+    /// Whether the work itself reported failure via [`Reporter::fail`].
+    ///
+    /// Only tasks that can tell are recorded as failed. `spawn` is generic
+    /// over its result type, so nothing here can inspect it — a task that
+    /// returns a tuple with an error count inside is indistinguishable from
+    /// one that succeeded. Workers that know they failed say so; the rest are
+    /// recorded as finished, which is a gap rather than a lie.
+    pub failed: bool,
 }
 
 /// How many finished tasks the panel remembers. Bounded because this list is
@@ -76,7 +84,15 @@ pub struct FinishedTask {
 /// of the process.
 const FINISHED_LIMIT: usize = 20;
 
-type Running = Vec<(TaskInfo, Arc<AtomicBool>)>;
+/// The two flags a task can have flipped from outside itself.
+struct Flags {
+    /// Set by [`cancel`] / [`cancel_all`]; read by [`Reporter::cancelled`].
+    cancel: Arc<AtomicBool>,
+    /// Set by [`Reporter::fail`]; read once, when the task is recorded.
+    failed: Arc<AtomicBool>,
+}
+
+type Running = Vec<(TaskInfo, Flags)>;
 
 /// Every task currently running, so the panel can list them and [`cancel`]
 /// can reach one of them.
@@ -128,6 +144,7 @@ fn locked_finished<R>(f: impl FnOnce(&mut VecDeque<FinishedTask>) -> R) -> R {
 pub struct Reporter {
     tx: async_channel::Sender<Update>,
     cancelled: Arc<AtomicBool>,
+    failed: Arc<AtomicBool>,
 }
 
 /// A progress report from a worker.
@@ -162,6 +179,16 @@ impl Reporter {
     pub fn cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
+
+    /// Say that this task failed.
+    ///
+    /// Worth calling even though the failure is already reported to the user,
+    /// because a toast disappears and the task manager's badge does not. A
+    /// worker that finishes with an error count of zero simply never calls
+    /// this.
+    pub fn fail(&self) {
+        self.failed.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Record a progress report against a running task.
@@ -179,17 +206,27 @@ fn set_progress(id: u64, update: &Update) {
 }
 
 /// Move a task from running to finished.
-fn finish(id: u64, cancelled: bool) {
-    let label = locked(|running| {
+fn finish(id: u64) {
+    let done = locked(|running| {
         let pos = running.iter().position(|(info, _)| info.id == id);
-        pos.map(|i| running.remove(i).0.label)
+        pos.map(|i| {
+            let (info, flags) = running.remove(i);
+            (
+                info.label,
+                flags.cancel.load(Ordering::Relaxed),
+                flags.failed.load(Ordering::Relaxed),
+            )
+        })
     });
-    let Some(label) = label else { return };
+    let Some((label, cancelled, failed)) = done else {
+        return
+    };
     locked_finished(|list| {
         list.push_back(FinishedTask {
             id,
             label,
             cancelled,
+            failed,
         });
         while list.len() > FINISHED_LIMIT {
             list.pop_front();
@@ -226,7 +263,10 @@ where
     let (result_tx, result_rx) = async_channel::unbounded::<T>();
 
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let cancelled = Arc::new(AtomicBool::new(false));
+    let flags = Flags {
+        cancel: Arc::new(AtomicBool::new(false)),
+        failed: Arc::new(AtomicBool::new(false)),
+    };
     locked(|running| {
         running.push((
             TaskInfo {
@@ -236,14 +276,18 @@ where
                 total: 0,
                 detail: String::new(),
             },
-            cancelled.clone(),
+            Flags {
+                cancel: flags.cancel.clone(),
+                failed: flags.failed.clone(),
+            },
         ))
     });
 
     std::thread::spawn(move || {
         let reporter = Reporter {
             tx: progress_tx,
-            cancelled,
+            cancelled: flags.cancel,
+            failed: flags.failed,
         };
         let out = work(reporter);
         // `reporter` is dropped here, which closes the progress channel and
@@ -263,7 +307,7 @@ where
         if let Ok(value) = result_rx.recv().await {
             on_done(value);
         }
-        finish(id, was_cancelled(id));
+        finish(id);
     });
 }
 
@@ -293,7 +337,10 @@ where
     let (item_tx, item_rx) = async_channel::unbounded::<T>();
 
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let cancelled = Arc::new(AtomicBool::new(false));
+    let flags = Flags {
+        cancel: Arc::new(AtomicBool::new(false)),
+        failed: Arc::new(AtomicBool::new(false)),
+    };
     locked(|running| {
         running.push((
             TaskInfo {
@@ -303,14 +350,18 @@ where
                 total: 0,
                 detail: String::new(),
             },
-            cancelled.clone(),
+            Flags {
+                cancel: flags.cancel.clone(),
+                failed: flags.failed.clone(),
+            },
         ))
     });
 
     std::thread::spawn(move || {
         let reporter = Reporter {
             tx: progress_tx,
-            cancelled,
+            cancelled: flags.cancel,
+            failed: flags.failed,
         };
         work(reporter, Emit { tx: item_tx });
     });
@@ -320,7 +371,7 @@ where
         while let Ok(item) = item_rx.recv().await {
             on_item(item);
         }
-        finish(id, was_cancelled(id));
+        finish(id);
     });
 }
 
@@ -341,20 +392,6 @@ impl<T> Emit<T> {
     }
 }
 
-/// Whether a task was asked to stop. Read just before it leaves the registry,
-/// so a finished task can be recorded as cancelled or completed.
-///
-/// Returns `false` for an id that has already gone, which is the right answer
-/// for a task that finished on its own a moment ago.
-fn was_cancelled(id: u64) -> bool {
-    locked(|running| {
-        running
-            .iter()
-            .find(|(info, _)| info.id == id)
-            .is_some_and(|(_, flag)| flag.load(Ordering::Relaxed))
-    })
-}
-
 /// Ask one task to stop. Returns whether it was still running.
 ///
 /// Cancellation is cooperative: this sets a flag, and work that never checks
@@ -362,8 +399,8 @@ fn was_cancelled(id: u64) -> bool {
 /// query and wrong for a long download, which is why the long ones check.
 pub fn cancel(id: u64) -> bool {
     locked(|running| {
-        if let Some((_, flag)) = running.iter().find(|(info, _)| info.id == id) {
-            flag.store(true, Ordering::Relaxed);
+        if let Some((_, flags)) = running.iter().find(|(info, _)| info.id == id) {
+            flags.cancel.store(true, Ordering::Relaxed);
             true
         } else {
             false
@@ -378,8 +415,8 @@ pub fn cancel(id: u64) -> bool {
 /// completion, which is correct for short ones.
 pub fn cancel_all() {
     locked(|running| {
-        for (_, flag) in running.iter() {
-            flag.store(true, Ordering::Relaxed);
+        for (_, flags) in running.iter() {
+            flags.cancel.store(true, Ordering::Relaxed);
         }
     });
 }
@@ -440,6 +477,7 @@ mod tests {
             Reporter {
                 tx,
                 cancelled: flag.clone(),
+                failed: Arc::new(AtomicBool::new(false)),
             },
             rx,
             flag,
@@ -463,7 +501,10 @@ mod tests {
                     total: 0,
                     detail: String::new(),
                 },
-                flag.clone(),
+                Flags {
+                    cancel: flag.clone(),
+                    failed: Arc::new(AtomicBool::new(false)),
+                },
             ))
         });
         flag
@@ -595,7 +636,7 @@ mod tests {
         let before = running_count();
         register_fake(90_041, "Downloading a chapter");
         cancel(90_041);
-        finish(90_041, was_cancelled(90_041));
+        finish(90_041);
 
         assert_eq!(running_count(), before, "no longer running");
         let recent = recent();
@@ -618,6 +659,7 @@ mod tests {
                     id: 90_100 + i as u64,
                     label: format!("task {i}"),
                     cancelled: false,
+                    failed: false,
                 });
                 while list.len() > FINISHED_LIMIT {
                     list.pop_front();

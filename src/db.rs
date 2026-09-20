@@ -923,13 +923,6 @@ impl Catalog {
         Ok(rows.flatten().collect())
     }
 
-    #[allow(dead_code)]
-    pub fn count_books(&self) -> Result<usize> {
-        let conn = self.conn();
-        let n: i64 = conn.query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))?;
-        Ok(n as usize)
-    }
-
     /// Just `(uuid, cover_name)` for books that have a cover.
     ///
     /// The thumbnail backfill needs exactly these two columns, but was calling

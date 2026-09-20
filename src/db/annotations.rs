@@ -120,7 +120,7 @@ impl Catalog {
     }
 
     /// Total saved quotes, for counts that do not need the rows themselves.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn count_quotes(&self) -> Result<i64> {
         let conn = self.conn();
         let n: i64 = conn.query_row(

@@ -200,16 +200,6 @@ impl PdfDocument {
         InkBoundingBox::new(crop_min_x, crop_min_y, crop_max_x, crop_max_y)
     }
 
-    /// Calculate Zathura-Style Smart Crop ink bounding box for a page (1-indexed).
-    #[allow(dead_code)]
-    pub fn calculate_ink_box(&self, page_num: usize) -> InkBoundingBox {
-        if let Ok(img) = self.render_page_image_uncropped(page_num) {
-            Self::calculate_ink_box_for_image(&img)
-        } else {
-            InkBoundingBox::default()
-        }
-    }
-
     /// Render uncropped raw page image (1-indexed).
     fn render_page_image_uncropped(&self, page_num: usize) -> Result<DynamicImage> {
         if page_num == 0 || page_num > self.page_numbers.len() {

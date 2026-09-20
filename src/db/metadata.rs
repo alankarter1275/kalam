@@ -323,7 +323,7 @@ impl Catalog {
     }
 
     /// Forget remembered edits for a file — used by "import fresh".
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn forget_overrides(&self, file_hash: &str) -> Result<()> {
         // Drop the stashed cover too, otherwise the covers directory grows
         // forever with images nothing references.

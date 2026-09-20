@@ -295,16 +295,6 @@ impl Catalog {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn insert_dict_entry(&self, dict_id: i64, word: &str, definition: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT INTO dict_entries (dict_id, word, definition, key) VALUES (?1, ?2, ?3, ?4)",
-            params![dict_id, word, definition, fold_key(word)],
-        )?;
-        Ok(())
-    }
-
     pub fn batch_insert_dict_entries(
         &self,
         dict_id: i64,
@@ -507,7 +497,7 @@ impl Catalog {
         Ok(out)
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn dict_entry_count(&self) -> Result<i64> {
         let conn = self.conn();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;

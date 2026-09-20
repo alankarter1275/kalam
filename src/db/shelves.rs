@@ -396,7 +396,7 @@ impl Catalog {
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn set_reading_list_note(&self, book_id: i64, note: &str) -> Result<()> {
         let conn = self.conn();
         conn.execute(

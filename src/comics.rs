@@ -110,7 +110,6 @@ pub fn extract_comic_page(archive_path: &Path, entry_name: &str) -> Result<Vec<u
 }
 
 /// Extract the first image page as the cover thumbnail.
-#[allow(dead_code)]
 pub fn extract_comic_cover(archive_path: &Path) -> Result<Vec<u8>> {
     let pages = list_comic_pages(archive_path)?;
     let first_page = pages

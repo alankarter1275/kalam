@@ -9,12 +9,12 @@ use std::collections::HashSet;
 /// A closed session row, for the book page's timeline.
 #[derive(Debug, Clone)]
 pub struct SessionRow {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // sessions are aggregated for stats; the row id is never shown
     pub id: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // stats group by book title, not id
     pub book_id: i64,
     pub started_at: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // only the duration is displayed, not the end stamp
     pub ended_at: Option<String>,
     pub seconds: i64,
 }
@@ -23,15 +23,15 @@ pub struct SessionRow {
 /// sessions into its history feed.
 #[derive(Debug, Clone)]
 pub struct LibrarySession {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // history rows display title/at; the row id is unused
     pub id: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // joined to the book for display; the id itself is unread
     pub book_id: i64,
     pub started_at: String,
     pub seconds: i64,
     pub end_pct: i64,
     pub book_title: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // author line not rendered on history rows yet
     pub book_authors: String,
 }
 

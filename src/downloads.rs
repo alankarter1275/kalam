@@ -23,12 +23,12 @@ pub enum JobStatus {
 
 #[derive(Debug, Clone)]
 pub struct DownloadJob {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // job identity for cancel/resume once the downloads UI wires
     pub id: String,
     pub title: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the list shows title/status; provenance ids unread
     pub source_id: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // as above
     pub remote_id: String,
     pub status: JobStatus,
     pub created_at: std::time::Instant,

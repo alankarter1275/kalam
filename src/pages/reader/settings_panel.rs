@@ -174,7 +174,7 @@ pub(crate) fn build_reader_settings_panel(
         section: &gtk::Box,
         label: &str,
         on: bool,
-        tx: &relm4::mpsc::Sender<ReaderMsg>,
+        tx: &relm4::Sender<ReaderMsg>,
         make_msg: fn(bool) -> ReaderMsg,
     ) {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);

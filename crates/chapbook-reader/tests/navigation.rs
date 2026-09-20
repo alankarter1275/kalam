@@ -40,6 +40,33 @@ fn links_and_the_toc_both_navigate_and_the_trail_comes_back() {
 }
 
 #[test]
+fn the_back_trail_counts_so_a_shell_can_notice_a_jump() {
+    let mut s = open_isolated("epub-nav", &fixture("epub/minimal.epub"));
+    s.set_metrics(metrics());
+    s.render().expect("page renders");
+    assert_eq!(s.back_depth(), 0, "nothing to undo yet");
+
+    // Reading forward is not a jump; the trail must stay empty or a shell
+    // watching the number would offer "back" on every page turn.
+    s.next_page();
+    assert_eq!(s.back_depth(), 0, "a page turn is not a jump");
+
+    let (_, _, href) = sweep_for_link(&mut s).expect("chapter one links to chapter two");
+    assert!(s.follow_link(&href));
+    assert_eq!(s.back_depth(), 1, "a jump is one deep");
+
+    let entry = s.toc()[1].children[0].clone();
+    assert!(s.goto_toc(&entry));
+    assert_eq!(s.back_depth(), 2, "and another is two");
+
+    assert!(s.back());
+    assert_eq!(s.back_depth(), 1, "the return trip spends one");
+    assert!(s.back());
+    assert_eq!(s.back_depth(), 0, "and the trail is empty");
+    assert!(!s.back(), "with nothing left to go back to");
+}
+
+#[test]
 fn external_links_are_not_a_reading_position() {
     let mut s = open_isolated("epub-nav-external", &fixture("epub/minimal.epub"));
     s.set_metrics(metrics());

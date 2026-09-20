@@ -132,6 +132,16 @@ impl Component for ReaderModel {
                     set_tooltip_text: Some("Bookmark (B)"),
                     connect_clicked => ReaderMsg::AddBookmark,
                 },
+
+                // Roadmap 2.6: stands only while the last jump is fresh.
+                gtk::Button {
+                    set_child: Some(&crate::icons::symbolic_with_classes("edit-undo-symbolic", 16, &["kalam-inline-icon"])),
+                    add_css_class: "kalam-reader-back",
+                    #[watch]
+                    set_visible: model.can_jump_back,
+                    set_tooltip_text: Some("Jump back (Backspace)"),
+                    connect_clicked => ReaderMsg::JumpBack,
+                },
             },
 
             add_overlay = &gtk::Box {
@@ -744,6 +754,8 @@ impl Component for ReaderModel {
             justify: catalog_justify,
             hyphenate: catalog_hyphenate,
             publisher_styles: catalog_publisher,
+            can_jump_back: false,
+            back_depth: 0,
             selection_chip: None,
             note_popover: None,
             dict_popover: None,
@@ -1094,6 +1106,12 @@ impl Component for ReaderModel {
                     s.input(ReaderMsg::FontDelta(-1));
                     gtk::glib::Propagation::Stop
                 }
+                // Not while typing: the search field needs its own
+                // backspace, and `is_typing` has already ruled that out.
+                Key::BackSpace => {
+                    s.input(ReaderMsg::JumpBack);
+                    gtk::glib::Propagation::Stop
+                }
                 Key::t | Key::T => {
                     s.input(ReaderMsg::SwitchLeftTab(LeftSidebarTab::Toc));
                     gtk::glib::Propagation::Stop
@@ -1438,6 +1456,14 @@ impl Component for ReaderModel {
             ReaderMsg::ClearNote => {
                 engine::dismiss(self.note_popover.take());
             }
+            ReaderMsg::JumpBack => {
+                // The engine pops its own trail; the position report that
+                // follows withdraws the offer.
+                self.can_jump_back = false;
+                self.with_view(|v| {
+                    v.go_back();
+                });
+            }
             ReaderMsg::SwitchSettingsPane(pane) => {
                 if pane != self.settings_pane {
                     self.settings_pane = pane;
@@ -1489,6 +1515,14 @@ impl Component for ReaderModel {
                 // clears the selection too, but the widget says nothing on
                 // that path; that one is with the engine.
                 engine::dismiss(self.selection_chip.take());
+                // Roadmap 2.6: the engine keeps its own trail of jumps. A
+                // depth that grew means something just moved the reader —
+                // including a tap on a link the engine followed itself —
+                // so offer the way back. The next ordinary turn, or a
+                // return trip, withdraws the offer.
+                let depth = self.view.as_ref().map_or(0, |v| v.back_depth());
+                self.can_jump_back = depth > self.back_depth && depth > 0;
+                self.back_depth = depth;
                 let changed = chapter != self.chapter;
                 let moved = changed || (self.fraction - fraction).abs() > 0.001;
                 self.chapter = chapter.min(self.chapter_count.saturating_sub(1));

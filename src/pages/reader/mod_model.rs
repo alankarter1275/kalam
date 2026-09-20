@@ -32,6 +32,11 @@ pub struct ReaderModel {
     pub(crate) publisher_styles: bool,
     /// The chip over the current selection and the dictionary popover,
     /// so they can be taken down again.
+    /// Roadmap 2.6: the jump-back offer, standing while it is fresh.
+    pub(crate) can_jump_back: bool,
+    /// Last seen depth of the engine's back trail, so a jump shows up as
+    /// the number going up.
+    pub(crate) back_depth: usize,
     pub(crate) selection_chip: Option<gtk::Popover>,
     /// Roadmap 2.5: the footnote card, while it stands.
     pub(crate) note_popover: Option<gtk::Popover>,

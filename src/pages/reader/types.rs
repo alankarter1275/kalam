@@ -172,6 +172,8 @@ pub enum ReaderMsg {
     AnnotationNoteChanged(i64, String),
     SaveAnnotationNote(i64, String),
     JumpToChapter(usize),
+    /// Roadmap 2.6: back to where the last jump started.
+    JumpBack,
     JumpToLocation(usize, f64),
     DictSearch(String),
     DictSearchSelect(String),

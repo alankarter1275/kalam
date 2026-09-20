@@ -386,6 +386,15 @@ impl Session {
         !self.back_stack.is_empty()
     }
 
+    /// How many jumps are waiting to be undone.
+    ///
+    /// A shell that watches this can tell a jump happened — the number goes
+    /// up — without the engine announcing one, which covers jumps it made
+    /// on its own, like a tap on a link in the page.
+    pub fn back_depth(&self) -> usize {
+        self.back_stack.len()
+    }
+
     /// Spine index of a container-root path, tolerating the leading slash
     /// EPUB manifests may or may not carry.
     fn spine_index_of(&self, href: &str) -> Option<usize> {

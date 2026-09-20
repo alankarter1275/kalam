@@ -580,6 +580,29 @@ impl ReaderView {
         moved
     }
 
+    /// Back to where the last jump started. The engine keeps the trail —
+    /// every `goto`, link follow and TOC entry pushes onto it — so this is
+    /// the return trip, however many jumps deep. `false` with nothing to
+    /// go back to.
+    pub fn go_back(&self) -> bool {
+        let moved = self.inner.session.borrow_mut().back();
+        if moved {
+            self.jumped();
+        }
+        moved
+    }
+
+    /// Whether the last jump has somewhere to return to.
+    pub fn can_go_back(&self) -> bool {
+        self.inner.session.borrow().can_go_back()
+    }
+
+    /// How many jumps are waiting to be undone — the signal that lets a
+    /// shell notice a jump, including one the engine made by itself.
+    pub fn back_depth(&self) -> usize {
+        self.inner.session.borrow().back_depth()
+    }
+
     /// Jump to a chapter and a fraction of the way through it — Kalam's
     /// `JumpToLocation(chapter, fraction)` and its bookmarks, which store
     /// exactly that pair. `false` if the chapter does not exist.

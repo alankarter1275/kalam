@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-tasks settle=20
-binary: 41411960 bytes
+binary: 41466744 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5908.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5848.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -20,4 +20,4 @@ WAYLAND_DISPLAY=wayland-1
 === launching kalam ===
 requested route: tasks
 windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
---- run 35532554280 ---
+--- run 35533530116 ---

@@ -1800,7 +1800,7 @@ impl Component for ReaderModel {
             ReaderMsg::ExportAnnotations => {
                 let catalog = self.service.catalog();
                 match lists::export_highlights_markdown(
-                    &catalog,
+                    catalog,
                     self.book_id,
                     &self.book_title,
                 ) {

@@ -1116,6 +1116,15 @@ they need 1.2's asynchronous service layer underneath them.
     references in `src/`. The underlying engine bug was fixed upstream, so
     this is only the missing switch.
   - **Column width** is already exposed; these three join it.
+  - **Done 2026-09-21:** a "Text" section in the reader settings now carries
+    all three switches. `justify` and `publisher_styles` ride
+    `ReadingSettings` straight into the engine; hyphenation has no engine
+    field, so turning it off appends `hyphens: manual !important` to the skin
+    CSS, which stops the layout's soft-hyphen pass
+    (`chapbook-layout/src/boxtree.rs:245` only hyphenates when
+    `frag.hyphens_auto`). They persist to `reader.justify` (off by default),
+    `reader.hyphenate` and `reader.publisher_styles` (on by default) and apply
+    live.
 - **2.5 — Footnotes.** Clicking `[1]` opens an instant popover or jumps to the note.
   The engine resolves internal links; nothing in `src/` handles them.
 - **2.6 — "Jump back" history.** An instant return after jumping to a footnote, TOC

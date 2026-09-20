@@ -36,6 +36,11 @@ tick them off. The agent will remind you about this list.
 - [ ] **2.3 Font picker:** Reader → Settings → Reading → "Typeface" dropdown
       lists your installed fonts; picking one changes the body type live;
       "Default" restores the bundled face. The choice survives restart.
+- [ ] **2.4 Text layout:** the new "Text" section has Justify / Hyphenation /
+      Publisher styles. Justify gives ragged-right text flush edges; turning
+      Hyphenation off removes the end-of-line dashes in narrow columns;
+      Publisher styles off drops the book's own styling for plain Kalam text.
+      All three apply instantly and survive restart.
 
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).

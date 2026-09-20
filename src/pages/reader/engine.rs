@@ -737,7 +737,7 @@ pub(crate) fn build_dict_popover(
     let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
     popup.add_css_class("k-popup");
 
-    let width = 240.min((host.width() - 32).max(200));
+    let width = 380.min((host.width() - 32).max(300));
     popup.set_size_request(width, -1);
 
     let header = dict_header(host, card, sender);
@@ -747,7 +747,8 @@ pub(crate) fn build_dict_popover(
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
         .propagate_natural_height(true)
-        .max_content_height(160)
+        .overlay_scrolling(true)
+        .max_content_height(380)
         .build();
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.add_css_class("k-body");
@@ -777,7 +778,7 @@ pub(crate) fn build_dict_popover(
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
     popover.add_css_class("kalam-reader-dict-popover");
-    
+
     let tx = sender.input_sender().clone();
     popover.connect_closed(move |_| {
         let _ = tx.send(ReaderMsg::ClearDict);

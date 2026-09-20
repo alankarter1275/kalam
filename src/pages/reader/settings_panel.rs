@@ -494,12 +494,14 @@ fn keybind_row(
     button.add_controller(keys);
 
     {
+        // A name of its own: the closure cannot move the button it is
+        // being attached to.
         let armed = armed.clone();
-        let button = button.clone();
+        let target = button.clone();
         button.connect_clicked(move |_| {
             armed.set(true);
-            button.set_label("Press a key…");
-            button.grab_focus();
+            target.set_label("Press a key…");
+            target.grab_focus();
         });
     }
 

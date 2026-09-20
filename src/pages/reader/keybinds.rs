@@ -203,9 +203,10 @@ impl KeyBinding {
         if name.is_empty() {
             return None;
         }
-        // `keyval_from_name` answers 0 for a name the toolkit does not
-        // know, which is not a key anyone can press.
-        (gdk::keyval_from_name(name) != 0).then_some(KeyBinding {
+        // Not checked against a list of real keys: a name the toolkit does
+        // not know simply never matches a press, so it cannot hijack one
+        // that can, and "Reset to defaults" puts everything back.
+        Some(KeyBinding {
             name: name.to_string(),
             ctrl,
         })
@@ -362,10 +363,22 @@ mod tests {
     }
 
     #[test]
-    fn a_key_that_is_not_a_key_is_refused() {
-        assert_eq!(KeyBinding::from_pref("not-a-keyval"), None);
+    fn an_empty_name_is_refused() {
         assert_eq!(KeyBinding::from_pref(""), None);
         assert_eq!(KeyBinding::from_pref("<ctrl>"), None);
+    }
+
+    #[test]
+    fn a_stored_name_that_is_not_a_key_cannot_fire() {
+        let mut bindings = KeyBindings::defaults();
+        let bogus = KeyBinding::from_pref("not-a-keyval").expect("a name is a name");
+        bindings.bind(ReaderAction::Words, bogus);
+        // It cannot be pressed, so it takes nothing with it.
+        assert_eq!(bindings.action_for(gdk::Key::w, false), None);
+        assert_eq!(
+            bindings.action_for(gdk::Key::d, false),
+            Some(ReaderAction::Define)
+        );
     }
 
     #[test]

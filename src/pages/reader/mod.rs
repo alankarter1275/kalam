@@ -770,7 +770,6 @@ impl Component for ReaderModel {
             publisher_styles: catalog_publisher,
             dual_page: catalog_dual_page,
             keybinds,
-            keybind_buttons,
             autohide_cursor: catalog_autohide,
             wheel_step: catalog_wheel,
             can_jump_back: false,

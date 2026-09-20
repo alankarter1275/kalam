@@ -16,7 +16,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 10.48s
+crates/kalam-reader/src/prefs.rs:207:12: [1m[91merror[E0204][0m: the trait `std::marker::Copy` cannot be implemented for this type
+[1m[91merror[0m: could not compile `kalam-reader` (lib) due to 1 previous error
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+crates/kalam-reader/src/prefs.rs:401:25: [1m[91merror[E0382][0m: borrow of partially moved value: `a`: value borrowed here after partial move
+[1m[91merror[0m: could not compile `kalam-reader` (lib test) due to 2 previous errors

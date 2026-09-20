@@ -1003,6 +1003,14 @@ bulk editing. Fixing it later means rewriting all four.
   **Done when:** the count is materially lower, every survivor has a written
   reason rather than a bare attribute, and clippy's dead-code check is
   actually running over the code again.
+  **Progress, 2026-09-20:** all **4** module-wide `#![allow(dead_code)]` are
+  gone (the census at start was 4, not 5 — one had already been resolved).
+  Un-hiding them exposed only three dead items: `pronunciation.rs` and the
+  reading `engine.rs` proved fully used. Deleted `dict::strip_dict_html`
+  (leftover HTML stripper) and `shelf_rules::MatchMode::label` (no caller).
+  `dict::import_dictionary` turned out to be test-only, so it is now
+  `#[cfg(test)]` rather than dead-on-bin. Module-wide count: 4 → 0. The ~80
+  item-level suppressions remain for the next passes.
 - ~~**1.18 — The comic upscaler offers itself to books it cannot work on.**~~
   **Done, 2026-09-19.** Found by the owner: the Remaster button was drawn
   unconditionally in `book.rs` and `book_float.rs`, so it appeared on EPUBs and

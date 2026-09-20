@@ -1009,8 +1009,15 @@ bulk editing. Fixing it later means rewriting all four.
   reading `engine.rs` proved fully used. Deleted `dict::strip_dict_html`
   (leftover HTML stripper) and `shelf_rules::MatchMode::label` (no caller).
   `dict::import_dictionary` turned out to be test-only, so it is now
-  `#[cfg(test)]` rather than dead-on-bin. Module-wide count: 4 → 0. The ~80
-  item-level suppressions remain for the next passes.
+  `#[cfg(test)]` rather than dead-on-bin. Module-wide count: 4 → 0.
+  **Batch 2, 2026-09-20 (item-level):** item count 80 → 72. Deleted
+  zero-caller fns `db::count_books`, `dictionaries::insert_dict_entry`,
+  `pdf::calculate_ink_box` (helpers verified used, no cascade). Removed a
+  *stale* allow on `comics::extract_comic_cover` (it is called by `epub.rs`).
+  Made test-only fns `#[cfg(test)]`: `count_quotes`, `dict_entry_count`,
+  `forget_overrides`, `set_reading_list_note`. The remaining ~72 are mostly
+  data-model struct fields (keep-with-reason) plus a few forward-looking
+  clusters (author saved-quotes, reader engine, sources) for later passes.
 - ~~**1.18 — The comic upscaler offers itself to books it cannot work on.**~~
   **Done, 2026-09-19.** Found by the owner: the Remaster button was drawn
   unconditionally in `book.rs` and `book_float.rs`, so it appeared on EPUBs and

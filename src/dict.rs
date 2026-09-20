@@ -24,14 +24,6 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
-/// Result of a dictionary search.
-#[derive(Debug, Clone)]
-pub struct DictSearchResult {
-    pub word: String,
-    pub definition: String,
-    pub dict_name: String,
-}
-
 const BUNDLED_WORDNET_PREF: &str = "bundled_dictionary_english_wordnet_2025";
 #[cfg(feature = "bundled-dictionaries")]
 const BUNDLED_WORDNET_TSV_GZ: &[u8] =
@@ -184,6 +176,13 @@ fn install_bundled_tsv(
     }
     catalog.set_pref(installed_pref, "installed");
     Ok(true)
+}
+
+/// Test-only convenience wrapper that discards progress; the app drives a
+/// toast through [`import_dictionary_with_progress`].
+#[cfg(test)]
+pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
+    import_dictionary_with_progress(catalog, path, &|_| {})
 }
 
 /// Import a dictionary pack into the catalog, reporting entries written so

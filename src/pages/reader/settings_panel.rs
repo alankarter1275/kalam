@@ -170,12 +170,13 @@ pub(crate) fn build_reader_settings_panel(
     // Roadmap 2.4: the three engine text-layout switches that previously had
     // no user-facing control.
     let text_section = reader_settings_section("Text");
-    let toggles: [(&str, bool, fn(bool) -> ReaderMsg); 3] = [
-        ("Justify", justify, ReaderMsg::SetJustify),
-        ("Hyphenation", hyphenate, ReaderMsg::SetHyphenate),
-        ("Publisher styles", publisher_styles, ReaderMsg::SetPublisherStyles),
-    ];
-    for (label, on, make_msg) in toggles {
+    fn text_toggle(
+        section: &gtk::Box,
+        label: &str,
+        on: bool,
+        tx: &mpsc::Sender<ReaderMsg>,
+        make_msg: fn(bool) -> ReaderMsg,
+    ) {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.add_css_class("kalam-reader-setting-row");
         let name = gtk::Label::new(Some(label));
@@ -183,13 +184,29 @@ pub(crate) fn build_reader_settings_panel(
         name.set_hexpand(true);
         name.set_halign(gtk::Align::Start);
         row.append(&name);
-        let tx = sender.input_sender().clone();
+        let tx = tx.clone();
         let switch = crate::pages::settings::toggle_switch(on, move |v| {
             let _ = tx.send(make_msg(v));
         });
         row.append(&switch);
-        text_section.append(&row);
+        section.append(&row);
     }
+    let input_tx = sender.input_sender();
+    text_toggle(&text_section, "Justify", justify, input_tx, ReaderMsg::SetJustify);
+    text_toggle(
+        &text_section,
+        "Hyphenation",
+        hyphenate,
+        input_tx,
+        ReaderMsg::SetHyphenate,
+    );
+    text_toggle(
+        &text_section,
+        "Publisher styles",
+        publisher_styles,
+        input_tx,
+        ReaderMsg::SetPublisherStyles,
+    );
     reading_page.append(&text_section);
     reading_page.append(&reader_panel_divider());
 

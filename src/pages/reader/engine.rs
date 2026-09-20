@@ -43,6 +43,10 @@ pub(crate) fn engine_theme(theme: ReadingTheme) -> KalamTheme {
     KalamTheme::from_name(theme.as_str()).unwrap_or_default()
 }
 
+// Nine knobs, one purpose: the persisted reading preferences the engine
+// consumes. Grouping them into structs would only scatter what is plainly one
+// call. Same allow as `settings_panel` and `db`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn engine_prefs(
     theme: ReadingTheme,
     font_px: u32,

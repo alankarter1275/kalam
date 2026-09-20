@@ -947,8 +947,8 @@ bulk editing. Fixing it later means rewriting all four.
   right within a second of a task starting or finishing; `w` opens and closes
   the dialog; clicking the button opens the page; and an import actually shows
   up somewhere the owner can see it.
-- **1.15 — Warm the file cache at login so the first launch is a warm one.**
-  *Added 2026-09-19, owner-approved.* Cold start is ~9.9 s against ~762 ms
+- ~~**1.15 — Warm the file cache at login so the first launch is a warm one.**~~
+  **Done, 2026-09-20.** *Added 2026-09-19, owner-approved.* Cold start is ~9.9 s against ~762 ms
   warm, and the whole difference is reading from a spinning disk — no code
   change makes that faster. But the owner's own runs prove the fix: cold
   10,884 ms, then 762 ms on the very next launch with nothing recompiled.
@@ -982,6 +982,10 @@ bulk editing. Fixing it later means rewriting all four.
   single span), not because the warm-up fell short. `scripts/kalam-warm.service`
   is the systemd user unit that runs the script at login, so it survives a
   reboot without the owner doing anything — the second half of "done when".
+  **Service enabled and confirmed by the owner** (`systemctl --user status
+  kalam-warm.service`: `enabled`, ran at login, `status=0/SUCCESS`, "warmed
+  185 files"). `inactive (dead)` after the run is the correct state for a
+  `Type=oneshot` unit.
 
 - **1.16 — Work through the `#[allow(dead_code)]` suppressions.** *Split out
   of 1.8g, 2026-09-19.* **85** of them, **5** module-wide (`#!`), which each

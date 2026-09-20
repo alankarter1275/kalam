@@ -958,11 +958,12 @@ impl Catalog {
     /// How many saved words are currently due, for the header/badge.
     pub fn due_review_count(&self) -> Result<i64> {
         let conn = self.conn();
-        conn.query_row(
+        let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM saved_words WHERE srs_due <= ?1",
             params![now_epoch()],
             |r| r.get(0),
-        )
+        )?;
+        Ok(count)
     }
 
     /// Record a spaced-repetition answer (0 = again, 1 = good, 2 = easy) with a

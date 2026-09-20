@@ -225,7 +225,7 @@ impl KalamPrefs {
     pub const COLUMN_PX_RANGE: (f32, f32) = (400.0, 860.0);
 
     /// The preferences brought back inside Kalam's ranges.
-    pub fn clamped(self) -> KalamPrefs {
+    pub fn clamped(&self) -> KalamPrefs {
         KalamPrefs {
             theme: self.theme,
             font_px: self
@@ -237,7 +237,10 @@ impl KalamPrefs {
             column_px: self
                 .column_px
                 .clamp(Self::COLUMN_PX_RANGE.0, Self::COLUMN_PX_RANGE.1),
-            font_family: self.font_family.filter(|f| !f.trim().is_empty()),
+            font_family: self
+                .font_family
+                .clone()
+                .filter(|f| !f.trim().is_empty()),
         }
     }
 

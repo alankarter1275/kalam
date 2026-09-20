@@ -454,10 +454,10 @@ impl ReaderView {
     /// the position callback fires with the new page numbers.
     pub fn set_prefs(&self, prefs: KalamPrefs) {
         let prefs = prefs.clamped();
-        let old = self.inner.prefs.replace(prefs);
-        if old == prefs {
+        if *self.inner.prefs.borrow() == prefs {
             return;
         }
+        self.inner.prefs.replace(prefs.clone());
         {
             let mut s = self.inner.session.borrow_mut();
             s.set_settings(

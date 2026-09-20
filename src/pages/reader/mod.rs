@@ -551,7 +551,6 @@ impl Component for ReaderModel {
         let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
         let catalog_hyphenate = catalog.get_pref_i64("reader.hyphenate", 1) != 0;
         let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
-        let catalog_dual_page = catalog.get_pref_i64("reader.dual_page", 1) != 0;
         let scrolled = catalog.get_pref_i64(engine::PREF_SCROLLED, 0) != 0;
 
         // The engine opens the EPUB itself: one widget holds the book, and

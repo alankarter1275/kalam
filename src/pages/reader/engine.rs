@@ -457,6 +457,32 @@ impl DictCard {
     }
 }
 
+/// Best-effort text-to-speech for the pronunciation button. Tries the common
+/// Linux speech engines in turn; if none is present, tells the user which to
+/// install. Runs off the UI thread so a missing binary never blocks the popup.
+fn speak_word(word: String) {
+    std::thread::spawn(move || {
+        let attempts: Vec<(String, Vec<String>)> = vec![
+            ("espeak-ng".to_string(), vec!["-v".into(), "en".into(), word.clone()]),
+            ("espeak".to_string(), vec!["-v".into(), "en".into(), word.clone()]),
+            ("spd-say".to_string(), vec!["-w".into(), word.clone()]),
+        ];
+        for (cmd, args) in attempts {
+            if let Ok(status) = std::process::Command::new(&cmd).args(&args).status() {
+                if status.success() {
+                    return;
+                }
+            }
+        }
+        gtk::glib::MainContext::default().invoke(|| {
+            crate::notify::error(
+                "No speech engine",
+                "Install espeak-ng or speech-dispatcher (spd-say) to hear words aloud.",
+            );
+        });
+    });
+}
+
 /// The parts of speech the old popup listed first, in this order. Anything
 /// else keeps its first-seen order; senses with no part of speech land last
 /// and get no divider row at all.
@@ -494,6 +520,19 @@ fn dict_header(
         left.append(&pill);
     }
     header.append(&left);
+
+    // Audio pronunciation — best-effort via a system speech engine.
+    let audio = gtk::Button::new();
+    audio.add_css_class("k-audio-btn");
+    audio.set_child(Some(&gtk::Image::from_icon_name(
+        "audio-volume-high-symbolic",
+    )));
+    audio.set_tooltip_text(Some("Hear it"));
+    {
+        let w = card.word.clone();
+        audio.connect_clicked(move |_| speak_word(w.clone()));
+    }
+    header.append(&audio);
 
     let save = gtk::Button::new();
     save.add_css_class("k-save-btn");
@@ -565,15 +604,18 @@ fn sense_row(sense: &DictSense, number: usize) -> gtk::Box {
     row
 }
 
-fn append_definitions(body: &gtk::Box, card: &DictCard) {
+fn append_definitions(body: &gtk::Box, card: &DictCard) -> Vec<gtk::Box> {
     body.append(&section_label("Definitions"));
 
     let defs_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
     defs_box.add_css_class("k-defs");
 
     let shown = card.senses.len().min(3);
+    let mut rows = Vec::with_capacity(shown);
     for (i, sense) in card.senses.iter().take(shown).enumerate() {
-        defs_box.append(&sense_row(sense, i + 1));
+        let row = sense_row(sense, i + 1);
+        defs_box.append(&row);
+        rows.push(row);
     }
 
     let extra = &card.senses[shown..];
@@ -610,6 +652,7 @@ fn append_definitions(body: &gtk::Box, card: &DictCard) {
     }
 
     body.append(&defs_box);
+    rows
 }
 
 fn append_chips(body: &gtk::Box, words: &[String], antonym: bool, sender: &ComponentSender<ReaderModel>) {
@@ -636,9 +679,14 @@ fn append_chips(body: &gtk::Box, words: &[String], antonym: bool, sender: &Compo
     body.append(&flow);
 }
 
-fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<ReaderModel>) {
+fn append_sections(
+    body: &gtk::Box,
+    card: &DictCard,
+    sender: &ComponentSender<ReaderModel>,
+) -> Vec<gtk::Box> {
+    let mut def_rows = Vec::new();
     if !card.senses.is_empty() {
-        append_definitions(body, card);
+        def_rows = append_definitions(body, card);
     }
     if !card.synonyms.is_empty() {
         body.append(&section_label("Synonyms"));
@@ -687,6 +735,7 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
         empty.set_halign(gtk::Align::Start);
         body.append(&empty);
     }
+    def_rows
 }
 
 pub(crate) fn build_dict_popover(
@@ -698,7 +747,7 @@ pub(crate) fn build_dict_popover(
     let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
     popup.add_css_class("k-popup");
 
-    let width = 240.min((host.width() - 32).max(200));
+    let width = 380.min((host.width() - 32).max(300));
     popup.set_size_request(width, -1);
 
     let header = dict_header(host, card, sender);
@@ -708,11 +757,12 @@ pub(crate) fn build_dict_popover(
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
         .propagate_natural_height(true)
-        .max_content_height(160)
+        .overlay_scrolling(true)
+        .max_content_height(380)
         .build();
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.add_css_class("k-body");
-    append_sections(&body, card, sender);
+    let def_rows = append_sections(&body, card, sender);
     scroll.set_child(Some(&body));
     
     let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -738,7 +788,52 @@ pub(crate) fn build_dict_popover(
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
     popover.add_css_class("kalam-reader-dict-popover");
-    
+
+    // Sense-walk (roadmap 2.1): the arrow keys move the highlighted sense and
+    // Enter saves the word. The popover grabs the keyboard while it is up.
+    if !def_rows.is_empty() {
+        def_rows[0].add_css_class("k-def-focused");
+        let rows = std::rc::Rc::new(def_rows);
+        let idx = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let save_tx = sender.input_sender().clone();
+        let controller = gtk::EventControllerKey::new();
+        controller.connect_key_pressed(move |_c, key, _code, _state| {
+            let n = rows.len();
+            match key {
+                gtk::gdk::Key::Down | gtk::gdk::Key::Right => {
+                    let cur = idx.get().min(n - 1);
+                    if let Some(r) = rows.get(cur) {
+                        r.remove_css_class("k-def-focused");
+                    }
+                    let nxt = (cur + 1) % n;
+                    idx.set(nxt);
+                    if let Some(r) = rows.get(nxt) {
+                        r.add_css_class("k-def-focused");
+                    }
+                    gtk::glib::Propagation::Stop
+                }
+                gtk::gdk::Key::Up | gtk::gdk::Key::Left => {
+                    let cur = idx.get().min(n - 1);
+                    if let Some(r) = rows.get(cur) {
+                        r.remove_css_class("k-def-focused");
+                    }
+                    let prv = if cur == 0 { n - 1 } else { cur - 1 };
+                    idx.set(prv);
+                    if let Some(r) = rows.get(prv) {
+                        r.add_css_class("k-def-focused");
+                    }
+                    gtk::glib::Propagation::Stop
+                }
+                gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter => {
+                    let _ = save_tx.send(ReaderMsg::SaveCurrentWord);
+                    gtk::glib::Propagation::Stop
+                }
+                _ => gtk::glib::Propagation::Proceed,
+            }
+        });
+        popover.add_controller(controller);
+    }
+
     let tx = sender.input_sender().clone();
     popover.connect_closed(move |_| {
         let _ = tx.send(ReaderMsg::ClearDict);

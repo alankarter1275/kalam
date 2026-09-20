@@ -369,16 +369,10 @@ where
 /// `work` gets an [`Emit`] as well as a [`Reporter`]. `on_item` runs on the
 /// main thread once per emitted value, so it may touch widgets; like `spawn`,
 /// it is deliberately not `Send`.
-pub fn spawn_stream<T, W, F>(label: impl Into<String>, work: W, on_item: F)
-where
-    T: Send + 'static,
-    W: FnOnce(Reporter, Emit<T>) + Send + 'static,
-    F: Fn(T) + 'static,
-{
-    spawn_stream_with(label, false, work, on_item)
-}
-
-/// Housekeeping variant of [`spawn_stream`], matching [`spawn_internal`].
+/// The stream shape is currently used only by housekeeping (the cover
+/// preloader), so this is the internal variant. A user-facing stream —
+/// downloads, when they exist — will re-add the visible form; deleting the
+/// dead wrapper now keeps the dead-code check honest.
 pub fn spawn_stream_internal<T, W, F>(label: impl Into<String>, work: W, on_item: F)
 where
     T: Send + 'static,
@@ -441,7 +435,7 @@ where
     });
 }
 
-/// The worker half of [`spawn_stream`]: hands finished items back one at a
+/// The worker half of [`spawn_stream_internal`]: hands finished items back one at a
 /// time.
 pub struct Emit<T> {
     tx: async_channel::Sender<T>,

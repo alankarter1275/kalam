@@ -24,7 +24,7 @@
 //!
 //! **The results arrive one at a time.** A preloader that reported only when
 //! all twenty covers were done would be useless, so this uses
-//! [`crate::tasks::spawn_stream`] and each cover is cached the moment it is
+//! [`crate::tasks::spawn_stream_internal`] and each cover is cached the moment it is
 //! ready.
 //!
 //! # What it deliberately does not do

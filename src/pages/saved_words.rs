@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SavedWordsOut {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // jump-to-book from the saved-words list, wired when it links out
     OpenBook { book_id: i64 },
 }
 

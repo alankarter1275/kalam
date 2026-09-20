@@ -156,7 +156,7 @@ impl LibrarySection {
     /// Kept for the section pickers that will return with the definitive
     /// layout; the dashboard now routes via content sections instead of a
     /// generated tile grid.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the full section list renders once the library gains section tabs
     pub const ALL: &'static [LibrarySection] = &[
         LibrarySection::AllBooks,
         LibrarySection::ReadingList,
@@ -169,7 +169,7 @@ impl LibrarySection {
         LibrarySection::TaskManager,
     ];
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // section icons for those tabs
     pub fn icon(self) -> &'static str {
         match self {
             LibrarySection::AllBooks => "folder-documents-symbolic",

@@ -32,9 +32,9 @@ pub struct SeriesWork {
 /// A decoded cache row.
 #[derive(Debug, Clone)]
 pub struct SeriesCacheEntry {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // series grouping reads name/cover; the provenance key is not surfaced
     pub series_key: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // as above
     pub source: String,
     pub fetched_at: String,
     pub works: Vec<SeriesWork>,

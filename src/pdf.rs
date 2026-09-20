@@ -49,7 +49,7 @@ impl InkBoundingBox {
 
 /// PDF Document handle.
 pub struct PdfDocument {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // kept for re-open/title; not read on every render path
     pub path: PathBuf,
     doc: Document,
     page_numbers: Vec<u32>,

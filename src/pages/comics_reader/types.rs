@@ -44,7 +44,7 @@ pub enum PageStyle {
 }
 
 impl PageStyle {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // fit-mode labels render in the reader's settings popover
     pub fn label(self) -> &'static str {
         match self {
             PageStyle::Single => "Single",
@@ -120,7 +120,7 @@ pub enum ComicsReaderOut {
 }
 
 
-#[allow(dead_code)]
+#[allow(dead_code)] // menu/context actions for the comics reader UI
 pub enum ReaderContext {
     Local(i64), // book_id
     Remote { source_id: String, chapter_id: String },

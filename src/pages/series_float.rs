@@ -57,7 +57,7 @@ enum SeriesState {
 
 pub struct SeriesFloatModel {
     catalog: Arc<Catalog>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the float queries the service for the series grid
     service: LibraryService,
     series_name: String,
     series_key: String,

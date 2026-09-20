@@ -43,7 +43,7 @@ pub enum BookPageOut {
     /// Open the tags panel (in-app float) from the hero's "+" chip.
     ShowTags,
     Deleted {
-        #[allow(dead_code)]
+        #[allow(dead_code)] // carried for the open/delete round-trip; some arms ignore it
         book_id: i64,
     },
 }

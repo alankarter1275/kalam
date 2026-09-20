@@ -30,7 +30,7 @@ pub enum AuthorPageMsg {
 
 pub struct AuthorPageModel {
     catalog: Arc<Catalog>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // queried once the author saved-quotes section lands
     service: LibraryService,
     requested_name: String,
     profile: Option<AuthorProfile>,

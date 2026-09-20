@@ -22,7 +22,7 @@ pub enum ComicsOut {
 
 #[derive(Debug)]
 pub enum ComicsMsg {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // reserved refresh action for the comics grid
     Refresh,
     SearchChanged(String),
     PickFiles,

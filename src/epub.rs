@@ -15,7 +15,7 @@ use zip::ZipArchive;
 pub struct ImportResult {
     /// True when hand-edited metadata was re-applied from a previous import.
     pub restored: bool,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // only some import paths read the id; the rest re-fetch the book
     pub book_id: i64,
     pub title: String,
     pub duplicate: bool,

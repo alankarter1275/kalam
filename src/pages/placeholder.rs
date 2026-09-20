@@ -3,7 +3,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 pub struct PlaceholderPageModel {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // remembers which nav item this placeholder stands in for
     item: NavItem,
 }
 

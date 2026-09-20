@@ -12,12 +12,12 @@ use super::*;
 /// One logged dictionary lookup.
 #[derive(Debug, Clone)]
 pub struct DictLookup {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // lookup rows list the word; the row id is never shown
     pub id: i64,
     pub word: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the jump uses the word; the originating book is not surfaced
     pub book_id: Option<i64>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // as above
     pub chapter_index: Option<i64>,
     pub context_text: String,
     pub found: bool,

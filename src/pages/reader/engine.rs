@@ -261,7 +261,7 @@ pub(crate) fn range_from_json(text: &str) -> Option<(LayeredLocator, LayeredLoca
 /// can store beside `(chapter_index, fraction)` if you add a column for
 /// it later. Not used in v1; the pair is enough for the engine's
 /// `goto_chapter`.
-#[allow(dead_code)]
+#[allow(dead_code)] // serializes a locator for position persistence, wired later
 pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
     serde_json::json!({ "kalam_locator": 1, "at": locator_to_json(l) }).to_string()
 }

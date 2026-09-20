@@ -1,7 +1,7 @@
 use gtk::gdk;
 use anyhow::Result;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // the tiled provider's load states; wired with the provider
 pub enum ImageState {
     Loading,
     Ready(gdk::Texture),
@@ -13,7 +13,7 @@ pub trait ImageProvider: Send + Sync {
     fn page_count(&self) -> usize;
     
     /// Returns true if a page exists.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // bounds-check for the provider's windowed decode
     fn has_page(&self, idx: usize) -> bool {
         idx < self.page_count()
     }

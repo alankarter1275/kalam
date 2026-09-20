@@ -86,7 +86,7 @@ pub enum BookFloatOut {
     /// Open the shelves checklist panel (in-app float).
     ShowShelves,
     Deleted {
-        #[allow(dead_code)]
+        #[allow(dead_code)] // as above for the float
         book_id: i64,
     },
 }

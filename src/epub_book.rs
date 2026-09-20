@@ -16,7 +16,7 @@ use zip::ZipArchive;
 #[derive(Debug, Clone)]
 pub struct TocEntry {
     pub label: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // OPF link fields retained for the reader's link resolution
     pub href: String,
     /// Spine index if this href maps to a spine item.
     pub spine_index: Option<usize>,
@@ -24,7 +24,7 @@ pub struct TocEntry {
 
 #[derive(Debug, Clone)]
 pub struct SpineItem {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // as above
     pub id: String,
     pub href: String,
     /// Absolute path on disk after extract (under cache dir).
@@ -34,10 +34,10 @@ pub struct SpineItem {
 
 #[derive(Debug)]
 pub struct OpenBook {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // as above
     pub title: String,
     pub spine: Vec<SpineItem>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // base dir for resolving relative OPF paths
     opf_dir: String,
 }
 

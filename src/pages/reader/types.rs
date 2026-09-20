@@ -114,7 +114,7 @@ pub(crate) const UI_PRESETS_BACK_SIDE: [(&str, i32); 3] = [("Tight", 12), ("Norm
 pub(crate) const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 22), ("Strong", 32)];
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // reader->app messages; some variants are not yet emitted
 pub enum ReaderMsg {
     Close,
     TocSelect(usize),

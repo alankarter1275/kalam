@@ -140,7 +140,7 @@ pub enum SettingsMsg {
 
 pub struct SettingsPageModel {
     catalog: Arc<Catalog>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // settings uses the service for library-management actions
     service: LibraryService,
     dicts: Vec<crate::db::Dictionary>,
     active_tab: SettingsTab,

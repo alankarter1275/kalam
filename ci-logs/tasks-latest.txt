@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-tasks settle=20
-binary: 41314456 bytes
+binary: 41262552 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5608.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5860.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -21,29 +21,29 @@ WAYLAND_DISPLAY=wayland-1
 requested route: tasks
 windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
 toplevel windows seen: 1
-  shot: 01-tasks (40929 bytes)
+  shot: 01-tasks (41130 bytes)
 focused: 1
-  shot: 02-tasks-settling (40929 bytes)
-  shot: 03-tasks-settled (40929 bytes)
+  shot: 02-tasks-settling (41130 bytes)
+  shot: 03-tasks-settled (41130 bytes)
 navigation: app accepted route 'tasks'
 navigation: 'tasks' is not a grid page; no grid_build expected
-  shot: 04-home-for-comparison (67777 bytes)
+  shot: 04-home-for-comparison (68202 bytes)
 navigation: 'tasks' differs from Home -- the page really did change
 navigation: OK -- the images below are 'tasks'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init       61.4 ms
-  [timing] startup_style          44.3 ms
+  [timing] startup_gtk_init       76.9 ms
+  [timing] startup_style          55.8 ms
   [timing] startup_libraries       0.1 ms
-  [timing] startup_db_open         4.5 ms
-  [timing] startup_theme          10.1 ms
-  [timing] pre_run               120.5 ms
+  [timing] startup_db_open         6.2 ms
+  [timing] startup_theme          12.5 ms
+  [timing] pre_run               151.6 ms
   [timing] startup_dicts           0.1 ms
-  [timing] service_home            0.6 ms
+  [timing] service_home            0.8 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      2.0 ms
-  [timing] init_done             125.4 ms
-  [timing] window_shown          130.0 ms
+  [timing] startup_first_page      2.7 ms
+  [timing] init_done             157.9 ms
+  [timing] window_shown          165.0 ms
   [timing] page_cache_miss           1
   [timing] icons_write             0.0 ms
   [timing] icons_theme             0.1 ms
@@ -60,33 +60,33 @@ navigation: OK -- the images below are 'tasks'
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  cd8dfe8d0f3157ad22a3c14d49b1543b  ci-shots-tasks/01-tasks.png
-  cd8dfe8d0f3157ad22a3c14d49b1543b  ci-shots-tasks/02-tasks-settling.png
-  cd8dfe8d0f3157ad22a3c14d49b1543b  ci-shots-tasks/03-tasks-settled.png
-  195a1ec4b12fd29b083973878ca73cac  ci-shots-tasks/04-home-for-comparison.png
+  59a36e4478b25acbab85c5828b99c418  ci-shots-tasks/01-tasks.png
+  59a36e4478b25acbab85c5828b99c418  ci-shots-tasks/02-tasks-settling.png
+  59a36e4478b25acbab85c5828b99c418  ci-shots-tasks/03-tasks-settled.png
+  ae0175a72439867621278935b1597ffe  ci-shots-tasks/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5645): Gtk-WARNING **: 20:21:26.553: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:5897): Gtk-WARNING **: 00:20:46.930: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=tasks — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=86356 peak_rss_mb=84
+books=139 peak_rss_kb=87288 peak_rss_mb=85
 
 === shutting down ===
 
 === artifacts ===
-  total 220
-  drwxr-xr-x  2 runner runner  4096 Sep 19 20:22 .
-  drwxr-xr-x 20 runner runner  4096 Sep 19 20:21 ..
-  -rw-r--r--  1 runner runner 40929 Sep 19 20:21 01-tasks.png
-  -rw-r--r--  1 runner runner 40929 Sep 19 20:21 02-tasks-settling.png
-  -rw-r--r--  1 runner runner 40929 Sep 19 20:22 03-tasks-settled.png
-  -rw-r--r--  1 runner runner 67777 Sep 19 20:22 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Sep 19 20:21 grim.log
-  -rw-r--r--  1 runner runner  1051 Sep 19 20:22 kalam-home.log
-  -rw-r--r--  1 runner runner  1091 Sep 19 20:21 kalam.log
-  -rw-r--r--  1 runner runner  3099 Sep 19 20:22 report.txt
-  -rw-r--r--  1 runner runner    88 Sep 19 20:21 sway.log
-  -rw-r--r--  1 runner runner  7184 Sep 19 20:21 tree.json
---- run 35466674276 ---
+  total 232
+  drwxr-xr-x  2 runner runner  4096 Sep 20 00:21 .
+  drwxr-xr-x 20 runner runner  4096 Sep 20 00:20 ..
+  -rw-r--r--  1 runner runner 41130 Sep 20 00:21 01-tasks.png
+  -rw-r--r--  1 runner runner 41130 Sep 20 00:21 02-tasks-settling.png
+  -rw-r--r--  1 runner runner 41130 Sep 20 00:21 03-tasks-settled.png
+  -rw-r--r--  1 runner runner 68202 Sep 20 00:21 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 20 00:21 grim.log
+  -rw-r--r--  1 runner runner  1051 Sep 20 00:21 kalam-home.log
+  -rw-r--r--  1 runner runner  1091 Sep 20 00:20 kalam.log
+  -rw-r--r--  1 runner runner  3099 Sep 20 00:21 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 20 00:20 sway.log
+  -rw-r--r--  1 runner runner  7184 Sep 20 00:21 tree.json
+--- run 35478017833 ---

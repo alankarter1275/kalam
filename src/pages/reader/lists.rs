@@ -787,6 +787,51 @@ fn saved_word_meta(model: &ReaderModel, word: &SavedWord) -> String {
     }
 }
 
+/// Render a book's highlights/quotes/notes as Markdown, grouped per entry with
+/// the chapter number and any attached note. Kept deliberately plain so the
+/// file is pleasant to read and easy to import elsewhere.
+fn annotations_markdown(annos: &[Annotation], title: &str) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("# {title} — highlights & notes\n\n"));
+    for a in annos {
+        let (kind, color) = match a.kind.as_str() {
+            "quote" => ("Quote", None),
+            "note" => ("Note", None),
+            _ => ("Highlight", Some(a.color.as_str())),
+        };
+        let chapter = a.chapter_index + 1;
+        match color {
+            Some(c) => out.push_str(&format!(
+                "- **{kind}** ({c}, ch. {chapter}): {}\n",
+                a.text_excerpt
+            )),
+            None => out.push_str(&format!("- **{kind}** (ch. {chapter}): {}\n", a.text_excerpt)),
+        }
+        if !a.note.trim().is_empty() {
+            out.push_str(&format!("  - note: {}\n", a.note.trim()));
+        }
+    }
+    out
+}
+
+/// Export the book's highlights/quotes/notes to `~/Highlights.md`, mirroring
+/// the saved-words exporters (fixed home path, count + path for the toast).
+pub(crate) fn export_highlights_markdown(
+    catalog: &crate::db::Catalog,
+    book_id: i64,
+    book_title: &str,
+) -> Result<(usize, std::path::PathBuf), String> {
+    let annos = catalog
+        .get_annotations_for_book(book_id)
+        .map_err(|e| format!("{e}"))?;
+    let md = annotations_markdown(&annos, book_title);
+    let out = crate::paths::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("Highlights.md");
+    std::fs::write(&out, md).map_err(|e| format!("{e}"))?;
+    Ok((annos.len(), out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

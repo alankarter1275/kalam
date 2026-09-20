@@ -1797,6 +1797,20 @@ impl Component for ReaderModel {
                 refresh_controls = true;
                 refresh_words = true;
             }
+            ReaderMsg::ExportAnnotations => {
+                let catalog = self.service.catalog();
+                match lists::export_highlights_markdown(
+                    &catalog,
+                    self.book_id,
+                    &self.book_title,
+                ) {
+                    Ok((n, path)) => crate::notify::success(
+                        &format!("Exported {n} highlights & notes"),
+                        &path.display().to_string(),
+                    ),
+                    Err(err) => crate::notify::error("Could not export highlights", &err),
+                }
+            }
             ReaderMsg::ScheduleCloseLeft => {
                 self.schedule_left_close(sender.clone());
             }

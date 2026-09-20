@@ -165,6 +165,8 @@ pub enum ReaderMsg {
     SwitchLeftTab(LeftSidebarTab),
     SwitchRightTab(RightSidebarTab),
     SetHighlightFilter(HighlightFilter),
+    /// Write the book's highlights/quotes/notes to ~/Highlights.md.
+    ExportAnnotations,
     SetWordScope(WordScope),
     ScheduleCloseLeft,
     ScheduleCloseRight,

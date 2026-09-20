@@ -26,6 +26,20 @@ pub(crate) fn build_highlights_panel(
         s.input(ReaderMsg::AnnotationSearchChanged(entry.text().to_string()));
     });
     search_row.append(&search);
+
+    let export = gtk::Button::new();
+    export.set_child(Some(&crate::icons::labelled(
+        "document-send-symbolic",
+        16,
+        "Export",
+        6,
+    )));
+    export.add_css_class("kalam-btn-outlined");
+    export.set_tooltip_text(Some("Export highlights & notes to ~/Highlights.md"));
+    let s = sender.clone();
+    export.connect_clicked(move |_| s.input(ReaderMsg::ExportAnnotations));
+    search_row.append(&export);
+
     wrap.append(&search_row);
 
     let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);

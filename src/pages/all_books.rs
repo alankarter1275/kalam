@@ -937,56 +937,6 @@ fn rebuild_list(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_clean_import_reads_naturally() {
-        let tally = ImportTally {
-            imported: 3,
-            last_title: "Dune".into(),
-            ..Default::default()
-        };
-        assert_eq!(
-            import_summary(&tally),
-            "Import done — 3 added, 0 already in library, 0 failed. Last: Dune"
-        );
-    }
-
-    #[test]
-    fn restored_edits_are_called_out_but_only_when_there_were_some() {
-        // The note exists so a book that comes back with its old title does
-        // not look like the import ignored the file.
-        let none = ImportTally {
-            imported: 1,
-            ..Default::default()
-        };
-        assert!(!import_summary(&none).contains("kept your earlier"));
-
-        let some = ImportTally {
-            imported: 1,
-            restored: 1,
-            ..Default::default()
-        };
-        assert!(import_summary(&some).contains("1 kept your earlier metadata edits."));
-    }
-
-    #[test]
-    fn an_empty_title_leaves_off_the_last_clause() {
-        // Every file failing means there is no title to report; the summary
-        // should not trail off with a dangling "Last: ".
-        let tally = ImportTally {
-            errors: 2,
-            ..Default::default()
-        };
-        let text = import_summary(&tally);
-        assert!(text.ends_with("2 failed."), "got {text:?}");
-        assert!(!text.contains("Last:"));
-    }
-}
-
-
 /// Ask before a bulk delete. Mirrors `shelves_grid::confirm_delete`, which is
 /// the app's one established shape for a destructive yes/no.
 fn confirm_bulk_delete(anchor: &gtk::Widget, count: usize, on_confirm: impl Fn() + 'static) {
@@ -1035,5 +985,55 @@ fn confirm_bulk_delete(anchor: &gtk::Widget, count: usize, on_confirm: impl Fn()
             on_confirm();
             dialog.close();
         });
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clean_import_reads_naturally() {
+        let tally = ImportTally {
+            imported: 3,
+            last_title: "Dune".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            import_summary(&tally),
+            "Import done — 3 added, 0 already in library, 0 failed. Last: Dune"
+        );
+    }
+
+    #[test]
+    fn restored_edits_are_called_out_but_only_when_there_were_some() {
+        // The note exists so a book that comes back with its old title does
+        // not look like the import ignored the file.
+        let none = ImportTally {
+            imported: 1,
+            ..Default::default()
+        };
+        assert!(!import_summary(&none).contains("kept your earlier"));
+
+        let some = ImportTally {
+            imported: 1,
+            restored: 1,
+            ..Default::default()
+        };
+        assert!(import_summary(&some).contains("1 kept your earlier metadata edits."));
+    }
+
+    #[test]
+    fn an_empty_title_leaves_off_the_last_clause() {
+        // Every file failing means there is no title to report; the summary
+        // should not trail off with a dangling "Last: ".
+        let tally = ImportTally {
+            errors: 2,
+            ..Default::default()
+        };
+        let text = import_summary(&tally);
+        assert!(text.ends_with("2 failed."), "got {text:?}");
+        assert!(!text.contains("Last:"));
     }
 }

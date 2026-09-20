@@ -46,12 +46,15 @@ fn the_back_trail_counts_so_a_shell_can_notice_a_jump() {
     s.render().expect("page renders");
     assert_eq!(s.back_depth(), 0, "nothing to undo yet");
 
+    // Found first: the link lives on chapter one's opening page, and the
+    // page turn below moves away from it.
+    let (_, _, href) = sweep_for_link(&mut s).expect("chapter one links to chapter two");
+
     // Reading forward is not a jump; the trail must stay empty or a shell
     // watching the number would offer "back" on every page turn.
     s.next_page();
     assert_eq!(s.back_depth(), 0, "a page turn is not a jump");
 
-    let (_, _, href) = sweep_for_link(&mut s).expect("chapter one links to chapter two");
     assert!(s.follow_link(&href));
     assert_eq!(s.back_depth(), 1, "a jump is one deep");
 

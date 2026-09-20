@@ -80,7 +80,7 @@ pub struct Catalog {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // model mirrors the row; several fields below are not yet surfaced
 pub struct Annotation {
     pub id: i64,
     pub book_id: i64,
@@ -95,7 +95,7 @@ pub struct Annotation {
     pub note: String,
     pub cfi: Option<String>,
     pub created_at: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // written on update; no edited-at stamp is shown yet
     pub updated_at: String,
 }
 
@@ -125,12 +125,12 @@ pub struct QuoteRef {
 #[derive(Debug, Clone)]
 pub struct ReadingBookmark {
     pub id: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // bookmarks load per-book, so the id is never read back
     pub book_id: i64,
     pub chapter_index: i64,
     pub fraction: f64,
     pub label: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // kept for future date sorting; not displayed
     pub created_at: String,
 }
 
@@ -157,7 +157,7 @@ pub struct AuthorWork {
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthorProfile {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // authors are keyed by name; the row id is unused
     pub id: i64,
     pub canonical_name: String,
     pub sort_name: String,
@@ -179,23 +179,23 @@ pub struct AuthorProfile {
 
 #[derive(Debug, Clone)]
 pub struct Dictionary {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // lookups go by name; the id is internal
     pub id: i64,
     pub name: String,
     pub lang: Option<String>,
     pub entry_count: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // bookkeeping column; not displayed
     pub added_at: String,
     /// Merged-store priority (schema v12): lower numbers speak first.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the merged store orders by priority in SQL; the field mirrors the column
     pub priority: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct DictEntry {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // entries are addressed by word; the id is internal
     pub id: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the word->dict join happens in SQL; not read in Rust
     pub dict_id: i64,
     pub word: String,
     pub definition: String,
@@ -242,11 +242,11 @@ pub struct Shelf {
     pub description: String,
     /// JSON rule document; empty for manual shelves.
     pub rules: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // shelves render unsorted for now; ordering column retained
     pub position: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // not displayed
     pub created_at: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // not displayed
     pub updated_at: String,
     /// Live count, filled in by `list_shelves`.
     pub book_count: usize,
@@ -276,11 +276,11 @@ impl Shelf {
 #[derive(Debug, Clone)]
 pub struct ReadingListEntry {
     pub book: Book,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // order comes from the query's ORDER BY; field mirrors the column
     pub position: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the list shows titles only; notes not surfaced yet
     pub note: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // not displayed
     pub added_at: String,
 }
 
@@ -333,7 +333,7 @@ impl EventKind {
 /// A history row joined with its book title for display.
 #[derive(Debug, Clone)]
 pub struct ReadingEvent {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // events are displayed, never edited; the id is unused
     pub id: i64,
     pub book_id: i64,
     pub kind: EventKind,

@@ -124,6 +124,8 @@ pub enum ReaderMsg {
     FontDelta(i32),
     LineHeightDelta(i32),
     ColumnWidthDelta(i32),
+    /// Font picker (roadmap 2.3): the chosen family, "" = default.
+    SetFontFamily(String),
     SwitchSettingsPane(ReaderSettingsPane),
     SetUiSetting(ReaderUiSetting, i32),
     AdjustUiSetting(ReaderUiSetting, i32),

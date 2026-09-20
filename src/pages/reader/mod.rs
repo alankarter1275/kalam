@@ -537,14 +537,20 @@ impl Component for ReaderModel {
         let catalog_column = catalog
             .get_pref_i64("reader.column_px", 620)
             .clamp(400, 860) as u32;
+        let catalog_family = catalog.get_pref("reader.font_family");
         let scrolled = catalog.get_pref_i64(engine::PREF_SCROLLED, 0) != 0;
 
         // The engine opens the EPUB itself: one widget holds the book, and
         // its failure is the only thing that leaves the page without text.
         let mut open_failure: Option<String> = None;
         let (book_meta, view, chapter, fraction) = if let Some(book) = book.clone() {
-            let prefs =
-                engine::engine_prefs(catalog_theme, catalog_font, catalog_line_height, catalog_column);
+            let prefs = engine::engine_prefs(
+                catalog_theme,
+                catalog_font,
+                catalog_line_height,
+                catalog_column,
+                catalog_family.clone(),
+            );
             match engine::open_engine(&book.file_path, prefs) {
                 Ok(view) => {
                     let (ch, frac) = catalog
@@ -628,6 +634,11 @@ impl Component for ReaderModel {
         let catalog_column = catalog
             .get_pref_i64("reader.column_px", 620)
             .clamp(400, 860) as u32;
+        let catalog_family = catalog.get_pref("reader.font_family");
+        let font_families = view
+            .as_ref()
+            .map(|v| v.font_families())
+            .unwrap_or_default();
         let ui_prefs = ReaderUiPrefs::load(catalog);
         let ui_css_provider = gtk::CssProvider::new();
         register_reader_ui_provider(&ui_css_provider);
@@ -667,6 +678,8 @@ impl Component for ReaderModel {
             ui_prefs,
             catalog.get_pref_i64("dict_sense_hint", 1) != 0,
             catalog.get_pref_i64("dict_history_enabled", 1) != 0,
+            catalog_family.clone(),
+            font_families,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -715,6 +728,7 @@ impl Component for ReaderModel {
             font_px: catalog_font,
             line_height: catalog_line_height,
             column_px: catalog_column,
+            font_family: catalog_family,
             selection_chip: None,
             dict_popover: None,
             dict_anchor: None,
@@ -1337,6 +1351,20 @@ impl Component for ReaderModel {
                         .set_pref("reader.column_px", &next.to_string());
                     self.with_view(|v| v.set_column_px(next as f32));
                     refresh_controls = true;
+                }
+            }
+            ReaderMsg::SetFontFamily(family) => {
+                let family = if family.trim().is_empty() {
+                    None
+                } else {
+                    Some(family)
+                };
+                if family != self.font_family {
+                    self.font_family = family.clone();
+                    self.service
+                        .catalog()
+                        .set_pref("reader.font_family", family.as_deref().unwrap_or(""));
+                    self.with_view(move |v| v.set_font_family(family));
                 }
             }
             ReaderMsg::SwitchSettingsPane(pane) => {

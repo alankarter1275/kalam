@@ -498,6 +498,19 @@ impl ReaderView {
         });
     }
 
+    /// Choose the body typeface; `None` or blank restores Kalam's default.
+    pub fn set_font_family(&self, family: Option<String>) {
+        self.set_prefs(KalamPrefs {
+            font_family: family.filter(|f| !f.trim().is_empty()),
+            ..self.prefs()
+        });
+    }
+
+    /// The installed typefaces the engine can offer in a picker.
+    pub fn font_families(&self) -> Vec<String> {
+        self.inner.session.borrow().font_families()
+    }
+
     // ---- Navigation ----
 
     /// Forward a page. In scrolled mode, most of a viewport down.

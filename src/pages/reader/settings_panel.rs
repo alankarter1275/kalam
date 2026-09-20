@@ -24,6 +24,8 @@ pub(crate) fn build_reader_settings_panel(
     ui_prefs: ReaderUiPrefs,
     dict_sense_hint: bool,
     dict_history_enabled: bool,
+    font_family: Option<String>,
+    families: Vec<String>,
 
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -97,6 +99,53 @@ pub(crate) fn build_reader_settings_panel(
         ReaderMsg::LineHeightDelta(-1),
         ReaderMsg::LineHeightDelta(1),
     ));
+
+    // Font picker (roadmap 2.3): the engine lists the installed faces; the
+    // first row restores Kalam's bundled default.
+    if !families.is_empty() {
+        let default_label = "Default";
+        let current = font_family.clone().unwrap_or_default();
+        let mut display: Vec<String> = vec![default_label.to_string()];
+        display.extend(families.iter().cloned());
+        let selected = display.iter().position(|f| *f == current).unwrap_or(0) as u32;
+
+        let strings: Vec<&str> = display.iter().map(|s| s.as_str()).collect();
+        let drop = gtk::DropDown::new(Some(gtk::StringList::new(&strings)), None);
+        drop.set_valign(gtk::Align::Center);
+
+        let ready = Rc::new(std::cell::Cell::new(false));
+        let tx = sender.input_sender().clone();
+        let choices = display.clone();
+        let ready_for_cb = ready.clone();
+        drop.connect_selected_item_notify(move |d| {
+            if !ready_for_cb.get() {
+                return;
+            }
+            let chosen = choices
+                .get(d.selected() as usize)
+                .cloned()
+                .unwrap_or_default();
+            let value = if chosen == default_label {
+                String::new()
+            } else {
+                chosen
+            };
+            let _ = tx.send(ReaderMsg::SetFontFamily(value));
+        });
+        drop.set_selected(selected);
+        ready.set(true);
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        row.add_css_class("kalam-reader-setting-row");
+        let label = gtk::Label::new(Some("Typeface"));
+        label.add_css_class("kalam-reader-setting-name");
+        label.set_hexpand(true);
+        label.set_halign(gtk::Align::Start);
+        row.append(&label);
+        row.append(&drop);
+        type_section.append(&row);
+    }
+
     reading_page.append(&type_section);
     reading_page.append(&reader_panel_divider());
 

@@ -48,12 +48,14 @@ pub(crate) fn engine_prefs(
     font_px: u32,
     line_height: f32,
     column_px: u32,
+    font_family: Option<String>,
 ) -> KalamPrefs {
     KalamPrefs {
         theme: engine_theme(theme),
         font_px: font_px as f32,
         line_height,
         column_px: column_px as f32,
+        font_family,
     }
     .clamped()
 }

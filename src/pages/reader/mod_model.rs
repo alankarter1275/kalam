@@ -24,6 +24,8 @@ pub struct ReaderModel {
     pub(crate) font_px: u32,
     pub(crate) line_height: f32,
     pub(crate) column_px: u32,
+    /// The body typeface chosen in the font picker; `None` = default.
+    pub(crate) font_family: Option<String>,
     /// The chip over the current selection and the dictionary popover,
     /// so they can be taken down again.
     pub(crate) selection_chip: Option<gtk::Popover>,

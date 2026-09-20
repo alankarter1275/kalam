@@ -213,6 +213,9 @@ pub struct KalamPrefs {
     /// `reader.column_px`, 400–860, default 620: the widest a line of text
     /// may run. Wider windows centre the column.
     pub column_px: f32,
+    /// `reader.font_family`: the body typeface the picker chose; `None`
+    /// keeps Kalam's bundled default.
+    pub font_family: Option<String>,
 }
 
 impl KalamPrefs {
@@ -233,6 +236,7 @@ impl KalamPrefs {
             column_px: self
                 .column_px
                 .clamp(Self::COLUMN_PX_RANGE.0, Self::COLUMN_PX_RANGE.1),
+            font_family: self.font_family.filter(|f| !f.trim().is_empty()),
         }
     }
 
@@ -254,7 +258,12 @@ impl KalamPrefs {
             // The book decides; a publisher's ragged-right poem stays so.
             justify: false,
             publisher_styles: true,
-            font_family: Some(BODY_FONT.to_string()),
+            font_family: Some(
+                prefs
+                    .font_family
+                    .clone()
+                    .unwrap_or_else(|| BODY_FONT.to_string()),
+            ),
             theme: prefs.theme.engine_theme(),
             palette: Some(prefs.theme.palette()),
             user_css: Some(prefs.skin_css()),
@@ -312,6 +321,7 @@ impl Default for KalamPrefs {
             font_px: 17.0,
             line_height: 1.8,
             column_px: 620.0,
+            font_family: None,
         }
     }
 }
@@ -401,11 +411,14 @@ mod tests {
             font_px: 99.0,
             line_height: 0.1,
             column_px: 10_000.0,
+            font_family: Some("   ".to_string()),
         }
         .clamped();
         assert_eq!(wild.font_px, 24.0);
         assert_eq!(wild.line_height, 1.3);
         assert_eq!(wild.column_px, 860.0);
+        // A blank family name is treated as "use the default".
+        assert_eq!(wild.font_family, None);
     }
 
     #[test]

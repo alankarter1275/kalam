@@ -1018,6 +1018,14 @@ bulk editing. Fixing it later means rewriting all four.
   `forget_overrides`, `set_reading_list_note`. The remaining ~72 are mostly
   data-model struct fields (keep-with-reason) plus a few forward-looking
   clusters (author saved-quotes, reader engine, sources) for later passes.
+  **Batch 3, 2026-09-20:** de-staled `sources::all()` (used by `browse`).
+  Removing the allows on `Floating` and `SavedQuotesOut` exposed never-read
+  *payloads* inside otherwise-used enums — a lesson recorded: an enum being
+  used does not mean every variant field is read. Resolved with reasoned
+  field-level allows: `Floating`'s controllers are stored purely to keep the
+  float components alive, and `JumpTo.chapter_index` is part of the output
+  contract whose reader-scroll is not yet wired. Count now ~72; the remainder
+  is the data-model field sweep.
 - ~~**1.18 — The comic upscaler offers itself to books it cannot work on.**~~
   **Done, 2026-09-19.** Found by the owner: the Remaster button was drawn
   unconditionally in `book.rs` and `book_float.rs`, so it appeared on EPUBs and

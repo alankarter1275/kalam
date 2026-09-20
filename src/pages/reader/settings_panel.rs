@@ -152,6 +152,32 @@ pub(crate) fn build_reader_settings_panel(
         type_section.append(&row);
     }
 
+    // Roadmap 2.8: where a reader puts typefaces of their own, with no
+    // system-wide install. The engine reads the folder when a book opens.
+    let fonts_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    fonts_row.add_css_class("kalam-reader-setting-row");
+    let fonts_label = gtk::Label::new(Some("Fonts folder"));
+    fonts_label.add_css_class("kalam-reader-setting-name");
+    fonts_label.set_hexpand(true);
+    fonts_label.set_halign(gtk::Align::Start);
+    fonts_row.append(&fonts_label);
+    let fonts_tx = sender.input_sender().clone();
+    let fonts_open = gtk::Button::with_label("Open");
+    fonts_open.add_css_class("flat");
+    fonts_open.set_tooltip_text(Some("Drop .ttf or .otf files in here"));
+    fonts_open.connect_clicked(move |_| {
+        let _ = fonts_tx.send(ReaderMsg::OpenFontsFolder);
+    });
+    fonts_row.append(&fonts_open);
+    type_section.append(&fonts_row);
+
+    let fonts_hint =
+        gtk::Label::new(Some("New faces join the picker the next time you open the book."));
+    fonts_hint.add_css_class("kalam-reader-setting-hint");
+    fonts_hint.set_wrap(true);
+    fonts_hint.set_xalign(0.0);
+    type_section.append(&fonts_hint);
+
     reading_page.append(&type_section);
     reading_page.append(&reader_panel_divider());
 

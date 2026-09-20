@@ -132,6 +132,8 @@ pub enum ReaderMsg {
     SetPublisherStyles(bool),
     /// Roadmap 2.7: facing pages, or one page at a time.
     SetDualPage(bool),
+    /// Roadmap 2.8: open the folder a reader drops typefaces into.
+    OpenFontsFolder,
     /// Roadmap 2.5 footnotes: the engine has the text behind an internal
     /// link and is offering it before the reader moves. `x`/`y` are the
     /// press, in the drawing area's coordinates.

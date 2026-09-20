@@ -126,6 +126,16 @@ pub fn dictionaries_dir() -> PathBuf {
     shared_data_dir().join("dictionaries")
 }
 
+/// `~/.local/share/kalam/fonts` — typefaces the reader loads alongside the
+/// bundled ones, with no system-wide install (roadmap 2.8).
+///
+/// Shared rather than per-library for the reason [`dictionaries_dir`] gives:
+/// a typeface belongs to the installation, not to a shelf of books, and a
+/// reader who switches library should not have to copy their fonts.
+pub fn fonts_dir() -> PathBuf {
+    shared_data_dir().join("fonts")
+}
+
 /// The root for things every library shares.
 ///
 /// Always the classic location, never the active library. Kept separate from
@@ -273,6 +283,9 @@ pub fn ensure_data_dirs() -> std::io::Result<()> {
 
     // Shared: installed once, used by every library. See `dictionaries_dir`.
     fs::create_dir_all(dictionaries_dir())?;
+    // Created empty and scanned on every open; a reader who never drops a
+    // font in pays one empty directory read.
+    fs::create_dir_all(fonts_dir())?;
     Ok(())
 }
 

@@ -1171,6 +1171,13 @@ button.kalam-reader-pill-nav:hover {
     min-height: 36px;
 }
 
+/* Roadmap 2.8: the line under a setting that explains what it costs. */
+.kalam-reader-setting-hint {
+  font-size: 11px;
+  opacity: 0.65;
+  margin: 2px 0 8px;
+}
+
 .kalam-reader-setting-name {
     font-size: 0.84rem;
     color: @kalam_text;

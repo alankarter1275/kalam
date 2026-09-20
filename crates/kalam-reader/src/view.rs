@@ -147,6 +147,13 @@ pub struct ReaderOptions {
     /// bytes. `None` is [`DEFAULT_CACHE_BUDGET`] (32 MB), not the engine's
     /// own, comic-sized default.
     pub cache_budget: Option<usize>,
+    /// A folder of the reader's own typefaces, scanned recursively and
+    /// loaded after the bundled faces (roadmap 2.8). `None` — the default
+    /// — loads nothing but what the widget ships with.
+    ///
+    /// Faces are read when a book opens, so a file dropped in shows up in
+    /// the typeface picker on the next open, not the next page turn.
+    pub fonts_dir: Option<std::path::PathBuf>,
 }
 
 /// How the book is shown: one page at a time, or as one long strip.
@@ -265,7 +272,10 @@ impl ReaderView {
         options: &ReaderOptions,
     ) -> chapbook_core::Result<ReaderView> {
         let budget = options.cache_budget.unwrap_or(DEFAULT_CACHE_BUDGET);
-        let config = SessionConfig::new(crate::fonts::font_source(options.host_fonts))
+        let config = SessionConfig::new(crate::fonts::font_source(
+            options.host_fonts,
+            options.fonts_dir.clone(),
+        ))
             .with_cache_budget(budget);
         let mut session = Session::open_with(path.as_ref(), config)?;
         // Kalam's settings, before the first layout, so nothing is laid

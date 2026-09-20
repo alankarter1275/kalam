@@ -1479,6 +1479,24 @@ impl Component for ReaderModel {
                     self.with_view(move |v| v.set_dual_page(on));
                 }
             }
+            ReaderMsg::OpenFontsFolder => {
+                // Created on demand too, so the first use is not a missing
+                // folder in a file manager.
+                let dir = crate::paths::fonts_dir();
+                if let Err(e) = std::fs::create_dir_all(&dir) {
+                    log::warn!("cannot create {}: {e}", dir.display());
+                }
+                let uri = gtk::gio::File::for_path(&dir).uri().to_string();
+                gtk::UriLauncher::new(&uri).launch(
+                    None::<&gtk::Window>,
+                    gtk::gio::Cancellable::NONE,
+                    move |res| {
+                        if let Err(e) = res {
+                            log::warn!("cannot open {}: {e}", dir.display());
+                        }
+                    },
+                );
+            }
             ReaderMsg::SwitchSettingsPane(pane) => {
                 if pane != self.settings_pane {
                     self.settings_pane = pane;

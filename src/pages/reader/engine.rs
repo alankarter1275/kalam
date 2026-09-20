@@ -86,7 +86,9 @@ pub(crate) fn open_engine(
     prefs: KalamPrefs,
 ) -> Result<ReaderView, kalam_reader::ChapbookError> {
     crate::timing::span("book_open");
-    let options = ReaderOptions::default();
+    let mut options = ReaderOptions::default();
+    // Roadmap 2.8: a reader's own typefaces, scanned when the book opens.
+    options.fonts_dir = Some(crate::paths::fonts_dir());
     // Say what the cache ceiling actually is instead of leaving it to be
     // inferred through two layers of defaults — the engine's own is 192 MB,
     // but `kalam-reader` overrides it with a 32 MB figure chosen for a 4 GB

@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-reader settle=25
-binary: 41478488 bytes
+binary: 41500696 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5347.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5303.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,27 +32,27 @@ navigation: 'read-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'read-1'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init      111.0 ms
-  [timing] startup_style          59.2 ms
+  [timing] startup_gtk_init      129.2 ms
+  [timing] startup_style          56.4 ms
   [timing] icons_write             0.1 ms
   [timing] icons_theme             0.1 ms
-  [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open         7.1 ms
-  [timing] startup_theme          12.3 ms
-  [timing] pre_run               312.5 ms
+  [timing] startup_libraries       0.4 ms
+  [timing] startup_db_open         7.7 ms
+  [timing] startup_theme          12.6 ms
+  [timing] pre_run               328.9 ms
   [timing] service_home            0.8 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      2.5 ms
-  [timing] init_done             317.0 ms
-  [timing] window_shown          321.1 ms
+  [timing] startup_first_page      2.6 ms
+  [timing] init_done             333.7 ms
+  [timing] window_shown          337.9 ms
   [timing] page_cache_miss           1
   [timing] service_reader          0.2 ms
-  [timing] book_open               4.2 ms
+  [timing] book_open               4.1 ms
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        1805.2 ms
+  [timing] startup_dicts        1788.7 ms
 
 === did the covers actually load? ===
   01-read-1.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
@@ -69,26 +69,26 @@ navigation: OK -- the images below are 'read-1'
 
 === app stderr (non-timing lines) ===
   
-  (process:5385): Gtk-WARNING **: 22:49:17.095: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:5340): Gtk-WARNING **: 23:02:25.813: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=read-1 — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=285492 peak_rss_mb=278
+books=139 peak_rss_kb=267792 peak_rss_mb=261
 
 === shutting down ===
 
 === artifacts ===
   total 1308
-  drwxr-xr-x  2 runner runner   4096 Sep 20 22:50 .
-  drwxr-xr-x 19 runner runner   4096 Sep 20 22:49 ..
-  -rw-r--r--  1 runner runner 412875 Sep 20 22:49 01-read-1.png
-  -rw-r--r--  1 runner runner 412875 Sep 20 22:49 02-read-1-settling.png
-  -rw-r--r--  1 runner runner 412875 Sep 20 22:50 03-read-1-settled.png
-  -rw-r--r--  1 runner runner  61819 Sep 20 22:50 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner      0 Sep 20 22:49 grim.log
-  -rw-r--r--  1 runner runner   1167 Sep 20 22:50 kalam-home.log
-  -rw-r--r--  1 runner runner   1174 Sep 20 22:49 kalam.log
-  -rw-r--r--  1 runner runner   3210 Sep 20 22:50 report.txt
-  -rw-r--r--  1 runner runner     88 Sep 20 22:49 sway.log
-  -rw-r--r--  1 runner runner   7184 Sep 20 22:49 tree.json
---- run 35542363631 ---
+  drwxr-xr-x  2 runner runner   4096 Sep 20 23:03 .
+  drwxr-xr-x 19 runner runner   4096 Sep 20 23:02 ..
+  -rw-r--r--  1 runner runner 412875 Sep 20 23:02 01-read-1.png
+  -rw-r--r--  1 runner runner 412875 Sep 20 23:02 02-read-1-settling.png
+  -rw-r--r--  1 runner runner 412875 Sep 20 23:03 03-read-1-settled.png
+  -rw-r--r--  1 runner runner  61819 Sep 20 23:03 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner      0 Sep 20 23:02 grim.log
+  -rw-r--r--  1 runner runner   1167 Sep 20 23:03 kalam-home.log
+  -rw-r--r--  1 runner runner   1174 Sep 20 23:02 kalam.log
+  -rw-r--r--  1 runner runner   3210 Sep 20 23:03 report.txt
+  -rw-r--r--  1 runner runner     88 Sep 20 23:02 sway.log
+  -rw-r--r--  1 runner runner   7184 Sep 20 23:02 tree.json
+--- run 35543004256 ---

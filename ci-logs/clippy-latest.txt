@@ -1,4 +1,4 @@
-src/db.rs:961:9: [1m[91merror[E0308][0m: mismatched types: expected `Result<i64, DbError>`, found `Result<_, Error>`
+src/pages/review.rs:25:5: [1m[91merror[0m: variant `Refresh` is never constructed
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
@@ -21,11 +21,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/db.rs:961:9: [1m[91merror[E0308][0m: mismatched types: expected `Result<i64, DbError>`, found `Result<_, Error>`
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/pages/review.rs:25:5: [1m[91merror[0m: variant `Refresh` is never constructed
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 35530288620 ---
+--- run 35530408254 ---

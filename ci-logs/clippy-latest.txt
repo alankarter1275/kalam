@@ -1,4 +1,12 @@
-(no lines matched; last 100 lines of output)
+src/pages/task_manager.rs:215:28: [1m[91merror[E0609][0m: no field `hidden` on type `&&tasks::TaskInfo`: unknown field
+src/pages/task_manager.rs:265:55: [1m[91merror[E0609][0m: no field `hidden` on type `&&tasks::TaskInfo`: unknown field
+src/pages/task_manager.rs:349:68: [1m[91merror[E0609][0m: no field `hidden` on type `&tasks::TaskInfo`: unknown field
+src/tasks.rs:318:17: [1m[91merror[E0560][0m: struct `tasks::TaskInfo` has no field named `hidden`: `tasks::TaskInfo` does not have this field
+src/tasks.rs:412:17: [1m[91merror[E0560][0m: struct `tasks::TaskInfo` has no field named `hidden`: `tasks::TaskInfo` does not have this field
+src/tasks.rs:566:21: [1m[91merror[E0560][0m: struct `tasks::TaskInfo` has no field named `hidden`: `tasks::TaskInfo` does not have this field
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+src/tasks.rs:847:17: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -22,5 +30,14 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 15.84s
---- run 35478017833 ---
+src/pages/task_manager.rs:215:28: [1m[91merror[E0609][0m: no field `hidden` on type `&&tasks::TaskInfo`: unknown field
+src/pages/task_manager.rs:265:55: [1m[91merror[E0609][0m: no field `hidden` on type `&&tasks::TaskInfo`: unknown field
+src/pages/task_manager.rs:349:68: [1m[91merror[E0609][0m: no field `hidden` on type `&tasks::TaskInfo`: unknown field
+src/tasks.rs:318:17: [1m[91merror[E0560][0m: struct `tasks::TaskInfo` has no field named `hidden`: `tasks::TaskInfo` does not have this field
+src/tasks.rs:412:17: [1m[91merror[E0560][0m: struct `tasks::TaskInfo` has no field named `hidden`: `tasks::TaskInfo` does not have this field
+src/tasks.rs:566:21: [1m[91merror[E0560][0m: struct `tasks::TaskInfo` has no field named `hidden`: `tasks::TaskInfo` does not have this field
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+src/tasks.rs:847:17: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
+--- run 35481714338 ---

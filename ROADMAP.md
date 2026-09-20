@@ -1171,6 +1171,19 @@ they need 1.2's asynchronous service layer underneath them.
     page turn.
 - **2.9 — Auto-hiding mouse cursor** after 2s, and configurable keybindings and
   mouse-wheel sensitivity.
+  - **Cursor and wheel done 2026-09-21:** the pointer gets out of the way two
+    seconds after it last moved, and any movement brings it back — a movement
+    re-arms one timer rather than stacking them, and leaving the page cancels
+    it. On by default, switchable in Settings → Reading → Pointer. Scroll
+    speed is a setting (`reader.wheel_step`, 20–400 px per notch) instead of
+    the compile-time constant it was; paged mode is untouched, because the
+    wheel never turned pages there.
+  - **Still open: configurable keybindings** — Kalam's own actions (define,
+    next/previous chapter, font size, contents, jump back, search) are
+    hard-coded in the reader's key controller. They need a Keyboard section in
+    settings that stores a binding per action and a handler that reads it. The
+    engine's own keys (arrows, space, Page Up/Down) stay fixed: they are the
+    universal reading keys, and the engine's `KeyMap` is a separate table.
 - **2.10 — Selection toolbar.** Double-click selects a word, triple-click a paragraph.
   The teardrop handles exist (`crates/kalam-reader/src/handles.rs`). The
   toolbar needs highlight in five colours plus underline, quote, dictionary

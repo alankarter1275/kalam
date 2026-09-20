@@ -61,6 +61,13 @@ tick them off. The agent will remind you about this list.
       manager. Copy a `.ttf` or `.otf` in there, **close and reopen the
       book**, and the new face should be in the Typeface picker and render.
       Without any files dropped in, nothing should change or slow down.
+- [ ] **2.9 Pointer (part 1 of 2):** leave the mouse still over the page for
+      ~2 seconds — the pointer should vanish. Move it and it's back at once.
+      Settings → Reading → Pointer → **Hide the mouse pointer** off: it should
+      never vanish. Survives restart.
+- [ ] **2.9 Scroll speed (part 2 of 2):** in continuous-scroll mode, change
+      **Scroll speed** and the wheel should scroll noticeably more or less per
+      notch. Survives restart. (Paged mode ignores the wheel, as before.)
 
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).

@@ -22,7 +22,6 @@ pub enum ReviewMsg {
     Reveal,
     /// 0 = again, 1 = good, 2 = easy.
     Answer(i32),
-    Refresh,
 }
 
 pub struct ReviewModel {
@@ -204,7 +203,6 @@ impl Component for ReviewModel {
                 }
                 self.load_next();
             }
-            ReviewMsg::Refresh => self.load_next(),
         }
     }
 }

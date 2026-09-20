@@ -76,11 +76,12 @@ pub fn show() {
 /// Bounded: a stuck compositor must not stall startup for longer than the
 /// splash was meant to save.
 pub fn pump() {
+    let ctx = gtk::glib::MainContext::default();
     let start = std::time::Instant::now();
     while start.elapsed() < std::time::Duration::from_millis(120) {
-        while gtk::events_pending() {
-            gtk::main_iteration();
-        }
+        // Drain whatever is ready — paint dispatch included — without
+        // blocking, then yield so the compositor can draw the frame.
+        while ctx.iteration(false) {}
         std::thread::sleep(std::time::Duration::from_millis(4));
     }
 }

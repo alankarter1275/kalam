@@ -1151,6 +1151,13 @@ they need 1.2's asynchronous service layer underneath them.
 - **2.7 — Dual-page toggle, plus continuous vertical scroll.** The engine already
   shows facing pages above 900 px (`view.rs:911`) — **automatically, with no
   way to switch it off.** Add the toggle rather than the behaviour.
+  - **Done 2026-09-21:** the spread was four separate copies of
+    `width > 900` across `kalam-reader/src/view.rs`; they are now one
+    predicate, `spread_at()`, which also consults `View::dual_page`. The
+    switch is "Two pages side by side" in the Layout section, persisted to
+    `reader.dual_page` and **on by default**, so nobody's reading changes
+    until they ask for it to. Continuous vertical scroll — the other half of
+    this item — already shipped earlier as `reader.scrolled`.
 - **2.8 — Custom fonts folder** — drop `.ttf`/`.otf` in without a system install.
 - **2.9 — Auto-hiding mouse cursor** after 2s, and configurable keybindings and
   mouse-wheel sensitivity.

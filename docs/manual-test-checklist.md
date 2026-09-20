@@ -51,6 +51,11 @@ tick them off. The agent will remind you about this list.
       in the page), an undo button appears in the top-left dock next to
       Library and Bookmark; **Backspace** does the same. It takes you back to
       exactly where you were. Turning a page normally makes it disappear.
+- [ ] **2.7 Two pages:** make the window wide — you get facing pages, as
+      before. Settings → Reading → Layout → turn **"Two pages side by
+      side"** off: one page, full width, at any window size. Turning a page
+      moves one page, not two. It survives restart. Narrow the window with
+      it on and the spread should still give way to one page.
 
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).

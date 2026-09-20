@@ -203,7 +203,8 @@ impl HighlightColor {
 /// What Kalam remembers about how the reader should look. Mirrors the
 /// `reader.*` preferences one-to-one; the ranges are Kalam's own and
 /// [`KalamPrefs::clamped`] enforces them.
-#[derive(Debug, Clone, Copy, PartialEq)]
+// No `Copy`: `font_family` owns a string, so preferences are cloned.
+#[derive(Debug, Clone, PartialEq)]
 pub struct KalamPrefs {
     pub theme: KalamTheme,
     /// `reader.font_px`, 13–24, default 17.
@@ -396,6 +397,7 @@ mod tests {
         let a = KalamPrefs::default();
         let b = KalamPrefs {
             line_height: 1.3,
+            font_family: a.font_family.clone(),
             ..a
         };
         let (sa, sb) = (a.reading_settings(), b.reading_settings());

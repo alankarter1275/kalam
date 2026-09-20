@@ -176,7 +176,7 @@ struct Callbacks {
 
 struct Inner {
     session: RefCell<Session>,
-    prefs: Cell<KalamPrefs>,
+    prefs: RefCell<KalamPrefs>,
     callbacks: RefCell<Callbacks>,
     /// Last position reported, so a repaint that moved nothing says
     /// nothing.
@@ -301,7 +301,7 @@ impl ReaderView {
             area,
             inner: Rc::new(Inner {
                 session: RefCell::new(session),
-                prefs: Cell::new(prefs.clamped()),
+                prefs: RefCell::new(prefs.clamped()),
                 callbacks: RefCell::new(Callbacks::default()),
                 last_reported: RefCell::new(None),
                 last_size: Cell::new((0, 0, 0)),
@@ -446,7 +446,7 @@ impl ReaderView {
     // ---- Preferences ----
 
     pub fn prefs(&self) -> KalamPrefs {
-        self.inner.prefs.get()
+        self.inner.prefs.borrow().clone()
     }
 
     /// Apply new preferences. Relayout keeps the reading position (the
@@ -1246,7 +1246,7 @@ impl ReaderView {
                 log::info!("page area {width}x{height} at {}x", size.2);
             }
             let scale = size.2 as f32;
-            let prefs = view.inner.prefs.get();
+            let prefs = view.inner.prefs.borrow().clone();
             // The column: never wider than Kalam's `column_px`, centred
             // when the widget is wider than that, with at least the
             // minimum side margin when it is narrower.
@@ -1526,7 +1526,7 @@ impl ReaderView {
         let dividers = strip.visible_dividers();
         if !dividers.is_empty() {
             let style = DividerStyle {
-                font_px: self.inner.prefs.get().font_px,
+                font_px: self.inner.prefs.borrow().font_px,
                 foreground: s.settings().palette().foreground,
                 background,
             };
@@ -1557,7 +1557,7 @@ impl ReaderView {
             handles::paint(
                 &mut out,
                 &handles,
-                self.inner.prefs.get().theme.handle(),
+                self.inner.prefs.borrow().theme.handle(),
                 scale,
             );
         }

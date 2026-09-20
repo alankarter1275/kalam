@@ -95,6 +95,9 @@ pub fn spawn_import(
         move |reporter| {
             let mut tally = ImportTally::default();
             let mut failures: Vec<(String, String)> = Vec::new();
+            // Every title this run brings in, so the finished row can expand
+            // to name them all rather than just a count.
+            let mut imported_titles: Vec<String> = Vec::new();
             for (i, path) in paths.iter().enumerate() {
                 if reporter.cancelled() {
                     break;
@@ -106,6 +109,7 @@ pub fn spawn_import(
                     }
                     Ok(r) => {
                         tally.imported += 1;
+                        imported_titles.push(r.title.clone());
                         if r.restored {
                             tally.restored += 1;
                         }
@@ -138,6 +142,7 @@ pub fn spawn_import(
                     tally.imported, tally.dupes, tally.errors
                 )
             });
+            reporter.items(imported_titles);
             (tally, failures)
         },
         move |update| on_step(update.done, update.total, update.detail),

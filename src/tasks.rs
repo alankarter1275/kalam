@@ -59,6 +59,9 @@ pub struct TaskInfo {
     pub total: usize,
     /// The detail string from the most recent report — a file name, a page.
     pub detail: String,
+    /// The individual entries behind the task — the titles a bulk import
+    /// brought in, so the finished row can list them on demand.
+    pub items: Vec<String>,
     /// Housekeeping the user did not ask for. Hidden from the badge, the jobs
     /// history and the live list; still cancellable at shutdown.
     pub hidden: bool,
@@ -83,6 +86,8 @@ pub struct FinishedTask {
     /// What the task did, in the worker's own words — “Imported 3 books” or a
     /// single title. Empty when the task never said.
     pub detail: String,
+    /// The individual entries, for an expandable “show all” in the history.
+    pub items: Vec<String>,
 }
 
 /// How many finished tasks the panel remembers. Bounded because this list is
@@ -212,6 +217,12 @@ impl Reporter {
     pub fn summarize(&self, text: impl Into<String>) {
         set_summary(self.id, text);
     }
+
+    /// Record the individual entries behind this task (e.g. every title a
+    /// bulk import brought in) so the finished row can expand to show them.
+    pub fn items(&self, items: Vec<String>) {
+        set_items(self.id, items);
+    }
 }
 
 /// Record a progress report against a running task.
@@ -222,6 +233,14 @@ fn set_summary(id: u64, text: impl Into<String>) {
     locked(|running| {
         if let Some((info, _)) = running.iter_mut().find(|(info, _)| info.id == id) {
             info.detail = text.into();
+        }
+    });
+}
+
+fn set_items(id: u64, items: Vec<String>) {
+    locked(|running| {
+        if let Some((info, _)) = running.iter_mut().find(|(info, _)| info.id == id) {
+            info.items = items;
         }
     });
 }
@@ -248,10 +267,11 @@ fn finish(id: u64) {
                 flags.failed.load(Ordering::Relaxed),
                 flags.hidden,
                 info.detail,
+                info.items,
             )
         })
     });
-    let Some((label, cancelled, failed, hidden, detail)) = done else {
+    let Some((label, cancelled, failed, hidden, detail, items)) = done else {
         return
     };
     if hidden {
@@ -264,6 +284,7 @@ fn finish(id: u64) {
             cancelled,
             failed,
             detail,
+            items,
         });
         while list.len() > FINISHED_LIMIT {
             list.pop_front();
@@ -343,6 +364,7 @@ where
                 done: 0,
                 total: 0,
                 detail: String::new(),
+                items: Vec::new(),
                 hidden,
             },
             Flags {
@@ -432,6 +454,7 @@ where
                 done: 0,
                 total: 0,
                 detail: String::new(),
+                items: Vec::new(),
                 hidden,
             },
             Flags {
@@ -588,6 +611,7 @@ mod tests {
                     done: 0,
                     total: 0,
                     detail: String::new(),
+                    items: Vec::new(),
                     hidden: false,
                 },
                 Flags {
@@ -751,6 +775,7 @@ mod tests {
                     cancelled: false,
                     failed: false,
                     detail: String::new(),
+                    items: Vec::new(),
                 });
                 while list.len() > FINISHED_LIMIT {
                     list.pop_front();

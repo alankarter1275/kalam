@@ -479,6 +479,42 @@ fn recent_row(task: &FinishedTask) -> gtk::ListBoxRow {
         col.append(&detail);
     }
 
+    // A bulk import names every book it brought in, behind a toggle so the
+    // row stays compact until the reader asks for the full list.
+    if task.items.len() > 1 {
+        let n = task.items.len();
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        list.set_margin_top(4);
+        for title in &task.items {
+            let item = gtk::Label::new(Some(title));
+            item.add_css_class("kalam-page-sub");
+            item.set_halign(gtk::Align::Start);
+            item.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            item.set_max_width_chars(60);
+            list.append(&item);
+        }
+        let revealer = gtk::Revealer::new();
+        revealer.set_child(Some(&list));
+        revealer.set_reveal_child(false);
+
+        let toggle = gtk::Button::new();
+        toggle.add_css_class("kalam-mini-btn");
+        toggle.set_halign(gtk::Align::Start);
+        toggle.set_label(&format!("Show all {n}"));
+        {
+            let revealer = revealer.clone();
+            let toggle = toggle.clone();
+            toggle.connect_clicked(move |_| {
+                let show = !revealer.is_child_revealed();
+                revealer.set_reveal_child(show);
+                let text = if show { "Hide".to_string() } else { format!("Show all {n}") };
+                toggle.set_label(&text);
+            });
+        }
+        col.append(&toggle);
+        col.append(&revealer);
+    }
+
     as_list_row(&col)
 }
 

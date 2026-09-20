@@ -30,6 +30,8 @@ pub(crate) fn build_reader_settings_panel(
     hyphenate: bool,
     publisher_styles: bool,
     dual_page: bool,
+    autohide_cursor: bool,
+    wheel_step: i32,
 
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -265,6 +267,35 @@ pub(crate) fn build_reader_settings_panel(
     reading_page.append(&mode_section);
     reading_page.append(&reader_panel_divider());
 
+    // Roadmap 2.9: how the pointer behaves while reading.
+    let pointer_section = reader_settings_section("Pointer");
+    setting_toggle(
+        &pointer_section,
+        "Hide the mouse pointer",
+        autohide_cursor,
+        input_tx,
+        ReaderMsg::SetAutohideCursor,
+    );
+    let pointer_hint = gtk::Label::new(Some(
+        "The pointer gets out of the way after two seconds still; move it to bring it back.",
+    ));
+    pointer_hint.add_css_class("kalam-reader-setting-hint");
+    pointer_hint.set_wrap(true);
+    pointer_hint.set_xalign(0.0);
+    pointer_section.append(&pointer_hint);
+
+    let wheel_step_label = gtk::Label::new(Some(&wheel_step.to_string()));
+    wheel_step_label.add_css_class("kalam-reader-stepper-value");
+    pointer_section.append(&reader_stepper_row(
+        "Scroll speed",
+        &wheel_step_label,
+        sender,
+        ReaderMsg::WheelStepDelta(-8),
+        ReaderMsg::WheelStepDelta(8),
+    ));
+    reading_page.append(&pointer_section);
+    reading_page.append(&reader_panel_divider());
+
     let dict_section = reader_settings_section("Dictionary");
 
     let hint_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -366,6 +397,7 @@ pub(crate) fn build_reader_settings_panel(
         font_size_label,
         line_height_label,
         column_width_label,
+        wheel_step_label,
         theme_dots: dots,
         ui_controls,
     }

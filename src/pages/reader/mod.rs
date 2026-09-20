@@ -655,6 +655,8 @@ impl Component for ReaderModel {
         let catalog_hyphenate = catalog.get_pref_i64("reader.hyphenate", 1) != 0;
         let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
         let catalog_dual_page = catalog.get_pref_i64("reader.dual_page", 1) != 0;
+        let catalog_autohide = catalog.get_pref_i64("reader.autohide_cursor", 1) != 0;
+        let catalog_wheel = catalog.get_pref_i64("reader.wheel_step", 92).clamp(20, 400) as i32;
         let font_families = view
             .as_ref()
             .map(|v| v.font_families())
@@ -686,6 +688,7 @@ impl Component for ReaderModel {
             font_size_label,
             line_height_label,
             column_width_label,
+            wheel_step_label,
             theme_dots,
             ui_controls,
         } = build_reader_settings_panel(
@@ -704,6 +707,8 @@ impl Component for ReaderModel {
             catalog_hyphenate,
             catalog_publisher,
             catalog_dual_page,
+            catalog_autohide,
+            catalog_wheel,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -757,6 +762,9 @@ impl Component for ReaderModel {
             hyphenate: catalog_hyphenate,
             publisher_styles: catalog_publisher,
             dual_page: catalog_dual_page,
+            autohide_cursor: catalog_autohide,
+            wheel_step: catalog_wheel,
+            wheel_step_label,
             can_jump_back: false,
             back_depth: 0,
             selection_chip: None,
@@ -814,6 +822,7 @@ impl Component for ReaderModel {
             font_size_label,
             line_height_label,
             column_width_label,
+            wheel_step_label,
             theme_dots,
             ui_controls,
             highlight_filter_buttons,
@@ -872,6 +881,9 @@ impl Component for ReaderModel {
             // Roadmap 2.7: the spread is a choice now, not a consequence
             // of the window being wide.
             view.set_dual_page(model.dual_page);
+            // Roadmap 2.9: the pointer and the wheel.
+            view.set_autohide_cursor(model.autohide_cursor);
+            view.set_wheel_step(model.wheel_step as f32);
             scrollbar.set_visible(model.scrolled);
             model.strip_scrollbar = Some(scrollbar);
             view.widget().grab_focus();
@@ -1496,6 +1508,26 @@ impl Component for ReaderModel {
                         }
                     },
                 );
+            }
+            ReaderMsg::SetAutohideCursor(on) => {
+                if on != self.autohide_cursor {
+                    self.autohide_cursor = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.autohide_cursor", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_autohide_cursor(on));
+                }
+            }
+            ReaderMsg::WheelStepDelta(delta) => {
+                let next = (self.wheel_step + delta).clamp(20, 400);
+                if next != self.wheel_step {
+                    self.wheel_step = next;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.wheel_step", &next.to_string());
+                    self.with_view(move |v| v.set_wheel_step(next as f32));
+                    refresh_controls = true;
+                }
             }
             ReaderMsg::SwitchSettingsPane(pane) => {
                 if pane != self.settings_pane {

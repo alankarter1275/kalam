@@ -35,6 +35,9 @@ pub(crate) fn sync_reader_controls(model: &ReaderModel) {
     model
         .column_width_label
         .set_label(&model.column_px.to_string());
+    model
+        .wheel_step_label
+        .set_label(&model.wheel_step.to_string());
 
     for (pane, btn) in &model.settings_pane_buttons {
         toggle_active(btn, *pane == model.settings_pane);

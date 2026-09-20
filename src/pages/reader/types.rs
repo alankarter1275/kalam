@@ -96,6 +96,7 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) font_size_label: gtk::Label,
     pub(crate) line_height_label: gtk::Label,
     pub(crate) column_width_label: gtk::Label,
+    pub(crate) wheel_step_label: gtk::Label,
     pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
     pub(crate) ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
 }
@@ -132,6 +133,10 @@ pub enum ReaderMsg {
     SetPublisherStyles(bool),
     /// Roadmap 2.7: facing pages, or one page at a time.
     SetDualPage(bool),
+    /// Roadmap 2.9: hide the pointer when it sits still.
+    SetAutohideCursor(bool),
+    /// Roadmap 2.9: how far one wheel notch scrolls.
+    WheelStepDelta(i32),
     /// Roadmap 2.8: open the folder a reader drops typefaces into.
     OpenFontsFolder,
     /// Roadmap 2.5 footnotes: the engine has the text behind an internal

@@ -32,6 +32,11 @@ pub struct ReaderModel {
     pub(crate) publisher_styles: bool,
     /// Roadmap 2.7: facing pages when the window is wide enough.
     pub(crate) dual_page: bool,
+    /// Roadmap 2.9: hide the pointer when it sits still.
+    pub(crate) autohide_cursor: bool,
+    /// Roadmap 2.9: CSS px per wheel notch, and the label showing it.
+    pub(crate) wheel_step: i32,
+    pub(crate) wheel_step_label: gtk::Label,
     /// The chip over the current selection and the dictionary popover,
     /// so they can be taken down again.
     /// Roadmap 2.6: the jump-back offer, standing while it is fresh.

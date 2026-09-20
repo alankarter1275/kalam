@@ -57,6 +57,11 @@ pub(crate) const MARGIN_TOP: f32 = 48.0;
 pub(crate) const MARGIN_BOTTOM: f32 = 40.0;
 const MARGIN_SIDE_MIN: f32 = 28.0;
 
+/// How long the pointer may sit still before it gets out of the way
+/// (roadmap 2.9). Two seconds: long enough that a reader moving to a
+/// control does not watch it blink, short enough to be out of the text.
+const CURSOR_HIDE_SECS: u64 = 2;
+
 /// Facing pages need room for two columns worth reading. Below this the
 /// spread would be two narrow strips, so the reader shows one page —
 /// whatever the toggle says.
@@ -204,6 +209,12 @@ struct Inner {
     /// Facing pages when there is room, or one page at a time. On by
     /// default: what the reader has always done.
     dual_page: Cell<bool>,
+    /// Whether an idle pointer hides itself (roadmap 2.9).
+    hide_cursor: Cell<bool>,
+    /// The pending hide, so a movement can cancel it.
+    cursor_timer: RefCell<Option<gtk::glib::SourceId>>,
+    /// CSS px one wheel notch scrolls in scrolled mode.
+    wheel_step: Cell<f32>,
     /// The strip, in scrolled mode; `None` in paged mode and before the
     /// first scrolled draw.
     strip: RefCell<Option<Strip>>,
@@ -329,6 +340,9 @@ impl ReaderView {
                 zones,
                 mode: Cell::new(ReadingMode::Paged),
                 dual_page: Cell::new(true),
+                hide_cursor: Cell::new(true),
+                cursor_timer: RefCell::new(None),
+                wheel_step: Cell::new(WHEEL_STEP),
                 strip: RefCell::new(None),
                 pending_jump: Cell::new(false),
                 dragging: Cell::new(false),
@@ -386,6 +400,61 @@ impl ReaderView {
 
     pub fn dual_page(&self) -> bool {
         self.inner.dual_page.get()
+    }
+
+    /// Hide the pointer when it sits still (roadmap 2.9). Turning it off
+    /// brings the pointer back at once and cancels any pending hide.
+    pub fn set_autohide_cursor(&self, on: bool) {
+        if self.inner.hide_cursor.replace(on) == on {
+            return;
+        }
+        if on {
+            self.arm_cursor_timer();
+        } else {
+            self.disarm_cursor_timer();
+            self.set_cursor(None);
+        }
+    }
+
+    pub fn autohide_cursor(&self) -> bool {
+        self.inner.hide_cursor.get()
+    }
+
+    /// How far one wheel notch scrolls, in CSS px (roadmap 2.9). Clamped:
+    /// below a line or two the wheel feels broken, above a screenful it is
+    /// unusable.
+    pub fn set_wheel_step(&self, px: f32) {
+        self.inner.wheel_step.set(px.clamp(20.0, 400.0));
+    }
+
+    pub fn wheel_step(&self) -> f32 {
+        self.inner.wheel_step.get()
+    }
+
+    /// Arm the hide-the-pointer timer: [`CURSOR_HIDE_SECS`] after the
+    /// pointer last moved, the cursor goes. Called on every motion, so it
+    /// stays while the reader moves it and gets out of the way when they
+    /// read.
+    fn arm_cursor_timer(&self) {
+        if !self.inner.hide_cursor.get() {
+            return;
+        }
+        self.disarm_cursor_timer();
+        let view = self.clone();
+        let id = gtk::glib::timeout_add_local_once(
+            std::time::Duration::from_secs(CURSOR_HIDE_SECS),
+            move || {
+                view.inner.cursor_timer.borrow_mut().take();
+                view.set_cursor(Some("none"));
+            },
+        );
+        *self.inner.cursor_timer.borrow_mut() = Some(id);
+    }
+
+    fn disarm_cursor_timer(&self) {
+        if let Some(id) = self.inner.cursor_timer.borrow_mut().take() {
+            id.remove();
+        }
     }
 
     /// Whether the reader is showing facing pages at this width: paged
@@ -1744,7 +1813,7 @@ impl ReaderView {
             // already, and says so.
             let step = match controller.unit() {
                 gtk::gdk::ScrollUnit::Surface => dy as f32,
-                _ => dy as f32 * WHEEL_STEP,
+                _ => dy as f32 * view.wheel_step(),
             };
             let _ = view.scroll_by(step);
             glib::Propagation::Stop
@@ -2041,11 +2110,17 @@ impl ReaderView {
                     handles::handle_at(&handles, x as f32, y as f32).is_some()
                 });
                 view.set_cursor(over.then_some("grab"));
+                // The pointer is moving, so it stays — and starts the
+                // count towards getting out of the way again.
+                view.arm_cursor_timer();
             });
         }
         {
             let view = self.clone();
-            motion.connect_leave(move |_| view.set_cursor(None));
+            motion.connect_leave(move |_| {
+                view.disarm_cursor_timer();
+                view.set_cursor(None);
+            });
         }
         self.keep_controller(&motion);
         self.area.add_controller(motion);

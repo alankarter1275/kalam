@@ -13,7 +13,6 @@
 // specific items when the dictionary work next lands: a module-level allow
 // also hides anything that becomes dead *later*, which is exactly what it
 // should not do.
-#![allow(dead_code)]
 
 use crate::db::{
     Catalog, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME,

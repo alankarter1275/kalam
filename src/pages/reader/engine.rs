@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 //! The reading engine, wired to the reader page.
 //!

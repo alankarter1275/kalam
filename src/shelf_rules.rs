@@ -23,7 +23,6 @@
 // their `label`/`value_hint` helpers) is deliberately complete, while the
 // editor UI surfaces only part of it. Same caveat as `db.rs`: this hides
 // future dead code too, so new items should carry their own narrow allow.
-#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 

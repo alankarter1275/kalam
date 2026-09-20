@@ -1,7 +1,7 @@
 use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
-use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable};
+use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, invalidate_cover_cache};
 use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -41,6 +41,16 @@ pub enum AllBooksMsg {
     DeselectAll,
     OpenBulkEditDialog(gtk::Widget),
     ApplyBulkEdit(BulkMetadataEdit),
+    /// Ask before deleting the selected books; carries the button as anchor.
+    OpenDeleteConfirm(gtk::Widget),
+    /// Run the bulk delete on a worker so deleting many books cannot freeze
+    /// the grid.
+    DeleteSelected,
+    /// The bulk delete finished; the counts feed the toast and a reload.
+    DeleteDone {
+        done: usize,
+        failed: usize,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -117,6 +127,17 @@ pub fn spawn_import(
             if tally.errors > 0 {
                 reporter.fail();
             }
+            // The finished row answers "what did it actually do". A single
+            // file names itself; a batch gives counts, because sixty titles
+            // would be noise.
+            reporter.summarize(if total == 1 {
+                tally.last_title.clone()
+            } else {
+                format!(
+                    "{} imported, {} duplicates, {} failed",
+                    tally.imported, tally.dupes, tally.errors
+                )
+            });
             (tally, failures)
         },
         move |update| on_step(update.done, update.total, update.detail),
@@ -245,6 +266,20 @@ impl Component for AllBooksModel {
                     set_sensitive: !model.selected_books.is_empty(),
                     connect_clicked[sender] => move |btn| {
                         sender.input(AllBooksMsg::OpenBulkEditDialog(btn.clone().upcast()));
+                    },
+                },
+
+                // Deleting is the one selection action that cannot be undone,
+                // so it gets the danger style and a confirmation the others do
+                // not. It was simply missing: selection mode shipped with edit
+                // but no way to remove several books at once.
+                gtk::Button {
+                    set_label: "Delete",
+                    add_css_class: "kalam-btn-danger",
+                    #[watch]
+                    set_sensitive: !model.selected_books.is_empty(),
+                    connect_clicked[sender] => move |btn| {
+                        sender.input(AllBooksMsg::OpenDeleteConfirm(btn.clone().upcast()));
                     },
                 },
             },
@@ -632,6 +667,71 @@ impl Component for AllBooksModel {
                     self.reload(&sender);
                 }
             }
+            AllBooksMsg::OpenDeleteConfirm(anchor) => {
+                let count = self.selected_books.len();
+                if count == 0 {
+                    return;
+                }
+                let s = sender.input_sender().clone();
+                confirm_bulk_delete(&anchor, count, move || {
+                    s.send(AllBooksMsg::DeleteSelected).ok();
+                });
+            }
+            AllBooksMsg::DeleteSelected => {
+                let ids: Vec<i64> = self.selected_books.iter().copied().collect();
+                if ids.is_empty() {
+                    return;
+                }
+                // Owned Arc so the worker can outlive this borrow.
+                let catalog = self.service.catalog().clone();
+                let count = ids.len();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    format!("Deleting {} book{}", count, if count == 1 { "" } else { "s" }),
+                    move |reporter| {
+                        let mut failed = 0usize;
+                        for (i, id) in ids.iter().enumerate() {
+                            if reporter.cancelled() {
+                                break;
+                            }
+                            // Same courtesy as the single delete: drop the
+                            // cached cover so re-importing the path cannot
+                            // show the old one.
+                            if let Ok(Some(book)) = catalog.get_book(*id) {
+                                if let Some(path) = &book.cover_path {
+                                    invalidate_cover_cache(path);
+                                }
+                            }
+                            if catalog.delete_book(*id).is_err() {
+                                failed += 1;
+                                reporter.fail();
+                            }
+                            reporter.step(i + 1, count, format!("{}/{count}", i + 1));
+                        }
+                        (count, failed)
+                    },
+                    |_| {},
+                    move |(done, failed)| {
+                        s.send(AllBooksMsg::DeleteDone { done, failed }).ok();
+                    },
+                );
+            }
+            AllBooksMsg::DeleteDone { done, failed } => {
+                if failed == 0 {
+                    crate::notify::success(
+                        "Books removed",
+                        &format!("{done} book{} deleted", if done == 1 { "" } else { "s" }),
+                    );
+                } else {
+                    crate::notify::error(
+                        "Delete incomplete",
+                        &format!("{failed} of {done} could not be deleted"),
+                    );
+                }
+                self.selected_books.clear();
+                self.selection_mode = false;
+                self.reload(&sender);
+            }
             AllBooksMsg::PickFiles => {
                 let dialog = gtk::FileDialog::builder()
                     .title("Import EPUB books")
@@ -883,5 +983,57 @@ mod tests {
         let text = import_summary(&tally);
         assert!(text.ends_with("2 failed."), "got {text:?}");
         assert!(!text.contains("Last:"));
+    }
+}
+
+
+/// Ask before a bulk delete. Mirrors `shelves_grid::confirm_delete`, which is
+/// the app's one established shape for a destructive yes/no.
+fn confirm_bulk_delete(anchor: &gtk::Widget, count: usize, on_confirm: impl Fn() + 'static) {
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 14);
+    body.set_size_request(360, -1);
+
+    let text = gtk::Label::new(Some(&format!(
+        "Delete {count} book{}?\n\nThe files stay where they are — they are          removed from your library and their reading history goes with them.          This cannot be undone.",
+        if count == 1 { "" } else { "s" }
+    )));
+    text.set_wrap(true);
+    text.set_halign(gtk::Align::Start);
+    text.set_xalign(0.0);
+    body.append(&text);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    actions.set_halign(gtk::Align::End);
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.add_css_class("kalam-secondary-btn");
+    let confirm = gtk::Button::with_label("Delete");
+    confirm.add_css_class("kalam-btn-danger");
+    actions.append(&cancel);
+    actions.append(&confirm);
+    body.append(&actions);
+
+    let Some(dialog) = in_app_dialog::present(
+        anchor,
+        "Delete books",
+        in_app_dialog::DialogExit::OwnButtons,
+        &body,
+    ) else {
+        crate::notify::error(
+            "Could not show the confirmation",
+            "Please try again once the page has finished loading.",
+        );
+        return;
+    };
+
+    {
+        let dialog = dialog.clone();
+        cancel.connect_clicked(move |_| dialog.close());
+    }
+    {
+        let dialog = dialog.clone();
+        confirm.connect_clicked(move |_| {
+            on_confirm();
+            dialog.close();
+        });
     }
 }

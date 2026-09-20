@@ -80,6 +80,9 @@ pub struct FinishedTask {
     /// one that succeeded. Workers that know they failed say so; the rest are
     /// recorded as finished, which is a gap rather than a lie.
     pub failed: bool,
+    /// What the task did, in the worker's own words — “Imported 3 books” or a
+    /// single title. Empty when the task never said.
+    pub detail: String,
 }
 
 /// How many finished tasks the panel remembers. Bounded because this list is
@@ -153,6 +156,7 @@ pub struct Reporter {
     tx: async_channel::Sender<Update>,
     cancelled: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
+    id: u64,
 }
 
 /// A progress report from a worker.
@@ -197,12 +201,31 @@ impl Reporter {
     pub fn fail(&self) {
         self.failed.store(true, Ordering::Relaxed);
     }
+
+    /// Leave a one-line summary of what the task did, for the finished list.
+    ///
+    /// Written straight to the registry rather than through the progress
+    /// channel, because the worker records its completion a moment later and
+    /// the channel is drained by the main thread on its own schedule — a
+    /// summary sent through it could arrive after the entry was already
+    /// written. This takes the registry lock only for one field write.
+    pub fn summarize(&self, text: impl Into<String>) {
+        set_summary(self.id, text);
+    }
 }
 
 /// Record a progress report against a running task.
 ///
 /// Called on the main thread by the reader in [`spawn`], never by a worker —
 /// see the note on the registry at the top of this module.
+fn set_summary(id: u64, text: impl Into<String>) {
+    locked(|running| {
+        if let Some((info, _)) = running.iter_mut().find(|(info, _)| info.id == id) {
+            info.detail = text.into();
+        }
+    });
+}
+
 fn set_progress(id: u64, update: &Update) {
     locked(|running| {
         if let Some((info, _)) = running.iter_mut().find(|(info, _)| info.id == id) {
@@ -224,10 +247,11 @@ fn finish(id: u64) {
                 flags.cancel.load(Ordering::Relaxed),
                 flags.failed.load(Ordering::Relaxed),
                 flags.hidden,
+                info.detail,
             )
         })
     });
-    let Some((label, cancelled, failed, hidden)) = done else {
+    let Some((label, cancelled, failed, hidden, detail)) = done else {
         return
     };
     if hidden {
@@ -239,6 +263,7 @@ fn finish(id: u64) {
             label,
             cancelled,
             failed,
+            detail,
         });
         while list.len() > FINISHED_LIMIT {
             list.pop_front();
@@ -333,6 +358,7 @@ where
             tx: progress_tx,
             cancelled: flags.cancel,
             failed: flags.failed,
+            id,
         };
         let out = work(reporter);
         // `reporter` is dropped here, which closes the progress channel and
@@ -421,6 +447,7 @@ where
             tx: progress_tx,
             cancelled: flags.cancel,
             failed: flags.failed,
+            id,
         };
         work(reporter, Emit { tx: item_tx });
         // Same as `spawn_with`: the record is the worker's own last act.
@@ -538,6 +565,7 @@ mod tests {
                 tx,
                 cancelled: flag.clone(),
                 failed: Arc::new(AtomicBool::new(false)),
+                id: 0,
             },
             rx,
             flag,
@@ -722,6 +750,7 @@ mod tests {
                     label: format!("task {i}"),
                     cancelled: false,
                     failed: false,
+                    detail: String::new(),
                 });
                 while list.len() > FINISHED_LIMIT {
                     list.pop_front();

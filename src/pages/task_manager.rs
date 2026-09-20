@@ -446,9 +446,10 @@ fn as_list_row(child: &impl IsA<gtk::Widget>) -> gtk::ListBoxRow {
 }
 
 fn recent_row(task: &FinishedTask) -> gtk::ListBoxRow {
-    let line = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    line.set_margin_all(12);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    col.set_margin_all(12);
 
+    let line = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let label = gtk::Label::new(Some(&task.label));
     label.set_halign(gtk::Align::Start);
     label.set_hexpand(true);
@@ -465,10 +466,20 @@ fn recent_row(task: &FinishedTask) -> gtk::ListBoxRow {
     }));
     state.add_css_class("kalam-page-sub");
     line.append(&state);
+    col.append(&line);
 
-    let row = gtk::ListBoxRow::new();
-    row.set_child(Some(&line));
-    row
+    // The worker's own summary — the answer to "which books?". Without it a
+    // row reading "Importing EPUBs" says nothing about what was imported.
+    if !task.detail.is_empty() {
+        let detail = gtk::Label::new(Some(&task.detail));
+        detail.add_css_class("kalam-page-sub");
+        detail.set_halign(gtk::Align::Start);
+        detail.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        detail.set_max_width_chars(60);
+        col.append(&detail);
+    }
+
+    as_list_row(&col)
 }
 
 fn status_line(running: &[TaskInfo], recent: &[FinishedTask]) -> String {

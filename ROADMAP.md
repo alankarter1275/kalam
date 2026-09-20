@@ -989,6 +989,16 @@ bulk editing. Fixing it later means rewriting all four.
   drawn. Visibility now follows the format, in both the page and the float,
   including when the book has been removed underneath you. The toast guard
   stays as a backstop.
+- **1.19 — Bulk delete from the all-books selection.** *Added and done
+  2026-09-19, owner-directed.* Selection mode already let you pick many books
+  and bulk-*edit* them, but offered no way to remove several at once — the
+  obvious pairing was simply missing. A Delete button (danger-styled) now joins
+  the selection bar. It confirms first, because it is the one selection action
+  that cannot be undone, then deletes on a worker via `tasks::spawn` — so the
+  job shows up in the task manager with progress and is cancellable, and the
+  grid cannot freeze while sixty books' data dirs are removed. Files are left
+  where they are; the library row, reading history and thumbnail go, matching
+  the single-book delete.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`

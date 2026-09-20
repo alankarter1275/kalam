@@ -1127,8 +1127,20 @@ they need 1.2's asynchronous service layer underneath them.
     live.
 - **2.5 — Footnotes.** Clicking `[1]` opens an instant popover or jumps to the note.
   The engine resolves internal links; nothing in `src/` handles them.
+  - **Done 2026-09-21:** tapping a footnote reference shows the note where the
+    reader already is. `Session::peek_link` resolves an internal href and
+    returns the note's text without moving (`chapbook-layout`'s new
+    `extract_text_at` gives one subtree); `looks_like_note` keeps TOC entries
+    and cross-references navigating as before — a note is an `li`/`aside`/`dd`
+    or a short `p`/`div`, a section or heading is a destination. The shell
+    offers the note through `View::connect_note` and answers with a card in
+    the dictionary card's styling plus a "Go to the note" button, which uses
+    the new `View::follow_link`.
 - **2.6 — "Jump back" history.** An instant return after jumping to a footnote, TOC
-  entry or search match.
+  entry or search match. **The engine already keeps the trail**:
+  `Session::back` / `can_go_back` (`chapbook-reader/src/nav.rs`) pop a
+  64-deep stack that `jump` pushes on. What is missing is only a control —
+  `View::follow_link` landed with 2.5 and is the shape to copy.
 - **2.7 — Dual-page toggle, plus continuous vertical scroll.** The engine already
   shows facing pages above 900 px (`view.rs:911`) — **automatically, with no
   way to switch it off.** Add the toggle rather than the behaviour.

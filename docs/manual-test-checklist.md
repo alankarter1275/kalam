@@ -42,6 +42,12 @@ tick them off. The agent will remind you about this list.
       Publisher styles off drops the book's own styling for plain Kalam text.
       All three apply instantly and survive restart.
 
+- [ ] **2.5 Footnotes:** tap a footnote marker (a `[1]` in the text) — the
+      note appears in a card right there, you stay on your page. "Go to the
+      note" jumps to it properly. Tapping outside closes the card. A link to
+      another chapter or a TOC entry should still just navigate, never open
+      a card.
+
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).
 - [ ] Home appears first; heavy chores run after first paint.

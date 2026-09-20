@@ -1152,7 +1152,7 @@ impl Component for AppModel {
         // next launch skips as normal.
         let backfill_catalog = catalog.clone();
         crate::thumbs::invalidate_backfill_marker(&backfill_catalog);
-        crate::tasks::spawn(
+        crate::tasks::spawn_internal(
             "Rebuilding cover thumbnails",
             move |reporter| crate::thumbs::backfill_missing(&backfill_catalog, &reporter),
             // Only interesting under KALAM_TIMING=1: a first launch over a big
@@ -1184,7 +1184,7 @@ impl Component for AppModel {
         // other for no reason, and a failure in one would be reported as a
         // failure of both.
         let dict_catalog = catalog.clone();
-        crate::tasks::spawn(
+        crate::tasks::spawn_internal(
             "Checking dictionary packs",
             move |_reporter| {
                 // No cancel check inside: the unit of work is a whole pack,

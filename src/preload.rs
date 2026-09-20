@@ -134,7 +134,7 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
     if covers.is_empty() || !preload_enabled() {
         return;
     }
-    crate::tasks::spawn_stream(
+    crate::tasks::spawn_stream_internal(
         "Preloading covers",
         move |reporter, emit| {
             for (i, cover) in covers.into_iter().enumerate() {

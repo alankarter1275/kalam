@@ -209,7 +209,13 @@ impl TaskManagerModel {
     /// redrawing twice a second is not something anyone reads closely enough
     /// to notice.
     fn render(&self, sender: &ComponentSender<Self>) {
-        self.status.set_label(&status_line(&self.running, &self.recent));
+        let visible_running: Vec<_> = self
+            .running
+            .iter()
+            .filter(|t| !t.hidden)
+            .cloned()
+            .collect();
+        self.status.set_label(&status_line(&visible_running, &self.recent));
         let s = sender.input_sender().clone();
         let on_cancel: CancelFn =
             Rc::new(move |id| {
@@ -217,10 +223,10 @@ impl TaskManagerModel {
             });
 
         clear_list(&self.running_list);
-        if self.running.is_empty() {
+        if visible_running.is_empty() {
             self.running_list.append(&empty_row("Nothing is running."));
         }
-        for task in &self.running {
+        for task in &visible_running {
             let content = running_row(task, &on_cancel);
             self.running_list.append(&as_list_row(&content));
         }
@@ -256,7 +262,7 @@ pub(crate) enum Badge {
 
 /// Read the registry the way the sidebar badge needs it.
 pub(crate) fn badge() -> Badge {
-    let running = tasks::tasks().len();
+    let running = tasks::tasks().iter().filter(|t| !t.hidden).count();
     if running > 0 {
         return Badge::Running(running);
     }
@@ -320,7 +326,7 @@ pub(crate) fn apply_badge(btn: &gtk::Button, state: Badge) {
 /// was keeping alive.
 pub(crate) fn build_tasks_dialog(on_cancel: CancelFn) -> (gtk::Box, gtk::Box) {
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    panel.add_css_class("kalam-float-panel");
+    panel.add_css_class("kalam-float");
     panel.set_margin_all(16);
 
     let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -340,7 +346,7 @@ pub(crate) fn build_tasks_dialog(on_cancel: CancelFn) -> (gtk::Box, gtk::Box) {
 /// Refill the `w` dialog's list. Called on every app tick while it is open.
 pub(crate) fn fill_tasks_dialog(list: &gtk::Box, on_cancel: &CancelFn) {
     clear_box(list);
-    let running = tasks::tasks();
+    let running: Vec<_> = tasks::tasks().into_iter().filter(|t| !t.hidden).collect();
     if running.is_empty() {
         list.append(&empty_label("Nothing is running."));
         return;

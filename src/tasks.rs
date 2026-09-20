@@ -90,6 +90,11 @@ struct Flags {
     cancel: Arc<AtomicBool>,
     /// Set by [`Reporter::fail`]; read once, when the task is recorded.
     failed: Arc<AtomicBool>,
+    /// Housekeeping the user did not ask for — thumbnail rebuilds, cover
+    /// preloading, dictionary checks. Runs and is cancellable like any task,
+    /// but never enters the finished list and never moves the badge, because a
+    /// jobs history of background chores answers no question anyone asked.
+    hidden: bool,
 }
 
 type Running = Vec<(TaskInfo, Flags)>;
@@ -215,12 +220,16 @@ fn finish(id: u64) {
                 info.label,
                 flags.cancel.load(Ordering::Relaxed),
                 flags.failed.load(Ordering::Relaxed),
+                flags.hidden,
             )
         })
     });
-    let Some((label, cancelled, failed)) = done else {
+    let Some((label, cancelled, failed, hidden)) = done else {
         return
     };
+    if hidden {
+        return; // Housekeeping never enters the jobs history.
+    }
     locked_finished(|list| {
         list.push_back(FinishedTask {
             id,
@@ -249,6 +258,8 @@ fn finish(id: u64) {
 ///
 /// Must be called from the main thread: it attaches a receiver to the GLib
 /// main context.
+/// Run `work` on a worker thread; report progress and the result on the main
+/// thread. The task appears in the finished list and moves the sidebar badge.
 pub fn spawn<T, W, P, D>(label: impl Into<String>, work: W, on_progress: P, on_done: D)
 where
     T: Send + 'static,
@@ -256,9 +267,37 @@ where
     P: Fn(Update) + 'static,
     D: FnOnce(T) + 'static,
 {
-    // Two channels rather than one enum: it keeps `Reporter` non-generic, so
-    // worker code does not have to name the task's result type to report a
-    // percentage.
+    spawn_with(label, false, work, on_progress, on_done)
+}
+
+/// Like [`spawn`], but the task is housekeeping the user did not ask for —
+/// rebuild a cache, warm something. It runs, can be cancelled, and shows in
+/// the live `w` dialog, but it never enters the finished list and never moves
+/// the badge. A jobs history of background chores answers no question anyone
+/// asked; Calibre shows imports and conversions, not its own indexing.
+pub fn spawn_internal<T, W, P, D>(label: impl Into<String>, work: W, on_progress: P, on_done: D)
+where
+    T: Send + 'static,
+    W: FnOnce(Reporter) -> T + Send + 'static,
+    P: Fn(Update) + 'static,
+    D: FnOnce(T) + 'static,
+{
+    spawn_with(label, true, work, on_progress, on_done)
+}
+
+fn spawn_with<T, W, P, D>(
+    label: impl Into<String>,
+    hidden: bool,
+    work: W,
+    on_progress: P,
+    on_done: D,
+)
+where
+    T: Send + 'static,
+    W: FnOnce(Reporter) -> T + Send + 'static,
+    P: Fn(Update) + 'static,
+    D: FnOnce(T) + 'static,
+{
     let (progress_tx, progress_rx) = async_channel::unbounded::<Update>();
     let (result_tx, result_rx) = async_channel::unbounded::<T>();
 
@@ -266,6 +305,7 @@ where
     let flags = Flags {
         cancel: Arc::new(AtomicBool::new(false)),
         failed: Arc::new(AtomicBool::new(false)),
+        hidden,
     };
     locked(|running| {
         running.push((
@@ -275,10 +315,12 @@ where
                 done: 0,
                 total: 0,
                 detail: String::new(),
+                hidden,
             },
             Flags {
                 cancel: flags.cancel.clone(),
                 failed: flags.failed.clone(),
+                hidden,
             },
         ))
     });
@@ -293,13 +335,16 @@ where
         // `reporter` is dropped here, which closes the progress channel and
         // is how the reader below knows to stop waiting for updates.
         let _ = result_tx.send_blocking(out);
+        // The record is written by the worker the instant it finishes, not by
+        // the main-loop future. The owner's run showed an import can finish
+        // and never reach the list when only the future writes it; this makes
+        // the record independent of whatever the main loop is doing. The lock
+        // is held only for a remove and a push, never across slow work, so
+        // this does not reintroduce the "worker blocks the UI" problem.
+        finish(id);
     });
 
     gtk::glib::spawn_future_local(async move {
-        // Drain progress to exhaustion *first*, then take the result. One
-        // sequential future rather than two concurrent ones, because two would
-        // race: the completion toast could land before the last progress
-        // update and leave a stale "importing 3 of 5" on screen afterwards.
         while let Ok(update) = progress_rx.recv().await {
             set_progress(id, &update);
             on_progress(update);
@@ -307,7 +352,6 @@ where
         if let Ok(value) = result_rx.recv().await {
             on_done(value);
         }
-        finish(id);
     });
 }
 
@@ -328,10 +372,25 @@ where
     W: FnOnce(Reporter, Emit<T>) + Send + 'static,
     F: Fn(T) + 'static,
 {
-    // A stream reports by emitting items, so there is no separate progress
-    // channel to listen on. The `Reporter` still exists for `cancelled()`;
-    // its sender goes nowhere, which is fine because `step` ignores send
-    // failures by design.
+    spawn_stream_with(label, false, work, on_item)
+}
+
+/// Housekeeping variant of [`spawn_stream`], matching [`spawn_internal`].
+pub fn spawn_stream_internal<T, W, F>(label: impl Into<String>, work: W, on_item: F)
+where
+    T: Send + 'static,
+    W: FnOnce(Reporter, Emit<T>) + Send + 'static,
+    F: Fn(T) + 'static,
+{
+    spawn_stream_with(label, true, work, on_item)
+}
+
+fn spawn_stream_with<T, W, F>(label: impl Into<String>, hidden: bool, work: W, on_item: F)
+where
+    T: Send + 'static,
+    W: FnOnce(Reporter, Emit<T>) + Send + 'static,
+    F: Fn(T) + 'static,
+{
     let (progress_tx, progress_rx) = async_channel::unbounded::<Update>();
     drop(progress_rx);
     let (item_tx, item_rx) = async_channel::unbounded::<T>();
@@ -340,6 +399,7 @@ where
     let flags = Flags {
         cancel: Arc::new(AtomicBool::new(false)),
         failed: Arc::new(AtomicBool::new(false)),
+        hidden,
     };
     locked(|running| {
         running.push((
@@ -349,10 +409,12 @@ where
                 done: 0,
                 total: 0,
                 detail: String::new(),
+                hidden,
             },
             Flags {
                 cancel: flags.cancel.clone(),
                 failed: flags.failed.clone(),
+                hidden,
             },
         ))
     });
@@ -364,6 +426,8 @@ where
             failed: flags.failed,
         };
         work(reporter, Emit { tx: item_tx });
+        // Same as `spawn_with`: the record is the worker's own last act.
+        finish(id);
     });
 
     gtk::glib::spawn_future_local(async move {
@@ -371,7 +435,6 @@ where
         while let Ok(item) = item_rx.recv().await {
             on_item(item);
         }
-        finish(id);
     });
 }
 
@@ -500,10 +563,12 @@ mod tests {
                     done: 0,
                     total: 0,
                     detail: String::new(),
+                    hidden: false,
                 },
                 Flags {
                     cancel: flag.clone(),
                     failed: Arc::new(AtomicBool::new(false)),
+                    hidden: false,
                 },
             ))
         });
@@ -756,6 +821,38 @@ mod tests {
 
         // Clean up: the recent list is process-wide and other tests read it.
         locked_finished(|list| list.retain(|t| t.label != LABEL));
+    }
+
+    #[test]
+    fn housekeeping_tasks_stay_out_of_the_jobs_history() {
+        let _guard = test_guard();
+        // The owner's exact complaint: thumbnail rebuilds and preloaders
+        // littered the history. `spawn_internal` must run and be cancellable
+        // but never appear as a finished job.
+        let done = Rc::new(Cell::new(false));
+        let done_in = done.clone();
+
+        let ctx = gtk::glib::MainContext::default();
+        ctx.block_on(async move {
+            spawn_internal("internal chore", |_| {
+                1u32
+            }, |_| {}, move |_| done_in.set(true));
+            for _ in 0..500 {
+                if done.get() {
+                    break;
+                }
+                gtk::glib::timeout_future(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        assert!(done.get(), "the internal task ran");
+        assert!(
+            !recent().iter().any(|t| t.label == "internal chore"),
+            "housekeeping must not appear in the finished list"
+        );
+        assert!(
+            !tasks().iter().any(|t| t.label == "internal chore"),
+            "the task must have left the running list too"
+        );
     }
 
     #[test]

@@ -130,6 +130,19 @@ pub enum ReaderMsg {
     SetJustify(bool),
     SetHyphenate(bool),
     SetPublisherStyles(bool),
+    /// Roadmap 2.5 footnotes: the engine has the text behind an internal
+    /// link and is offering it before the reader moves. `x`/`y` are the
+    /// press, in the drawing area's coordinates.
+    ShowNote {
+        href: String,
+        text: String,
+        x: f64,
+        y: f64,
+    },
+    /// The note card's escape hatch: go to the note itself.
+    GoToNote(String),
+    /// The note card closed on its own.
+    ClearNote,
     SwitchSettingsPane(ReaderSettingsPane),
     SetUiSetting(ReaderUiSetting, i32),
     AdjustUiSetting(ReaderUiSetting, i32),

@@ -745,6 +745,7 @@ impl Component for ReaderModel {
             hyphenate: catalog_hyphenate,
             publisher_styles: catalog_publisher,
             selection_chip: None,
+            note_popover: None,
             dict_popover: None,
             dict_anchor: None,
             dict_suppress_clear: 0,
@@ -1408,6 +1409,30 @@ impl Component for ReaderModel {
                         .set_pref("reader.publisher_styles", if on { "1" } else { "0" });
                     self.with_view(move |v| v.set_publisher_styles(on));
                 }
+            }
+            ReaderMsg::ShowNote { href, text, x, y } => {
+                // A note is worth more than a stale selection chip under
+                // the reader's finger.
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.note_popover.take());
+                let Some(view) = &self.view else { return };
+                let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                let card = engine::build_note_popover(
+                    view.widget().upcast_ref(),
+                    &rect,
+                    &text,
+                    &href,
+                    &sender,
+                );
+                card.popup();
+                self.note_popover = Some(card);
+            }
+            ReaderMsg::GoToNote(href) => {
+                engine::dismiss(self.note_popover.take());
+                self.with_view(|v| v.follow_link(&href));
+            }
+            ReaderMsg::ClearNote => {
+                engine::dismiss(self.note_popover.take());
             }
             ReaderMsg::SwitchSettingsPane(pane) => {
                 if pane != self.settings_pane {

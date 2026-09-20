@@ -337,6 +337,41 @@ impl Session {
         }
     }
 
+    /// The text behind an internal link, without moving the reader — the
+    /// payload of a footnote popover.
+    ///
+    /// `None` for everything a shell should keep handling the old way:
+    /// external links, links with no fragment, a path that resolves to no
+    /// spine, a non-text unit, or a fragment the unit does not carry. The
+    /// unit is read and parsed on each call, so a shell that peeks often
+    /// should cache the answer; one footnote tap is one small unit.
+    pub fn peek_link(&self, href: &str) -> Option<String> {
+        let (path, fragment) = peek_target(href)?;
+        let book = self.book.publication();
+        // An empty path is a fragment in this unit, as `follow_link` reads it.
+        let spine = if path.is_empty() {
+            self.spine
+        } else {
+            let Ok(item) = book.spine_item(self.spine) else {
+                return None;
+            };
+            let resolved = chapbook_epub::resolve_href(&item.href.clone(), path);
+            self.spine_index_of(&resolved)?
+        };
+        let unit_href = book.spine_item(spine).ok()?.href.clone();
+        let bytes = book.unit_bytes(spine).ok()?;
+        let doc = chapbook_layout::dom::parse_xhtml(&bytes, &unit_href).ok()?;
+        let node = doc.element_by_id(fragment)?;
+        let text = trim_note(&chapbook_layout::dom::extract_text_at(&doc, node));
+        // A TOC entry or a cross-reference in the body should navigate
+        // exactly as it always did; only a note is worth answering in
+        // place.
+        if !looks_like_note(&doc, node, &text) {
+            return None;
+        }
+        (!text.is_empty()).then_some(text)
+    }
+
     /// Return to where the last jump started. `false` with nothing to go
     /// back to.
     pub fn back(&mut self) -> bool {
@@ -394,5 +429,112 @@ impl Session {
         } else {
             FrameIntent::UnitChange
         });
+    }
+}
+
+/// Split an href the way [`Session::peek_link`] reads it. Only a link
+/// carrying a fragment names an element to show in place, and an external
+/// link is the shell's business rather than the book's.
+fn peek_target(href: &str) -> Option<(&str, &str)> {
+    if href.contains("://") || href.starts_with("mailto:") {
+        return None;
+    }
+    let (path, fragment) = href.split_once('#')?;
+    (!fragment.is_empty()).then_some((path, fragment))
+}
+
+/// Footnote-shaped, rather than a chapter?
+///
+/// A note is a list item or an `aside` — the two shapes EPUB footnotes
+/// actually come in — or a short paragraph the publisher gave an id to.
+/// A section, a heading or a long block is a destination, and a tap on
+/// one means "take me there", not "tell me about it".
+fn looks_like_note(
+    doc: &chapbook_layout::dom::Document,
+    node: chapbook_layout::dom::NodeId,
+    text: &str,
+) -> bool {
+    /// A `p`/`div` this short is a note; longer is a destination.
+    const SHORT_NOTE_CHARS: usize = 400;
+    let chapbook_layout::dom::NodeData::Element(el) = &doc.node(node).data else {
+        return false;
+    };
+    let tag: &str = el.local_name();
+    match tag {
+        "li" | "aside" | "dd" => true,
+        "p" | "div" => text.chars().count() <= SHORT_NOTE_CHARS,
+        _ => false,
+    }
+}
+
+/// A footnote usually ends in a back-link — an arrow, or a "return to
+/// text" label — which is chrome rather than content. A note longer than
+/// a popover is a preview of itself, not a scroll.
+fn trim_note(raw: &str) -> String {
+    /// Room for any real footnote; a longer note is a section of its own.
+    const MAX_CHARS: usize = 1200;
+    let mut text = raw.trim().to_string();
+    for tail in ["↩", "↵", "←", "↑", "[back]", "back to text", "return to text"] {
+        while let Some(stripped) = text.strip_suffix(tail) {
+            text = stripped.trim_end().to_string();
+        }
+    }
+    if text.chars().count() > MAX_CHARS {
+        let cut: String = text.chars().take(MAX_CHARS).collect();
+        return format!("{cut}…");
+    }
+    text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{peek_target, trim_note};
+
+    #[test]
+    fn only_fragment_bearing_internal_links_are_peekable() {
+        assert_eq!(peek_target("notes.xhtml#fn1"), Some(("notes.xhtml", "fn1")));
+        assert_eq!(peek_target("#fn1"), Some(("", "fn1")));
+        // No fragment: nothing to show in place.
+        assert_eq!(peek_target("chapter2.xhtml"), None);
+        assert_eq!(peek_target("notes.xhtml#"), None);
+        // External links belong to the shell, not the book.
+        assert_eq!(peek_target("https://example.org/#frag"), None);
+        assert_eq!(peek_target("mailto:a@b.c#x"), None);
+    }
+
+    #[test]
+    fn a_note_shows_its_text_without_its_back_link() {
+        assert_eq!(
+            trim_note("  The author means the moon. ↩  "),
+            "The author means the moon."
+        );
+        assert_eq!(trim_note("See p. 12. [back]"), "See p. 12.");
+        assert_eq!(trim_note("Only whitespace ↩"), "Only whitespace");
+    }
+
+    #[test]
+    fn a_note_is_shown_in_place_but_a_chapter_still_navigates() {
+        use chapbook_layout::dom::parse_xhtml;
+        let xhtml = concat!(
+            "<?xml version=\"1.0\"?>",
+            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body>",
+            "<section id=\"ch3\"><h2>Chapter three</h2><p>Body text.</p></section>",
+            "<ol class=\"footnotes\">",
+            "<li id=\"fn1\">The author means the moon. <a href=\"#r1\">\u{21a9}</a></li>",
+            "</ol></body></html>",
+        );
+        let doc = parse_xhtml(xhtml.as_bytes(), "notes.xhtml").expect("parses");
+        let note = doc.element_by_id("fn1").expect("the note");
+        let chapter = doc.element_by_id("ch3").expect("the chapter");
+        assert!(super::looks_like_note(&doc, note, "The author means the moon."));
+        assert!(!super::looks_like_note(&doc, chapter, "Chapter three Body text."));
+    }
+
+    #[test]
+    fn an_overlong_note_is_cut_on_a_char_boundary() {
+        // Multi-byte throughout: a byte slice here would panic.
+        let cut = trim_note(&"न".repeat(2000));
+        assert!(cut.chars().count() <= 1201);
+        assert!(cut.ends_with('…'));
     }
 }

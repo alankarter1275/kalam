@@ -145,6 +145,20 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
         }
     });
 
+    // Roadmap 2.5: the engine offers the note behind an internal link
+    // before following it. Kalam always takes the offer — the card carries
+    // a "go to the note" button, so nothing is lost by staying put.
+    let tx = sender.input_sender().clone();
+    view.connect_note(move |href: &str, text: &str, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::ShowNote {
+            href: href.to_string(),
+            text: text.to_string(),
+            x,
+            y,
+        });
+        true
+    });
+
     let tx = sender.input_sender().clone();
     view.connect_image_tap(move |w: u32, h: u32, bytes: &[u8]| {
         let _ = tx.send(ReaderMsg::OpenImageLightbox(w, h, bytes.to_vec()));
@@ -800,6 +814,76 @@ pub(crate) fn build_dict_popover(
 }
 /// Take a popover down and off its parent. A popover with `set_parent`
 /// must be `unparent`ed before it is dropped, or GTK complains.
+/// Roadmap 2.5: a footnote read where the reader already is. The engine
+/// hands over the note's plain text; this is the card that shows it, with
+/// one escape hatch — go to the note itself. Styled by the same classes as
+/// the dictionary card, so the two read as the same kind of thing.
+pub(crate) fn build_note_popover(
+    host: &gtk::Widget,
+    rect: &gtk::gdk::Rectangle,
+    text: &str,
+    href: &str,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::Popover {
+    let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    popup.add_css_class("k-popup");
+    let width = 380.min((host.width() - 32).max(280));
+    popup.set_size_request(width, -1);
+
+    let note = gtk::Label::new(Some(text));
+    note.add_css_class("k-note-text");
+    note.set_wrap(true);
+    note.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    note.set_xalign(0.0);
+    note.set_yalign(0.0);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .propagate_natural_height(true)
+        .overlay_scrolling(true)
+        .max_content_height(260)
+        .build();
+    scroll.set_child(Some(&note));
+
+    let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    fade.add_css_class("k-fade-bottom");
+    fade.set_valign(gtk::Align::End);
+    fade.set_size_request(-1, 16);
+    fade.set_can_target(false);
+
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&scroll));
+    overlay.add_overlay(&fade);
+    popup.append(&overlay);
+
+    let go = gtk::Button::builder().label("Go to the note").build();
+    go.add_css_class("flat");
+    go.add_css_class("k-note-go");
+    let tx = sender.input_sender().clone();
+    let target = href.to_string();
+    go.connect_clicked(move |_| {
+        let _ = tx.send(ReaderMsg::GoToNote(target.clone()));
+    });
+    popup.append(&go);
+
+    let popover = gtk::Popover::new();
+    popover.set_child(Some(&popup));
+    popover.set_parent(host);
+    popover.set_autohide(true);
+    popover.set_has_arrow(false);
+    popover.set_position(gtk::PositionType::Top);
+    popover.set_pointing_to(Some(rect));
+    popover.add_css_class("kalam-reader-dict-popover");
+
+    let tx = sender.input_sender().clone();
+    popover.connect_closed(move |_| {
+        let _ = tx.send(ReaderMsg::ClearNote);
+    });
+
+    popover
+}
+
 pub(crate) fn dismiss(popover: Option<gtk::Popover>) {
     if let Some(p) = popover {
         p.popdown();

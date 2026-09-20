@@ -33,6 +33,8 @@ pub struct ReaderModel {
     /// The chip over the current selection and the dictionary popover,
     /// so they can be taken down again.
     pub(crate) selection_chip: Option<gtk::Popover>,
+    /// Roadmap 2.5: the footnote card, while it stands.
+    pub(crate) note_popover: Option<gtk::Popover>,
     pub(crate) dict_popover: Option<gtk::Popover>,
     /// Where the last word tap was, for the popover that follows it.
     pub(crate) dict_anchor: Option<gtk::gdk::Rectangle>,

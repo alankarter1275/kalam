@@ -159,6 +159,7 @@ pub enum ReadingMode {
 type PositionCallback = dyn Fn(&ReadingPosition);
 type SelectionCallback = dyn Fn(Option<&SelectedText>);
 type LinkCallback = dyn Fn(&str);
+type NoteCallback = dyn Fn(&str, &str, f64, f64) -> bool;
 type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
 
 /// Callbacks a shell installs. All run on the GTK main thread, from inside
@@ -171,6 +172,7 @@ struct Callbacks {
     position: Option<Box<PositionCallback>>,
     selection: Option<Box<SelectionCallback>>,
     link: Option<Box<LinkCallback>>,
+    note: Option<Box<NoteCallback>>,
     image_tap: Option<Box<ImageTapCallback>>,
 }
 
@@ -432,10 +434,24 @@ impl ReaderView {
     }
 
     /// Called for a link the engine will not follow itself — anything
-    /// with a scheme (`https://…`, `mailto:`). Internal links (footnotes,
-    /// cross-references) are followed in place and never reported.
+    /// with a scheme (`https://…`, `mailto:`). An internal link the shell
+    /// declines in [`Self::connect_note`] lands here too.
     pub fn connect_external_link(&self, f: impl Fn(&str) + 'static) {
         self.inner.callbacks.borrow_mut().link = Some(Box::new(f));
+    }
+
+    /// Offered an internal link's note text before the reader moves — a
+    /// footnote popover's chance to answer in place. Arguments are the
+    /// href, the note as plain text, and the press in the drawing area's
+    /// coordinates, so a shell can point a popover at the marker that was
+    /// tapped. Return `true` when the shell showed it: the reader then
+    /// stays where it is. `false` — or no callback installed — follows the
+    /// link as before.
+    ///
+    /// Runs with the session unborrowed, so the callback may read the
+    /// view; keep it quick all the same.
+    pub fn connect_note(&self, f: impl Fn(&str, &str, f64, f64) -> bool + 'static) {
+        self.inner.callbacks.borrow_mut().note = Some(Box::new(f));
     }
 
     /// Called when the reader taps an image on the page, with width, height and RGBA8 bytes.
@@ -550,6 +566,18 @@ impl ReaderView {
 
     pub fn prev_chapter(&self) {
         self.apply(Action::PrevUnit);
+    }
+
+    /// Follow a document-internal link the way a tap on the page does:
+    /// the escape hatch a footnote popover offers after showing the note
+    /// in place. An external link is the shell's, and comes back `false`
+    /// untouched.
+    pub fn follow_link(&self, href: &str) -> bool {
+        let moved = self.inner.session.borrow_mut().follow_link(href);
+        if moved {
+            self.jumped();
+        }
+        moved
     }
 
     /// Jump to a chapter and a fraction of the way through it — Kalam's
@@ -1773,6 +1801,21 @@ impl ReaderView {
                     }
                 };
                 if let Some(href) = href {
+                    // A footnote, or anything else with text behind a
+                    // fragment: offer it to the shell first, and only move
+                    // the reader when the shell declines. Peeked with the
+                    // session held and called without it — a callback that
+                    // re-entered the view would otherwise deadlock.
+                    let note = s.peek_link(&href);
+                    drop(s);
+                    if let Some(text) = &note {
+                        if let Some(cb) = &view.inner.callbacks.borrow().note {
+                            if cb(&href, text, x as f64, y as f64) {
+                                return;
+                            }
+                        }
+                    }
+                    let mut s = view.inner.session.borrow_mut();
                     if s.follow_link(&href) {
                         drop(s);
                         view.jumped();

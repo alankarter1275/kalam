@@ -32,5 +32,5 @@ pub use foreign::MathSource;
 pub use offsets::{links, locator_offset_of, locator_offsets, locator_text, node_tag, Link};
 pub use parse::parse_xhtml;
 pub use stylo_impls::DomNode;
-pub use text::extract_text;
+pub use text::{extract_text, extract_text_at};
 pub use tree::{Document, ElementData, Node, NodeData, NodeId, StylesheetSource};

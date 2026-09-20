@@ -4036,6 +4036,18 @@ popover.kalam-reader-dict-popover > contents {
   border-radius: 0 0 18px 18px;
 }
 
+/* Roadmap 2.5: a footnote read in place. No new colours — the note card is
+   the dictionary card, so the two read as the same kind of thing. */
+.k-note-text {
+  font-size: 15px;
+  line-height: 1.55;
+  padding: 14px 20px 2px;
+}
+
+.k-note-go {
+  margin: 8px 14px 14px;
+}
+
 .kalam-reader-bottom-right-dock {
     background: transparent;
     margin-right: 18px;

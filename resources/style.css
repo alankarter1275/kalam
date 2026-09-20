@@ -1171,6 +1171,13 @@ button.kalam-reader-pill-nav:hover {
     min-height: 36px;
 }
 
+/* Roadmap 2.9: a key a reader can rebind. */
+button.kalam-reader-keycap {
+  min-width: 72px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
 /* Roadmap 2.8: the line under a setting that explains what it costs. */
 .kalam-reader-setting-hint {
   font-size: 11px;

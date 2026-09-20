@@ -1,5 +1,6 @@
 //! Left sidebar Settings panel builder and UI setting stepper rows.
 
+use super::keybinds::{KeyBinding, KeyBindings, ReaderAction};
 use super::mod_model::ReaderModel;
 use super::types::*;
 use super::ui_prefs::{
@@ -32,6 +33,7 @@ pub(crate) fn build_reader_settings_panel(
     dual_page: bool,
     autohide_cursor: bool,
     wheel_step: i32,
+    keybinds: &Rc<RefCell<KeyBindings>>,
 
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -296,6 +298,33 @@ pub(crate) fn build_reader_settings_panel(
     reading_page.append(&pointer_section);
     reading_page.append(&reader_panel_divider());
 
+    // Roadmap 2.9: the reader's own keys, editable here.
+    let key_section = reader_settings_section("Keyboard");
+    let mut keybind_buttons = Vec::new();
+    for action in ReaderAction::ALL {
+        let binding = keybinds.borrow().binding(action);
+        let button = keybind_row(&key_section, action, binding, sender);
+        keybind_buttons.push((action, button));
+    }
+    let key_hint = gtk::Label::new(Some(
+        "Click a key, then press the one you want; Escape cancels. A key does one \
+         thing, so binding it elsewhere moves it.",
+    ));
+    key_hint.add_css_class("kalam-reader-setting-hint");
+    key_hint.set_wrap(true);
+    key_hint.set_xalign(0.0);
+    key_section.append(&key_hint);
+
+    let reset_keys = gtk::Button::with_label("Reset to defaults");
+    reset_keys.add_css_class("flat");
+    let reset_tx = sender.input_sender().clone();
+    reset_keys.connect_clicked(move |_| {
+        let _ = reset_tx.send(ReaderMsg::ResetKeyBindings);
+    });
+    key_section.append(&reset_keys);
+    reading_page.append(&key_section);
+    reading_page.append(&reader_panel_divider());
+
     let dict_section = reader_settings_section("Dictionary");
 
     let hint_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -398,9 +427,81 @@ pub(crate) fn build_reader_settings_panel(
         line_height_label,
         column_width_label,
         wheel_step_label,
+        keybind_buttons,
         theme_dots: dots,
         ui_controls,
     }
+}
+
+/// One editable key: its name, and a button that shows the key and takes a
+/// new one when clicked.
+///
+/// The capture is a key controller on the button itself, armed by the click
+/// and disarmed by whatever key arrives — so there is no modal to dismiss
+/// and no way to leave the panel listening.
+fn keybind_row(
+    section: &gtk::Box,
+    action: ReaderAction,
+    binding: KeyBinding,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::Button {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.add_css_class("kalam-reader-setting-row");
+    let label = gtk::Label::new(Some(action.label()));
+    label.add_css_class("kalam-reader-setting-name");
+    label.set_hexpand(true);
+    label.set_halign(gtk::Align::Start);
+    row.append(&label);
+
+    let button = gtk::Button::with_label(&binding.label());
+    button.add_css_class("kalam-reader-keycap");
+    button.set_tooltip_text(Some("Click, then press the key you want"));
+    row.append(&button);
+    section.append(&row);
+
+    // What the button showed before capture, so Escape can put it back.
+    let shown = Rc::new(RefCell::new(binding.label()));
+    let armed = Rc::new(std::cell::Cell::new(false));
+
+    let keys = gtk::EventControllerKey::new();
+    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    {
+        let armed = armed.clone();
+        let shown = shown.clone();
+        let button = button.clone();
+        let tx = sender.input_sender().clone();
+        keys.connect_key_pressed(move |_, keyval, _, state| {
+            use gtk::glib::Propagation;
+            if !armed.get() {
+                return Propagation::Proceed;
+            }
+            armed.set(false);
+            if keyval == gtk::gdk::Key::Escape {
+                let back = shown.borrow().clone();
+                button.set_label(&back);
+                return Propagation::Stop;
+            }
+            let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            let binding = KeyBinding { keyval, ctrl };
+            *shown.borrow_mut() = binding.label();
+            button.set_label(&shown.borrow());
+            let _ = tx.send(ReaderMsg::SetKeyBinding(action, keyval, ctrl));
+            Propagation::Stop
+        });
+    }
+    button.add_controller(keys);
+
+    {
+        let armed = armed.clone();
+        let button = button.clone();
+        button.connect_clicked(move |_| {
+            armed.set(true);
+            button.set_label("Press a key…");
+            button.grab_focus();
+        });
+    }
+
+    button
 }
 
 pub(crate) fn reader_ui_setting_block(

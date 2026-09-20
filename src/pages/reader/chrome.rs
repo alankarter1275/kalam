@@ -39,6 +39,12 @@ pub(crate) fn sync_reader_controls(model: &ReaderModel) {
         .wheel_step_label
         .set_label(&model.wheel_step.to_string());
 
+    let bindings = model.keybinds.borrow();
+    for (action, button) in &model.keybind_buttons {
+        button.set_label(&bindings.binding(*action).label());
+    }
+    drop(bindings);
+
     for (pane, btn) in &model.settings_pane_buttons {
         toggle_active(btn, *pane == model.settings_pane);
     }

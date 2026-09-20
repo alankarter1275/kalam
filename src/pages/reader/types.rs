@@ -97,6 +97,7 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) line_height_label: gtk::Label,
     pub(crate) column_width_label: gtk::Label,
     pub(crate) wheel_step_label: gtk::Label,
+    pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
     pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
     pub(crate) ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
 }
@@ -137,6 +138,10 @@ pub enum ReaderMsg {
     SetAutohideCursor(bool),
     /// Roadmap 2.9: how far one wheel notch scrolls.
     WheelStepDelta(i32),
+    /// Roadmap 2.9: a reader moved an action to a different key.
+    SetKeyBinding(super::keybinds::ReaderAction, u32, bool),
+    /// Roadmap 2.9: every action back on the key it shipped with.
+    ResetKeyBindings,
     /// Roadmap 2.8: open the folder a reader drops typefaces into.
     OpenFontsFolder,
     /// Roadmap 2.5 footnotes: the engine has the text behind an internal

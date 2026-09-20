@@ -4,6 +4,7 @@ mod chapter;
 mod chrome;
 mod engine;
 mod dictionary_popover;
+mod keybinds;
 mod lists;
 mod mod_model;
 mod panels;
@@ -681,6 +682,10 @@ impl Component for ReaderModel {
         toc_scroll.add_css_class("kalam-reader-panel-scroll");
         left_stack.add_named(&toc_scroll, Some("toc"));
 
+        // Roadmap 2.9: the reader's keys. One table, shared with the key
+        // controller below, so a change in settings takes effect at once.
+        let keybinds = keybinds::KeyBindings::shared(catalog);
+
         let ReaderSettingsControls {
             root: settings_panel,
             settings_stack,
@@ -689,6 +694,7 @@ impl Component for ReaderModel {
             line_height_label,
             column_width_label,
             wheel_step_label,
+            keybind_buttons,
             theme_dots,
             ui_controls,
         } = build_reader_settings_panel(
@@ -709,6 +715,7 @@ impl Component for ReaderModel {
             catalog_dual_page,
             catalog_autohide,
             catalog_wheel,
+            &keybinds,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -762,6 +769,8 @@ impl Component for ReaderModel {
             hyphenate: catalog_hyphenate,
             publisher_styles: catalog_publisher,
             dual_page: catalog_dual_page,
+            keybinds,
+            keybind_buttons,
             autohide_cursor: catalog_autohide,
             wheel_step: catalog_wheel,
             can_jump_back: false,
@@ -822,6 +831,7 @@ impl Component for ReaderModel {
             line_height_label,
             column_width_label,
             wheel_step_label,
+            keybind_buttons,
             theme_dots,
             ui_controls,
             highlight_filter_buttons,
@@ -1062,10 +1072,21 @@ impl Component for ReaderModel {
         let key = gtk::EventControllerKey::new();
         key.set_propagation_phase(gtk::PropagationPhase::Capture);
         let s = sender.clone();
+        let keys = model.keybinds.clone();
         key.connect_key_pressed(move |controller, keyval, _, state| {
             use gtk::gdk::Key;
-            if state.contains(gtk::gdk::ModifierType::CONTROL_MASK)
-                && (keyval == Key::f || keyval == Key::F)
+            // Shift+D arrives as a different keyval from d and the table
+            // holds one spelling, so the press is folded onto it.
+            let keyval = gtk::gdk::keyval_to_lower(keyval);
+            let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            // Search is answered before the typing check, so Ctrl+F opens
+            // search from inside the search box too — as it always did.
+            if ctrl
+                && keyval
+                    == keys
+                        .borrow()
+                        .binding(keybinds::ReaderAction::Search)
+                        .keyval
             {
                 s.input(ReaderMsg::ToggleSearch);
                 return gtk::glib::Propagation::Stop;
@@ -1102,58 +1123,13 @@ impl Component for ReaderModel {
                 return gtk::glib::Propagation::Proceed;
             }
 
-            match keyval {
-                Key::d | Key::D => {
-                    s.input(ReaderMsg::LookUpSelection);
+            // Roadmap 2.9: what a key does is the reader's to decide.
+            match keys.borrow().action_for(keyval, ctrl) {
+                Some(action) => {
+                    s.input(action.message());
                     gtk::glib::Propagation::Stop
                 }
-                Key::n | Key::N => {
-                    s.input(ReaderMsg::NextChapter);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::p | Key::P => {
-                    s.input(ReaderMsg::PrevChapter);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::plus | Key::equal => {
-                    s.input(ReaderMsg::FontDelta(1));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::minus => {
-                    s.input(ReaderMsg::FontDelta(-1));
-                    gtk::glib::Propagation::Stop
-                }
-                // Not while typing: the search field needs its own
-                // backspace, and `is_typing` has already ruled that out.
-                Key::BackSpace => {
-                    s.input(ReaderMsg::JumpBack);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::t | Key::T => {
-                    s.input(ReaderMsg::SwitchLeftTab(LeftSidebarTab::Toc));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::s | Key::S => {
-                    s.input(ReaderMsg::SwitchLeftTab(LeftSidebarTab::Settings));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::h | Key::H => {
-                    s.input(ReaderMsg::SwitchRightTab(RightSidebarTab::Highlights));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::b | Key::B => {
-                    s.input(ReaderMsg::AddBookmark);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::m | Key::M => {
-                    s.input(ReaderMsg::AddBookmark);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::w | Key::W => {
-                    s.input(ReaderMsg::SwitchRightTab(RightSidebarTab::Words));
-                    gtk::glib::Propagation::Stop
-                }
-                _ => gtk::glib::Propagation::Proceed,
+                None => gtk::glib::Propagation::Proceed,
             }
         });
         root.add_controller(key);
@@ -1527,6 +1503,18 @@ impl Component for ReaderModel {
                     self.with_view(move |v| v.set_wheel_step(next as f32));
                     refresh_controls = true;
                 }
+            }
+            ReaderMsg::SetKeyBinding(action, keyval, ctrl) => {
+                {
+                    let mut bindings = self.keybinds.borrow_mut();
+                    bindings.bind(action, keybinds::KeyBinding { keyval, ctrl });
+                    bindings.save(self.service.catalog(), action);
+                }
+                refresh_controls = true;
+            }
+            ReaderMsg::ResetKeyBindings => {
+                self.keybinds.borrow_mut().reset_all(self.service.catalog());
+                refresh_controls = true;
             }
             ReaderMsg::SwitchSettingsPane(pane) => {
                 if pane != self.settings_pane {

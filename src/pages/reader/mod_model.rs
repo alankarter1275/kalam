@@ -32,6 +32,13 @@ pub struct ReaderModel {
     pub(crate) publisher_styles: bool,
     /// Roadmap 2.7: facing pages when the window is wide enough.
     pub(crate) dual_page: bool,
+    /// Roadmap 2.9: the reader's keys. Shared with the key controller, so
+    /// a change in settings reaches the handler without rebuilding it.
+    pub(crate) keybinds: std::rc::Rc<
+        std::cell::RefCell<super::keybinds::KeyBindings>,
+    >,
+    /// The buttons that show those keys, so a change can repaint them.
+    pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
     /// Roadmap 2.9: hide the pointer when it sits still.
     pub(crate) autohide_cursor: bool,
     /// Roadmap 2.9: CSS px per wheel notch, and the label showing it.

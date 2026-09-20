@@ -504,7 +504,7 @@ impl AppModel {
             Route::LibrarySection(LibrarySection::Review) => {
                 let cat = catalog.clone();
                 let ctrl = ReviewModel::builder()
-                    .launch(cat)
+                    .launch(crate::service::LibraryService::new(cat))
                     .forward(sender.input_sender(), |out| match out {
                         ReviewOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })

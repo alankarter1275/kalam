@@ -5,11 +5,10 @@
 //! grade feeds a small SM-2-style schedule in [`crate::db::Catalog`] that
 //! decides when the word next comes due.
 
-use crate::db::{Catalog, ReviewCard};
+use crate::db::ReviewCard;
 use crate::service::LibraryService;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum ReviewOut {
@@ -68,7 +67,7 @@ impl ReviewModel {
 
 #[relm4::component(pub)]
 impl Component for ReviewModel {
-    type Init = Arc<Catalog>;
+    type Init = LibraryService;
     type Input = ReviewMsg;
     type Output = ReviewOut;
     type CommandOutput = ();
@@ -172,12 +171,12 @@ impl Component for ReviewModel {
     }
 
     fn init(
-        catalog: Self::Init,
+        service: Self::Init,
         _root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let mut model = ReviewModel {
-            service: LibraryService::new(catalog),
+            service,
             current: None,
             revealed: false,
             status: String::new(),

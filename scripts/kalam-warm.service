@@ -1,0 +1,34 @@
+# Kalam page-cache warm-up — runs once at login so the first launch is warm.
+# Roadmap 1.15.
+#
+# INSTALL
+#   1. Edit the two paths in ExecStart below to match your machine:
+#        - the warm-cache.sh script
+#        - the kalam binary you actually launch
+#      If you run from a checkout, the binary is target/release/kalam inside
+#      it. If you install Kalam system-wide, point at that binary instead
+#      (e.g. /usr/bin/kalam) and the script can stay where it is.
+#   2. Copy this file to:  ~/.config/systemd/user/kalam-warm.service
+#   3. Reload and enable:
+#        systemctl --user daemon-reload
+#        systemctl --user enable --now kalam-warm.service
+#   4. Check it ran:
+#        systemctl --user status kalam-warm.service
+#        journalctl --user -u kalam-warm.service
+#
+# It is Type=oneshot: it warms the cache and exits. It does not keep running.
+# If it ever needs to run before you log in graphically (e.g. an autologin
+# kiosk), enable lingering once with:  loginctl enable-linger $USER
+
+[Unit]
+Description=Warm the page cache for Kalam's first launch
+After=default.target
+
+[Service]
+Type=oneshot
+# %h is your home directory. Adjust both paths if your checkout lives
+# elsewhere or you launch an installed binary.
+ExecStart=%h/kalam/scripts/warm-cache.sh %h/kalam/target/release/kalam
+
+[Install]
+WantedBy=default.target

@@ -972,6 +972,16 @@ bulk editing. Fixing it later means rewriting all four.
   first per this bullet: run it after a reboot, launch with `KALAM_TIMING=1`,
   and confirm `window_shown` is near ~760 ms. The systemd user unit is the
   step *after* that holds, not before.
+  **Manual test passed, 2026-09-20.** Owner rebooted, ran `warm-cache.sh`,
+  launched with nothing else open: **`window_shown` = 1136 ms**, against the
+  ~9,900 ms cold start — the gap is gone. `pre_run` (676.8 ms) is now fully
+  attributed (its five spans sum to 676.6 ms), the largest being
+  `startup_db_open` at 291.3 ms; the rest of the launch is `startup_first_page`
+  232.5 ms and ~119 ms of GTK realize. The 1136 ms is above the older ~762 ms
+  warm figure because the catalogue has grown (`db_open` is now the biggest
+  single span), not because the warm-up fell short. `scripts/kalam-warm.service`
+  is the systemd user unit that runs the script at login, so it survives a
+  reboot without the owner doing anything — the second half of "done when".
 
 - **1.16 — Work through the `#[allow(dead_code)]` suppressions.** *Split out
   of 1.8g, 2026-09-19.* **85** of them, **5** module-wide (`#!`), which each

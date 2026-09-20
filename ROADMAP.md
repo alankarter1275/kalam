@@ -987,7 +987,7 @@ bulk editing. Fixing it later means rewriting all four.
   185 files"). `inactive (dead)` after the run is the correct state for a
   `Type=oneshot` unit.
 
-- **1.16 — Work through the `#[allow(dead_code)]` suppressions.** *Split out
+- ~~**1.16 — Work through the `#[allow(dead_code)]` suppressions.**~~ **Done, 2026-09-20.** *Split out
   of 1.8g, 2026-09-19.* **85** of them, **5** module-wide (`#!`), which each
   hide an entire module rather than one item.
   **Why it is its own item and not a few minutes.** CI runs clippy with
@@ -1026,6 +1026,16 @@ bulk editing. Fixing it later means rewriting all four.
   float components alive, and `JumpTo.chapter_index` is part of the output
   contract whose reader-scroll is not yet wired. Count now ~72; the remainder
   is the data-model field sweep.
+  **Completed, 2026-09-20.** The field sweep finished: every surviving
+  `#[allow(dead_code)]` in the tree now carries a written reason. Tallies:
+  module-wide 4 → 0; deleted dead items `count_books`, `insert_dict_entry`,
+  `calculate_ink_box`, `strip_dict_html`, `MatchMode::label`,
+  `DictSearchResult`; test-only fns moved to `#[cfg(test)]`
+  (`import_dictionary`, `count_quotes`, `dict_entry_count`,
+  `forget_overrides`, `set_reading_list_note`); stale allows removed where the
+  item is actually used (`extract_comic_cover`, `sources::all`, and the
+  enum-level ones re-scoped to reasoned field allows). Clippy's dead-code
+  check runs over every module again.
 - ~~**1.18 — The comic upscaler offers itself to books it cannot work on.**~~
   **Done, 2026-09-19.** Found by the owner: the Remaster button was drawn
   unconditionally in `book.rs` and `book_float.rs`, so it appeared on EPUBs and

@@ -1178,12 +1178,22 @@ they need 1.2's asynchronous service layer underneath them.
     speed is a setting (`reader.wheel_step`, 20–400 px per notch) instead of
     the compile-time constant it was; paged mode is untouched, because the
     wheel never turned pages there.
-  - **Still open: configurable keybindings** — Kalam's own actions (define,
-    next/previous chapter, font size, contents, jump back, search) are
-    hard-coded in the reader's key controller. They need a Keyboard section in
-    settings that stores a binding per action and a handler that reads it. The
-    engine's own keys (arrows, space, Page Up/Down) stay fixed: they are the
-    universal reading keys, and the engine's `KeyMap` is a separate table.
+  - **Keybindings done 2026-09-21:** twelve of Kalam's actions — look up,
+    next/previous chapter, larger/smaller text, contents, settings,
+    highlights, saved words, bookmark, jump back, search — live in a table
+    (`src/pages/reader/keybinds.rs`) that Settings → Reading → Keyboard
+    edits: click a key, press the one you want, Escape cancels, and "Reset
+    to defaults" puts them all back. A key is held by the name the toolkit
+    gives it (`d`, `plus`, `BackSpace`), which round-trips through
+    `reader.key.<action>` and makes Shift+D the same key as d. One action
+    per key: binding a key another action holds leaves that action
+    *unbound* — recorded, showing "None", never firing — because dropping
+    it from the table let the shipped default sneak straight back. `=`
+    still makes text larger as the unshifted twin of `+`, but an exact
+    claim on `=` wins, since the twin is only a fallback. `m` duplicated
+    `b` for bookmarks and is gone. The engine's own keys (arrows, space,
+    Page Up/Down) stay fixed: they are the universal reading keys and live
+    in a different table in a different crate.
 - **2.10 — Selection toolbar.** Double-click selects a word, triple-click a paragraph.
   The teardrop handles exist (`crates/kalam-reader/src/handles.rs`). The
   toolbar needs highlight in five colours plus underline, quote, dictionary

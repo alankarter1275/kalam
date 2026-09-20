@@ -68,6 +68,12 @@ tick them off. The agent will remind you about this list.
 - [ ] **2.9 Scroll speed (part 2 of 2):** in continuous-scroll mode, change
       **Scroll speed** and the wheel should scroll noticeably more or less per
       notch. Survives restart. (Paged mode ignores the wheel, as before.)
+- [ ] **2.9 Keyboard (part 3 of 3):** Settings → Reading → **Keyboard**
+      lists twelve actions with their keys. Click one, press a new key — the
+      button should show it and the key should work at once. Escape cancels.
+      Bind a key another action already has: that other action should go to
+      **"None"**, not keep working. **Reset to defaults** puts them all back.
+      Survives restart. Note `m` no longer adds a bookmark — `b` does.
 
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).

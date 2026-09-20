@@ -3892,154 +3892,427 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-color-dot-pink   { background: rgba(198,120,221,0.38); }
 .k-color-dot-orange { background: rgba(209,154,102,0.38); }
 
-/* ── dictionary popup (v3 design) ─────────────────────── */
-/* Palette + type from docs/design/kalam_dictionary_popup_v3.html. Fonts fall
-   back to generic families when Fraunces / IBM Plex are not installed. */
-popover.kalam-reader-dict-popover { background: transparent; }
-popover.kalam-reader-dict-popover > contents {
-  background-color: transparent;
-  border: none;
-  padding: 0;
-  box-shadow: none;
-}
-
+/* ── dictionary popup ─────────────────────────────────── */
 .k-popup {
-  background-color: #1b1e24;
+  background: #1b1e24;
   border: 1px solid #343842;
   border-radius: 18px;
   box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3);
 }
 
-.k-header {
-  background-color: #1b1e24;
-  border-bottom: 1px solid #343842;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-  padding: 20px 20px 16px;
+.kalam-reader-dict-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.kalam-reader-dict-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
 }
 
+.k-header {
+  padding: 20px 20px 16px;
+  background: #1b1e24;
+  border-bottom: 1px solid #343842;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+.k-header-left { }
+
 .k-word {
-  font-family: "Fraunces", Georgia, serif;
+  font-family: 'Fraunces', serif;
   font-size: 26px;
   font-weight: 600;
   color: #e6e9ef;
+  margin-bottom: 5px;
 }
 
 .k-pronunciation {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   color: #6b7280;
+  margin-bottom: 7px;
 }
 
 .k-pos {
-  font-size: 10px;
-  font-style: italic;
+  font-size: 10.5px;
   color: #c678dd;
-  background-color: rgba(198,120,221,0.14);
-  border-radius: 999px;
+  background: rgba(198,120,221,0.14);
   padding: 2px 9px;
-}
-
-.k-save-btn, .k-audio-btn {
-  background-color: #282c34;
-  border: 1px solid #343842;
   border-radius: 999px;
-  color: #6b7280;
-  min-width: 30px;
-  min-height: 30px;
-}
-.k-save-btn:hover, .k-audio-btn:hover { background-color: #343842; color: #abb2bf; }
-.k-save-btn.saved {
-  color: #61afef;
-  border-color: #61afef;
-  background-color: rgba(97,175,239,0.15);
+  font-style: italic;
 }
 
-.k-body { padding: 4px 20px 24px; }
+.k-save-btn,
+.k-audio-btn {
+  min-width: 30px; min-height: 30px;
+  border-radius: 50%;
+  background: #282c34;
+  border: 1px solid #343842;
+  color: #6b7280;
+  padding: 0;
+}
+.k-save-btn image { -gtk-icon-size: 15px; }
+.k-save-btn:hover { background: #343842; color: #abb2bf; }
+.k-save-btn.saved { color: #61afef; border-color: #61afef; background: rgba(97,175,239,0.15); }
+
+.k-body {
+  padding: 4px 20px 24px;
+}
 
 .k-section-label {
   font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: .08em;
   color: #6b7280;
-  margin-top: 20px;
   margin-bottom: 10px;
+  margin-top: 20px;
 }
 
+.k-defs { }
+
+.k-def-item { }
+
 .k-def-num {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   color: #61afef;
+  margin-top: 3px;
+  min-width: 16px;
 }
-.k-def-text { font-size: 13px; color: #abb2bf; }
+
+.k-def-text { font-size: 13px; color: #abb2bf; line-height: 1.6; }
+
 .k-def-example {
-  font-family: "Fraunces", Georgia, serif;
+  font-family: 'Fraunces', serif;
   font-style: italic;
   font-size: 12px;
   color: #6b7280;
+  margin-top: 3px;
 }
+
 .k-def-badge {
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: 0.08em;
-  color: #61afef;
-  background-color: rgba(97,175,239,0.15);
+  color: #e5c07b;
+  background: rgba(229,192,123,0.18);
+  padding: 2px 6px;
   border-radius: 999px;
-  padding: 1px 8px;
-}
-/* sense-walk: the sense the arrow keys are currently on */
-.k-def-focused {
-  background-color: rgba(97,175,239,0.10);
-  border-radius: 8px;
+  margin-top: 3px;
+  margin-bottom: 2px;
 }
 
 .k-show-more {
-  font-size: 11px;
+  font-size: 11.5px;
   color: #61afef;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  padding: 0;
+  background: transparent; border: none; padding: 0; margin-top: 8px;
 }
 .k-show-more:hover { text-decoration: underline; }
 
+.k-extra-defs { }
+
+.k-chips { }
+
 .k-chip {
   font-size: 12px;
+  padding: 4px 12px;
   border-radius: 999px;
   border: 1px solid;
-  padding: 4px 12px;
-  box-shadow: none;
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: transparent;
 }
 .k-chip-syn {
   color: #61afef;
-  background-color: rgba(97,175,239,0.15);
+  background: rgba(97,175,239,0.15);
   border-color: rgba(97,175,239,0.3);
 }
-.k-chip-syn:hover { background-color: rgba(97,175,239,0.25); border-color: #61afef; }
+.k-chip-syn:hover { background: rgba(97,175,239,0.25); border-color: #61afef; }
+
 .k-chip-ant {
   color: #e06c75;
-  background-color: rgba(224,108,117,0.14);
+  background: rgba(224,108,117,0.14);
   border-color: rgba(224,108,117,0.3);
 }
-.k-chip-ant:hover { background-color: rgba(224,108,117,0.25); border-color: #e06c75; }
+.k-chip-ant:hover { background: rgba(224,108,117,0.25); border-color: #e06c75; }
+
+.k-idioms { }
 
 .k-idiom-item {
-  background-color: #282c34;
+  background: #282c34;
   border: 1px solid #343842;
   border-radius: 10px;
   padding: 10px 12px;
 }
+
 .k-idiom-phrase {
-  font-family: "Fraunces", Georgia, serif;
+  font-family: 'Fraunces', serif;
   font-style: italic;
   font-size: 13px;
   color: #e6e9ef;
+  margin-bottom: 4px;
 }
-.k-idiom-def { font-size: 12px; color: #abb2bf; }
+
+.k-idiom-def {
+  font-size: 12px;
+  color: #abb2bf;
+}
 
 .k-fade-bottom {
-  background-image: linear-gradient(to bottom, transparent, #1b1e24);
+  background: linear-gradient(to bottom, transparent, #1b1e24);
   border-radius: 0 0 18px 18px;
 }
+/* ── selection toolbar ────────────────────────────────── */
+.k-sel-toolbar {
+  background: rgba(22,24,30,0.96);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 9999px;
+  padding: 3px 5px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
 
+.k-sel-toolbar-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.k-sel-toolbar-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.k-sel-action {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  margin: 0;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.8);
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.k-sel-action image {
+  -gtk-icon-size: 14px;
+}
+.k-sel-action:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+.k-sel-action.accent {
+  color: #61afef;
+}
+
+.k-sel-divider {
+  min-width: 1px;
+  min-height: 14px;
+  background: rgba(255,255,255,0.15);
+  margin: 0 2px;
+}
+
+.k-color-bar {
+  padding: 0 2px;
+}
+
+.k-color-dot {
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0;
+  margin: 0 2px;
+  border-radius: 9999px;
+  border: 2px solid rgba(255,255,255,0.25);
+  transition: transform 150ms ease, border-color 150ms ease;
+}
+
+.k-color-dot:hover {
+  transform: scale(1.22);
+  border-color: rgba(255,255,255,0.8);
+}
+
+.k-color-dot-yellow { background-color: #e5c07b; background-image: none; }
+.k-color-dot-green  { background-color: #98c379; background-image: none; }
+.k-color-dot-blue   { background-color: #61afef; background-image: none; }
+.k-color-dot-pink   { background-color: #e06c75; background-image: none; }
+.k-color-dot-orange { background-color: #c678dd; background-image: none; }
+.k-color-dot-underline { background-color: #3b82f6; background-image: none; border-bottom: 2px solid #2563eb; }
+
+/* ── dictionary popup ─────────────────────────────────── */
+.k-popup {
+  background: #1b1e24;
+  border: 1px solid #343842;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.kalam-reader-dict-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.kalam-reader-dict-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.k-header {
+  padding: 10px 12px 8px;
+  background: #1b1e24;
+  border-bottom: 1px solid #343842;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+.k-header-left { }
+
+.k-word {
+  font-family: 'Fraunces', serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: #e6e9ef;
+  margin-bottom: 2px;
+}
+
+.k-pronunciation {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #6b7280;
+  margin-bottom: 3px;
+}
+
+.k-pos {
+  font-size: 9px;
+  color: #c678dd;
+  background: rgba(198,120,221,0.14);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-style: italic;
+}
+
+.k-save-btn {
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 9999px;
+  background: #282c34;
+  border: 1px solid #343842;
+  color: #6b7280;
+  padding: 0;
+  margin: 0;
+}
+.k-save-btn image { -gtk-icon-size: 12px; }
+.k-save-btn:hover { background: #343842; color: #abb2bf; }
+.k-save-btn.saved { color: #61afef; border-color: #61afef; background: rgba(97,175,239,0.15); }
+
+.k-body {
+  padding: 2px 14px 14px;
+}
+
+.k-section-label {
+  font-size: 8px;
+  letter-spacing: .08em;
+  color: #6b7280;
+  margin-bottom: 6px;
+  margin-top: 10px;
+}
+
+.k-defs { }
+
+.k-def-item { }
+
+.k-def-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9.5px;
+  color: #61afef;
+  margin-top: 2px;
+  min-width: 14px;
+}
+
+.k-def-text { font-size: 11.5px; color: #abb2bf; line-height: 1.5; }
+
+.k-def-example {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.k-def-badge {
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  color: #e5c07b;
+  background: rgba(229,192,123,0.18);
+  padding: 1px 5px;
+  border-radius: 9999px;
+  margin-top: 2px;
+  margin-bottom: 1px;
+}
+
+.k-show-more {
+  font-size: 10.5px;
+  color: #61afef;
+  background: transparent; border: none; padding: 0; margin-top: 6px;
+}
+.k-show-more:hover { text-decoration: underline; }
+
+.k-extra-defs { }
+
+.k-chips { }
+
+.k-chip {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 9999px;
+  border: 1px solid;
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: transparent;
+}
+.k-chip-syn {
+  color: #61afef;
+  background: rgba(97,175,239,0.15);
+  border-color: rgba(97,175,239,0.3);
+}
+.k-chip-syn:hover { background: rgba(97,175,239,0.25); border-color: #61afef; }
+
+.k-chip-ant {
+  color: #e06c75;
+  background: rgba(224,108,117,0.14);
+  border-color: rgba(224,108,117,0.3);
+}
+.k-chip-ant:hover { background: rgba(224,108,117,0.25); border-color: #e06c75; }
+
+.k-idioms { }
+
+.k-idiom-item {
+  background: #282c34;
+  border: 1px solid #343842;
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+
+.k-idiom-phrase {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 11.5px;
+  color: #e6e9ef;
+  margin-bottom: 2px;
+}
+
+.k-idiom-def {
+  font-size: 11px;
+  color: #abb2bf;
+}
+
+.k-fade-bottom {
+  background: linear-gradient(to bottom, transparent, #1b1e24);
+  border-radius: 0 0 14px 14px;
+}
 .kalam-reader-bottom-right-dock {
     background: transparent;
     margin-right: 18px;

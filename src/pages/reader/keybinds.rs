@@ -163,6 +163,16 @@ impl KeyBinding {
         }
     }
 
+    /// No key at all — what an action holds after its key was given to
+    /// another. `none` is not a GDK key name, so it never matches a press,
+    /// and it shows as "None" in the panel.
+    pub(crate) fn unbound() -> KeyBinding {
+        KeyBinding {
+            name: UNBOUND.to_string(),
+            ctrl: false,
+        }
+    }
+
     /// From a captured press. `None` for a key the toolkit will not name,
     /// which is not one a reader can be asked to press again.
     pub(crate) fn capture(key: gdk::Key, ctrl: bool) -> Option<KeyBinding> {
@@ -213,6 +223,9 @@ impl KeyBinding {
     }
 }
 
+/// The name an action with no key is stored and shown under.
+const UNBOUND: &str = "none";
+
 /// The toolkit's name for a key, or nothing for one it will not name.
 fn key_name(key: gdk::Key) -> String {
     key.name().map(|name| name.to_string()).unwrap_or_default()
@@ -229,6 +242,7 @@ fn display_name(name: &str) -> String {
         "Escape" => "Escape".to_string(),
         "space" => "Space".to_string(),
         "Tab" => "Tab".to_string(),
+        UNBOUND => "None".to_string(),
         _ => {
             let mut chars = name.chars();
             match chars.next() {
@@ -293,29 +307,51 @@ impl KeyBindings {
     }
 
     /// Bind `action` to `binding`, taking the key from whatever held it.
+    ///
+    /// The action that loses its key becomes unbound rather than being
+    /// dropped from the table: dropped, it would fall back to the key it
+    /// shipped with and quietly take the key back.
     pub(crate) fn bind(&mut self, action: ReaderAction, binding: KeyBinding) {
-        self.map.retain(|_, held| *held != binding);
+        for slot in self.map.values_mut() {
+            if *slot == binding {
+                *slot = KeyBinding::unbound();
+            }
+        }
         self.map.insert(action, binding);
     }
 
     /// Which action this keypress runs, if any.
+    ///
+    /// In two passes: a key somebody claimed exactly wins, and the
+    /// physical-key twin of `+`/`=` is only a fallback. Without that order,
+    /// giving `=` an action of its own would lose to the `+` binding's
+    /// claim on it.
     pub(crate) fn action_for(&self, key: gdk::Key, ctrl: bool) -> Option<ReaderAction> {
-        ReaderAction::ALL.into_iter().find(|action| {
-            let held = self.binding(*action);
-            if held.ctrl == ctrl && held.is_key(key) {
-                return true;
-            }
-            match twin_of(&held.name) {
-                Some(twin) => {
-                    let twin = KeyBinding {
-                        name: twin.to_string(),
-                        ctrl: held.ctrl,
-                    };
-                    twin.ctrl == ctrl && twin.is_key(key)
+        ReaderAction::ALL
+            .into_iter()
+            .find(|action| self.claims_exact(*action, key, ctrl))
+            .or_else(|| {
+                ReaderAction::ALL
+                    .into_iter()
+                    .find(|action| self.claims_twin(*action, key, ctrl))
+            })
+    }
+
+    fn claims_exact(&self, action: ReaderAction, key: gdk::Key, ctrl: bool) -> bool {
+        let held = self.binding(action);
+        held.ctrl == ctrl && held.is_key(key)
+    }
+
+    fn claims_twin(&self, action: ReaderAction, key: gdk::Key, ctrl: bool) -> bool {
+        let held = self.binding(action);
+        held.ctrl == ctrl
+            && twin_of(&held.name).is_some_and(|twin| {
+                KeyBinding {
+                    name: twin.to_string(),
+                    ctrl: held.ctrl,
                 }
-                None => false,
-            }
-        })
+                .is_key(key)
+            })
     }
 
     /// Store one binding where [`KeyBindings::load`] will find it.
@@ -395,6 +431,12 @@ mod tests {
             Some(ReaderAction::NextChapter)
         );
         assert_eq!(bindings.action_for(gdk::Key::n, false), None);
+        // And the dictionary does not sneak its default key back.
+        assert_eq!(
+            bindings.binding(ReaderAction::Define).label(),
+            "None",
+            "a displaced action is unbound, not restored to its default"
+        );
     }
 
     #[test]

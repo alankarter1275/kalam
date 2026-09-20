@@ -26,9 +26,13 @@ mod tags;
 
 pub use tags::BulkMetadataEdit;
 pub use dictionaries::{
-    likely_sense_index, EntryData, PhraseLookup, Sense, BUNDLED_ANTONYMS_NAME,
+    likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME,
     BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
 };
+// Only the engine's tests name `Sense` directly; keep it out of the non-test
+// build so it is not an unused import.
+#[cfg(test)]
+pub use dictionaries::Sense;
 pub use history::{LibrarySession, SessionRow};
 pub use lookup_history::DictLookup;
 #[allow(unused_imports)]

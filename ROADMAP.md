@@ -964,6 +964,14 @@ bulk editing. Fixing it later means rewriting all four.
   mitigation, not a fix — the fix is faster storage.
   **Done when:** a launch immediately after a reboot measures close to the
   warm figure, and it survives a reboot without the owner doing anything.
+  **2026-09-20:** `scripts/warm-cache.sh` written — warms the binary, its
+  `ldd` dependencies, the GTK/graphics stack (resolved through `ldconfig`,
+  not hardcoded paths), `catalog.db`, and the fontconfig cache; `--covers`
+  additionally warms the thumbnails. Uses `vmtouch` when present, `cat` to
+  /dev/null otherwise, so it has no hard dependency. The manual test comes
+  first per this bullet: run it after a reboot, launch with `KALAM_TIMING=1`,
+  and confirm `window_shown` is near ~760 ms. The systemd user unit is the
+  step *after* that holds, not before.
 
 - **1.16 — Work through the `#[allow(dead_code)]` suppressions.** *Split out
   of 1.8g, 2026-09-19.* **85** of them, **5** module-wide (`#!`), which each

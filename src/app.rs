@@ -148,7 +148,11 @@ impl PageSlot {
 /// Which float is on screen — only one at a time. The controller is held
 /// (never read) purely to keep the component alive until the float closes.
 enum Floating {
+    // The controller is stored (never read) purely to keep the float's
+    // component alive until it closes — see the enum doc.
+    #[allow(dead_code)]
     Book(Controller<BookFloatModel>),
+    #[allow(dead_code)]
     Series(Controller<SeriesFloatModel>),
     /// Highlights & quotes — a plain widget panel, nothing to keep alive.
     Annotations,

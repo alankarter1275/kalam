@@ -8,7 +8,13 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum SavedQuotesOut {
     OpenBook { book_id: i64 },
-    JumpTo { book_id: i64, chapter_index: usize },
+    JumpTo {
+        book_id: i64,
+        // The page reports the chapter the quote came from; scrolling the
+        // reader to it is not wired yet, so nothing reads this for now.
+        #[allow(dead_code)]
+        chapter_index: usize,
+    },
 }
 
 #[derive(Debug)]

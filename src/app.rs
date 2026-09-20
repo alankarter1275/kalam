@@ -147,7 +147,6 @@ impl PageSlot {
 
 /// Which float is on screen — only one at a time. The controller is held
 /// (never read) purely to keep the component alive until the float closes.
-#[allow(dead_code)]
 enum Floating {
     Book(Controller<BookFloatModel>),
     Series(Controller<SeriesFloatModel>),

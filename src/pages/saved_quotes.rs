@@ -6,7 +6,6 @@ use relm4::prelude::*;
 use std::sync::Arc;
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum SavedQuotesOut {
     OpenBook { book_id: i64 },
     JumpTo { book_id: i64, chapter_index: usize },

@@ -2,7 +2,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
@@ -15,7 +15,7 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 test missing_resources_error_cleanly ... ok
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test fonts::tests::a_source_that_finds_nothing_is_an_error_not_an_empty_database ... ok
-test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
@@ -37,7 +37,7 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
@@ -50,8 +50,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test db::tests::book_first_opened_is_none_not_an_error_for_a_never_opened_book ... ok
 test db::tests::books_by_ids_on_no_ids_is_not_an_error ... ok
+test db::tests::book_first_opened_is_none_not_an_error_for_a_never_opened_book ... ok
 test downloads::tests::locked_writes_are_visible_to_later_reads_when_nothing_panicked ... ok
 test dict::tests::unrecognized_format_error_names_the_expected_formats ... ok
 test epub_metadata::tests::missing_metadata_block_is_an_error_not_a_panic ... ok
@@ -61,8 +61,6 @@ test metadata::tests::network_errors_are_collapsed_to_one_line ... ok
 test metadata::tests::unknown_network_errors_are_still_truncated ... ok
 test notify::tests::errors_linger_longer_than_chatter ... ok
 test notify::tests::report_passes_ok_through_and_flags_errors ... ok
-test pages::reader::keybinds::tests::a_key_does_one_thing ... FAILED
-test pages::reader::keybinds::tests::equals_still_makes_text_larger ... FAILED
 test service::tests::a_missing_shelf_yields_no_books_and_no_error ... ok
 test service::tests::an_empty_dashboard_is_not_an_error ... ok
 test service::tests::an_empty_log_is_not_an_error ... ok
@@ -76,8 +74,8 @@ test service::tests::shelves_are_returned_and_an_empty_grid_is_not_an_error ... 
 test service::tests::there_are_no_quotes_at_all_is_not_an_error ... ok
 test tasks::tests::reporting_after_the_ui_is_gone_is_not_an_error ... ok
 test thumbs::tests::missing_source_is_not_an_error ... ok
-thread 'pages::reader::keybinds::tests::a_key_does_one_thing' (6077) panicked at src/pages/reader/keybinds.rs:393:9:
-thread 'pages::reader::keybinds::tests::equals_still_makes_text_larger' (6083) panicked at src/pages/reader/keybinds.rs:429:9:
-test result: FAILED. 400 passed; 2 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.85s
-[1m[91merror[0m: test failed, to rerun pass `-p kalam --bin kalam`
---- run 35544372746 ---
+test result: ok. 402 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.89s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+--- run 35544578985 ---

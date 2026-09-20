@@ -1,6 +1,4 @@
-src/pages/review.rs:25:5: [1m[91merror[0m: variant `Refresh` is never constructed
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -24,8 +22,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/review.rs:25:5: [1m[91merror[0m: variant `Refresh` is never constructed
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 35530408254 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 15.21s
+--- run 35530511098 ---

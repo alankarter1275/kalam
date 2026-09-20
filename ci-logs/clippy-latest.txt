@@ -1,8 +1,4 @@
-src/app.rs:151:10: [1m[91merror[0m: field `0` is never read
-src/app.rs:152:12: [1m[91merror[0m: field `0` is never read
-src/pages/saved_quotes.rs:11:28: [1m[91merror[0m: field `chapter_index` is never read
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -23,13 +19,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/app.rs:151:10: [1m[91merror[0m: field `0` is never read
-src/app.rs:152:12: [1m[91merror[0m: field `0` is never read
-src/pages/saved_quotes.rs:11:28: [1m[91merror[0m: field `chapter_index` is never read
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
---- run 35517693550 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.52s
+--- run 35517842619 ---

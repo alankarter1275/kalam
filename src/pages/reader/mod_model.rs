@@ -26,6 +26,10 @@ pub struct ReaderModel {
     pub(crate) column_px: u32,
     /// The body typeface chosen in the font picker; `None` = default.
     pub(crate) font_family: Option<String>,
+    /// Roadmap 2.4 text-layout toggles.
+    pub(crate) justify: bool,
+    pub(crate) hyphenate: bool,
+    pub(crate) publisher_styles: bool,
     /// The chip over the current selection and the dictionary popover,
     /// so they can be taken down again.
     pub(crate) selection_chip: Option<gtk::Popover>,

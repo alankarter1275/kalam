@@ -217,6 +217,12 @@ pub struct KalamPrefs {
     /// `reader.font_family`: the body typeface the picker chose; `None`
     /// keeps Kalam's bundled default.
     pub font_family: Option<String>,
+    /// `reader.justify`: justify body text (default off).
+    pub justify: bool,
+    /// `reader.hyphenate`: allow soft-hyphen breaks (default on).
+    pub hyphenate: bool,
+    /// `reader.publisher_styles`: honor the book's own stylesheet (default on).
+    pub publisher_styles: bool,
 }
 
 impl KalamPrefs {
@@ -241,6 +247,9 @@ impl KalamPrefs {
                 .font_family
                 .clone()
                 .filter(|f| !f.trim().is_empty()),
+            justify: self.justify,
+            hyphenate: self.hyphenate,
+            publisher_styles: self.publisher_styles,
         }
     }
 
@@ -259,9 +268,8 @@ impl KalamPrefs {
         ReadingSettings {
             base_font_px: prefs.font_px,
             line_height: prefs.line_height,
-            // The book decides; a publisher's ragged-right poem stays so.
-            justify: false,
-            publisher_styles: true,
+            justify: prefs.justify,
+            publisher_styles: prefs.publisher_styles,
             font_family: Some(
                 prefs
                     .font_family
@@ -305,7 +313,7 @@ impl KalamPrefs {
         let ink = format!("#{:02x}{:02x}{:02x}", ink.r, ink.g, ink.b);
         let size = prefs.font_px;
         let lh = prefs.line_height;
-        format!(
+        let mut css = format!(
             "* {{ color: {ink} !important; background-color: transparent !important; }}\n\
              html, body {{ font-size: {size}px !important; line-height: {lh} !important; \
              margin: 0 !important; padding: 0 !important; }}\n\
@@ -314,7 +322,13 @@ impl KalamPrefs {
              h1, h2, h3, h4, h5, h6 {{ font-weight: bold !important; \
              line-height: 1.25 !important; margin-top: 1.4em !important; }}\n\
              a {{ text-decoration: none !important; }}\n"
-        )
+        );
+        // Hyphenation off = force the computed style the layout keys its
+        // soft-hyphen insertion on to `manual`.
+        if !prefs.hyphenate {
+            css.push_str("* { hyphens: manual !important; }\n");
+        }
+        css
     }
 }
 
@@ -326,6 +340,9 @@ impl Default for KalamPrefs {
             line_height: 1.8,
             column_px: 620.0,
             font_family: None,
+            justify: false,
+            hyphenate: true,
+            publisher_styles: true,
         }
     }
 }
@@ -417,6 +434,9 @@ mod tests {
             line_height: 0.1,
             column_px: 10_000.0,
             font_family: Some("   ".to_string()),
+            justify: true,
+            hyphenate: false,
+            publisher_styles: false,
         }
         .clamped();
         assert_eq!(wild.font_px, 24.0);

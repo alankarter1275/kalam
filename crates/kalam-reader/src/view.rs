@@ -506,6 +506,27 @@ impl ReaderView {
         });
     }
 
+    pub fn set_justify(&self, justify: bool) {
+        self.set_prefs(KalamPrefs {
+            justify,
+            ..self.prefs()
+        });
+    }
+
+    pub fn set_hyphenate(&self, hyphenate: bool) {
+        self.set_prefs(KalamPrefs {
+            hyphenate,
+            ..self.prefs()
+        });
+    }
+
+    pub fn set_publisher_styles(&self, on: bool) {
+        self.set_prefs(KalamPrefs {
+            publisher_styles: on,
+            ..self.prefs()
+        });
+    }
+
     /// The installed typefaces the engine can offer in a picker.
     pub fn font_families(&self) -> Vec<String> {
         self.inner.session.borrow().font_families()

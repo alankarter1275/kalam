@@ -26,6 +26,9 @@ pub(crate) fn build_reader_settings_panel(
     dict_history_enabled: bool,
     font_family: Option<String>,
     families: Vec<String>,
+    justify: bool,
+    hyphenate: bool,
+    publisher_styles: bool,
 
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -162,6 +165,32 @@ pub(crate) fn build_reader_settings_panel(
         ReaderMsg::ColumnWidthDelta(20),
     ));
     reading_page.append(&width_section);
+    reading_page.append(&reader_panel_divider());
+
+    // Roadmap 2.4: the three engine text-layout switches that previously had
+    // no user-facing control.
+    let text_section = reader_settings_section("Text");
+    let toggles: [(&str, bool, fn(bool) -> ReaderMsg); 3] = [
+        ("Justify", justify, ReaderMsg::SetJustify),
+        ("Hyphenation", hyphenate, ReaderMsg::SetHyphenate),
+        ("Publisher styles", publisher_styles, ReaderMsg::SetPublisherStyles),
+    ];
+    for (label, on, make_msg) in toggles {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        row.add_css_class("kalam-reader-setting-row");
+        let name = gtk::Label::new(Some(label));
+        name.add_css_class("kalam-reader-setting-name");
+        name.set_hexpand(true);
+        name.set_halign(gtk::Align::Start);
+        row.append(&name);
+        let tx = sender.input_sender().clone();
+        let switch = crate::pages::settings::toggle_switch(on, move |v| {
+            let _ = tx.send(make_msg(v));
+        });
+        row.append(&switch);
+        text_section.append(&row);
+    }
+    reading_page.append(&text_section);
     reading_page.append(&reader_panel_divider());
 
     // "Layout": one page at a time, or one long strip. Same control the

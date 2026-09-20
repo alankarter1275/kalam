@@ -538,6 +538,9 @@ impl Component for ReaderModel {
             .get_pref_i64("reader.column_px", 620)
             .clamp(400, 860) as u32;
         let catalog_family = catalog.get_pref("reader.font_family");
+        let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
+        let catalog_hyphenate = catalog.get_pref_i64("reader.hyphenate", 1) != 0;
+        let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
         let scrolled = catalog.get_pref_i64(engine::PREF_SCROLLED, 0) != 0;
 
         // The engine opens the EPUB itself: one widget holds the book, and
@@ -550,6 +553,9 @@ impl Component for ReaderModel {
                 catalog_line_height,
                 catalog_column,
                 catalog_family.clone(),
+                catalog_justify,
+                catalog_hyphenate,
+                catalog_publisher,
             );
             match engine::open_engine(&book.file_path, prefs) {
                 Ok(view) => {
@@ -635,6 +641,9 @@ impl Component for ReaderModel {
             .get_pref_i64("reader.column_px", 620)
             .clamp(400, 860) as u32;
         let catalog_family = catalog.get_pref("reader.font_family");
+        let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
+        let catalog_hyphenate = catalog.get_pref_i64("reader.hyphenate", 1) != 0;
+        let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
         let font_families = view
             .as_ref()
             .map(|v| v.font_families())
@@ -680,6 +689,9 @@ impl Component for ReaderModel {
             catalog.get_pref_i64("dict_history_enabled", 1) != 0,
             catalog_family.clone(),
             font_families,
+            catalog_justify,
+            catalog_hyphenate,
+            catalog_publisher,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -729,6 +741,9 @@ impl Component for ReaderModel {
             line_height: catalog_line_height,
             column_px: catalog_column,
             font_family: catalog_family,
+            justify: catalog_justify,
+            hyphenate: catalog_hyphenate,
+            publisher_styles: catalog_publisher,
             selection_chip: None,
             dict_popover: None,
             dict_anchor: None,
@@ -1365,6 +1380,33 @@ impl Component for ReaderModel {
                         .catalog()
                         .set_pref("reader.font_family", family.as_deref().unwrap_or(""));
                     self.with_view(move |v| v.set_font_family(family));
+                }
+            }
+            ReaderMsg::SetJustify(on) => {
+                if on != self.justify {
+                    self.justify = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.justify", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_justify(on));
+                }
+            }
+            ReaderMsg::SetHyphenate(on) => {
+                if on != self.hyphenate {
+                    self.hyphenate = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.hyphenate", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_hyphenate(on));
+                }
+            }
+            ReaderMsg::SetPublisherStyles(on) => {
+                if on != self.publisher_styles {
+                    self.publisher_styles = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.publisher_styles", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_publisher_styles(on));
                 }
             }
             ReaderMsg::SwitchSettingsPane(pane) => {

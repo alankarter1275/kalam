@@ -49,6 +49,9 @@ pub(crate) fn engine_prefs(
     line_height: f32,
     column_px: u32,
     font_family: Option<String>,
+    justify: bool,
+    hyphenate: bool,
+    publisher_styles: bool,
 ) -> KalamPrefs {
     KalamPrefs {
         theme: engine_theme(theme),
@@ -56,6 +59,9 @@ pub(crate) fn engine_prefs(
         line_height,
         column_px: column_px as f32,
         font_family,
+        justify,
+        hyphenate,
+        publisher_styles,
     }
     .clamped()
 }

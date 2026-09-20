@@ -1,47 +1,8 @@
-src/pages/reader/keybinds.rs:164:25: [1m[91merror[E0425][0m: cannot find function `keyval_name` in crate `gdk`: not found in `gdk`
-src/pages/reader/keybinds.rs:182:27: [1m[91merror[E0425][0m: cannot find function `keyval_from_name` in crate `gdk`: not found in `gdk`
-src/pages/reader/keybinds.rs:200:25: [1m[91merror[E0425][0m: cannot find function `keyval_name` in crate `gdk`: not found in `gdk`
-src/pages/reader/keybinds.rs:270:27: [1m[91merror[E0425][0m: cannot find function `keyval_to_lower` in crate `gdk`: not found in `gdk`
-src/pages/reader/mod.rs:1080:36: [1m[91merror[E0425][0m: cannot find function `keyval_to_lower` in crate `gtk::gdk`: not found in `gtk::gdk`
-src/pages/reader/keybinds.rs:95:55: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:96:60: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:97:60: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:98:55: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:99:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:100:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:101:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:102:59: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:103:54: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:104:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:105:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:110:25: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:192:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `plus` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:193:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `equal` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:194:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `minus` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:195:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `BackSpace` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:196:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `Return` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:196:28: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `KP_Enter` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:197:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `Escape` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:198:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `space` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:199:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `Tab` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:280:73: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/settings_panel.rs:485:40: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/settings_panel.rs:488:62: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
+src/pages/reader/keybinds.rs:208:15: [1m[91merror[E0425][0m: cannot find function `keyval_from_name` in crate `gdk`: not found in `gdk`
 src/pages/reader/mod.rs:834:13: [1m[91merror[E0062][0m: field `keybind_buttons` specified more than once: used more than once
-src/pages/reader/keybinds.rs:339:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:343:68: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:345:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:348:40: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:355:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:359:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:365:62: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:367:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:376:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:380:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:389:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:392:40: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 30 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 42 previous errors
+src/pages/reader/settings_panel.rs:499:32: [1m[91merror[E0505][0m: cannot move out of `button` because it is borrowed: move out of `button` occurs here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -63,51 +24,12 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/reader/keybinds.rs:164:25: [1m[91merror[E0425][0m: cannot find function `keyval_name` in crate `gdk`: not found in `gdk`
-src/pages/reader/keybinds.rs:182:27: [1m[91merror[E0425][0m: cannot find function `keyval_from_name` in crate `gdk`: not found in `gdk`
-src/pages/reader/keybinds.rs:200:25: [1m[91merror[E0425][0m: cannot find function `keyval_name` in crate `gdk`: not found in `gdk`
-src/pages/reader/keybinds.rs:270:27: [1m[91merror[E0425][0m: cannot find function `keyval_to_lower` in crate `gdk`: not found in `gdk`
-src/pages/reader/mod.rs:1080:36: [1m[91merror[E0425][0m: cannot find function `keyval_to_lower` in crate `gtk::gdk`: not found in `gtk::gdk`
-src/pages/reader/keybinds.rs:95:55: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:96:60: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:97:60: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:98:55: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:99:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:100:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:101:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:102:59: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:103:54: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:104:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:105:57: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:110:25: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:192:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `plus` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:193:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `equal` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:194:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `minus` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:195:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `BackSpace` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:196:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `Return` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:196:28: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `KP_Enter` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:197:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `Escape` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:198:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `space` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:199:9: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`, `Tab` is interpreted as an associated constant, not a new binding
-src/pages/reader/keybinds.rs:280:73: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/settings_panel.rs:485:40: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/settings_panel.rs:488:62: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/reader/keybinds.rs:208:15: [1m[91merror[E0425][0m: cannot find function `keyval_from_name` in crate `gdk`: not found in `gdk`
 src/pages/reader/mod.rs:834:13: [1m[91merror[E0062][0m: field `keybind_buttons` specified more than once: used more than once
-src/pages/reader/keybinds.rs:339:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:343:68: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:345:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:348:40: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:355:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:359:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:365:62: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:367:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:376:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:380:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:389:33: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-src/pages/reader/keybinds.rs:392:40: [1m[91merror[E0308][0m: mismatched types: expected `u32`, found `Key`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 30 previous errors
+src/pages/reader/settings_panel.rs:499:32: [1m[91merror[E0505][0m: cannot move out of `button` because it is borrowed: move out of `button` occurs here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 42 previous errors
---- run 35544009855 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+--- run 35544216215 ---

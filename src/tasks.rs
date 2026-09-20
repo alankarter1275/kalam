@@ -59,6 +59,9 @@ pub struct TaskInfo {
     pub total: usize,
     /// The detail string from the most recent report — a file name, a page.
     pub detail: String,
+    /// Housekeeping the user did not ask for. Hidden from the badge, the jobs
+    /// history and the live list; still cancellable at shutdown.
+    pub hidden: bool,
 }
 
 /// A task that has finished, kept briefly so the panel can show what just
@@ -830,15 +833,14 @@ mod tests {
         // littered the history. `spawn_internal` must run and be cancellable
         // but never appear as a finished job.
         let done = Rc::new(Cell::new(false));
-        let done_in = done.clone();
+        let done_cb = done.clone();
+        let done_poll = done.clone();
 
         let ctx = gtk::glib::MainContext::default();
         ctx.block_on(async move {
-            spawn_internal("internal chore", |_| {
-                1u32
-            }, |_| {}, move |_| done_in.set(true));
+            spawn_internal("internal chore", |_| 1u32, |_| {}, move |_| done_cb.set(true));
             for _ in 0..500 {
-                if done.get() {
+                if done_poll.get() {
                     break;
                 }
                 gtk::glib::timeout_future(std::time::Duration::from_millis(10)).await;

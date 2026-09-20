@@ -214,13 +214,6 @@ impl MatchMode {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            MatchMode::All => "All",
-            MatchMode::Any => "Any",
-        }
-    }
-
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "any" | "or" => MatchMode::Any,

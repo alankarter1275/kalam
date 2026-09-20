@@ -1141,6 +1141,13 @@ they need 1.2's asynchronous service layer underneath them.
   `Session::back` / `can_go_back` (`chapbook-reader/src/nav.rs`) pop a
   64-deep stack that `jump` pushes on. What is missing is only a control —
   `View::follow_link` landed with 2.5 and is the shape to copy.
+  - **Done 2026-09-21:** `Session::back_depth` exposes the trail's length, and
+    the reader watches it grow on each position report — which catches jumps
+    the engine made on its own, like a tap on a link in the page, that no
+    message would otherwise announce. A third button appears in the dock that
+    already holds Library and Bookmark, and Backspace does the same. The offer
+    withdraws on the next ordinary page turn, so it reads as "undo that jump"
+    rather than a permanent history menu.
 - **2.7 — Dual-page toggle, plus continuous vertical scroll.** The engine already
   shows facing pages above 900 px (`view.rs:911`) — **automatically, with no
   way to switch it off.** Add the toggle rather than the behaviour.

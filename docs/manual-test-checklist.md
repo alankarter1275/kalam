@@ -47,6 +47,10 @@ tick them off. The agent will remind you about this list.
       note" jumps to it properly. Tapping outside closes the card. A link to
       another chapter or a TOC entry should still just navigate, never open
       a card.
+- [ ] **2.6 Jump back:** after jumping (a TOC entry, a search match, a link
+      in the page), an undo button appears in the top-left dock next to
+      Library and Bookmark; **Backspace** does the same. It takes you back to
+      exactly where you were. Turning a page normally makes it disappear.
 
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).

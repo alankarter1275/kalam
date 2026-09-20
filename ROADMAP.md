@@ -998,7 +998,10 @@ bulk editing. Fixing it later means rewriting all four.
   job shows up in the task manager with progress and is cancellable, and the
   grid cannot freeze while sixty books' data dirs are removed. Files are left
   where they are; the library row, reading history and thumbnail go, matching
-  the single-book delete.
+  the single-book delete. The owner then asked for *every* delete to be a
+  task, so the single-book delete (book page) now runs on the same seam too —
+  it is far too fast to cancel, but it belongs in the history like any other
+  operation, and the page no longer blocks on removing the directory.
 
 **Done when:** no UI thread blocks on SQLite; background work reports progress
 and can be cancelled; the app writes a log file that survives a `.desktop`

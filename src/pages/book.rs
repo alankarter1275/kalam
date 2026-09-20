@@ -51,6 +51,12 @@ pub enum BookPageOut {
 #[derive(Debug)]
 pub enum BookPageMsg {
     Delete,
+    /// The single-book delete finished on its worker.
+    DeleteDone {
+        id: i64,
+        title: String,
+        res: Result<(), String>,
+    },
     ToggleReadingList,
     ToggleFinished,
     SetRating(u8),
@@ -641,26 +647,38 @@ impl Component for BookPageModel {
             BookPageMsg::Delete => {
                 if let Some(book) = &self.book {
                     let id = book.id;
-                    // Drop the cached texture so a re-import of the same path
-                    // cannot show the old cover.
+                    let title = book.title.clone();
+                    // Drop the cached texture on the main thread (it is a GTK
+                    // texture cache) before the worker removes the book.
                     if let Some(path) = &book.cover_path {
                         invalidate_cover_cache(path);
                     }
-                    let title = book.title.clone();
-                    match self.service.catalog().delete_book(id) {
-                        Ok(()) => {
-                            crate::notify::success("Book removed", &title);
-                            self.book = None;
-                            sender.output(BookPageOut::Deleted { book_id: id }).ok();
-                        }
-                        // Silently doing nothing was the worst outcome here:
-                        // the book stayed and no reason was given.
-                        Err(err) => {
-                            crate::notify::error("Could not remove the book", &err.to_string())
-                        }
-                    }
+                    let catalog = self.service.catalog().clone();
+                    let s = sender.input_sender().clone();
+                    // A delete is a task like any other operation, even though
+                    // one book is far too fast to cancel: it belongs in the
+                    // history, and the page must not block on removing the
+                    // book's directory.
+                    crate::tasks::spawn(
+                        format!("Deleting {title}"),
+                        move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
+                        |_| {},
+                        move |res| {
+                            s.send(BookPageMsg::DeleteDone { id, title, res }).ok();
+                        },
+                    );
                 }
             }
+            BookPageMsg::DeleteDone { id, title, res } => match res {
+                Ok(()) => {
+                    crate::notify::success("Book removed", &title);
+                    self.book = None;
+                    sender.output(BookPageOut::Deleted { book_id: id }).ok();
+                }
+                // Silently doing nothing was the worst outcome here: the book
+                // stayed and no reason was given.
+                Err(err) => crate::notify::error("Could not remove the book", &err),
+            },
             BookPageMsg::ToggleReadingList => {
                 if let Some(book) = &self.book {
                     let id = book.id;

@@ -1,5 +1,4 @@
-src/pages/all_books.rs:941:1: [1m[91merror[0m: items after a test module
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -21,8 +20,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/all_books.rs:941:1: [1m[91merror[0m: items after a test module
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 35483703650 ---
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 10.81s
+--- run 35483872408 ---

@@ -764,7 +764,6 @@ impl Component for ReaderModel {
             dual_page: catalog_dual_page,
             autohide_cursor: catalog_autohide,
             wheel_step: catalog_wheel,
-            wheel_step_label,
             can_jump_back: false,
             back_depth: 0,
             selection_chip: None,

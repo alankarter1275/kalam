@@ -76,7 +76,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
                 .unwrap_or_else(|| "Untitled PDF".into());
             let cover_name = crate::pdf::PdfDocument::open(source)
                 .ok()
-                .and_then(|doc| doc.render_page_image(1, false))
+                .and_then(|doc| doc.render_page_image(1, false).ok())
                 .and_then(|img| {
                     let mut bytes = std::io::Cursor::new(Vec::new());
                     img.write_to(&mut bytes, image::ImageFormat::Png).ok()?;

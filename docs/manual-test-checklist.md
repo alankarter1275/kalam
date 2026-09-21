@@ -1,5 +1,48 @@
 # Phase 2 test plan
 
+## Round 2 — what changed from your first report
+
+- **T1 Typeface picker:** fixed. Moving the pointer onto a dropdown list
+  fired the settings sidebar's leave-timer and killed list and sidebar
+  together. The sidebar now holds while a popup owns the session and
+  re-judges when focus comes home. **Re-test:** open Typeface, pick Default
+  or any face — the list should stay up until you choose.
+- **T2 Hyphenation:** fixed for real this time. The toggle only ever
+  *turned hyphenation off at the publisher's request*; it never asked for
+  it, so ordinary books showed nothing in either position. "On" now claims
+  hyphenation on paragraphs and the engine's dictionary hyphenator runs.
+  **Re-test:** narrow window, narrow column — long words should break with
+  a visible hyphen at line ends. Heads up: English words only (the bundled
+  dictionary is en-US), and broken words appear where the line needs them,
+  not at every opportunity.
+- **T3 Two pages:** your reading was right and so was the build — with the
+  setting **on** and a wide window, a turn *should* move two pages (1–2 →
+  3–4). The mismatched case was the setting **off** moving two anyway. What
+  changed: in **continuous scroll** the toggle is now greyed out, because
+  a spread can never apply there. You asked for exactly that — done.
+- **T6 Jump back:** the on-screen button is gone for good — keyboard only.
+  Backspace is now wired the same way Ctrl+F always was (window-global,
+  with a typing guard), which is the route your run proved missing.
+  **Re-test:** TOC jump → Backspace, with and without clicking into the
+  page first.
+- **T7 Pointer:** now also hides while scrolling; only mouse *movement*
+  brings it back. You asked for exactly that — done.
+- **T8 Scroll speed:** root cause found — a touchpad reports smooth pixel
+  deltas and took them 1:1, ignoring the slider entirely. Both wheel and
+  pad now honour it, with the default pad feel unchanged. **Re-test:**
+  slider low vs high, two-finger scroll.
+- **T9 Shortcuts:** keyboard bindings moved to their own **Shortcuts** tab
+  next to Reading and UI. You asked for exactly that — done (re-test the
+  keys there; behaviour is otherwise identical).
+- **T10 Fonts folder:** on your setup (no desktop file manager) the launch
+  fails silently; now the folder's path is copied to your clipboard with a
+  toast saying so, and you can open it in yazi. **Re-test.**
+- **T11/T12/T13 PDF:** root cause found — the importer never accepted
+  `.pdf` at all, even though the reader it feeds has existed for months.
+  Import now works; the file name is the title and page one becomes the
+  cover. **Re-test:** import your text PDF and a scanned one, then the
+  timing lines.
+
 Everything built and CI-verified since the dictionary work, in one session.
 Each test has an ID — report by ID ("T7 failed: …") and I'll know exactly
 where to look.
@@ -92,6 +135,13 @@ gives way to a single page.
 
 ### T4 · Footnotes in place (2.5)
 
+*What's a footnote?* A tiny aside at the bottom of a page or the end of a
+chapter that the main text points at with a small raised number or `[1]`,
+so the author can comment or cite without interrupting the sentence.
+Non-fiction and classic novels digested by Standard Ebooks are full of
+them; most modern fiction has none. If your book has none, skip this test
+and say so.
+
 **Do:** find a footnote marker in the text (a `[1]` or similar) and tap it.
 Then tap **Go to the note**. Then tap outside the card.
 
@@ -121,9 +171,9 @@ Then press **Backspace**. Try it again after a second jump.
 **Look for:** you land back exactly where you were. Jump twice and back
 twice should retrace both.
 
-**Note:** the undo *button* lives in the top-left dock, and that dock hides
-itself when you're not near it — so the button may not be visible. Backspace
-always works. Turning a page normally should make the offer go away.
+**Note:** there is no on-screen button for this — Backspace only, and it
+should work wherever the pointer and focus happen to be. Turning a page
+normally should quietly expire the jump (Backspace then does nothing).
 
 **Report if:** Backspace does nothing, or takes you somewhere other than
 where you were.

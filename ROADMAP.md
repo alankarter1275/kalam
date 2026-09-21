@@ -1228,6 +1228,21 @@ they need 1.2's asynchronous service layer underneath them.
   Per-book cache budgets come with it — `set_cache_budget` already exists, only
   the call is missing.
 
+**Field report, round 1 (2026-09-21).** The whole 2.x batch went through its
+first real run on the device; the report and every fix are itemized in
+`docs/manual-test-checklist.md` ("Round 2"). Caught only there: the importer
+never accepted `.pdf` at all (fixed — a PDF now imports like a comic, page
+one as cover); the hyphenation toggle never *asked* for hyphenation, so it
+showed nothing in either position (fixed — "on" claims `hyphens: auto`, and
+a test pins it); touchpad smooth-scroll ignored the scroll-speed setting
+(fixed — surface deltas scale by step/default); jump-back's Backspace never
+arrived through the focus-dependent capture path (fixed — window-global
+shortcut, typing-guarded, and the on-screen undo button retired as clutter);
+the settings sidebar's leave-timer killed dropdown popups mid-pick (fixed —
+hold while a popup owns the session); the two-page toggle now greys in
+continuous scroll; the fonts folder copies its path to the clipboard when no
+file manager exists; keyboard shortcuts moved to their own settings tab.
+
 **What already survived.** The dictionary overhaul shipped ten phases under
 WebKit; most of it is SQLite and is intact — the headword index, WordNet
 lemmatization, phrase decomposition, the merged store, the popup UI and part-of-

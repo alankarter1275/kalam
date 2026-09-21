@@ -1809,10 +1809,23 @@ impl ReaderView {
             if view.mode() != ReadingMode::Scrolled {
                 return glib::Propagation::Proceed;
             }
-            // A wheel reports whole notches; a touchpad reports pixels
-            // already, and says so.
+            // Scrolling is reading too: a reader who scrolls with a thumb
+            // on the pad still wants the pointer out of the text. Only
+            // motion brings it back (roadmap 2.9, second report).
+            if view.autohide_cursor() {
+                view.set_cursor(Some("none"));
+                view.arm_cursor_timer();
+            }
+            // A wheel reports whole notches; a touchpad reports pixels and
+            // says so via `ScrollUnit::Surface`. Both honour the step
+            // setting: a touchpad's raw pixels are the motion a 92 px step
+            // already gives, so the same ratio scales each — the setting
+            // used to be wheel-only, and a pad ignored it (2.9 field
+            // report).
             let step = match controller.unit() {
-                gtk::gdk::ScrollUnit::Surface => dy as f32,
+                gtk::gdk::ScrollUnit::Surface => {
+                    dy as f32 * (view.wheel_step() / WHEEL_STEP)
+                }
                 _ => dy as f32 * view.wheel_step(),
             };
             let _ = view.scroll_by(step);

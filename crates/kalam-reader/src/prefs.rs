@@ -323,9 +323,14 @@ impl KalamPrefs {
              line-height: 1.25 !important; margin-top: 1.4em !important; }}\n\
              a {{ text-decoration: none !important; }}\n"
         );
-        // Hyphenation off = force the computed style the layout keys its
-        // soft-hyphen insertion on to `manual`.
-        if !prefs.hyphenate {
+        // Hyphenation has to be asked for, not merely left alone: no real
+        // book ships a `hyphens: auto` rule of its own accord, so a toggle
+        // that only *refrained from unsetting* it showed nothing in either
+        // position (the first field report from 2.4). On = claim it on the
+        // paragraphs; off = force it off even where the publisher asked.
+        if prefs.hyphenate {
+            css.push_str("p { hyphens: auto !important; }\n");
+        } else {
             css.push_str("* { hyphens: manual !important; }\n");
         }
         css
@@ -444,6 +449,27 @@ mod tests {
         assert_eq!(wild.column_px, 860.0);
         // A blank family name is treated as "use the default".
         assert_eq!(wild.font_family, None);
+    }
+
+    #[test]
+    fn hyphenation_on_claims_hyphens_auto() {
+        // First field report from 2.4: the toggle showed nothing in either
+        // position because the skin only ever forced `manual`. "On" must
+        // set `hyphens: auto` for the layout's insertion to key off.
+        let on = KalamPrefs {
+            hyphenate: true,
+            ..KalamPrefs::default()
+        }
+        .skin_css();
+        assert!(on.contains("hyphens: auto"), "on sets auto: {on}");
+        assert!(!on.contains("manual"), "on never forces manual: {on}");
+        let off = KalamPrefs {
+            hyphenate: false,
+            ..KalamPrefs::default()
+        }
+        .skin_css();
+        assert!(off.contains("hyphens: manual"), "off forces manual: {off}");
+        assert!(!off.contains("hyphens: auto"), "off never sets auto: {off}");
     }
 
     #[test]

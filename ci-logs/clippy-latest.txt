@@ -1,4 +1,18 @@
-(no lines matched; last 100 lines of output)
+src/pages/reader/chrome.rs:87:50: [1m[91merror[E0425][0m: cannot find type `ReaderModelWidgets` in module `super`: not found in `super`
+src/pages/reader/chrome.rs:123:22: [1m[91merror[E0425][0m: cannot find type `ReaderModelWidgets` in module `super`: not found in `super`
+src/pages/reader/chrome.rs:142:53: [1m[91merror[E0425][0m: cannot find type `ReaderModelWidgets` in module `super`: not found in `super`
+src/pages/reader/mod.rs:20:64: [1m[91merror[0m: unused import: `reader_sidebar_tab_content`
+src/pages/reader/mod.rs:105:1: [1m[91merror[E0046][0m: not all trait items implemented, missing: `Root`, `Widgets`, `init_root`: missing `Root`, `Widgets`, `init_root` in implementation
+src/pages/reader/mod.rs:940:21: [1m[91merror[E0609][0m: no field `web_host` on type `()`: unknown field
+src/pages/reader/mod.rs:973:21: [1m[91merror[E0609][0m: no field `web_host` on type `()`: unknown field
+src/pages/reader/mod.rs:975:17: [1m[91merror[E0609][0m: no field `left_panel_host` on type `()`: unknown field
+src/pages/reader/mod.rs:976:17: [1m[91merror[E0609][0m: no field `right_panel_host` on type `()`: unknown field
+src/pages/reader/mod.rs:978:14: [1m[91merror[E0609][0m: no field `left_panel_host` on type `()`: unknown field
+src/pages/reader/mod.rs:982:14: [1m[91merror[E0609][0m: no field `right_panel_host` on type `()`: unknown field
+src/pages/reader/mod.rs:997:37: [1m[91merror[E0609][0m: no field `left_cover_host` on type `()`: unknown field
+src/pages/reader/mod.rs:998:42: [1m[91merror[E0609][0m: no field `reader_stage` on type `()`: unknown field
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 13 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 13 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -22,5 +36,20 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 23.13s
---- run 35567383914 ---
+src/pages/reader/chrome.rs:87:50: [1m[91merror[E0425][0m: cannot find type `ReaderModelWidgets` in module `super`: not found in `super`
+src/pages/reader/chrome.rs:123:22: [1m[91merror[E0425][0m: cannot find type `ReaderModelWidgets` in module `super`: not found in `super`
+src/pages/reader/chrome.rs:142:53: [1m[91merror[E0425][0m: cannot find type `ReaderModelWidgets` in module `super`: not found in `super`
+src/pages/reader/mod.rs:20:64: [1m[91merror[0m: unused import: `reader_sidebar_tab_content`
+src/pages/reader/mod.rs:105:1: [1m[91merror[E0046][0m: not all trait items implemented, missing: `Root`, `Widgets`, `init_root`: missing `Root`, `Widgets`, `init_root` in implementation
+src/pages/reader/mod.rs:940:21: [1m[91merror[E0609][0m: no field `web_host` on type `()`: unknown field
+src/pages/reader/mod.rs:973:21: [1m[91merror[E0609][0m: no field `web_host` on type `()`: unknown field
+src/pages/reader/mod.rs:975:17: [1m[91merror[E0609][0m: no field `left_panel_host` on type `()`: unknown field
+src/pages/reader/mod.rs:976:17: [1m[91merror[E0609][0m: no field `right_panel_host` on type `()`: unknown field
+src/pages/reader/mod.rs:978:14: [1m[91merror[E0609][0m: no field `left_panel_host` on type `()`: unknown field
+src/pages/reader/mod.rs:982:14: [1m[91merror[E0609][0m: no field `right_panel_host` on type `()`: unknown field
+src/pages/reader/mod.rs:997:37: [1m[91merror[E0609][0m: no field `left_cover_host` on type `()`: unknown field
+src/pages/reader/mod.rs:998:42: [1m[91merror[E0609][0m: no field `reader_stage` on type `()`: unknown field
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 13 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 13 previous errors
+--- run 35568186737 ---

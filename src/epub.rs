@@ -45,8 +45,8 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if ext != "epub" && ext != "cbz" && ext != "cbr" {
-        return Err(anyhow!("unsupported file format .{ext} (expected .epub, .cbz, or .cbr)"));
+    if ext != "epub" && ext != "cbz" && ext != "cbr" && ext != "pdf" {
+        return Err(anyhow!("unsupported file format .{ext} (expected .epub, .cbz, .cbr, or .pdf)"));
     }
 
     let hash = db::hash_file(source)?;
@@ -64,7 +64,35 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     }
 
     let (title, authors, description, series, tags, format, file_name, cover_name) =
-        if ext == "cbz" || ext == "cbr" {
+        if ext == "pdf" {
+            // A PDF carries no title a library can trust — the file name is the
+            // safest label, same as a comic. Page one becomes the cover, so a
+            // book is never grey in the grid. Best-effort: a doc that renders
+            // nothing still imports.
+            let title = source
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| "Untitled PDF".into());
+            let cover_name = crate::pdf::PdfDocument::open(source)
+                .ok()
+                .and_then(|doc| doc.render_page_image(1, false))
+                .and_then(|img| {
+                    let mut bytes = std::io::Cursor::new(Vec::new());
+                    img.write_to(&mut bytes, image::ImageFormat::Png).ok()?;
+                    Some(("cover.png".to_string(), bytes.into_inner()))
+                });
+            (
+                title,
+                "Unknown".to_string(),
+                String::new(),
+                None,
+                Vec::new(),
+                BookFormat::Pdf,
+                "book.pdf".to_string(),
+                cover_name,
+            )
+        } else if ext == "cbz" || ext == "cbr" {
             let title = source
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())

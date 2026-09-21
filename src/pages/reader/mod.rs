@@ -44,7 +44,6 @@ fn report_errors(errors: &[String]) {
     }
 }
 
-#[relm4::component(pub)]
 /// Install (or replace) the window-global shortcut for jump-back from the
 /// current binding (roadmaps 2.6 and 2.9). There is deliberately no
 /// on-screen undo button — it read as clutter — so the key must answer
@@ -102,6 +101,7 @@ fn install_jump_back_shortcut(
     *slot.borrow_mut() = Some(shortcuts);
 }
 
+#[relm4::component(pub)]
 impl Component for ReaderModel {
     type Init = (Arc<Catalog>, i64);
     type Input = ReaderMsg;

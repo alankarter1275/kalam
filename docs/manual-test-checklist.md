@@ -74,6 +74,21 @@ tick them off. The agent will remind you about this list.
       Bind a key another action already has: that other action should go to
       **"None"**, not keep working. **Reset to defaults** puts them all back.
       Survives restart. Note `m` no longer adds a bookmark — `b` does.
+- [ ] **2.11 Text PDFs:** open a **text** PDF (a novel or paper, not a scan).
+      It should show readable reflowed text instead of grey stripes, with a
+      note saying the page has no image. Open a **scanned** PDF — it should
+      still show the page image exactly as before. The **Text Reflow** button
+      should still switch either way, and your choice should stick.
+
+## Numbers, if you can (for 2.12's "measure first")
+Run the app with `KALAM_TIMING=1` and send me the `[timing]` lines:
+
+    KALAM_TIMING=1 cargo run --release
+
+Worth having: `pdf_open` and `pdf_page_reflow` / `pdf_page_image` (open one
+text PDF and one scanned PDF), plus `book_open` for an EPUB. That tells us
+what the two PDF paths actually cost on your machine instead of what I
+expect them to cost.
 
 ## Carried over from earlier work (re-verify if you haven't)
 - [ ] Splash screen shows the brand on cold start (no blank window).

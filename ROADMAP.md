@@ -1206,6 +1206,19 @@ they need 1.2's asynchronous service layer underneath them.
   of text**, and page mode is the default (`reflow_mode: false` at
   `src/pages/pdf_reader.rs:89`), so an ordinary text PDF opens as a page of
   grey stripes. Real rendering — MuPDF — stays deferred.
+  - **Done 2026-09-21:** a page with no picture of its own is now shown with
+    its text reflowed, and the toolbar says so ("Reflowed text — this page has
+    no image to show"). `PdfDocument::page_has_picture` answers the question
+    with the renderer's own resource walk but decodes nothing, so it costs a
+    dictionary read per page turn. Scanned pages are untouched: they have a
+    picture, so they still show the picture. The Text Reflow toggle still
+    wins once a reader uses it.
+  - **Timings added with it:** `KALAM_TIMING=1` now reports `pdf_open` and,
+    per page turn, `pdf_page_reflow` or `pdf_page_image` — the two paths have
+    very different costs (one reads a page's text, the other builds a
+    full-page RGBA bitmap), and this is the measurement that says which ran
+    and what it took. Nothing is benchmarked yet; there is no PDF corpus in
+    the sandbox.
 - **2.12 — Bubbles.** Several books open at once as stacked circles over any screen in
   the app; tap one to read it in a floating window. Full design, including what
   has to be measured first, is in

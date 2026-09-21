@@ -46,6 +46,7 @@ pub(crate) fn build_reader_settings_panel(
     for (label, pane) in [
         ("Reading", ReaderSettingsPane::Reading),
         ("UI", ReaderSettingsPane::Ui),
+        ("Shortcuts", ReaderSettingsPane::Shortcuts),
     ] {
         let btn = gtk::Button::with_label(label);
         btn.add_css_class("kalam-reader-settings-switch");
@@ -297,35 +298,6 @@ pub(crate) fn build_reader_settings_panel(
         ReaderMsg::WheelStepDelta(8),
     ));
     reading_page.append(&pointer_section);
-    reading_page.append(&reader_panel_divider());
-
-    // Roadmap 2.9: the reader's own keys, editable here.
-    let key_section = reader_settings_section("Keyboard");
-    let mut keybind_buttons = Vec::new();
-    for action in ReaderAction::ALL {
-        let binding = keybinds.borrow().binding(action);
-        let button = keybind_row(&key_section, action, binding, sender);
-        keybind_buttons.push((action, button));
-    }
-    let key_hint = gtk::Label::new(Some(
-        "Click a key, then press the one you want; Escape cancels. A key does one \
-         thing, so binding it elsewhere moves it.",
-    ));
-    key_hint.add_css_class("kalam-reader-setting-hint");
-    key_hint.set_wrap(true);
-    key_hint.set_xalign(0.0);
-    key_section.append(&key_hint);
-
-    let reset_keys = gtk::Button::with_label("Reset to defaults");
-    reset_keys.add_css_class("flat");
-    let reset_tx = sender.input_sender().clone();
-    reset_keys.connect_clicked(move |_| {
-        let _ = reset_tx.send(ReaderMsg::ResetKeyBindings);
-    });
-    key_section.append(&reset_keys);
-    reading_page.append(&key_section);
-    reading_page.append(&reader_panel_divider());
-
     let dict_section = reader_settings_section("Dictionary");
 
     let hint_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -359,6 +331,40 @@ pub(crate) fn build_reader_settings_panel(
     stack.add_named(
         &reading_page,
         Some(reader_settings_pane_name(ReaderSettingsPane::Reading)),
+    );
+
+    // Roadmap 2.9, third cut: the reader's own keys, in a tab of their
+    // own — twelve rows deep they were burying the reading settings, and
+    // the tab layout is how the panel already says "a different kind of
+    // setting".
+    let shortcuts_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let key_section = reader_settings_section("Keyboard");
+    let mut keybind_buttons = Vec::new();
+    for action in ReaderAction::ALL {
+        let binding = keybinds.borrow().binding(action);
+        let button = keybind_row(&key_section, action, binding, sender);
+        keybind_buttons.push((action, button));
+    }
+    let key_hint = gtk::Label::new(Some(
+        "Click a key, then press the one you want; Escape cancels. A key does one \
+         thing, so binding it elsewhere moves it.",
+    ));
+    key_hint.add_css_class("kalam-reader-setting-hint");
+    key_hint.set_wrap(true);
+    key_hint.set_xalign(0.0);
+    key_section.append(&key_hint);
+
+    let reset_keys = gtk::Button::with_label("Reset to defaults");
+    reset_keys.add_css_class("flat");
+    let reset_tx = sender.input_sender().clone();
+    reset_keys.connect_clicked(move |_| {
+        let _ = reset_tx.send(ReaderMsg::ResetKeyBindings);
+    });
+    key_section.append(&reset_keys);
+    shortcuts_page.append(&key_section);
+    stack.add_named(
+        &shortcuts_page,
+        Some(reader_settings_pane_name(ReaderSettingsPane::Shortcuts)),
     );
 
     let ui_page = gtk::Box::new(gtk::Orientation::Vertical, 0);

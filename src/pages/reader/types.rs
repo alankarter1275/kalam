@@ -48,6 +48,7 @@ pub(crate) enum WordScope {
 pub(crate) enum ReaderSettingsPane {
     Reading,
     Ui,
+    Shortcuts,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

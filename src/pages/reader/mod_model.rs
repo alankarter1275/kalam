@@ -39,6 +39,15 @@ pub struct ReaderModel {
     >,
     /// The buttons that show those keys, so a change can repaint them.
     pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
+    /// Roadmap 2.7's spread toggle, kept so the shell can grey it while
+    /// the reader is in continuous scroll, where a spread never applies
+    /// (sensitivity only — the pref itself is untouched).
+    pub(crate) dual_page_switch: gtk::Switch,
+    /// The window-global jump-back shortcut (roadmaps 2.6/2.9), swapped in
+    /// place whenever the key is rebound. Keyboard-only on purpose: the
+    /// on-screen undo button read as clutter and went away.
+    pub(crate) jump_back_shortcut:
+        std::rc::Rc<std::cell::RefCell<Option<gtk::ShortcutController>>>,
     /// Roadmap 2.9: hide the pointer when it sits still.
     pub(crate) autohide_cursor: bool,
     /// Roadmap 2.9: CSS px per wheel notch, and the label showing it.

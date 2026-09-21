@@ -207,7 +207,7 @@ pub(crate) fn build_reader_settings_panel(
         on: bool,
         tx: &relm4::Sender<ReaderMsg>,
         make_msg: fn(bool) -> ReaderMsg,
-    ) {
+    ) -> gtk::Switch {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.add_css_class("kalam-reader-setting-row");
         let name = gtk::Label::new(Some(label));
@@ -221,6 +221,7 @@ pub(crate) fn build_reader_settings_panel(
         });
         row.append(&switch);
         section.append(&row);
+        switch
     }
     let input_tx = sender.input_sender();
     setting_toggle(&text_section, "Justify", justify, input_tx, ReaderMsg::SetJustify);
@@ -259,7 +260,7 @@ pub(crate) fn build_reader_settings_panel(
     mode_section.append(&mode_row);
 
     // Roadmap 2.7: the spread was automatic and could not be turned off.
-    setting_toggle(
+    let dual_page_switch = setting_toggle(
         &mode_section,
         "Two pages side by side",
         dual_page,
@@ -428,6 +429,7 @@ pub(crate) fn build_reader_settings_panel(
         column_width_label,
         wheel_step_label,
         keybind_buttons,
+        dual_page_switch,
         theme_dots: dots,
         ui_controls,
     }

@@ -45,6 +45,63 @@ fn report_errors(errors: &[String]) {
 }
 
 #[relm4::component(pub)]
+/// Install (or replace) the window-global shortcut for jump-back from the
+/// current binding (roadmaps 2.6 and 2.9). There is deliberately no
+/// on-screen undo button — it read as clutter — so the key must answer
+/// wherever the focus happens to sit right after a jump: a sidebar row,
+/// a popup, nowhere at all. A window-global shortcut with a typing guard
+/// does that, the same route Ctrl+F always used; the focus-dependent
+/// capture path on the reader root could miss, which is what the first
+/// field report showed. When nothing jumpable is fresh, the handler
+/// declines.
+fn install_jump_back_shortcut(
+    root: &gtk::Overlay,
+    slot: &std::rc::Rc<std::cell::RefCell<Option<gtk::ShortcutController>>>,
+    keybinds: &std::rc::Rc<std::cell::RefCell<keybinds::KeyBindings>>,
+    sender: &ComponentSender<ReaderModel>,
+) {
+    if let Some(old) = slot.borrow_mut().take() {
+        root.remove_controller(&old);
+    }
+    let pref = keybinds
+        .borrow()
+        .binding(keybinds::ReaderAction::JumpBack)
+        .to_pref();
+    if pref == keybinds::UNBOUND {
+        return;
+    }
+    let accel = match pref.strip_prefix("<ctrl>") {
+        Some(rest) => format!("<Control>{rest}"),
+        None => pref,
+    };
+    let Some(trigger) = gtk::ShortcutTrigger::parse_string(&accel) else {
+        return;
+    };
+    let shortcuts = gtk::ShortcutController::new();
+    shortcuts.set_scope(gtk::ShortcutScope::Global);
+    let s = sender.clone();
+    let action = gtk::CallbackAction::new(move |w, _| {
+        // Deleting a character in the search box is not a jump.
+        let typing = w
+            .root()
+            .and_then(|r| r.focus())
+            .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
+        if typing {
+            return gtk::glib::Propagation::Proceed;
+        }
+        s.input(ReaderMsg::JumpBack);
+        gtk::glib::Propagation::Stop
+    });
+    shortcuts.add_shortcut(
+        gtk::Shortcut::builder()
+            .trigger(&trigger)
+            .action(&action)
+            .build(),
+    );
+    root.add_controller(shortcuts.clone());
+    *slot.borrow_mut() = Some(shortcuts);
+}
+
 impl Component for ReaderModel {
     type Init = (Arc<Catalog>, i64);
     type Input = ReaderMsg;
@@ -134,15 +191,6 @@ impl Component for ReaderModel {
                     connect_clicked => ReaderMsg::AddBookmark,
                 },
 
-                // Roadmap 2.6: stands only while the last jump is fresh.
-                gtk::Button {
-                    set_child: Some(&crate::icons::symbolic_with_classes("edit-undo-symbolic", 16, &["kalam-inline-icon"])),
-                    add_css_class: "kalam-reader-back",
-                    #[watch]
-                    set_visible: model.can_jump_back,
-                    set_tooltip_text: Some("Jump back (Backspace)"),
-                    connect_clicked => ReaderMsg::JumpBack,
-                },
             },
 
             add_overlay = &gtk::Box {
@@ -686,6 +734,12 @@ impl Component for ReaderModel {
         // controller below, so a change in settings takes effect at once.
         let keybinds = keybinds::KeyBindings::shared(catalog);
 
+        // Filled by install_jump_back_shortcut below, and swapped whenever
+        // the key is rebound in Settings.
+        let jump_back_shortcut: std::rc::Rc<
+            std::cell::RefCell<Option<gtk::ShortcutController>>,
+        > = std::rc::Rc::new(std::cell::RefCell::new(None));
+
         let ReaderSettingsControls {
             root: settings_panel,
             settings_stack,
@@ -695,6 +749,7 @@ impl Component for ReaderModel {
             column_width_label,
             wheel_step_label,
             keybind_buttons,
+            dual_page_switch,
             theme_dots,
             ui_controls,
         } = build_reader_settings_panel(
@@ -770,6 +825,7 @@ impl Component for ReaderModel {
             publisher_styles: catalog_publisher,
             dual_page: catalog_dual_page,
             keybinds,
+            jump_back_shortcut,
             autohide_cursor: catalog_autohide,
             wheel_step: catalog_wheel,
             can_jump_back: false,
@@ -831,6 +887,7 @@ impl Component for ReaderModel {
             column_width_label,
             wheel_step_label,
             keybind_buttons,
+            dual_page_switch,
             theme_dots,
             ui_controls,
             highlight_filter_buttons,
@@ -1147,6 +1204,17 @@ impl Component for ReaderModel {
         }
         root.add_controller(shortcut_ctrl);
 
+        // Roadmap 2.6/2.9: jump back is keyboard-only, and it must answer
+        // wherever the focus happens to sit right after a jump, so it rides
+        // the window-global route above rather than the focus-dependent
+        // capture path. Rebinding in Settings swaps it through the slot.
+        install_jump_back_shortcut(
+            &root,
+            &model.jump_back_shortcut,
+            &model.keybinds,
+            &sender,
+        );
+
         ComponentParts { model, widgets }
     }
 
@@ -1155,7 +1223,7 @@ impl Component for ReaderModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         let mut refresh_sidebar_header = false;
         let mut refresh_toc = false;
@@ -1445,12 +1513,17 @@ impl Component for ReaderModel {
                 engine::dismiss(self.note_popover.take());
             }
             ReaderMsg::JumpBack => {
-                // The engine pops its own trail; the position report that
-                // follows withdraws the offer.
-                self.can_jump_back = false;
-                self.with_view(|v| {
-                    v.go_back();
-                });
+                // Keyboard-only now, and a keystroke can land long after
+                // the jump went stale — the guard that used to be the
+                // button's visibility moves in here. The engine pops its
+                // own trail; the position report that follows withdraws
+                // the offer.
+                if self.can_jump_back {
+                    self.can_jump_back = false;
+                    self.with_view(|v| {
+                        v.go_back();
+                    });
+                }
             }
             ReaderMsg::SetDualPage(on) => {
                 if on != self.dual_page {
@@ -1475,6 +1548,17 @@ impl Component for ReaderModel {
                     move |res| {
                         if let Err(e) = res {
                             log::warn!("cannot open {}: {e}", dir.display());
+                            // No desktop file manager on this machine (a
+                            // terminal-only setup, e.g. yazi): the next
+                            // best thing is the path in the clipboard and
+                            // a toast saying so.
+                            if let Some(display) = gtk::gdk::Display::default() {
+                                display.clipboard().set_text(&dir.display().to_string());
+                                crate::notify::error(
+                                    "Could not open the fonts folder",
+                                    "Its path is on the clipboard instead",
+                                );
+                            }
                         }
                     },
                 );
@@ -1508,10 +1592,22 @@ impl Component for ReaderModel {
                     bindings.bind(action, binding);
                     bindings.save(self.service.catalog(), action);
                 }
+                install_jump_back_shortcut(
+                    root,
+                    &self.jump_back_shortcut,
+                    &self.keybinds,
+                    &sender,
+                );
                 refresh_controls = true;
             }
             ReaderMsg::ResetKeyBindings => {
                 self.keybinds.borrow_mut().reset_all(self.service.catalog());
+                install_jump_back_shortcut(
+                    root,
+                    &self.jump_back_shortcut,
+                    &self.keybinds,
+                    &sender,
+                );
                 refresh_controls = true;
             }
             ReaderMsg::SwitchSettingsPane(pane) => {
@@ -2009,10 +2105,24 @@ impl Component for ReaderModel {
             }
             ReaderMsg::ForceCloseRight(token) => {
                 if token == self.right_close_token {
-                    self.close_annotation_editor();
-                    self.right_sidebar_open = false;
-                    self.right_close_timer = None;
-                    refresh_tabs = true;
+                    // A dropdown's list (the Typeface picker) is a separate
+                    // surface: chasing the pointer into it fired the
+                    // sidebar's leave and started this timer, while the
+                    // reader is very much still engaged. While any popup
+                    // owns the session the reader's window is inactive, so
+                    // hold the sidebar and re-judge when focus comes home.
+                    let popup_active = root
+                        .root()
+                        .and_then(|r| r.downcast::<gtk::Window>().ok())
+                        .is_some_and(|w| !w.is_active());
+                    if popup_active {
+                        self.schedule_right_close(sender.clone());
+                    } else {
+                        self.close_annotation_editor();
+                        self.right_sidebar_open = false;
+                        self.right_close_timer = None;
+                        refresh_tabs = true;
+                    }
                 }
             }
             ReaderMsg::CloseSidebars => {

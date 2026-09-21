@@ -197,7 +197,7 @@ impl KeyBinding {
     }
 
     /// As stored: `<ctrl>f`, `d`, `plus`.
-    fn to_pref(&self) -> String {
+    pub(crate) fn to_pref(&self) -> String {
         if self.ctrl {
             format!("<ctrl>{}", self.name)
         } else {
@@ -224,7 +224,7 @@ impl KeyBinding {
 }
 
 /// The name an action with no key is stored and shown under.
-const UNBOUND: &str = "none";
+pub(crate) const UNBOUND: &str = "none";
 
 /// The toolkit's name for a key, or nothing for one it will not name.
 fn key_name(key: gdk::Key) -> String {

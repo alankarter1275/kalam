@@ -98,6 +98,7 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) column_width_label: gtk::Label,
     pub(crate) wheel_step_label: gtk::Label,
     pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
+    pub(crate) dual_page_switch: gtk::Switch,
     pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
     pub(crate) ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
 }

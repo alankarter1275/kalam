@@ -35,6 +35,12 @@ pub(crate) fn sync_reader_controls(model: &ReaderModel) {
     model
         .column_width_label
         .set_label(&model.column_px.to_string());
+    // A spread is a paged-mode thing: the toggle stays on record but does
+    // nothing under continuous scroll, so the row greys out instead of
+    // pretending (2.7, first field report).
+    model
+        .dual_page_switch
+        .set_sensitive(!model.scrolled);
     model
         .wheel_step_label
         .set_label(&model.wheel_step.to_string());

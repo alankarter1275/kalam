@@ -44,6 +44,26 @@ fn report_errors(errors: &[String]) {
     }
 }
 
+
+/// Any visible `gtk::Popover` under `widget`? An open dropdown list or
+/// menu is one, so this is how a close-on-leave timer can tell "still
+/// engaged" from "genuinely left" without touching platform grab APIs.
+fn popover_visible_in(widget: &gtk::Widget) -> bool {
+    if let Some(pop) = widget.downcast_ref::<gtk::Popover>() {
+        if pop.is_visible() {
+            return true;
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        if popover_visible_in(&c) {
+            return true;
+        }
+        child = c.next_sibling();
+    }
+    false
+}
+
 /// Install (or replace) the window-global shortcut for jump-back from the
 /// current binding (roadmaps 2.6 and 2.9). There is deliberately no
 /// on-screen undo button — it read as clutter — so the key must answer
@@ -2104,7 +2124,10 @@ impl Component for ReaderModel {
                     let hold = self
                         .right_sidebar_box
                         .as_ref()
-                        .is_some_and(|sb| sb.contains_pointer() || sb.has_grab());
+                        .is_some_and(|sb| {
+                            let sb = sb.upcast_ref::<gtk::Widget>();
+                            sb.contains_pointer() || popover_visible_in(sb)
+                        });
                     if hold {
                         self.schedule_right_close(sender.clone());
                     } else {

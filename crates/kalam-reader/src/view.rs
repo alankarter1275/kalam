@@ -79,6 +79,15 @@ const SMOOTH_STEP_CAP: f32 = 240.0;
 /// sub-pixel motions through the whole two-finger gesture (2.9, field
 /// report round 2).
 const CURSOR_SCROLL_GRACE: std::time::Duration = std::time::Duration::from_millis(160);
+
+/// Below this fraction of a chapter the back arrow jumps to the previous
+/// chapter; above it the arrow "rewinds" to the start of the current one
+/// first — the two-step unwind the reader asked for.
+const CHAPTER_START_EPS: f64 = 0.01;
+/// Tick of the hold-to-scroll timer in strip mode.
+const HOLD_TICK_MS: u64 = 20;
+/// Pixels per hold tick: ~750 px a second, smooth to the eye.
+const HOLD_STEP: f32 = 15.0;
 /// One arrow key in scrolled mode.
 const ARROW_STEP: f32 = 46.0;
 /// Where a chapter's length is guessed from before it is laid out: a
@@ -225,6 +234,15 @@ struct Inner {
     /// When the last scroll event arrived; motions inside the grace window
     /// after it are the touchpad dripping, not a reach for the pointer.
     last_scroll: Cell<std::time::Instant>,
+    /// The arrow-key the reader last chapter-stepped with: `Some(true)` =
+    /// forward, `Some(false)` = back. Pressing the opposite arrow right
+    /// after is "take me back", answered by the session's own trail;
+    /// anything in between (a page turn, a scroll, another jump) clears it.
+    last_chapter_step: Cell<Option<bool>>,
+    /// Hold-to-scroll timers for the arrow keys in strip mode: holding an
+    /// arrow moves the text in a smooth stream instead of repeated hops.
+    hold_up: RefCell<Option<gtk::glib::SourceId>>,
+    hold_down: RefCell<Option<gtk::glib::SourceId>>,
     /// CSS px one wheel notch scrolls in scrolled mode.
     wheel_step: Cell<f32>,
     /// The strip, in scrolled mode; `None` in paged mode and before the
@@ -354,6 +372,9 @@ impl ReaderView {
                 dual_page: Cell::new(true),
                 hide_cursor: Cell::new(true),
                 last_scroll: Cell::new(std::time::Instant::now()),
+                last_chapter_step: Cell::new(None),
+                hold_up: RefCell::new(None),
+                hold_down: RefCell::new(None),
                 cursor_timer: RefCell::new(None),
                 wheel_step: Cell::new(WHEEL_STEP),
                 strip: RefCell::new(None),
@@ -712,6 +733,74 @@ impl ReaderView {
     /// every `goto`, link follow and TOC entry pushes onto it — so this is
     /// the return trip, however many jumps deep. `false` with nothing to
     /// go back to.
+    /// One arrow-key chapter step (roadmap 2.9, third keyboard pass).
+    /// Forward (`next = true`) always lands on the next chapter's start.
+    /// Back first rewinds to the current chapter's start if the reader is
+    /// inside it, and only on a second press crosses into the previous
+    /// chapter. Pressing the opposite arrow right after any step is "take
+    /// me back" and is answered by the session trail; anything else
+    /// happening in between clears that notion.
+    fn chapter_step(&self, next: bool) {
+        let last = self.inner.last_chapter_step.get();
+        if last == Some(!next) && self.can_go_back() {
+            let _ = self.go_back();
+            self.inner.last_chapter_step.set(None);
+            return;
+        }
+        let pos = self.position();
+        let target = if next {
+            pos.chapter.saturating_add(1)
+        } else if pos.fraction > CHAPTER_START_EPS {
+            pos.chapter
+        } else {
+            pos.chapter.saturating_sub(1)
+        };
+        if next && target >= pos.chapter_count {
+            return;
+        }
+        if self.goto_chapter(target, 0.0) {
+            self.inner.last_chapter_step.set(Some(next));
+        }
+    }
+
+    /// Start (or ignore a repeat of) a held arrow scroll in strip mode.
+    /// The first press nudges by a line like before; the timer takes the
+    /// motion over so holding glides instead of hopping.
+    fn arrow_scroll_hold_start(&self, pix: f32, up: bool) {
+        let hold = if up { &self.inner.hold_up } else { &self.inner.hold_down };
+        if hold.borrow().is_some() {
+            return; // a repeat of the key we're already holding
+        }
+        let _ = self.scroll_by(pix);
+        self.inner.last_chapter_step.set(None);
+        let view = self.clone();
+        let dir = if pix < 0.0 { -1.0_f32 } else { 1.0_f32 };
+        let id = gtk::glib::timeout_add_local(
+            std::time::Duration::from_millis(HOLD_TICK_MS),
+            move || {
+                // Stop when the mode flips or the widget goes away.
+                if view.mode() != ReadingMode::Scrolled || !view.area.is_realized() {
+                    if up {
+                        view.inner.hold_up.borrow_mut().take();
+                    } else {
+                        view.inner.hold_down.borrow_mut().take();
+                    }
+                    return gtk::glib::ControlFlow::Break;
+                }
+                let _ = view.scroll_by(HOLD_STEP * dir);
+                gtk::glib::ControlFlow::Continue
+            },
+        );
+        *hold.borrow_mut() = Some(id);
+    }
+
+    fn arrow_scroll_hold_stop(&self, up: bool) {
+        let hold = if up { &self.inner.hold_up } else { &self.inner.hold_down };
+        if let Some(id) = hold.borrow_mut().take() {
+            id.remove();
+        }
+    }
+
     pub fn go_back(&self) -> bool {
         let moved = self.inner.session.borrow_mut().back();
         if moved {
@@ -1775,21 +1864,43 @@ impl ReaderView {
                     view.clear_selection();
                     return glib::Propagation::Stop;
                 }
-                // In a strip the vertical arrows are lines, not pages;
-                // Home and End are the book's ends.
+                // Arrows, second keyboard pass: in a strip the vertical
+                // pair scrolls (holding glides, not hops) and the
+                // horizontal pair steps chapters; in paged mode it is the
+                // other way around — Left/Right turn pages via the KeyMap,
+                // Up/Down step chapters. PageUp/PageDown keep their KeyMap
+                // paging in both modes. Home/End stay the book's ends.
                 Some("Up") if scrolled => {
-                    let _ = view.scroll_by(-ARROW_STEP);
+                    view.arrow_scroll_hold_start(-ARROW_STEP, true);
                     return glib::Propagation::Stop;
                 }
                 Some("Down") if scrolled => {
-                    let _ = view.scroll_by(ARROW_STEP);
+                    view.arrow_scroll_hold_start(ARROW_STEP, false);
+                    return glib::Propagation::Stop;
+                }
+                Some("Left") if scrolled => {
+                    view.chapter_step(false);
+                    return glib::Propagation::Stop;
+                }
+                Some("Right") if scrolled => {
+                    view.chapter_step(true);
+                    return glib::Propagation::Stop;
+                }
+                Some("Up") if !scrolled => {
+                    view.chapter_step(false);
+                    return glib::Propagation::Stop;
+                }
+                Some("Down") if !scrolled => {
+                    view.chapter_step(true);
                     return glib::Propagation::Stop;
                 }
                 Some("Home") if scrolled => {
+                    view.inner.last_chapter_step.set(None);
                     view.scroll_to(0.0);
                     return glib::Propagation::Stop;
                 }
                 Some("End") if scrolled => {
+                    view.inner.last_chapter_step.set(None);
                     view.scroll_to(f32::MAX);
                     return glib::Propagation::Stop;
                 }
@@ -1797,7 +1908,10 @@ impl ReaderView {
                     .and_then(engine_key)
                     .and_then(|k| view.inner.keys.action(k))
                 {
-                    Some(action) => view.apply(action),
+                    Some(action) => {
+                        view.inner.last_chapter_step.set(None);
+                        view.apply(action)
+                    }
                     None => return glib::Propagation::Proceed,
                 },
             };
@@ -1807,6 +1921,14 @@ impl ReaderView {
                 glib::Propagation::Stop
             } else {
                 glib::Propagation::Proceed
+            }
+        });
+        let view = self.clone();
+        key.connect_key_released(move |_, keyval, _, _| {
+            match keyval.name().as_deref() {
+                Some("Up") => view.arrow_scroll_hold_stop(true),
+                Some("Down") => view.arrow_scroll_hold_stop(false),
+                _ => {}
             }
         });
         self.keep_controller(&key);
@@ -1825,6 +1947,7 @@ impl ReaderView {
             // Stamp first: the motions a touchpad drips through a
             // two-finger scroll must not undo the hide below.
             view.inner.last_scroll.set(std::time::Instant::now());
+            view.inner.last_chapter_step.set(None);
             // Scrolling is reading too: a reader who scrolls with a thumb
             // on the pad still wants the pointer out of the text. Only
             // motion brings it back (roadmap 2.9, second report).

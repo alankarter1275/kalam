@@ -2105,9 +2105,24 @@ impl Component for ReaderModel {
             }
             ReaderMsg::ForceCloseLeft(token) => {
                 if token == self.left_close_token {
-                    self.left_sidebar_open = false;
-                    self.left_close_timer = None;
-                    refresh_tabs = true;
+                    // THIS is the sidebar that hosts Settings — and its
+                    // dropdowns. Three previous fixes all patched the right
+                    // sidebar while the Typeface picker's list kept dying
+                    // over here. Same approach as the right: an open popup
+                    // shows up as a visible GtkPopover inside the tree;
+                    // hold and re-judge. (A pointer that simply comes back
+                    // sends OpenLeftSidebar and cancels this timer itself.)
+                    let hold = self
+                        .left_sidebar_box
+                        .as_ref()
+                        .is_some_and(|sb| popover_visible_in(sb.upcast_ref()));
+                    if hold {
+                        self.schedule_left_close(sender.clone());
+                    } else {
+                        self.left_sidebar_open = false;
+                        self.left_close_timer = None;
+                        refresh_tabs = true;
+                    }
                 }
             }
             ReaderMsg::ForceCloseRight(token) => {

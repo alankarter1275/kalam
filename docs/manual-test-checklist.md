@@ -1,5 +1,35 @@
 # Phase 2 test plan
 
+## Round 3 — typeface list, fourth attempt (the correct one), and arrow keys
+
+- **T1 Typeface picker (again):** the real root cause, finally. The panel
+  holding the Typeface dropdown lives in the **left** sidebar — all three
+  earlier fixes guarded the **right** sidebar's close timer, which was
+  never the one that fired. The left sidebar now holds exactly like the
+  right one while a dropdown list is open. **Re-test:** open Typeface,
+  move onto the list, pick Default or any face. If it still closes
+  mid-pick, say so immediately.
+- **Arrow keys — new behaviour, your spec:**
+  - **Scrolled mode:** Up/Down scroll — tap for a step, *hold* to glide
+    smoothly until you let go. Left/Right step chapters.
+  - **Paged mode:** Left/Right turn pages as before; Up/Down now step
+    chapters.
+  - **Chapter stepping:** forward always lands at the next chapter's
+    start. Backward from the middle of a chapter first rewinds to *that*
+    chapter's start; only the next press crosses into the previous one.
+  - **Opposite arrow = undo:** right after a chapter step, pressing the
+    opposite arrow takes you back to where you were (and vice versa).
+    Scrolling, Home/End or any other key in between drops that notion, so
+    later opposite presses just step chapters again.
+  **Re-test:** scrolled mode — hold Down a few seconds (smooth glide?),
+  Left from mid-chapter (chapter start?), Right immediately after (back
+  where you were?). Same pass in paged mode with Up/Down.
+
+Both built and CI-green (all tests) before this reached you. Report as
+usual: "T1" for the dropdown, "arrows" for the key cases.
+
+---
+
 ## Round 2 — what changed from your first report
 
 - **T1 Typeface picker:** fixed. Moving the pointer onto a dropdown list

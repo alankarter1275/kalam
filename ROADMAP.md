@@ -1228,6 +1228,19 @@ they need 1.2's asynchronous service layer underneath them.
   Per-book cache budgets come with it — `set_cache_budget` already exists, only
   the call is missing.
 
+**Round 3 (2026-09-22) — shipped, awaiting the report.** The typeface
+dropdown's fourth fix is the first one aimed at the right wall: the
+Settings panel hangs in the **left** sidebar (`left_stack`), and the three
+earlier holds all guarded the **right** sidebar's close timer;
+`ForceCloseLeft` now mirrors the right side's popover-tree hold. Arrow
+keys gained the reader's spec: scrolled mode — vertical arrows scroll and
+a held key glides on a 20 ms timer; horizontal arrows step chapters.
+Paged mode — vertical arrows step chapters, horizontal keep turning
+pages. A backward step from mid-chapter first rewinds to that chapter's
+start, and an opposite arrow immediately after a step is answered by the
+session trail ("take me back"); any navigation in between clears that
+memo. The PDF rebuild from scratch is queued next.
+
 **Field report, round 2 (2026-09-21, evening).** Hyphenation is **retired
 outright** — the reader's call ("I really don't like it"): toggle, pref,
 message and model field all gone; the engine keeps the capability, the app

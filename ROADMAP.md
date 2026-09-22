@@ -1228,6 +1228,19 @@ they need 1.2's asynchronous service layer underneath them.
   Per-book cache budgets come with it — `set_cache_budget` already exists, only
   the call is missing.
 
+**Field report, round 2 (2026-09-21, evening).** Hyphenation is **retired
+outright** — the reader's call ("I really don't like it"): toggle, pref,
+message and model field all gone; the engine keeps the capability, the app
+never asks. Two round-1 fixes didn't take: the sidebar-vs-dropdown hold
+(first try watched window `is_active`, which a popup doesn't reliably flip —
+replaced with a walk for a visible `gtk::Popover` inside the sidebar, which
+works on every platform), and hide-cursor-on-scroll (touchpads drip
+sub-pixel motions through a two-finger gesture and every motion re-showed
+the pointer — a 160 ms grace after each scroll event absorbs the drip).
+Smooth scroll steps are also capped at 240 px per event, because a high
+speed setting made a two-finger flick teleport whole screens. The PDF
+import and the rest of round 2 passed.
+
 **Field report, round 1 (2026-09-21).** The whole 2.x batch went through its
 first real run on the device; the report and every fix are itemized in
 `docs/manual-test-checklist.md` ("Round 2"). Caught only there: the importer
@@ -1585,7 +1598,7 @@ back; a suppression that cannot be lifted would be a trap.
 **You said PDFs are rare, so this is not on the critical path.** Recorded so it
 is not lost.
 
-The PDF reader is further from done than it looks. `src/pdf.rs` has no page
+The PDF import reader is further from done than it looks. `src/pdf.rs` has no page
 rasterizer — only `lopdf`, which reads text. `render_page_image_uncropped`
 looks for a picture embedded in the page: **scanned PDFs work**, and smart
 crop trims them correctly. With no embedded picture it falls back to

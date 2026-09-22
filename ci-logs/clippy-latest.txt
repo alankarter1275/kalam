@@ -1,4 +1,9 @@
-(no lines matched; last 100 lines of output)
+src/pages/reader/mod.rs:1583:21: [1m[91merror[E0425][0m: cannot find value `root` in this scope
+src/pages/reader/mod.rs:1593:21: [1m[91merror[E0425][0m: cannot find value `root` in this scope
+src/pages/reader/mod.rs:2107:46: [1m[91merror[E0599][0m: no method named `contains_pointer` found for reference `&gtk4::Box` in the current scope
+src/pages/reader/mod.rs:2107:71: [1m[91merror[E0599][0m: no method named `has_grab` found for reference `&gtk4::Box` in the current scope: method not found in `&gtk4::Box`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -19,8 +24,14 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 19.20s
---- run 35621531551 ---
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/pages/reader/mod.rs:1583:21: [1m[91merror[E0425][0m: cannot find value `root` in this scope
+src/pages/reader/mod.rs:1593:21: [1m[91merror[E0425][0m: cannot find value `root` in this scope
+src/pages/reader/mod.rs:2107:46: [1m[91merror[E0599][0m: no method named `contains_pointer` found for reference `&gtk4::Box` in the current scope
+src/pages/reader/mod.rs:2107:71: [1m[91merror[E0599][0m: no method named `has_grab` found for reference `&gtk4::Box` in the current scope: method not found in `&gtk4::Box`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+--- run 35679717784 ---

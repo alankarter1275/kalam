@@ -1600,7 +1600,7 @@ impl Component for ReaderModel {
                     bindings.save(self.service.catalog(), action);
                 }
                 install_jump_back_shortcut(
-                    root,
+                    _root,
                     &self.jump_back_shortcut,
                     &self.keybinds,
                     &sender,
@@ -1610,7 +1610,7 @@ impl Component for ReaderModel {
             ReaderMsg::ResetKeyBindings => {
                 self.keybinds.borrow_mut().reset_all(self.service.catalog());
                 install_jump_back_shortcut(
-                    root,
+                    _root,
                     &self.jump_back_shortcut,
                     &self.keybinds,
                     &sender,

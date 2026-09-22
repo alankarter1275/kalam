@@ -132,7 +132,6 @@ pub enum ReaderMsg {
     SetFontFamily(String),
     /// Roadmap 2.4 text-layout toggles.
     SetJustify(bool),
-    SetHyphenate(bool),
     SetPublisherStyles(bool),
     /// Roadmap 2.7: facing pages, or one page at a time.
     SetDualPage(bool),

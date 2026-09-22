@@ -70,6 +70,15 @@ const SPREAD_MIN_WIDTH_PX: i32 = 900;
 /// One wheel notch in scrolled mode, CSS px — three lines at Kalam's
 /// default 17 px × 1.8, which is what a browser moves too.
 const WHEEL_STEP: f32 = 92.0;
+/// The most one smooth-scroll event may move the strip, whatever the speed
+/// setting — beyond this a two-finger flick teleports whole screens and
+/// reads as jumpy (2.9, field report round 2).
+const SMOOTH_STEP_CAP: f32 = 240.0;
+/// How long after a scroll event a pointer motion still counts as part of
+/// the scroll, not as the reader reaching for the pointer: touchpads drip
+/// sub-pixel motions through the whole two-finger gesture (2.9, field
+/// report round 2).
+const CURSOR_SCROLL_GRACE: std::time::Duration = std::time::Duration::from_millis(160);
 /// One arrow key in scrolled mode.
 const ARROW_STEP: f32 = 46.0;
 /// Where a chapter's length is guessed from before it is laid out: a
@@ -213,6 +222,9 @@ struct Inner {
     hide_cursor: Cell<bool>,
     /// The pending hide, so a movement can cancel it.
     cursor_timer: RefCell<Option<gtk::glib::SourceId>>,
+    /// When the last scroll event arrived; motions inside the grace window
+    /// after it are the touchpad dripping, not a reach for the pointer.
+    last_scroll: Cell<std::time::Instant>,
     /// CSS px one wheel notch scrolls in scrolled mode.
     wheel_step: Cell<f32>,
     /// The strip, in scrolled mode; `None` in paged mode and before the
@@ -341,6 +353,7 @@ impl ReaderView {
                 mode: Cell::new(ReadingMode::Paged),
                 dual_page: Cell::new(true),
                 hide_cursor: Cell::new(true),
+                last_scroll: Cell::new(std::time::Instant::now()),
                 cursor_timer: RefCell::new(None),
                 wheel_step: Cell::new(WHEEL_STEP),
                 strip: RefCell::new(None),
@@ -1809,6 +1822,9 @@ impl ReaderView {
             if view.mode() != ReadingMode::Scrolled {
                 return glib::Propagation::Proceed;
             }
+            // Stamp first: the motions a touchpad drips through a
+            // two-finger scroll must not undo the hide below.
+            view.inner.last_scroll.set(std::time::Instant::now());
             // Scrolling is reading too: a reader who scrolls with a thumb
             // on the pad still wants the pointer out of the text. Only
             // motion brings it back (roadmap 2.9, second report).
@@ -1824,7 +1840,8 @@ impl ReaderView {
             // report).
             let step = match controller.unit() {
                 gtk::gdk::ScrollUnit::Surface => {
-                    dy as f32 * (view.wheel_step() / WHEEL_STEP)
+                    (dy as f32 * (view.wheel_step() / WHEEL_STEP))
+                        .clamp(-SMOOTH_STEP_CAP, SMOOTH_STEP_CAP)
                 }
                 _ => dy as f32 * view.wheel_step(),
             };
@@ -2122,6 +2139,10 @@ impl ReaderView {
                 let over = view.inner.handles.get().is_some_and(|handles| {
                     handles::handle_at(&handles, x as f32, y as f32).is_some()
                 });
+                if view.inner.last_scroll.get().elapsed() < CURSOR_SCROLL_GRACE {
+                    view.arm_cursor_timer();
+                    return;
+                }
                 view.set_cursor(over.then_some("grab"));
                 // The pointer is moving, so it stays — and starts the
                 // count towards getting out of the way again.

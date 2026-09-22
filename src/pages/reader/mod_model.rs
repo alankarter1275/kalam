@@ -28,7 +28,6 @@ pub struct ReaderModel {
     pub(crate) font_family: Option<String>,
     /// Roadmap 2.4 text-layout toggles.
     pub(crate) justify: bool,
-    pub(crate) hyphenate: bool,
     pub(crate) publisher_styles: bool,
     /// Roadmap 2.7: facing pages when the window is wide enough.
     pub(crate) dual_page: bool,

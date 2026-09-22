@@ -28,7 +28,6 @@ pub(crate) fn build_reader_settings_panel(
     font_family: Option<String>,
     families: Vec<String>,
     justify: bool,
-    hyphenate: bool,
     publisher_styles: bool,
     dual_page: bool,
     autohide_cursor: bool,
@@ -226,13 +225,6 @@ pub(crate) fn build_reader_settings_panel(
     }
     let input_tx = sender.input_sender();
     setting_toggle(&text_section, "Justify", justify, input_tx, ReaderMsg::SetJustify);
-    setting_toggle(
-        &text_section,
-        "Hyphenation",
-        hyphenate,
-        input_tx,
-        ReaderMsg::SetHyphenate,
-    );
     setting_toggle(
         &text_section,
         "Publisher styles",

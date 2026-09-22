@@ -598,7 +598,6 @@ impl Component for ReaderModel {
             .clamp(400, 860) as u32;
         let catalog_family = catalog.get_pref("reader.font_family");
         let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
-        let catalog_hyphenate = catalog.get_pref_i64("reader.hyphenate", 1) != 0;
         let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
         let scrolled = catalog.get_pref_i64(engine::PREF_SCROLLED, 0) != 0;
 
@@ -613,7 +612,7 @@ impl Component for ReaderModel {
                 catalog_column,
                 catalog_family.clone(),
                 catalog_justify,
-                catalog_hyphenate,
+                false, // no hyphenation: retired after the round-1 field report
                 catalog_publisher,
             );
             match engine::open_engine(&book.file_path, prefs) {
@@ -701,7 +700,6 @@ impl Component for ReaderModel {
             .clamp(400, 860) as u32;
         let catalog_family = catalog.get_pref("reader.font_family");
         let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
-        let catalog_hyphenate = catalog.get_pref_i64("reader.hyphenate", 1) != 0;
         let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
         let catalog_dual_page = catalog.get_pref_i64("reader.dual_page", 1) != 0;
         let catalog_autohide = catalog.get_pref_i64("reader.autohide_cursor", 1) != 0;
@@ -765,7 +763,6 @@ impl Component for ReaderModel {
             catalog_family.clone(),
             font_families,
             catalog_justify,
-            catalog_hyphenate,
             catalog_publisher,
             catalog_dual_page,
             catalog_autohide,
@@ -821,7 +818,6 @@ impl Component for ReaderModel {
             column_px: catalog_column,
             font_family: catalog_family,
             justify: catalog_justify,
-            hyphenate: catalog_hyphenate,
             publisher_styles: catalog_publisher,
             dual_page: catalog_dual_page,
             keybinds,
@@ -1223,7 +1219,7 @@ impl Component for ReaderModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        root: &Self::Root,
+        _root: &Self::Root,
     ) {
         let mut refresh_sidebar_header = false;
         let mut refresh_toc = false;
@@ -1464,15 +1460,6 @@ impl Component for ReaderModel {
                         .catalog()
                         .set_pref("reader.justify", if on { "1" } else { "0" });
                     self.with_view(move |v| v.set_justify(on));
-                }
-            }
-            ReaderMsg::SetHyphenate(on) => {
-                if on != self.hyphenate {
-                    self.hyphenate = on;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.hyphenate", if on { "1" } else { "0" });
-                    self.with_view(move |v| v.set_hyphenate(on));
                 }
             }
             ReaderMsg::SetPublisherStyles(on) => {
@@ -2106,16 +2093,19 @@ impl Component for ReaderModel {
             ReaderMsg::ForceCloseRight(token) => {
                 if token == self.right_close_token {
                     // A dropdown's list (the Typeface picker) is a separate
-                    // surface: chasing the pointer into it fired the
-                    // sidebar's leave and started this timer, while the
-                    // reader is very much still engaged. While any popup
-                    // owns the session the reader's window is inactive, so
-                    // hold the sidebar and re-judge when focus comes home.
-                    let popup_active = root
-                        .root()
-                        .and_then(|r| r.downcast::<gtk::Window>().ok())
-                        .is_some_and(|w| !w.is_active());
-                    if popup_active {
+                    // surface: chasing the pointer into it fires the
+                    // sidebar's leave and starts this timer, while the
+                    // reader is very much still engaged. An open popup does
+                    // NOT reliably make the window inactive — the first fix
+                    // assumed it did and Wayland said no — but it always
+                    // takes a grab on a descendant of the sidebar. That
+                    // grab, or the pointer simply still being inside, is
+                    // the signal to hold and re-judge later.
+                    let hold = self
+                        .right_sidebar_box
+                        .as_ref()
+                        .is_some_and(|sb| sb.contains_pointer() || sb.has_grab());
+                    if hold {
                         self.schedule_right_close(sender.clone());
                     } else {
                         self.close_annotation_editor();

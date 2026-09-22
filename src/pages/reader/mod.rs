@@ -2119,14 +2119,16 @@ impl Component for ReaderModel {
                     // NOT reliably make the window inactive — the first fix
                     // assumed it did and Wayland said no — but it always
                     // takes a grab on a descendant of the sidebar. That
-                    // grab, or the pointer simply still being inside, is
-                    // the signal to hold and re-judge later.
+                    // walk for a visible GtkPopover is the only hold
+                    // signal that survives the toolkit version churn.
+                    // (A pointer that comes back inside needs no check:
+                    // re-entering sends Open* and cancels this timer.)
                     let hold = self
                         .right_sidebar_box
                         .as_ref()
                         .is_some_and(|sb| {
                             let sb = sb.upcast_ref::<gtk::Widget>();
-                            sb.contains_pointer() || popover_visible_in(sb)
+                            popover_visible_in(sb)
                         });
                     if hold {
                         self.schedule_right_close(sender.clone());

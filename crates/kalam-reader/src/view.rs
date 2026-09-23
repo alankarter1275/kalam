@@ -805,7 +805,7 @@ impl ReaderView {
                     return gtk::glib::ControlFlow::Break;
                 }
                 let current_step = view.arrow_step();
-                let hold_step = (current_step / 3.0).max(1.0);
+                let hold_step = (current_step * (HOLD_STEP / ARROW_STEP)).max(1.0);
                 let _ = view.scroll_by(dir * hold_step);
                 gtk::glib::ControlFlow::Continue
             },

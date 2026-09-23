@@ -1,7 +1,12 @@
-[1m[92m  Downloaded[0m thiserror v2.0.21
-[1m[92m  Downloaded[0m thiserror-impl v2.0.21
-[1m[92m   Compiling[0m thiserror v2.0.21
-[1m[92m   Compiling[0m thiserror-impl v2.0.21
+src/pages/pdf_reader.rs:191:16: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `self.current_page > d`
+src/pdf.rs:7:45: [1m[91merror[0m: unused import: `Rgba`
+src/pages/pdf_reader.rs:595:32: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::CellRenderer>` is not implemented for `std::option::Option<gtk4::Widget>`: requires `std::option::Option<gtk4::Widget>` to be a GObject that can be statically cast to `gtk4::CellRenderer`
+src/pdf.rs:80:34: [1m[91merror[E0277][0m: the trait bound `std::path::PathBuf: std::convert::AsRef<mupdf::FilePath>` is not satisfied: the trait `std::convert::AsRef<mupdf::FilePath>` is not implemented for `std::path::PathBuf`
+src/pdf.rs:144:19: [1m[91merror[E0308][0m: mismatched types: expected `Vec<Outline>`, found `Option<_>`
+src/pdf.rs:342:33: [1m[91merror[E0609][0m: no field `page` on type `&mupdf::Outline`: unknown field
+src/pages/pdf_reader.rs:760:44: [1m[91merror[0m: unused variable: `ratio_page`: help: if this is intentional, prefix it with an underscore: `_ratio_page`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -15,23 +20,63 @@ not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m thiserror v2.0.21
-[1m[92m  Downloaded[0m thiserror-impl v2.0.21
-[1m[92m   Compiling[0m thiserror v2.0.21
-[1m[92m   Compiling[0m thiserror-impl v2.0.21
+[1m[92m  Downloaded[0m cexpr v0.6.0
+[1m[92m  Downloaded[0m clang-sys v1.9.1
+[1m[92m  Downloaded[0m bindgen v0.72.1
+[1m[92m  Downloaded[0m glob v0.3.4
+[1m[92m  Downloaded[0m itertools v0.13.0
+[1m[92m  Downloaded[0m libloading v0.8.9
+[1m[92m  Downloaded[0m mupdf v0.8.0
+[1m[92m  Downloaded[0m mupdf-sys v0.8.0
+[1m[92m  Downloaded[0m shlex v1.3.0
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
-[1m[92m    Checking[0m rbook v0.7.10
-[1m[92m    Checking[0m epub-builder v0.8.3
-[1m[92m    Checking[0m zip v2.4.2
+[1m[92m   Compiling[0m zerocopy v0.8.57
+[1m[92m   Compiling[0m zerocopy-derive v0.8.57
+[1m[92m   Compiling[0m memchr v2.8.3
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
+[1m[92m   Compiling[0m glob v0.3.4
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m clang-sys v1.9.1
+[1m[92m   Compiling[0m aho-corasick v1.1.5
+[1m[92m   Compiling[0m libloading v0.8.9
+[1m[92m   Compiling[0m nom v7.1.3
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
+[1m[92m   Compiling[0m bindgen v0.72.1
+[1m[92m   Compiling[0m regex-automata v0.4.18
+[1m[92m   Compiling[0m either v1.18.0
+[1m[92m   Compiling[0m itertools v0.13.0
+[1m[92m   Compiling[0m cexpr v0.6.0
+[1m[92m   Compiling[0m regex v1.13.1
+[1m[92m   Compiling[0m bitflags v2.13.2
+[1m[92m   Compiling[0m shlex v1.3.0
+[1m[92m    Checking[0m time v0.3.55
+[1m[92m    Checking[0m ppv-lite86 v0.2.21
+[1m[92m    Checking[0m rand_chacha v0.9.0
+[1m[92m    Checking[0m proptest v1.11.0
+[1m[92m    Checking[0m ahash v0.8.12
+[1m[92m    Checking[0m hashbrown v0.14.5
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m hashlink v0.9.1
+[1m[92m    Checking[0m zip v6.0.0
+[1m[92m    Checking[0m rusqlite v0.32.1
+[1m[92m    Checking[0m epub-builder v0.8.3
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 18.36s
---- run 35924955894 ---
+[1m[92m   Compiling[0m mupdf-sys v0.8.0
+[1m[92m    Checking[0m mupdf v0.8.0
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/pages/pdf_reader.rs:191:16: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `self.current_page > d`
+src/pdf.rs:7:45: [1m[91merror[0m: unused import: `Rgba`
+src/pages/pdf_reader.rs:595:32: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::CellRenderer>` is not implemented for `std::option::Option<gtk4::Widget>`: requires `std::option::Option<gtk4::Widget>` to be a GObject that can be statically cast to `gtk4::CellRenderer`
+src/pdf.rs:80:34: [1m[91merror[E0277][0m: the trait bound `std::path::PathBuf: std::convert::AsRef<mupdf::FilePath>` is not satisfied: the trait `std::convert::AsRef<mupdf::FilePath>` is not implemented for `std::path::PathBuf`
+src/pdf.rs:144:19: [1m[91merror[E0308][0m: mismatched types: expected `Vec<Outline>`, found `Option<_>`
+src/pdf.rs:342:33: [1m[91merror[E0609][0m: no field `page` on type `&mupdf::Outline`: unknown field
+src/pages/pdf_reader.rs:760:44: [1m[91merror[0m: unused variable: `ratio_page`: help: if this is intentional, prefix it with an underscore: `_ratio_page`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+--- run 35931033996 ---

@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.8361.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5942.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,19 +32,19 @@ navigation: 'tasks' differs from Home -- the page really did change
 navigation: OK -- the images below are 'tasks'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init       80.2 ms
-  [timing] startup_style          56.9 ms
+  [timing] startup_gtk_init       77.4 ms
+  [timing] startup_style          56.7 ms
   [timing] icons_write             0.0 ms
   [timing] icons_theme             0.1 ms
   [timing] startup_libraries       0.1 ms
-  [timing] startup_db_open         6.8 ms
-  [timing] startup_theme          13.4 ms
-  [timing] pre_run               283.5 ms
-  [timing] service_home            0.8 ms
+  [timing] startup_db_open         7.3 ms
+  [timing] startup_theme          12.6 ms
+  [timing] pre_run               278.2 ms
+  [timing] service_home            0.9 ms
   [timing] covers_queued            11
   [timing] startup_first_page      2.5 ms
-  [timing] init_done             288.2 ms
-  [timing] window_shown          293.3 ms
+  [timing] init_done             282.8 ms
+  [timing] window_shown          286.7 ms
   [timing] startup_dicts           0.1 ms
   [timing] page_cache_miss           1
   [timing] thumbs_backfilled        50
@@ -67,26 +67,26 @@ navigation: OK -- the images below are 'tasks'
 
 === app stderr (non-timing lines) ===
   
-  (process:8398): Gtk-WARNING **: 23:20:27.814: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:5979): Gtk-WARNING **: 23:37:15.273: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=tasks — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=87396 peak_rss_mb=85
+books=139 peak_rss_kb=87680 peak_rss_mb=85
 
 === shutting down ===
 
 === artifacts ===
   total 196
-  drwxr-xr-x  2 runner runner  4096 Sep 23 23:21 .
-  drwxr-xr-x 20 runner runner  4096 Sep 23 23:20 ..
-  -rw-r--r--  1 runner runner 30451 Sep 23 23:20 01-tasks.png
-  -rw-r--r--  1 runner runner 30451 Sep 23 23:20 02-tasks-settling.png
-  -rw-r--r--  1 runner runner 30451 Sep 23 23:21 03-tasks-settled.png
-  -rw-r--r--  1 runner runner 66389 Sep 23 23:21 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Sep 23 23:20 grim.log
-  -rw-r--r--  1 runner runner  1130 Sep 23 23:21 kalam-home.log
-  -rw-r--r--  1 runner runner  1093 Sep 23 23:20 kalam.log
-  -rw-r--r--  1 runner runner  3101 Sep 23 23:21 report.txt
-  -rw-r--r--  1 runner runner    88 Sep 23 23:20 sway.log
-  -rw-r--r--  1 runner runner  7184 Sep 23 23:20 tree.json
---- run 35931970452 ---
+  drwxr-xr-x  2 runner runner  4096 Sep 23 23:38 .
+  drwxr-xr-x 20 runner runner  4096 Sep 23 23:37 ..
+  -rw-r--r--  1 runner runner 30451 Sep 23 23:37 01-tasks.png
+  -rw-r--r--  1 runner runner 30451 Sep 23 23:37 02-tasks-settling.png
+  -rw-r--r--  1 runner runner 30451 Sep 23 23:37 03-tasks-settled.png
+  -rw-r--r--  1 runner runner 66389 Sep 23 23:38 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 23 23:37 grim.log
+  -rw-r--r--  1 runner runner  1130 Sep 23 23:37 kalam-home.log
+  -rw-r--r--  1 runner runner  1093 Sep 23 23:37 kalam.log
+  -rw-r--r--  1 runner runner  3101 Sep 23 23:38 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 23 23:37 sway.log
+  -rw-r--r--  1 runner runner  7184 Sep 23 23:37 tree.json
+--- run 35933586750 ---

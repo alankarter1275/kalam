@@ -222,6 +222,7 @@ impl PdfDocument {
     }
 
     /// Render uncropped raw page image (1-indexed) as a DynamicImage.
+    #[allow(dead_code)]
     pub fn render_page_image(&self, page_num: usize, smart_crop: bool) -> Result<DynamicImage> {
         let rendered = self.render_page_rgba(page_num, 1.5, smart_crop)?;
         let rgba = RgbaImage::from_raw(
@@ -295,6 +296,7 @@ impl PdfDocument {
     }
 
     /// Run heuristic paragraph boundary detection over extracted raw text lines.
+    #[allow(dead_code)]
     pub fn reflow_text(raw_text: &str) -> Vec<String> {
         if raw_text.trim().is_empty() {
             return Vec::new();
@@ -363,6 +365,7 @@ fn collect_outline(item: &Outline, depth: usize, out: &mut Vec<PdfTocEntry>) {
 }
 
 /// Helper function to check if a text line is a header/footer or page number.
+#[allow(dead_code)]
 fn is_header_or_footer(line: &str) -> bool {
     let lower = line.to_lowercase();
     if lower.starts_with("page ") || lower.starts_with("chapter ") {
@@ -377,6 +380,7 @@ fn is_header_or_footer(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::Rgba;
 
     #[test]
     fn test_ink_bounding_box_defaults() {

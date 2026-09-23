@@ -34,7 +34,6 @@ pub enum PdfViewMode {
 pub enum PdfReaderMsg {
     NextPage,
     PrevPage,
-    SetPage(usize),
     ZoomIn,
     ZoomOut,
     ResetZoom,
@@ -638,16 +637,6 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::PrevPage => {
                 if self.current_page > 1 {
                     self.current_page -= 1;
-                    self.save_progress();
-                    self.trigger_loads(&sender);
-                    let child = rebuild_viewport_widget(self);
-                    widgets.viewport_scroll.set_child(Some(&child));
-                }
-            }
-            PdfReaderMsg::SetPage(page) => {
-                let clamped = page.clamp(1, self.total_pages);
-                if clamped != self.current_page {
-                    self.current_page = clamped;
                     self.save_progress();
                     self.trigger_loads(&sender);
                     let child = rebuild_viewport_widget(self);

@@ -1,4 +1,9 @@
-(no lines matched; last 100 lines of output)
+[1m[92m  Downloaded[0m thiserror-impl v2.0.21
+[1m[92m  Downloaded[0m thiserror v2.0.21
+[1m[92m   Compiling[0m thiserror v2.0.21
+[1m[92m   Compiling[0m thiserror-impl v2.0.21
+crates/kalam-reader/src/view.rs:90:7: [1m[91merror[0m: constant `HOLD_STEP` is never used
+[1m[91merror[0m: could not compile `kalam-reader` (lib) due to 1 previous error
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -11,7 +16,15 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m thiserror-impl v2.0.21
+[1m[92m  Downloaded[0m thiserror v2.0.21
+[1m[92m   Compiling[0m thiserror v2.0.21
+[1m[92m   Compiling[0m thiserror-impl v2.0.21
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m    Checking[0m rbook v0.7.10
+[1m[92m    Checking[0m epub-builder v0.8.3
+[1m[92m    Checking[0m zip v2.4.2
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
@@ -20,7 +33,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 26.47s
---- run 35762017899 ---
+crates/kalam-reader/src/view.rs:90:7: [1m[91merror[0m: constant `HOLD_STEP` is never used
+[1m[91merror[0m: could not compile `kalam-reader` (lib) due to 1 previous error
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+--- run 35924764088 ---

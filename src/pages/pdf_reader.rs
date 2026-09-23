@@ -188,7 +188,7 @@ impl PdfReaderModel {
             if self.current_page + d <= max_page {
                 load_order.push(self.current_page + d);
             }
-            if self.current_page >= d + 1 && self.current_page - d >= min_page {
+            if self.current_page > d && self.current_page - d >= min_page {
                 load_order.push(self.current_page - d);
             }
         }
@@ -591,7 +591,9 @@ impl Component for PdfReaderModel {
         let click = gtk::GestureClick::new();
         let s_click = sender.clone();
         click.connect_released(move |gesture, _, x, _| {
-            let widget = gesture.widget();
+            let Some(widget) = gesture.widget() else {
+                return;
+            };
             let width = widget.width() as f64;
             if width > 0.0 {
                 let fraction = x / width;
@@ -757,7 +759,7 @@ impl Component for PdfReaderModel {
                     sender.input(PdfReaderMsg::PrevPage);
                 }
             }
-            PdfReaderMsg::UpdateScrollPage(ratio_page) => {
+            PdfReaderMsg::UpdateScrollPage(_ratio_page) => {
                 if self.view_mode == PdfViewMode::Continuous && self.total_pages > 1 {
                     let vadj = widgets.viewport_scroll.vadjustment();
                     let max = (vadj.upper() - vadj.page_size()).max(1.0);

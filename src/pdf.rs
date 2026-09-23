@@ -4,7 +4,7 @@
 //! vector outline / TOC extraction, Zathura-style smart cropping, and text extraction.
 
 use anyhow::{anyhow, Result};
-use image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
+use image::{DynamicImage, GenericImageView, RgbaImage};
 use mupdf::{Colorspace, Document, Matrix, Outline, TextExtractOptions};
 use std::path::{Path, PathBuf};
 
@@ -77,7 +77,8 @@ impl PdfDocument {
     /// Load a PDF document from a file path using MuPDF.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
-        let doc = Document::open(&path_buf)
+        let path_str = path_buf.to_string_lossy();
+        let doc = Document::open(&*path_str)
             .map_err(|e| anyhow!("Failed to load PDF document {:?}: {}", path_buf, e))?;
 
         let count = doc
@@ -141,8 +142,10 @@ impl PdfDocument {
     /// Extract hierarchical table of contents (outlines) from the PDF document.
     pub fn outlines(&self) -> Result<Vec<PdfTocEntry>> {
         let mut entries = Vec::new();
-        if let Ok(Some(root)) = self.doc.outlines() {
-            collect_outline(&root, 0, &mut entries);
+        if let Ok(roots) = self.doc.outlines() {
+            for root in &roots {
+                collect_outline(root, 0, &mut entries);
+            }
         }
         Ok(entries)
     }
@@ -339,7 +342,11 @@ impl PdfDocument {
 fn collect_outline(item: &Outline, depth: usize, out: &mut Vec<PdfTocEntry>) {
     let title = item.title.trim();
     if !title.is_empty() {
-        let page_1_based = item.page.map(|p| (p + 1) as usize).unwrap_or(1);
+        let page_1_based = item
+            .dest
+            .as_ref()
+            .map(|d| (d.loc.page_number + 1) as usize)
+            .unwrap_or(1);
         out.push(PdfTocEntry {
             title: title.to_string(),
             page: page_1_based,

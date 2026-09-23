@@ -50,7 +50,8 @@ pub enum PdfReaderMsg {
         height: i32,
     },
     PointerMoved,
-    HideChromeTimerTick,
+    HideChromeTimerTick(u64),
+    ControlsHover(bool),
     ScrollDelta(f64),
     UpdateScrollPage(usize),
 }
@@ -79,7 +80,7 @@ pub struct PdfReaderModel {
     #[allow(dead_code)]
     pub is_loading: bool,
     pub status_text: String,
-    pub chrome_hide_timer: Option<glib::SourceId>,
+    pub chrome_hide_seq: u64,
     pub mouse_in_controls: bool,
 }
 
@@ -115,7 +116,7 @@ impl PdfReaderModel {
             arrow_step: arrow_step.clamp(10.0, 200.0),
             is_loading: true,
             status_text: "Opening PDF...".to_string(),
-            chrome_hide_timer: None,
+            chrome_hide_seq: 0,
             mouse_in_controls: false,
         };
 
@@ -157,14 +158,12 @@ impl PdfReaderModel {
 
     /// Schedule autohide of floating controls after 3.5s of inactivity.
     pub fn schedule_chrome_hide(&mut self, sender: ComponentSender<Self>) {
-        if let Some(timer) = self.chrome_hide_timer.take() {
-            timer.remove();
-        }
-        let s = sender.clone();
-        let source_id = glib::timeout_add_local_once(Duration::from_millis(3500), move || {
-            s.input(PdfReaderMsg::HideChromeTimerTick);
+        self.chrome_hide_seq = self.chrome_hide_seq.wrapping_add(1);
+        let seq = self.chrome_hide_seq;
+        let tx = sender.input_sender().clone();
+        glib::timeout_add_local_once(Duration::from_millis(3500), move || {
+            let _ = tx.send(PdfReaderMsg::HideChromeTimerTick(seq));
         });
-        self.chrome_hide_timer = Some(source_id);
     }
 
     /// Evict distant page textures and trigger background renders for current ± 2 pages.
@@ -227,7 +226,7 @@ impl PdfReaderModel {
                             &bytes,
                             stride,
                         );
-                        s.input(PdfReaderMsg::PageRendered {
+                        let _ = s.input_sender().send(PdfReaderMsg::PageRendered {
                             page: p,
                             texture: texture.upcast(),
                             width: w,
@@ -422,7 +421,7 @@ impl Component for PdfReaderModel {
 
                         // Smart Crop Toggle
                         gtk::Button {
-                            set_label: "✂️",
+                            set_icon_name: "edit-cut-symbolic",
                             add_css_class: "kalam-reader-pill-nav",
                             #[watch]
                             set_tooltip_text: Some(if model.smart_crop {
@@ -505,53 +504,54 @@ impl Component for PdfReaderModel {
         let widgets = view_output!();
 
         // Keyboard navigation controller
+        let tx = sender.input_sender().clone();
         let key = gtk::EventControllerKey::new();
-        let s_key = sender.clone();
+        let tx_key = tx.clone();
         key.connect_key_pressed(move |_, keyval, _keycode, _state| {
             use gtk::gdk::Key;
             match keyval {
                 Key::Escape | Key::BackSpace | Key::q | Key::Q => {
-                    s_key.input(PdfReaderMsg::Close);
+                    let _ = tx_key.send(PdfReaderMsg::Close);
                     gtk::glib::Propagation::Stop
                 }
                 Key::Left | Key::Page_Up | Key::h | Key::H => {
-                    s_key.input(PdfReaderMsg::PrevPage);
+                    let _ = tx_key.send(PdfReaderMsg::PrevPage);
                     gtk::glib::Propagation::Stop
                 }
                 Key::Right | Key::Page_Down | Key::space | Key::l | Key::L => {
-                    s_key.input(PdfReaderMsg::NextPage);
+                    let _ = tx_key.send(PdfReaderMsg::NextPage);
                     gtk::glib::Propagation::Stop
                 }
                 Key::Up | Key::k | Key::K => {
-                    s_key.input(PdfReaderMsg::ScrollDelta(-1.0));
+                    let _ = tx_key.send(PdfReaderMsg::ScrollDelta(-1.0));
                     gtk::glib::Propagation::Stop
                 }
                 Key::Down | Key::j | Key::J => {
-                    s_key.input(PdfReaderMsg::ScrollDelta(1.0));
+                    let _ = tx_key.send(PdfReaderMsg::ScrollDelta(1.0));
                     gtk::glib::Propagation::Stop
                 }
                 Key::plus | Key::equal | Key::KP_Add => {
-                    s_key.input(PdfReaderMsg::ZoomIn);
+                    let _ = tx_key.send(PdfReaderMsg::ZoomIn);
                     gtk::glib::Propagation::Stop
                 }
                 Key::minus | Key::KP_Subtract => {
-                    s_key.input(PdfReaderMsg::ZoomOut);
+                    let _ = tx_key.send(PdfReaderMsg::ZoomOut);
                     gtk::glib::Propagation::Stop
                 }
                 Key::_0 | Key::KP_0 => {
-                    s_key.input(PdfReaderMsg::ResetZoom);
+                    let _ = tx_key.send(PdfReaderMsg::ResetZoom);
                     gtk::glib::Propagation::Stop
                 }
                 Key::m | Key::M => {
-                    s_key.input(PdfReaderMsg::ToggleContinuousMode);
+                    let _ = tx_key.send(PdfReaderMsg::ToggleContinuousMode);
                     gtk::glib::Propagation::Stop
                 }
                 Key::c | Key::C => {
-                    s_key.input(PdfReaderMsg::ToggleSmartCrop);
+                    let _ = tx_key.send(PdfReaderMsg::ToggleSmartCrop);
                     gtk::glib::Propagation::Stop
                 }
                 Key::t | Key::T => {
-                    s_key.input(PdfReaderMsg::ToggleSidebar);
+                    let _ = tx_key.send(PdfReaderMsg::ToggleSidebar);
                     gtk::glib::Propagation::Stop
                 }
                 _ => gtk::glib::Propagation::Proceed,
@@ -563,32 +563,48 @@ impl Component for PdfReaderModel {
 
         // Pointer motion controller to reveal controls on movement
         let motion = gtk::EventControllerMotion::new();
-        let s_motion = sender.clone();
+        let tx_motion = tx.clone();
         motion.connect_motion(move |_, _, _| {
-            s_motion.input(PdfReaderMsg::PointerMoved);
+            let _ = tx_motion.send(PdfReaderMsg::PointerMoved);
         });
         root.add_controller(motion);
 
         // Track hover state on bottom dock to avoid autohiding while interacting
         let bottom_motion = gtk::EventControllerMotion::new();
-        let s_bm = sender.clone();
+        let tx_bme = tx.clone();
         bottom_motion.connect_enter(move |_, _, _| {
-            s_bm.input(PdfReaderMsg::PointerMoved);
+            let _ = tx_bme.send(PdfReaderMsg::ControlsHover(true));
+        });
+        let tx_bml = tx.clone();
+        bottom_motion.connect_leave(move |_| {
+            let _ = tx_bml.send(PdfReaderMsg::ControlsHover(false));
         });
         widgets.bottom_dock.add_controller(bottom_motion);
 
+        // Track hover state on back dock
+        let back_motion = gtk::EventControllerMotion::new();
+        let tx_tme = tx.clone();
+        back_motion.connect_enter(move |_, _, _| {
+            let _ = tx_tme.send(PdfReaderMsg::ControlsHover(true));
+        });
+        let tx_tml = tx.clone();
+        back_motion.connect_leave(move |_| {
+            let _ = tx_tml.send(PdfReaderMsg::ControlsHover(false));
+        });
+        widgets.back_dock.add_controller(back_motion);
+
         // Track continuous scroll position changes to update current_page
         let vadj = widgets.viewport_scroll.vadjustment();
-        let s_vadj = sender.clone();
+        let tx_vadj = tx.clone();
         vadj.connect_value_changed(move |adj| {
             let max = (adj.upper() - adj.page_size()).max(1.0);
             let ratio = (adj.value() / max).clamp(0.0, 1.0);
-            s_vadj.input(PdfReaderMsg::UpdateScrollPage(ratio as usize));
+            let _ = tx_vadj.send(PdfReaderMsg::UpdateScrollPage(ratio as usize));
         });
 
         // Click / tap navigation: left quarter = prev, right quarter = next, center = reveal controls
         let click = gtk::GestureClick::new();
-        let s_click = sender.clone();
+        let tx_click = tx.clone();
         click.connect_released(move |gesture, _, x, _| {
             let Some(widget) = gesture.widget() else {
                 return;
@@ -597,11 +613,11 @@ impl Component for PdfReaderModel {
             if width > 0.0 {
                 let fraction = x / width;
                 if fraction < 0.22 {
-                    s_click.input(PdfReaderMsg::PrevPage);
+                    let _ = tx_click.send(PdfReaderMsg::PrevPage);
                 } else if fraction > 0.78 {
-                    s_click.input(PdfReaderMsg::NextPage);
+                    let _ = tx_click.send(PdfReaderMsg::NextPage);
                 } else {
-                    s_click.input(PdfReaderMsg::PointerMoved);
+                    let _ = tx_click.send(PdfReaderMsg::PointerMoved);
                 }
             }
         });
@@ -730,8 +746,16 @@ impl Component for PdfReaderModel {
                 self.show_chrome = true;
                 self.schedule_chrome_hide(sender.clone());
             }
-            PdfReaderMsg::HideChromeTimerTick => {
-                if !self.mouse_in_controls && !self.show_sidebar {
+            PdfReaderMsg::ControlsHover(hovering) => {
+                self.mouse_in_controls = hovering;
+                if hovering {
+                    self.show_chrome = true;
+                } else {
+                    self.schedule_chrome_hide(sender.clone());
+                }
+            }
+            PdfReaderMsg::HideChromeTimerTick(seq) => {
+                if seq == self.chrome_hide_seq && !self.mouse_in_controls && !self.show_sidebar {
                     self.show_chrome = false;
                 }
             }
@@ -898,9 +922,9 @@ fn populate_toc_list(
             row_box.append(&lbl);
             btn.set_child(Some(&row_box));
 
-            let s = sender.clone();
+            let tx = sender.input_sender().clone();
             btn.connect_clicked(move |_| {
-                s.input(PdfReaderMsg::JumpToToc(p));
+                let _ = tx.send(PdfReaderMsg::JumpToToc(p));
             });
             container.append(&btn);
         }
@@ -931,9 +955,9 @@ fn populate_toc_list(
         btn.set_child(Some(&row_box));
 
         let p = entry.page;
-        let s = sender.clone();
+        let tx = sender.input_sender().clone();
         btn.connect_clicked(move |_| {
-            s.input(PdfReaderMsg::JumpToToc(p));
+            let _ = tx.send(PdfReaderMsg::JumpToToc(p));
         });
 
         container.append(&btn);

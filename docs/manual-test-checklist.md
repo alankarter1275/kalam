@@ -303,40 +303,43 @@ but renders as boxes.
 
 ---
 
-## Part E — PDFs
+## Part E — PDFs (Rebuilt with MuPDF & Unified Chrome)
 
-### T11 · A text PDF is readable (2.11)
+### T11 · True MuPDF PDF Rasterization & Visual Fidelity
+**Do:** open a text PDF (e.g. *Tell Me Why #66*, an academic paper, or book) and a scanned PDF.
+**Look for:** crisp, high-fidelity native page rendering (sharp vector fonts, diagrams, tables, figures, artwork) rendered via MuPDF. No synthetic ink lines or grey bars.
+**Report if:** page is blank, distorted, text characters are missing or overlapping, or rasterization fails.
 
-**Do:** open a **text** PDF (one you can select text in).
+### T12 · Unified Reader Chrome & Autohiding Controls
+**Do:** move the pointer over the reader; then let the pointer sit still for ~4 seconds.
+**Look for:**
+- Floating back chip at top-left with back arrow and book title.
+- Floating bottom pill at bottom-center with page numbers, jump, zoom controls, mode toggle, crop toggle, and TOC sidebar toggle.
+- Both controls smoothly autohide on mouse inactivity, returning to 100% immersive reading. Any mouse motion reveals them again.
+**Report if:** controls do not autohide, fail to show on pointer motion, or clip content.
 
-**Look for:** readable reflowed text — not grey stripes — and a note in the
-toolbar saying *"Reflowed text — this page has no image to show."* Try the
-font size and theme controls, and the **Text Reflow** button.
+### T13 · Slide-in Table of Contents Sidebar
+**Do:** click the TOC icon on the bottom pill or press `T`.
+**Look for:**
+- A smooth slide-in outline panel from the left with dim backdrop.
+- Full hierarchical outline (chapters, sections indented by depth) with page numbers.
+- Clicking any TOC item immediately jumps to that page and closes the sidebar.
+- Pressing `Esc` or clicking the dim backdrop closes the sidebar.
+**Report if:** outline is empty for a document that has bookmarks, clicking an item does not jump to the correct page, or the sidebar animation is broken.
 
-**Report if:** you still see grey bars; the text is garbled, out of order, or
-missing chunks (tell me which — two-column layouts and tables are the known
-weak spots); or the note is missing.
+### T14 · Paged Mode vs Continuous Vertical Scroll Mode & Arrow Speed
+**Do:**
+- Press `M` or click the mode icon in the bottom pill to switch between Paged and Continuous modes.
+- In Continuous mode, use `Up` / `Down` arrows to scroll vertically.
+**Look for:**
+- In Paged mode: single centered page, Left/Right turns pages.
+- In Continuous mode: pages stacked vertically with clean separation and drop shadows. Up/Down scrolls smoothly obeying your configured arrow scroll speed setting (`reader.arrow_step`).
+**Report if:** mode switch fails, continuous scrolling is jerky or doesn't obey arrow speed, or page tracking is desynchronized.
 
-### T12 · A scanned PDF still works (2.11)
-
-**Do:** open a **scanned** PDF. Turn smart crop on and off.
-
-**Look for:** exactly what you had before — the page image, correctly
-cropped. Scans should be untouched by all of this.
-
-**Report if:** a scan now shows text instead of the image, or the crop broke.
-
-### T13 · The numbers
-
-With `KALAM_TIMING=1` on, send me the `[timing]` lines from:
-
-- opening one **text** PDF → `pdf_open`, then `pdf_page_reflow` per page turn
-- opening one **scanned** PDF → `pdf_open`, then `pdf_page_image`
-- opening an EPUB → `book_open`
-
-Even three or four lines is enough. This is the measurement behind the
-"reflow is the cheap path" claim — I reasoned it out from the code, I have
-not measured it, and there are no PDFs in my sandbox.
+### T15 · Bounded Memory Footprint
+**Do:** open a multi-hundred page PDF and flip / scroll rapidly through 20+ pages.
+**Look for:** RAM usage stays bounded under 80 MB (only current page ±2 pages cached in memory, distant pages evicted).
+**Report if:** memory balloons continuously or UI freezes.
 
 ---
 

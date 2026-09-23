@@ -4079,3 +4079,23 @@ popover.kalam-reader-dict-popover > contents {
 .kalam-reader-location-text {
     font-size: 0.78rem;
 }
+
+/* PDF Reader styles */
+.kalam-pdf-page-image {
+    background: #ffffff;
+    box-shadow: 0 8px 30px alpha(#000, 0.28);
+    border-radius: 2px;
+}
+
+.kalam-pdf-placeholder {
+    background: alpha(@kalam_surface, 0.7);
+    border: 1px dashed @kalam_border;
+    border-radius: 4px;
+}
+
+.kalam-reader-back-title {
+    color: @kalam_text_dim;
+    font-size: 13px;
+    margin-left: 6px;
+    padding-right: 12px;
+}

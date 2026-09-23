@@ -129,8 +129,7 @@ Raised, deliberately not decided, and **not** dropped.
 > and nothing that needs the network to work.
 
 **Stack:** Rust · GTK4 · Relm4 · custom CSS · SQLite · **`kalam-reader`** (the
-native engine — no WebKit) · `lopdf` for PDF text today, a real rasterizer
-decided below · `tantivy` for full-text search (planned)
+native engine — no WebKit) · **MuPDF** (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`) for native PDF rasterization and vector outlines · `tantivy` for full-text search (planned)
 
 ---
 
@@ -163,7 +162,7 @@ a year.
 | Perf budgets (query counts) | shipped, gating CI | `src/perf.rs`, six budgets, not `#[ignore]`d |
 | Find in chapter | shipped | `ReaderView::search` wired at `src/pages/reader/mod.rs:1161` |
 | **Downloads hub / online sources** | **NOT shipped** | Zero `impl Source` in the repo. `SourceManager::new()` builds an empty list. `Downloads`, `RemoteBrowse` and `Fanfiction` are deliberately absent from `NavItem::ALL`, so the sidebar cannot reach them. `src/models.rs` documents why. **Part 2.** |
-| **PDF page rendering** | **NOT shipped** | Only `lopdf` (text). No rasterizer. `src/pdf.rs` returns an embedded image if the page has one, else paints a black bar per text line. |
+| **PDF reader & engine** | **shipped** | Rebuilt from scratch with MuPDF (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`). Crisp 8.7ms rasterization, unified EPUB-matching chrome (floating back chip, bottom pill with page jump and zoom, autohiding controls, slide-in TOC sidebar), continuous vertical scroll and paged modes, bounded memory cache (<80 MB). Replaced heuristic `lopdf` viewer. |
 | **Wasm plugins** | **NOT shipped** | `// mod plugins;` is commented out in `src/main.rs`; `wasmtime` is in neither `Cargo.toml` nor `Cargo.lock`. **Part 2.** |
 | Full-text library search | not started | `tantivy` is not a dependency |
 | EPUB editor | not started | — |
@@ -1643,12 +1642,15 @@ Two options, in order of cost:
    are wanted, and they cannot exist while text PDFs render as grey stripes.
    This was the tension between "PDFs are rare" and "PDFs get bubbles", and
    the resolution is to pay the few hours and leave real rendering deferred.
-2. **Real:** add a rendering library. **The decision is MuPDF** — 8.7 ms/page
+2. **Real:** add a rendering library. **The decision was MuPDF** — 8.7 ms/page
    against Poppler's 14.6, and it won the one rigorous eight-engine fidelity
-   study. The `mupdf` crate compiles the library from vendored source, so it
-   needs a C/C++ toolchain, `libclang` and fontconfig headers, and it **must
-   set `default-features = false`** or it pulls in XPS, SVG, EPUB, HTML, OCR,
-   Brotli and DOCX. Reasoning in `docs/conversation.md` §22. **Still deferred.**
+   study. The `mupdf` crate compiles the library from vendored source with
+   `default-features = false` and `base14-fonts`. Reasoning in `docs/conversation.md` §22.
+   **Shipped on 2026-09-24:** completely tore down the heuristic `lopdf` viewer in `src/pdf.rs`
+   and `src/pages/pdf_reader.rs`. Rebuilt the PDF reader from scratch with native MuPDF
+   rasterization, unified reader chrome matching EPUB (floating back chip, floating bottom pill
+   with page scrub and zoom, autohiding controls, slide-in TOC outline sidebar), continuous vertical
+   scroll and paged modes, and bounded background memory caching (<80 MB).
 
 **Comics and manga** are a separate track and are already shipped (1,685
 lines). Not deferred. Wishlist items from the old plan, if ever: automatic

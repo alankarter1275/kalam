@@ -46,7 +46,8 @@ jobs:
             build-essential pkg-config \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
-            libgraphene-1.0-dev
+            libgraphene-1.0-dev \
+            libclang-dev libfontconfig1-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -321,7 +322,8 @@ jobs:
             libgraphene-1.0-dev \
             sway grim wtype \
             xwayland \
-            fonts-dejavu-core
+            fonts-dejavu-core \
+            libclang-dev libfontconfig1-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

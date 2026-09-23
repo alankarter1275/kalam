@@ -1,11 +1,11 @@
-//! PDF Engine Integration and Reflow Engine.
+//! PDF Engine Integration via MuPDF.
 //!
-//! Provides PDF document parsing via `lopdf`, page text extraction, Zathura-style smart cropping
-//! (ink bounding box calculation to strip blank margins), and heuristic text reflow.
+//! Provides true MuPDF document parsing, high-fidelity page rasterization,
+//! vector outline / TOC extraction, Zathura-style smart cropping, and text extraction.
 
 use anyhow::{anyhow, Result};
 use image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
-use lopdf::Document;
+use mupdf::{Colorspace, Document, Matrix, Outline, TextExtractOptions};
 use std::path::{Path, PathBuf};
 
 /// Ink bounding box representing content boundaries in normalized (0.0 .. 1.0) coordinates.
@@ -47,96 +47,187 @@ impl InkBoundingBox {
     }
 }
 
-/// PDF Document handle.
+/// Flattened table of contents item extracted from document outline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdfTocEntry {
+    pub title: String,
+    pub page: usize, // 1-based page number
+    pub depth: usize,
+}
+
+/// Raw RGBA rasterized page buffer.
+#[derive(Clone, Debug)]
+pub struct RenderedPage {
+    pub page_num: usize,
+    pub width: i32,
+    pub height: i32,
+    pub stride: usize,
+    pub samples: Vec<u8>,
+}
+
+/// MuPDF Document handle.
 pub struct PdfDocument {
-    #[allow(dead_code)] // kept for re-open/title; not read on every render path
+    #[allow(dead_code)]
     pub path: PathBuf,
     doc: Document,
-    page_numbers: Vec<u32>,
+    page_count: usize,
 }
 
 impl PdfDocument {
-    /// Load a PDF document from a file path.
+    /// Load a PDF document from a file path using MuPDF.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
-        let doc = Document::load(&path_buf)
+        let doc = Document::open(&path_buf)
             .map_err(|e| anyhow!("Failed to load PDF document {:?}: {}", path_buf, e))?;
 
-        let mut page_numbers: Vec<u32> = doc.get_pages().keys().cloned().collect();
-        page_numbers.sort_unstable();
+        let count = doc
+            .page_count()
+            .map_err(|e| anyhow!("Failed to count pages in {:?}: {}", path_buf, e))?;
 
-        if page_numbers.is_empty() {
+        if count <= 0 {
             return Err(anyhow!("PDF document has no pages"));
         }
 
         Ok(Self {
             path: path_buf,
             doc,
-            page_numbers,
+            page_count: count as usize,
         })
     }
 
     /// Return total page count.
     pub fn page_count(&self) -> usize {
-        self.page_numbers.len()
+        self.page_count
     }
 
-    /// Extract raw text layer from a PDF page (1-indexed).
-    pub fn extract_raw_text(&self, page_num: usize) -> Result<String> {
-        if page_num == 0 || page_num > self.page_numbers.len() {
+    /// Return page dimensions (width, height in points) at 72 DPI.
+    #[allow(dead_code)]
+    pub fn page_dimensions(&self, page_num: usize) -> Result<(f32, f32)> {
+        if page_num == 0 || page_num > self.page_count {
             return Err(anyhow!("Page number {} out of range", page_num));
         }
 
-        let pdf_page_num = self.page_numbers[page_num - 1];
-        let text = self
+        let page = self
             .doc
-            .extract_text(&[pdf_page_num])
-            .unwrap_or_else(|_| String::new());
+            .load_page((page_num - 1) as i32)
+            .map_err(|e| anyhow!("Failed to load page {}: {}", page_num, e))?;
+
+        let rect = page
+            .bounds()
+            .map_err(|e| anyhow!("Failed to read page {} bounds: {}", page_num, e))?;
+
+        Ok((rect.width().abs(), rect.height().abs()))
+    }
+
+    /// Extract raw text layer from a PDF page (1-indexed) using MuPDF.
+    #[allow(dead_code)]
+    pub fn extract_raw_text(&self, page_num: usize) -> Result<String> {
+        if page_num == 0 || page_num > self.page_count {
+            return Err(anyhow!("Page number {} out of range", page_num));
+        }
+
+        let page = self
+            .doc
+            .load_page((page_num - 1) as i32)
+            .map_err(|e| anyhow!("Failed to load page {}: {}", page_num, e))?;
+
+        let text = page
+            .text(TextExtractOptions::default())
+            .map_err(|e| anyhow!("Failed to extract text from page {}: {}", page_num, e))?;
 
         Ok(text)
     }
 
-    /// Run heuristic paragraph boundary detection over extracted raw text lines.
-    pub fn reflow_text(raw_text: &str) -> Vec<String> {
-        if raw_text.trim().is_empty() {
-            return Vec::new();
+    /// Extract hierarchical table of contents (outlines) from the PDF document.
+    pub fn outlines(&self) -> Result<Vec<PdfTocEntry>> {
+        let mut entries = Vec::new();
+        if let Ok(Some(root)) = self.doc.outlines() {
+            collect_outline(&root, 0, &mut entries);
+        }
+        Ok(entries)
+    }
+
+    /// Whether this page carries visual content.
+    /// With MuPDF rendering every page into crisp native visuals, every page has a picture.
+    #[allow(dead_code)]
+    pub fn page_has_picture(&self, _page_num: usize) -> bool {
+        true
+    }
+
+    /// Rasterize a PDF page to raw RGBA bytes with optional Smart Crop applied.
+    pub fn render_page_rgba(
+        &self,
+        page_num: usize,
+        scale: f32,
+        smart_crop: bool,
+    ) -> Result<RenderedPage> {
+        if page_num == 0 || page_num > self.page_count {
+            return Err(anyhow!("Page number {} out of range", page_num));
         }
 
-        let lines: Vec<&str> = raw_text.lines().map(|l| l.trim()).collect();
-        let mut paragraphs: Vec<String> = Vec::new();
-        let mut current_para = String::new();
+        let page = self
+            .doc
+            .load_page((page_num - 1) as i32)
+            .map_err(|e| anyhow!("Failed to load page {}: {}", page_num, e))?;
 
-        for line in lines {
-            if line.is_empty() {
-                if !current_para.is_empty() {
-                    paragraphs.push(current_para.trim().to_string());
-                    current_para.clear();
+        let scale_clamped = scale.clamp(0.2, 4.0);
+        let matrix = Matrix::new_scale(scale_clamped, scale_clamped);
+        let pixmap = page
+            .to_pixmap(&matrix, &Colorspace::device_rgb(), true, true)
+            .map_err(|e| anyhow!("Failed to rasterize page {}: {}", page_num, e))?;
+
+        let width = pixmap.width();
+        let height = pixmap.height();
+        let raw = pixmap.samples().to_vec();
+
+        if smart_crop {
+            if let Some(rgba) = RgbaImage::from_raw(width, height, raw.clone()) {
+                let dyn_img = DynamicImage::ImageRgba8(rgba);
+                let ink_box = Self::calculate_ink_box_for_image(&dyn_img);
+                let x = (ink_box.min_x * width as f32) as u32;
+                let y = (ink_box.min_y * height as f32) as u32;
+                let crop_w = (ink_box.width_fraction() * width as f32) as u32;
+                let crop_h = (ink_box.height_fraction() * height as f32) as u32;
+
+                if crop_w > 0 && crop_h > 0 && (crop_w < width || crop_h < height) {
+                    let cropped = dyn_img.crop_imm(x, y, crop_w, crop_h).to_rgba8();
+                    let c_w = cropped.width() as i32;
+                    let c_h = cropped.height() as i32;
+                    let c_stride = (c_w * 4) as usize;
+                    return Ok(RenderedPage {
+                        page_num,
+                        width: c_w,
+                        height: c_h,
+                        stride: c_stride,
+                        samples: cropped.into_raw(),
+                    });
                 }
-                continue;
-            }
-
-            // Skip page numbers or standalone headers like "Page 1"
-            if is_header_or_footer(line) {
-                continue;
-            }
-
-            if current_para.is_empty() {
-                current_para.push_str(line);
-            } else if current_para.ends_with('-') && !current_para.ends_with(" -") {
-                current_para.pop(); // remove hyphenation
-                current_para.push_str(line);
-            } else {
-                // Line continuation in same paragraph
-                current_para.push(' ');
-                current_para.push_str(line);
             }
         }
 
-        if !current_para.is_empty() {
-            paragraphs.push(current_para.trim().to_string());
-        }
+        let w = width as i32;
+        let h = height as i32;
+        let stride = pixmap.stride() as usize;
 
-        paragraphs
+        Ok(RenderedPage {
+            page_num,
+            width: w,
+            height: h,
+            stride,
+            samples: raw,
+        })
+    }
+
+    /// Render uncropped raw page image (1-indexed) as a DynamicImage.
+    pub fn render_page_image(&self, page_num: usize, smart_crop: bool) -> Result<DynamicImage> {
+        let rendered = self.render_page_rgba(page_num, 1.5, smart_crop)?;
+        let rgba = RgbaImage::from_raw(
+            rendered.width as u32,
+            rendered.height as u32,
+            rendered.samples,
+        )
+        .ok_or_else(|| anyhow!("Failed to build RGBA image from rendered page samples"))?;
+        Ok(DynamicImage::ImageRgba8(rgba))
     }
 
     /// Calculate Zathura-Style Smart Crop ink bounding box for a page image.
@@ -200,114 +291,67 @@ impl PdfDocument {
         InkBoundingBox::new(crop_min_x, crop_min_y, crop_max_x, crop_max_y)
     }
 
-    /// Render uncropped raw page image (1-indexed).
-    fn render_page_image_uncropped(&self, page_num: usize) -> Result<DynamicImage> {
-        if page_num == 0 || page_num > self.page_numbers.len() {
-            return Err(anyhow!("Page number {} out of range", page_num));
+    /// Run heuristic paragraph boundary detection over extracted raw text lines.
+    pub fn reflow_text(raw_text: &str) -> Vec<String> {
+        if raw_text.trim().is_empty() {
+            return Vec::new();
         }
 
-        let pdf_page_num = self.page_numbers[page_num - 1];
+        let lines: Vec<&str> = raw_text.lines().map(|l| l.trim()).collect();
+        let mut paragraphs: Vec<String> = Vec::new();
+        let mut current_para = String::new();
 
-        // Try extracting raster image XObject from the PDF page resources
-        if let Ok(page_id) = self.doc.get_pages().get(&pdf_page_num).copied().ok_or_else(|| anyhow!("Page ID not found")) {
-            if let Ok(resources) = self.doc.get_page_resources(page_id) {
-                if let Some(resources_dict) = resources.0 {
-                    if let Ok(xobjects) = resources_dict.get(b"XObject").and_then(|o| o.as_dict()) {
-                        for (_, obj) in xobjects.iter() {
-                            let stream_res = if let Ok(ref_id) = obj.as_reference() {
-                                self.doc.get_object(ref_id).and_then(|o| o.as_stream())
-                            } else {
-                                obj.as_stream()
-                            };
-
-                            if let Ok(stream) = stream_res {
-                                if let Ok(subtype) = stream.dict.get(b"Subtype").and_then(|s| s.as_name()) {
-                                    if subtype == b"Image" {
-                                        // Try decompressed stream content first, then fallback to raw stream content (e.g. for JPEG DCTDecode streams)
-                                        let bytes_candidates = vec![
-                                            stream.decompressed_content().ok(),
-                                            Some(stream.content.clone()),
-                                        ];
-
-                                        for bytes in bytes_candidates.into_iter().flatten() {
-                                            if let Ok(img) = image::load_from_memory(&bytes) {
-                                                return Ok(img);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+        for line in lines {
+            if line.is_empty() {
+                if !current_para.is_empty() {
+                    paragraphs.push(current_para.trim().to_string());
+                    current_para.clear();
                 }
+                continue;
             }
-        }
 
-        // Synthetic page canvas fallback: render extracted text onto a clean page canvas
-        let text = self.extract_raw_text(page_num)?;
-        let canvas = render_text_to_canvas(&text, 800, 1050);
-        Ok(canvas)
-    }
+            // Skip page numbers or standalone headers like "Page 1"
+            if is_header_or_footer(line) {
+                continue;
+            }
 
-    /// Render PDF page image with optional Smart Crop applied.
-    /// Whether this page carries a picture of its own — a scan, or a page
-    /// whose text *is* an image.
-    ///
-    /// This is the question that decides how a page is shown (roadmap
-    /// 2.11): with a picture, show the picture; without one there is
-    /// nothing to render, so the text is reflowed instead of the old
-    /// fallback, which drew a grey bar for every line.
-    ///
-    /// Mirrors the resource walk in [`Self::render_page_image_uncropped`]
-    /// but decodes nothing, so asking costs a dictionary read rather than
-    /// an image decode — it is called on every page turn.
-    pub fn page_has_picture(&self, page_num: usize) -> bool {
-        if page_num == 0 || page_num > self.page_numbers.len() {
-            return false;
-        }
-        let pdf_page_num = self.page_numbers[page_num - 1];
-        let Some(page_id) = self.doc.get_pages().get(&pdf_page_num).copied() else {
-            return false;
-        };
-        let Ok(resources) = self.doc.get_page_resources(page_id) else {
-            return false;
-        };
-        let Some(resources_dict) = resources.0 else {
-            return false;
-        };
-        let Ok(xobjects) = resources_dict.get(b"XObject").and_then(|o| o.as_dict()) else {
-            return false;
-        };
-        xobjects.iter().any(|(_, obj)| {
-            let stream = if let Ok(ref_id) = obj.as_reference() {
-                self.doc.get_object(ref_id).and_then(|o| o.as_stream())
+            if current_para.is_empty() {
+                current_para.push_str(line);
+            } else if current_para.ends_with('-') && !current_para.ends_with(" -") {
+                current_para.pop(); // remove hyphenation
+                current_para.push_str(line);
             } else {
-                obj.as_stream()
-            };
-            stream
-                .and_then(|s| s.dict.get(b"Subtype").and_then(|t| t.as_name()))
-                .is_ok_and(|subtype| subtype == b"Image")
-        })
-    }
-
-    pub fn render_page_image(&self, page_num: usize, smart_crop: bool) -> Result<DynamicImage> {
-        let img = self.render_page_image_uncropped(page_num)?;
-
-        if smart_crop {
-            let ink_box = Self::calculate_ink_box_for_image(&img);
-            let (width, height) = img.dimensions();
-
-            let x = (ink_box.min_x * width as f32) as u32;
-            let y = (ink_box.min_y * height as f32) as u32;
-            let crop_w = (ink_box.width_fraction() * width as f32) as u32;
-            let crop_h = (ink_box.height_fraction() * height as f32) as u32;
-
-            if crop_w > 0 && crop_h > 0 && (crop_w < width || crop_h < height) {
-                return Ok(img.crop_imm(x, y, crop_w, crop_h));
+                // Line continuation in same paragraph
+                current_para.push(' ');
+                current_para.push_str(line);
             }
         }
 
-        Ok(img)
+        if !current_para.is_empty() {
+            paragraphs.push(current_para.trim().to_string());
+        }
+
+        paragraphs
+    }
+}
+
+/// Recursive helper to collect table of contents outline items.
+fn collect_outline(item: &Outline, depth: usize, out: &mut Vec<PdfTocEntry>) {
+    let title = item.title.trim();
+    if !title.is_empty() {
+        let page_1_based = item.page.map(|p| (p + 1) as usize).unwrap_or(1);
+        out.push(PdfTocEntry {
+            title: title.to_string(),
+            page: page_1_based,
+            depth,
+        });
+        for child in &item.down {
+            collect_outline(child, depth + 1, out);
+        }
+    } else {
+        for child in &item.down {
+            collect_outline(child, depth, out);
+        }
     }
 }
 
@@ -321,37 +365,6 @@ fn is_header_or_footer(line: &str) -> bool {
         }
     }
     line.chars().all(|c| c.is_numeric() || c == '-') && line.len() <= 5
-}
-
-/// Helper function to render text lines onto a synthetic GTK page canvas image (for preview / page mode).
-fn render_text_to_canvas(text: &str, width: u32, height: u32) -> DynamicImage {
-    let mut img = RgbaImage::from_pixel(width, height, Rgba([255, 255, 255, 255]));
-
-    let margin = 40;
-    let lines: Vec<&str> = text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
-    let mut current_y = margin + 30;
-
-    for line in lines {
-        if current_y + 20 > height - margin {
-            break;
-        }
-        let line_len = line.len().min(70);
-        let line_w = ((line_len as u32) * 9).min(width - 2 * margin - 20);
-
-        // Draw ink pixels representing the text line (no margin border line to avoid breaking smart crop)
-        for dy in 0..8 {
-            for dx in 0..line_w {
-                let px = margin + 20 + dx;
-                let py = current_y + dy;
-                if px < width - margin && py < height - margin {
-                    img.put_pixel(px, py, Rgba([40, 40, 40, 255]));
-                }
-            }
-        }
-        current_y += 18;
-    }
-
-    DynamicImage::ImageRgba8(img)
 }
 
 #[cfg(test)]
@@ -368,11 +381,16 @@ mod tests {
 
     #[test]
     fn test_calculate_ink_box_for_blank_and_content_image() {
-        let blank_img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255])));
+        let blank_img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            100,
+            100,
+            Rgba([255, 255, 255, 255]),
+        ));
         let ink_box = PdfDocument::calculate_ink_box_for_image(&blank_img);
         assert_eq!(ink_box, InkBoundingBox::default());
 
-        let mut content_img = RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
+        let mut content_img =
+            RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
         // Draw ink rect from x=20..80, y=30..70
         for y in 30..70 {
             for x in 20..80 {
@@ -388,8 +406,6 @@ mod tests {
         assert!(ink_box.max_y >= 0.69);
     }
 
-    // Reflow became the default way a text PDF is shown (roadmap 2.11),
-    // so the guess it makes about paragraphs is worth pinning down.
     #[test]
     fn reflow_joins_the_lines_of_one_paragraph() {
         assert_eq!(
@@ -436,16 +452,6 @@ mod tests {
     }
 
     #[test]
-    fn test_synthetic_canvas_smart_crop() {
-        let canvas = render_text_to_canvas("Sample header line\nSecond line of content", 800, 1050);
-        let ink_box = PdfDocument::calculate_ink_box_for_image(&canvas);
-
-        // Verify smart crop calculated bounds specifically around the text block, ignoring blank margins
-        assert!(ink_box.min_x >= 0.05); // margin at left
-        assert!(ink_box.max_y <= 0.50); // text only covers top half of canvas
-    }
-
-    #[test]
     fn test_reflow_text_heuristics() {
         let raw = "This is a sentence that is split across two-\nlines due to PDF formatting.\n\nThis is a second paragraph.\nIt continues here.";
         let reflowed = PdfDocument::reflow_text(raw);
@@ -455,4 +461,3 @@ mod tests {
         assert_eq!(reflowed[1], "This is a second paragraph. It continues here.");
     }
 }
-

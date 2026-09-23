@@ -98,6 +98,8 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) line_height_label: gtk::Label,
     pub(crate) column_width_label: gtk::Label,
     pub(crate) wheel_step_label: gtk::Label,
+    pub(crate) arrow_step_label: gtk::Label,
+    pub(crate) arrow_step_row: gtk::Box,
     pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
     pub(crate) dual_page_switch: gtk::Switch,
     pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
@@ -139,6 +141,8 @@ pub enum ReaderMsg {
     SetAutohideCursor(bool),
     /// Roadmap 2.9: how far one wheel notch scrolls.
     WheelStepDelta(i32),
+    /// How far one arrow key step / hold tick scrolls in continuous mode.
+    ArrowStepDelta(i32),
     /// Roadmap 2.9: a reader moved an action to a different key.
     SetKeyBinding(super::keybinds::ReaderAction, gtk::gdk::Key, bool),
     /// Roadmap 2.9: every action back on the key it shipped with.

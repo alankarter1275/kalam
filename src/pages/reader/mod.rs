@@ -724,6 +724,7 @@ impl Component for ReaderModel {
         let catalog_dual_page = catalog.get_pref_i64("reader.dual_page", 1) != 0;
         let catalog_autohide = catalog.get_pref_i64("reader.autohide_cursor", 1) != 0;
         let catalog_wheel = catalog.get_pref_i64("reader.wheel_step", 92).clamp(20, 400) as i32;
+        let catalog_arrow = catalog.get_pref_i64("reader.arrow_step", 45).clamp(10, 200) as i32;
         let font_families = view
             .as_ref()
             .map(|v| v.font_families())
@@ -766,6 +767,8 @@ impl Component for ReaderModel {
             line_height_label,
             column_width_label,
             wheel_step_label,
+            arrow_step_label,
+            arrow_step_row,
             keybind_buttons,
             dual_page_switch,
             theme_dots,
@@ -787,6 +790,7 @@ impl Component for ReaderModel {
             catalog_dual_page,
             catalog_autohide,
             catalog_wheel,
+            catalog_arrow,
             &keybinds,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
@@ -844,6 +848,7 @@ impl Component for ReaderModel {
             jump_back_shortcut,
             autohide_cursor: catalog_autohide,
             wheel_step: catalog_wheel,
+            arrow_step: catalog_arrow,
             can_jump_back: false,
             back_depth: 0,
             selection_chip: None,
@@ -902,6 +907,8 @@ impl Component for ReaderModel {
             line_height_label,
             column_width_label,
             wheel_step_label,
+            arrow_step_label,
+            arrow_step_row,
             keybind_buttons,
             dual_page_switch,
             theme_dots,
@@ -965,6 +972,7 @@ impl Component for ReaderModel {
             // Roadmap 2.9: the pointer and the wheel.
             view.set_autohide_cursor(model.autohide_cursor);
             view.set_wheel_step(model.wheel_step as f32);
+            view.set_arrow_step(model.arrow_step as f32);
             scrollbar.set_visible(model.scrolled);
             model.strip_scrollbar = Some(scrollbar);
             view.widget().grab_focus();
@@ -1587,6 +1595,17 @@ impl Component for ReaderModel {
                         .catalog()
                         .set_pref("reader.wheel_step", &next.to_string());
                     self.with_view(move |v| v.set_wheel_step(next as f32));
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::ArrowStepDelta(delta) => {
+                let next = (self.arrow_step + delta).clamp(10, 200);
+                if next != self.arrow_step {
+                    self.arrow_step = next;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.arrow_step", &next.to_string());
+                    self.with_view(move |v| v.set_arrow_step(next as f32));
                     refresh_controls = true;
                 }
             }

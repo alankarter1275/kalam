@@ -1,5 +1,33 @@
 # Phase 2 test plan
 
+## Round 4 — settings reorganized and continuous arrow scroll speed
+
+- **Arrow scroll speed (continuous mode):**
+  - Added an **Arrow scroll speed** stepper in the left sidebar Settings panel
+    under **Navigation & Scrolling** (persisted in `reader.arrow_step`).
+  - Scales both single-tap arrow step and the 20 ms hold glide speed
+    proportionally (default 45 = 15 px/tick, ~750 px/s).
+  - Dynamically active in continuous scroll mode, and automatically greyed
+    out in paged mode (where vertical arrows step chapters instead).
+  **Re-test:** continuous mode — increase/decrease Arrow scroll speed in Settings;
+  verify ↑/↓ single-tap and hold-glide speed changes to your preference. Switch
+  to paged mode: verify the stepper greys out.
+- **Left sidebar settings reorganized & properly sorted:**
+  - Consolidated the previous 7 fragmented sections into 5 clean, coherent
+    groups in the **Reading** pane:
+    1. **Theme**: Sepia, Light, Dark, Ink palette dots.
+    2. **Typography**: Typeface dropdown, Fonts folder + hint, Font size stepper,
+       Line height stepper, Justify toggle, Publisher styles toggle.
+    3. **Layout**: Column width stepper, Continuous scroll toggle, Two pages
+       side by side toggle (greyed in continuous scroll).
+    4. **Navigation & Scrolling**: Wheel scroll speed stepper, Arrow scroll speed
+       stepper (greyed in paged mode), Hide pointer while reading toggle + hint.
+    5. **Dictionary**: Sense hint toggle, Lookup history toggle.
+  **Re-test:** open Settings (left sidebar), check all 5 sections and the UI
+  flow.
+
+---
+
 ## Round 3 — typeface list, fourth attempt (the correct one), and arrow keys
 
 - **T1 Typeface picker (again):** the real root cause, finally. The panel

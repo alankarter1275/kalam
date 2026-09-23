@@ -41,9 +41,17 @@ pub(crate) fn sync_reader_controls(model: &ReaderModel) {
     model
         .dual_page_switch
         .set_sensitive(!model.scrolled);
+    // Arrow scrolling is active only in continuous scroll mode; in paged
+    // mode Up/Down step chapters, so the scroll speed setting greys out.
+    model
+        .arrow_step_row
+        .set_sensitive(model.scrolled);
     model
         .wheel_step_label
         .set_label(&model.wheel_step.to_string());
+    model
+        .arrow_step_label
+        .set_label(&model.arrow_step.to_string());
 
     let bindings = model.keybinds.borrow();
     for (action, button) in &model.keybind_buttons {

@@ -86,10 +86,10 @@ const CURSOR_SCROLL_GRACE: std::time::Duration = std::time::Duration::from_milli
 const CHAPTER_START_EPS: f64 = 0.01;
 /// Tick of the hold-to-scroll timer in strip mode.
 const HOLD_TICK_MS: u64 = 20;
-/// Pixels per hold tick: ~750 px a second, smooth to the eye.
+/// Pixels per hold tick: ~750 px a second at default speed, smooth to the eye.
 const HOLD_STEP: f32 = 15.0;
-/// One arrow key in scrolled mode.
-const ARROW_STEP: f32 = 46.0;
+/// One arrow key in scrolled mode at default speed: 45 px = ~1.5 lines of text.
+const ARROW_STEP: f32 = 45.0;
 /// Where a chapter's length is guessed from before it is laid out: a
 /// starting density in CSS px per character, replaced by the real one as
 /// soon as one chapter has been. Literata at 17 px in a 620 px column
@@ -243,6 +243,8 @@ struct Inner {
     /// arrow moves the text in a smooth stream instead of repeated hops.
     hold_up: RefCell<Option<gtk::glib::SourceId>>,
     hold_down: RefCell<Option<gtk::glib::SourceId>>,
+    /// CSS px one arrow key scrolls in scrolled mode.
+    arrow_step: Cell<f32>,
     /// CSS px one wheel notch scrolls in scrolled mode.
     wheel_step: Cell<f32>,
     /// The strip, in scrolled mode; `None` in paged mode and before the
@@ -376,6 +378,7 @@ impl ReaderView {
                 hold_up: RefCell::new(None),
                 hold_down: RefCell::new(None),
                 cursor_timer: RefCell::new(None),
+                arrow_step: Cell::new(ARROW_STEP),
                 wheel_step: Cell::new(WHEEL_STEP),
                 strip: RefCell::new(None),
                 pending_jump: Cell::new(false),
@@ -452,6 +455,18 @@ impl ReaderView {
 
     pub fn autohide_cursor(&self) -> bool {
         self.inner.hide_cursor.get()
+    }
+
+    /// How far one arrow key step scrolls in scrolled mode, in CSS px.
+    /// Also scales the hold-to-scroll glide speed (hold_step = arrow_step / 3).
+    pub fn set_arrow_step(&self, px: f32) {
+        let step = px.clamp(10.0, 200.0);
+        self.inner.arrow_step.set(step);
+        self.inner.vadjustment.set_step_increment(f64::from(step));
+    }
+
+    pub fn arrow_step(&self) -> f32 {
+        self.inner.arrow_step.get()
     }
 
     /// How far one wheel notch scrolls, in CSS px (roadmap 2.9). Clamped:
@@ -764,17 +779,19 @@ impl ReaderView {
     }
 
     /// Start (or ignore a repeat of) a held arrow scroll in strip mode.
-    /// The first press nudges by a line like before; the timer takes the
-    /// motion over so holding glides instead of hopping.
-    fn arrow_scroll_hold_start(&self, pix: f32, up: bool) {
+    /// The first press nudges by one step; the timer takes the motion over
+    /// so holding glides smoothly instead of hopping.
+    fn arrow_scroll_hold_start(&self, up: bool) {
         let hold = if up { &self.inner.hold_up } else { &self.inner.hold_down };
         if hold.borrow().is_some() {
             return; // a repeat of the key we're already holding
         }
+        let step = self.arrow_step();
+        let pix = if up { -step } else { step };
         let _ = self.scroll_by(pix);
         self.inner.last_chapter_step.set(None);
         let view = self.clone();
-        let dir = if pix < 0.0 { -1.0_f32 } else { 1.0_f32 };
+        let dir = if up { -1.0_f32 } else { 1.0_f32 };
         let id = gtk::glib::timeout_add_local(
             std::time::Duration::from_millis(HOLD_TICK_MS),
             move || {
@@ -787,7 +804,9 @@ impl ReaderView {
                     }
                     return gtk::glib::ControlFlow::Break;
                 }
-                let _ = view.scroll_by(HOLD_STEP * dir);
+                let current_step = view.arrow_step();
+                let hold_step = (current_step / 3.0).max(1.0);
+                let _ = view.scroll_by(dir * hold_step);
                 gtk::glib::ControlFlow::Continue
             },
         );
@@ -1448,7 +1467,7 @@ impl ReaderView {
             value,
             0.0,
             upper,
-            f64::from(ARROW_STEP),
+            f64::from(self.arrow_step()),
             page * f64::from(PAGE_SCROLL_FRACTION),
             page,
         );
@@ -1871,11 +1890,11 @@ impl ReaderView {
                 // Up/Down step chapters. PageUp/PageDown keep their KeyMap
                 // paging in both modes. Home/End stay the book's ends.
                 Some("Up") if scrolled => {
-                    view.arrow_scroll_hold_start(-ARROW_STEP, true);
+                    view.arrow_scroll_hold_start(true);
                     return glib::Propagation::Stop;
                 }
                 Some("Down") if scrolled => {
-                    view.arrow_scroll_hold_start(ARROW_STEP, false);
+                    view.arrow_scroll_hold_start(false);
                     return glib::Propagation::Stop;
                 }
                 Some("Left") if scrolled => {

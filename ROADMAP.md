@@ -1228,6 +1228,21 @@ they need 1.2's asynchronous service layer underneath them.
   Per-book cache budgets come with it — `set_cache_budget` already exists, only
   the call is missing.
 
+**Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
+Field report: T1 typeface dropdown and keyboard arrow navigation confirmed
+working on device ("done. looks fine"). In response to user feedback,
+the left sidebar's Reading settings have been recategorized from 7
+fragmented sections into 5 clean, logically sorted groups: Theme (palette
+dots), Typography (Typeface dropdown, Fonts folder, Font size, Line
+height, Justify, Publisher styles), Layout (Column width, Continuous
+scroll, Two pages), Navigation & Scrolling (Wheel scroll speed, Arrow
+scroll speed, Pointer autohide), and Dictionary (Sense hint, Lookup
+history). The new `reader.arrow_step` preference (range 10–200, step 5,
+default 45) scales both single-tap arrow steps and the 20 ms continuous
+glide speed; in paged mode it is greyed out (since vertical arrows step
+chapters there), mirroring the existing continuous-mode greying of
+two-page spreads.
+
 **Round 3 (2026-09-22) — shipped, awaiting the report.** The typeface
 dropdown's fourth fix is the first one aimed at the right wall: the
 Settings panel hangs in the **left** sidebar (`left_stack`), and the three

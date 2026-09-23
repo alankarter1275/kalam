@@ -52,6 +52,10 @@ pub struct ReaderModel {
     /// Roadmap 2.9: CSS px per wheel notch, and the label showing it.
     pub(crate) wheel_step: i32,
     pub(crate) wheel_step_label: gtk::Label,
+    /// CSS px per arrow step in continuous scroll, its label and row widget.
+    pub(crate) arrow_step: i32,
+    pub(crate) arrow_step_label: gtk::Label,
+    pub(crate) arrow_step_row: gtk::Box,
     /// The chip over the current selection and the dictionary popover,
     /// so they can be taken down again.
     /// Roadmap 2.6: the jump-back offer, standing while it is fresh.

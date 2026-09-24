@@ -1,4 +1,9 @@
-(no lines matched; last 100 lines of output)
+src/pdf.rs:252:14: [1m[91merror[0m: `(width - 3)` is never smaller than `0` and has therefore no effect: help: try: `(width - 3)`
+src/pdf.rs:253:32: [1m[91merror[0m: `(height - 3)` is never smaller than `0` and has therefore no effect: help: try: `(height - 3)`
+src/pdf.rs:254:14: [1m[91merror[0m: `(width - 3)` is never smaller than `0` and has therefore no effect: help: try: `(width - 3)`
+src/pdf.rs:254:34: [1m[91merror[0m: `(height - 3)` is never smaller than `0` and has therefore no effect: help: try: `(height - 3)`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -11,16 +16,47 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m dirs-sys v0.5.0
+[1m[92m  Downloaded[0m dirs v6.0.0
+[1m[92m  Downloaded[0m dlib v0.5.3
+[1m[92m  Downloaded[0m float-ord v0.3.2
+[1m[92m  Downloaded[0m font-kit v0.14.3
+[1m[92m  Downloaded[0m freetype-sys v0.20.1
+[1m[92m  Downloaded[0m lazy_static v1.5.0
+[1m[92m  Downloaded[0m option-ext v0.2.0
+[1m[92m  Downloaded[0m pathfinder_geometry v0.5.1
+[1m[92m  Downloaded[0m pathfinder_simd v0.5.6
+[1m[92m  Downloaded[0m yeslogic-fontconfig-sys v6.0.1
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m   Compiling[0m pathfinder_simd v0.5.6
+[1m[92m   Compiling[0m freetype-sys v0.20.1
+[1m[92m   Compiling[0m yeslogic-fontconfig-sys v6.0.1
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
+[1m[92m    Checking[0m libloading v0.8.9
+[1m[92m    Checking[0m option-ext v0.2.0
+[1m[92m    Checking[0m dirs-sys v0.5.0
+[1m[92m   Compiling[0m font-kit v0.14.3
+[1m[92m    Checking[0m dlib v0.5.3
+[1m[92m    Checking[0m dirs v6.0.0
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m float-ord v0.3.2
+[1m[92m    Checking[0m lazy_static v1.5.0
+[1m[92m    Checking[0m pathfinder_geometry v0.5.1
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 23.19s
---- run 35946896916 ---
+src/pdf.rs:252:14: [1m[91merror[0m: `(width - 3)` is never smaller than `0` and has therefore no effect: help: try: `(width - 3)`
+src/pdf.rs:253:32: [1m[91merror[0m: `(height - 3)` is never smaller than `0` and has therefore no effect: help: try: `(height - 3)`
+src/pdf.rs:254:14: [1m[91merror[0m: `(width - 3)` is never smaller than `0` and has therefore no effect: help: try: `(width - 3)`
+src/pdf.rs:254:34: [1m[91merror[0m: `(height - 3)` is never smaller than `0` and has therefore no effect: help: try: `(height - 3)`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+--- run 35950915385 ---

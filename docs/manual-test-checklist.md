@@ -338,25 +338,29 @@ but renders as boxes.
 
 ### T14 · Paged Mode vs Continuous Vertical Scroll Mode & Arrow Speed
 **Do:**
+- Open any PDF document in Kalam.
+- Verify that the first page displays immediately upon open with NO blank dashed placeholder.
 - Verify Continuous mode is the default when opening any PDF.
 - Press `M` or click the mode icon in the bottom pill to switch between Paged and Continuous modes.
-- Close the reader and reopen: verify your view mode preference is remembered.
+- Close the reader and reopen: verify your view mode preference is remembered, and if reopening a book read past page 1, your scroll position is restored.
 - In Continuous mode, use `Up` / `Down` arrows or mouse wheel to scroll vertically.
 **Look for:**
+- Page appears immediately upon opening without needing to scroll first.
 - In Paged mode: single centered page, Left/Right turns pages.
-- In Continuous mode: pages stacked vertically with clean separation. Scrolling is liquid smooth without any widget recreation or scrollbar jumping (in-place picture updates).
+- In Continuous mode: pages stacked vertically with clean separation and horizontal padding. Scrolling is liquid smooth without any widget recreation or scrollbar jumping (in-place picture updates).
 - Up/Down arrows scroll smoothly obeying your configured arrow scroll speed setting (`reader.arrow_step`).
-**Report if:** continuous mode is not default, mode does not persist across restarts, continuous scrolling jerks or resets scroll position, or arrow scroll speed is ignored.
+**Report if:** continuous mode is not default, a blank placeholder appears until scrolling, continuous scrolling jerks or resets scroll position, or arrow scroll speed is ignored.
 
 ### T15 · Touchpad Pinch-to-Zoom & Smart Crop Persistence
 **Do:**
 - On a trackpad, use two fingers to pinch in/out. Alternatively, hold `Ctrl` and scroll.
-- Toggle Smart Crop (`C` or the scissor icon in the bottom pill). Verify that fonts and page numbers are never clipped (generous 3.5% padding).
+- Toggle Smart Crop (`C` or the scissor icon in the bottom pill). Verify that fonts and page numbers are never clipped (background luminance detection + 5.5% / 44px breathing margin).
+- Verify all fonts across diverse PDFs render cleanly with full glyph coverage (MuPDF `system-fonts` enabled).
 - Close and reopen that document: verify Smart Crop state was saved for that specific book.
 - Open a different PDF: verify Smart Crop is OFF by default.
 **Look for:**
 - Fluid touchpad pinch-to-zoom and Ctrl+Scroll zoom.
-- Smart Crop removes margins without cutting off any text or numbers.
+- Smart Crop removes margins without cutting off any text, accents, headers, or numbers.
 - Smart Crop state is document-specific and survives app restart.
 **Report if:** pinch-to-zoom doesn't react, fonts are cut off, or persistence fails.
 

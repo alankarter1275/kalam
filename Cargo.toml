@@ -151,8 +151,8 @@ quick-xml = "0.37"
 flate2 = "1"
 epub-builder = "0.8.3"
 
-# PDF (MuPDF safe Rust engine with base14 fonts; default-features off)
-mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }
+# PDF (MuPDF safe Rust engine with base14 fonts and system fontconfig support)
+mupdf = { version = "0.8", default-features = false, features = ["base14-fonts", "system-fonts"] }
 
 [profile.dev]
 opt-level = 1

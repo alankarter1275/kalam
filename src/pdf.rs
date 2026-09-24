@@ -236,12 +236,38 @@ impl PdfDocument {
 
     /// Calculate Zathura-Style Smart Crop ink bounding box for a page image.
     ///
-    /// Scans pixel contents to find min/max ink coordinates, cropping out blank white margins.
+    /// Scans pixel contents against the sampled page background color to find min/max ink coordinates,
+    /// with generous reading margin padding so fonts, ascenders, descenders, and page numbers are never clipped.
     pub fn calculate_ink_box_for_image(img: &DynamicImage) -> InkBoundingBox {
         let (width, height) = img.dimensions();
         if width == 0 || height == 0 {
             return InkBoundingBox::default();
         }
+
+        let rgba = img.to_rgba8();
+
+        // Sample corner pixels to determine background paper luminance (handles white, cream, off-white)
+        let sample_pts = [
+            (2.min(width - 1), 2.min(height - 1)),
+            ((width - 3).max(0), 2.min(height - 1)),
+            (2.min(width - 1), (height - 3).max(0)),
+            ((width - 3).max(0), (height - 3).max(0)),
+        ];
+        let mut bg_lum_sum = 0.0f32;
+        let mut bg_count = 0;
+        for (sx, sy) in sample_pts {
+            let p = rgba.get_pixel(sx, sy);
+            if p[3] > 20 {
+                let l = 0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32;
+                bg_lum_sum += l;
+                bg_count += 1;
+            }
+        }
+        let bg_lum = if bg_count > 0 {
+            bg_lum_sum / bg_count as f32
+        } else {
+            255.0
+        };
 
         let mut min_x = width;
         let mut min_y = height;
@@ -249,11 +275,9 @@ impl PdfDocument {
         let mut max_y = 0;
         let mut found_ink = false;
 
-        let rgba = img.to_rgba8();
         for y in 0..height {
             for x in 0..width {
                 let pixel = rgba.get_pixel(x, y);
-                // Check if pixel is "ink" (using luminance threshold < 225 out of 255)
                 let r = pixel[0] as f32;
                 let g = pixel[1] as f32;
                 let b = pixel[2] as f32;
@@ -261,7 +285,11 @@ impl PdfDocument {
 
                 let lum = 0.299 * r + 0.587 * g + 0.114 * b;
 
-                if a > 30 && lum < 225.0 {
+                // Ink check: detect any pixel that noticeably departs from background paper color,
+                // or any anti-aliased glyph stroke. Sensitive enough to capture light grey headers,
+                // footnote markers, subtle section titles, and subpixel font edges.
+                let diff = (bg_lum - lum).abs();
+                if (a > 20 && diff > 10.0) || (a > 20 && lum < 242.0) {
                     found_ink = true;
                     if x < min_x {
                         min_x = x;
@@ -283,9 +311,10 @@ impl PdfDocument {
             return InkBoundingBox::default();
         }
 
-        // Add 3.5% padding margin (min 24px) so text, ascenders, descenders, and page numbers are never clipped
-        let pad_x = ((width as f32) * 0.035).max(24.0) as u32;
-        let pad_y = ((height as f32) * 0.035).max(24.0) as u32;
+        // Add 5.5% margin padding (min 44px) so text, ascenders, descenders, headers, and page numbers
+        // always preserve generous breathing room and are never cut off.
+        let pad_x = ((width as f32) * 0.055).max(44.0) as u32;
+        let pad_y = ((height as f32) * 0.055).max(44.0) as u32;
 
         let crop_min_x = min_x.saturating_sub(pad_x) as f32 / width as f32;
         let crop_min_y = min_y.saturating_sub(pad_y) as f32 / height as f32;

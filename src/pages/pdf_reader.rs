@@ -179,6 +179,24 @@ impl PdfReaderModel {
                 model.toc_entries = doc.outlines().unwrap_or_default();
                 model.is_loading = false;
                 model.status_text.clear();
+
+                // Synchronously pre-render the active starting page (8-15ms)
+                // so the viewer opens with the page immediately visible — zero blank placeholder!
+                let scale = (1.5 * model.zoom_level).clamp(0.5, 3.5);
+                if let Ok(rendered) = doc.render_page_rgba(model.current_page, scale, model.smart_crop) {
+                    let bytes = glib::Bytes::from_owned(rendered.samples);
+                    let texture = gdk::MemoryTexture::new(
+                        rendered.width,
+                        rendered.height,
+                        gdk::MemoryFormat::R8g8b8a8,
+                        &bytes,
+                        rendered.stride,
+                    );
+                    model.textures.insert(
+                        model.current_page,
+                        (texture.upcast(), rendered.width, rendered.height),
+                    );
+                }
             } else {
                 model.status_text = "Failed to open PDF document".to_string();
                 model.is_loading = false;
@@ -287,7 +305,7 @@ impl PdfReaderModel {
             let s = sender.clone();
             let p_buf = path.clone();
 
-            crate::tasks::spawn(
+            crate::tasks::spawn_internal(
                 "Rendering PDF page",
                 move |_| -> anyhow::Result<(usize, i32, i32, usize, Vec<u8>)> {
                     let doc = PdfDocument::open(&p_buf)?;
@@ -359,9 +377,7 @@ impl PdfReaderModel {
 
                 if let Some((tex, w, h)) = self.textures.get(&self.current_page) {
                     pic.set_paintable(Some(tex));
-                    let target_w = ((*w as f32) * self.zoom_level) as i32;
-                    let target_h = ((*h as f32) * self.zoom_level) as i32;
-                    pic.set_size_request(target_w, target_h);
+                    pic.set_size_request(*w, *h);
                     pic.set_visible(true);
                     loading_box.set_visible(false);
                 } else {
@@ -387,6 +403,8 @@ impl PdfReaderModel {
                 container.set_vexpand(false);
                 container.set_margin_top(24);
                 container.set_margin_bottom(80);
+                container.set_margin_start(16);
+                container.set_margin_end(16);
 
                 self.page_pictures.clear();
                 self.paged_picture = None;
@@ -404,9 +422,7 @@ impl PdfReaderModel {
 
                     if let Some((tex, w, h)) = self.textures.get(&p) {
                         pic.set_paintable(Some(tex));
-                        let target_w = ((*w as f32) * self.zoom_level) as i32;
-                        let target_h = ((*h as f32) * self.zoom_level) as i32;
-                        pic.set_size_request(target_w, target_h);
+                        pic.set_size_request(*w, *h);
                         pic.add_css_class("kalam-pdf-page-image");
                     } else {
                         let placeholder_w = (600.0 * self.zoom_level) as i32;
@@ -438,11 +454,11 @@ impl PdfReaderModel {
 
         if let Some((tex, w, h)) = self.textures.get(&self.current_page) {
             pic.set_paintable(Some(tex));
-            let target_w = ((*w as f32) * self.zoom_level) as i32;
-            let target_h = ((*h as f32) * self.zoom_level) as i32;
-            pic.set_size_request(target_w, target_h);
+            pic.set_size_request(*w, *h);
             pic.set_visible(true);
             loading_box.set_visible(false);
+            pic.queue_resize();
+            pic.queue_draw();
         } else {
             pic.set_visible(false);
             loading_box.set_visible(true);
@@ -934,10 +950,12 @@ impl Component for PdfReaderModel {
         // 9. Track continuous scroll position changes to update current_page
         let vadj = widgets.viewport_scroll.vadjustment();
         let tx_vadj = tx.clone();
-        vadj.connect_value_changed(move |adj| {
-            let max = (adj.upper() - adj.page_size()).max(1.0);
-            let ratio = (adj.value() / max).clamp(0.0, 1.0);
-            let _ = tx_vadj.send(PdfReaderMsg::UpdateScrollPage(ratio as usize));
+        vadj.connect_value_changed(move |_| {
+            let _ = tx_vadj.send(PdfReaderMsg::UpdateScrollPage(0));
+        });
+        let tx_vadj_changed = tx.clone();
+        vadj.connect_changed(move |_| {
+            let _ = tx_vadj_changed.send(PdfReaderMsg::UpdateScrollPage(0));
         });
 
         // 10. Click / tap navigation: left quarter = prev, right quarter = next, center = toggle controls
@@ -987,6 +1005,20 @@ impl Component for PdfReaderModel {
         // Initial child and render triggering
         let child = model.build_viewport_widget();
         widgets.viewport_scroll.set_child(Some(&child));
+
+        // Restore scroll position in continuous mode if resuming past page 1
+        if model.view_mode == PdfViewMode::Continuous && model.current_page > 1 && model.total_pages > 1 {
+            let cur = model.current_page;
+            let total = model.total_pages;
+            let vadj = widgets.viewport_scroll.vadjustment();
+            glib::idle_add_local_once(move || {
+                let max = (vadj.upper() - vadj.page_size()).max(0.0);
+                if max > 0.0 {
+                    let ratio = (cur - 1) as f64 / (total - 1) as f64;
+                    vadj.set_value(ratio * max);
+                }
+            });
+        }
 
         model.trigger_loads(&sender);
 
@@ -1158,12 +1190,13 @@ impl Component for PdfReaderModel {
                         self.update_paged_view();
                     }
                 } else if let Some(pic) = self.page_pictures.get(&page) {
-                    let target_w = ((width as f32) * self.zoom_level) as i32;
-                    let target_h = ((height as f32) * self.zoom_level) as i32;
                     pic.set_paintable(Some(&texture));
-                    pic.set_size_request(target_w, target_h);
+                    pic.set_size_request(width, height);
                     pic.remove_css_class("kalam-pdf-placeholder");
                     pic.add_css_class("kalam-pdf-page-image");
+                    pic.queue_resize();
+                    pic.queue_draw();
+                    widgets.viewport_scroll.queue_draw();
                 }
             }
             PdfReaderMsg::TopEdgeHover(hovering) => {

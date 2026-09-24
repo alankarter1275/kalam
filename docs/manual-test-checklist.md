@@ -315,39 +315,50 @@ but renders as boxes.
 - Hover near the top edge (< 50px from top) or the back button.
 - Hover near the bottom edge (< 60px from bottom) or the bottom dock.
 - Hover within 20px of the left edge of the screen (Zen Browser style).
+- Click the middle of the reading viewport.
 - Move mouse back into the reading area or scroll.
+- Test in both PDF and EPUB readers.
 **Look for:**
-- Top edge hover reveals floating back button pill ("Library") without title text (prevents overlaps). Autohides smoothly after 2.5s when leaving.
-- Bottom edge hover reveals floating bottom pill with navigation, zoom controls, mode toggle, smart crop toggle, and TOC toggle. Autohides after 3s when leaving.
+- Top edge hover reveals floating back button pill ("Library") without title text (prevents overlaps). Autohides smoothly after 2.5s when leaving with a clean SlideDown / SlideUp transition.
+- Bottom edge hover reveals floating bottom pill with navigation, zoom controls, mode toggle, and smart crop toggle. Autohides consistently after 2.5s when leaving with a clean SlideUp / SlideDown transition.
+- Clicking the middle of the reading viewport toggles controls on/off cleanly without getting stuck.
 - Left edge hover smoothly slides open the left TOC outlines sidebar (`SlideRight`). Moving cursor away from sidebar closes it with 350ms debounce.
 - Scrolling the document immediately hides unhovered controls.
-**Report if:** controls fail to reveal on edge hover, fail to autohide, or sidebar fails to slide out on left edge hover.
+- EPUB reader also uses smooth SlideDown and SlideUp transitions for its top back chip and bottom pill.
+**Report if:** controls fail to reveal on edge hover, fail to autohide, bottom bar gets stuck, or transitions are missing.
 
 ### T13 · Table of Contents & Outlines Left Sidebar
-**Do:** hover the left edge or click the sidebar icon in the bottom pill, or press `T`.
+**Do:** hover the left edge or press `T`.
 **Look for:**
-- Left sidebar header displaying book cover thumbnail, serif book title, author, and reading progress bar (`kalam-reader-book-head`).
-- Document outlines listed below with indentation for sub-sections and page numbers.
+- Left sidebar header displaying book cover thumbnail, serif book title, author, and reading progress bar (`kalam-reader-book-head`), floating 8px off the edge matching EPUB aesthetics.
+- Document outlines listed directly below without redundant intermediate headers or extra close buttons.
 - Clicking any outline item jumps directly to that page.
 - Pressing `Esc` or clicking the dim backdrop immediately closes the sidebar.
 **Report if:** book cover or title is missing in sidebar, header has overlapping text, or clicking an outline entry fails to jump.
 
 ### T14 · Paged Mode vs Continuous Vertical Scroll Mode & Arrow Speed
 **Do:**
+- Verify Continuous mode is the default when opening any PDF.
 - Press `M` or click the mode icon in the bottom pill to switch between Paged and Continuous modes.
+- Close the reader and reopen: verify your view mode preference is remembered.
 - In Continuous mode, use `Up` / `Down` arrows or mouse wheel to scroll vertically.
 **Look for:**
 - In Paged mode: single centered page, Left/Right turns pages.
 - In Continuous mode: pages stacked vertically with clean separation. Scrolling is liquid smooth without any widget recreation or scrollbar jumping (in-place picture updates).
 - Up/Down arrows scroll smoothly obeying your configured arrow scroll speed setting (`reader.arrow_step`).
-**Report if:** continuous scrolling jerks or resets scroll position, arrow scroll speed is ignored, or page tracking is desynchronized.
+**Report if:** continuous mode is not default, mode does not persist across restarts, continuous scrolling jerks or resets scroll position, or arrow scroll speed is ignored.
 
-### T15 · Generous Memory Prefetching & Fast Scrolling
-**Do:** open a multi-hundred page PDF and scroll rapidly through 20+ pages.
+### T15 · Touchpad Pinch-to-Zoom & Smart Crop Persistence
+**Do:**
+- On a trackpad, use two fingers to pinch in/out. Alternatively, hold `Ctrl` and scroll.
+- Toggle Smart Crop (`C` or the scissor icon in the bottom pill). Verify that fonts and page numbers are never clipped (generous 3.5% padding).
+- Close and reopen that document: verify Smart Crop state was saved for that specific book.
+- Open a different PDF: verify Smart Crop is OFF by default.
 **Look for:**
-- Current page ± 8 pages kept in memory (~85-100 MB), prefetching ± 4 pages ahead.
-- Fast scrolling fills in smoothly without freezes.
-**Report if:** memory balloons beyond reason (>200 MB) or UI freezes.
+- Fluid touchpad pinch-to-zoom and Ctrl+Scroll zoom.
+- Smart Crop removes margins without cutting off any text or numbers.
+- Smart Crop state is document-specific and survives app restart.
+**Report if:** pinch-to-zoom doesn't react, fonts are cut off, or persistence fails.
 
 ---
 

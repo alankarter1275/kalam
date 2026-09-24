@@ -41,6 +41,7 @@ pub enum PdfReaderMsg {
     ToggleSmartCrop,
     ToggleSidebar,
     CloseSidebar,
+    ToggleControls,
     JumpToToc(usize),
     EscapeKey,
     Close,
@@ -121,6 +122,20 @@ impl PdfReaderModel {
 
         let arrow_step = init.catalog.get_pref_i64("reader.arrow_step", 45) as f32;
 
+        // Continuous scroll is global default for the viewer and survives restart
+        let continuous_pref = init.catalog.get_pref_i64("reader.pdf.continuous", 1);
+        let view_mode = if continuous_pref == 0 {
+            PdfViewMode::Paged
+        } else {
+            PdfViewMode::Continuous
+        };
+
+        // Smart crop is document-specific and defaults to OFF
+        let smart_crop_pref = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.smart_crop", init.book_id));
+        let smart_crop = smart_crop_pref.as_deref() == Some("1");
+
         let mut model = Self {
             book_id: init.book_id,
             catalog: init.catalog,
@@ -131,8 +146,8 @@ impl PdfReaderModel {
             current_page: saved_page,
             total_pages: 1,
             zoom_level: 1.0,
-            view_mode: PdfViewMode::Paged,
-            smart_crop: true,
+            view_mode,
+            smart_crop,
             show_back_button: true,
             show_bottom_pill: true,
             show_sidebar: false,
@@ -206,7 +221,7 @@ impl PdfReaderModel {
         self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
         let seq = self.bottom_hide_seq;
         let tx = sender.input_sender().clone();
-        glib::timeout_add_local_once(Duration::from_millis(3000), move || {
+        glib::timeout_add_local_once(Duration::from_millis(2500), move || {
             let _ = tx.send(PdfReaderMsg::BottomHideTimerTick(seq));
         });
     }
@@ -470,7 +485,7 @@ impl Component for PdfReaderModel {
                 connect_clicked => PdfReaderMsg::CloseSidebar,
             },
 
-            // ── 3. Overlay: Left Edge Hover Strip (Zen Browser style)
+            // ── 3. Overlay: Left Edge Hover Strip (Zen Browser style) ──
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
                 add_css_class: "kalam-reader-hover-edge-left",
@@ -630,14 +645,6 @@ impl Component for PdfReaderModel {
                             }),
                             connect_clicked => PdfReaderMsg::ToggleSmartCrop,
                         },
-
-                        // Table of Contents Sidebar Toggle
-                        gtk::Button {
-                            set_icon_name: "sidebar-show-symbolic",
-                            add_css_class: "kalam-reader-pill-nav",
-                            set_tooltip_text: Some("Table of Contents / Outlines (T)"),
-                            connect_clicked => PdfReaderMsg::ToggleSidebar,
-                        },
                     },
                 },
             },
@@ -651,15 +658,18 @@ impl Component for PdfReaderModel {
                 set_transition_type: gtk::RevealerTransitionType::SlideRight,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Fill,
+                set_margin_start: 8,
+                set_margin_top: 8,
+                set_margin_bottom: 8,
 
                 #[name = "left_sidebar_box"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_width_request: 320,
+                    set_width_request: 280,
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-left",
 
-                    // 1. Book Head (Cover + Title + Author + Progress)
+                    // Book Head (Cover + Title + Author + Progress)
                     gtk::Box {
                         add_css_class: "kalam-reader-book-head",
                         set_orientation: gtk::Orientation::Horizontal,
@@ -712,40 +722,20 @@ impl Component for PdfReaderModel {
                         },
                     },
 
-                    // 2. TOC Header
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        add_css_class: "kalam-reader-sidebar-head",
-                        set_margin_start: 14,
-                        set_margin_end: 14,
-                        set_margin_top: 10,
-                        set_margin_bottom: 6,
-
-                        gtk::Label {
-                            set_label: "Table of Contents",
-                            add_css_class: "kalam-reader-sidebar-title",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::Start,
-                        },
-
-                        gtk::Button {
-                            set_icon_name: "window-close-symbolic",
-                            set_tooltip_text: Some("Close (Esc)"),
-                            add_css_class: "flat",
-                            connect_clicked => PdfReaderMsg::CloseSidebar,
-                        },
-                    },
-
-                    // 3. Outlines List
+                    // Outlines List (Panel Scroll matching EPUB reader)
                     gtk::ScrolledWindow {
+                        add_css_class: "kalam-reader-panel-scroll",
+                        set_hscrollbar_policy: gtk::PolicyType::Never,
+                        set_vscrollbar_policy: gtk::PolicyType::Automatic,
                         set_hexpand: true,
                         set_vexpand: true,
 
                         #[name = "toc_list_box"]
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 2,
-                            set_margin_all: 8,
+                            set_spacing: 0,
+                            set_hexpand: true,
+                            set_vexpand: true,
                         },
                     },
                 },
@@ -851,7 +841,7 @@ impl Component for PdfReaderModel {
             let h = root_clone.height() as f64;
             let top = y < 50.0;
             let bottom = y > (h - 60.0) && h > 60.0;
-            let left = x < 20.0;
+            let left = x < 25.0;
 
             if top != was_top_clone.get() {
                 was_top_clone.set(top);
@@ -920,12 +910,22 @@ impl Component for PdfReaderModel {
         });
         widgets.left_sidebar_box.add_controller(sidebar_motion);
 
-        // 8. Scroll controller to autohide controls on scrolling
+        // 8. Scroll controller to autohide controls on scrolling or zoom on Ctrl+scroll
         let scroll_ctrl = gtk::EventControllerScroll::new(
             gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::HORIZONTAL,
         );
         let tx_sc = tx.clone();
-        scroll_ctrl.connect_scroll(move |_, _, _| {
+        let tx_ctrl_zoom = tx.clone();
+        scroll_ctrl.connect_scroll(move |controller, _dx, dy| {
+            let state = controller.current_event_state();
+            if state.contains(gdk::ModifierType::CONTROL_MASK) {
+                if dy < -0.1 {
+                    let _ = tx_ctrl_zoom.send(PdfReaderMsg::ZoomIn);
+                } else if dy > 0.1 {
+                    let _ = tx_ctrl_zoom.send(PdfReaderMsg::ZoomOut);
+                }
+                return gtk::glib::Propagation::Stop;
+            }
             let _ = tx_sc.send(PdfReaderMsg::UserScrolled);
             gtk::glib::Propagation::Proceed
         });
@@ -940,7 +940,7 @@ impl Component for PdfReaderModel {
             let _ = tx_vadj.send(PdfReaderMsg::UpdateScrollPage(ratio as usize));
         });
 
-        // 11. Click / tap navigation: left quarter = prev, right quarter = next, center = toggle bottom pill
+        // 10. Click / tap navigation: left quarter = prev, right quarter = next, center = toggle controls
         let click = gtk::GestureClick::new();
         let tx_click = tx.clone();
         click.connect_released(move |gesture, _, x, _| {
@@ -955,11 +955,34 @@ impl Component for PdfReaderModel {
                 } else if fraction > 0.78 {
                     let _ = tx_click.send(PdfReaderMsg::NextPage);
                 } else {
-                    let _ = tx_click.send(PdfReaderMsg::BottomEdgeHover(true));
+                    let _ = tx_click.send(PdfReaderMsg::ToggleControls);
                 }
             }
         });
         widgets.viewport_scroll.add_controller(click);
+
+        // 11. Touchpad pinch-to-zoom gesture
+        let zoom_gesture = gtk::GestureZoom::new();
+        let tx_zoom = tx.clone();
+        let last_scale = std::rc::Rc::new(std::cell::Cell::new(1.0f64));
+        let ls_begin = last_scale.clone();
+        zoom_gesture.connect_begin(move |_, _| {
+            ls_begin.set(1.0);
+        });
+        let ls_change = last_scale.clone();
+        zoom_gesture.connect_scale_changed(move |_, scale| {
+            let prev = ls_change.get();
+            let delta = scale - prev;
+            if delta.abs() > 0.08 {
+                ls_change.set(scale);
+                if delta > 0.0 {
+                    let _ = tx_zoom.send(PdfReaderMsg::ZoomIn);
+                } else {
+                    let _ = tx_zoom.send(PdfReaderMsg::ZoomOut);
+                }
+            }
+        });
+        widgets.viewport_scroll.add_controller(zoom_gesture);
 
         // Initial child and render triggering
         let child = model.build_viewport_widget();
@@ -967,7 +990,7 @@ impl Component for PdfReaderModel {
 
         model.trigger_loads(&sender);
 
-        // Schedule initial hide of back button and bottom pill after 3.5s
+        // Schedule initial hide of back button and bottom pill after 2.5s
         model.schedule_back_hide(&sender);
         model.schedule_bottom_hide(&sender);
 
@@ -1003,7 +1026,7 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::ZoomIn => {
-                self.zoom_level = (self.zoom_level + 0.2).min(3.0);
+                self.zoom_level = (self.zoom_level + 0.15).min(3.0);
                 self.textures.clear();
                 self.pending_loads.clear();
                 self.trigger_loads(&sender);
@@ -1011,7 +1034,7 @@ impl Component for PdfReaderModel {
                 widgets.viewport_scroll.set_child(Some(&child));
             }
             PdfReaderMsg::ZoomOut => {
-                self.zoom_level = (self.zoom_level - 0.2).max(0.4);
+                self.zoom_level = (self.zoom_level - 0.15).max(0.4);
                 self.textures.clear();
                 self.pending_loads.clear();
                 self.trigger_loads(&sender);
@@ -1031,12 +1054,22 @@ impl Component for PdfReaderModel {
                     PdfViewMode::Paged => PdfViewMode::Continuous,
                     PdfViewMode::Continuous => PdfViewMode::Paged,
                 };
+                // Persist globally for the viewer across restarts
+                self.catalog.set_pref_i64(
+                    "reader.pdf.continuous",
+                    if self.view_mode == PdfViewMode::Continuous { 1 } else { 0 },
+                );
                 let child = self.build_viewport_widget();
                 widgets.viewport_scroll.set_child(Some(&child));
                 self.trigger_loads(&sender);
             }
             PdfReaderMsg::ToggleSmartCrop => {
                 self.smart_crop = !self.smart_crop;
+                // Persist document-specific across restarts
+                self.catalog.set_pref(
+                    &format!("book.{}.pdf.smart_crop", self.book_id),
+                    if self.smart_crop { "1" } else { "0" },
+                );
                 self.textures.clear();
                 self.pending_loads.clear();
                 self.trigger_loads(&sender);
@@ -1060,6 +1093,19 @@ impl Component for PdfReaderModel {
                 self.show_sidebar = false;
                 self.mouse_in_sidebar = false;
                 self.mouse_in_left_edge = false;
+            }
+            PdfReaderMsg::ToggleControls => {
+                if self.show_bottom_pill || self.show_back_button {
+                    self.show_bottom_pill = false;
+                    self.show_back_button = false;
+                } else {
+                    self.show_bottom_pill = true;
+                    if !self.show_sidebar {
+                        self.show_back_button = true;
+                    }
+                    self.schedule_bottom_hide(&sender);
+                    self.schedule_back_hide(&sender);
+                }
             }
             PdfReaderMsg::JumpToToc(page) => {
                 self.show_sidebar = false;
@@ -1224,7 +1270,7 @@ impl Component for PdfReaderModel {
     }
 }
 
-/// Helper function to populate the sidebar outline list.
+/// Helper function to populate the sidebar outline list matching the EPUB reader.
 fn populate_toc_list(
     container: &gtk::Box,
     entries: &[PdfTocEntry],
@@ -1271,7 +1317,7 @@ fn populate_toc_list(
             btn.add_css_class("active");
         }
 
-        btn.set_margin_start(entry.depth as i32 * 14);
+        btn.set_margin_start((entry.depth as i32 * 14).min(56));
 
         let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let title_lbl = gtk::Label::new(Some(&entry.title));

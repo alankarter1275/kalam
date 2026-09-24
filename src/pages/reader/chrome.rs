@@ -209,7 +209,35 @@ pub(crate) fn overlay_child_box(overlay: &gtk::Overlay, index: usize) -> Option<
     for _ in 0..index {
         child = child.next_sibling()?;
     }
-    child.downcast::<gtk::Box>().ok()
+    if let Ok(b) = child.clone().downcast::<gtk::Box>() {
+        Some(b)
+    } else if let Ok(r) = child.downcast::<gtk::Revealer>() {
+        r.child().and_then(|w| w.downcast::<gtk::Box>().ok())
+    } else {
+        None
+    }
+}
+
+pub(crate) fn find_overlay_by_class(overlay: &gtk::Overlay, class: &str) -> Option<gtk::Box> {
+    let mut child = overlay.first_child();
+    while let Some(c) = child {
+        if c.has_css_class(class) {
+            if let Ok(b) = c.clone().downcast::<gtk::Box>() {
+                return Some(b);
+            }
+        }
+        if let Ok(r) = c.clone().downcast::<gtk::Revealer>() {
+            if let Some(rc) = r.child() {
+                if rc.has_css_class(class) {
+                    if let Ok(b) = rc.downcast::<gtk::Box>() {
+                        return Some(b);
+                    }
+                }
+            }
+        }
+        child = c.next_sibling();
+    }
+    None
 }
 
 pub(crate) fn connect_hover_zone(

@@ -17,9 +17,9 @@ pub use mod_model::ReaderModel;
 pub use types::ReaderOut;
 
 use chrome::{
-    connect_hover_zone, overlay_child_box, rebuild_cover_host, reader_sidebar_tab_content,
-    sync_reader_controls, sync_reader_stage_theme, sync_reader_stacks, sync_sidebar_tabs,
-    update_chrome_labels, update_sidebar_header,
+    connect_hover_zone, find_overlay_by_class, overlay_child_box, rebuild_cover_host,
+    reader_sidebar_tab_content, sync_reader_controls, sync_reader_stage_theme, sync_reader_stacks,
+    sync_sidebar_tabs, update_chrome_labels, update_sidebar_header,
 };
 use lists::{rebuild_bookmarks_list, rebuild_highlights_list, rebuild_toc, rebuild_words_list};
 use panels::{build_bookmarks_panel, build_highlights_panel, build_words_panel};
@@ -189,28 +189,31 @@ impl Component for ReaderModel {
                 set_valign: gtk::Align::Fill,
             },
 
-            add_overlay = &gtk::Box {
-                add_css_class: "kalam-reader-back-dock",
+            add_overlay = &gtk::Revealer {
                 #[watch]
-                set_visible: model.show_back_button,
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 6,
+                set_reveal_child: model.show_back_button && !model.left_sidebar_open,
+                set_transition_type: gtk::RevealerTransitionType::SlideDown,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
 
-                gtk::Button {
-                    set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
-                    add_css_class: "kalam-reader-back",
-                    connect_clicked => ReaderMsg::Close,
-                },
+                gtk::Box {
+                    add_css_class: "kalam-reader-back-dock",
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 6,
 
-                gtk::Button {
-                    set_child: Some(&crate::icons::symbolic_with_classes("bookmark-new-symbolic", 16, &["kalam-inline-icon"])),
-                    add_css_class: "kalam-reader-back",
-                    set_tooltip_text: Some("Bookmark (B)"),
-                    connect_clicked => ReaderMsg::AddBookmark,
-                },
+                    gtk::Button {
+                        set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
+                        add_css_class: "kalam-reader-back",
+                        connect_clicked => ReaderMsg::Close,
+                    },
 
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("bookmark-new-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Bookmark (B)"),
+                        connect_clicked => ReaderMsg::AddBookmark,
+                    },
+                },
             },
 
             add_overlay = &gtk::Box {
@@ -230,18 +233,21 @@ impl Component for ReaderModel {
                 },
             },
 
-            add_overlay = &gtk::Box {
+            add_overlay = &gtk::Revealer {
                 #[watch]
-                set_visible: model.show_bottom_pill,
-                add_css_class: "kalam-reader-bottom-dock",
+                set_reveal_child: model.show_bottom_pill,
+                set_transition_type: gtk::RevealerTransitionType::SlideUp,
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::End,
 
                 gtk::Box {
-                    add_css_class: "kalam-reader-bottom-pill",
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 4,
-                    set_valign: gtk::Align::Center,
+                    add_css_class: "kalam-reader-bottom-dock",
+
+                    gtk::Box {
+                        add_css_class: "kalam-reader-bottom-pill",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 4,
+                        set_valign: gtk::Align::Center,
 
                     gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes("go-previous-symbolic", 15, &["kalam-inline-icon"])),
@@ -1006,8 +1012,8 @@ impl Component for ReaderModel {
             .right_panel_host
             .parent()
             .and_then(|w| w.downcast::<gtk::Box>().ok());
-        model.back_dock = overlay_child_box(&root, 4);
-        model.bottom_dock = overlay_child_box(&root, 5);
+        model.back_dock = find_overlay_by_class(&root, "kalam-reader-back-dock");
+        model.bottom_dock = find_overlay_by_class(&root, "kalam-reader-bottom-dock");
         model.left_sidebar_shell = left_sidebar_box
             .as_ref()
             .and_then(|sidebar| sidebar.parent())

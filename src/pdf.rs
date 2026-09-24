@@ -283,9 +283,9 @@ impl PdfDocument {
             return InkBoundingBox::default();
         }
 
-        // Add 1% padding margin so content isn't clipped flush to ink edges
-        let pad_x = ((width as f32) * 0.01).max(2.0) as u32;
-        let pad_y = ((height as f32) * 0.01).max(2.0) as u32;
+        // Add 3.5% padding margin (min 24px) so text, ascenders, descenders, and page numbers are never clipped
+        let pad_x = ((width as f32) * 0.035).max(24.0) as u32;
+        let pad_y = ((height as f32) * 0.035).max(24.0) as u32;
 
         let crop_min_x = min_x.saturating_sub(pad_x) as f32 / width as f32;
         let crop_min_y = min_y.saturating_sub(pad_y) as f32 / height as f32;

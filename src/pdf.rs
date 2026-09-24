@@ -39,10 +39,12 @@ pub struct PdfPageText {
 }
 
 impl PdfPageText {
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.lines.is_empty() || self.lines.iter().all(|l| l.chars.is_empty())
     }
 
+    #[allow(dead_code)]
     pub fn total_chars(&self) -> usize {
         self.lines.iter().map(|l| l.chars.len()).sum()
     }

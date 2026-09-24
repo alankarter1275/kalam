@@ -30,6 +30,9 @@ pub const DYNAMIC_PAGE_SINGLE: usize = 0;
 pub const DYNAMIC_PAGE_LEFT: usize = usize::MAX - 1;
 pub const DYNAMIC_PAGE_RIGHT: usize = usize::MAX;
 
+pub type PageDrawOverlay = (gtk::DrawingArea, Rc<RefCell<Vec<(f64, f64, f64, f64)>>>);
+pub type PageRenderPayload = (usize, i32, i32, usize, Vec<u8>, Option<PdfPageText>);
+
 pub struct PdfReaderInit {
     pub catalog: Arc<Catalog>,
     pub book_id: i64,
@@ -140,6 +143,7 @@ pub enum PdfReaderMsg {
         dx: f64,
         dy: f64,
     },
+    #[allow(dead_code)]
     ClearSelection,
     CopySelection,
     LookUpSelection,
@@ -213,7 +217,7 @@ pub struct PdfReaderModel {
     pub selected_rects: Vec<(f32, f32, f32, f32)>,
     pub selection_chip: Option<gtk::Popover>,
     pub dict_popover: Option<gtk::Popover>,
-    pub page_draw_areas: HashMap<usize, (gtk::DrawingArea, Rc<RefCell<Vec<(f64, f64, f64, f64)>>>)>,
+    pub page_draw_areas: HashMap<usize, PageDrawOverlay>,
     pub active_drag_start: Option<(f64, f64)>,
 }
 
@@ -570,7 +574,7 @@ impl PdfReaderModel {
 
             crate::tasks::spawn_internal(
                 "Rendering PDF page",
-                move |_| -> anyhow::Result<(usize, i32, i32, usize, Vec<u8>, Option<PdfPageText>)> {
+                move |_| -> anyhow::Result<PageRenderPayload> {
                     let doc = PdfDocument::open(&p_buf)?;
                     let rendered = doc.render_page_rgba(page, scale, smart_crop)?;
                     let text = doc.extract_page_text(page).ok();

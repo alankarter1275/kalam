@@ -12,8 +12,8 @@ use std::time::Duration;
 
 #[derive(Clone)]
 pub struct PdfReaderInit {
-    pub book_id: i64,
     pub catalog: Arc<Catalog>,
+    pub book_id: i64,
 }
 
 impl std::fmt::Debug for PdfReaderInit {
@@ -42,6 +42,7 @@ pub enum PdfReaderMsg {
     ToggleSidebar,
     CloseSidebar,
     JumpToToc(usize),
+    EscapeKey,
     Close,
     PageRendered {
         page: usize,
@@ -49,9 +50,14 @@ pub enum PdfReaderMsg {
         width: i32,
         height: i32,
     },
-    PointerMoved,
-    HideChromeTimerTick(u64),
-    ControlsHover(bool),
+    TopEdgeHover(bool),
+    BottomEdgeHover(bool),
+    LeftEdgeHover(bool),
+    SidebarHover(bool),
+    BackHideTimerTick(u64),
+    BottomHideTimerTick(u64),
+    SidebarCloseTimerTick(u64),
+    UserScrolled,
     ScrollDelta(f64),
     UpdateScrollPage(usize),
 }
@@ -65,14 +71,24 @@ pub struct PdfReaderModel {
     pub book_id: i64,
     pub catalog: Arc<Catalog>,
     pub title: String,
+    pub author: String,
+    pub cover_path: Option<PathBuf>,
     pub file_path: Option<PathBuf>,
     pub current_page: usize,
     pub total_pages: usize,
     pub zoom_level: f32,
     pub view_mode: PdfViewMode,
     pub smart_crop: bool,
-    pub show_chrome: bool,
+    pub show_back_button: bool,
+    pub show_bottom_pill: bool,
     pub show_sidebar: bool,
+    pub mouse_in_top_edge: bool,
+    pub mouse_in_bottom_edge: bool,
+    pub mouse_in_left_edge: bool,
+    pub mouse_in_sidebar: bool,
+    pub back_hide_seq: u64,
+    pub bottom_hide_seq: u64,
+    pub sidebar_close_seq: u64,
     pub toc_entries: Vec<PdfTocEntry>,
     pub textures: HashMap<usize, (gdk::Texture, i32, i32)>,
     pub pending_loads: HashSet<usize>,
@@ -80,15 +96,22 @@ pub struct PdfReaderModel {
     #[allow(dead_code)]
     pub is_loading: bool,
     pub status_text: String,
-    pub chrome_hide_seq: u64,
-    pub mouse_in_controls: bool,
+    pub page_pictures: HashMap<usize, gtk::Picture>,
+    pub paged_picture: Option<gtk::Picture>,
+    pub paged_loading_box: Option<gtk::Box>,
+    pub paged_label: Option<gtk::Label>,
 }
 
 impl PdfReaderModel {
     pub fn new(init: PdfReaderInit) -> Self {
-        let (title, file_path) = match init.catalog.get_book(init.book_id) {
-            Ok(Some(book)) => (book.title, Some(book.file_path)),
-            _ => ("PDF Document".to_string(), None),
+        let (title, author, cover_path, file_path) = match init.catalog.get_book(init.book_id) {
+            Ok(Some(book)) => (
+                book.title,
+                book.authors,
+                book.cover_path,
+                Some(book.file_path),
+            ),
+            _ => ("PDF Document".to_string(), String::new(), None, None),
         };
 
         let saved_page = match init.catalog.get_reading_progress(init.book_id) {
@@ -102,22 +125,34 @@ impl PdfReaderModel {
             book_id: init.book_id,
             catalog: init.catalog,
             title,
+            author,
+            cover_path,
             file_path: file_path.clone(),
             current_page: saved_page,
             total_pages: 1,
             zoom_level: 1.0,
             view_mode: PdfViewMode::Paged,
             smart_crop: true,
-            show_chrome: true,
+            show_back_button: true,
+            show_bottom_pill: true,
             show_sidebar: false,
+            mouse_in_top_edge: false,
+            mouse_in_bottom_edge: false,
+            mouse_in_left_edge: false,
+            mouse_in_sidebar: false,
+            back_hide_seq: 0,
+            bottom_hide_seq: 0,
+            sidebar_close_seq: 0,
             toc_entries: Vec::new(),
             textures: HashMap::new(),
             pending_loads: HashSet::new(),
             arrow_step: arrow_step.clamp(10.0, 200.0),
             is_loading: true,
             status_text: "Opening PDF...".to_string(),
-            chrome_hide_seq: 0,
-            mouse_in_controls: false,
+            page_pictures: HashMap::new(),
+            paged_picture: None,
+            paged_loading_box: None,
+            paged_label: None,
         };
 
         if let Some(ref path) = file_path {
@@ -156,33 +191,68 @@ impl PdfReaderModel {
         crate::sidecar::refresh_for_book(&self.catalog, self.book_id);
     }
 
-    /// Schedule autohide of floating controls after 3.5s of inactivity.
-    pub fn schedule_chrome_hide(&mut self, sender: ComponentSender<Self>) {
-        self.chrome_hide_seq = self.chrome_hide_seq.wrapping_add(1);
-        let seq = self.chrome_hide_seq;
+    /// Schedule autohide of floating back button.
+    pub fn schedule_back_hide(&mut self, sender: &ComponentSender<Self>) {
+        self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
+        let seq = self.back_hide_seq;
         let tx = sender.input_sender().clone();
-        glib::timeout_add_local_once(Duration::from_millis(3500), move || {
-            let _ = tx.send(PdfReaderMsg::HideChromeTimerTick(seq));
+        glib::timeout_add_local_once(Duration::from_millis(2500), move || {
+            let _ = tx.send(PdfReaderMsg::BackHideTimerTick(seq));
         });
     }
 
-    /// Evict distant page textures and trigger background renders for current ± 2 pages.
+    /// Schedule autohide of floating bottom pill.
+    pub fn schedule_bottom_hide(&mut self, sender: &ComponentSender<Self>) {
+        self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
+        let seq = self.bottom_hide_seq;
+        let tx = sender.input_sender().clone();
+        glib::timeout_add_local_once(Duration::from_millis(3000), move || {
+            let _ = tx.send(PdfReaderMsg::BottomHideTimerTick(seq));
+        });
+    }
+
+    /// Schedule close of left sidebar (350ms debounce like Zen browser).
+    pub fn schedule_sidebar_close(&mut self, sender: &ComponentSender<Self>) {
+        self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
+        let seq = self.sidebar_close_seq;
+        let tx = sender.input_sender().clone();
+        glib::timeout_add_local_once(Duration::from_millis(350), move || {
+            let _ = tx.send(PdfReaderMsg::SidebarCloseTimerTick(seq));
+        });
+    }
+
+    /// Evict distant page textures and trigger background renders for current ± 4 pages.
     pub fn trigger_loads(&mut self, sender: &ComponentSender<Self>) {
         let Some(ref path) = self.file_path else {
             return;
         };
 
-        // Bounded memory eviction: keep only pages within current_page - 2 ..= current_page + 2
+        // Generous memory cache: retain current_page ± 8 pages in memory (up to 17 pages, ~80-100 MB)
         let cur = self.current_page as isize;
-        self.textures.retain(|&p, _| (p as isize - cur).abs() <= 2);
+        let mut evicted = Vec::new();
+        self.textures.retain(|&p, _| {
+            let keep = (p as isize - cur).abs() <= 8;
+            if !keep {
+                evicted.push(p);
+            }
+            keep
+        });
 
-        // Determine which pages need rendering: current ± 2 pages
-        let min_page = (self.current_page.saturating_sub(2)).max(1);
-        let max_page = (self.current_page + 2).min(self.total_pages);
+        // Clear paintable for evicted pages so GPU/cairo memory is freed
+        for p in evicted {
+            if let Some(pic) = self.page_pictures.get(&p) {
+                pic.set_paintable(None::<&gdk::Texture>);
+                pic.add_css_class("kalam-pdf-placeholder");
+            }
+        }
 
-        // Always render current_page first, then immediate neighbors
+        // Determine which pages need pre-rendering: current ± 4 pages
+        let min_page = (self.current_page.saturating_sub(4)).max(1);
+        let max_page = (self.current_page + 4).min(self.total_pages);
+
+        // Prioritize current_page, then neighbors in load order
         let mut load_order = vec![self.current_page];
-        for d in 1..=2 {
+        for d in 1..=4 {
             if self.current_page + d <= max_page {
                 load_order.push(self.current_page + d);
             }
@@ -237,6 +307,133 @@ impl PdfReaderModel {
             );
         }
     }
+
+    /// Build the viewport container widget for current view mode (Paged vs Continuous).
+    pub fn build_viewport_widget(&mut self) -> gtk::Widget {
+        match self.view_mode {
+            PdfViewMode::Paged => {
+                let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                container.set_halign(gtk::Align::Center);
+                container.set_valign(gtk::Align::Center);
+                container.set_hexpand(true);
+                container.set_vexpand(true);
+                container.set_margin_all(16);
+
+                let pic = gtk::Picture::new();
+                pic.set_can_shrink(true);
+                pic.set_content_fit(gtk::ContentFit::Contain);
+                pic.set_halign(gtk::Align::Center);
+                pic.set_valign(gtk::Align::Center);
+                pic.add_css_class("kalam-pdf-page-image");
+
+                let loading_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+                loading_box.set_halign(gtk::Align::Center);
+                loading_box.set_valign(gtk::Align::Center);
+
+                let spinner = gtk::Spinner::new();
+                spinner.start();
+                spinner.set_size_request(32, 32);
+                loading_box.append(&spinner);
+
+                let label = gtk::Label::new(Some(&format!(
+                    "Rendering page {}...",
+                    self.current_page
+                )));
+                label.add_css_class("dim-label");
+                loading_box.append(&label);
+
+                if let Some((tex, w, h)) = self.textures.get(&self.current_page) {
+                    pic.set_paintable(Some(tex));
+                    let target_w = ((*w as f32) * self.zoom_level) as i32;
+                    let target_h = ((*h as f32) * self.zoom_level) as i32;
+                    pic.set_size_request(target_w, target_h);
+                    pic.set_visible(true);
+                    loading_box.set_visible(false);
+                } else {
+                    pic.set_visible(false);
+                    loading_box.set_visible(true);
+                }
+
+                container.append(&pic);
+                container.append(&loading_box);
+
+                self.paged_picture = Some(pic);
+                self.paged_loading_box = Some(loading_box);
+                self.paged_label = Some(label);
+                self.page_pictures.clear();
+
+                container.upcast()
+            }
+            PdfViewMode::Continuous => {
+                let container = gtk::Box::new(gtk::Orientation::Vertical, 20);
+                container.set_halign(gtk::Align::Center);
+                container.set_valign(gtk::Align::Start);
+                container.set_hexpand(true);
+                container.set_vexpand(false);
+                container.set_margin_top(24);
+                container.set_margin_bottom(80);
+
+                self.page_pictures.clear();
+                self.paged_picture = None;
+                self.paged_loading_box = None;
+                self.paged_label = None;
+
+                for p in 1..=self.total_pages {
+                    let page_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+                    page_box.set_halign(gtk::Align::Center);
+
+                    let pic = gtk::Picture::new();
+                    pic.set_can_shrink(true);
+                    pic.set_content_fit(gtk::ContentFit::Contain);
+                    pic.set_halign(gtk::Align::Center);
+
+                    if let Some((tex, w, h)) = self.textures.get(&p) {
+                        pic.set_paintable(Some(tex));
+                        let target_w = ((*w as f32) * self.zoom_level) as i32;
+                        let target_h = ((*h as f32) * self.zoom_level) as i32;
+                        pic.set_size_request(target_w, target_h);
+                        pic.add_css_class("kalam-pdf-page-image");
+                    } else {
+                        let placeholder_w = (600.0 * self.zoom_level) as i32;
+                        let placeholder_h = (800.0 * self.zoom_level) as i32;
+                        pic.set_size_request(placeholder_w, placeholder_h);
+                        pic.add_css_class("kalam-pdf-placeholder");
+                    }
+
+                    page_box.append(&pic);
+                    self.page_pictures.insert(p, pic);
+
+                    container.append(&page_box);
+                }
+
+                container.upcast()
+            }
+        }
+    }
+
+    /// Fast, in-place update for Paged mode when page changes or renders.
+    pub fn update_paged_view(&self) {
+        let (Some(pic), Some(loading_box), Some(label)) = (
+            &self.paged_picture,
+            &self.paged_loading_box,
+            &self.paged_label,
+        ) else {
+            return;
+        };
+
+        if let Some((tex, w, h)) = self.textures.get(&self.current_page) {
+            pic.set_paintable(Some(tex));
+            let target_w = ((*w as f32) * self.zoom_level) as i32;
+            let target_h = ((*h as f32) * self.zoom_level) as i32;
+            pic.set_size_request(target_w, target_h);
+            pic.set_visible(true);
+            loading_box.set_visible(false);
+        } else {
+            pic.set_visible(false);
+            loading_box.set_visible(true);
+            label.set_label(&format!("Rendering page {}...", self.current_page));
+        }
+    }
 }
 
 #[relm4::component(pub)]
@@ -273,10 +470,22 @@ impl Component for PdfReaderModel {
                 connect_clicked => PdfReaderMsg::CloseSidebar,
             },
 
-            // ── 3. Overlay: Floating Back Chip (Top-Left) ──────────────
+            // ── 3. Overlay: Left Edge Hover Trigger (Zen Browser style)
+            add_overlay = &gtk::Box {
+                #[name = "left_hover_edge"]
+                add_css_class: "kalam-reader-hover-edge",
+                add_css_class: "kalam-reader-hover-edge-left",
+                set_width_request: 20,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Fill,
+            },
+
+            // ── 4. Overlay: Floating Back Button (Top-Left) ────────────
             add_overlay = &gtk::Revealer {
                 #[watch]
-                set_reveal_child: model.show_chrome,
+                set_reveal_child: model.show_back_button && !model.show_sidebar,
                 set_transition_type: gtk::RevealerTransitionType::SlideDown,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
@@ -284,32 +493,23 @@ impl Component for PdfReaderModel {
                 #[name = "back_dock"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 8,
                     add_css_class: "kalam-reader-back-dock",
                     set_margin_start: 18,
                     set_margin_top: 18,
 
                     gtk::Button {
-                        set_icon_name: "go-previous-symbolic",
+                        set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
                         add_css_class: "kalam-reader-back",
                         set_tooltip_text: Some("Back to Library (Esc / Backspace)"),
                         connect_clicked => PdfReaderMsg::Close,
                     },
-
-                    gtk::Label {
-                        #[watch]
-                        set_label: &model.title,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        set_max_width_chars: 40,
-                        add_css_class: "kalam-reader-back-title",
-                    },
                 },
             },
 
-            // ── 4. Overlay: Floating Bottom Pill (Bottom-Center) ───────
+            // ── 5. Overlay: Floating Bottom Pill (Bottom-Center) ───────
             add_overlay = &gtk::Revealer {
                 #[watch]
-                set_reveal_child: model.show_chrome,
+                set_reveal_child: model.show_bottom_pill,
                 set_transition_type: gtk::RevealerTransitionType::SlideUp,
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::End,
@@ -443,25 +643,84 @@ impl Component for PdfReaderModel {
                 },
             },
 
-            // ── 5. Overlay: Slide-in Table of Contents Sidebar ─────────
+            // ── 6. Overlay: Slide-in Table of Contents Sidebar ─────────
             add_overlay = &gtk::Revealer {
+                add_css_class: "kalam-reader-sidebar-shell",
+                add_css_class: "kalam-reader-sidebar-shell-left",
                 #[watch]
                 set_reveal_child: model.show_sidebar,
                 set_transition_type: gtk::RevealerTransitionType::SlideRight,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Fill,
 
+                #[name = "left_sidebar_box"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 320,
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-left",
 
-                    // Sidebar Header
+                    // 1. Book Head (Cover + Title + Author + Progress)
+                    gtk::Box {
+                        add_css_class: "kalam-reader-book-head",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 12,
+
+                        #[name = "cover_host"]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            add_css_class: "kalam-reader-cover-slot",
+                            set_width_request: 48,
+                        },
+
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 4,
+                            set_hexpand: true,
+
+                            gtk::Label {
+                                add_css_class: "kalam-reader-book-title",
+                                add_css_class: "kalam-title-serif",
+                                #[watch]
+                                set_label: &model.title,
+                                set_halign: gtk::Align::Start,
+                                set_wrap: true,
+                                set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                                set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                set_lines: 2,
+                                set_xalign: 0.0,
+                            },
+
+                            gtk::Label {
+                                add_css_class: "dim-label",
+                                #[watch]
+                                set_label: &model.author,
+                                set_halign: gtk::Align::Start,
+                                set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                set_xalign: 0.0,
+                            },
+
+                            gtk::ProgressBar {
+                                add_css_class: "kalam-reader-progress",
+                                set_show_text: false,
+                                #[watch]
+                                set_fraction: if model.total_pages > 0 {
+                                    model.current_page as f64 / model.total_pages as f64
+                                } else {
+                                    0.0
+                                },
+                            },
+                        },
+                    },
+
+                    // 2. TOC Header
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         add_css_class: "kalam-reader-sidebar-head",
-                        set_margin_all: 12,
+                        set_margin_start: 14,
+                        set_margin_end: 14,
+                        set_margin_top: 10,
+                        set_margin_bottom: 6,
 
                         gtk::Label {
                             set_label: "Table of Contents",
@@ -478,7 +737,7 @@ impl Component for PdfReaderModel {
                         },
                     },
 
-                    // Sidebar Outlines List
+                    // 3. Outlines List
                     gtk::ScrolledWindow {
                         set_hexpand: true,
                         set_vexpand: true,
@@ -503,14 +762,31 @@ impl Component for PdfReaderModel {
         let mut model = Self::new(init);
         let widgets = view_output!();
 
-        // Keyboard navigation controller
+        // 1. Populate Cover in Sidebar Book Head
+        let cover_w = crate::widgets::book_row::cover_widget(model.cover_path.as_deref(), 48, 70);
+        widgets.cover_host.append(&cover_w);
+
+        // 2. Populate Sidebar TOC
+        populate_toc_list(
+            &widgets.toc_list_box,
+            &model.toc_entries,
+            model.current_page,
+            model.total_pages,
+            &sender,
+        );
+
+        // 3. Keyboard navigation controller
         let tx = sender.input_sender().clone();
         let key = gtk::EventControllerKey::new();
         let tx_key = tx.clone();
         key.connect_key_pressed(move |_, keyval, _keycode, _state| {
             use gtk::gdk::Key;
             match keyval {
-                Key::Escape | Key::BackSpace | Key::q | Key::Q => {
+                Key::Escape => {
+                    let _ = tx_key.send(PdfReaderMsg::EscapeKey);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::BackSpace | Key::q | Key::Q => {
                     let _ = tx_key.send(PdfReaderMsg::Close);
                     gtk::glib::Propagation::Stop
                 }
@@ -561,39 +837,114 @@ impl Component for PdfReaderModel {
         root.set_can_focus(true);
         root.grab_focus();
 
-        // Pointer motion controller to reveal controls on movement
-        let motion = gtk::EventControllerMotion::new();
-        let tx_motion = tx.clone();
-        motion.connect_motion(move |_, _, _| {
-            let _ = tx_motion.send(PdfReaderMsg::PointerMoved);
-        });
-        root.add_controller(motion);
+        // 4. Edge hover motion controller on root (Top, Bottom, Left)
+        let root_motion = gtk::EventControllerMotion::new();
+        let tx_rm = tx.clone();
+        let root_clone = root.clone();
+        let was_top = std::rc::Rc::new(std::cell::Cell::new(false));
+        let was_bottom = std::rc::Rc::new(std::cell::Cell::new(false));
+        let was_left = std::rc::Rc::new(std::cell::Cell::new(false));
+        let was_top_clone = was_top.clone();
+        let was_bottom_clone = was_bottom.clone();
+        let was_left_clone = was_left.clone();
 
-        // Track hover state on bottom dock to avoid autohiding while interacting
-        let bottom_motion = gtk::EventControllerMotion::new();
-        let tx_bme = tx.clone();
-        bottom_motion.connect_enter(move |_, _, _| {
-            let _ = tx_bme.send(PdfReaderMsg::ControlsHover(true));
-        });
-        let tx_bml = tx.clone();
-        bottom_motion.connect_leave(move |_| {
-            let _ = tx_bml.send(PdfReaderMsg::ControlsHover(false));
-        });
-        widgets.bottom_dock.add_controller(bottom_motion);
+        root_motion.connect_motion(move |_, x, y| {
+            let h = root_clone.height() as f64;
+            let top = y < 50.0;
+            let bottom = y > (h - 60.0) && h > 60.0;
+            let left = x < 20.0;
 
-        // Track hover state on back dock
+            if top != was_top_clone.get() {
+                was_top_clone.set(top);
+                let _ = tx_rm.send(PdfReaderMsg::TopEdgeHover(top));
+            }
+            if bottom != was_bottom_clone.get() {
+                was_bottom_clone.set(bottom);
+                let _ = tx_rm.send(PdfReaderMsg::BottomEdgeHover(bottom));
+            }
+            if left != was_left_clone.get() {
+                was_left_clone.set(left);
+                let _ = tx_rm.send(PdfReaderMsg::LeftEdgeHover(left));
+            }
+        });
+
+        let tx_leave = tx.clone();
+        root_motion.connect_leave(move |_| {
+            if was_top.get() {
+                was_top.set(false);
+                let _ = tx_leave.send(PdfReaderMsg::TopEdgeHover(false));
+            }
+            if was_bottom.get() {
+                was_bottom.set(false);
+                let _ = tx_leave.send(PdfReaderMsg::BottomEdgeHover(false));
+            }
+            if was_left.get() {
+                was_left.set(false);
+                let _ = tx_leave.send(PdfReaderMsg::LeftEdgeHover(false));
+            }
+        });
+        root.add_controller(root_motion);
+
+        // 5. Hover state on floating back dock
         let back_motion = gtk::EventControllerMotion::new();
-        let tx_tme = tx.clone();
+        let tx_bd = tx.clone();
         back_motion.connect_enter(move |_, _, _| {
-            let _ = tx_tme.send(PdfReaderMsg::ControlsHover(true));
+            let _ = tx_bd.send(PdfReaderMsg::TopEdgeHover(true));
         });
-        let tx_tml = tx.clone();
+        let tx_bdl = tx.clone();
         back_motion.connect_leave(move |_| {
-            let _ = tx_tml.send(PdfReaderMsg::ControlsHover(false));
+            let _ = tx_bdl.send(PdfReaderMsg::TopEdgeHover(false));
         });
         widgets.back_dock.add_controller(back_motion);
 
-        // Track continuous scroll position changes to update current_page
+        // 6. Hover state on floating bottom dock
+        let bottom_motion = gtk::EventControllerMotion::new();
+        let tx_bm = tx.clone();
+        bottom_motion.connect_enter(move |_, _, _| {
+            let _ = tx_bm.send(PdfReaderMsg::BottomEdgeHover(true));
+        });
+        let tx_bml = tx.clone();
+        bottom_motion.connect_leave(move |_| {
+            let _ = tx_bml.send(PdfReaderMsg::BottomEdgeHover(false));
+        });
+        widgets.bottom_dock.add_controller(bottom_motion);
+
+        // 7. Hover state on Left Sidebar
+        let sidebar_motion = gtk::EventControllerMotion::new();
+        let tx_sm = tx.clone();
+        sidebar_motion.connect_enter(move |_, _, _| {
+            let _ = tx_sm.send(PdfReaderMsg::SidebarHover(true));
+        });
+        let tx_sml = tx.clone();
+        sidebar_motion.connect_leave(move |_| {
+            let _ = tx_sml.send(PdfReaderMsg::SidebarHover(false));
+        });
+        widgets.left_sidebar_box.add_controller(sidebar_motion);
+
+        // 8. Hover state on Left Hover Edge Strip
+        let edge_motion = gtk::EventControllerMotion::new();
+        let tx_em = tx.clone();
+        edge_motion.connect_enter(move |_, _, _| {
+            let _ = tx_em.send(PdfReaderMsg::LeftEdgeHover(true));
+        });
+        let tx_eml = tx.clone();
+        edge_motion.connect_leave(move |_| {
+            let _ = tx_eml.send(PdfReaderMsg::LeftEdgeHover(false));
+        });
+        widgets.left_hover_edge.add_controller(edge_motion);
+
+        // 9. Scroll controller to autohide controls on scrolling
+        let scroll_ctrl = gtk::EventControllerScroll::new(
+            gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::HORIZONTAL,
+        );
+        let tx_sc = tx.clone();
+        scroll_ctrl.connect_scroll(move |_, _, _| {
+            let _ = tx_sc.send(PdfReaderMsg::UserScrolled);
+            gtk::glib::Propagation::Proceed
+        });
+        widgets.viewport_scroll.add_controller(scroll_ctrl);
+
+        // 10. Track continuous scroll position changes to update current_page
         let vadj = widgets.viewport_scroll.vadjustment();
         let tx_vadj = tx.clone();
         vadj.connect_value_changed(move |adj| {
@@ -602,7 +953,7 @@ impl Component for PdfReaderModel {
             let _ = tx_vadj.send(PdfReaderMsg::UpdateScrollPage(ratio as usize));
         });
 
-        // Click / tap navigation: left quarter = prev, right quarter = next, center = reveal controls
+        // 11. Click / tap navigation: left quarter = prev, right quarter = next, center = toggle bottom pill
         let click = gtk::GestureClick::new();
         let tx_click = tx.clone();
         click.connect_released(move |gesture, _, x, _| {
@@ -617,18 +968,21 @@ impl Component for PdfReaderModel {
                 } else if fraction > 0.78 {
                     let _ = tx_click.send(PdfReaderMsg::NextPage);
                 } else {
-                    let _ = tx_click.send(PdfReaderMsg::PointerMoved);
+                    let _ = tx_click.send(PdfReaderMsg::BottomEdgeHover(true));
                 }
             }
         });
         widgets.viewport_scroll.add_controller(click);
 
         // Initial child and render triggering
-        let child = rebuild_viewport_widget(&model);
+        let child = model.build_viewport_widget();
         widgets.viewport_scroll.set_child(Some(&child));
 
         model.trigger_loads(&sender);
-        model.schedule_chrome_hide(sender.clone());
+
+        // Schedule initial hide of back button and bottom pill after 3.5s
+        model.schedule_back_hide(&sender);
+        model.schedule_bottom_hide(&sender);
 
         ComponentParts { model, widgets }
     }
@@ -646,8 +1000,9 @@ impl Component for PdfReaderModel {
                     self.current_page += 1;
                     self.save_progress();
                     self.trigger_loads(&sender);
-                    let child = rebuild_viewport_widget(self);
-                    widgets.viewport_scroll.set_child(Some(&child));
+                    if self.view_mode == PdfViewMode::Paged {
+                        self.update_paged_view();
+                    }
                 }
             }
             PdfReaderMsg::PrevPage => {
@@ -655,8 +1010,9 @@ impl Component for PdfReaderModel {
                     self.current_page -= 1;
                     self.save_progress();
                     self.trigger_loads(&sender);
-                    let child = rebuild_viewport_widget(self);
-                    widgets.viewport_scroll.set_child(Some(&child));
+                    if self.view_mode == PdfViewMode::Paged {
+                        self.update_paged_view();
+                    }
                 }
             }
             PdfReaderMsg::ZoomIn => {
@@ -664,7 +1020,7 @@ impl Component for PdfReaderModel {
                 self.textures.clear();
                 self.pending_loads.clear();
                 self.trigger_loads(&sender);
-                let child = rebuild_viewport_widget(self);
+                let child = self.build_viewport_widget();
                 widgets.viewport_scroll.set_child(Some(&child));
             }
             PdfReaderMsg::ZoomOut => {
@@ -672,7 +1028,7 @@ impl Component for PdfReaderModel {
                 self.textures.clear();
                 self.pending_loads.clear();
                 self.trigger_loads(&sender);
-                let child = rebuild_viewport_widget(self);
+                let child = self.build_viewport_widget();
                 widgets.viewport_scroll.set_child(Some(&child));
             }
             PdfReaderMsg::ResetZoom => {
@@ -680,7 +1036,7 @@ impl Component for PdfReaderModel {
                 self.textures.clear();
                 self.pending_loads.clear();
                 self.trigger_loads(&sender);
-                let child = rebuild_viewport_widget(self);
+                let child = self.build_viewport_widget();
                 widgets.viewport_scroll.set_child(Some(&child));
             }
             PdfReaderMsg::ToggleContinuousMode => {
@@ -688,21 +1044,22 @@ impl Component for PdfReaderModel {
                     PdfViewMode::Paged => PdfViewMode::Continuous,
                     PdfViewMode::Continuous => PdfViewMode::Paged,
                 };
-                let child = rebuild_viewport_widget(self);
+                let child = self.build_viewport_widget();
                 widgets.viewport_scroll.set_child(Some(&child));
+                self.trigger_loads(&sender);
             }
             PdfReaderMsg::ToggleSmartCrop => {
                 self.smart_crop = !self.smart_crop;
                 self.textures.clear();
                 self.pending_loads.clear();
                 self.trigger_loads(&sender);
-                let child = rebuild_viewport_widget(self);
+                let child = self.build_viewport_widget();
                 widgets.viewport_scroll.set_child(Some(&child));
             }
             PdfReaderMsg::ToggleSidebar => {
                 self.show_sidebar = !self.show_sidebar;
                 if self.show_sidebar {
-                    self.show_chrome = true;
+                    self.show_back_button = false;
                     populate_toc_list(
                         &widgets.toc_list_box,
                         &self.toc_entries,
@@ -714,16 +1071,40 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::CloseSidebar => {
                 self.show_sidebar = false;
+                self.mouse_in_sidebar = false;
+                self.mouse_in_left_edge = false;
             }
             PdfReaderMsg::JumpToToc(page) => {
                 self.show_sidebar = false;
+                self.mouse_in_sidebar = false;
+                self.mouse_in_left_edge = false;
                 let clamped = page.clamp(1, self.total_pages);
                 if clamped != self.current_page {
                     self.current_page = clamped;
                     self.save_progress();
                     self.trigger_loads(&sender);
-                    let child = rebuild_viewport_widget(self);
-                    widgets.viewport_scroll.set_child(Some(&child));
+                    if self.view_mode == PdfViewMode::Paged {
+                        self.update_paged_view();
+                    } else {
+                        let vadj = widgets.viewport_scroll.vadjustment();
+                        let target_y = if self.total_pages > 1 && vadj.upper() > 0.0 {
+                            (clamped.saturating_sub(1) as f64) * (vadj.upper() / self.total_pages as f64)
+                        } else {
+                            0.0
+                        };
+                        vadj.set_value(
+                            target_y.clamp(vadj.lower(), (vadj.upper() - vadj.page_size()).max(0.0)),
+                        );
+                    }
+                }
+            }
+            PdfReaderMsg::EscapeKey => {
+                if self.show_sidebar {
+                    self.show_sidebar = false;
+                    self.mouse_in_sidebar = false;
+                    self.mouse_in_left_edge = false;
+                } else {
+                    let _ = sender.output(PdfReaderOut::Close);
                 }
             }
             PdfReaderMsg::Close => {
@@ -736,27 +1117,92 @@ impl Component for PdfReaderModel {
                 height,
             } => {
                 self.pending_loads.remove(&page);
-                self.textures.insert(page, (texture, width, height));
-                if page == self.current_page || self.view_mode == PdfViewMode::Continuous {
-                    let child = rebuild_viewport_widget(self);
-                    widgets.viewport_scroll.set_child(Some(&child));
+                self.textures.insert(page, (texture.clone(), width, height));
+
+                // Smooth in-place picture updates without demolishing or rebuilding widgets
+                if self.view_mode == PdfViewMode::Paged {
+                    if page == self.current_page {
+                        self.update_paged_view();
+                    }
+                } else if let Some(pic) = self.page_pictures.get(&page) {
+                    let target_w = ((width as f32) * self.zoom_level) as i32;
+                    let target_h = ((height as f32) * self.zoom_level) as i32;
+                    pic.set_paintable(Some(&texture));
+                    pic.set_size_request(target_w, target_h);
+                    pic.remove_css_class("kalam-pdf-placeholder");
+                    pic.add_css_class("kalam-pdf-page-image");
                 }
             }
-            PdfReaderMsg::PointerMoved => {
-                self.show_chrome = true;
-                self.schedule_chrome_hide(sender.clone());
-            }
-            PdfReaderMsg::ControlsHover(hovering) => {
-                self.mouse_in_controls = hovering;
+            PdfReaderMsg::TopEdgeHover(hovering) => {
+                self.mouse_in_top_edge = hovering;
                 if hovering {
-                    self.show_chrome = true;
-                } else {
-                    self.schedule_chrome_hide(sender.clone());
+                    if !self.show_sidebar {
+                        self.show_back_button = true;
+                    }
+                } else if self.show_back_button {
+                    self.schedule_back_hide(&sender);
                 }
             }
-            PdfReaderMsg::HideChromeTimerTick(seq) => {
-                if seq == self.chrome_hide_seq && !self.mouse_in_controls && !self.show_sidebar {
-                    self.show_chrome = false;
+            PdfReaderMsg::BottomEdgeHover(hovering) => {
+                self.mouse_in_bottom_edge = hovering;
+                if hovering {
+                    self.show_bottom_pill = true;
+                } else if self.show_bottom_pill {
+                    self.schedule_bottom_hide(&sender);
+                }
+            }
+            PdfReaderMsg::LeftEdgeHover(hovering) => {
+                self.mouse_in_left_edge = hovering;
+                if hovering {
+                    let was_hidden = !self.show_sidebar;
+                    self.show_sidebar = true;
+                    self.show_back_button = false;
+                    if was_hidden {
+                        populate_toc_list(
+                            &widgets.toc_list_box,
+                            &self.toc_entries,
+                            self.current_page,
+                            self.total_pages,
+                            &sender,
+                        );
+                    }
+                } else if !self.mouse_in_sidebar && self.show_sidebar {
+                    self.schedule_sidebar_close(&sender);
+                }
+            }
+            PdfReaderMsg::SidebarHover(hovering) => {
+                self.mouse_in_sidebar = hovering;
+                if hovering {
+                    self.show_sidebar = true;
+                    self.show_back_button = false;
+                } else if !self.mouse_in_left_edge && self.show_sidebar {
+                    self.schedule_sidebar_close(&sender);
+                }
+            }
+            PdfReaderMsg::BackHideTimerTick(seq) => {
+                if seq == self.back_hide_seq && !self.mouse_in_top_edge {
+                    self.show_back_button = false;
+                }
+            }
+            PdfReaderMsg::BottomHideTimerTick(seq) => {
+                if seq == self.bottom_hide_seq && !self.mouse_in_bottom_edge {
+                    self.show_bottom_pill = false;
+                }
+            }
+            PdfReaderMsg::SidebarCloseTimerTick(seq) => {
+                if seq == self.sidebar_close_seq && !self.mouse_in_left_edge && !self.mouse_in_sidebar {
+                    self.show_sidebar = false;
+                }
+            }
+            PdfReaderMsg::UserScrolled => {
+                if !self.mouse_in_top_edge {
+                    self.show_back_button = false;
+                }
+                if !self.mouse_in_bottom_edge {
+                    self.show_bottom_pill = false;
+                }
+                if !self.mouse_in_left_edge && !self.mouse_in_sidebar {
+                    self.show_sidebar = false;
                 }
             }
             PdfReaderMsg::ScrollDelta(dir) => {
@@ -767,9 +1213,9 @@ impl Component for PdfReaderModel {
                         .clamp(vadj.lower(), (vadj.upper() - vadj.page_size()).max(0.0));
                     vadj.set_value(target);
                 } else if dir > 0.0 {
-                    sender.input(PdfReaderMsg::NextPage);
+                    let _ = sender.input_sender().send(PdfReaderMsg::NextPage);
                 } else {
-                    sender.input(PdfReaderMsg::PrevPage);
+                    let _ = sender.input_sender().send(PdfReaderMsg::PrevPage);
                 }
             }
             PdfReaderMsg::UpdateScrollPage(_ratio_page) => {
@@ -789,106 +1235,6 @@ impl Component for PdfReaderModel {
 
         self.update_view(widgets, sender);
     }
-}
-
-/// Rebuild the viewport widget depending on Paged or Continuous mode.
-fn rebuild_viewport_widget(model: &PdfReaderModel) -> gtk::Widget {
-    let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
-
-    match model.view_mode {
-        PdfViewMode::Paged => {
-            container.set_orientation(gtk::Orientation::Vertical);
-            container.set_halign(gtk::Align::Center);
-            container.set_valign(gtk::Align::Center);
-            container.set_hexpand(true);
-            container.set_vexpand(true);
-            container.set_margin_all(16);
-
-            if let Some((tex, w, h)) = model.textures.get(&model.current_page) {
-                let pic = gtk::Picture::for_paintable(tex);
-                pic.set_can_shrink(true);
-                pic.set_content_fit(gtk::ContentFit::Contain);
-                let target_w = ((*w as f32) * model.zoom_level) as i32;
-                let target_h = ((*h as f32) * model.zoom_level) as i32;
-                pic.set_size_request(target_w, target_h);
-                pic.set_halign(gtk::Align::Center);
-                pic.set_valign(gtk::Align::Center);
-                pic.add_css_class("kalam-pdf-page-image");
-                container.append(&pic);
-            } else {
-                let loading_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
-                loading_box.set_halign(gtk::Align::Center);
-                loading_box.set_valign(gtk::Align::Center);
-
-                if !model.status_text.is_empty() {
-                    let err_lbl = gtk::Label::new(Some(&model.status_text));
-                    err_lbl.add_css_class("dim-label");
-                    loading_box.append(&err_lbl);
-                } else {
-                    let spinner = gtk::Spinner::new();
-                    spinner.start();
-                    spinner.set_size_request(32, 32);
-                    loading_box.append(&spinner);
-
-                    let label = gtk::Label::new(Some(&format!(
-                        "Rendering page {}...",
-                        model.current_page
-                    )));
-                    label.add_css_class("dim-label");
-                    loading_box.append(&label);
-                }
-
-                container.append(&loading_box);
-            }
-        }
-        PdfViewMode::Continuous => {
-            container.set_orientation(gtk::Orientation::Vertical);
-            container.set_spacing(20);
-            container.set_halign(gtk::Align::Center);
-            container.set_valign(gtk::Align::Start);
-            container.set_hexpand(true);
-            container.set_vexpand(false);
-            container.set_margin_top(24);
-            container.set_margin_bottom(80);
-
-            for p in 1..=model.total_pages {
-                let page_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-                page_box.set_halign(gtk::Align::Center);
-
-                if let Some((tex, w, h)) = model.textures.get(&p) {
-                    let pic = gtk::Picture::for_paintable(tex);
-                    pic.set_can_shrink(true);
-                    pic.set_content_fit(gtk::ContentFit::Contain);
-                    let target_w = ((*w as f32) * model.zoom_level) as i32;
-                    let target_h = ((*h as f32) * model.zoom_level) as i32;
-                    pic.set_size_request(target_w, target_h);
-                    pic.set_halign(gtk::Align::Center);
-                    pic.add_css_class("kalam-pdf-page-image");
-                    page_box.append(&pic);
-                } else {
-                    let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 8);
-                    placeholder.set_size_request(
-                        (600.0 * model.zoom_level) as i32,
-                        (800.0 * model.zoom_level) as i32,
-                    );
-                    placeholder.set_halign(gtk::Align::Center);
-                    placeholder.set_valign(gtk::Align::Center);
-                    placeholder.add_css_class("kalam-pdf-placeholder");
-
-                    let lbl = gtk::Label::new(Some(&format!("Page {}", p)));
-                    lbl.add_css_class("dim-label");
-                    lbl.set_valign(gtk::Align::Center);
-                    placeholder.append(&lbl);
-
-                    page_box.append(&placeholder);
-                }
-
-                container.append(&page_box);
-            }
-        }
-    }
-
-    container.upcast()
 }
 
 /// Helper function to populate the sidebar outline list.
@@ -938,13 +1284,17 @@ fn populate_toc_list(
             btn.add_css_class("active");
         }
 
-        let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        row_box.set_margin_start((entry.depth as i32 * 14).min(70));
+        btn.set_margin_start(entry.depth as i32 * 14);
 
+        let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let title_lbl = gtk::Label::new(Some(&entry.title));
-        title_lbl.set_hexpand(true);
         title_lbl.set_halign(gtk::Align::Start);
+        title_lbl.set_hexpand(true);
+        title_lbl.set_wrap(true);
+        title_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
         title_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        title_lbl.set_lines(2);
+        title_lbl.set_xalign(0.0);
         row_box.append(&title_lbl);
 
         let page_lbl = gtk::Label::new(Some(&format!("{}", entry.page)));

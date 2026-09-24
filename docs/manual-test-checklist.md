@@ -310,36 +310,44 @@ but renders as boxes.
 **Look for:** crisp, high-fidelity native page rendering (sharp vector fonts, diagrams, tables, figures, artwork) rendered via MuPDF. No synthetic ink lines or grey bars.
 **Report if:** page is blank, distorted, text characters are missing or overlapping, or rasterization fails.
 
-### T12 · Unified Reader Chrome & Autohiding Controls
-**Do:** move the pointer over the reader; then let the pointer sit still for ~4 seconds.
+### T12 · Unified Reader Chrome & Edge Hover Autohiding
+**Do:** 
+- Hover near the top edge (< 50px from top) or the back button.
+- Hover near the bottom edge (< 60px from bottom) or the bottom dock.
+- Hover within 20px of the left edge of the screen (Zen Browser style).
+- Move mouse back into the reading area or scroll.
 **Look for:**
-- Floating back chip at top-left with back arrow and book title.
-- Floating bottom pill at bottom-center with page numbers, jump, zoom controls, mode toggle, crop toggle, and TOC sidebar toggle.
-- Both controls smoothly autohide on mouse inactivity, returning to 100% immersive reading. Any mouse motion reveals them again.
-**Report if:** controls do not autohide, fail to show on pointer motion, or clip content.
+- Top edge hover reveals floating back button pill ("Library") without title text (prevents overlaps). Autohides smoothly after 2.5s when leaving.
+- Bottom edge hover reveals floating bottom pill with navigation, zoom controls, mode toggle, smart crop toggle, and TOC toggle. Autohides after 3s when leaving.
+- Left edge hover smoothly slides open the left TOC outlines sidebar (`SlideRight`). Moving cursor away from sidebar closes it with 350ms debounce.
+- Scrolling the document immediately hides unhovered controls.
+**Report if:** controls fail to reveal on edge hover, fail to autohide, or sidebar fails to slide out on left edge hover.
 
-### T13 · Slide-in Table of Contents Sidebar
-**Do:** click the TOC icon on the bottom pill or press `T`.
+### T13 · Table of Contents & Outlines Left Sidebar
+**Do:** hover the left edge or click the sidebar icon in the bottom pill, or press `T`.
 **Look for:**
-- A smooth slide-in outline panel from the left with dim backdrop.
-- Full hierarchical outline (chapters, sections indented by depth) with page numbers.
-- Clicking any TOC item immediately jumps to that page and closes the sidebar.
-- Pressing `Esc` or clicking the dim backdrop closes the sidebar.
-**Report if:** outline is empty for a document that has bookmarks, clicking an item does not jump to the correct page, or the sidebar animation is broken.
+- Left sidebar header displaying book cover thumbnail, serif book title, author, and reading progress bar (`kalam-reader-book-head`).
+- Document outlines listed below with indentation for sub-sections and page numbers.
+- Clicking any outline item jumps directly to that page.
+- Pressing `Esc` or clicking the dim backdrop immediately closes the sidebar.
+**Report if:** book cover or title is missing in sidebar, header has overlapping text, or clicking an outline entry fails to jump.
 
 ### T14 · Paged Mode vs Continuous Vertical Scroll Mode & Arrow Speed
 **Do:**
 - Press `M` or click the mode icon in the bottom pill to switch between Paged and Continuous modes.
-- In Continuous mode, use `Up` / `Down` arrows to scroll vertically.
+- In Continuous mode, use `Up` / `Down` arrows or mouse wheel to scroll vertically.
 **Look for:**
 - In Paged mode: single centered page, Left/Right turns pages.
-- In Continuous mode: pages stacked vertically with clean separation and drop shadows. Up/Down scrolls smoothly obeying your configured arrow scroll speed setting (`reader.arrow_step`).
-**Report if:** mode switch fails, continuous scrolling is jerky or doesn't obey arrow speed, or page tracking is desynchronized.
+- In Continuous mode: pages stacked vertically with clean separation. Scrolling is liquid smooth without any widget recreation or scrollbar jumping (in-place picture updates).
+- Up/Down arrows scroll smoothly obeying your configured arrow scroll speed setting (`reader.arrow_step`).
+**Report if:** continuous scrolling jerks or resets scroll position, arrow scroll speed is ignored, or page tracking is desynchronized.
 
-### T15 · Bounded Memory Footprint
-**Do:** open a multi-hundred page PDF and flip / scroll rapidly through 20+ pages.
-**Look for:** RAM usage stays bounded under 80 MB (only current page ±2 pages cached in memory, distant pages evicted).
-**Report if:** memory balloons continuously or UI freezes.
+### T15 · Generous Memory Prefetching & Fast Scrolling
+**Do:** open a multi-hundred page PDF and scroll rapidly through 20+ pages.
+**Look for:**
+- Current page ± 8 pages kept in memory (~85-100 MB), prefetching ± 4 pages ahead.
+- Fast scrolling fills in smoothly without freezes.
+**Report if:** memory balloons beyond reason (>200 MB) or UI freezes.
 
 ---
 

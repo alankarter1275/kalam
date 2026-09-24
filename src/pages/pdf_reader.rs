@@ -68,7 +68,6 @@ pub struct PdfSettingsWidgets {
     pub flow_continuous_btn: gtk::Button,
     pub flow_discrete_btn: gtk::Button,
     pub cover_alone_switch: gtk::Switch,
-    pub cover_alone_row: gtk::Box,
     pub gap_0_btn: gtk::Button,
     pub gap_4_btn: gtk::Button,
     pub gap_8_btn: gtk::Button,
@@ -89,7 +88,6 @@ pub enum PdfReaderMsg {
     SetPageLayout(PdfPageLayout),
     SetScrollFlow(PdfScrollFlow),
     SetTwoPageGap(i32),
-    SetViewMode(PdfViewMode),
     ToggleContinuousMode,
     SetCoverAlone(bool),
     SetSmartCrop(bool),
@@ -137,7 +135,6 @@ pub struct PdfReaderModel {
     pub page_layout: PdfPageLayout,
     pub scroll_flow: PdfScrollFlow,
     pub two_page_gap: i32,
-    pub view_mode: PdfViewMode,
     pub cover_alone: bool,
     pub smart_crop: bool,
     pub sidebar_tab: PdfSidebarTab,
@@ -160,7 +157,6 @@ pub struct PdfReaderModel {
     pub status_text: String,
     pub session_id: Option<i64>,
     pub session_start: std::time::Instant,
-    pub session_start_pct: i64,
     pub page_pictures: HashMap<usize, gtk::Picture>,
     pub paged_picture: Option<gtk::Picture>,
     pub paged_loading_box: Option<gtk::Box>,
@@ -233,11 +229,7 @@ impl PdfReaderModel {
             .get_pref(&format!("book.{}.pdf.smart_crop", init.book_id));
         let smart_crop = smart_crop_pref.as_deref() == Some("1");
 
-        let view_mode = match (page_layout, scroll_flow) {
-            (PdfPageLayout::TwoPage, _) => PdfViewMode::TwoPage,
-            (PdfPageLayout::Single, PdfScrollFlow::Continuous) => PdfViewMode::Continuous,
-            (PdfPageLayout::Single, PdfScrollFlow::Discrete) => PdfViewMode::Paged,
-        };
+
 
         let mut model = Self {
             book_id: init.book_id,
@@ -252,7 +244,6 @@ impl PdfReaderModel {
             page_layout,
             scroll_flow,
             two_page_gap,
-            view_mode,
             cover_alone,
             smart_crop,
             sidebar_tab: PdfSidebarTab::Toc,
@@ -274,7 +265,6 @@ impl PdfReaderModel {
             status_text: "Opening PDF...".to_string(),
             session_id,
             session_start,
-            session_start_pct: start_pct,
             page_pictures: HashMap::new(),
             paged_picture: None,
             paged_loading_box: None,
@@ -340,7 +330,7 @@ impl PdfReaderModel {
             if page <= 1 {
                 (1, None)
             } else {
-                let left = if page % 2 == 0 { page } else { page - 1 };
+                let left = if page.is_multiple_of(2) { page } else { page - 1 };
                 let right = if left < self.total_pages {
                     Some(left + 1)
                 } else {
@@ -1765,20 +1755,6 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
-            PdfReaderMsg::SetViewMode(mode) => {
-                match mode {
-                    PdfViewMode::Continuous => {
-                        let _ = sender.input_sender().send(PdfReaderMsg::SetScrollFlow(PdfScrollFlow::Continuous));
-                    }
-                    PdfViewMode::Paged => {
-                        let _ = sender.input_sender().send(PdfReaderMsg::SetPageLayout(PdfPageLayout::Single));
-                        let _ = sender.input_sender().send(PdfReaderMsg::SetScrollFlow(PdfScrollFlow::Discrete));
-                    }
-                    PdfViewMode::TwoPage => {
-                        let _ = sender.input_sender().send(PdfReaderMsg::SetPageLayout(PdfPageLayout::TwoPage));
-                    }
-                }
-            }
             PdfReaderMsg::ToggleContinuousMode => {
                 let next = match self.scroll_flow {
                     PdfScrollFlow::Continuous => PdfScrollFlow::Discrete,
@@ -2393,7 +2369,6 @@ fn build_pdf_settings_panel(
         flow_continuous_btn,
         flow_discrete_btn,
         cover_alone_switch,
-        cover_alone_row,
         gap_0_btn,
         gap_4_btn,
         gap_8_btn,

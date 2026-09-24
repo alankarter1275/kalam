@@ -179,38 +179,31 @@ pub struct PdfReaderModel {
 
 impl PdfReaderModel {
     pub fn new(init: PdfReaderInit) -> Self {
-        let (title, author, cover_path, file_path, saved_page) =
-            if let Ok(Some(book)) = init.catalog.get_book(init.book_id) {
-                let saved = if let Some(ref pos) = book.last_read_position {
-                    pos.parse::<usize>().unwrap_or(1).max(1)
-                } else if book.progress > 0.0 {
-                    1
-                } else {
-                    1
-                };
-                (
-                    book.title,
-                    book.author,
-                    book.cover_path.map(PathBuf::from),
-                    Some(PathBuf::from(book.file_path)),
-                    saved,
-                )
-            } else {
-                (
-                    "Unknown Document".to_string(),
-                    "Unknown".to_string(),
-                    None,
-                    None,
-                    1,
-                )
-            };
+        let (title, author, cover_path, file_path) = match init.catalog.get_book(init.book_id) {
+            Ok(Some(book)) => (
+                book.title,
+                book.authors,
+                book.cover_path.map(PathBuf::from),
+                Some(PathBuf::from(book.file_path)),
+            ),
+            _ => ("PDF Document".to_string(), String::new(), None, None),
+        };
+
+        let saved_page = match init.catalog.get_reading_progress(init.book_id) {
+            Ok(Some((page, _))) if page >= 1 => page,
+            _ => 1,
+        };
 
         let arrow_step = init.catalog.get_pref_i64("reader.arrow_step", 45) as f32;
 
         let _ = init.catalog.mark_book_opened(init.book_id);
+        let start_pct = match init.catalog.get_book(init.book_id) {
+            Ok(Some(b)) => b.progress as i64,
+            _ => 0,
+        };
         let session_id = init
             .catalog
-            .start_reading_session(init.book_id, 0)
+            .start_reading_session(init.book_id, start_pct)
             .ok();
         let session_start = std::time::Instant::now();
 
@@ -315,7 +308,7 @@ impl PdfReaderModel {
                 model.is_loading = false;
                 model.status_text.clear();
 
-                let scale = (1.5 * model.zoom_level).clamp(0.5, 3.5);
+                let scale = ((1.5 * model.zoom_level).clamp(0.5, 3.5)) as f32;
                 if let Ok(rendered) = doc.render_page_rgba(model.current_page, scale, model.rotation, model.smart_crop) {
                     let bytes = glib::Bytes::from_owned(rendered.samples);
                     let texture = gdk::MemoryTexture::new(
@@ -351,18 +344,20 @@ impl PdfReaderModel {
     }
 
     pub fn save_progress(&self) {
-        let pct = if self.total_pages > 0 {
-            (self.current_page as f64 / self.total_pages as f64).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let _ = self
-            .catalog
-            .set_reading_progress(self.book_id, &self.current_page.to_string(), pct);
+        if self.total_pages == 0 {
+            return;
+        }
+        let fraction = self.progress_fraction();
+        let _ = self.catalog.set_reading_progress(
+            self.book_id,
+            self.current_page,
+            fraction,
+            self.total_pages,
+        );
 
         if let Some(sid) = self.session_id {
             let elapsed = self.session_start.elapsed().as_secs() as i64;
-            let end_pct = (pct * 100.0).round() as i64;
+            let end_pct = (fraction * 100.0).round() as i64;
             let _ = self.catalog.checkpoint_reading_session(sid, elapsed, end_pct);
         }
     }
@@ -399,7 +394,7 @@ impl PdfReaderModel {
             spreads.push((1, None));
             let mut p = 2;
             while p <= self.total_pages {
-                let right = if p + 1 <= self.total_pages {
+                let right = if p < self.total_pages {
                     Some(p + 1)
                 } else {
                     None
@@ -410,7 +405,7 @@ impl PdfReaderModel {
         } else {
             let mut p = 1;
             while p <= self.total_pages {
-                let right = if p + 1 <= self.total_pages {
+                let right = if p < self.total_pages {
                     Some(p + 1)
                 } else {
                     None
@@ -478,7 +473,7 @@ impl PdfReaderModel {
                     if cur + delta <= self.total_pages {
                         load_order.push(cur + delta);
                     }
-                    if cur >= 1 + delta {
+                    if cur > delta {
                         load_order.push(cur - delta);
                     }
                 }
@@ -524,7 +519,7 @@ impl PdfReaderModel {
             }
         }
 
-        let scale = (1.5 * self.zoom_level).clamp(0.5, 3.5);
+        let scale = ((1.5 * self.zoom_level).clamp(0.5, 3.5)) as f32;
         let rotation = self.rotation;
         let smart_crop = self.smart_crop;
 
@@ -1375,8 +1370,9 @@ impl Component for PdfReaderModel {
         model.settings_widgets = Some(settings_w);
 
         // 3. Connect Keyboard Controller
+        let tx = sender.input_sender().clone();
         let key = gtk::EventControllerKey::new();
-        let tx_key = sender.input_sender().clone();
+        let tx_key = tx.clone();
         key.connect_key_pressed(move |_, keyval, _keycode, _state| {
             use gtk::gdk::Key;
             match keyval {
@@ -1449,7 +1445,7 @@ impl Component for PdfReaderModel {
 
         // 4. Edge hover motion controller on root (Top, Bottom, Left)
         let root_motion = gtk::EventControllerMotion::new();
-        let tx_rm = tx_key.clone();
+        let tx_rm = tx.clone();
         let root_clone = root.clone();
         let was_top = std::rc::Rc::new(std::cell::Cell::new(false));
         let was_bottom = std::rc::Rc::new(std::cell::Cell::new(false));

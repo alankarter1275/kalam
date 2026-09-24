@@ -555,20 +555,6 @@ chores happen after the first paint.
 A bulk import expands to show **every** imported book name. Each delete
 shows up as its own task in the task manager.
 
-### T22 · PDF Reader Layout & Spread Rendering Stability
-**Do:**
-- Open any PDF document in Kalam.
-- Switch between Scrolling modes: `Page Scrolling`, `Vertical Scrolling`, `Horizontal Scrolling`, `Wrapped Scrolling`.
-- Switch between Spreads modes: `No Spreads`, `Odd Spreads`, `Even Spreads`, and adjust `Spread Gap` (`0px`–`16px`).
-- Zoom in and out using `+` and `-` on the bottom pill or settings panel.
-- Click on the viewport to toggle floating controls, and hover edges to reveal back chip and dock.
-**Look for:**
-- Pages display crisply at their natural aspect ratio without distortion or artificial stretching.
-- Page 1 cover in `Odd Spreads` is centered cleanly without a right-side ghost container.
-- Single-page loading box is centered cleanly during navigation.
-- Smooth scrolling without flicker or gesture conflicts, and pointer remains a standard arrow.
-**Report if:** page is stretched, cover page is off-center on Odd Spreads, zoom distorts layout, or controls flicker unexpectedly.
-
 ---
 
 ## At the end

@@ -1080,29 +1080,22 @@ button.kalam-reader-tab > box {
     min-width: 0;
 }
 
-button.kalam-reader-back,
-button.kalam-reader-back-chip {
+button.kalam-reader-back {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 999px;
     color: @kalam_text;
-    padding: 7px 14px;
+    padding: 7px 11px 7px 8px;
     box-shadow: 0 8px 22px alpha(#000, 0.24);
 }
 
-button.kalam-reader-back:hover,
-button.kalam-reader-back-chip:hover {
+button.kalam-reader-back:hover {
     background: @kalam_surface_2;
     color: @kalam_text;
 }
 
-.kalam-reader-back image,
-.kalam-reader-back-chip image {
+.kalam-reader-back image {
     -gtk-icon-size: 16px;
-}
-
-.kalam-reader-back-dock {
-    margin: 16px 20px;
 }
 
 .kalam-reader-bottom-dock {
@@ -1111,20 +1104,12 @@ button.kalam-reader-back-chip:hover {
     margin: 0 12px 16px 12px;
 }
 
-.kalam-reader-bottom-pill,
-.kalam-reader-floating-pill {
+.kalam-reader-bottom-pill {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 999px;
     padding: 5px 6px;
     box-shadow: 0 8px 24px alpha(#000, 0.26);
-}
-
-.kalam-reader-pill-sep {
-    background: alpha(@kalam_border, 0.6);
-    min-width: 1px;
-    min-height: 16px;
-    margin: 4px 2px;
 }
 
 button.kalam-reader-pill-nav {
@@ -1142,11 +1127,6 @@ button.kalam-reader-pill-nav:hover {
     color: @kalam_text;
 }
 
-button.kalam-reader-pill-nav.active {
-    background: alpha(@kalam_accent, 0.18);
-    color: @kalam_accent;
-}
-
 .kalam-reader-pill-nav image {
     -gtk-icon-size: 15px;
 }
@@ -1158,8 +1138,7 @@ button.kalam-reader-pill-nav.active {
     box-shadow: none;
 }
 
-.kalam-reader-pill-pages,
-.kalam-reader-pill-counter {
+.kalam-reader-pill-pages {
     font-size: 0.82rem;
     font-weight: 700;
     color: @kalam_accent;

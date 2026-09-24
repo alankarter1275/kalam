@@ -1474,7 +1474,7 @@ impl Component for PdfReaderModel {
             }
         });
 
-        let tx_leave = tx_key.clone();
+        let tx_leave = tx.clone();
         root_motion.connect_leave(move |_| {
             if was_top.get() {
                 was_top.set(false);
@@ -1493,11 +1493,11 @@ impl Component for PdfReaderModel {
 
         // 5. Hover state on floating back dock
         let back_motion = gtk::EventControllerMotion::new();
-        let tx_bd = tx_key.clone();
+        let tx_bd = tx.clone();
         back_motion.connect_enter(move |_, _, _| {
             let _ = tx_bd.send(PdfReaderMsg::TopEdgeHover(true));
         });
-        let tx_bdl = tx_key.clone();
+        let tx_bdl = tx.clone();
         back_motion.connect_leave(move |_| {
             let _ = tx_bdl.send(PdfReaderMsg::TopEdgeHover(false));
         });
@@ -1505,11 +1505,11 @@ impl Component for PdfReaderModel {
 
         // 6. Hover state on floating bottom dock
         let bottom_motion = gtk::EventControllerMotion::new();
-        let tx_bm = tx_key.clone();
+        let tx_bm = tx.clone();
         bottom_motion.connect_enter(move |_, _, _| {
             let _ = tx_bm.send(PdfReaderMsg::BottomEdgeHover(true));
         });
-        let tx_bml = tx_key.clone();
+        let tx_bml = tx.clone();
         bottom_motion.connect_leave(move |_| {
             let _ = tx_bml.send(PdfReaderMsg::BottomEdgeHover(false));
         });
@@ -1517,11 +1517,11 @@ impl Component for PdfReaderModel {
 
         // 7. Hover state on Left Sidebar
         let sidebar_motion = gtk::EventControllerMotion::new();
-        let tx_sm = tx_key.clone();
+        let tx_sm = tx.clone();
         sidebar_motion.connect_enter(move |_, _, _| {
             let _ = tx_sm.send(PdfReaderMsg::SidebarHover(true));
         });
-        let tx_sml = tx_key.clone();
+        let tx_sml = tx.clone();
         sidebar_motion.connect_leave(move |_| {
             let _ = tx_sml.send(PdfReaderMsg::SidebarHover(false));
         });
@@ -1531,8 +1531,8 @@ impl Component for PdfReaderModel {
         let scroll_ctrl = gtk::EventControllerScroll::new(
             gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::HORIZONTAL,
         );
-        let tx_sc = tx_key.clone();
-        let tx_ctrl_zoom = tx_key.clone();
+        let tx_sc = tx.clone();
+        let tx_ctrl_zoom = tx.clone();
         scroll_ctrl.connect_scroll(move |controller, _dx, dy| {
             let state = controller.current_event_state();
             if state.contains(gdk::ModifierType::CONTROL_MASK) {
@@ -1550,18 +1550,18 @@ impl Component for PdfReaderModel {
 
         // 9. Track continuous scroll position changes to update current_page
         let vadj = widgets.viewport_scroll.vadjustment();
-        let tx_vadj = tx_key.clone();
+        let tx_vadj = tx.clone();
         vadj.connect_value_changed(move |_| {
             let _ = tx_vadj.send(PdfReaderMsg::UpdateScrollPage(0));
         });
-        let tx_vadj_changed = tx_key.clone();
+        let tx_vadj_changed = tx.clone();
         vadj.connect_changed(move |_| {
             let _ = tx_vadj_changed.send(PdfReaderMsg::UpdateScrollPage(0));
         });
 
         // 10. Click controller on viewport to toggle controls or dismiss sidebar
         let click = gtk::GestureClick::new();
-        let tx_clk = tx_key.clone();
+        let tx_clk = tx.clone();
         click.connect_released(move |_, _n_press, _x, _y| {
             let _ = tx_clk.send(PdfReaderMsg::ToggleControls);
         });
@@ -1569,7 +1569,7 @@ impl Component for PdfReaderModel {
 
         // 11. Pinch zoom gesture for touchpads and touchscreens
         let zoom_gesture = gtk::GestureZoom::new();
-        let tx_zg = tx_key.clone();
+        let tx_zg = tx.clone();
         zoom_gesture.connect_scale_changed(move |_, scale_factor| {
             if scale_factor > 1.08 {
                 let _ = tx_zg.send(PdfReaderMsg::ZoomIn);

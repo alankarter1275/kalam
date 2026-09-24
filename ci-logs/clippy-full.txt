@@ -9,8 +9,8 @@ not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m zerocopy v0.8.58
 [1m[92m  Downloaded[0m zerocopy-derive v0.8.58
+[1m[92m  Downloaded[0m zerocopy v0.8.58
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
 [1m[92m   Compiling[0m zerocopy v0.8.58
 [1m[92m   Compiling[0m zerocopy-derive v0.8.58
@@ -33,7 +33,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m rusqlite v0.32.1
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/pdf_reader.rs:53:10: [1m[91merror[0m: enum `PdfViewMode` is never used
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 24.29s

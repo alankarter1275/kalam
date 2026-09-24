@@ -470,9 +470,8 @@ impl Component for PdfReaderModel {
                 connect_clicked => PdfReaderMsg::CloseSidebar,
             },
 
-            // ── 3. Overlay: Left Edge Hover Trigger (Zen Browser style)
+            // ── 3. Overlay: Left Edge Hover Strip (Zen Browser style)
             add_overlay = &gtk::Box {
-                #[name = "left_hover_edge"]
                 add_css_class: "kalam-reader-hover-edge",
                 add_css_class: "kalam-reader-hover-edge-left",
                 set_width_request: 20,
@@ -921,19 +920,7 @@ impl Component for PdfReaderModel {
         });
         widgets.left_sidebar_box.add_controller(sidebar_motion);
 
-        // 8. Hover state on Left Hover Edge Strip
-        let edge_motion = gtk::EventControllerMotion::new();
-        let tx_em = tx.clone();
-        edge_motion.connect_enter(move |_, _, _| {
-            let _ = tx_em.send(PdfReaderMsg::LeftEdgeHover(true));
-        });
-        let tx_eml = tx.clone();
-        edge_motion.connect_leave(move |_| {
-            let _ = tx_eml.send(PdfReaderMsg::LeftEdgeHover(false));
-        });
-        widgets.left_hover_edge.add_controller(edge_motion);
-
-        // 9. Scroll controller to autohide controls on scrolling
+        // 8. Scroll controller to autohide controls on scrolling
         let scroll_ctrl = gtk::EventControllerScroll::new(
             gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::HORIZONTAL,
         );
@@ -944,7 +931,7 @@ impl Component for PdfReaderModel {
         });
         widgets.viewport_scroll.add_controller(scroll_ctrl);
 
-        // 10. Track continuous scroll position changes to update current_page
+        // 9. Track continuous scroll position changes to update current_page
         let vadj = widgets.viewport_scroll.vadjustment();
         let tx_vadj = tx.clone();
         vadj.connect_value_changed(move |adj| {

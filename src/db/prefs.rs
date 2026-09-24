@@ -69,4 +69,9 @@ impl Catalog {
             .and_then(|v| v.parse().ok())
             .unwrap_or(default)
     }
+
+    /// Convenience for writing numeric prefs.
+    pub fn set_pref_i64(&self, key: &str, value: i64) {
+        self.set_pref(key, &value.to_string());
+    }
 }

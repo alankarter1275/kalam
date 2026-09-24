@@ -555,21 +555,19 @@ chores happen after the first paint.
 A bulk import expands to show **every** imported book name. Each delete
 shows up as its own task in the task manager.
 
-### T22 · PDF Vector Text Selection, Highlight Toolbar, and Dictionary Lookup
+### T22 · PDF Reader Layout & Spread Rendering Stability
 **Do:**
 - Open any PDF document in Kalam.
-- Click and drag over words or sentences in any view mode (`Page Scrolling`, `Vertical Scrolling`, `Horizontal Scrolling`, `Wrapped Scrolling`).
-- Release the mouse drag.
+- Switch between Scrolling modes: `Page Scrolling`, `Vertical Scrolling`, `Horizontal Scrolling`, `Wrapped Scrolling`.
+- Switch between Spreads modes: `No Spreads`, `Odd Spreads`, `Even Spreads`, and adjust `Spread Gap` (`0px`–`16px`).
+- Zoom in and out using `+` and `-` on the bottom pill or settings panel.
+- Click on the viewport to toggle floating controls, and hover edges to reveal back chip and dock.
 **Look for:**
-- Translucent blue highlight rectangle (`rgba(53, 132, 228, 0.35)`) renders cleanly over the selected text lines.
-- Floating toolbar popover appears anchored above the selection, offering:
-  - 5 color swatches (Yellow, Green, Blue, Pink, Orange) for instant highlighting.
-  - Define icon button (`accessories-dictionary-symbolic` or shortcut `D`).
-  - Copy icon button (`edit-copy-symbolic` or shortcut `Ctrl+C`).
-- Clicking **Define** (or pressing `D`) pops open the offline dictionary card with word title, pronunciation, part-of-speech badge, and numbered senses.
-- Clicking a color dot saves the highlight to the database and displays a compact notification.
-- Clicking elsewhere or pressing `Escape` dismisses the selection and popover cleanly.
-**Report if:** text drag doesn't highlight, popover doesn't appear, dictionary lookup fails, or `Escape` fails to clear selection.
+- Pages display crisply at their natural aspect ratio without distortion or artificial stretching.
+- Page 1 cover in `Odd Spreads` is centered cleanly without a right-side ghost container.
+- Single-page loading box is centered cleanly during navigation.
+- Smooth scrolling without flicker or gesture conflicts, and pointer remains a standard arrow.
+**Report if:** page is stretched, cover page is off-center on Odd Spreads, zoom distorts layout, or controls flicker unexpectedly.
 
 ---
 

@@ -16,22 +16,13 @@ use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::{Catalog, ReadingBookmark};
-use crate::pdf::{PdfDocument, PdfPageText, PdfTocEntry};
-
-pub const DYNAMIC_PAGE_SINGLE: usize = 0;
-pub const DYNAMIC_PAGE_LEFT: usize = usize::MAX - 1;
-pub const DYNAMIC_PAGE_RIGHT: usize = usize::MAX;
-
-pub type PageDrawOverlay = (gtk::DrawingArea, Rc<RefCell<Vec<(f64, f64, f64, f64)>>>);
-pub type PageRenderPayload = (usize, i32, i32, usize, Vec<u8>, Option<PdfPageText>);
+use crate::pdf::{PdfDocument, PdfTocEntry};
 
 pub struct PdfReaderInit {
     pub catalog: Arc<Catalog>,
@@ -126,28 +117,7 @@ pub enum PdfReaderMsg {
         texture: gdk::Texture,
         width: i32,
         height: i32,
-        text: Option<PdfPageText>,
     },
-    TextSelectionDragStart {
-        page: usize,
-        x: f64,
-        y: f64,
-    },
-    TextSelectionDragUpdate {
-        page: usize,
-        dx: f64,
-        dy: f64,
-    },
-    TextSelectionDragEnd {
-        page: usize,
-        dx: f64,
-        dy: f64,
-    },
-    #[allow(dead_code)]
-    ClearSelection,
-    CopySelection,
-    LookUpSelection,
-    HighlightSelection(String),
     TopEdgeHover(bool),
     BottomEdgeHover(bool),
     LeftEdgeHover(bool),
@@ -211,14 +181,6 @@ pub struct PdfReaderModel {
     pub toc_list_box: Option<gtk::Box>,
     pub bookmarks_list_box: Option<gtk::Box>,
     pub settings_widgets: Option<PdfSettingsWidgets>,
-    pub page_texts: HashMap<usize, PdfPageText>,
-    pub selected_text: Option<String>,
-    pub selected_page: Option<usize>,
-    pub selected_rects: Vec<(f32, f32, f32, f32)>,
-    pub selection_chip: Option<gtk::Popover>,
-    pub dict_popover: Option<gtk::Popover>,
-    pub page_draw_areas: HashMap<usize, PageDrawOverlay>,
-    pub active_drag_start: Option<(f64, f64)>,
 }
 
 impl PdfReaderModel {
@@ -332,14 +294,6 @@ impl PdfReaderModel {
             toc_list_box: None,
             bookmarks_list_box: None,
             settings_widgets: None,
-            page_texts: HashMap::new(),
-            selected_text: None,
-            selected_page: None,
-            selected_rects: Vec::new(),
-            selection_chip: None,
-            dict_popover: None,
-            page_draw_areas: HashMap::new(),
-            active_drag_start: None,
         };
 
         model.reload_bookmarks();
@@ -368,9 +322,6 @@ impl PdfReaderModel {
                         model.current_page,
                         (texture.upcast(), rendered.width, rendered.height),
                     );
-                }
-                if let Ok(text) = doc.extract_page_text(model.current_page) {
-                    model.page_texts.insert(model.current_page, text);
                 }
             } else {
                 model.status_text = "Failed to open PDF document".to_string();
@@ -574,22 +525,20 @@ impl PdfReaderModel {
 
             crate::tasks::spawn_internal(
                 "Rendering PDF page",
-                move |_| -> anyhow::Result<PageRenderPayload> {
+                move |_| -> anyhow::Result<(usize, i32, i32, usize, Vec<u8>)> {
                     let doc = PdfDocument::open(&p_buf)?;
                     let rendered = doc.render_page_rgba(page, scale, smart_crop)?;
-                    let text = doc.extract_page_text(page).ok();
                     Ok((
                         rendered.page_num,
                         rendered.width,
                         rendered.height,
                         rendered.stride,
                         rendered.samples,
-                        text,
                     ))
                 },
                 |_| {},
                 move |res| {
-                    if let Ok((p, w, h, stride, samples, text)) = res {
+                    if let Ok((p, w, h, stride, samples)) = res {
                         let bytes = glib::Bytes::from_owned(samples);
                         let texture = gdk::MemoryTexture::new(
                             w,
@@ -603,7 +552,6 @@ impl PdfReaderModel {
                             texture: texture.upcast(),
                             width: w,
                             height: h,
-                            text,
                         });
                     }
                 },
@@ -611,306 +559,9 @@ impl PdfReaderModel {
         }
     }
 
-    pub fn dismiss_popovers(&mut self) {
-        if let Some(chip) = self.selection_chip.take() {
-            chip.popdown();
-            chip.unparent();
-        }
-        if let Some(dict) = self.dict_popover.take() {
-            dict.popdown();
-            dict.unparent();
-        }
-    }
-
-    pub fn clear_selection_visuals(&mut self) {
-        for (draw_area, sel_rects) in self.page_draw_areas.values() {
-            sel_rects.borrow_mut().clear();
-            draw_area.queue_draw();
-        }
-    }
-
-    pub fn create_page_overlay(
-        &mut self,
-        key_page: usize,
-        pic: &gtk::Picture,
-        sender: &ComponentSender<Self>,
-    ) -> gtk::Widget {
-        let overlay = gtk::Overlay::new();
-        overlay.set_child(Some(pic));
-        overlay.set_halign(pic.halign());
-        overlay.set_valign(pic.valign());
-
-        let draw_area = gtk::DrawingArea::new();
-        draw_area.set_cursor_from_name(Some("text"));
-        draw_area.set_hexpand(true);
-        draw_area.set_vexpand(true);
-
-        let sel_rects = Rc::new(RefCell::new(Vec::<(f64, f64, f64, f64)>::new()));
-        let sel_rects_draw = sel_rects.clone();
-
-        draw_area.set_draw_func(move |_area, cr, _width, _height| {
-            let rects = sel_rects_draw.borrow();
-            if !rects.is_empty() {
-                cr.set_source_rgba(53.0 / 255.0, 132.0 / 255.0, 228.0 / 255.0, 0.35);
-                for &(x, y, w, h) in rects.iter() {
-                    cr.rectangle(x, y, w, h);
-                    let _ = cr.fill();
-                }
-            }
-        });
-
-        let drag = gtk::GestureDrag::new();
-        let tx_start = sender.input_sender().clone();
-        drag.connect_drag_begin(move |_, x, y| {
-            let _ = tx_start.send(PdfReaderMsg::TextSelectionDragStart { page: key_page, x, y });
-        });
-
-        let tx_update = sender.input_sender().clone();
-        drag.connect_drag_update(move |_, dx, dy| {
-            let _ = tx_update.send(PdfReaderMsg::TextSelectionDragUpdate { page: key_page, dx, dy });
-        });
-
-        let tx_end = sender.input_sender().clone();
-        drag.connect_drag_end(move |_, dx, dy| {
-            let _ = tx_end.send(PdfReaderMsg::TextSelectionDragEnd { page: key_page, dx, dy });
-        });
-
-        draw_area.add_controller(drag);
-        overlay.add_overlay(&draw_area);
-        self.page_draw_areas.insert(key_page, (draw_area, sel_rects));
-
-        overlay.upcast()
-    }
-
-    pub fn show_selection_chip(
-        &mut self,
-        page: usize,
-        sender: &ComponentSender<Self>,
-    ) {
-        self.dismiss_popovers();
-
-        let Some((draw_area, sel_rects)) = self.page_draw_areas.get(&page) else { return; };
-        let rects = sel_rects.borrow();
-        if rects.is_empty() { return; }
-
-        let (first_x, first_y, first_w, first_h) = rects[0];
-        let anchor = gtk::gdk::Rectangle::new(
-            first_x as i32,
-            (first_y - 6.0).max(0.0) as i32,
-            first_w.max(20.0) as i32,
-            first_h.max(20.0) as i32,
-        );
-
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-        row.add_css_class("k-sel-toolbar");
-
-        let colors = gtk::Box::new(gtk::Orientation::Horizontal, 3);
-        colors.add_css_class("k-color-bar");
-        for (color_name, class_name) in [
-            ("yellow", "k-color-dot-yellow"),
-            ("green", "k-color-dot-green"),
-            ("blue", "k-color-dot-blue"),
-            ("pink", "k-color-dot-pink"),
-            ("orange", "k-color-dot-orange"),
-        ] {
-            let dot = gtk::Button::new();
-            dot.add_css_class("k-color-dot");
-            dot.add_css_class(class_name);
-            dot.set_tooltip_text(Some(&format!("Highlight {}", color_name)));
-            dot.set_size_request(16, 16);
-            dot.set_valign(gtk::Align::Center);
-            dot.set_halign(gtk::Align::Center);
-            let tx = sender.input_sender().clone();
-            let c_str = color_name.to_string();
-            dot.connect_clicked(move |_| {
-                let _ = tx.send(PdfReaderMsg::HighlightSelection(c_str.clone()));
-            });
-            colors.append(&dot);
-        }
-        row.append(&colors);
-
-        let sep1 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        sep1.add_css_class("k-sel-divider");
-        row.append(&sep1);
-
-        let define_btn = gtk::Button::new();
-        define_btn.add_css_class("k-sel-action");
-        define_btn.set_child(Some(&crate::icons::symbolic_with_classes(
-            "accessories-dictionary-symbolic",
-            14,
-            &["kalam-inline-icon"],
-        )));
-        define_btn.set_tooltip_text(Some("Define in Dictionary (D)"));
-        let tx_def = sender.input_sender().clone();
-        define_btn.connect_clicked(move |_| {
-            let _ = tx_def.send(PdfReaderMsg::LookUpSelection);
-        });
-        row.append(&define_btn);
-
-        let sep2 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        sep2.add_css_class("k-sel-divider");
-        row.append(&sep2);
-
-        let copy_btn = gtk::Button::new();
-        copy_btn.add_css_class("k-sel-action");
-        copy_btn.set_child(Some(&crate::icons::symbolic_with_classes(
-            "edit-copy-symbolic",
-            14,
-            &["kalam-inline-icon"],
-        )));
-        copy_btn.set_tooltip_text(Some("Copy to Clipboard (Ctrl+C)"));
-        let tx_copy = sender.input_sender().clone();
-        copy_btn.connect_clicked(move |_| {
-            let _ = tx_copy.send(PdfReaderMsg::CopySelection);
-        });
-        row.append(&copy_btn);
-
-        let popover = gtk::Popover::new();
-        popover.set_child(Some(&row));
-        popover.set_parent(draw_area);
-        popover.set_autohide(false);
-        popover.set_has_arrow(true);
-        popover.set_position(gtk::PositionType::Top);
-        popover.set_pointing_to(Some(&anchor));
-        popover.add_css_class("k-sel-toolbar-popover");
-        popover.popup();
-
-        self.selection_chip = Some(popover);
-    }
-
-    pub fn show_dict_popover(
-        &mut self,
-        word: &str,
-        page: usize,
-        _sender: &ComponentSender<Self>,
-    ) {
-        self.dismiss_popovers();
-
-        let clean_word = word.trim().trim_matches(|c: char| !c.is_alphanumeric());
-        if clean_word.is_empty() { return; }
-
-        let Some((draw_area, sel_rects)) = self.page_draw_areas.get(&page) else { return; };
-        let rects = sel_rects.borrow();
-        let (first_x, first_y, first_w, first_h) = if !rects.is_empty() {
-            rects[0]
-        } else {
-            (draw_area.width() as f64 / 2.0, draw_area.height() as f64 / 2.0, 10.0, 10.0)
-        };
-
-        let anchor = gtk::gdk::Rectangle::new(
-            first_x as i32,
-            (first_y - 6.0).max(0.0) as i32,
-            first_w.max(20.0) as i32,
-            first_h.max(20.0) as i32,
-        );
-
-        let entry = self.catalog.lookup_entry(clean_word).unwrap_or_else(|_| {
-            crate::db::EntryData {
-                word: clean_word.to_string(),
-                ..Default::default()
-            }
-        });
-        let pronunciation = crate::db::pronunciation_for(&entry.word).map(|p| format!("/{p}/"));
-
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        card.add_css_class("k-popup");
-        card.set_margin_start(12);
-        card.set_margin_end(12);
-        card.set_margin_top(12);
-        card.set_margin_bottom(12);
-        card.set_size_request(320, -1);
-
-        let head_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        let word_lbl = gtk::Label::new(Some(&entry.word));
-        word_lbl.add_css_class("kalam-reader-bookmark-title");
-        word_lbl.set_halign(gtk::Align::Start);
-        head_box.append(&word_lbl);
-
-        if let Some(ref pron) = pronunciation {
-            let pron_lbl = gtk::Label::new(Some(pron));
-            pron_lbl.add_css_class("dim-label");
-            pron_lbl.set_halign(gtk::Align::Start);
-            head_box.append(&pron_lbl);
-        }
-        card.append(&head_box);
-
-        let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
-        sep.add_css_class("kalam-section-divider");
-        card.append(&sep);
-
-        if entry.senses.is_empty() {
-            let not_found = gtk::Label::new(Some("No dictionary definition found."));
-            not_found.add_css_class("dim-label");
-            not_found.set_halign(gtk::Align::Start);
-            card.append(&not_found);
-        } else {
-            let senses_scroll = gtk::ScrolledWindow::builder()
-                .hscrollbar_policy(gtk::PolicyType::Never)
-                .vscrollbar_policy(gtk::PolicyType::Automatic)
-                .max_content_height(260)
-                .propagate_natural_height(true)
-                .build();
-
-            let senses_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
-
-            for (idx, sense) in entry.senses.iter().take(4).enumerate() {
-                let sense_row = gtk::Box::new(gtk::Orientation::Vertical, 2);
-
-                let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                let num_lbl = gtk::Label::new(Some(&format!("{}.", idx + 1)));
-                num_lbl.add_css_class("dim-label");
-                top_row.append(&num_lbl);
-
-                if let Some(ref pos) = sense.pos {
-                    let pos_lbl = gtk::Label::new(Some(pos));
-                    pos_lbl.add_css_class("kalam-reader-badge");
-                    top_row.append(&pos_lbl);
-                }
-
-                let def_lbl = gtk::Label::new(Some(&sense.def));
-                def_lbl.set_wrap(true);
-                def_lbl.set_halign(gtk::Align::Start);
-                def_lbl.set_hexpand(true);
-                top_row.append(&def_lbl);
-                sense_row.append(&top_row);
-
-                if let Some(ref ex) = sense.example {
-                    let ex_lbl = gtk::Label::new(Some(&format!("\"{}\"", ex)));
-                    ex_lbl.add_css_class("dim-label");
-                    ex_lbl.set_wrap(true);
-                    ex_lbl.set_margin_start(16);
-                    ex_lbl.set_halign(gtk::Align::Start);
-                    sense_row.append(&ex_lbl);
-                }
-
-                senses_box.append(&sense_row);
-            }
-
-            senses_scroll.set_child(Some(&senses_box));
-            card.append(&senses_scroll);
-        }
-
-        let popover = gtk::Popover::new();
-        popover.set_child(Some(&card));
-        popover.set_parent(draw_area);
-        popover.set_autohide(true);
-        popover.set_has_arrow(true);
-        popover.set_position(gtk::PositionType::Top);
-        popover.set_pointing_to(Some(&anchor));
-        popover.add_css_class("kalam-reader-dict-popover");
-        popover.popup();
-
-        self.dict_popover = Some(popover);
-    }
-
     /// Build the viewport container widget for current scroll mode & spread mode.
-    pub fn build_viewport_widget(&mut self, sender: &ComponentSender<Self>) -> gtk::Widget {
+    pub fn build_viewport_widget(&mut self) -> gtk::Widget {
         self.page_pictures.clear();
-        self.page_draw_areas.clear();
-        self.dismiss_popovers();
-        self.selected_text = None;
-        self.selected_rects.clear();
-        self.active_drag_start = None;
         self.paged_picture = None;
         self.paged_loading_box = None;
         self.paged_label = None;
@@ -972,8 +623,7 @@ impl PdfReaderModel {
                             loading_box.set_visible(true);
                         }
 
-                        let page_widget = self.create_page_overlay(DYNAMIC_PAGE_SINGLE, &pic, sender);
-                        container.append(&page_widget);
+                        container.append(&pic);
                         container.append(&loading_box);
 
                         self.paged_picture = Some(pic);
@@ -1076,10 +726,8 @@ impl PdfReaderModel {
                             loading_box.set_visible(true);
                         }
 
-                        let left_widget = self.create_page_overlay(DYNAMIC_PAGE_LEFT, &left_pic, sender);
-                        let right_widget = self.create_page_overlay(DYNAMIC_PAGE_RIGHT, &right_pic, sender);
-                        spread_box.append(&left_widget);
-                        spread_box.append(&right_widget);
+                        spread_box.append(&left_pic);
+                        spread_box.append(&right_pic);
                         container.append(&spread_box);
                         container.append(&loading_box);
 
@@ -1127,9 +775,8 @@ impl PdfReaderModel {
                                 pic.add_css_class("kalam-pdf-placeholder");
                             }
 
-                            self.page_pictures.insert(p, pic.clone());
-                            let page_widget = self.create_page_overlay(p, &pic, sender);
-                            page_box.append(&page_widget);
+                            page_box.append(&pic);
+                            self.page_pictures.insert(p, pic);
                             container.append(&page_box);
                         }
                     }
@@ -1157,9 +804,8 @@ impl PdfReaderModel {
                                 left_pic.set_size_request(est_w, est_h);
                                 left_pic.add_css_class("kalam-pdf-placeholder");
                             }
-                            self.page_pictures.insert(left, left_pic.clone());
-                            let left_widget = self.create_page_overlay(left, &left_pic, sender);
-                            spread_row.append(&left_widget);
+                            spread_row.append(&left_pic);
+                            self.page_pictures.insert(left, left_pic);
 
                             if let Some(r) = right {
                                 let right_pic = gtk::Picture::new();
@@ -1179,9 +825,8 @@ impl PdfReaderModel {
                                     right_pic.set_size_request(est_w, est_h);
                                     right_pic.add_css_class("kalam-pdf-placeholder");
                                 }
-                                self.page_pictures.insert(r, right_pic.clone());
-                                let right_widget = self.create_page_overlay(r, &right_pic, sender);
-                                spread_row.append(&right_widget);
+                                spread_row.append(&right_pic);
+                                self.page_pictures.insert(r, right_pic);
                             }
 
                             container.append(&spread_row);
@@ -1222,8 +867,7 @@ impl PdfReaderModel {
                             }
 
                             self.page_pictures.insert(p, pic.clone());
-                            let page_widget = self.create_page_overlay(p, &pic, sender);
-                            container.append(&page_widget);
+                            container.append(&pic);
                         }
                     }
                     _ => {
@@ -1248,9 +892,8 @@ impl PdfReaderModel {
                                 left_pic.set_size_request(est_w, est_h);
                                 left_pic.add_css_class("kalam-pdf-placeholder");
                             }
-                            self.page_pictures.insert(left, left_pic.clone());
-                            let left_widget = self.create_page_overlay(left, &left_pic, sender);
-                            spread_box.append(&left_widget);
+                            spread_box.append(&left_pic);
+                            self.page_pictures.insert(left, left_pic);
 
                             if let Some(r) = right {
                                 let right_pic = gtk::Picture::new();
@@ -1269,9 +912,8 @@ impl PdfReaderModel {
                                     right_pic.set_size_request(est_w, est_h);
                                     right_pic.add_css_class("kalam-pdf-placeholder");
                                 }
-                                self.page_pictures.insert(r, right_pic.clone());
-                                let right_widget = self.create_page_overlay(r, &right_pic, sender);
-                                spread_box.append(&right_widget);
+                                spread_box.append(&right_pic);
+                                self.page_pictures.insert(r, right_pic);
                             }
 
                             container.append(&spread_box);
@@ -1315,8 +957,7 @@ impl PdfReaderModel {
                     }
 
                     self.page_pictures.insert(p, pic.clone());
-                    let page_widget = self.create_page_overlay(p, &pic, sender);
-                    flow_box.append(&page_widget);
+                    flow_box.append(&pic);
                 }
 
                 flow_box.upcast()
@@ -1324,12 +965,7 @@ impl PdfReaderModel {
         }
     }
 
-    pub fn update_paged_view(&mut self) {
-        self.dismiss_popovers();
-        self.clear_selection_visuals();
-        self.selected_text = None;
-        self.selected_rects.clear();
-        self.active_drag_start = None;
+    pub fn update_paged_view(&self) {
         let (Some(ref pic), Some(ref loading_box), Some(ref label)) =
             (&self.paged_picture, &self.paged_loading_box, &self.paged_label)
         else {
@@ -1356,12 +992,7 @@ impl PdfReaderModel {
         }
     }
 
-    pub fn update_two_page_view(&mut self) {
-        self.dismiss_popovers();
-        self.clear_selection_visuals();
-        self.selected_text = None;
-        self.selected_rects.clear();
-        self.active_drag_start = None;
+    pub fn update_two_page_view(&self) {
         let (Some(ref left_pic), Some(ref right_pic), Some(ref loading_box), Some(ref label)) = (
             &self.two_page_left_pic,
             &self.two_page_right_pic,
@@ -1431,11 +1062,6 @@ impl PdfReaderModel {
 
     /// Smooth in-place zoom adjustment without widget recreation or crashes.
     pub fn apply_zoom_change(&mut self, sender: &ComponentSender<Self>, scroll: &gtk::ScrolledWindow) {
-        self.dismiss_popovers();
-        self.clear_selection_visuals();
-        self.selected_text = None;
-        self.selected_rects.clear();
-        self.active_drag_start = None;
         self.textures.clear();
         self.pending_loads.clear();
 
@@ -1937,16 +1563,8 @@ impl Component for PdfReaderModel {
                     let _ = tx_key.send(PdfReaderMsg::GoToLastPage);
                     gtk::glib::Propagation::Stop
                 }
-                Key::c | Key::C if _state.contains(gtk::gdk::ModifierType::CONTROL_MASK) => {
-                    let _ = tx_key.send(PdfReaderMsg::CopySelection);
-                    gtk::glib::Propagation::Stop
-                }
                 Key::c | Key::C => {
                     let _ = tx_key.send(PdfReaderMsg::ToggleSmartCrop);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::d | Key::D if !_state.contains(gtk::gdk::ModifierType::CONTROL_MASK) => {
-                    let _ = tx_key.send(PdfReaderMsg::LookUpSelection);
                     gtk::glib::Propagation::Stop
                 }
                 Key::t | Key::T => {
@@ -2097,7 +1715,7 @@ impl Component for PdfReaderModel {
         widgets.viewport_scroll.add_controller(zoom_gesture);
 
         // Initial child and render triggering
-        let child = model.build_viewport_widget(&sender);
+        let child = model.build_viewport_widget();
         widgets.viewport_scroll.set_child(Some(&child));
 
         // Restore scroll position in continuous mode if resuming past page 1
@@ -2144,13 +1762,7 @@ impl Component for PdfReaderModel {
                 let _ = sender.output_sender().send(PdfReaderOut::Close);
             }
             PdfReaderMsg::EscapeKey => {
-                if self.selection_chip.is_some() || self.dict_popover.is_some() || self.selected_text.is_some() {
-                    self.dismiss_popovers();
-                    self.clear_selection_visuals();
-                    self.selected_text = None;
-                    self.selected_rects.clear();
-                    self.active_drag_start = None;
-                } else if self.show_sidebar {
+                if self.show_sidebar {
                     self.show_sidebar = false;
                 } else {
                     let _ = sender.input_sender().send(PdfReaderMsg::Close);
@@ -2295,7 +1907,7 @@ impl Component for PdfReaderModel {
                         widgets.viewport_scroll.set_vscrollbar_policy(gtk::PolicyType::Always);
                     }
 
-                    let child = self.build_viewport_widget(&sender);
+                    let child = self.build_viewport_widget();
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.trigger_loads(&sender);
                     if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
@@ -2314,7 +1926,7 @@ impl Component for PdfReaderModel {
                     self.catalog.set_pref(&format!("book.{}.pdf.spread_mode", self.book_id), mode_str);
                     self.catalog.set_pref("reader.pdf.spread_mode", mode_str);
 
-                    let child = self.build_viewport_widget(&sender);
+                    let child = self.build_viewport_widget();
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.trigger_loads(&sender);
                     if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
@@ -2328,7 +1940,7 @@ impl Component for PdfReaderModel {
                     self.two_page_gap = clamped;
                     self.catalog.set_pref_i64("reader.pdf.two_page_gap", clamped as i64);
                     if self.spread_mode != PdfSpreadMode::NoSpreads {
-                        let child = self.build_viewport_widget(&sender);
+                        let child = self.build_viewport_widget();
                         widgets.viewport_scroll.set_child(Some(&child));
                         self.trigger_loads(&sender);
                         if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
@@ -2463,13 +2075,9 @@ impl Component for PdfReaderModel {
                 texture,
                 width,
                 height,
-                text,
             } => {
                 self.pending_loads.remove(&page);
                 self.textures.insert(page, (texture.clone(), width, height));
-                if let Some(t) = text {
-                    self.page_texts.insert(page, t);
-                }
 
                 match self.scroll_mode {
                     PdfScrollMode::PageScrolling => {
@@ -2498,124 +2106,6 @@ impl Component for PdfReaderModel {
                             widgets.viewport_scroll.queue_draw();
                         }
                     }
-                }
-            }
-            PdfReaderMsg::TextSelectionDragStart { page, x, y } => {
-                self.dismiss_popovers();
-                self.clear_selection_visuals();
-                self.active_drag_start = Some((x, y));
-                let actual_page = match page {
-                    DYNAMIC_PAGE_SINGLE => self.current_page,
-                    DYNAMIC_PAGE_LEFT => self.spread_for_page(self.current_page).0,
-                    DYNAMIC_PAGE_RIGHT => match self.spread_for_page(self.current_page).1 {
-                        Some(r) => r,
-                        None => return,
-                    },
-                    p => p,
-                };
-                self.selected_page = Some(actual_page);
-                self.selected_text = None;
-                self.selected_rects.clear();
-            }
-            PdfReaderMsg::TextSelectionDragUpdate { page, dx, dy } => {
-                let Some((start_x, start_y)) = self.active_drag_start else { return; };
-                let cur_x = start_x + dx;
-                let cur_y = start_y + dy;
-
-                let actual_page = match page {
-                    DYNAMIC_PAGE_SINGLE => self.current_page,
-                    DYNAMIC_PAGE_LEFT => self.spread_for_page(self.current_page).0,
-                    DYNAMIC_PAGE_RIGHT => match self.spread_for_page(self.current_page).1 {
-                        Some(r) => r,
-                        None => return,
-                    },
-                    p => p,
-                };
-
-                let Some(page_text) = self.page_texts.get(&actual_page) else { return; };
-                let Some((draw_area, sel_rects)) = self.page_draw_areas.get(&page) else { return; };
-
-                let w = draw_area.width() as f64;
-                let h = draw_area.height() as f64;
-                if w <= 0.0 || h <= 0.0 || page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 {
-                    return;
-                }
-
-                let p0_x = (start_x * page_text.width_pts as f64 / w) as f32;
-                let p0_y = (start_y * page_text.height_pts as f64 / h) as f32;
-                let p1_x = (cur_x * page_text.width_pts as f64 / w) as f32;
-                let p1_y = (cur_y * page_text.height_pts as f64 / h) as f32;
-
-                let (text, rects_pts) = page_text.select_between((p0_x, p0_y), (p1_x, p1_y));
-
-                let mut screen_rects = Vec::new();
-                for &(rx0, ry0, rx1, ry1) in &rects_pts {
-                    let sx = rx0 as f64 * w / page_text.width_pts as f64;
-                    let sy = ry0 as f64 * h / page_text.height_pts as f64;
-                    let sw = (rx1 - rx0) as f64 * w / page_text.width_pts as f64;
-                    let sh = (ry1 - ry0) as f64 * h / page_text.height_pts as f64;
-                    screen_rects.push((sx, sy, sw, sh));
-                }
-
-                *sel_rects.borrow_mut() = screen_rects;
-                draw_area.queue_draw();
-
-                self.selected_text = if text.is_empty() { None } else { Some(text) };
-                self.selected_rects = rects_pts;
-            }
-            PdfReaderMsg::TextSelectionDragEnd { page, dx, dy } => {
-                self.active_drag_start = None;
-                if dx.abs() < 4.0 && dy.abs() < 4.0 {
-                    self.clear_selection_visuals();
-                    self.selected_text = None;
-                    self.selected_rects.clear();
-                    return;
-                }
-
-                if let Some(ref text) = self.selected_text {
-                    if !text.is_empty() {
-                        self.show_selection_chip(page, &sender);
-                    }
-                }
-            }
-            PdfReaderMsg::ClearSelection => {
-                self.dismiss_popovers();
-                self.clear_selection_visuals();
-                self.selected_text = None;
-                self.selected_rects.clear();
-                self.active_drag_start = None;
-            }
-            PdfReaderMsg::CopySelection => {
-                self.dismiss_popovers();
-                if let Some(ref text) = self.selected_text {
-                    if let Some(display) = gdk::Display::default() {
-                        display.clipboard().set_text(text);
-                    }
-                    crate::notify::compact("Copied to clipboard", text);
-                }
-            }
-            PdfReaderMsg::LookUpSelection => {
-                let Some(text) = self.selected_text.clone() else { return; };
-                let Some(page) = self.selected_page else { return; };
-                self.dismiss_popovers();
-                self.show_dict_popover(&text, page, &sender);
-            }
-            PdfReaderMsg::HighlightSelection(color) => {
-                self.dismiss_popovers();
-                if let (Some(ref text), Some(page)) = (&self.selected_text, self.selected_page) {
-                    let _ = self.catalog.insert_annotation(
-                        self.book_id,
-                        "highlight",
-                        page as i64,
-                        &format!("pdf/page/{}", page),
-                        0,
-                        &format!("pdf/page/{}", page),
-                        text.len() as i64,
-                        &color,
-                        text,
-                        "",
-                    );
-                    crate::notify::compact("Highlight saved", text);
                 }
             }
             PdfReaderMsg::TopEdgeHover(hovering) => {

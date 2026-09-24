@@ -9,6 +9,7 @@ use mupdf::{Colorspace, Document, Matrix, Outline, Rect, TextBlockContent, TextE
 use std::path::{Path, PathBuf};
 
 /// Single extracted character with bounding box in PDF points (72 DPI).
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdfTextChar {
     pub ch: char,
@@ -19,6 +20,7 @@ pub struct PdfTextChar {
 }
 
 /// Single extracted text line with bounding box and character stream in PDF points.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdfTextLine {
     pub text: String,
@@ -30,6 +32,7 @@ pub struct PdfTextLine {
 }
 
 /// Extracted page text containing line hierarchy and document point dimensions.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdfPageText {
     pub page_num: usize,
@@ -283,6 +286,7 @@ impl PdfDocument {
     }
 
     /// Extract structured text with character and line bounding boxes from a page (1-indexed).
+    #[allow(dead_code)]
     pub fn extract_page_text(&self, page_num: usize) -> Result<PdfPageText> {
         if page_num == 0 || page_num > self.page_count {
             return Err(anyhow!("Page number {} out of range", page_num));

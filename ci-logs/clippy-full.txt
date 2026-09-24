@@ -18,48 +18,48 @@ glib-2.0: 2.88.0
 [1m[92m   Compiling[0m zerofrom-derive v0.1.8
 [1m[92m   Compiling[0m yoke-derive v0.8.3
 [1m[92m    Checking[0m bytemuck v1.25.2
-[1m[92m   Compiling[0m zerovec-derive v0.11.6
 [1m[92m   Compiling[0m displaydoc v0.2.7
+[1m[92m   Compiling[0m zerovec-derive v0.11.6
 [1m[92m    Checking[0m zerofrom v0.1.8
 [1m[92m    Checking[0m yoke v0.8.3
 [1m[92m   Compiling[0m thiserror-impl v2.0.21
-[1m[92m    Checking[0m serde v1.0.229
-[1m[92m    Checking[0m string_cache v0.9.0
-[1m[92m    Checking[0m font-types v0.12.5
-[1m[92m    Checking[0m read-fonts v0.41.0
-[1m[92m    Checking[0m zerovec v0.11.8
 [1m[92m    Checking[0m zerotrie v0.2.5
+[1m[92m    Checking[0m serde v1.0.229
+[1m[92m    Checking[0m font-types v0.12.5
+[1m[92m    Checking[0m string_cache v0.9.0
+[1m[92m    Checking[0m read-fonts v0.41.0
+[1m[92m    Checking[0m font-types v0.11.3
+[1m[92m    Checking[0m read-fonts v0.37.0
+[1m[92m    Checking[0m zerovec v0.11.8
 [1m[92m    Checking[0m tinystr v0.8.4
 [1m[92m    Checking[0m icu_locale_core v2.3.0
 [1m[92m    Checking[0m potential_utf v0.1.6
-[1m[92m    Checking[0m icu_collections v2.3.0
-[1m[92m    Checking[0m font-types v0.11.3
-[1m[92m    Checking[0m read-fonts v0.37.0
 [1m[92m    Checking[0m icu_provider v2.3.1
+[1m[92m    Checking[0m icu_collections v2.3.0
 [1m[92m    Checking[0m icu_normalizer v2.3.0
 [1m[92m    Checking[0m icu_properties v2.3.0
+[1m[92m   Compiling[0m cssparser-macros v0.7.1
 [1m[92m    Checking[0m idna_adapter v1.2.2
 [1m[92m    Checking[0m idna v1.1.0
-[1m[92m   Compiling[0m cssparser-macros v0.7.1
-[1m[92m    Checking[0m cssparser v0.37.0
-[1m[92m    Checking[0m skrifa v0.44.0
 [1m[92m    Checking[0m url v2.5.8
+[1m[92m    Checking[0m skrifa v0.44.0
 [1m[92m    Checking[0m servo_arc v0.4.3
+[1m[92m    Checking[0m harfrust v0.5.2
+[1m[92m    Checking[0m cssparser v0.37.0
 [1m[92m    Checking[0m to_shmem v0.5.0
 [1m[92m    Checking[0m skrifa v0.40.0
-[1m[92m    Checking[0m harfrust v0.5.2
 [1m[92m    Checking[0m swash v0.2.10
 [1m[92m    Checking[0m tiny-skia-path v0.12.0
 [1m[92m    Checking[0m selectors v0.40.0
 [1m[92m    Checking[0m web_atoms v0.2.6
 [1m[92m    Checking[0m euclid v0.22.14
+[1m[92m    Checking[0m cosmic-text v0.19.0
 [1m[92m    Checking[0m app_units v0.7.8
 [1m[92m    Checking[0m tiny-skia v0.12.0
-[1m[92m    Checking[0m cosmic-text v0.19.0
-[1m[92m    Checking[0m stylo_malloc_size_of v0.20.0
-[1m[92m   Compiling[0m bincode v1.3.3
 [1m[92m    Checking[0m thiserror v2.0.21
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m    Checking[0m stylo_malloc_size_of v0.20.0
+[1m[92m   Compiling[0m bincode v1.3.3
 [1m[92m   Compiling[0m hyphenation_commons v0.8.4
 [1m[92m    Checking[0m rbook v0.7.10
 [1m[92m    Checking[0m markup5ever v0.39.0
@@ -73,16 +73,16 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m icu_segmenter v2.3.0
 [1m[92m    Checking[0m stylo_dom v0.20.0
 [1m[92m    Checking[0m rustybuzz v0.20.1
-[1m[92m    Checking[0m usvg v0.48.1
 [1m[92m    Checking[0m rgb v0.8.53
+[1m[92m    Checking[0m usvg v0.48.1
 [1m[92m    Checking[0m stylo v0.20.0
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m xml5ever v0.39.0
 [1m[92m    Checking[0m html5ever v0.39.0
-[1m[92m    Checking[0m resvg v0.48.1
-[1m[92m    Checking[0m formulary v0.2.0
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m   Compiling[0m futures-macro v0.3.34
+[1m[92m    Checking[0m resvg v0.48.1
+[1m[92m    Checking[0m formulary v0.2.0
 [1m[92m   Compiling[0m glib-macros v0.22.9
 [1m[92m   Compiling[0m clap_derive v4.6.7
 [1m[92m    Checking[0m futures-util v0.3.34
@@ -95,10 +95,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m zip v2.4.2
 [1m[92m    Checking[0m ureq v2.12.1
 [1m[92m    Checking[0m glib v0.22.10
+[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m gio v0.22.10
 [1m[92m    Checking[0m cairo-rs v0.22.9
 [1m[92m    Checking[0m graphene-rs v0.22.8
-[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m pango v0.22.9
@@ -112,10 +112,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m relm4 v0.11.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/pdf_reader.rs:143:5: [1m[91merror[0m: variant `ClearSelection` is never constructed
-src/pdf.rs:42:12: [1m[91merror[0m: methods `is_empty` and `total_chars` are never used
-src/pages/pdf_reader.rs:216:26: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/pdf_reader.rs:573:29: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 2m 20s

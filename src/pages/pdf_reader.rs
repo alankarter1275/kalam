@@ -1875,9 +1875,6 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
-            PdfReaderMsg::CloseSidebar => {
-                self.show_sidebar = false;
-            }
             PdfReaderMsg::ToggleControls => {
                 if self.show_sidebar {
                     self.show_sidebar = false;

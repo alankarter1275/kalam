@@ -71,12 +71,6 @@ pub struct PdfSettingsWidgets {
     pub spread_settings_box: gtk::Box,
     pub smart_crop_switch: gtk::Switch,
     pub zoom_label: gtk::Label,
-    pub fit_page_btn: gtk::Button,
-    pub fit_width_btn: gtk::Button,
-    pub rotate_cw_btn: gtk::Button,
-    pub rotate_ccw_btn: gtk::Button,
-    pub first_page_btn: gtk::Button,
-    pub last_page_btn: gtk::Button,
 }
 
 #[derive(Debug)]
@@ -101,7 +95,6 @@ pub enum PdfReaderMsg {
     ToggleSmartCrop,
     SwitchSidebarTab(PdfSidebarTab),
     ToggleSidebar,
-    CloseSidebar,
     ToggleControls,
     JumpToToc(usize),
     EscapeKey,
@@ -183,8 +176,8 @@ impl PdfReaderModel {
             Ok(Some(book)) => (
                 book.title,
                 book.authors,
-                book.cover_path.map(PathBuf::from),
-                Some(PathBuf::from(book.file_path)),
+                book.cover_path,
+                Some(book.file_path),
             ),
             _ => ("PDF Document".to_string(), String::new(), None, None),
         };
@@ -2537,12 +2530,6 @@ fn build_pdf_settings_panel(
         spread_settings_box,
         smart_crop_switch,
         zoom_label,
-        fit_page_btn,
-        fit_width_btn,
-        rotate_cw_btn,
-        rotate_ccw_btn,
-        first_page_btn,
-        last_page_btn,
     };
 
     (wrap, widgets)

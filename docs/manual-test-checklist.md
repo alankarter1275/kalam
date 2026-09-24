@@ -1,6 +1,41 @@
 # Phase 2 test plan
 
-## Round 4 — settings reorganized and continuous arrow scroll speed
+## Round 6 — Decoupled PDF Layout & Flow, Spread Gap, Continue Reading, and Crash-Free Zoom
+
+- **Decoupled Page Layout and Scroll Flow (All 4 Combinations):**
+  - **Single Page + Continuous Stream**: Single pages flowing vertically in continuous scroll.
+  - **Single Page + Discrete (Paged)**: Single page at a time with Left/Right page flips.
+  - **Two-Page Spread + Discrete (Paged)**: Facing pages displayed side by side as spreads with Left/Right flips.
+  - **Two-Page Spread + Continuous Stream**: Facing pages side by side flowing in a vertical continuous scroll stream.
+  **Re-test:** Open a PDF, open the left sidebar → Settings tab under **Layout & Flow**:
+  1. Toggle between **Single Page** and **Two-Page Spread**.
+  2. Toggle between **Continuous Stream** and **Discrete (Paged)**.
+  3. Verify that all 4 combinations render cleanly, smoothly, and without any glitches or jumps.
+- **Customizable Spread Gap (0px Seamless Spreads):**
+  - Added spread gap selector under Two-Page mode: **0px**, **4px**, **8px**, **12px**, **16px** (persisted in `reader.pdf.two_page_gap`).
+  - **0px gap**: Left and right pages touch seamlessly without any separation line, designed specifically for double-page spreads, comics, manga, and diagrams.
+  **Re-test:** Select Two-Page Spread in Settings:
+  1. Select **0px**: verify the two pages join seamlessly in the center.
+  2. Select **4px**, **8px**, **12px**, **16px**: verify the facing page spacing changes accordingly.
+  3. Verify gap works in both Two-Page Discrete and Two-Page Continuous modes.
+- **Home Page "Continue Reading" for PDFs:**
+  - PDF reading now stamps `books.last_opened_at` via `mark_book_opened` and tracks reading sessions (`start_reading_session`, `checkpoint_reading_session`, `end_reading_session`).
+  **Re-test:**
+  1. Open any PDF from Library or import. Read a few pages.
+  2. Press Esc or click Library back button to return to the Home page.
+  3. Verify the PDF book card appears under the **Continue Reading** section on the Home page with its cover/title and progress bar.
+  4. Click the book card: verify it re-opens immediately to the exact saved page.
+- **Bottom Bar Zoom Crash Resolution (SIGSEGV):**
+  - Eliminated viewport widget destruction/reparenting during zoom. Page pictures are updated in-place via `apply_zoom_change`.
+  - MuPDF rasterization hardened with bounds checking, tightly packed 32-bit RGBA buffers, and safe stride handling.
+  **Re-test:**
+  1. In any view mode (Single/Two-Page, Discrete/Continuous), repeatedly click the **+** (Zoom In) and **-** (Zoom Out) buttons on the floating bottom pill.
+  2. Click the **100%** reset button.
+  3. Try Ctrl + mouse scroll wheel or touchpad pinch-to-zoom.
+  4. Verify that zoom smoothly resizes the document without any crashes or SIGSEGV errors.
+- **GTK CSS Theme Parser Warnings:**
+  - Removed unsupported `width` and `max-width` properties in `resources/style.css`.
+  **Re-test:** Launch Kalam from a terminal: verify there are zero `Theme parser error: No property named "width"` or `"max-width"` warnings in stdout/stderr.
 
 - **Arrow scroll speed (continuous mode):**
   - Added an **Arrow scroll speed** stepper in the left sidebar Settings panel

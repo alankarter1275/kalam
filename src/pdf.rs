@@ -181,10 +181,53 @@ impl PdfDocument {
 
         let width = pixmap.width();
         let height = pixmap.height();
-        let raw = pixmap.samples().to_vec();
+        if width == 0 || height == 0 {
+            return Err(anyhow!("Rendered page {page_num} has empty dimensions"));
+        }
+
+        let w_usize = width as usize;
+        let h_usize = height as usize;
+        let raw_samples = pixmap.samples();
+        let raw_stride = pixmap.stride();
+
+        let tight_raw = if raw_stride == (w_usize * 4) as isize && raw_samples.len() >= w_usize * h_usize * 4 {
+            raw_samples[..w_usize * h_usize * 4].to_vec()
+        } else if raw_stride > 0 {
+            let row_stride = raw_stride as usize;
+            let mut buf = Vec::with_capacity(w_usize * h_usize * 4);
+            for y in 0..h_usize {
+                let start = y * row_stride;
+                let end = start + w_usize * 4;
+                if end <= raw_samples.len() {
+                    buf.extend_from_slice(&raw_samples[start..end]);
+                } else if start < raw_samples.len() {
+                    buf.extend_from_slice(&raw_samples[start..]);
+                    buf.resize(buf.len() + (end - raw_samples.len()), 255);
+                } else {
+                    buf.resize(buf.len() + w_usize * 4, 255);
+                }
+            }
+            buf
+        } else {
+            let row_stride = raw_stride.unsigned_abs();
+            let mut buf = Vec::with_capacity(w_usize * h_usize * 4);
+            for y in 0..h_usize {
+                let start = (h_usize - 1 - y) * row_stride;
+                let end = start + w_usize * 4;
+                if end <= raw_samples.len() {
+                    buf.extend_from_slice(&raw_samples[start..end]);
+                } else if start < raw_samples.len() {
+                    buf.extend_from_slice(&raw_samples[start..]);
+                    buf.resize(buf.len() + (end - raw_samples.len()), 255);
+                } else {
+                    buf.resize(buf.len() + w_usize * 4, 255);
+                }
+            }
+            buf
+        };
 
         if smart_crop {
-            if let Some(rgba) = RgbaImage::from_raw(width, height, raw.clone()) {
+            if let Some(rgba) = RgbaImage::from_raw(width, height, tight_raw.clone()) {
                 let dyn_img = DynamicImage::ImageRgba8(rgba);
                 let ink_box = Self::calculate_ink_box_for_image(&dyn_img);
                 let x = (ink_box.min_x * width as f32) as u32;
@@ -210,14 +253,14 @@ impl PdfDocument {
 
         let w = width as i32;
         let h = height as i32;
-        let stride = pixmap.stride() as usize;
+        let stride = (w * 4) as usize;
 
         Ok(RenderedPage {
             page_num,
             width: w,
             height: h,
             stride,
-            samples: raw,
+            samples: tight_raw,
         })
     }
 

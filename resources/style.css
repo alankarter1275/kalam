@@ -1002,9 +1002,7 @@ button.kalam-reader-dim {
     border-radius: 20px;
     box-shadow: 0 22px 52px alpha(#000, 0.42);
     padding: 0;
-    width: 340px;
     min-width: 340px;
-    max-width: 340px;
 }
 
 .kalam-reader-sidebar-left,
@@ -4089,10 +4087,16 @@ popover.kalam-reader-dict-popover > contents {
 
 /* PDF Reader styles */
 .kalam-pdf-page,
-.kalam-pdf-page-image {
+.kalam-pdf-page-image,
+.kalam-pdf-two-page {
     background: #ffffff;
     box-shadow: 0 8px 30px alpha(#000, 0.28);
     border-radius: 2px;
+}
+
+.kalam-pdf-spread-row {
+    margin: 0;
+    padding: 0;
 }
 
 .kalam-pdf-placeholder {

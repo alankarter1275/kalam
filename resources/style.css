@@ -1104,12 +1104,26 @@ button.kalam-reader-back:hover {
     margin: 0 12px 16px 12px;
 }
 
-.kalam-reader-bottom-pill {
+.kalam-reader-bottom-pill,
+.kalam-reader-floating-pill {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 999px;
-    padding: 5px 6px;
+    padding: 5px 8px;
     box-shadow: 0 8px 24px alpha(#000, 0.26);
+}
+
+.kalam-reader-pill-counter {
+    padding: 0 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+separator.kalam-reader-pill-sep {
+    background: @kalam_border;
+    min-width: 1px;
+    margin: 6px 4px;
 }
 
 button.kalam-reader-pill-nav {

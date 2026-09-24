@@ -109,6 +109,7 @@ pub enum PdfReaderMsg {
     ToggleSmartCrop,
     SwitchSidebarTab(PdfSidebarTab),
     ToggleSidebar,
+    CloseSidebar,
     ToggleControls,
     EscapeKey,
     Close,
@@ -153,6 +154,7 @@ pub struct PdfReaderModel {
     pub show_back_button: bool,
     pub show_bottom_pill: bool,
     pub show_sidebar: bool,
+    pub sidebar_pinned: bool,
     pub mouse_in_top_edge: bool,
     pub mouse_in_bottom_edge: bool,
     pub mouse_in_left_edge: bool,
@@ -266,6 +268,7 @@ impl PdfReaderModel {
             show_back_button: true,
             show_bottom_pill: true,
             show_sidebar: false,
+            sidebar_pinned: false,
             mouse_in_top_edge: false,
             mouse_in_bottom_edge: false,
             mouse_in_left_edge: false,
@@ -449,7 +452,7 @@ impl PdfReaderModel {
         self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
         let seq = self.sidebar_close_seq;
         let s = sender.clone();
-        glib::timeout_add_local_once(Duration::from_millis(350), move || {
+        glib::timeout_add_local_once(Duration::from_millis(600), move || {
             let _ = s.input_sender().send(PdfReaderMsg::SidebarCloseTimerTick(seq));
         });
     }
@@ -1161,24 +1164,28 @@ impl Component for PdfReaderModel {
                 add_css_class: "kalam-pdf-viewport",
             },
 
-            // ── 2. Top Edge Trigger Strip ─────────────────────────────
-            add_overlay = &gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_valign: gtk::Align::Start,
+            // ── 2. Overlay Backdrop for Dimming & Dismissing Sidebar ──
+            add_overlay = &gtk::Button {
+                add_css_class: "kalam-reader-dim",
+                #[watch]
+                set_visible: model.show_sidebar,
                 set_hexpand: true,
-                set_height_request: 45,
-                add_css_class: "kalam-reader-edge-strip",
-                add_css_class: "kalam-reader-edge-strip-top",
+                set_vexpand: true,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Fill,
+                connect_clicked => PdfReaderMsg::CloseSidebar,
             },
 
-            // ── 3. Bottom Edge Trigger Strip ──────────────────────────
+            // ── 3. Overlay: Invisible Left Edge Hover Strip ───────────
+            #[name = "left_edge_box"]
             add_overlay = &gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_valign: gtk::Align::End,
-                set_hexpand: true,
-                set_height_request: 45,
-                add_css_class: "kalam-reader-edge-strip",
-                add_css_class: "kalam-reader-edge-strip-bottom",
+                add_css_class: "kalam-reader-hover-edge",
+                add_css_class: "kalam-reader-hover-edge-left",
+                set_width_request: 18,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Fill,
             },
 
             // ── 4. Floating Top-Left Back Dock ────────────────────────
@@ -1194,14 +1201,17 @@ impl Component for PdfReaderModel {
                 #[name = "back_dock"]
                 gtk::Box {
                     add_css_class: "kalam-reader-back-dock",
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 6,
+
                     gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
+                        set_child: Some(&crate::icons::labelled(
                             "go-previous-symbolic",
-                            15,
-                            &["kalam-inline-icon"],
+                            16,
+                            "Library",
+                            6,
                         )),
-                        set_label: "Library",
-                        add_css_class: "kalam-reader-back-chip",
+                        add_css_class: "kalam-reader-back",
                         set_tooltip_text: Some("Back to Library (Esc / Backspace)"),
                         connect_clicked => PdfReaderMsg::Close,
                     },
@@ -1219,104 +1229,109 @@ impl Component for PdfReaderModel {
 
                 #[name = "bottom_dock"]
                 gtk::Box {
-                    add_css_class: "kalam-reader-floating-pill",
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 6,
+                    add_css_class: "kalam-reader-bottom-dock",
 
-                    // Sidebar Toggle
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
-                            "view-sidebar-start-symbolic",
-                            15,
-                            &["kalam-inline-icon"],
-                        )),
-                        add_css_class: "kalam-reader-pill-nav",
-                        set_tooltip_text: Some("Toggle Outlines & Bookmarks (t)"),
-                        connect_clicked => PdfReaderMsg::ToggleSidebar,
-                    },
+                    gtk::Box {
+                        add_css_class: "kalam-reader-bottom-pill",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 6,
 
-                    gtk::Separator {
-                        set_orientation: gtk::Orientation::Vertical,
-                        add_css_class: "kalam-reader-pill-sep",
-                    },
+                        // Sidebar Toggle
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "view-list-bullet-symbolic",
+                                15,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-pill-nav",
+                            set_tooltip_text: Some("Toggle Outlines & Bookmarks (t)"),
+                            connect_clicked => PdfReaderMsg::ToggleSidebar,
+                        },
 
-                    // Previous Page
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
-                            "go-previous-symbolic",
-                            15,
-                            &["kalam-inline-icon"],
-                        )),
-                        add_css_class: "kalam-reader-pill-nav",
-                        set_tooltip_text: Some("Previous Page (Left / h)"),
-                        connect_clicked => PdfReaderMsg::PrevPage,
-                    },
+                        gtk::Separator {
+                            set_orientation: gtk::Orientation::Vertical,
+                            add_css_class: "kalam-reader-pill-sep",
+                        },
 
-                    // Page Indicator
-                    gtk::Label {
-                        add_css_class: "kalam-reader-pill-counter",
-                        #[watch]
-                        set_label: &format!("Page {} of {}", model.current_page, model.total_pages),
-                    },
+                        // Previous Page
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "go-previous-symbolic",
+                                15,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-pill-nav",
+                            set_tooltip_text: Some("Previous Page (Left / h)"),
+                            connect_clicked => PdfReaderMsg::PrevPage,
+                        },
 
-                    // Next Page
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
-                            "go-next-symbolic",
-                            15,
-                            &["kalam-inline-icon"],
-                        )),
-                        add_css_class: "kalam-reader-pill-nav",
-                        set_tooltip_text: Some("Next Page (Right / Space / l)"),
-                        connect_clicked => PdfReaderMsg::NextPage,
-                    },
+                        // Page Indicator
+                        gtk::Label {
+                            add_css_class: "kalam-reader-pill-counter",
+                            #[watch]
+                            set_label: &format!("Page {} of {}", model.current_page, model.total_pages),
+                        },
 
-                    gtk::Separator {
-                        set_orientation: gtk::Orientation::Vertical,
-                        add_css_class: "kalam-reader-pill-sep",
-                    },
+                        // Next Page
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "go-next-symbolic",
+                                15,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-pill-nav",
+                            set_tooltip_text: Some("Next Page (Right / Space / l)"),
+                            connect_clicked => PdfReaderMsg::NextPage,
+                        },
 
-                    // Bookmark Toggle Button
-                    #[name = "bottom_bookmark_btn"]
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
-                            "bookmark-new-symbolic",
-                            15,
-                            &["kalam-inline-icon"],
-                        )),
-                        add_css_class: "kalam-reader-pill-nav",
-                        set_tooltip_text: Some("Bookmark Page (b)"),
-                        connect_clicked => PdfReaderMsg::ToggleBookmark,
-                    },
+                        gtk::Separator {
+                            set_orientation: gtk::Orientation::Vertical,
+                            add_css_class: "kalam-reader-pill-sep",
+                        },
 
-                    gtk::Separator {
-                        set_orientation: gtk::Orientation::Vertical,
-                        add_css_class: "kalam-reader-pill-sep",
-                    },
+                        // Bookmark Toggle Button
+                        #[name = "bottom_bookmark_btn"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "bookmark-new-symbolic",
+                                15,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-pill-nav",
+                            set_tooltip_text: Some("Bookmark Page (b)"),
+                            connect_clicked => PdfReaderMsg::ToggleBookmark,
+                        },
 
-                    // Zoom Out
-                    gtk::Button {
-                        set_label: "-",
-                        add_css_class: "kalam-reader-pill-nav",
-                        set_tooltip_text: Some("Zoom Out (-)"),
-                        connect_clicked => PdfReaderMsg::ZoomOut,
-                    },
+                        gtk::Separator {
+                            set_orientation: gtk::Orientation::Vertical,
+                            add_css_class: "kalam-reader-pill-sep",
+                        },
 
-                    // Zoom Percentage / Reset
-                    gtk::Button {
-                        #[watch]
-                        set_label: &format!("{}%", (model.zoom_level * 100.0).round() as i32),
-                        add_css_class: "flat",
-                        set_tooltip_text: Some("Reset Zoom to 100% (0)"),
-                        connect_clicked => PdfReaderMsg::ResetZoom,
-                    },
+                        // Zoom Out
+                        gtk::Button {
+                            set_label: "-",
+                            add_css_class: "kalam-reader-pill-nav",
+                            set_tooltip_text: Some("Zoom Out (-)"),
+                            connect_clicked => PdfReaderMsg::ZoomOut,
+                        },
 
-                    // Zoom In
-                    gtk::Button {
-                        set_label: "+",
-                        add_css_class: "kalam-reader-pill-nav",
-                        set_tooltip_text: Some("Zoom In (+)"),
-                        connect_clicked => PdfReaderMsg::ZoomIn,
+                        // Zoom Percentage / Reset
+                        gtk::Button {
+                            #[watch]
+                            set_label: &format!("{}%", (model.zoom_level * 100.0).round() as i32),
+                            add_css_class: "flat",
+                            add_css_class: "kalam-reader-pill-counter",
+                            set_tooltip_text: Some("Reset Zoom to 100% (0)"),
+                            connect_clicked => PdfReaderMsg::ResetZoom,
+                        },
+
+                        // Zoom In
+                        gtk::Button {
+                            set_label: "+",
+                            add_css_class: "kalam-reader-pill-nav",
+                            set_tooltip_text: Some("Zoom In (+)"),
+                            connect_clicked => PdfReaderMsg::ZoomIn,
+                        },
                     },
                 },
             },
@@ -1650,6 +1665,18 @@ impl Component for PdfReaderModel {
         });
         widgets.bottom_dock.add_controller(bottom_motion);
 
+        // Hover state on dedicated left edge strip
+        let left_edge_motion = gtk::EventControllerMotion::new();
+        let tx_lem = tx.clone();
+        left_edge_motion.connect_enter(move |_, _, _| {
+            let _ = tx_lem.send(PdfReaderMsg::LeftEdgeHover(true));
+        });
+        let tx_leml = tx.clone();
+        left_edge_motion.connect_leave(move |_| {
+            let _ = tx_leml.send(PdfReaderMsg::LeftEdgeHover(false));
+        });
+        widgets.left_edge_box.add_controller(left_edge_motion);
+
         // 7. Hover state on Left Sidebar
         let sidebar_motion = gtk::EventControllerMotion::new();
         let tx_sm = tx.clone();
@@ -1764,6 +1791,7 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::EscapeKey => {
                 if self.show_sidebar {
                     self.show_sidebar = false;
+                    self.sidebar_pinned = false;
                 } else {
                     let _ = sender.input_sender().send(PdfReaderMsg::Close);
                 }
@@ -1993,6 +2021,9 @@ impl Component for PdfReaderModel {
                     }
                 }
                 self.show_sidebar = false;
+                self.sidebar_pinned = false;
+                self.mouse_in_sidebar = false;
+                self.mouse_in_left_edge = false;
                 self.update_bookmark_icon_state(widgets);
             }
             PdfReaderMsg::SetSmartCrop(crop) => {
@@ -2039,8 +2070,15 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
+            PdfReaderMsg::CloseSidebar => {
+                self.show_sidebar = false;
+                self.sidebar_pinned = false;
+                self.mouse_in_sidebar = false;
+                self.mouse_in_left_edge = false;
+            }
             PdfReaderMsg::ToggleSidebar => {
                 self.show_sidebar = !self.show_sidebar;
+                self.sidebar_pinned = self.show_sidebar;
                 if self.show_sidebar {
                     self.show_back_button = false;
                     if let Some(ref list) = self.toc_list_box {
@@ -2060,6 +2098,7 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::ToggleControls => {
                 if self.show_sidebar {
                     self.show_sidebar = false;
+                    self.sidebar_pinned = false;
                 } else {
                     let next = !self.show_bottom_pill;
                     self.show_bottom_pill = next;
@@ -2146,13 +2185,15 @@ impl Component for PdfReaderModel {
                             populate_bookmarks_list(list, &self.bookmarks, &sender);
                         }
                     }
-                } else if !self.mouse_in_sidebar {
+                } else if !self.mouse_in_sidebar && !self.sidebar_pinned {
                     self.schedule_sidebar_close(&sender);
                 }
             }
             PdfReaderMsg::SidebarHover(hovering) => {
                 self.mouse_in_sidebar = hovering;
-                if !hovering && !self.mouse_in_left_edge {
+                if hovering {
+                    self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
+                } else if !self.mouse_in_left_edge && !self.sidebar_pinned {
                     self.schedule_sidebar_close(&sender);
                 }
             }
@@ -2167,7 +2208,7 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::SidebarCloseTimerTick(seq) => {
-                if seq == self.sidebar_close_seq && !self.mouse_in_sidebar && !self.mouse_in_left_edge {
+                if !self.sidebar_pinned && seq == self.sidebar_close_seq && !self.mouse_in_sidebar && !self.mouse_in_left_edge {
                     self.show_sidebar = false;
                 }
             }

@@ -56,6 +56,7 @@ impl PdfPageText {
     /// Returns:
     /// - Selected text string (with trimmed spacing)
     /// - List of highlight bounding boxes `(x0, y0, x1, y1)` in document points
+    #[allow(dead_code)]
     pub fn select_between(
         &self,
         p0: (f32, f32),

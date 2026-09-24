@@ -248,10 +248,10 @@ impl PdfDocument {
 
         // Sample corner pixels to determine background paper luminance (handles white, cream, off-white)
         let sample_pts = [
-            (2.min(width - 1), 2.min(height - 1)),
-            ((width - 3).max(0), 2.min(height - 1)),
-            (2.min(width - 1), (height - 3).max(0)),
-            ((width - 3).max(0), (height - 3).max(0)),
+            (2.min(width.saturating_sub(1)), 2.min(height.saturating_sub(1))),
+            (width.saturating_sub(3), 2.min(height.saturating_sub(1))),
+            (2.min(width.saturating_sub(1)), height.saturating_sub(3)),
+            (width.saturating_sub(3), height.saturating_sub(3)),
         ];
         let mut bg_lum_sum = 0.0f32;
         let mut bg_count = 0;

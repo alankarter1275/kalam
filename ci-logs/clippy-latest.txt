@@ -1,10 +1,9 @@
-src/pages/pdf_reader.rs:956:83: [1m[91merror[E0425][0m: cannot find type `PdfReaderWidgets` in this scope
-src/pages/pdf_reader.rs:990:52: [1m[91merror[E0425][0m: cannot find type `PdfReaderWidgets` in this scope
-src/pages/pdf_reader.rs:12:5: [1m[91merror[0m: unused import: `anyhow::Result`
-src/pages/pdf_reader.rs:526:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `cur < self.total_pages`
-src/pages/pdf_reader.rs:2105:28: [1m[91merror[E0609][0m: no field `level` on type `&pdf::PdfTocEntry`: unknown field
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
+src/pages/pdf_reader.rs:71:9: [1m[91merror[0m: field `cover_alone_row` is never read
+src/pages/pdf_reader.rs:92:5: [1m[91merror[0m: variant `SetViewMode` is never constructed
+src/pages/pdf_reader.rs:140:9: [1m[91merror[0m: fields `view_mode` and `session_start_pct` are never read
+src/pages/pdf_reader.rs:343:31: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `page.is_multiple_of(2)`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -36,18 +35,17 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m ahash v0.8.12
 [1m[92m    Checking[0m mupdf-sys v0.8.0
 [1m[92m    Checking[0m hashbrown v0.14.5
-[1m[92m    Checking[0m rand_chacha v0.9.0
 [1m[92m    Checking[0m hashlink v0.9.1
-[1m[92m    Checking[0m proptest v1.11.0
+[1m[92m    Checking[0m rand_chacha v0.9.0
 [1m[92m    Checking[0m rusqlite v0.32.1
+[1m[92m    Checking[0m proptest v1.11.0
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/pdf_reader.rs:956:83: [1m[91merror[E0425][0m: cannot find type `PdfReaderWidgets` in this scope
-src/pages/pdf_reader.rs:990:52: [1m[91merror[E0425][0m: cannot find type `PdfReaderWidgets` in this scope
-src/pages/pdf_reader.rs:12:5: [1m[91merror[0m: unused import: `anyhow::Result`
-src/pages/pdf_reader.rs:526:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `cur < self.total_pages`
-src/pages/pdf_reader.rs:2105:28: [1m[91merror[E0609][0m: no field `level` on type `&pdf::PdfTocEntry`: unknown field
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+src/pages/pdf_reader.rs:71:9: [1m[91merror[0m: field `cover_alone_row` is never read
+src/pages/pdf_reader.rs:92:5: [1m[91merror[0m: variant `SetViewMode` is never constructed
+src/pages/pdf_reader.rs:140:9: [1m[91merror[0m: fields `view_mode` and `session_start_pct` are never read
+src/pages/pdf_reader.rs:343:31: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `page.is_multiple_of(2)`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
---- run 35965755834 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+--- run 35966051015 ---

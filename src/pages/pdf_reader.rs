@@ -2224,7 +2224,9 @@ impl Component for PdfReaderModel {
             self.sync_settings_ui(sw);
         }
     }
+}
 
+impl PdfReaderModel {
     pub fn update_bookmark_icon_state(&self, widgets: &PdfReaderModelWidgets) {
         let is_bookmarked = self
             .bookmarks

@@ -264,8 +264,8 @@ impl PdfReaderModel {
                 return (1, None);
             }
             // Page 1 is alone. Spreads start at 2: (2, 3), (4, 5), etc.
-            let left = if page % 2 == 0 { page } else { page - 1 };
-            let right = if left + 1 <= self.total_pages {
+            let left = if page.is_multiple_of(2) { page } else { page - 1 };
+            let right = if left < self.total_pages {
                 Some(left + 1)
             } else {
                 None
@@ -273,8 +273,8 @@ impl PdfReaderModel {
             (left, right)
         } else {
             // Spreads start at 1: (1, 2), (3, 4), etc.
-            let left = if page % 2 == 1 { page } else { page - 1 };
-            let right = if left + 1 <= self.total_pages {
+            let left = if !page.is_multiple_of(2) { page } else { page - 1 };
+            let right = if left < self.total_pages {
                 Some(left + 1)
             } else {
                 None
@@ -410,14 +410,14 @@ impl PdfReaderModel {
                 let next_left = left + d * 2;
                 if next_left <= self.total_pages {
                     load_order.push(next_left);
-                    if next_left + 1 <= self.total_pages {
+                    if next_left < self.total_pages {
                         load_order.push(next_left + 1);
                     }
                 }
                 if left > d * 2 {
                     let prev_left = left - d * 2;
                     load_order.push(prev_left);
-                    if prev_left + 1 <= self.total_pages {
+                    if prev_left < self.total_pages {
                         load_order.push(prev_left + 1);
                     }
                 }
@@ -607,7 +607,7 @@ impl PdfReaderModel {
                         left_pic.set_size_request(*w, *h);
                         left_pic.set_visible(true);
                     }
-                    if let Some(r) = right {
+                    if right.is_some() {
                         if let Some((tex, w, h)) = right_loaded {
                             right_pic.set_paintable(Some(tex));
                             right_pic.set_size_request(*w, *h);
@@ -743,7 +743,7 @@ impl PdfReaderModel {
                 left_pic.set_halign(if right.is_some() { gtk::Align::End } else { gtk::Align::Center });
                 left_pic.set_visible(true);
             }
-            if let Some(r) = right {
+            if right.is_some() {
                 if let Some((tex, w, h)) = right_loaded {
                     right_pic.set_paintable(Some(tex));
                     right_pic.set_size_request(*w, *h);
@@ -1371,7 +1371,7 @@ impl Component for PdfReaderModel {
                             }
                         } else if left + 2 <= self.total_pages {
                             self.current_page = left + 2;
-                        } else if left + 1 <= self.total_pages {
+                        } else if left < self.total_pages {
                             self.current_page = left + 1;
                         }
                     }
@@ -1448,7 +1448,7 @@ impl Component for PdfReaderModel {
                         "reader.pdf.continuous",
                         if self.view_mode == PdfViewMode::Continuous { 1 } else { 0 },
                     );
-                    let _ = self.catalog.set_pref(
+                    self.catalog.set_pref(
                         "reader.pdf.view_mode",
                         match self.view_mode {
                             PdfViewMode::Continuous => "continuous",
@@ -1486,7 +1486,7 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::SetSmartCrop(crop) => {
                 if self.smart_crop != crop {
                     self.smart_crop = crop;
-                    let _ = self.catalog.set_pref(
+                    self.catalog.set_pref(
                         &format!("book.{}.pdf.smart_crop", self.book_id),
                         if self.smart_crop { "1" } else { "0" },
                     );

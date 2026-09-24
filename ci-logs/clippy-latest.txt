@@ -1,4 +1,15 @@
-(no lines matched; last 100 lines of output)
+src/pages/pdf_reader.rs:268:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
+src/pages/pdf_reader.rs:277:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
+src/pages/pdf_reader.rs:413:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `next_left < self.total_pages`
+src/pages/pdf_reader.rs:420:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `prev_left < self.total_pages`
+src/pages/pdf_reader.rs:1374:35: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
+src/pages/pdf_reader.rs:610:33: [1m[91merror[0m: unused variable: `r`: help: if this is intentional, prefix it with an underscore: `_r`
+src/pages/pdf_reader.rs:746:25: [1m[91merror[0m: unused variable: `r`: help: if this is intentional, prefix it with an underscore: `_r`
+src/pages/pdf_reader.rs:267:27: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `page.is_multiple_of(2)`
+src/pages/pdf_reader.rs:1451:21: [1m[91merror[0m: this let-binding has unit value
+src/pages/pdf_reader.rs:1489:21: [1m[91merror[0m: this let-binding has unit value
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -11,41 +22,28 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
-[1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m dirs-sys v0.5.0
-[1m[92m  Downloaded[0m dirs v6.0.0
-[1m[92m  Downloaded[0m dlib v0.5.3
-[1m[92m  Downloaded[0m float-ord v0.3.2
-[1m[92m  Downloaded[0m font-kit v0.14.3
-[1m[92m  Downloaded[0m freetype-sys v0.20.1
-[1m[92m  Downloaded[0m lazy_static v1.5.0
-[1m[92m  Downloaded[0m option-ext v0.2.0
-[1m[92m  Downloaded[0m pathfinder_geometry v0.5.1
-[1m[92m  Downloaded[0m pathfinder_simd v0.5.6
-[1m[92m  Downloaded[0m yeslogic-fontconfig-sys v6.0.1
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
-[1m[92m   Compiling[0m pathfinder_simd v0.5.6
-[1m[92m   Compiling[0m freetype-sys v0.20.1
-[1m[92m   Compiling[0m yeslogic-fontconfig-sys v6.0.1
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
-[1m[92m    Checking[0m libloading v0.8.9
-[1m[92m    Checking[0m option-ext v0.2.0
-[1m[92m    Checking[0m dirs-sys v0.5.0
-[1m[92m    Checking[0m dlib v0.5.3
-[1m[92m   Compiling[0m font-kit v0.14.3
-[1m[92m    Checking[0m dirs v6.0.0
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m lazy_static v1.5.0
-[1m[92m    Checking[0m float-ord v0.3.2
-[1m[92m    Checking[0m pathfinder_geometry v0.5.1
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 20.41s
---- run 35951104216 ---
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/pdf_reader.rs:268:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
+src/pages/pdf_reader.rs:277:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
+src/pages/pdf_reader.rs:413:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `next_left < self.total_pages`
+src/pages/pdf_reader.rs:420:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `prev_left < self.total_pages`
+src/pages/pdf_reader.rs:1374:35: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
+src/pages/pdf_reader.rs:610:33: [1m[91merror[0m: unused variable: `r`: help: if this is intentional, prefix it with an underscore: `_r`
+src/pages/pdf_reader.rs:746:25: [1m[91merror[0m: unused variable: `r`: help: if this is intentional, prefix it with an underscore: `_r`
+src/pages/pdf_reader.rs:267:27: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `page.is_multiple_of(2)`
+src/pages/pdf_reader.rs:1451:21: [1m[91merror[0m: this let-binding has unit value
+src/pages/pdf_reader.rs:1489:21: [1m[91merror[0m: this let-binding has unit value
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
+--- run 35956831504 ---

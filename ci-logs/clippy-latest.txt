@@ -1,15 +1,4 @@
-src/pages/pdf_reader.rs:268:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
-src/pages/pdf_reader.rs:277:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
-src/pages/pdf_reader.rs:413:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `next_left < self.total_pages`
-src/pages/pdf_reader.rs:420:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `prev_left < self.total_pages`
-src/pages/pdf_reader.rs:1374:35: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
-src/pages/pdf_reader.rs:610:33: [1m[91merror[0m: unused variable: `r`: help: if this is intentional, prefix it with an underscore: `_r`
-src/pages/pdf_reader.rs:746:25: [1m[91merror[0m: unused variable: `r`: help: if this is intentional, prefix it with an underscore: `_r`
-src/pages/pdf_reader.rs:267:27: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `page.is_multiple_of(2)`
-src/pages/pdf_reader.rs:1451:21: [1m[91merror[0m: this let-binding has unit value
-src/pages/pdf_reader.rs:1489:21: [1m[91merror[0m: this let-binding has unit value
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -31,19 +20,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/pdf_reader.rs:268:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
-src/pages/pdf_reader.rs:277:28: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
-src/pages/pdf_reader.rs:413:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `next_left < self.total_pages`
-src/pages/pdf_reader.rs:420:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `prev_left < self.total_pages`
-src/pages/pdf_reader.rs:1374:35: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `left < self.total_pages`
-src/pages/pdf_reader.rs:610:33: [1m[91merror[0m: unused variable: `r`: help: if this is intentional, prefix it with an underscore: `_r`
-src/pages/pdf_reader.rs:746:25: [1m[91merror[0m: unused variable: `r`: help: if this is intentional, prefix it with an underscore: `_r`
-src/pages/pdf_reader.rs:267:27: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `page.is_multiple_of(2)`
-src/pages/pdf_reader.rs:1451:21: [1m[91merror[0m: this let-binding has unit value
-src/pages/pdf_reader.rs:1489:21: [1m[91merror[0m: this let-binding has unit value
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
---- run 35956831504 ---
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 29.75s
+--- run 35957069723 ---

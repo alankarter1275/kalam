@@ -1,46 +1,5 @@
 # Phase 2 test plan
 
-## Round 8 — View Modes & Naming from Reference Image, Rotation Removal, and Bookmarks Integration
-
-- **Exact View Modes & Naming (Scrolling & Spreads):**
-  - Settings panel re-arranged into exact layout groups:
-    - **Scrolling**: `Page Scrolling`, `Vertical Scrolling`, `Horizontal Scrolling`, `Wrapped Scrolling`.
-    - **Spreads**: `No Spreads`, `Odd Spreads` (cover alone), `Even Spreads` (paired facing).
-    - **Spread Gap**: `0px (Seamless)`, `4px`, `8px`, `12px`, `16px` (visible when `Odd Spreads` or `Even Spreads` is chosen).
-  **Re-test:**
-  1. Open a PDF document and open the left sidebar → Settings tab.
-  2. Verify the **Scrolling** section shows:
-     - `Page Scrolling` (discrete page-by-page or spread-by-spread).
-     - `Vertical Scrolling` (continuous vertical stream).
-     - `Horizontal Scrolling` (continuous horizontal stream with horizontal panning).
-     - `Wrapped Scrolling` (multi-page responsive flow grid).
-  3. Verify the **Spreads** section shows:
-     - `No Spreads` (single page display).
-     - `Odd Spreads` (first page alone, followed by facing spreads).
-     - `Even Spreads` (pages 1 & 2 together, facing spreads throughout).
-  4. Verify that selecting `Odd Spreads` or `Even Spreads` reveals the **Spread Gap** selector (`0px`, `4px`, `8px`, `12px`, `16px`), and selecting `0px` removes the gap completely for seamless spreads.
-  5. Verify that selecting `No Spreads` hides the Spread Gap selector.
-
-- **Rotation Removal:**
-  - Rotation feature and all associated buttons/shortcuts completely removed per user request.
-  **Re-test:**
-  1. Verify there are no rotation controls in the Settings panel or bottom dock.
-  2. Pressing `r` or `R` has no effect.
-
-- **Bookmarks System in Sidebar and Bottom Dock:**
-  - Full bookmarks integration wired to catalog database (`reading_bookmarks`).
-  - Added dedicated **Bookmarks** tab to sidebar between **TOC** and **Settings**.
-  - Added bookmark toggle button (`bookmark-new-symbolic`) to floating bottom pill.
-  - Added keyboard shortcut `b` / `B` to toggle bookmark for current page.
-  **Re-test:**
-  1. Open a PDF document.
-  2. On any page (e.g. Page 5), press `b` or click the bookmark button on the floating bottom pill.
-  3. Verify compact notification appears ("Bookmark saved - Page 5") and the bottom pill bookmark icon highlights active.
-  4. Open the left sidebar and click the **Bookmarks** tab.
-  5. Verify "Page 5" appears in the bookmarks list.
-  6. Navigate to another page (e.g. Page 12) and click the "Page 5" entry in the Bookmarks list: verify it immediately jumps to Page 5.
-  7. Click the delete icon (trash can) next to the bookmark or press `b` again while on Page 5: verify the bookmark is removed.
-
 ## Round 7 — Top Font Cut-Off Fix, Per-Book Settings Persistence, Firefox-Style Settings & Rotation
 
 - **Top Font Cut-Off Fix (Vertical Alignment & Viewport Fitting):**

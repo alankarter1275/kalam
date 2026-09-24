@@ -285,6 +285,7 @@ impl Component for ReaderModel {
                     },
                 },
             },
+        },
 
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-sidebar-shell",

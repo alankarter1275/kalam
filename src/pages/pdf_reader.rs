@@ -48,13 +48,6 @@ pub enum PdfScrollFlow {
     Continuous,
 }
 
-/// Legacy view mode kept for compatibility with callers / settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PdfViewMode {
-    Continuous,
-    Paged,
-    TwoPage,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfSidebarTab {

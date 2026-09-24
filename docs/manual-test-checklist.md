@@ -1,5 +1,43 @@
 # Phase 2 test plan
 
+## Round 7 — Top Font Cut-Off Fix, Per-Book Settings Persistence, Firefox-Style Settings & Rotation
+
+- **Top Font Cut-Off Fix (Vertical Alignment & Viewport Fitting):**
+  - Eliminated the root cause of the top font clipping / ascender slicing where `valign: Align::Center` centered tall pages around the viewport midpoint, pushing headers and font tops into negative Y coordinates.
+  - Converted all containers, spread boxes, and pictures to `valign: Align::Start` with a generous 28px top margin.
+  - Allowed `gtk::Picture` with `ContentFit::Contain` to fit naturally in discrete mode.
+  **Re-test:**
+  1. Open a PDF document (such as "The Origin of Species").
+  2. In Single or Two-Page Discrete mode, inspect the top line of text and running headers (e.g., `ON THE ORIGIN OF SPECIES` and quotation marks/ascenders).
+  3. Verify that the running headers and the top line of text are 100% visible, crisp, with no horizontal slicing or clipping.
+  4. Verify that in Two-Page mode, both the left and right pages display their top margins and headers cleanly.
+
+- **Per-Book Settings Persistence (Remembering Two-Page Continuous Mode):**
+  - Settings are now saved with strict per-book priority (`book.{id}.pdf.*`) and global defaults (`reader.pdf.*`).
+  - Layout (`single` vs `two_page`), Scroll Flow (`continuous` vs `discrete`), Zoom level, Rotation, and Cover Alone are remembered per-document.
+  **Re-test:**
+  1. Open a PDF book.
+  2. Set **Two-Page Spread** layout and **Continuous Stream** scroll flow.
+  3. Exit to Library or Home by pressing Esc or clicking the Library back button.
+  4. Re-open the same PDF book.
+  5. Verify that it immediately re-opens in **Two-Page Continuous** mode, exactly as left!
+
+- **Firefox-Style Settings Panel & Document Rotation:**
+  - Added Firefox PDF viewer-style categorized settings in the left sidebar:
+    - **Layout & Spreads**: Single Page (`No Spreads`), Two-Page Spread, `Odd Spreads (Cover alone)`, and Facing Page Gap (`0px`, `4px`, `8px`, `12px`, `16px`).
+    - **Scroll Flow**: `Continuous Stream (Vertical)` vs `Page-by-Page (Discrete)`.
+    - **Zoom & View Sizing**: `Fit Page` (auto-fits page height without cut-off), `Fit Width`, `100%`, and Stepper.
+    - **Orientation & Rotation**: `90° ↻` (Clockwise) and `90° ↺` (Counter-Clockwise), persisted per document.
+    - **Document Navigation**: `First Page` (1) and `Last Page` (N).
+    - **Margins & Enhancements**: `Smart Crop (Trim Margins)`.
+    - **Document Properties**: Title, Author, Total Pages, MuPDF v0.8.0 engine info.
+  **Re-test:**
+  1. Open the left sidebar → Settings tab.
+  2. Click **Rotate 90° ↻**: verify the document rotates 90 degrees clockwise cleanly.
+  3. Click **Fit Page**: verify the page height scales to fit comfortably within the viewport.
+  4. Click **Fit Width**: verify the page scales to fit the viewport width.
+  5. Test **First Page** and **Last Page** navigation buttons.
+
 ## Round 6 — Decoupled PDF Layout & Flow, Spread Gap, Continue Reading, and Crash-Free Zoom
 
 - **Decoupled Page Layout and Scroll Flow (All 4 Combinations):**

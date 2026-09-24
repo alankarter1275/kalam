@@ -157,11 +157,12 @@ impl PdfDocument {
         true
     }
 
-    /// Rasterize a PDF page to raw RGBA bytes with optional Smart Crop applied.
+    /// Rasterize a PDF page to raw RGBA bytes with optional rotation and Smart Crop applied.
     pub fn render_page_rgba(
         &self,
         page_num: usize,
         scale: f32,
+        rotation: i32,
         smart_crop: bool,
     ) -> Result<RenderedPage> {
         if page_num == 0 || page_num > self.page_count {
@@ -174,7 +175,11 @@ impl PdfDocument {
             .map_err(|e| anyhow!("Failed to load page {}: {}", page_num, e))?;
 
         let scale_clamped = scale.clamp(0.2, 4.0);
-        let matrix = Matrix::new_scale(scale_clamped, scale_clamped);
+        let mut matrix = Matrix::new_scale(scale_clamped, scale_clamped);
+        let rot = rotation.rem_euclid(360);
+        if rot != 0 {
+            matrix.rotate(rot as f32);
+        }
         let pixmap = page
             .to_pixmap(&matrix, &Colorspace::device_rgb(), true, true)
             .map_err(|e| anyhow!("Failed to rasterize page {}: {}", page_num, e))?;
@@ -267,7 +272,7 @@ impl PdfDocument {
     /// Render uncropped raw page image (1-indexed) as a DynamicImage.
     #[allow(dead_code)]
     pub fn render_page_image(&self, page_num: usize, smart_crop: bool) -> Result<DynamicImage> {
-        let rendered = self.render_page_rgba(page_num, 1.5, smart_crop)?;
+        let rendered = self.render_page_rgba(page_num, 1.5, 0, smart_crop)?;
         let rgba = RgbaImage::from_raw(
             rendered.width as u32,
             rendered.height as u32,
@@ -354,10 +359,10 @@ impl PdfDocument {
             return InkBoundingBox::default();
         }
 
-        // Add 5.5% margin padding (min 44px) so text, ascenders, descenders, headers, and page numbers
+        // Add 6% margin padding (min 56px) so text, ascenders, descenders, headers, and page numbers
         // always preserve generous breathing room and are never cut off.
-        let pad_x = ((width as f32) * 0.055).max(44.0) as u32;
-        let pad_y = ((height as f32) * 0.055).max(44.0) as u32;
+        let pad_x = ((width as f32) * 0.06).max(56.0) as u32;
+        let pad_y = ((height as f32) * 0.06).max(56.0) as u32;
 
         let crop_min_x = min_x.saturating_sub(pad_x) as f32 / width as f32;
         let crop_min_y = min_y.saturating_sub(pad_y) as f32 / height as f32;

@@ -1,4 +1,15 @@
-(no lines matched; last 100 lines of output)
+src/pages/pdf_reader.rs:402:32: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `p < self.total_pages`
+src/pages/pdf_reader.rs:413:32: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `p < self.total_pages`
+src/pages/pdf_reader.rs:481:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `cur > delta`
+src/pages/pdf_reader.rs:184:57: [1m[91merror[E0609][0m: no field `last_read_position` on type `models::Book`: unknown field
+src/pages/pdf_reader.rs:186:43: [1m[91merror[E0308][0m: mismatched types: expected `u8`, found floating-point number
+src/pages/pdf_reader.rs:193:26: [1m[91merror[E0609][0m: no field `author` on type `models::Book`: unknown field
+src/pages/pdf_reader.rs:319:80: [1m[91merror[E0308][0m: mismatched types: expected `f32`, found `f64`
+src/pages/pdf_reader.rs:361:14: [1m[91merror[E0061][0m: this method takes 4 arguments but 3 arguments were supplied
+src/pages/pdf_reader.rs:543:63: [1m[91merror[E0308][0m: mismatched types: expected `f32`, found `f64`
+src/pages/pdf_reader.rs:1452:21: [1m[91merror[E0382][0m: borrow of moved value: `tx_key`: value borrowed here after move
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -11,12 +22,7 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
-[1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m zerocopy-derive v0.8.58
-[1m[92m  Downloaded[0m zerocopy v0.8.58
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
-[1m[92m   Compiling[0m zerocopy v0.8.58
-[1m[92m   Compiling[0m zerocopy-derive v0.8.58
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
@@ -24,17 +30,20 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m ppv-lite86 v0.2.21
-[1m[92m    Checking[0m ahash v0.8.12
-[1m[92m    Checking[0m mupdf-sys v0.8.0
-[1m[92m    Checking[0m hashbrown v0.14.5
-[1m[92m    Checking[0m rand_chacha v0.9.0
-[1m[92m    Checking[0m proptest v1.11.0
-[1m[92m    Checking[0m hashlink v0.9.1
-[1m[92m    Checking[0m rusqlite v0.32.1
-[1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 24.29s
---- run 35966605458 ---
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/pdf_reader.rs:402:32: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `p < self.total_pages`
+src/pages/pdf_reader.rs:413:32: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `p < self.total_pages`
+src/pages/pdf_reader.rs:481:24: [1m[91merror[0m: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `cur > delta`
+src/pages/pdf_reader.rs:184:57: [1m[91merror[E0609][0m: no field `last_read_position` on type `models::Book`: unknown field
+src/pages/pdf_reader.rs:186:43: [1m[91merror[E0308][0m: mismatched types: expected `u8`, found floating-point number
+src/pages/pdf_reader.rs:193:26: [1m[91merror[E0609][0m: no field `author` on type `models::Book`: unknown field
+src/pages/pdf_reader.rs:319:80: [1m[91merror[E0308][0m: mismatched types: expected `f32`, found `f64`
+src/pages/pdf_reader.rs:361:14: [1m[91merror[E0061][0m: this method takes 4 arguments but 3 arguments were supplied
+src/pages/pdf_reader.rs:543:63: [1m[91merror[E0308][0m: mismatched types: expected `f32`, found `f64`
+src/pages/pdf_reader.rs:1452:21: [1m[91merror[E0382][0m: borrow of moved value: `tx_key`: value borrowed here after move
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
+--- run 35975720933 ---

@@ -253,11 +253,16 @@ jobs:
         if: steps.test.outcome == 'failure'
         run: exit 1
 
-      - name: build (debug)
-        run: cargo build --verbose
-
       - name: build (release)
         run: cargo build --release
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalam-release-binary
+          path: target/release/kalam
+          if-no-files-found: error
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Smoke test: does the app actually launch, and does a book open?
@@ -312,27 +317,27 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install system dependencies
+      - name: Install system runtime dependencies
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential pkg-config \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
             sway grim wtype \
             xwayland \
             fonts-dejavu-core \
-            libclang-dev libfontconfig1-dev
+            python3 \
+            libfontconfig1-dev
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: kalam-release-binary
+          path: target/release
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: build (release)
-        run: cargo build --release
+      - name: Make binary executable
+        run: chmod +x target/release/kalam
 
       # 139 books: matches the library the user actually measured on, so the
       # seeded state is a familiar one rather than an arbitrary small number.

@@ -42,6 +42,7 @@ impl std::fmt::Debug for PdfReaderInit {
 /// - VerticalScrolling: Continuous vertical stream
 /// - HorizontalScrolling: Continuous horizontal stream
 /// - WrappedScrolling: Multi-column wrapped grid flow
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfScrollMode {
     PageScrolling,
@@ -54,6 +55,7 @@ pub enum PdfScrollMode {
 /// - NoSpreads: Single page layout
 /// - OddSpreads: Facing pages with cover alone on page 1 ([1], [2, 3], [4, 5]...)
 /// - EvenSpreads: Facing pages starting on page 1 ([1, 2], [3, 4]...)
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfSpreadMode {
     NoSpreads,

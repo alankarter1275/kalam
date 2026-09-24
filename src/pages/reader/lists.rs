@@ -273,6 +273,8 @@ fn append_toc_heading(list: &gtk::Box, row: &TocRow) {
     label.set_xalign(0.0);
     label.set_wrap(true);
     label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_max_width_chars(24);
     label.set_margin_start(16 + row.depth as i32 * 16);
     label.set_margin_end(16);
     list.append(&label);
@@ -313,6 +315,7 @@ fn append_toc_btn(
     title.set_wrap(true);
     title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_max_width_chars(24);
     title.set_lines(2);
     title.set_xalign(0.0);
     btn.set_child(Some(&title));

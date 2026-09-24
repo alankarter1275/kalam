@@ -327,34 +327,44 @@ but renders as boxes.
 - EPUB reader also uses smooth SlideDown and SlideUp transitions for its top back chip and bottom pill.
 **Report if:** controls fail to reveal on edge hover, fail to autohide, bottom bar gets stuck, or transitions are missing.
 
-### T13 · Table of Contents & Outlines Left Sidebar
+### T13 · Table of Contents & Settings Left Sidebar (PDF & EPUB)
 **Do:** hover the left edge or press `T`.
 **Look for:**
-- Left sidebar header displaying book cover thumbnail, serif book title, author, and reading progress bar (`kalam-reader-book-head`), floating 8px off the edge matching EPUB aesthetics.
-- Document outlines listed directly below without redundant intermediate headers or extra close buttons.
-- Clicking any outline item jumps directly to that page.
+- Fixed 340px width sidebar (`width: 340px`, `size_request: (340, -1)`) that never blows out to fill the screen even on books with long titles or chapters.
+- Book title wraps at 24 chars with ellipsis (`End`).
+- 2-tab switcher at the bottom of the left sidebar: **TOC** (`view-list-bullet-symbolic`) and **Settings** (`preferences-system-symbolic`).
+- In **TOC** tab: document outlines listed cleanly; clicking any entry jumps to that page.
+- In **Settings** tab:
+  - View Mode switcher: **Continuous**, **Single**, and **Two-Page**.
+  - Dual Page Spread option: "First page as single cover" switch (active in Two-Page mode; greys out in Continuous/Single modes).
+  - Display option: "Smart Crop (Zathura style)" switch with explanatory hint.
+  - Magnification / Zoom controls: `-`, percentage display, `+`, and `100%` reset.
 - Pressing `Esc` or clicking the dim backdrop immediately closes the sidebar.
-**Report if:** book cover or title is missing in sidebar, header has overlapping text, or clicking an outline entry fails to jump.
+**Report if:** sidebar expands wider than 340px, tabs do not switch content, or settings do not update the document.
 
-### T14 · Paged Mode vs Continuous Vertical Scroll Mode & Arrow Speed
+### T14 · Paged Mode, Continuous Vertical Scroll, & Two-Page Spread Mode (PDF)
 **Do:**
 - Open any PDF document in Kalam.
 - Verify that the first page displays immediately upon open with NO blank dashed placeholder.
-- Verify Continuous mode is the default when opening any PDF.
-- Press `M` or click the mode icon in the bottom pill to switch between Paged and Continuous modes.
-- Close the reader and reopen: verify your view mode preference is remembered, and if reopening a book read past page 1, your scroll position is restored.
+- In Settings tab (or press `M` to cycle modes), switch between **Continuous**, **Single (Paged)**, and **Two-Page**.
+- In **Two-Page** mode:
+  - Verify facing pages are displayed side-by-side with centered alignment.
+  - With "First page as single cover" ON: page 1 shows centered alone; navigating Next shows pages 2-3 together, 4-5 together, etc.
+  - With "First page as single cover" OFF: pages 1-2 show together, 3-4 together, etc.
+  - Verify bottom pill displays spread notation (e.g., `2-3/120 (3%)`).
+- Verify top font ascenders are NOT clipped in either PDF or EPUB readers (EPUB band blit bleed allowance + PDF top margins).
 - In Continuous mode, use `Up` / `Down` arrows or mouse wheel to scroll vertically.
 **Look for:**
 - Page appears immediately upon opening without needing to scroll first.
-- In Paged mode: single centered page, Left/Right turns pages.
-- In Continuous mode: pages stacked vertically with clean separation and horizontal padding. Scrolling is liquid smooth without any widget recreation or scrollbar jumping (in-place picture updates).
-- Up/Down arrows scroll smoothly obeying your configured arrow scroll speed setting (`reader.arrow_step`).
-**Report if:** continuous mode is not default, a blank placeholder appears until scrolling, continuous scrolling jerks or resets scroll position, or arrow scroll speed is ignored.
+- In Two-Page mode: two pages side-by-side with clear spine separation, or single centered cover when cover-alone is enabled.
+- No top line ascender clipping (d, h, k, l, t, accents, capital letters have full breathing room).
+- Bottom pill is streamlined: contains Prev/Next page navigation, page info indicator, and zoom controls only.
+**Report if:** continuous mode is not default, two-page mode shows misalignment, top font is cut off, or spread navigation skips pages.
 
 ### T15 · Touchpad Pinch-to-Zoom & Smart Crop Persistence
 **Do:**
 - On a trackpad, use two fingers to pinch in/out. Alternatively, hold `Ctrl` and scroll.
-- Toggle Smart Crop (`C` or the scissor icon in the bottom pill). Verify that fonts and page numbers are never clipped (background luminance detection + 5.5% / 44px breathing margin).
+- Toggle Smart Crop (`C` or via Settings tab). Verify that fonts and page numbers are never clipped (background luminance detection + 5.5% / 44px breathing margin).
 - Verify all fonts across diverse PDFs render cleanly with full glyph coverage (MuPDF `system-fonts` enabled).
 - Close and reopen that document: verify Smart Crop state was saved for that specific book.
 - Open a different PDF: verify Smart Crop is OFF by default.

@@ -1820,10 +1820,14 @@ impl ReaderView {
                 continue;
             };
             // The band's page-space slice, and where it lands in the
-            // viewport, both in device pixels.
-            let src_y = (band.page_y * scale).round() as i32;
-            let dst_y = ((band.top - view_top) * scale).round() as i32;
-            let rows = (band.height * scale).ceil() as i32;
+            // viewport, both in device pixels. Include up to 12px bleed
+            // above the content box top so font ascenders, accents, and capital
+            // letters on the first line are never sliced off from the top.
+            let bleed_y = 12.0f32;
+            let src_y = ((band.page_y - bleed_y).max(0.0) * scale).round() as i32;
+            let actual_bleed = band.page_y - (src_y as f32 / scale);
+            let dst_y = ((band.top - actual_bleed - view_top) * scale).round() as i32;
+            let rows = ((band.height + actual_bleed) * scale).ceil() as i32;
             blit_rows(&mut out, &page, src_y, dst_y, rows);
         }
 

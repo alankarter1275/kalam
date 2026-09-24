@@ -981,6 +981,10 @@ button.kalam-float-icon-btn.kalam-float-icon-btn-danger:hover {
     background: @kalam_bg;
 }
 
+.kalam-reader-stage {
+    padding-top: 12px;
+}
+
 button.kalam-reader-dim {
     background: alpha(@kalam_bg, 0.22);
     border: none;
@@ -998,6 +1002,9 @@ button.kalam-reader-dim {
     border-radius: 20px;
     box-shadow: 0 22px 52px alpha(#000, 0.42);
     padding: 0;
+    width: 340px;
+    min-width: 340px;
+    max-width: 340px;
 }
 
 .kalam-reader-sidebar-left,
@@ -4081,6 +4088,7 @@ popover.kalam-reader-dict-popover > contents {
 }
 
 /* PDF Reader styles */
+.kalam-pdf-page,
 .kalam-pdf-page-image {
     background: #ffffff;
     box-shadow: 0 8px 30px alpha(#000, 0.28);

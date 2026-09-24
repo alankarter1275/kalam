@@ -299,6 +299,7 @@ impl Component for ReaderModel {
                 #[wrap(Some)]
                 set_child = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
+                    set_size_request: (340, -1),
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-left",
 
@@ -327,6 +328,7 @@ impl Component for ReaderModel {
                                 set_wrap: true,
                                 set_wrap_mode: gtk::pango::WrapMode::WordChar,
                                 set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                set_max_width_chars: 24,
                                 set_lines: 2,
                                 set_xalign: 0.0,
                             },
@@ -390,6 +392,7 @@ impl Component for ReaderModel {
                 #[wrap(Some)]
                 set_child = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
+                    set_size_request: (340, -1),
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-right",
 

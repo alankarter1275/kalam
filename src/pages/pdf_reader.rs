@@ -2266,6 +2266,8 @@ impl Component for PdfReaderModel {
         if let Some(ref sw) = self.settings_widgets {
             self.sync_settings_ui(sw);
         }
+
+        self.update_view(widgets, sender);
     }
 }
 

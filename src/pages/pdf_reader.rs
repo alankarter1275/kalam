@@ -9,7 +9,6 @@
 //! - Reading history, session time tracking, and catalog persistence for "Continue Reading" on Home.
 //! - Crash-free, in-place zoom updates and robust pixel stride handling.
 
-use anyhow::Result;
 use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
@@ -523,7 +522,7 @@ impl PdfReaderModel {
                     PdfPageLayout::Single => {
                         let cur = self.current_page;
                         load_order.push(cur);
-                        if cur + 1 <= self.total_pages {
+                        if cur < self.total_pages {
                             load_order.push(cur + 1);
                         }
                         if cur > 1 {
@@ -953,7 +952,7 @@ impl PdfReaderModel {
     }
 
     /// Smooth in-place zoom adjustment without widget recreation or SIGSEGV crashes.
-    pub fn apply_zoom_change(&mut self, sender: &ComponentSender<Self>, widgets: &PdfReaderWidgets) {
+    pub fn apply_zoom_change(&mut self, sender: &ComponentSender<Self>, scroll: &gtk::ScrolledWindow) {
         self.textures.clear();
         self.pending_loads.clear();
 
@@ -979,7 +978,7 @@ impl PdfReaderModel {
                     pic.queue_resize();
                     pic.queue_draw();
                 }
-                widgets.viewport_scroll.queue_draw();
+                scroll.queue_draw();
             }
         }
 
@@ -987,9 +986,9 @@ impl PdfReaderModel {
     }
 
     /// Scroll to current page ratio in continuous flow.
-    pub fn scroll_to_current_page(&self, widgets: &PdfReaderWidgets) {
+    pub fn scroll_to_current_page(&self, scroll: &gtk::ScrolledWindow) {
         if self.scroll_flow == PdfScrollFlow::Continuous && self.total_pages > 1 {
-            let vadj = widgets.viewport_scroll.vadjustment();
+            let vadj = scroll.vadjustment();
             let max = (vadj.upper() - vadj.page_size()).max(0.0);
             if max > 0.0 {
                 let ratio = (self.current_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
@@ -1638,7 +1637,7 @@ impl Component for PdfReaderModel {
                             self.current_page = (self.current_page + step).min(self.total_pages);
                             self.save_progress();
                             self.trigger_loads(&sender);
-                            self.scroll_to_current_page(widgets);
+                            self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
                     }
                 }
@@ -1678,22 +1677,22 @@ impl Component for PdfReaderModel {
                             self.current_page = self.current_page.saturating_sub(step).max(1);
                             self.save_progress();
                             self.trigger_loads(&sender);
-                            self.scroll_to_current_page(widgets);
+                            self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
                     }
                 }
             }
             PdfReaderMsg::ZoomIn => {
                 self.zoom_level = (self.zoom_level + 0.15).min(3.0);
-                self.apply_zoom_change(&sender, widgets);
+                self.apply_zoom_change(&sender, &widgets.viewport_scroll);
             }
             PdfReaderMsg::ZoomOut => {
                 self.zoom_level = (self.zoom_level - 0.15).max(0.4);
-                self.apply_zoom_change(&sender, widgets);
+                self.apply_zoom_change(&sender, &widgets.viewport_scroll);
             }
             PdfReaderMsg::ResetZoom => {
                 self.zoom_level = 1.0;
-                self.apply_zoom_change(&sender, widgets);
+                self.apply_zoom_change(&sender, &widgets.viewport_scroll);
             }
             PdfReaderMsg::SetPageLayout(layout) => {
                 if self.page_layout != layout {
@@ -1717,7 +1716,7 @@ impl Component for PdfReaderModel {
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.trigger_loads(&sender);
                     if self.scroll_flow == PdfScrollFlow::Continuous && self.current_page > 1 {
-                        self.scroll_to_current_page(widgets);
+                        self.scroll_to_current_page(&widgets.viewport_scroll);
                     }
                 }
             }
@@ -1747,7 +1746,7 @@ impl Component for PdfReaderModel {
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.trigger_loads(&sender);
                     if self.scroll_flow == PdfScrollFlow::Continuous && self.current_page > 1 {
-                        self.scroll_to_current_page(widgets);
+                        self.scroll_to_current_page(&widgets.viewport_scroll);
                     }
                 }
             }
@@ -1761,7 +1760,7 @@ impl Component for PdfReaderModel {
                         widgets.viewport_scroll.set_child(Some(&child));
                         self.trigger_loads(&sender);
                         if self.scroll_flow == PdfScrollFlow::Continuous && self.current_page > 1 {
-                            self.scroll_to_current_page(widgets);
+                            self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
                     }
                 }
@@ -1799,7 +1798,7 @@ impl Component for PdfReaderModel {
                         widgets.viewport_scroll.set_child(Some(&child));
                         self.trigger_loads(&sender);
                         if self.scroll_flow == PdfScrollFlow::Continuous && self.current_page > 1 {
-                            self.scroll_to_current_page(widgets);
+                            self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
                     }
                 }
@@ -1811,7 +1810,7 @@ impl Component for PdfReaderModel {
                         &format!("book.{}.pdf.smart_crop", self.book_id),
                         if self.smart_crop { "1" } else { "0" },
                     );
-                    self.apply_zoom_change(&sender, widgets);
+                    self.apply_zoom_change(&sender, &widgets.viewport_scroll);
                 }
             }
             PdfReaderMsg::ToggleSmartCrop => {
@@ -1882,7 +1881,7 @@ impl Component for PdfReaderModel {
                             }
                         }
                         PdfScrollFlow::Continuous => {
-                            self.scroll_to_current_page(widgets);
+                            self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
                     }
                 }
@@ -2102,7 +2101,7 @@ fn populate_toc_list(
         }
 
         let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let indent = (item.level.saturating_sub(1) * 14) as i32;
+        let indent = (item.depth.saturating_sub(1) * 14) as i32;
         row_box.set_margin_start(indent);
 
         let title_lbl = gtk::Label::new(Some(&item.title));

@@ -1086,7 +1086,7 @@ button.kalam-reader-back-chip {
     border: 1px solid @kalam_border;
     border-radius: 999px;
     color: @kalam_text;
-    padding: 7px 11px 7px 8px;
+    padding: 7px 14px;
     box-shadow: 0 8px 22px alpha(#000, 0.24);
 }
 
@@ -1140,6 +1140,11 @@ button.kalam-reader-pill-nav {
 button.kalam-reader-pill-nav:hover {
     background: @kalam_surface_2;
     color: @kalam_text;
+}
+
+button.kalam-reader-pill-nav.active {
+    background: alpha(@kalam_accent, 0.18);
+    color: @kalam_accent;
 }
 
 .kalam-reader-pill-nav image {

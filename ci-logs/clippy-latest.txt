@@ -1,16 +1,7 @@
-src/pages/pdf_reader.rs:2228:5: [1m[91merror[E0449][0m: visibility qualifiers are not permitted here: help: remove the qualifier
-src/pages/pdf_reader.rs:2228:5: [1m[91merror[E0407][0m: method `update_bookmark_icon_state` is not a member of trait `Component`: not a member of trait `Component`
-src/pages/pdf_reader.rs:1736:15: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for struct `pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1793:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1821:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1840:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1859:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1967:22: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1975:22: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1994:22: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:2218:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 11 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 11 previous errors
+src/pages/pdf_reader.rs:46:1: [1m[91merror[0m: all variants have the same postfix: `Scrolling`
+src/pages/pdf_reader.rs:58:1: [1m[91merror[0m: all variants have the same postfix: `Spreads`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -31,21 +22,12 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/pdf_reader.rs:2228:5: [1m[91merror[E0449][0m: visibility qualifiers are not permitted here: help: remove the qualifier
-src/pages/pdf_reader.rs:2228:5: [1m[91merror[E0407][0m: method `update_bookmark_icon_state` is not a member of trait `Component`: not a member of trait `Component`
-src/pages/pdf_reader.rs:1736:15: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for struct `pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1793:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1821:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1840:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1859:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1967:22: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1975:22: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:1994:22: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-src/pages/pdf_reader.rs:2218:26: [1m[91merror[E0599][0m: no method named `update_bookmark_icon_state` found for mutable reference `&mut pages::pdf_reader::PdfReaderModel` in the current scope: method not found in `&mut pages::pdf_reader::PdfReaderModel`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 11 previous errors
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/pages/pdf_reader.rs:46:1: [1m[91merror[0m: all variants have the same postfix: `Scrolling`
+src/pages/pdf_reader.rs:58:1: [1m[91merror[0m: all variants have the same postfix: `Spreads`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 11 previous errors
---- run 35980874389 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+--- run 35981223580 ---

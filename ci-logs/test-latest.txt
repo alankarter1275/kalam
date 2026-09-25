@@ -1,13 +1,81 @@
-(no lines matched; last 100 lines of output)
-[1m[92m   Compiling[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
-[1m[92m   Compiling[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
-[1m[92m   Compiling[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
-[1m[92m   Compiling[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
-[1m[92m   Compiling[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
-[1m[92m   Compiling[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
-[1m[92m   Compiling[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
-[1m[92m   Compiling[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m   Compiling[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m   Compiling[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m   Compiling[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
---- run 36199882344 ---
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test diagnostics::tests::installing_twice_is_not_an_error ... ok
+test result: ok. 54 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test missing_resources_error_cleanly ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test fonts::tests::a_source_that_finds_nothing_is_an_error_not_an_empty_database ... ok
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test db::tests::book_first_opened_is_none_not_an_error_for_a_never_opened_book ... ok
+test db::tests::books_by_ids_on_no_ids_is_not_an_error ... ok
+test dict::tests::unrecognized_format_error_names_the_expected_formats ... ok
+test downloads::tests::locked_writes_are_visible_to_later_reads_when_nothing_panicked ... ok
+test epub_metadata::tests::missing_metadata_block_is_an_error_not_a_panic ... ok
+test metadata::google_books::tests::empty_payload_is_not_an_error ... ok
+test metadata::google_books::tests::error_envelope_parses ... ok
+test metadata::tests::network_errors_are_collapsed_to_one_line ... ok
+test metadata::tests::unknown_network_errors_are_still_truncated ... ok
+test notify::tests::errors_linger_longer_than_chatter ... ok
+test notify::tests::report_passes_ok_through_and_flags_errors ... ok
+test service::tests::a_missing_shelf_yields_no_books_and_no_error ... ok
+test service::tests::an_empty_dashboard_is_not_an_error ... ok
+test service::tests::an_empty_log_is_not_an_error ... ok
+test service::tests::an_empty_vocabulary_is_not_an_error ... ok
+test service::tests::book_stats_are_zero_for_an_unread_book_without_erroring ... ok
+test service::tests::history_and_lookup_history_return_rows_without_errors ... ok
+test service::tests::dashboard_reads_every_strip_without_errors ... ok
+test service::tests::opening_a_book_with_no_marks_is_not_an_error ... ok
+test service::tests::reading_list_is_empty_without_an_error_when_nothing_is_queued ... ok
+test service::tests::shelves_are_returned_and_an_empty_grid_is_not_an_error ... ok
+test service::tests::there_are_no_quotes_at_all_is_not_an_error ... ok
+test tasks::tests::reporting_after_the_ui_is_gone_is_not_an_error ... ok
+test thumbs::tests::missing_source_is_not_an_error ... ok
+test result: ok. 409 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.41s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+--- run 36200261932 ---

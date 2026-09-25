@@ -1737,7 +1737,7 @@ impl Component for PdfReaderModel {
             let gen = active_gen.clone();
             let tx_msg = sender.input_sender().clone();
 
-            std::thread::Builder::new()
+            let _ = std::thread::Builder::new()
                 .name(format!("kalam-pdf-worker-{}", worker_id))
                 .spawn(move || {
                     let mut cached_path: Option<PathBuf> = None;
@@ -1775,8 +1775,7 @@ impl Component for PdfReaderModel {
                             }
                         }
                     }
-                })
-                .expect("failed to spawn kalam-pdf-worker");
+                });
         }
 
         model.render_tx = Some(render_tx);

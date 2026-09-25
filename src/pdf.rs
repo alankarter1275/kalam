@@ -8,6 +8,12 @@ use image::{DynamicImage, GenericImageView, RgbaImage};
 use mupdf::{Colorspace, Document, Matrix, Outline, Rect, TextBlockContent, TextExtractOptions, TextPageFlags};
 use std::path::{Path, PathBuf};
 
+/// Bounding rectangle in PDF points: (x0, y0, x1, y1).
+pub type PdfTextRect = (f32, f32, f32, f32);
+
+/// Extracted text selection result: (selected_text, highlight_rects).
+pub type PdfSelectionResult = (String, Vec<PdfTextRect>);
+
 /// Single extracted character with bounding box in PDF points (72 DPI).
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
@@ -61,7 +67,7 @@ impl PdfPageText {
         &self,
         p0: (f32, f32),
         p1: (f32, f32),
-    ) -> (String, Vec<(f32, f32, f32, f32)>) {
+    ) -> PdfSelectionResult {
         if self.lines.is_empty() {
             return (String::new(), Vec::new());
         }
@@ -139,7 +145,7 @@ impl PdfPageText {
     /// Find word under point in document coordinates (PDF points).
     /// Returns word text and bounding box (x0, y0, x1, y1).
     #[allow(dead_code)]
-    pub fn word_at(&self, p: (f32, f32)) -> Option<(String, Vec<(f32, f32, f32, f32)>)> {
+    pub fn word_at(&self, p: (f32, f32)) -> Option<PdfSelectionResult> {
         for line in &self.lines {
             let line_top = line.y0.min(line.y1) - 4.0;
             let line_bottom = line.y0.max(line.y1) + 4.0;
@@ -191,7 +197,7 @@ impl PdfPageText {
 
     /// Find entire line under point in document coordinates (PDF points).
     #[allow(dead_code)]
-    pub fn line_at(&self, p: (f32, f32)) -> Option<(String, Vec<(f32, f32, f32, f32)>)> {
+    pub fn line_at(&self, p: (f32, f32)) -> Option<PdfSelectionResult> {
         for line in &self.lines {
             let line_top = line.y0.min(line.y1) - 4.0;
             let line_bottom = line.y0.max(line.y1) + 4.0;

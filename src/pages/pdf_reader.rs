@@ -94,8 +94,6 @@ pub struct PdfSettingsWidgets {
     pub gap_12_btn: gtk::Button,
     pub gap_16_btn: gtk::Button,
     pub spread_gap_box: gtk::Box,
-    pub fit_page_btn: gtk::Button,
-    pub fit_width_btn: gtk::Button,
     pub smart_crop_switch: gtk::Switch,
     pub zoom_label: gtk::Label,
 }
@@ -2797,8 +2795,6 @@ fn build_pdf_settings_panel(
         gap_12_btn,
         gap_16_btn,
         spread_gap_box,
-        fit_page_btn,
-        fit_width_btn,
         smart_crop_switch,
         zoom_label,
     };

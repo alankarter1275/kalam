@@ -73,6 +73,14 @@ pub enum PdfSpreadMode {
     EvenSpreads,
 }
 
+#[derive(Clone, Debug)]
+pub struct CachedPageTexture {
+    pub texture: gdk::Texture,
+    pub width: i32,
+    pub height: i32,
+    pub generation: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfSidebarTab {
     Toc,
@@ -174,7 +182,7 @@ pub struct PdfReaderModel {
     pub sidebar_close_seq: u64,
     pub toc_entries: Vec<PdfTocEntry>,
     pub bookmarks: Vec<ReadingBookmark>,
-    pub textures: HashMap<usize, (gdk::Texture, i32, i32)>,
+    pub textures: HashMap<usize, CachedPageTexture>,
     pub pending_loads: HashSet<usize>,
     pub arrow_step: f32,
     pub is_loading: bool,
@@ -347,7 +355,12 @@ impl PdfReaderModel {
                     );
                     model.textures.insert(
                         model.current_page,
-                        (texture.upcast(), rendered.width, rendered.height),
+                        CachedPageTexture {
+                            texture: texture.upcast(),
+                            width: rendered.width,
+                            height: rendered.height,
+                            generation: 1,
+                        },
                     );
                 }
             } else {
@@ -593,7 +606,12 @@ impl PdfReaderModel {
         let gen = self.render_generation;
 
         for page in load_order {
-            if self.textures.contains_key(&page) || self.pending_loads.contains(&page) {
+            if let Some(cached) = self.textures.get(&page) {
+                if cached.generation == gen {
+                    continue;
+                }
+            }
+            if self.pending_loads.contains(&page) {
                 continue;
             }
             self.pending_loads.insert(page);
@@ -662,8 +680,8 @@ impl PdfReaderModel {
                         let page_h = (self.base_page_height * self.zoom_level) as i32;
                         pic.set_size_request(page_w, page_h);
 
-                        if let Some((tex, _, _)) = self.textures.get(&self.current_page) {
-                            pic.set_paintable(Some(tex));
+                        if let Some(cached) = self.textures.get(&self.current_page) {
+                            pic.set_paintable(Some(&cached.texture));
                             pic.set_visible(true);
                             loading_box.set_visible(false);
                         } else {
@@ -746,13 +764,13 @@ impl PdfReaderModel {
                         };
 
                         if all_needed_loaded {
-                            if let Some((tex, _, _)) = left_loaded {
-                                left_pic.set_paintable(Some(tex));
+                            if let Some(cached) = left_loaded {
+                                left_pic.set_paintable(Some(&cached.texture));
                                 left_pic.set_visible(true);
                             }
                             if right.is_some() {
-                                if let Some((tex, _, _)) = right_loaded {
-                                    right_pic.set_paintable(Some(tex));
+                                if let Some(cached) = right_loaded {
+                                    right_pic.set_paintable(Some(&cached.texture));
                                     right_pic.set_visible(true);
                                 }
                             } else {
@@ -807,8 +825,8 @@ impl PdfReaderModel {
                             pic.set_valign(gtk::Align::Start);
                             pic.set_size_request(page_w, page_h);
 
-                            if let Some((tex, _, _)) = self.textures.get(&p) {
-                                pic.set_paintable(Some(tex));
+                            if let Some(cached) = self.textures.get(&p) {
+                                pic.set_paintable(Some(&cached.texture));
                                 pic.add_css_class("kalam-pdf-page-image");
                             } else {
                                 pic.add_css_class("kalam-pdf-placeholder");
@@ -834,8 +852,8 @@ impl PdfReaderModel {
                             left_pic.set_size_request(page_w, page_h);
                             left_pic.add_css_class("kalam-pdf-two-page");
 
-                            if let Some((tex, _, _)) = self.textures.get(&left) {
-                                left_pic.set_paintable(Some(tex));
+                            if let Some(cached) = self.textures.get(&left) {
+                                left_pic.set_paintable(Some(&cached.texture));
                                 left_pic.add_css_class("kalam-pdf-page-image");
                             } else {
                                 left_pic.add_css_class("kalam-pdf-placeholder");
@@ -852,8 +870,8 @@ impl PdfReaderModel {
                                 right_pic.set_size_request(page_w, page_h);
                                 right_pic.add_css_class("kalam-pdf-two-page");
 
-                                if let Some((tex, _, _)) = self.textures.get(&r) {
-                                    right_pic.set_paintable(Some(tex));
+                                if let Some(cached) = self.textures.get(&r) {
+                                    right_pic.set_paintable(Some(&cached.texture));
                                     right_pic.add_css_class("kalam-pdf-page-image");
                                 } else {
                                     right_pic.add_css_class("kalam-pdf-placeholder");
@@ -892,8 +910,8 @@ impl PdfReaderModel {
                             pic.set_valign(gtk::Align::Start);
                             pic.set_size_request(page_w, page_h);
 
-                            if let Some((tex, _, _)) = self.textures.get(&p) {
-                                pic.set_paintable(Some(tex));
+                            if let Some(cached) = self.textures.get(&p) {
+                                pic.set_paintable(Some(&cached.texture));
                                 pic.add_css_class("kalam-pdf-page-image");
                             } else {
                                 pic.add_css_class("kalam-pdf-placeholder");
@@ -916,8 +934,8 @@ impl PdfReaderModel {
                             left_pic.set_size_request(page_w, page_h);
                             left_pic.add_css_class("kalam-pdf-two-page");
 
-                            if let Some((tex, _, _)) = self.textures.get(&left) {
-                                left_pic.set_paintable(Some(tex));
+                            if let Some(cached) = self.textures.get(&left) {
+                                left_pic.set_paintable(Some(&cached.texture));
                                 left_pic.add_css_class("kalam-pdf-page-image");
                             } else {
                                 left_pic.add_css_class("kalam-pdf-placeholder");
@@ -933,8 +951,8 @@ impl PdfReaderModel {
                                 right_pic.set_size_request(page_w, page_h);
                                 right_pic.add_css_class("kalam-pdf-two-page");
 
-                                if let Some((tex, _, _)) = self.textures.get(&r) {
-                                    right_pic.set_paintable(Some(tex));
+                                if let Some(cached) = self.textures.get(&r) {
+                                    right_pic.set_paintable(Some(&cached.texture));
                                     right_pic.add_css_class("kalam-pdf-page-image");
                                 } else {
                                     right_pic.add_css_class("kalam-pdf-placeholder");
@@ -964,22 +982,20 @@ impl PdfReaderModel {
                 flow_box.set_row_spacing(20);
                 flow_box.set_selection_mode(gtk::SelectionMode::None);
 
+                let thumb_w = (self.base_page_width * 0.6 * self.zoom_level) as i32;
+                let thumb_h = (self.base_page_height * 0.6 * self.zoom_level) as i32;
+
                 for p in 1..=self.total_pages {
                     let pic = gtk::Picture::new();
                     pic.set_can_shrink(true);
                     pic.set_content_fit(gtk::ContentFit::Contain);
                     pic.set_valign(gtk::Align::Start);
+                    pic.set_size_request(thumb_w, thumb_h);
 
-                    if let Some((tex, w, h)) = self.textures.get(&p) {
-                        pic.set_paintable(Some(tex));
-                        let thumb_w = (*w as f64 * 0.6 * self.zoom_level) as i32;
-                        let thumb_h = (*h as f64 * 0.6 * self.zoom_level) as i32;
-                        pic.set_size_request(thumb_w, thumb_h);
+                    if let Some(cached) = self.textures.get(&p) {
+                        pic.set_paintable(Some(&cached.texture));
                         pic.add_css_class("kalam-pdf-page-image");
                     } else {
-                        let placeholder_w = (360.0 * self.zoom_level) as i32;
-                        let placeholder_h = (480.0 * self.zoom_level) as i32;
-                        pic.set_size_request(placeholder_w, placeholder_h);
                         pic.add_css_class("kalam-pdf-placeholder");
                     }
 
@@ -1003,8 +1019,8 @@ impl PdfReaderModel {
         let page_h = (self.base_page_height * self.zoom_level) as i32;
         pic.set_size_request(page_w, page_h);
 
-        if let Some((tex, _, _)) = self.textures.get(&self.current_page) {
-            pic.set_paintable(Some(tex));
+        if let Some(cached) = self.textures.get(&self.current_page) {
+            pic.set_paintable(Some(&cached.texture));
             pic.set_visible(true);
             loading_box.set_visible(false);
             pic.queue_resize();
@@ -1042,15 +1058,15 @@ impl PdfReaderModel {
         };
 
         if all_needed_loaded {
-            if let Some((tex, _, _)) = left_loaded {
-                left_pic.set_paintable(Some(tex));
+            if let Some(cached) = left_loaded {
+                left_pic.set_paintable(Some(&cached.texture));
                 left_pic.set_halign(if right.is_some() { gtk::Align::End } else { gtk::Align::Center });
                 left_pic.set_valign(gtk::Align::Start);
                 left_pic.set_visible(true);
             }
             if right.is_some() {
-                if let Some((tex, _, _)) = right_loaded {
-                    right_pic.set_paintable(Some(tex));
+                if let Some(cached) = right_loaded {
+                    right_pic.set_paintable(Some(&cached.texture));
                     right_pic.set_halign(gtk::Align::Start);
                     right_pic.set_valign(gtk::Align::Start);
                     right_pic.set_visible(true);
@@ -1076,13 +1092,17 @@ impl PdfReaderModel {
     }
 
     /// Smooth in-place zoom adjustment without widget recreation or crashes.
-    pub fn apply_zoom_change(&mut self, sender: &ComponentSender<Self>, scroll: &gtk::ScrolledWindow) {
+    pub fn apply_zoom_change(
+        &mut self,
+        old_zoom: f64,
+        sender: &ComponentSender<Self>,
+        scroll: &gtk::ScrolledWindow,
+    ) {
         self.render_generation = self.render_generation.wrapping_add(1);
         if let Some(ref gen) = self.active_generation {
             gen.store(self.render_generation, Ordering::Relaxed);
         }
 
-        self.textures.clear();
         self.pending_loads.clear();
 
         let page_w = (self.base_page_width * self.zoom_level) as i32;
@@ -1105,14 +1125,41 @@ impl PdfReaderModel {
                 }
             }
             _ => {
+                let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
+                    (
+                        (self.base_page_width * 0.6 * self.zoom_level) as i32,
+                        (self.base_page_height * 0.6 * self.zoom_level) as i32,
+                    )
+                } else {
+                    (page_w, page_h)
+                };
+
                 for pic in self.page_pictures.values() {
-                    pic.set_paintable(None::<&gdk::Paintable>);
-                    pic.set_size_request(page_w, page_h);
-                    pic.remove_css_class("kalam-pdf-page-image");
-                    pic.add_css_class("kalam-pdf-placeholder");
+                    pic.set_size_request(target_w, target_h);
                     pic.queue_resize();
                     pic.queue_draw();
                 }
+
+                if old_zoom > 0.05 {
+                    if self.scroll_mode == PdfScrollMode::HorizontalScrolling {
+                        let hadj = scroll.hadjustment();
+                        let page_size = hadj.page_size();
+                        let center = hadj.value() + page_size / 2.0;
+                        let new_center = center * (self.zoom_level / old_zoom);
+                        let target_val = (new_center - page_size / 2.0)
+                            .clamp(hadj.lower(), (hadj.upper() - page_size).max(0.0));
+                        hadj.set_value(target_val);
+                    } else {
+                        let vadj = scroll.vadjustment();
+                        let page_size = vadj.page_size();
+                        let center = vadj.value() + page_size / 2.0;
+                        let new_center = center * (self.zoom_level / old_zoom);
+                        let target_val = (new_center - page_size / 2.0)
+                            .clamp(vadj.lower(), (vadj.upper() - page_size).max(0.0));
+                        vadj.set_value(target_val);
+                    }
+                }
+
                 scroll.queue_draw();
             }
         }
@@ -1681,13 +1728,19 @@ impl Component for PdfReaderModel {
         );
         let tx_sc = tx.clone();
         let tx_ctrl_zoom = tx.clone();
+        let zoom_scroll_accum = std::rc::Rc::new(std::cell::Cell::new(0.0f64));
         scroll_ctrl.connect_scroll(move |controller, _dx, dy| {
             let state = controller.current_event_state();
             if state.contains(gdk::ModifierType::CONTROL_MASK) {
-                if dy < -0.1 {
+                let acc = zoom_scroll_accum.get() + dy;
+                if acc <= -0.8 {
+                    zoom_scroll_accum.set(0.0);
                     let _ = tx_ctrl_zoom.send(PdfReaderMsg::ZoomIn);
-                } else if dy > 0.1 {
+                } else if acc >= 0.8 {
+                    zoom_scroll_accum.set(0.0);
                     let _ = tx_ctrl_zoom.send(PdfReaderMsg::ZoomOut);
+                } else {
+                    zoom_scroll_accum.set(acc);
                 }
                 return gtk::glib::Propagation::Stop;
             }
@@ -1711,12 +1764,21 @@ impl Component for PdfReaderModel {
         // 10. Pinch zoom gesture for touchpads and touchscreens
         let zoom_gesture = gtk::GestureZoom::new();
         let tx_zg = tx.clone();
+        let prev_scale = std::rc::Rc::new(std::cell::Cell::new(1.0f64));
+        let prev_scale_clone = prev_scale.clone();
         zoom_gesture.connect_scale_changed(move |_, scale_factor| {
-            if scale_factor > 1.08 {
+            let ratio = scale_factor / prev_scale.get();
+            if ratio > 1.15 {
+                prev_scale.set(scale_factor);
                 let _ = tx_zg.send(PdfReaderMsg::ZoomIn);
-            } else if scale_factor < 0.92 {
+            } else if ratio < 0.85 {
+                prev_scale.set(scale_factor);
                 let _ = tx_zg.send(PdfReaderMsg::ZoomOut);
             }
+        });
+        let prev_scale_end = prev_scale_clone;
+        zoom_gesture.connect_end(move |_, _| {
+            prev_scale_end.set(1.0);
         });
         widgets.viewport_scroll.add_controller(zoom_gesture);
 
@@ -1933,31 +1995,36 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::ZoomIn => {
-                self.zoom_level = (self.zoom_level + 0.15).min(3.0);
+                let old_zoom = self.zoom_level;
+                self.zoom_level = ((self.zoom_level + 0.10).min(3.5) * 100.0).round() / 100.0;
                 self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(&sender, &widgets.viewport_scroll);
+                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
             }
             PdfReaderMsg::ZoomOut => {
-                self.zoom_level = (self.zoom_level - 0.15).max(0.4);
+                let old_zoom = self.zoom_level;
+                self.zoom_level = ((self.zoom_level - 0.10).max(0.3) * 100.0).round() / 100.0;
                 self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(&sender, &widgets.viewport_scroll);
+                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
             }
             PdfReaderMsg::ResetZoom => {
+                let old_zoom = self.zoom_level;
                 self.zoom_level = 1.0;
                 self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(&sender, &widgets.viewport_scroll);
+                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
             }
             PdfReaderMsg::FitToPage => {
+                let old_zoom = self.zoom_level;
                 let fit = self.compute_fit_zoom(&widgets.viewport_scroll, false);
                 self.zoom_level = fit;
                 self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(&sender, &widgets.viewport_scroll);
+                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
             }
             PdfReaderMsg::FitToWidth => {
+                let old_zoom = self.zoom_level;
                 let fit = self.compute_fit_zoom(&widgets.viewport_scroll, true);
                 self.zoom_level = fit;
                 self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(&sender, &widgets.viewport_scroll);
+                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
             }
             PdfReaderMsg::SetScrollMode(mode) => {
                 if self.scroll_mode != mode {
@@ -2152,7 +2219,15 @@ impl Component for PdfReaderModel {
                     return;
                 }
                 self.pending_loads.remove(&page);
-                self.textures.insert(page, (texture.clone(), width, height));
+                self.textures.insert(
+                    page,
+                    CachedPageTexture {
+                        texture: texture.clone(),
+                        width,
+                        height,
+                        generation,
+                    },
+                );
 
                 match self.scroll_mode {
                     PdfScrollMode::PageScrolling => {
@@ -2173,7 +2248,18 @@ impl Component for PdfReaderModel {
                     _ => {
                         if let Some(pic) = self.page_pictures.get(&page) {
                             pic.set_paintable(Some(&texture));
-                            pic.set_size_request(width, height);
+                            let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
+                                (
+                                    (self.base_page_width * 0.6 * self.zoom_level) as i32,
+                                    (self.base_page_height * 0.6 * self.zoom_level) as i32,
+                                )
+                            } else {
+                                (
+                                    (self.base_page_width * self.zoom_level) as i32,
+                                    (self.base_page_height * self.zoom_level) as i32,
+                                )
+                            };
+                            pic.set_size_request(target_w, target_h);
                             pic.remove_css_class("kalam-pdf-placeholder");
                             pic.add_css_class("kalam-pdf-page-image");
                             pic.queue_resize();

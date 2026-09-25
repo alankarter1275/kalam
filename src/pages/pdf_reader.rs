@@ -33,6 +33,7 @@ pub enum PageSlot {
     PagedSpreadRight,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct PdfActiveSelection {
     pub page: usize,
@@ -177,6 +178,7 @@ pub enum PdfReaderMsg {
     CopySelection,
     QuoteSelection,
     LookUpWord(String),
+    #[allow(dead_code)]
     ClearSelection,
 }
 
@@ -2713,13 +2715,13 @@ impl Component for PdfReaderModel {
 
                 let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
                     (
-                        (self.base_page_width * 0.6 * self.zoom_level) as f64,
-                        (self.base_page_height * 0.6 * self.zoom_level) as f64,
+                        self.base_page_width * 0.6 * self.zoom_level,
+                        self.base_page_height * 0.6 * self.zoom_level,
                     )
                 } else {
                     (
-                        (self.base_page_width * self.zoom_level) as f64,
-                        (self.base_page_height * self.zoom_level) as f64,
+                        self.base_page_width * self.zoom_level,
+                        self.base_page_height * self.zoom_level,
                     )
                 };
 
@@ -2809,13 +2811,13 @@ impl Component for PdfReaderModel {
 
                 let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
                     (
-                        (self.base_page_width * 0.6 * self.zoom_level) as f64,
-                        (self.base_page_height * 0.6 * self.zoom_level) as f64,
+                        self.base_page_width * 0.6 * self.zoom_level,
+                        self.base_page_height * 0.6 * self.zoom_level,
                     )
                 } else {
                     (
-                        (self.base_page_width * self.zoom_level) as f64,
-                        (self.base_page_height * self.zoom_level) as f64,
+                        self.base_page_width * self.zoom_level,
+                        self.base_page_height * self.zoom_level,
                     )
                 };
 
@@ -2876,13 +2878,13 @@ impl Component for PdfReaderModel {
 
                 let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
                     (
-                        (self.base_page_width * 0.6 * self.zoom_level) as f64,
-                        (self.base_page_height * 0.6 * self.zoom_level) as f64,
+                        self.base_page_width * 0.6 * self.zoom_level,
+                        self.base_page_height * 0.6 * self.zoom_level,
                     )
                 } else {
                     (
-                        (self.base_page_width * self.zoom_level) as f64,
-                        (self.base_page_height * self.zoom_level) as f64,
+                        self.base_page_width * self.zoom_level,
+                        self.base_page_height * self.zoom_level,
                     )
                 };
 

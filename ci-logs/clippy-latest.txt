@@ -1,4 +1,6 @@
-(no lines matched; last 100 lines of output)
+src/pages/pdf_reader.rs:97:9: [1m[91merror[0m: fields `fit_page_btn` and `fit_width_btn` are never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -11,12 +13,7 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
-[1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m zerocopy-derive v0.8.59
-[1m[92m  Downloaded[0m zerocopy v0.8.59
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
-[1m[92m   Compiling[0m zerocopy v0.8.59
-[1m[92m   Compiling[0m zerocopy-derive v0.8.59
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
@@ -24,17 +21,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m ppv-lite86 v0.2.21
-[1m[92m    Checking[0m ahash v0.8.12
-[1m[92m    Checking[0m mupdf-sys v0.8.0
-[1m[92m    Checking[0m hashbrown v0.14.5
-[1m[92m    Checking[0m rand_chacha v0.9.0
-[1m[92m    Checking[0m hashlink v0.9.1
-[1m[92m    Checking[0m proptest v1.11.0
-[1m[92m    Checking[0m rusqlite v0.32.1
-[1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 30.39s
---- run 36166464947 ---
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/pdf_reader.rs:97:9: [1m[91merror[0m: fields `fit_page_btn` and `fit_width_btn` are never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 36191441289 ---

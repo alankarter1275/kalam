@@ -18,11 +18,21 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::{Catalog, ReadingBookmark};
 use crate::pdf::{PdfDocument, PdfTocEntry};
+
+#[derive(Debug, Clone)]
+pub struct PdfRenderRequest {
+    pub generation: u64,
+    pub page: usize,
+    pub scale: f32,
+    pub smart_crop: bool,
+    pub path: PathBuf,
+}
 
 pub struct PdfReaderInit {
     pub catalog: Arc<Catalog>,
@@ -113,6 +123,7 @@ pub enum PdfReaderMsg {
     EscapeKey,
     Close,
     PageRendered {
+        generation: u64,
         page: usize,
         texture: gdk::Texture,
         width: i32,
@@ -182,6 +193,9 @@ pub struct PdfReaderModel {
     pub toc_list_box: Option<gtk::Box>,
     pub bookmarks_list_box: Option<gtk::Box>,
     pub settings_widgets: Option<PdfSettingsWidgets>,
+    pub render_tx: Option<async_channel::Sender<PdfRenderRequest>>,
+    pub render_generation: u64,
+    pub active_generation: Option<Arc<AtomicU64>>,
 }
 
 impl PdfReaderModel {
@@ -296,6 +310,9 @@ impl PdfReaderModel {
             toc_list_box: None,
             bookmarks_list_box: None,
             settings_widgets: None,
+            render_tx: None,
+            render_generation: 1,
+            active_generation: None,
         };
 
         model.reload_bookmarks();
@@ -456,10 +473,25 @@ impl PdfReaderModel {
         });
     }
 
-    pub fn trigger_loads(&mut self, sender: &ComponentSender<Self>) {
+    pub fn prune_textures(&mut self) {
+        if self.scroll_mode == PdfScrollMode::PageScrolling {
+            return;
+        }
+        let cur = self.current_page;
+        let min_keep = cur.saturating_sub(6);
+        let max_keep = cur + 6;
+        self.textures.retain(|&p, _| p >= min_keep && p <= max_keep);
+        self.pending_loads.retain(|&p| p >= min_keep && p <= max_keep);
+    }
+
+    pub fn trigger_loads(&mut self, _sender: &ComponentSender<Self>) {
         let Some(ref path) = self.file_path else {
             return;
         };
+
+        if self.total_pages == 0 {
+            return;
+        }
 
         let mut load_order = Vec::new();
 
@@ -502,11 +534,13 @@ impl PdfReaderModel {
                     }
                 }
 
-                // Window of 7 pages ahead and behind for uninterrupted smooth scrolling
-                for delta in 1..=7 {
+                // Window of 3 pages ahead and 2 pages behind for responsive, smooth scrolling
+                for delta in 1..=3 {
                     if cur + delta <= self.total_pages {
                         load_order.push(cur + delta);
                     }
+                }
+                for delta in 1..=2 {
                     if cur > delta {
                         load_order.push(cur - delta);
                     }
@@ -516,48 +550,23 @@ impl PdfReaderModel {
 
         let scale = ((1.5 * self.zoom_level).clamp(0.5, 3.5)) as f32;
         let smart_crop = self.smart_crop;
+        let gen = self.render_generation;
 
         for page in load_order {
             if self.textures.contains_key(&page) || self.pending_loads.contains(&page) {
                 continue;
             }
             self.pending_loads.insert(page);
-            let s = sender.clone();
-            let p_buf = path.clone();
 
-            crate::tasks::spawn_internal(
-                "Rendering PDF page",
-                move |_| -> anyhow::Result<(usize, i32, i32, usize, Vec<u8>)> {
-                    let doc = PdfDocument::open(&p_buf)?;
-                    let rendered = doc.render_page_rgba(page, scale, smart_crop)?;
-                    Ok((
-                        rendered.page_num,
-                        rendered.width,
-                        rendered.height,
-                        rendered.stride,
-                        rendered.samples,
-                    ))
-                },
-                |_| {},
-                move |res| {
-                    if let Ok((p, w, h, stride, samples)) = res {
-                        let bytes = glib::Bytes::from_owned(samples);
-                        let texture = gdk::MemoryTexture::new(
-                            w,
-                            h,
-                            gdk::MemoryFormat::R8g8b8a8,
-                            &bytes,
-                            stride,
-                        );
-                        let _ = s.input_sender().send(PdfReaderMsg::PageRendered {
-                            page: p,
-                            texture: texture.upcast(),
-                            width: w,
-                            height: h,
-                        });
-                    }
-                },
-            );
+            if let Some(ref tx) = self.render_tx {
+                let _ = tx.send_blocking(PdfRenderRequest {
+                    generation: gen,
+                    page,
+                    scale,
+                    smart_crop,
+                    path: path.clone(),
+                });
+            }
         }
     }
 
@@ -1064,6 +1073,11 @@ impl PdfReaderModel {
 
     /// Smooth in-place zoom adjustment without widget recreation or crashes.
     pub fn apply_zoom_change(&mut self, sender: &ComponentSender<Self>, scroll: &gtk::ScrolledWindow) {
+        self.render_generation = self.render_generation.wrapping_add(1);
+        if let Some(ref gen) = self.active_generation {
+            gen.store(self.render_generation, Ordering::Relaxed);
+        }
+
         self.textures.clear();
         self.pending_loads.clear();
 
@@ -1673,9 +1687,10 @@ impl Component for PdfReaderModel {
         vadj.connect_value_changed(move |_| {
             let _ = tx_vadj.send(PdfReaderMsg::UpdateScrollPage(0));
         });
-        let tx_vadj_changed = tx.clone();
-        vadj.connect_changed(move |_| {
-            let _ = tx_vadj_changed.send(PdfReaderMsg::UpdateScrollPage(0));
+        let hadj = widgets.viewport_scroll.hadjustment();
+        let tx_hadj = tx.clone();
+        hadj.connect_value_changed(move |_| {
+            let _ = tx_hadj.send(PdfReaderMsg::UpdateScrollPage(0));
         });
 
         // 10. Pinch zoom gesture for touchpads and touchscreens
@@ -1713,6 +1728,61 @@ impl Component for PdfReaderModel {
         toggle_active(&widgets.tab_bookmarks_btn, false);
         toggle_active(&widgets.tab_settings_btn, false);
 
+        // Start bounded background rendering workers (exactly 2 threads for lifetime of reader)
+        let (render_tx, render_rx) = async_channel::unbounded::<PdfRenderRequest>();
+        let active_gen = Arc::new(AtomicU64::new(1));
+
+        for worker_id in 0..2 {
+            let rx = render_rx.clone();
+            let gen = active_gen.clone();
+            let tx_msg = sender.input_sender().clone();
+
+            std::thread::Builder::new()
+                .name(format!("kalam-pdf-worker-{}", worker_id))
+                .spawn(move || {
+                    let mut cached_path: Option<PathBuf> = None;
+                    let mut cached_doc: Option<PdfDocument> = None;
+
+                    while let Ok(req) = rx.recv_blocking() {
+                        if req.generation != gen.load(Ordering::Relaxed) {
+                            continue;
+                        }
+
+                        if cached_path.as_ref() != Some(&req.path) {
+                            cached_path = Some(req.path.clone());
+                            cached_doc = PdfDocument::open(&req.path).ok();
+                        }
+
+                        if let Some(ref doc) = cached_doc {
+                            if let Ok(rendered) = doc.render_page_rgba(req.page, req.scale, req.smart_crop) {
+                                if req.generation == gen.load(Ordering::Relaxed) {
+                                    let bytes = glib::Bytes::from_owned(rendered.samples);
+                                    let texture = gdk::MemoryTexture::new(
+                                        rendered.width,
+                                        rendered.height,
+                                        gdk::MemoryFormat::R8g8b8a8,
+                                        &bytes,
+                                        rendered.stride,
+                                    );
+                                    let _ = tx_msg.send(PdfReaderMsg::PageRendered {
+                                        generation: req.generation,
+                                        page: rendered.page_num,
+                                        texture: texture.upcast(),
+                                        width: rendered.width,
+                                        height: rendered.height,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                })
+                .expect("failed to spawn kalam-pdf-worker");
+        }
+
+        model.render_tx = Some(render_tx);
+        model.active_generation = Some(active_gen);
+        model.render_generation = 1;
+
         model.schedule_back_hide(&sender);
         model.schedule_bottom_hide(&sender);
         model.trigger_loads(&sender);
@@ -1740,6 +1810,7 @@ impl Component for PdfReaderModel {
                     };
                     let _ = self.catalog.end_reading_session(sid, elapsed, pct);
                 }
+                self.render_tx = None;
                 let _ = sender.output_sender().send(PdfReaderOut::Close);
             }
             PdfReaderMsg::EscapeKey => {
@@ -1761,6 +1832,7 @@ impl Component for PdfReaderModel {
                     };
                     self.current_page = (self.current_page + step).min(self.total_pages);
                     self.save_progress();
+                    self.prune_textures();
                     self.trigger_loads(&sender);
 
                     match self.scroll_mode {
@@ -1789,6 +1861,7 @@ impl Component for PdfReaderModel {
                     };
                     self.current_page = self.current_page.saturating_sub(step).max(1);
                     self.save_progress();
+                    self.prune_textures();
                     self.trigger_loads(&sender);
 
                     match self.scroll_mode {
@@ -1809,6 +1882,7 @@ impl Component for PdfReaderModel {
                 if self.current_page != 1 {
                     self.current_page = 1;
                     self.save_progress();
+                    self.prune_textures();
                     self.trigger_loads(&sender);
                     match self.scroll_mode {
                         PdfScrollMode::PageScrolling => {
@@ -1828,6 +1902,7 @@ impl Component for PdfReaderModel {
                 if self.current_page != self.total_pages {
                     self.current_page = self.total_pages;
                     self.save_progress();
+                    self.prune_textures();
                     self.trigger_loads(&sender);
                     match self.scroll_mode {
                         PdfScrollMode::PageScrolling => {
@@ -1961,6 +2036,7 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::JumpToPage(target_page) => {
                 self.current_page = target_page.clamp(1, self.total_pages);
                 self.save_progress();
+                self.prune_textures();
                 self.trigger_loads(&sender);
 
                 match self.scroll_mode {
@@ -2050,11 +2126,15 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::PageRendered {
+                generation,
                 page,
                 texture,
                 width,
                 height,
             } => {
+                if generation != self.render_generation {
+                    return;
+                }
                 self.pending_loads.remove(&page);
                 self.textures.insert(page, (texture.clone(), width, height));
 
@@ -2197,6 +2277,7 @@ impl Component for PdfReaderModel {
                 if target != self.current_page && target <= self.total_pages {
                     self.current_page = target;
                     self.save_progress();
+                    self.prune_textures();
                     self.trigger_loads(&sender);
                     self.update_bookmark_icon_state(widgets);
                 }

@@ -90,7 +90,7 @@ impl ComicsReaderModel {
 
         for idx in missing {
             self.pending_loads.insert(idx);
-            let s = sender.clone();
+            let s = sender.input_sender().clone();
             let prov = provider.clone();
             crate::tasks::spawn(
                 "Loading comic pages",
@@ -117,7 +117,7 @@ impl ComicsReaderModel {
                 },
                 |_| {},
                 move |tex_opt| {
-                    s.input(types::ComicsReaderMsg::PageLoaded(idx, tex_opt));
+                    let _ = s.send(types::ComicsReaderMsg::PageLoaded(idx, tex_opt));
                 },
             );
         }

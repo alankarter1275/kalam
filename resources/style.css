@@ -1277,6 +1277,68 @@ button.kalam-reader-seg-btn image {
     margin-right: 6px;
 }
 
+.kalam-reader-options-group {
+    background: alpha(@kalam_surface_2, 0.45);
+    border: 1px solid alpha(@kalam_border, 0.75);
+    border-radius: 10px;
+    padding: 3px;
+}
+
+button.kalam-reader-option-row {
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 8px 10px;
+    color: @kalam_text_dim;
+    font-size: 0.84rem;
+    font-weight: 500;
+}
+
+button.kalam-reader-option-row:hover {
+    background: alpha(@kalam_surface_2, 0.75);
+    color: @kalam_text;
+}
+
+button.kalam-reader-option-row.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+button.kalam-reader-option-row image {
+    -gtk-icon-size: 16px;
+    margin-right: 8px;
+}
+
+.kalam-reader-segmented {
+    background: alpha(@kalam_surface_2, 0.55);
+    border: 1px solid alpha(@kalam_border, 0.8);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+button.kalam-reader-seg-item {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: @kalam_text_dim;
+    padding: 4px 8px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    min-width: 36px;
+}
+
+button.kalam-reader-seg-item:hover {
+    background: alpha(@kalam_surface_2, 0.9);
+    color: @kalam_text;
+}
+
+button.kalam-reader-seg-item.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
 .kalam-reader-spread-gap-box button.kalam-reader-seg-btn {
     border-radius: 6px;
     padding: 5px 8px;

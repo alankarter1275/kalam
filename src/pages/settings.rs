@@ -417,7 +417,7 @@ impl Component for SettingsPageModel {
                                 // window, with the "Importing…" toast painted
                                 // *before* the freeze so it looked like a hang.
                                 let catalog = catalog_clone.clone();
-                                let done_sender = sender_clone.clone();
+                                let done_sender = sender_clone.input_sender().clone();
                                 crate::tasks::spawn(
                                     "Importing dictionary",
                                     move |reporter| {
@@ -475,7 +475,7 @@ impl Component for SettingsPageModel {
                                                 &detail,
                                             ),
                                         }
-                                        done_sender.input(SettingsMsg::Refresh);
+                                        let _ = done_sender.send(SettingsMsg::Refresh);
                                     },
                                 );
                             }

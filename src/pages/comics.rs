@@ -412,16 +412,16 @@ impl Component for ComicsModel {
                 if total == 0 {
                     return;
                 }
-                let s_progress = sender.clone();
-                let s_done = sender.clone();
+                let s_progress = sender.input_sender().clone();
+                let s_done = sender.input_sender().clone();
                 spawn_import(
                     self.service.catalog().clone(),
                     paths,
                     move |done, total, title| {
-                        s_progress.input(ComicsMsg::ImportStep { done, total, title });
+                        let _ = s_progress.send(ComicsMsg::ImportStep { done, total, title });
                     },
                     move |tally| {
-                        s_done.input(ComicsMsg::ImportFinished(tally));
+                        let _ = s_done.send(ComicsMsg::ImportFinished(tally));
                     },
                 );
             }

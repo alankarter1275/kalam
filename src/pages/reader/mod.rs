@@ -329,6 +329,7 @@ impl Component for ReaderModel {
                                 set_wrap_mode: gtk::pango::WrapMode::WordChar,
                                 set_ellipsize: gtk::pango::EllipsizeMode::End,
                                 set_max_width_chars: 24,
+                                set_width_chars: 1,
                                 set_lines: 2,
                                 set_xalign: 0.0,
                             },

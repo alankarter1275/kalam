@@ -175,13 +175,15 @@ impl TagsModel {
         self.reload_gen += 1;
         let gen = self.reload_gen;
         let catalog = self.catalog.clone();
-        let done = sender.clone();
+        let done = sender.input_sender().clone();
         crate::tasks::spawn(
             "Loading tags",
             move |_reporter| LibraryService::new(catalog).tags(),
             // One query, not a sequence of steps, so nothing to report.
             |_update| {},
-            move |snap| done.input(TagsMsg::Loaded { gen, snap }),
+            move |snap| {
+                let _ = done.send(TagsMsg::Loaded { gen, snap });
+            },
         );
     }
 
@@ -601,13 +603,15 @@ impl TagBooksModel {
         let catalog = self.service.catalog().clone();
         let tag = self.tag.clone();
         let sort = self.sort;
-        let done = sender.clone();
+        let done = sender.input_sender().clone();
         crate::tasks::spawn(
             "Loading tagged books",
             move |_reporter| LibraryService::new(catalog).tag_books(&tag, sort),
             // One query, not a sequence of steps, so nothing to report.
             |_update| {},
-            move |snap| done.input(TagBooksMsg::Loaded { gen, snap }),
+            move |snap| {
+                let _ = done.send(TagBooksMsg::Loaded { gen, snap });
+            },
         );
     }
 }

@@ -226,7 +226,7 @@ impl HistoryModel {
         let catalog = self.service.catalog().clone();
         let filter = self.filter;
         let query = self.query.clone();
-        let done = sender.clone();
+        let done = sender.input_sender().clone();
         crate::tasks::spawn(
             "Loading history",
             move |_reporter| {
@@ -234,7 +234,9 @@ impl HistoryModel {
             },
             // One query, not a sequence of steps, so nothing to report.
             |_update| {},
-            move |snap| done.input(HistoryMsg::Loaded { gen, snap }),
+            move |snap| {
+                let _ = done.send(HistoryMsg::Loaded { gen, snap });
+            },
         );
     }
 }

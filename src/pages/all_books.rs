@@ -795,16 +795,16 @@ impl Component for AllBooksModel {
                 self.status = format!("Importing 1 of {total}…");
 
                 let catalog = self.service.catalog().clone();
-                let step_sender = sender.clone();
-                let done_sender = sender.clone();
+                let step_tx = sender.input_sender().clone();
+                let done_tx = sender.input_sender().clone();
                 spawn_import(
                     catalog,
                     paths,
                     move |done, total, title| {
-                        step_sender.input(AllBooksMsg::ImportStep { done, total, title });
+                        let _ = step_tx.send(AllBooksMsg::ImportStep { done, total, title });
                     },
                     move |tally| {
-                        done_sender.input(AllBooksMsg::ImportFinished(tally));
+                        let _ = done_tx.send(AllBooksMsg::ImportFinished(tally));
                     },
                 );
             }
@@ -838,7 +838,7 @@ impl AllBooksModel {
         let catalog = self.service.catalog().clone();
         let sort = self.sort;
         let query = self.query.clone();
-        let done = sender.clone();
+        let done = sender.input_sender().clone();
         crate::tasks::spawn(
             "Loading books",
             move |_reporter| {
@@ -850,7 +850,9 @@ impl AllBooksModel {
             },
             // Nothing to report: this is one query, not a sequence of steps.
             |_update| {},
-            move |snap| done.input(AllBooksMsg::BooksLoaded { gen, snap }),
+            move |snap| {
+                let _ = done.send(AllBooksMsg::BooksLoaded { gen, snap });
+            },
         );
     }
 }

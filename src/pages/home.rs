@@ -283,16 +283,16 @@ impl Component for HomePageModel {
                 // part of the read-snapshot seam (they belong to the task
                 // manager, A0 step 4).
                 let catalog = self.service.catalog().clone();
-                let step_sender = sender.clone();
-                let done_sender = sender.clone();
+                let step_tx = sender.input_sender().clone();
+                let done_tx = sender.input_sender().clone();
                 spawn_import(
                     catalog,
                     paths,
                     move |done, total, title| {
-                        step_sender.input(HomeMsg::ImportStep { done, total, title });
+                        let _ = step_tx.send(HomeMsg::ImportStep { done, total, title });
                     },
                     move |tally| {
-                        done_sender.input(HomeMsg::ImportFinished(tally));
+                        let _ = done_tx.send(HomeMsg::ImportFinished(tally));
                     },
                 );
             }

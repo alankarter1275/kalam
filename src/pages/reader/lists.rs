@@ -314,9 +314,8 @@ fn append_toc_btn(
     title.set_hexpand(true);
     title.set_wrap(true);
     title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    title.set_max_width_chars(24);
-    title.set_lines(2);
+    title.set_lines(-1);
+    title.set_width_chars(1);
     title.set_xalign(0.0);
     btn.set_child(Some(&title));
     let s = sender.clone();

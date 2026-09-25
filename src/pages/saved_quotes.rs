@@ -263,13 +263,15 @@ impl SavedQuotesModel {
         let gen = self.reload_gen;
         let catalog = self.service.catalog().clone();
         let query = self.query.clone();
-        let done = sender.clone();
+        let done = sender.input_sender().clone();
         crate::tasks::spawn(
             "Loading quotes",
             move |_reporter| LibraryService::new(catalog).quotes(&query),
             // One query, not a sequence of steps, so nothing to report.
             |_update| {},
-            move |snap| done.input(SavedQuotesMsg::Loaded { gen, snap }),
+            move |snap| {
+                let _ = done.send(SavedQuotesMsg::Loaded { gen, snap });
+            },
         );
     }
 }

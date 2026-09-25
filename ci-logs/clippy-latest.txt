@@ -1,26 +1,86 @@
-(no lines matched; last 100 lines of output)
+src/pages/pdf_reader.rs:113:5: [1m[91merror[0m: variant `ToggleControls` is never constructed
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
 === last 80 lines of the raw log ===
---- system libraries (the agent cannot read Actions logs, and
---- kalam-reader's gtk4 v4_16 feature needs system GTK >= 4.16) ---
-gtk4: 4.22.4
-gdk4: Package gdk4 was not found in the pkg-config search path.
-Perhaps you should add the directory containing `gdk4.pc'
-to the PKG_CONFIG_PATH environment variable
-Package 'gdk4' not found
-not found
-libadwaita-1: 1.9.1
-glib-2.0: 2.88.0
-[1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m    Checking[0m string_cache v0.9.0
+[1m[92m    Checking[0m icu_normalizer v2.3.0
+[1m[92m    Checking[0m harfrust v0.5.2
+[1m[92m    Checking[0m idna_adapter v1.2.2
+[1m[92m   Compiling[0m phf_macros v0.13.1
+[1m[92m    Checking[0m idna v1.1.0
+[1m[92m    Checking[0m url v2.5.8
+[1m[92m   Compiling[0m selectors v0.40.0
+[1m[92m   Compiling[0m web_atoms v0.2.6
+[1m[92m    Checking[0m cosmic-text v0.19.0
+[1m[92m   Compiling[0m stylo_atoms v0.20.0
+[1m[92m    Checking[0m phf v0.13.1
+[1m[92m    Checking[0m kurbo v0.13.1
+[1m[92m    Checking[0m cssparser v0.37.0
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
+[1m[92m    Checking[0m harfrust v0.12.0
+[1m[92m    Checking[0m to_shmem v0.5.0
+[1m[92m    Checking[0m markup5ever v0.39.0
+[1m[92m    Checking[0m svgtypes v0.16.1
+[1m[92m    Checking[0m rustybuzz v0.20.1
+[1m[92m   Compiling[0m cfg-expr v0.20.9
+[1m[92m    Checking[0m stylo_malloc_size_of v0.20.0
+[1m[92m    Checking[0m stylo_dom v0.20.0
+[1m[92m    Checking[0m stylo_traits v0.20.0
+[1m[92m    Checking[0m icu_segmenter v2.3.0
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
-[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
+[1m[92m    Checking[0m html5ever v0.39.0
+[1m[92m    Checking[0m usvg v0.48.1
+[1m[92m    Checking[0m formulary v0.2.0
+[1m[92m    Checking[0m stylo v0.20.0
+[1m[92m    Checking[0m xml5ever v0.39.0
+[1m[92m   Compiling[0m system-deps v9.0.0
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
+[1m[92m   Compiling[0m find-msvc-tools v0.1.14
+[1m[92m    Checking[0m resvg v0.48.1
+[1m[92m   Compiling[0m cc v1.5.1
+[1m[92m   Compiling[0m system-deps v7.0.8
+[1m[92m   Compiling[0m glib-sys v0.22.9
+[1m[92m   Compiling[0m gobject-sys v0.22.9
+[1m[92m   Compiling[0m gio-sys v0.22.9
+[1m[92m   Compiling[0m cairo-sys-rs v0.22.9
+[1m[92m   Compiling[0m pango-sys v0.22.9
+[1m[92m   Compiling[0m gdk-pixbuf-sys v0.22.9
+[1m[92m    Checking[0m glib v0.22.10
+[1m[92m   Compiling[0m graphene-sys v0.22.9
+[1m[92m   Compiling[0m gdk4-sys v0.11.5
+[1m[92m   Compiling[0m gsk4-sys v0.11.5
+[1m[92m   Compiling[0m gtk4-sys v0.11.5
+[1m[92m   Compiling[0m ring v0.17.14
+[1m[92m   Compiling[0m freetype-sys v0.20.1
+[1m[92m   Compiling[0m libadwaita-sys v0.9.2
+[1m[92m   Compiling[0m libsqlite3-sys v0.30.1
+[1m[92m   Compiling[0m mupdf-sys v0.8.0
+[1m[92m    Checking[0m gio v0.22.10
+[1m[92m    Checking[0m cairo-rs v0.22.9
+[1m[92m    Checking[0m graphene-rs v0.22.8
+[1m[92m   Compiling[0m font-kit v0.14.3
+[1m[92m    Checking[0m rustls-webpki v0.103.15
+[1m[92m   Compiling[0m rustls v0.23.45
+[1m[92m    Checking[0m pango v0.22.9
+[1m[92m    Checking[0m gdk-pixbuf v0.22.0
+[1m[92m    Checking[0m gdk4 v0.11.5
+[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
+[1m[92m    Checking[0m gsk4 v0.11.5
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
+[1m[92m    Checking[0m gtk4 v0.11.5
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
+[1m[92m    Checking[0m ureq v2.12.1
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+[1m[92m    Checking[0m libadwaita v0.9.2
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+[1m[92m    Checking[0m relm4 v0.11.0
+[1m[92m    Checking[0m rusqlite v0.32.1
+[1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 24.24s
---- run 36067792100 ---
+src/pages/pdf_reader.rs:113:5: [1m[91merror[0m: variant `ToggleControls` is never constructed
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 36159634853 ---

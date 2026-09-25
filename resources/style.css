@@ -1250,13 +1250,38 @@ button.kalam-reader-stepper-btn:hover {
     padding-bottom: 2px;
 }
 
-button.kalam-reader-settings-switch {
-    background: transparent;
-    border: 1px solid alpha(@kalam_border, 0.95);
-    border-radius: 999px;
+button.kalam-reader-seg-btn {
+    background: alpha(@kalam_surface_2, 0.5);
+    border: 1px solid alpha(@kalam_border, 0.8);
+    border-radius: 8px;
     color: @kalam_text_dim;
-    padding: 7px 10px;
-    font-size: 0.76rem;
+    padding: 8px 12px;
+    font-size: 0.84rem;
+    font-weight: 500;
+}
+
+button.kalam-reader-seg-btn:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+button.kalam-reader-seg-btn.active {
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+button.kalam-reader-seg-btn image {
+    -gtk-icon-size: 16px;
+    margin-right: 6px;
+}
+
+.kalam-reader-spread-gap-box button.kalam-reader-seg-btn {
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 0.8rem;
+    min-width: 44px;
 }
 
 button.kalam-reader-settings-switch:hover {

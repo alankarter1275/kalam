@@ -5,8 +5,214 @@
 
 use anyhow::{anyhow, Result};
 use image::{DynamicImage, GenericImageView, RgbaImage};
-use mupdf::{Colorspace, Document, Matrix, Outline, TextExtractOptions};
+use mupdf::{Colorspace, Document, Matrix, Outline, Rect, TextBlockContent, TextExtractOptions, TextPageFlags};
 use std::path::{Path, PathBuf};
+
+/// Single extracted character with bounding box in PDF points (72 DPI).
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfTextChar {
+    pub ch: char,
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
+}
+
+/// Single extracted text line with bounding box and character stream in PDF points.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfTextLine {
+    pub text: String,
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
+    pub chars: Vec<PdfTextChar>,
+}
+
+/// Extracted page text containing line hierarchy and document point dimensions.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfPageText {
+    pub page_num: usize,
+    pub width_pts: f32,
+    pub height_pts: f32,
+    pub lines: Vec<PdfTextLine>,
+}
+
+impl PdfPageText {
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.lines.is_empty() || self.lines.iter().all(|l| l.chars.is_empty())
+    }
+
+    #[allow(dead_code)]
+    pub fn total_chars(&self) -> usize {
+        self.lines.iter().map(|l| l.chars.len()).sum()
+    }
+
+    /// Select text between two points in document point coordinates.
+    /// Returns:
+    /// - Selected text string (with trimmed spacing)
+    /// - List of highlight bounding boxes `(x0, y0, x1, y1)` in document points
+    #[allow(dead_code)]
+    pub fn select_between(
+        &self,
+        p0: (f32, f32),
+        p1: (f32, f32),
+    ) -> (String, Vec<(f32, f32, f32, f32)>) {
+        if self.lines.is_empty() {
+            return (String::new(), Vec::new());
+        }
+
+        // Determine reading order start and end points
+        let (start, end) = if p0.1 < p1.1 - 4.0 {
+            (p0, p1)
+        } else if p1.1 < p0.1 - 4.0 {
+            (p1, p0)
+        } else if p0.0 <= p1.0 {
+            (p0, p1)
+        } else {
+            (p1, p0)
+        };
+
+        let mut selected_text = String::new();
+        let mut highlight_rects = Vec::new();
+
+        for line in &self.lines {
+            let line_top = line.y0.min(line.y1);
+            let line_bottom = line.y0.max(line.y1);
+
+            // Skip lines completely outside vertical drag span (with 3pt tolerance)
+            if line_bottom < start.1 - 3.0 || line_top > end.1 + 3.0 {
+                continue;
+            }
+
+            let is_first_line = start.1 >= line_top - 3.0 && start.1 <= line_bottom + 3.0;
+            let is_last_line = end.1 >= line_top - 3.0 && end.1 <= line_bottom + 3.0;
+
+            let mut line_selected_chars = Vec::new();
+            let mut line_min_x = f32::MAX;
+            let mut line_max_x = f32::MIN;
+            let mut line_min_y = line_top;
+            let mut line_max_y = line_bottom;
+
+            for ch in &line.chars {
+                let ch_min_x = ch.x0.min(ch.x1);
+                let ch_max_x = ch.x0.max(ch.x1);
+                let ch_mid_x = (ch_min_x + ch_max_x) * 0.5;
+
+                let selected = match (is_first_line, is_last_line) {
+                    (true, true) => {
+                        let (s_x, e_x) = if start.0 <= end.0 { (start.0, end.0) } else { (end.0, start.0) };
+                        ch_mid_x >= s_x && ch_mid_x <= e_x
+                    }
+                    (true, false) => ch_mid_x >= start.0,
+                    (false, true) => ch_mid_x <= end.0,
+                    (false, false) => true,
+                };
+
+                if selected {
+                    line_selected_chars.push(ch.ch);
+                    line_min_x = line_min_x.min(ch_min_x);
+                    line_max_x = line_max_x.max(ch_max_x);
+                    line_min_y = line_min_y.min(ch.y0.min(ch.y1));
+                    line_max_y = line_max_y.max(ch.y0.max(ch.y1));
+                }
+            }
+
+            if !line_selected_chars.is_empty() {
+                if !selected_text.is_empty() && !selected_text.ends_with(' ') && !selected_text.ends_with('\n') {
+                    selected_text.push(' ');
+                }
+                for c in line_selected_chars {
+                    selected_text.push(c);
+                }
+                highlight_rects.push((line_min_x, line_min_y, line_max_x, line_max_y));
+            }
+        }
+
+        (selected_text.trim().to_string(), highlight_rects)
+    }
+
+    /// Find word under point in document coordinates (PDF points).
+    /// Returns word text and bounding box (x0, y0, x1, y1).
+    #[allow(dead_code)]
+    pub fn word_at(&self, p: (f32, f32)) -> Option<(String, Vec<(f32, f32, f32, f32)>)> {
+        for line in &self.lines {
+            let line_top = line.y0.min(line.y1) - 4.0;
+            let line_bottom = line.y0.max(line.y1) + 4.0;
+            if p.1 < line_top || p.1 > line_bottom {
+                continue;
+            }
+
+            if let Some(char_idx) = line.chars.iter().position(|c| {
+                let min_x = c.x0.min(c.x1) - 2.0;
+                let max_x = c.x0.max(c.x1) + 2.0;
+                p.0 >= min_x && p.0 <= max_x
+            }) {
+                if line.chars[char_idx].ch.is_whitespace() {
+                    continue;
+                }
+
+                let mut start_idx = char_idx;
+                while start_idx > 0 && !line.chars[start_idx - 1].ch.is_whitespace() {
+                    start_idx -= 1;
+                }
+
+                let mut end_idx = char_idx;
+                while end_idx + 1 < line.chars.len() && !line.chars[end_idx + 1].ch.is_whitespace() {
+                    end_idx += 1;
+                }
+
+                let mut word_text = String::new();
+                let mut min_x = f32::MAX;
+                let mut max_x = f32::MIN;
+                let mut min_y = line.y0.min(line.y1);
+                let mut max_y = line.y0.max(line.y1);
+
+                for c in &line.chars[start_idx..=end_idx] {
+                    word_text.push(c.ch);
+                    min_x = min_x.min(c.x0.min(c.x1));
+                    max_x = max_x.max(c.x0.max(c.x1));
+                    min_y = min_y.min(c.y0.min(c.y1));
+                    max_y = max_y.max(c.y0.max(c.y1));
+                }
+
+                let trimmed = word_text.trim_matches(|c: char| c.is_ascii_punctuation() && c != '\'' && c != '-');
+                if !trimmed.is_empty() {
+                    return Some((trimmed.to_string(), vec![(min_x, min_y, max_x, max_y)]));
+                }
+            }
+        }
+        None
+    }
+
+    /// Find entire line under point in document coordinates (PDF points).
+    #[allow(dead_code)]
+    pub fn line_at(&self, p: (f32, f32)) -> Option<(String, Vec<(f32, f32, f32, f32)>)> {
+        for line in &self.lines {
+            let line_top = line.y0.min(line.y1) - 4.0;
+            let line_bottom = line.y0.max(line.y1) + 4.0;
+            if p.1 >= line_top && p.1 <= line_bottom {
+                let trimmed = line.text.trim().to_string();
+                if !trimmed.is_empty() {
+                    return Some((
+                        trimmed,
+                        vec![(
+                            line.x0.min(line.x1),
+                            line.y0.min(line.y1),
+                            line.x0.max(line.x1),
+                            line.y0.max(line.y1),
+                        )],
+                    ));
+                }
+            }
+        }
+        None
+    }
+}
 
 /// Ink bounding box representing content boundaries in normalized (0.0 .. 1.0) coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,6 +343,70 @@ impl PdfDocument {
             .map_err(|e| anyhow!("Failed to extract text from page {}: {}", page_num, e))?;
 
         Ok(text)
+    }
+
+    /// Extract structured text with character and line bounding boxes from a page (1-indexed).
+    #[allow(dead_code)]
+    pub fn extract_page_text(&self, page_num: usize) -> Result<PdfPageText> {
+        if page_num == 0 || page_num > self.page_count {
+            return Err(anyhow!("Page number {} out of range", page_num));
+        }
+
+        let page = self
+            .doc
+            .load_page((page_num - 1) as i32)
+            .map_err(|e| anyhow!("Failed to load page {}: {}", page_num, e))?;
+
+        let bounds = page
+            .bounds()
+            .unwrap_or_else(|_| Rect::new(0.0, 0.0, 612.0, 792.0));
+
+        let text_page = page
+            .to_text_page(TextPageFlags::empty())
+            .map_err(|e| anyhow!("Failed to extract structured text: {}", e))?;
+
+        let structured = text_page.structured();
+        let mut lines = Vec::new();
+
+        for block in structured.blocks {
+            if let TextBlockContent::Text { lines: block_lines } = block.content {
+                for line in block_lines {
+                    let chars: Vec<PdfTextChar> = line
+                        .chars
+                        .into_iter()
+                        .map(|c| {
+                            let x0 = c.quad.ul.x.min(c.quad.ur.x).min(c.quad.ll.x).min(c.quad.lr.x);
+                            let y0 = c.quad.ul.y.min(c.quad.ur.y).min(c.quad.ll.y).min(c.quad.lr.y);
+                            let x1 = c.quad.ul.x.max(c.quad.ur.x).max(c.quad.ll.x).max(c.quad.lr.x);
+                            let y1 = c.quad.ul.y.max(c.quad.ur.y).max(c.quad.ll.y).max(c.quad.lr.y);
+                            PdfTextChar {
+                                ch: c.ch,
+                                x0,
+                                y0,
+                                x1,
+                                y1,
+                            }
+                        })
+                        .collect();
+
+                    lines.push(PdfTextLine {
+                        text: line.text,
+                        x0: line.bounds.x0,
+                        y0: line.bounds.y0,
+                        x1: line.bounds.x1,
+                        y1: line.bounds.y1,
+                        chars,
+                    });
+                }
+            }
+        }
+
+        Ok(PdfPageText {
+            page_num,
+            width_pts: bounds.width(),
+            height_pts: bounds.height(),
+            lines,
+        })
     }
 
     /// Extract hierarchical table of contents (outlines) from the PDF document.
@@ -542,5 +812,108 @@ mod tests {
         assert_eq!(reflowed.len(), 2);
         assert!(reflowed[0].contains("across twolines due to PDF formatting."));
         assert_eq!(reflowed[1], "This is a second paragraph. It continues here.");
+    }
+
+    #[test]
+    fn test_pdf_page_text_select_between() {
+        let page_text = PdfPageText {
+            page_num: 1,
+            width_pts: 600.0,
+            height_pts: 800.0,
+            lines: vec![
+                PdfTextLine {
+                    text: "Hello world".to_string(),
+                    x0: 50.0,
+                    y0: 100.0,
+                    x1: 150.0,
+                    y1: 120.0,
+                    chars: vec![
+                        PdfTextChar { ch: 'H', x0: 50.0, y0: 100.0, x1: 60.0, y1: 120.0 },
+                        PdfTextChar { ch: 'e', x0: 60.0, y0: 100.0, x1: 70.0, y1: 120.0 },
+                        PdfTextChar { ch: 'l', x0: 70.0, y0: 100.0, x1: 75.0, y1: 120.0 },
+                        PdfTextChar { ch: 'l', x0: 75.0, y0: 100.0, x1: 80.0, y1: 120.0 },
+                        PdfTextChar { ch: 'o', x0: 80.0, y0: 100.0, x1: 90.0, y1: 120.0 },
+                        PdfTextChar { ch: ' ', x0: 90.0, y0: 100.0, x1: 95.0, y1: 120.0 },
+                        PdfTextChar { ch: 'w', x0: 95.0, y0: 100.0, x1: 110.0, y1: 120.0 },
+                        PdfTextChar { ch: 'o', x0: 110.0, y0: 100.0, x1: 120.0, y1: 120.0 },
+                        PdfTextChar { ch: 'r', x0: 120.0, y0: 100.0, x1: 130.0, y1: 120.0 },
+                        PdfTextChar { ch: 'l', x0: 130.0, y0: 100.0, x1: 135.0, y1: 120.0 },
+                        PdfTextChar { ch: 'd', x0: 135.0, y0: 100.0, x1: 145.0, y1: 120.0 },
+                    ],
+                },
+            ],
+        };
+
+        let (text, rects) = page_text.select_between((50.0, 105.0), (90.0, 105.0));
+        assert_eq!(text, "Hello");
+        assert_eq!(rects.len(), 1);
+        assert_eq!(rects[0].0, 50.0);
+        assert_eq!(rects[0].2, 90.0);
+    }
+
+    #[test]
+    fn test_pdf_page_text_word_at() {
+        let page_text = PdfPageText {
+            page_num: 1,
+            width_pts: 600.0,
+            height_pts: 800.0,
+            lines: vec![
+                PdfTextLine {
+                    text: "Quick brown fox".to_string(),
+                    x0: 50.0,
+                    y0: 100.0,
+                    x1: 200.0,
+                    y1: 120.0,
+                    chars: vec![
+                        PdfTextChar { ch: 'Q', x0: 50.0, y0: 100.0, x1: 60.0, y1: 120.0 },
+                        PdfTextChar { ch: 'u', x0: 60.0, y0: 100.0, x1: 70.0, y1: 120.0 },
+                        PdfTextChar { ch: 'i', x0: 70.0, y0: 100.0, x1: 75.0, y1: 120.0 },
+                        PdfTextChar { ch: 'c', x0: 75.0, y0: 100.0, x1: 85.0, y1: 120.0 },
+                        PdfTextChar { ch: 'k', x0: 85.0, y0: 100.0, x1: 95.0, y1: 120.0 },
+                        PdfTextChar { ch: ' ', x0: 95.0, y0: 100.0, x1: 100.0, y1: 120.0 },
+                        PdfTextChar { ch: 'b', x0: 100.0, y0: 100.0, x1: 110.0, y1: 120.0 },
+                        PdfTextChar { ch: 'r', x0: 110.0, y0: 100.0, x1: 120.0, y1: 120.0 },
+                        PdfTextChar { ch: 'o', x0: 120.0, y0: 100.0, x1: 130.0, y1: 120.0 },
+                        PdfTextChar { ch: 'w', x0: 130.0, y0: 100.0, x1: 145.0, y1: 120.0 },
+                        PdfTextChar { ch: 'n', x0: 145.0, y0: 100.0, x1: 155.0, y1: 120.0 },
+                    ],
+                },
+            ],
+        };
+
+        let result = page_text.word_at((125.0, 110.0));
+        assert!(result.is_some());
+        let (word, rects) = result.unwrap();
+        assert_eq!(word, "brown");
+        assert_eq!(rects.len(), 1);
+        assert_eq!(rects[0].0, 100.0);
+        assert_eq!(rects[0].2, 155.0);
+    }
+
+    #[test]
+    fn test_pdf_page_text_line_at() {
+        let page_text = PdfPageText {
+            page_num: 1,
+            width_pts: 600.0,
+            height_pts: 800.0,
+            lines: vec![
+                PdfTextLine {
+                    text: "Single complete line.".to_string(),
+                    x0: 50.0,
+                    y0: 100.0,
+                    x1: 200.0,
+                    y1: 120.0,
+                    chars: vec![],
+                },
+            ],
+        };
+
+        let result = page_text.line_at((100.0, 110.0));
+        assert!(result.is_some());
+        let (line, rects) = result.unwrap();
+        assert_eq!(line, "Single complete line.");
+        assert_eq!(rects.len(), 1);
+        assert_eq!(rects[0].0, 50.0);
+        assert_eq!(rects[0].2, 200.0);
     }
 }

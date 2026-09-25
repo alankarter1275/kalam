@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-tasks settle=20
-binary: 46937176 bytes
+binary: 46976312 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4261.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4193.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,20 +32,20 @@ navigation: 'tasks' differs from Home -- the page really did change
 navigation: OK -- the images below are 'tasks'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init       64.4 ms
-  [timing] startup_style          46.8 ms
-  [timing] icons_write             0.0 ms
+  [timing] startup_gtk_init       61.4 ms
+  [timing] startup_style          44.3 ms
+  [timing] icons_write             0.1 ms
   [timing] icons_theme             0.1 ms
   [timing] startup_libraries       0.1 ms
-  [timing] startup_db_open         5.0 ms
-  [timing] startup_theme          10.1 ms
-  [timing] pre_run               250.2 ms
-  [timing] service_home            0.7 ms
+  [timing] startup_db_open         5.2 ms
+  [timing] startup_theme          10.3 ms
+  [timing] pre_run               245.6 ms
+  [timing] service_home            0.6 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      2.1 ms
-  [timing] init_done             254.6 ms
-  [timing] window_shown          258.5 ms
-  [timing] startup_dicts           0.0 ms
+  [timing] startup_first_page      1.9 ms
+  [timing] init_done             249.3 ms
+  [timing] window_shown          253.3 ms
+  [timing] startup_dicts           0.1 ms
   [timing] page_cache_miss           1
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
@@ -67,26 +67,26 @@ navigation: OK -- the images below are 'tasks'
 
 === app stderr (non-timing lines) ===
   
-  (process:4298): Gtk-WARNING **: 22:39:08.650: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:4230): Gtk-WARNING **: 16:35:00.709: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=tasks — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=86864 peak_rss_mb=84
+books=139 peak_rss_kb=87188 peak_rss_mb=85
 
 === shutting down ===
 
 === artifacts ===
   total 196
-  drwxr-xr-x  2 runner runner  4096 Sep 24 22:40 .
-  drwxr-xr-x 20 runner runner  4096 Sep 24 22:39 ..
-  -rw-r--r--  1 runner runner 30451 Sep 24 22:39 01-tasks.png
-  -rw-r--r--  1 runner runner 30451 Sep 24 22:39 02-tasks-settling.png
-  -rw-r--r--  1 runner runner 30451 Sep 24 22:39 03-tasks-settled.png
-  -rw-r--r--  1 runner runner 66389 Sep 24 22:40 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Sep 24 22:39 grim.log
-  -rw-r--r--  1 runner runner  1130 Sep 24 22:39 kalam-home.log
-  -rw-r--r--  1 runner runner  1093 Sep 24 22:39 kalam.log
-  -rw-r--r--  1 runner runner  3101 Sep 24 22:40 report.txt
-  -rw-r--r--  1 runner runner    88 Sep 24 22:39 sway.log
-  -rw-r--r--  1 runner runner  7184 Sep 24 22:39 tree.json
---- run 36067792100 ---
+  drwxr-xr-x  2 runner runner  4096 Sep 25 16:35 .
+  drwxr-xr-x 20 runner runner  4096 Sep 25 16:34 ..
+  -rw-r--r--  1 runner runner 30451 Sep 25 16:35 01-tasks.png
+  -rw-r--r--  1 runner runner 30451 Sep 25 16:35 02-tasks-settling.png
+  -rw-r--r--  1 runner runner 30451 Sep 25 16:35 03-tasks-settled.png
+  -rw-r--r--  1 runner runner 66389 Sep 25 16:35 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 25 16:35 grim.log
+  -rw-r--r--  1 runner runner  1130 Sep 25 16:35 kalam-home.log
+  -rw-r--r--  1 runner runner  1093 Sep 25 16:35 kalam.log
+  -rw-r--r--  1 runner runner  3101 Sep 25 16:35 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 25 16:34 sway.log
+  -rw-r--r--  1 runner runner  7184 Sep 25 16:35 tree.json
+--- run 36160090715 ---

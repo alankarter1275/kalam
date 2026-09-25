@@ -952,49 +952,6 @@ impl PdfReaderModel {
 
                 container.upcast()
             }
-                            left_pic.add_css_class("kalam-pdf-two-page");
-
-                            if let Some((tex, w, h)) = self.textures.get(&left) {
-                                left_pic.set_paintable(Some(tex));
-                                left_pic.set_size_request(*w, *h);
-                                left_pic.add_css_class("kalam-pdf-page-image");
-                            } else {
-                                let est_w = (600.0 * self.zoom_level) as i32;
-                                let est_h = (800.0 * self.zoom_level) as i32;
-                                left_pic.set_size_request(est_w, est_h);
-                                left_pic.add_css_class("kalam-pdf-placeholder");
-                            }
-                            spread_box.append(&left_pic);
-                            self.page_pictures.insert(left, left_pic);
-
-                            if let Some(r) = right {
-                                let right_pic = gtk::Picture::new();
-                                right_pic.set_can_shrink(true);
-                                right_pic.set_content_fit(gtk::ContentFit::Contain);
-                                right_pic.set_valign(gtk::Align::Start);
-                                right_pic.add_css_class("kalam-pdf-two-page");
-
-                                if let Some((tex, w, h)) = self.textures.get(&r) {
-                                    right_pic.set_paintable(Some(tex));
-                                    right_pic.set_size_request(*w, *h);
-                                    right_pic.add_css_class("kalam-pdf-page-image");
-                                } else {
-                                    let est_w = (600.0 * self.zoom_level) as i32;
-                                    let est_h = (800.0 * self.zoom_level) as i32;
-                                    right_pic.set_size_request(est_w, est_h);
-                                    right_pic.add_css_class("kalam-pdf-placeholder");
-                                }
-                                spread_box.append(&right_pic);
-                                self.page_pictures.insert(r, right_pic);
-                            }
-
-                            container.append(&spread_box);
-                        }
-                    }
-                }
-
-                container.upcast()
-            }
             PdfScrollMode::WrappedScrolling => {
                 let flow_box = gtk::FlowBox::new();
                 flow_box.set_valign(gtk::Align::Start);

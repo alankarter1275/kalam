@@ -475,15 +475,21 @@ but renders as boxes.
 - Bottom pill is streamlined: contains Prev/Next page navigation, page info indicator, and zoom controls only.
 **Report if:** continuous mode is not default, two-page mode shows misalignment, top font is cut off, or spread navigation skips pages.
 
-### T15 · Touchpad Pinch-to-Zoom & Smart Crop Persistence
+### T15 · Touchpad Pinch-to-Zoom, Ctrl+Wheel, & Zoom Stabilization
 **Do:**
-- On a trackpad, use two fingers to pinch in/out. Alternatively, hold `Ctrl` and scroll.
+- On a trackpad, use two fingers to pinch in and pinch out.
+- Alternatively, hold `Ctrl` and scroll with the mouse wheel or touchpad.
+- In Settings tab, click `+` and `-` zoom buttons, or `Fit Page` and `Fit Width`.
+- Observe the document during and immediately after zooming in both continuous and paged modes.
 - Toggle Smart Crop (`C` or via Settings tab). Verify that fonts and page numbers are never clipped (background luminance detection + 5.5% / 44px breathing margin).
 - Verify all fonts across diverse PDFs render cleanly with full glyph coverage (MuPDF `system-fonts` enabled).
 - Close and reopen that document: verify Smart Crop state was saved for that specific book.
 - Open a different PDF: verify Smart Crop is OFF by default.
 **Look for:**
-- Fluid touchpad pinch-to-zoom and Ctrl+Scroll zoom.
+- Fluid touchpad pinch-to-zoom and Ctrl+Scroll zoom with deadband filtering to prevent event flooding.
+- No grey/blank placeholder flashing when stepping zoom levels: prior generation textures remain visible and scale smoothly until fresh renders finish.
+- Zero visual snapping or size pops when background high-DPI renders complete: container point sizes match target dimensions continuously.
+- Center-anchored scroll compensation: zooming maintains the current reading viewport center rather than drifting to the top or bottom edge.
 - Smart Crop removes margins without cutting off any text, accents, headers, or numbers.
 - Smart Crop state is document-specific and survives app restart.
 **Report if:** pinch-to-zoom doesn't react, fonts are cut off, or persistence fails.

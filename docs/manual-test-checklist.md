@@ -494,6 +494,26 @@ but renders as boxes.
 - Smart Crop state is document-specific and survives app restart.
 **Report if:** pinch-to-zoom doesn't react, fonts are cut off, or persistence fails.
 
+### T16 · Native Digital Vector Text Selection & Floating Action Popover (PDF)
+**Do:**
+- Open any digital vector PDF in Kalam (Page Scrolling, Vertical Scrolling, Horizontal Scrolling, or Two-Page Spreads).
+- Click and drag across lines of text with the mouse or touchpad.
+- Double-click on any individual word.
+- Triple-click on any line or sentence.
+- Observe the blue selection highlight (`rgba(53, 132, 228, 0.35)`) and start/end handles.
+- Observe the floating toolbar popover anchored directly above the selected text.
+- Click **Copy** (or press `Ctrl+C`). Paste into another text editor (or terminal) to verify exact text was copied.
+- Click **Define** (Dictionary lookup): verify definition notification appears and lookup is logged in history.
+- Click **Quote** (Save Quote): verify "Quote saved" notification appears and the quote is saved to the book's annotations in the database.
+- Press `Escape` (or click outside the selection): verify the selection and toolbar popover dismiss cleanly without closing the reader.
+- Zoom in/out or flip pages while text is selected: verify selection clears cleanly without leaving orphan highlights or detached popovers.
+**Look for:**
+- Accurate character quad bounding box mapping matching the visual text glyphs at any zoom level.
+- Clean floating toolbar containing Copy, Define, and Quote actions.
+- `Ctrl+C` keyboard shortcut copies the active text selection to clipboard immediately.
+- `Escape` key dismisses active selection before closing sidebar or reader.
+**Report if:** selection doesn't highlight, handles are misplaced, floating toolbar doesn't show, or Copy/Define/Quote fails.
+
 ---
 
 ## Part F — dictionary and annotations (earlier work, unverified on device)

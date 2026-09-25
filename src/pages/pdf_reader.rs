@@ -110,7 +110,6 @@ pub enum PdfReaderMsg {
     SwitchSidebarTab(PdfSidebarTab),
     ToggleSidebar,
     CloseSidebar,
-    ToggleControls,
     EscapeKey,
     Close,
     PageRendered {
@@ -2047,20 +2046,6 @@ impl Component for PdfReaderModel {
                     }
                     if let Some(ref list) = self.bookmarks_list_box {
                         populate_bookmarks_list(list, &self.bookmarks, &sender);
-                    }
-                }
-            }
-            PdfReaderMsg::ToggleControls => {
-                if self.show_sidebar {
-                    self.show_sidebar = false;
-                    self.sidebar_pinned = false;
-                } else {
-                    let next = !self.show_bottom_pill;
-                    self.show_bottom_pill = next;
-                    self.show_back_button = next;
-                    if next {
-                        self.schedule_back_hide(&sender);
-                        self.schedule_bottom_hide(&sender);
                     }
                 }
             }

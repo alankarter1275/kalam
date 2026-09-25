@@ -28,9 +28,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m mupdf-sys v0.8.0
 [1m[92m    Checking[0m hashbrown v0.14.5
 [1m[92m    Checking[0m rand_chacha v0.9.0
-[1m[92m    Checking[0m proptest v1.11.0
 [1m[92m    Checking[0m hashlink v0.9.1
+[1m[92m    Checking[0m proptest v1.11.0
 [1m[92m    Checking[0m rusqlite v0.32.1
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 29.87s
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 30.39s

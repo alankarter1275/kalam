@@ -19,7 +19,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/pdf_reader.rs:97:9: [1m[91merror[0m: fields `fit_page_btn` and `fit_width_btn` are never read
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 12.75s

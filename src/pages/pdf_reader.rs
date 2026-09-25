@@ -74,6 +74,7 @@ pub enum PdfSpreadMode {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct CachedPageTexture {
     pub texture: gdk::Texture,
     pub width: i32,
@@ -2146,7 +2147,7 @@ impl Component for PdfReaderModel {
                         &format!("book.{}.pdf.smart_crop", self.book_id),
                         if self.smart_crop { "1" } else { "0" },
                     );
-                    self.apply_zoom_change(&sender, &widgets.viewport_scroll);
+                    self.apply_zoom_change(self.zoom_level, &sender, &widgets.viewport_scroll);
                 }
             }
             PdfReaderMsg::ToggleSmartCrop => {

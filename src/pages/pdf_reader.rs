@@ -579,7 +579,7 @@ impl PdfReaderModel {
                 } else {
                     page_w * 2 + self.two_page_gap + 32
                 };
-                let vp_w = scroll.width().max(scroll.allocated_width());
+                let vp_w = scroll.width();
                 if vp_w > 0 && content_w > vp_w {
                     scroll.set_hscrollbar_policy(gtk::PolicyType::Automatic);
                 } else {
@@ -1830,7 +1830,7 @@ impl Component for PdfReaderModel {
                 set_can_target: false,
 
                 #[wrap(Some)]
-                gtk::Label {
+                set_child = &gtk::Label {
                     add_css_class: "kalam-zoom-osd",
                     #[watch]
                     set_label: &format!("{:.0}%", model.zoom_level * 100.0),

@@ -58,10 +58,53 @@ impl PdfPageText {
         self.lines.iter().map(|l| l.chars.len()).sum()
     }
 
+    /// Helper to find the index of the line closest to a given document point.
+    pub fn find_closest_line_index(&self, p: (f32, f32)) -> Option<usize> {
+        if self.lines.is_empty() {
+            return None;
+        }
+
+        let mut best_idx = None;
+        let mut min_dist = f32::MAX;
+
+        for (idx, line) in self.lines.iter().enumerate() {
+            let top = line.y0.min(line.y1);
+            let bottom = line.y0.max(line.y1);
+            let left = line.x0.min(line.x1);
+            let right = line.x0.max(line.x1);
+
+            let dy = if p.1 < top {
+                top - p.1
+            } else if p.1 > bottom {
+                p.1 - bottom
+            } else {
+                0.0
+            };
+
+            let dx = if p.0 < left {
+                left - p.0
+            } else if p.0 > right {
+                p.0 - right
+            } else {
+                0.0
+            };
+
+            // Heavily weight dy so lines on the same vertical level take strong precedence,
+            // while dx disambiguates columns cleanly.
+            let dist = dy * 4.0 + dx;
+            if dist < min_dist {
+                min_dist = dist;
+                best_idx = Some(idx);
+            }
+        }
+
+        best_idx
+    }
+
     /// Select text between two points in document point coordinates.
-    /// Returns:
-    /// - Selected text string (with trimmed spacing)
-    /// - List of highlight bounding boxes `(x0, y0, x1, y1)` in document points
+    /// Employs column-aware segmentation matching standard Adobe Acrobat / Foxit behavior:
+    /// prevents drag selection in one column/box from bleeding into adjacent columns,
+    /// sidebars, or callouts located at the same vertical height.
     #[allow(dead_code)]
     pub fn select_between(
         &self,
@@ -72,74 +115,191 @@ impl PdfPageText {
             return (String::new(), Vec::new());
         }
 
-        // Determine reading order start and end points
-        let (start, end) = if p0.1 < p1.1 - 4.0 {
-            (p0, p1)
-        } else if p1.1 < p0.1 - 4.0 {
-            (p1, p0)
-        } else if p0.0 <= p1.0 {
-            (p0, p1)
-        } else {
-            (p1, p0)
+        let idx0 = match self.find_closest_line_index(p0) {
+            Some(i) => i,
+            None => return (String::new(), Vec::new()),
+        };
+        let idx1 = match self.find_closest_line_index(p1) {
+            Some(i) => i,
+            None => return (String::new(), Vec::new()),
         };
 
-        let mut selected_text = String::new();
+        let (start_idx, end_idx, start_pt, end_pt) = if idx0 < idx1 {
+            (idx0, idx1, p0, p1)
+        } else if idx1 < idx0 {
+            (idx1, idx0, p1, p0)
+        } else {
+            // Same line: order points horizontally
+            if p0.0 <= p1.0 {
+                (idx0, idx0, p0, p1)
+            } else {
+                (idx0, idx0, p1, p0)
+            }
+        };
+
+        let start_line = &self.lines[start_idx];
+        let end_line = &self.lines[end_idx];
+
+        let sl_x0 = start_line.x0.min(start_line.x1);
+        let sl_x1 = start_line.x0.max(start_line.x1);
+        let el_x0 = end_line.x0.min(end_line.x1);
+        let el_x1 = end_line.x0.max(end_line.x1);
+
+        let sl_center = (sl_x0 + sl_x1) * 0.5;
+        let el_center = (el_x0 + el_x1) * 0.5;
+
+        // Check whether start and end lines are within the same column or content block.
+        // They share a column if their horizontal spans overlap or their horizontal centers align closely.
+        let horiz_overlap = sl_x0 < el_x1 + 12.0 && el_x0 < sl_x1 + 12.0;
+        let center_close = (sl_center - el_center).abs() < (sl_x1 - sl_x0).max(el_x1 - el_x0) * 0.6;
+        let is_same_column = horiz_overlap || center_close;
+
+        let mut col_min_x = sl_x0.min(el_x0) - 20.0;
+        let mut col_max_x = sl_x1.max(el_x1) + 20.0;
+
+        let mut selected_lines = Vec::new();
+        let mut highlight_rects = Vec::new();
+
+        for line_idx in start_idx..=end_idx {
+            let line = &self.lines[line_idx];
+            let line_x0 = line.x0.min(line.x1);
+            let line_x1 = line.x0.max(line.x1);
+            let line_center = (line_x0 + line_x1) * 0.5;
+
+            // When selecting within a single column, skip any interleaved or parallel
+            // lines belonging to adjacent columns or sidebars.
+            if is_same_column && (line_center < col_min_x || line_center > col_max_x) {
+                continue;
+            }
+
+            if is_same_column {
+                col_min_x = col_min_x.min(line_x0 - 20.0);
+                col_max_x = col_max_x.max(line_x1 + 20.0);
+            }
+
+            let is_first_line = line_idx == start_idx;
+            let is_last_line = line_idx == end_idx;
+
+            let mut line_chars = Vec::new();
+            let mut line_rect_x0 = f32::MAX;
+            let mut line_rect_x1 = f32::MIN;
+            let mut line_rect_y0 = line.y0.min(line.y1);
+            let mut line_rect_y1 = line.y0.max(line.y1);
+
+            for ch in &line.chars {
+                let cx0 = ch.x0.min(ch.x1);
+                let cx1 = ch.x0.max(ch.x1);
+                let cy0 = ch.y0.min(ch.y1);
+                let cy1 = ch.y0.max(ch.y1);
+                let mid_x = (cx0 + cx1) * 0.5;
+
+                let selected = match (is_first_line, is_last_line) {
+                    (true, true) => mid_x >= start_pt.0.min(end_pt.0) && mid_x <= start_pt.0.max(end_pt.0),
+                    (true, false) => mid_x >= start_pt.0,
+                    (false, true) => mid_x <= end_pt.0,
+                    (false, false) => true,
+                };
+
+                if selected {
+                    line_chars.push(ch.ch);
+                    line_rect_x0 = line_rect_x0.min(cx0);
+                    line_rect_x1 = line_rect_x1.max(cx1);
+                    line_rect_y0 = line_rect_y0.min(cy0);
+                    line_rect_y1 = line_rect_y1.max(cy1);
+                }
+            }
+
+            if line.chars.is_empty() {
+                let selected = match (is_first_line, is_last_line) {
+                    (true, true) => line_x0 <= end_pt.0 && line_x1 >= start_pt.0,
+                    (true, false) => line_x1 >= start_pt.0,
+                    (false, true) => line_x0 <= end_pt.0,
+                    (false, false) => true,
+                };
+                if selected {
+                    selected_lines.push(line.text.clone());
+                    highlight_rects.push((line_x0, line.y0.min(line.y1), line_x1, line.y0.max(line.y1)));
+                }
+            } else if !line_chars.is_empty() {
+                let line_str: String = line_chars.into_iter().collect();
+                selected_lines.push(line_str);
+                highlight_rects.push((line_rect_x0, line_rect_y0, line_rect_x1, line_rect_y1));
+            }
+        }
+
+        let result_text = selected_lines.join(" ").trim().to_string();
+        (result_text, highlight_rects)
+    }
+
+    /// Select text inside an exact rectangular bounding box (for Alt+Drag block marquee selection).
+    /// Returns:
+    /// - Selected text string (lines separated by newlines)
+    /// - List of highlight bounding boxes `(x0, y0, x1, y1)` in document points
+    #[allow(dead_code)]
+    pub fn select_rect(
+        &self,
+        p0: (f32, f32),
+        p1: (f32, f32),
+    ) -> PdfSelectionResult {
+        if self.lines.is_empty() {
+            return (String::new(), Vec::new());
+        }
+
+        let min_x = p0.0.min(p1.0);
+        let max_x = p0.0.max(p1.0);
+        let min_y = p0.1.min(p1.1);
+        let max_y = p0.1.max(p1.1);
+
+        let mut selected_lines = Vec::new();
         let mut highlight_rects = Vec::new();
 
         for line in &self.lines {
             let line_top = line.y0.min(line.y1);
             let line_bottom = line.y0.max(line.y1);
 
-            // Skip lines completely outside vertical drag span (with 3pt tolerance)
-            if line_bottom < start.1 - 3.0 || line_top > end.1 + 3.0 {
+            // Skip lines outside vertical box bounds (with 1pt tolerance)
+            if line_bottom < min_y - 1.0 || line_top > max_y + 1.0 {
                 continue;
             }
-
-            let is_first_line = start.1 >= line_top - 3.0 && start.1 <= line_bottom + 3.0;
-            let is_last_line = end.1 >= line_top - 3.0 && end.1 <= line_bottom + 3.0;
 
             let mut line_selected_chars = Vec::new();
             let mut line_min_x = f32::MAX;
             let mut line_max_x = f32::MIN;
-            let mut line_min_y = line_top;
-            let mut line_max_y = line_bottom;
+            let mut line_min_y = f32::MAX;
+            let mut line_max_y = f32::MIN;
 
             for ch in &line.chars {
                 let ch_min_x = ch.x0.min(ch.x1);
                 let ch_max_x = ch.x0.max(ch.x1);
+                let ch_min_y = ch.y0.min(ch.y1);
+                let ch_max_y = ch.y0.max(ch.y1);
                 let ch_mid_x = (ch_min_x + ch_max_x) * 0.5;
+                let ch_mid_y = (ch_min_y + ch_max_y) * 0.5;
 
-                let selected = match (is_first_line, is_last_line) {
-                    (true, true) => {
-                        let (s_x, e_x) = if start.0 <= end.0 { (start.0, end.0) } else { (end.0, start.0) };
-                        ch_mid_x >= s_x && ch_mid_x <= e_x
-                    }
-                    (true, false) => ch_mid_x >= start.0,
-                    (false, true) => ch_mid_x <= end.0,
-                    (false, false) => true,
-                };
-
-                if selected {
+                if ch_mid_x >= min_x && ch_mid_x <= max_x && ch_mid_y >= min_y && ch_mid_y <= max_y {
                     line_selected_chars.push(ch.ch);
                     line_min_x = line_min_x.min(ch_min_x);
                     line_max_x = line_max_x.max(ch_max_x);
-                    line_min_y = line_min_y.min(ch.y0.min(ch.y1));
-                    line_max_y = line_max_y.max(ch.y0.max(ch.y1));
+                    line_min_y = line_min_y.min(ch_min_y);
+                    line_max_y = line_max_y.max(ch_max_y);
                 }
             }
 
-            if !line_selected_chars.is_empty() {
-                if !selected_text.is_empty() && !selected_text.ends_with(' ') && !selected_text.ends_with('\n') {
-                    selected_text.push(' ');
+            if line.chars.is_empty() {
+                let lx0 = line.x0.min(line.x1);
+                let lx1 = line.x0.max(line.x1);
+                if lx1 >= min_x && lx0 <= max_x {
+                    selected_lines.push(line.text.clone());
+                    highlight_rects.push((lx0.max(min_x), line_top.max(min_y), lx1.min(max_x), line_bottom.min(max_y)));
                 }
-                for c in line_selected_chars {
-                    selected_text.push(c);
-                }
+            } else if !line_selected_chars.is_empty() {
+                let line_str: String = line_selected_chars.into_iter().collect();
+                selected_lines.push(line_str);
                 highlight_rects.push((line_min_x, line_min_y, line_max_x, line_max_y));
             }
         }
 
-        (selected_text.trim().to_string(), highlight_rects)
+        (selected_lines.join("\n").trim().to_string(), highlight_rects)
     }
 
     /// Find word under point in document coordinates (PDF points).
@@ -945,5 +1105,129 @@ mod tests {
         assert_eq!(rects.len(), 1);
         assert_eq!(rects[0].0, 50.0);
         assert_eq!(rects[0].2, 200.0);
+    }
+
+    #[test]
+    fn test_pdf_page_text_column_aware_selection() {
+        // Multi-column page: Column 1 on left (x=50..250), STARFACT sidebar on right (x=350..500)
+        let page_text = PdfPageText {
+            page_num: 1,
+            width_pts: 600.0,
+            height_pts: 800.0,
+            lines: vec![
+                PdfTextLine {
+                    text: "Aristotle wrote books.".to_string(),
+                    x0: 50.0,
+                    y0: 100.0,
+                    x1: 220.0,
+                    y1: 118.0,
+                    chars: "Aristotle wrote books."
+                        .chars()
+                        .enumerate()
+                        .map(|(i, ch)| PdfTextChar {
+                            ch,
+                            x0: 50.0 + (i as f32 * 7.5),
+                            y0: 100.0,
+                            x1: 50.0 + ((i + 1) as f32 * 7.5),
+                            y1: 118.0,
+                        })
+                        .collect(),
+                },
+                PdfTextLine {
+                    text: "STARFACT: Stars shine.".to_string(),
+                    x0: 350.0,
+                    y0: 100.0,
+                    x1: 490.0,
+                    y1: 118.0,
+                    chars: "STARFACT: Stars shine."
+                        .chars()
+                        .enumerate()
+                        .map(|(i, ch)| PdfTextChar {
+                            ch,
+                            x0: 350.0 + (i as f32 * 6.5),
+                            y0: 100.0,
+                            x1: 350.0 + ((i + 1) as f32 * 6.5),
+                            y1: 118.0,
+                        })
+                        .collect(),
+                },
+                PdfTextLine {
+                    text: "He studied natural philosophy.".to_string(),
+                    x0: 50.0,
+                    y0: 125.0,
+                    x1: 245.0,
+                    y1: 143.0,
+                    chars: "He studied natural philosophy."
+                        .chars()
+                        .enumerate()
+                        .map(|(i, ch)| PdfTextChar {
+                            ch,
+                            x0: 50.0 + (i as f32 * 6.5),
+                            y0: 125.0,
+                            x1: 50.0 + ((i + 1) as f32 * 6.5),
+                            y1: 143.0,
+                        })
+                        .collect(),
+                },
+            ],
+        };
+
+        // Drag down Column 1 across lines 1 and 3
+        let (text, rects) = page_text.select_between((50.0, 105.0), (240.0, 135.0));
+        assert!(text.contains("Aristotle wrote books."));
+        assert!(text.contains("He studied natural philosophy."));
+        // Critically: STARFACT sidebar at the same vertical height MUST NOT be included!
+        assert!(!text.contains("STARFACT"));
+        assert_eq!(rects.len(), 2);
+    }
+
+    #[test]
+    fn test_pdf_page_text_select_rect_block_mode() {
+        let page_text = PdfPageText {
+            page_num: 1,
+            width_pts: 600.0,
+            height_pts: 800.0,
+            lines: vec![
+                PdfTextLine {
+                    text: "Col 1 line 1".to_string(),
+                    x0: 50.0,
+                    y0: 100.0,
+                    x1: 150.0,
+                    y1: 120.0,
+                    chars: vec![
+                        PdfTextChar { ch: 'C', x0: 50.0, y0: 100.0, x1: 60.0, y1: 120.0 },
+                        PdfTextChar { ch: '1', x0: 60.0, y0: 100.0, x1: 70.0, y1: 120.0 },
+                    ],
+                },
+                PdfTextLine {
+                    text: "Box line 1".to_string(),
+                    x0: 300.0,
+                    y0: 100.0,
+                    x1: 400.0,
+                    y1: 120.0,
+                    chars: vec![
+                        PdfTextChar { ch: 'B', x0: 300.0, y0: 100.0, x1: 310.0, y1: 120.0 },
+                        PdfTextChar { ch: '1', x0: 310.0, y0: 100.0, x1: 320.0, y1: 120.0 },
+                    ],
+                },
+                PdfTextLine {
+                    text: "Box line 2".to_string(),
+                    x0: 300.0,
+                    y0: 130.0,
+                    x1: 400.0,
+                    y1: 150.0,
+                    chars: vec![
+                        PdfTextChar { ch: 'B', x0: 300.0, y0: 130.0, x1: 310.0, y1: 150.0 },
+                        PdfTextChar { ch: '2', x0: 310.0, y0: 130.0, x1: 320.0, y1: 150.0 },
+                    ],
+                },
+            ],
+        };
+
+        // Select exact rectangle over the box on the right
+        let (text, rects) = page_text.select_rect((295.0, 95.0), (410.0, 155.0));
+        assert_eq!(text, "B1\nB2");
+        assert_eq!(rects.len(), 2);
+        assert!(!text.contains("C1"));
     }
 }

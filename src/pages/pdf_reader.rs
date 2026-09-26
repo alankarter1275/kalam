@@ -45,6 +45,7 @@ pub struct PdfActiveSelection {
     pub end_handle: (f64, f64, f64),
     pub anchor_pt: (f32, f32),
     pub active_pt: (f32, f32),
+    pub is_block: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -170,9 +171,9 @@ pub enum PdfReaderMsg {
     UserScrolled,
     ScrollDelta(f64),
     UpdateScrollPage(usize),
-    SelectionDragBegin { slot: PageSlot, x: f64, y: f64 },
-    SelectionDragUpdate { slot: PageSlot, dx: f64, dy: f64 },
-    SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64 },
+    SelectionDragBegin { slot: PageSlot, x: f64, y: f64, is_block: bool },
+    SelectionDragUpdate { slot: PageSlot, dx: f64, dy: f64, is_block: bool },
+    SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64, is_block: bool },
     SelectionWordAt { slot: PageSlot, x: f64, y: f64 },
     SelectionLineAt { slot: PageSlot, x: f64, y: f64 },
     PageOcrResult {
@@ -251,7 +252,7 @@ pub struct PdfReaderModel {
     pub page_draw_areas: HashMap<PageSlot, gtk::DrawingArea>,
     pub page_text_cache: HashMap<usize, PdfPageText>,
     pub active_selection: std::rc::Rc<std::cell::RefCell<Option<PdfActiveSelection>>>,
-    pub selection_drag_state: Option<(PageSlot, f64, f64, bool)>,
+    pub selection_drag_state: Option<(PageSlot, f64, f64, bool, bool)>,
     pub selection_chip: Option<gtk::Popover>,
     pub ocr_tx: Option<async_channel::Sender<crate::ocr::PdfOcrRequest>>,
     pub ocr_in_progress: HashSet<usize>,
@@ -633,15 +634,82 @@ impl PdfReaderModel {
     }
 
     pub fn prune_textures(&mut self) {
-        if self.scroll_mode == PdfScrollMode::PageScrolling {
-            return;
-        }
         let cur = self.current_page;
-        let min_keep = cur.saturating_sub(6);
-        let max_keep = cur + 6;
-        self.textures.retain(|&p, _| p >= min_keep && p <= max_keep);
+        let (min_keep, max_keep) = match self.scroll_mode {
+            PdfScrollMode::PageScrolling => {
+                (cur.saturating_sub(2), cur + 2)
+            }
+            _ => {
+                (cur.saturating_sub(3), cur + 3)
+            }
+        };
+
+        let evicted: Vec<usize> = self
+            .textures
+            .keys()
+            .copied()
+            .filter(|&p| p < min_keep || p > max_keep)
+            .collect();
+
+        for p in &evicted {
+            self.textures.remove(p);
+            if let Some(pic) = self.page_pictures.get(p) {
+                pic.set_paintable(None::<&gdk::Texture>);
+                pic.remove_css_class("kalam-pdf-page-image");
+                pic.add_css_class("kalam-pdf-placeholder");
+            }
+        }
+
         self.pending_loads.retain(|&p| p >= min_keep && p <= max_keep);
+
+        #[cfg(target_os = "linux")]
+        if !evicted.is_empty() {
+            unsafe {
+                libc::malloc_trim(0);
+            }
+        }
     }
+
+    pub fn cleanup_memory(&mut self) {
+        for pic in self.page_pictures.values() {
+            pic.set_paintable(None::<&gdk::Texture>);
+        }
+        if let Some(ref pic) = self.paged_picture {
+            pic.set_paintable(None::<&gdk::Texture>);
+        }
+        if let Some(ref pic) = self.two_page_left_pic {
+            pic.set_paintable(None::<&gdk::Texture>);
+        }
+        if let Some(ref pic) = self.two_page_right_pic {
+            pic.set_paintable(None::<&gdk::Texture>);
+        }
+
+        self.textures.clear();
+        self.page_pictures.clear();
+        self.page_overlays.clear();
+        self.page_draw_areas.clear();
+        self.page_text_cache.clear();
+        self.pending_loads.clear();
+        self.ocr_in_progress.clear();
+
+        self.doc = None;
+        self.render_tx = None;
+        self.ocr_tx = None;
+
+        #[cfg(target_os = "linux")]
+        unsafe {
+            libc::malloc_trim(0);
+        }
+    }
+}
+
+impl Drop for PdfReaderModel {
+    fn drop(&mut self) {
+        self.cleanup_memory();
+    }
+}
+
+impl PdfReaderModel {
 
     pub fn trigger_loads(&mut self, _sender: &ComponentSender<Self>) {
         let Some(ref path) = self.file_path else {
@@ -912,40 +980,55 @@ impl PdfReaderModel {
                         let _ = cr.fill();
                     }
 
-                    // Handles (start and end)
-                    cr.set_source_rgba(53.0 / 255.0, 132.0 / 255.0, 228.0 / 255.0, 0.95);
-                    let (sx, sy, sh) = sel.start_handle;
-                    cr.rectangle(sx - 1.0, sy, 2.0, sh);
-                    let _ = cr.fill();
-                    cr.arc(sx, (sy - 4.5).max(4.5), 4.5, 0.0, 2.0 * std::f64::consts::PI);
-                    let _ = cr.fill();
+                    // Handles (start and end) or marquee outline
+                    if sel.is_block {
+                        // Marquee box outline for rectangular selection
+                        cr.set_source_rgba(53.0 / 255.0, 132.0 / 255.0, 228.0 / 255.0, 0.85);
+                        cr.set_line_width(1.5);
+                        cr.rectangle(sel.bounds.0, sel.bounds.1, sel.bounds.2, sel.bounds.3);
+                        let _ = cr.stroke();
+                    } else {
+                        // Handles (start and end) for continuous reading selection
+                        cr.set_source_rgba(53.0 / 255.0, 132.0 / 255.0, 228.0 / 255.0, 0.95);
+                        let (sx, sy, sh) = sel.start_handle;
+                        cr.rectangle(sx - 1.0, sy, 2.0, sh);
+                        let _ = cr.fill();
+                        cr.arc(sx, (sy - 4.5).max(4.5), 4.5, 0.0, 2.0 * std::f64::consts::PI);
+                        let _ = cr.fill();
 
-                    let (ex, ey, eh) = sel.end_handle;
-                    cr.rectangle(ex - 1.0, ey, 2.0, eh);
-                    let _ = cr.fill();
-                    cr.arc(ex, ey + eh + 4.5, 4.5, 0.0, 2.0 * std::f64::consts::PI);
-                    let _ = cr.fill();
+                        let (ex, ey, eh) = sel.end_handle;
+                        cr.rectangle(ex - 1.0, ey, 2.0, eh);
+                        let _ = cr.fill();
+                        cr.arc(ex, ey + eh + 4.5, 4.5, 0.0, 2.0 * std::f64::consts::PI);
+                        let _ = cr.fill();
+                    }
                 }
             }
         });
 
         overlay.add_overlay(&draw_area);
 
-        // Drag controller for range selection
+        // Drag controller for range and block selection (Alt+Drag for block marquee)
         let drag = gtk::GestureDrag::new();
         drag.set_button(1);
         let tx_drag_begin = sender.input_sender().clone();
         let tx_drag_update = sender.input_sender().clone();
         let tx_drag_end = sender.input_sender().clone();
 
+        let drag_ctrl_begin = drag.clone();
         drag.connect_drag_begin(move |_, x, y| {
-            let _ = tx_drag_begin.send(PdfReaderMsg::SelectionDragBegin { slot: slot_copy, x, y });
+            let is_block = drag_ctrl_begin.current_event_state().contains(gdk::ModifierType::ALT_MASK);
+            let _ = tx_drag_begin.send(PdfReaderMsg::SelectionDragBegin { slot: slot_copy, x, y, is_block });
         });
+        let drag_ctrl_up = drag.clone();
         drag.connect_drag_update(move |_, dx, dy| {
-            let _ = tx_drag_update.send(PdfReaderMsg::SelectionDragUpdate { slot: slot_copy, dx, dy });
+            let is_block = drag_ctrl_up.current_event_state().contains(gdk::ModifierType::ALT_MASK);
+            let _ = tx_drag_update.send(PdfReaderMsg::SelectionDragUpdate { slot: slot_copy, dx, dy, is_block });
         });
+        let drag_ctrl_end = drag.clone();
         drag.connect_drag_end(move |_, dx, dy| {
-            let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy });
+            let is_block = drag_ctrl_end.current_event_state().contains(gdk::ModifierType::ALT_MASK);
+            let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy, is_block });
         });
         overlay.add_controller(drag);
 
@@ -2416,7 +2499,7 @@ impl Component for PdfReaderModel {
                     };
                     let _ = self.catalog.end_reading_session(sid, elapsed, pct);
                 }
-                self.render_tx = None;
+                self.cleanup_memory();
                 let _ = sender.output_sender().send(PdfReaderOut::Close);
             }
             PdfReaderMsg::EscapeKey => {
@@ -2957,13 +3040,13 @@ impl Component for PdfReaderModel {
                     self.update_bookmark_icon_state(widgets);
                 }
             }
-            PdfReaderMsg::SelectionDragBegin { slot, x, y } => {
+            PdfReaderMsg::SelectionDragBegin { slot, x, y, is_block } => {
                 let Some(page) = self.page_for_slot(slot) else { return };
                 self.dismiss_selection_chip();
                 let _ = self.ensure_page_text(page);
 
                 let is_adjusting_end = if let Some(ref sel) = *self.active_selection.borrow() {
-                    if sel.slot == slot {
+                    if sel.slot == slot && !is_block {
                         let (ex, ey, eh) = sel.end_handle;
                         (x - ex).abs() < 24.0 && (y - (ey + eh)).abs() < 28.0
                     } else {
@@ -2973,10 +3056,10 @@ impl Component for PdfReaderModel {
                     false
                 };
 
-                self.selection_drag_state = Some((slot, x, y, is_adjusting_end));
+                self.selection_drag_state = Some((slot, x, y, is_adjusting_end, is_block));
             }
-            PdfReaderMsg::SelectionDragUpdate { slot, dx, dy } => {
-                let Some((drag_slot, start_x, start_y, is_adjusting_end)) = self.selection_drag_state else {
+            PdfReaderMsg::SelectionDragUpdate { slot, dx, dy, is_block } => {
+                let Some((drag_slot, start_x, start_y, is_adjusting_end, _)) = self.selection_drag_state else {
                     return;
                 };
                 if drag_slot != slot {
@@ -3009,7 +3092,7 @@ impl Component for PdfReaderModel {
                 let scale_x = target_w / (page_text.width_pts as f64);
                 let scale_y = target_h / (page_text.height_pts as f64);
 
-                let (p0, p1) = if is_adjusting_end {
+                let (p0, p1) = if is_adjusting_end && !is_block {
                     if let Some(ref sel) = *self.active_selection.borrow() {
                         (sel.anchor_pt, ((curr_x / scale_x) as f32, (curr_y / scale_y) as f32))
                     } else {
@@ -3019,7 +3102,11 @@ impl Component for PdfReaderModel {
                     (((start_x / scale_x) as f32, (start_y / scale_y) as f32), ((curr_x / scale_x) as f32, (curr_y / scale_y) as f32))
                 };
 
-                let (selected_text, highlight_rects) = page_text.select_between(p0, p1);
+                let (selected_text, highlight_rects) = if is_block {
+                    page_text.select_rect(p0, p1)
+                } else {
+                    page_text.select_between(p0, p1)
+                };
 
                 if highlight_rects.is_empty() {
                     self.active_selection.replace(None);
@@ -3059,6 +3146,7 @@ impl Component for PdfReaderModel {
                         end_handle,
                         anchor_pt: p0,
                         active_pt: p1,
+                        is_block,
                     }));
                 }
 
@@ -3066,7 +3154,7 @@ impl Component for PdfReaderModel {
                     da.queue_draw();
                 }
             }
-            PdfReaderMsg::SelectionDragEnd { slot, dx, dy } => {
+            PdfReaderMsg::SelectionDragEnd { slot, dx, dy, .. } => {
                 self.selection_drag_state = None;
                 if dx.abs() > 4.0 || dy.abs() > 4.0 {
                     if self.active_selection.borrow().is_some() {
@@ -3135,6 +3223,7 @@ impl Component for PdfReaderModel {
                         end_handle,
                         anchor_pt: pt,
                         active_pt: pt,
+                        is_block: false,
                     }));
 
                     if let Some(da) = self.page_draw_areas.get(&slot) {
@@ -3202,6 +3291,7 @@ impl Component for PdfReaderModel {
                         end_handle,
                         anchor_pt: pt,
                         active_pt: pt,
+                        is_block: false,
                     }));
 
                     if let Some(da) = self.page_draw_areas.get(&slot) {

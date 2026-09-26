@@ -619,6 +619,31 @@ shows up as its own task in the task manager.
 
 ---
 
+## Part H — PDF Reader Verifications (2.11)
+
+### T22 · PDF Memory Sliding Window & Exit RAM Release
+
+**Do:** open a large multi-page PDF in Continuous Vertical Scrolling mode. Scroll down through 40–50 pages continuously, observing system RAM (e.g. via `top`, `htop`, or system monitor). Then click "Library" or press `Escape` to close the reader back to the main library view.
+
+**Look for:**
+1. Memory usage during scrolling is capped to a tight sliding window (~100–120 MB total) rather than shooting up towards 1 GB.
+2. Pages scrolled out of view have their raster textures unbound from GTK pictures without altering the scroll stream geometry.
+3. Upon exiting the reader, all page textures and caches are cleared and `malloc_trim` releases resident memory back to the Linux kernel, returning app RAM to baseline.
+
+### T23 · Column-Aware Selection & Alt+Drag Block Selection
+
+**Do:**
+1. Open a multi-column PDF or a textbook page containing parallel text columns, sidebars, or callout boxes at the same vertical height.
+2. Drag select multiple lines down one column.
+3. Next, hold `Alt` and drag-select a rectangular marquee box over a specific callout box, table column, or question.
+
+**Look for:**
+1. Normal drag selection stays strictly within the column/block being selected — it does NOT grab or highlight adjacent sidebars, callouts, or parallel columns sharing the same vertical space.
+2. Holding `Alt` activates 2D rectangular block selection, displaying a clean marquee outline and selecting only the exact text characters inside the dragged rectangle.
+3. Selected text can be copied (`Ctrl+C`) or saved as a quote, maintaining clean line breaks.
+
+---
+
 ## At the end
 
 Send me whatever you have, in this shape:

@@ -616,7 +616,7 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel, viewport_width: i32) -> gt
                             pic.set_size_request(-1, -1);
                         }
                         FitMode::Width => {
-                            let avail_w = ((win_w - 32 - model.two_page_gap).max(400) / 2);
+                            let avail_w = (win_w - 32 - model.two_page_gap).max(400) / 2;
                             let target_h = if tw > 0 {
                                 ((avail_w as f64) * (th as f64 / tw as f64)).round() as i32
                             } else {
@@ -1928,7 +1928,7 @@ impl Component for ComicsReaderModel {
                     } else {
                         let fract = self.progress_fraction();
                         let title = format!("Page {}", self.current_page + 1);
-                        let _ = catalog.add_reading_bookmark(bid, page, fract, &title);
+                        let _ = catalog.insert_reading_bookmark(bid, page, fract, &title);
                         self.trigger_osd("Bookmark Added", &sender);
                     }
                     self.reload_bookmarks();

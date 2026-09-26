@@ -579,7 +579,8 @@ impl PdfReaderModel {
                 } else {
                     page_w * 2 + self.two_page_gap + 32
                 };
-                let vp_w = scroll.width();
+                let page_size = scroll.hadjustment().page_size() as i32;
+                let vp_w = if page_size > 0 { page_size } else { scroll.width() };
                 if vp_w > 0 && content_w > vp_w {
                     scroll.set_hscrollbar_policy(gtk::PolicyType::Automatic);
                 } else {
@@ -957,6 +958,14 @@ impl PdfReaderModel {
                         container.set_margin_start(16);
                         container.set_margin_end(16);
 
+                        let page_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                        page_row.set_hexpand(true);
+                        page_row.set_valign(gtk::Align::Start);
+
+                        let spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                        spacer_left.set_hexpand(true);
+                        page_row.append(&spacer_left);
+
                         let pic = gtk::Picture::new();
                         pic.set_can_shrink(true);
                         pic.set_content_fit(gtk::ContentFit::Contain);
@@ -997,7 +1006,13 @@ impl PdfReaderModel {
                         self.page_pictures.insert(self.current_page, pic.clone());
                         let page_widget = self.wrap_page(PageSlot::PagedSingle, pic, sender);
 
-                        container.append(&page_widget);
+                        page_row.append(&page_widget);
+
+                        let spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                        spacer_right.set_hexpand(true);
+                        page_row.append(&spacer_right);
+
+                        container.append(&page_row);
                         container.append(&loading_box);
 
                         self.paged_loading_box = Some(loading_box);
@@ -1016,10 +1031,18 @@ impl PdfReaderModel {
                         container.set_margin_start(16);
                         container.set_margin_end(16);
 
-                        let spread_box = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                        let spread_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
                         spread_box.set_hexpand(true);
-                        spread_box.set_halign(gtk::Align::Center);
                         spread_box.set_valign(gtk::Align::Start);
+
+                        let spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                        spacer_left.set_hexpand(true);
+                        spread_box.append(&spacer_left);
+
+                        let spread_inner = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                        spread_inner.set_hexpand(false);
+                        spread_inner.set_halign(gtk::Align::Center);
+                        spread_inner.set_valign(gtk::Align::Start);
 
                         let (left, right) = self.spread_for_page(self.current_page);
 
@@ -1101,8 +1124,14 @@ impl PdfReaderModel {
                         let left_widget = self.wrap_page(PageSlot::PagedSpreadLeft, left_pic, sender);
                         let right_widget = self.wrap_page(PageSlot::PagedSpreadRight, right_pic, sender);
 
-                        spread_box.append(&left_widget);
-                        spread_box.append(&right_widget);
+                        spread_inner.append(&left_widget);
+                        spread_inner.append(&right_widget);
+                        spread_box.append(&spread_inner);
+
+                        let spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                        spacer_right.set_hexpand(true);
+                        spread_box.append(&spacer_right);
+
                         container.append(&spread_box);
                         container.append(&loading_box);
 
@@ -1130,10 +1159,13 @@ impl PdfReaderModel {
                 match self.spread_mode {
                     PdfSpreadMode::NoSpreads => {
                         for p in 1..=self.total_pages {
-                            let page_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-                            page_box.set_hexpand(true);
-                            page_box.set_halign(gtk::Align::Center);
-                            page_box.set_valign(gtk::Align::Start);
+                            let page_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                            page_row.set_hexpand(true);
+                            page_row.set_valign(gtk::Align::Start);
+
+                            let spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                            spacer_left.set_hexpand(true);
+                            page_row.append(&spacer_left);
 
                             let pic = gtk::Picture::new();
                             pic.set_can_shrink(true);
@@ -1152,17 +1184,30 @@ impl PdfReaderModel {
                             self.page_pictures.insert(p, pic.clone());
                             let page_widget = self.wrap_page(PageSlot::Fixed(p), pic, sender);
 
-                            page_box.append(&page_widget);
-                            container.append(&page_box);
+                            page_row.append(&page_widget);
+
+                            let spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                            spacer_right.set_hexpand(true);
+                            page_row.append(&spacer_right);
+
+                            container.append(&page_row);
                         }
                     }
                     _ => {
                         for (left, right) in self.all_spreads() {
-                            let spread_row = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                            let spread_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
                             spread_row.set_hexpand(true);
-                            spread_row.set_halign(gtk::Align::Center);
                             spread_row.set_valign(gtk::Align::Start);
                             spread_row.add_css_class("kalam-pdf-spread-row");
+
+                            let spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                            spacer_left.set_hexpand(true);
+                            spread_row.append(&spacer_left);
+
+                            let spread_inner = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                            spread_inner.set_hexpand(false);
+                            spread_inner.set_halign(gtk::Align::Center);
+                            spread_inner.set_valign(gtk::Align::Start);
 
                             let left_pic = gtk::Picture::new();
                             left_pic.set_can_shrink(true);
@@ -1181,7 +1226,7 @@ impl PdfReaderModel {
 
                             self.page_pictures.insert(left, left_pic.clone());
                             let left_widget = self.wrap_page(PageSlot::Fixed(left), left_pic, sender);
-                            spread_row.append(&left_widget);
+                            spread_inner.append(&left_widget);
 
                             if let Some(r) = right {
                                 let right_pic = gtk::Picture::new();
@@ -1201,8 +1246,14 @@ impl PdfReaderModel {
 
                                 self.page_pictures.insert(r, right_pic.clone());
                                 let right_widget = self.wrap_page(PageSlot::Fixed(r), right_pic, sender);
-                                spread_row.append(&right_widget);
+                                spread_inner.append(&right_widget);
                             }
+
+                            spread_row.append(&spread_inner);
+
+                            let spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                            spacer_right.set_hexpand(true);
+                            spread_row.append(&spacer_right);
 
                             container.append(&spread_row);
                         }
@@ -1828,6 +1879,8 @@ impl Component for PdfReaderModel {
                 set_halign: gtk::Align::End,
                 set_valign: gtk::Align::Start,
                 set_can_target: false,
+                set_margin_top: 24,
+                set_margin_end: 28,
 
                 #[wrap(Some)]
                 set_child = &gtk::Label {
@@ -2130,7 +2183,7 @@ impl Component for PdfReaderModel {
         });
 
         let tx_resize = tx.clone();
-        widgets.viewport_scroll.connect_notify(Some("width"), move |_, _| {
+        hadj.connect_page_size_notify(move |_| {
             let _ = tx_resize.send(PdfReaderMsg::ViewportResized);
         });
 

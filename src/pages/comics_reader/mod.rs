@@ -1431,10 +1431,10 @@ impl Component for ComicsReaderModel {
         // Explicitly register stack page names so GTK child lookup succeeds without warnings
         if let Some(settings_child) = widgets.left_stack.first_child() {
             let page = widgets.left_stack.page(&settings_child);
-            page.set_name(Some("settings"));
+            page.set_name("settings");
             if let Some(bookmarks_child) = settings_child.next_sibling() {
                 let page_bm = widgets.left_stack.page(&bookmarks_child);
-                page_bm.set_name(Some("bookmarks"));
+                page_bm.set_name("bookmarks");
             }
         }
         widgets.left_stack.set_visible_child_name("settings");

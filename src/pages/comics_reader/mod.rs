@@ -926,16 +926,11 @@ impl Component for ComicsReaderModel {
                         set_halign: gtk::Align::Fill,
 
                         // Cover slot
+                        #[name = "cover_host"]
                         gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
                             add_css_class: "kalam-reader-cover-slot",
-                            set_size_request: (48, 70),
-                            set_valign: gtk::Align::Start,
-                            set_halign: gtk::Align::Start,
-                            set_child: Some(&crate::widgets::book_row::cover_widget(
-                                model.cover_path.as_deref(),
-                                48,
-                                70,
-                            )),
+                            set_width_request: 48,
                         },
 
                         // Title & Progress info
@@ -1312,6 +1307,9 @@ impl Component for ComicsReaderModel {
         let mut model = ComicsReaderModel::new(init);
         model.trigger_loads(&sender);
         let widgets = view_output!();
+
+        let cover_w = crate::widgets::book_row::cover_widget(model.cover_path.as_deref(), 48, 70);
+        widgets.cover_host.append(&cover_w);
 
         model.pages_list_box = Some(widgets.pages_list_box.clone());
         model.bookmarks_list_box = Some(widgets.bookmarks_list_box.clone());
@@ -1723,7 +1721,7 @@ impl Component for ComicsReaderModel {
                         id: self.current_page as i64,
                         book_id: 0,
                         chapter_index: self.current_page as i64,
-                        chapter_progress: self.progress_fraction(),
+                        fraction: self.progress_fraction(),
                         label: format!("Page {}", self.current_page + 1),
                         created_at: String::new(),
                     });

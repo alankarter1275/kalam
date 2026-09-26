@@ -29,12 +29,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::db::{Catalog, ReadingBookmark};
+use crate::db::ReadingBookmark;
 
 pub struct ComicsReaderModel {
     pub title: String,
     pub provider: Arc<dyn provider::ImageProvider>,
-    pub catalog: Option<Arc<Catalog>>,
+    pub catalog: Option<Arc<crate::db::Catalog>>,
     pub book_id: Option<i64>,
     pub cover_path: Option<PathBuf>,
     pub current_page: usize,

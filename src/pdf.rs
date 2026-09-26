@@ -688,10 +688,33 @@ impl PdfDocument {
     }
 }
 
+/// Helper to determine if a TOC entry title represents a top-level structural division (Chapter, Part, etc.).
+pub fn is_top_level_title(title: &str) -> bool {
+    let lower = title.trim().to_lowercase();
+    lower.starts_with("chapter")
+        || lower.starts_with("part")
+        || lower.starts_with("book")
+        || lower.starts_with("act")
+        || lower.starts_with("canto")
+        || lower.starts_with("preface")
+        || lower.starts_with("prologue")
+        || lower.starts_with("epilogue")
+        || lower.starts_with("introduction")
+        || lower.starts_with("appendix")
+        || lower.starts_with("contents")
+        || lower.starts_with("table of contents")
+        || lower.starts_with("conclusion")
+        || lower.starts_with("glossary")
+        || lower.starts_with("bibliography")
+        || lower.starts_with("index")
+}
+
 /// Recursive helper to collect table of contents outline items.
 fn collect_outline(item: &Outline, depth: usize, out: &mut Vec<PdfTocEntry>) {
     let title = item.title.trim();
     if !title.is_empty() {
+        let is_top = is_top_level_title(title);
+        let effective_depth = if is_top { 0 } else { depth };
         let page_1_based = item
             .dest
             .as_ref()
@@ -700,10 +723,11 @@ fn collect_outline(item: &Outline, depth: usize, out: &mut Vec<PdfTocEntry>) {
         out.push(PdfTocEntry {
             title: title.to_string(),
             page: page_1_based,
-            depth,
+            depth: effective_depth,
         });
+        let child_depth = if is_top { 1 } else { effective_depth + 1 };
         for child in &item.down {
-            collect_outline(child, depth + 1, out);
+            collect_outline(child, child_depth, out);
         }
     } else {
         for child in &item.down {

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::{Catalog, ReadingBookmark};
-use crate::pdf::{PdfDocument, PdfPageText, PdfTocEntry};
+use crate::pdf::{is_top_level_title, PdfDocument, PdfPageText, PdfTocEntry};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PageSlot {
@@ -180,6 +180,8 @@ pub enum PdfReaderMsg {
     LookUpWord(String),
     #[allow(dead_code)]
     ClearSelection,
+    HideZoomOsd(u64),
+    ViewportResized,
 }
 
 #[derive(Debug)]
@@ -246,6 +248,8 @@ pub struct PdfReaderModel {
     pub active_selection: std::rc::Rc<std::cell::RefCell<Option<PdfActiveSelection>>>,
     pub selection_drag_state: Option<(PageSlot, f64, f64, bool)>,
     pub selection_chip: Option<gtk::Popover>,
+    pub show_zoom_osd: bool,
+    pub zoom_osd_seq: u64,
 }
 
 impl PdfReaderModel {
@@ -372,6 +376,8 @@ impl PdfReaderModel {
             active_selection: std::rc::Rc::new(std::cell::RefCell::new(None)),
             selection_drag_state: None,
             selection_chip: None,
+            show_zoom_osd: false,
+            zoom_osd_seq: 0,
         };
 
         model.reload_bookmarks();
@@ -540,6 +546,48 @@ impl PdfReaderModel {
         glib::timeout_add_local_once(Duration::from_millis(600), move || {
             let _ = s.input_sender().send(PdfReaderMsg::SidebarCloseTimerTick(seq));
         });
+    }
+
+    pub fn trigger_zoom_osd(&mut self, sender: &ComponentSender<Self>) {
+        self.show_zoom_osd = true;
+        self.zoom_osd_seq = self.zoom_osd_seq.wrapping_add(1);
+        let seq = self.zoom_osd_seq;
+        let s = sender.clone();
+        glib::timeout_add_local_once(Duration::from_millis(1000), move || {
+            let _ = s.input_sender().send(PdfReaderMsg::HideZoomOsd(seq));
+        });
+    }
+
+    pub fn update_scroll_policies(&self, scroll: &gtk::ScrolledWindow) {
+        match self.scroll_mode {
+            PdfScrollMode::HorizontalScrolling => {
+                scroll.set_hscrollbar_policy(gtk::PolicyType::Always);
+                scroll.set_vscrollbar_policy(gtk::PolicyType::Never);
+            }
+            PdfScrollMode::PageScrolling => {
+                scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
+                scroll.set_vscrollbar_policy(gtk::PolicyType::Never);
+            }
+            PdfScrollMode::WrappedScrolling => {
+                scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
+                scroll.set_vscrollbar_policy(gtk::PolicyType::Always);
+            }
+            PdfScrollMode::VerticalScrolling => {
+                let page_w = (self.base_page_width * self.zoom_level) as i32;
+                let content_w = if self.spread_mode == PdfSpreadMode::NoSpreads {
+                    page_w + 32
+                } else {
+                    page_w * 2 + self.two_page_gap + 32
+                };
+                let vp_w = scroll.width().max(scroll.allocated_width());
+                if vp_w > 0 && content_w > vp_w {
+                    scroll.set_hscrollbar_policy(gtk::PolicyType::Automatic);
+                } else {
+                    scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
+                }
+                scroll.set_vscrollbar_policy(gtk::PolicyType::Always);
+            }
+        }
     }
 
     pub fn compute_fit_zoom(&self, scroll: &gtk::ScrolledWindow, fit_width_only: bool) -> f64 {
@@ -900,7 +948,7 @@ impl PdfReaderModel {
                 match self.spread_mode {
                     PdfSpreadMode::NoSpreads => {
                         let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                        container.set_halign(gtk::Align::Center);
+                        container.set_halign(gtk::Align::Fill);
                         container.set_valign(gtk::Align::Start);
                         container.set_hexpand(true);
                         container.set_vexpand(true);
@@ -959,7 +1007,7 @@ impl PdfReaderModel {
                     }
                     _ => {
                         let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                        container.set_halign(gtk::Align::Center);
+                        container.set_halign(gtk::Align::Fill);
                         container.set_valign(gtk::Align::Start);
                         container.set_hexpand(true);
                         container.set_vexpand(true);
@@ -969,6 +1017,7 @@ impl PdfReaderModel {
                         container.set_margin_end(16);
 
                         let spread_box = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                        spread_box.set_hexpand(true);
                         spread_box.set_halign(gtk::Align::Center);
                         spread_box.set_valign(gtk::Align::Start);
 
@@ -1066,7 +1115,7 @@ impl PdfReaderModel {
             }
             PdfScrollMode::VerticalScrolling => {
                 let container = gtk::Box::new(gtk::Orientation::Vertical, 20);
-                container.set_halign(gtk::Align::Center);
+                container.set_halign(gtk::Align::Fill);
                 container.set_valign(gtk::Align::Start);
                 container.set_hexpand(true);
                 container.set_vexpand(false);
@@ -1082,6 +1131,7 @@ impl PdfReaderModel {
                     PdfSpreadMode::NoSpreads => {
                         for p in 1..=self.total_pages {
                             let page_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+                            page_box.set_hexpand(true);
                             page_box.set_halign(gtk::Align::Center);
                             page_box.set_valign(gtk::Align::Start);
 
@@ -1109,6 +1159,7 @@ impl PdfReaderModel {
                     _ => {
                         for (left, right) in self.all_spreads() {
                             let spread_row = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                            spread_row.set_hexpand(true);
                             spread_row.set_halign(gtk::Align::Center);
                             spread_row.set_valign(gtk::Align::Start);
                             spread_row.add_css_class("kalam-pdf-spread-row");
@@ -1378,6 +1429,8 @@ impl PdfReaderModel {
         scroll: &gtk::ScrolledWindow,
     ) {
         self.clear_selection();
+        self.trigger_zoom_osd(sender);
+        self.update_scroll_policies(scroll);
         self.render_generation = self.render_generation.wrapping_add(1);
         if let Some(ref gen) = self.active_generation {
             gen.store(self.render_generation, Ordering::Relaxed);
@@ -1525,7 +1578,7 @@ impl Component for PdfReaderModel {
             gtk::ScrolledWindow {
                 set_hexpand: true,
                 set_vexpand: true,
-                set_hscrollbar_policy: gtk::PolicyType::Automatic,
+                set_hscrollbar_policy: gtk::PolicyType::Never,
                 set_vscrollbar_policy: gtk::PolicyType::Always,
                 add_css_class: "kalam-pdf-viewport",
             },
@@ -1763,6 +1816,24 @@ impl Component for PdfReaderModel {
                             connect_clicked => PdfReaderMsg::SwitchSidebarTab(PdfSidebarTab::Settings),
                         },
                     },
+                },
+            },
+
+            // ── 5. Top-Right Zoom OSD Indicator (VLC style) ───────────
+            add_overlay = &gtk::Revealer {
+                #[watch]
+                set_reveal_child: model.show_zoom_osd,
+                set_transition_type: gtk::RevealerTransitionType::Crossfade,
+                set_transition_duration: 250,
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Start,
+                set_can_target: false,
+
+                #[wrap(Some)]
+                gtk::Label {
+                    add_css_class: "kalam-zoom-osd",
+                    #[watch]
+                    set_label: &format!("{:.0}%", model.zoom_level * 100.0),
                 },
             },
         }
@@ -2049,11 +2120,18 @@ impl Component for PdfReaderModel {
         let tx_vadj = tx.clone();
         vadj.connect_value_changed(move |_| {
             let _ = tx_vadj.send(PdfReaderMsg::UpdateScrollPage(0));
+            let _ = tx_vadj.send(PdfReaderMsg::UserScrolled);
         });
         let hadj = widgets.viewport_scroll.hadjustment();
         let tx_hadj = tx.clone();
         hadj.connect_value_changed(move |_| {
             let _ = tx_hadj.send(PdfReaderMsg::UpdateScrollPage(0));
+            let _ = tx_hadj.send(PdfReaderMsg::UserScrolled);
+        });
+
+        let tx_resize = tx.clone();
+        widgets.viewport_scroll.connect_notify(Some("width"), move |_, _| {
+            let _ = tx_resize.send(PdfReaderMsg::ViewportResized);
         });
 
         // 10. Pinch zoom gesture for touchpads and touchscreens
@@ -2080,6 +2158,7 @@ impl Component for PdfReaderModel {
         // Initial child and render triggering
         let child = model.build_viewport_widget(&sender);
         widgets.viewport_scroll.set_child(Some(&child));
+        model.update_scroll_policies(&widgets.viewport_scroll);
 
         // Restore scroll position in continuous mode if resuming past page 1
         if model.scroll_mode != PdfScrollMode::PageScrolling && model.current_page > 1 && model.total_pages > 1 {
@@ -2340,13 +2419,7 @@ impl Component for PdfReaderModel {
                     self.catalog.set_pref("reader.pdf.scroll_mode", mode_str);
 
                     // Adjust scrollbar policies
-                    if self.scroll_mode == PdfScrollMode::HorizontalScrolling {
-                        widgets.viewport_scroll.set_hscrollbar_policy(gtk::PolicyType::Always);
-                        widgets.viewport_scroll.set_vscrollbar_policy(gtk::PolicyType::Automatic);
-                    } else {
-                        widgets.viewport_scroll.set_hscrollbar_policy(gtk::PolicyType::Automatic);
-                        widgets.viewport_scroll.set_vscrollbar_policy(gtk::PolicyType::Always);
-                    }
+                    self.update_scroll_policies(&widgets.viewport_scroll);
 
                     let child = self.build_viewport_widget(&sender);
                     widgets.viewport_scroll.set_child(Some(&child));
@@ -2367,6 +2440,7 @@ impl Component for PdfReaderModel {
                     self.catalog.set_pref(&format!("book.{}.pdf.spread_mode", self.book_id), mode_str);
                     self.catalog.set_pref("reader.pdf.spread_mode", mode_str);
 
+                    self.update_scroll_policies(&widgets.viewport_scroll);
                     let child = self.build_viewport_widget(&sender);
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.trigger_loads(&sender);
@@ -2381,6 +2455,7 @@ impl Component for PdfReaderModel {
                     self.two_page_gap = clamped;
                     self.catalog.set_pref_i64("reader.pdf.two_page_gap", clamped as i64);
                     if self.spread_mode != PdfSpreadMode::NoSpreads {
+                        self.update_scroll_policies(&widgets.viewport_scroll);
                         let child = self.build_viewport_widget(&sender);
                         widgets.viewport_scroll.set_child(Some(&child));
                         self.trigger_loads(&sender);
@@ -2637,14 +2712,24 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::UserScrolled => {
-                if self.show_bottom_pill {
-                    self.schedule_bottom_hide(&sender);
+                if self.show_bottom_pill && !self.mouse_in_bottom_edge {
+                    self.show_bottom_pill = false;
+                    self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
                 }
                 if self.show_back_button && !self.mouse_in_top_edge {
-                    self.schedule_back_hide(&sender);
+                    self.show_back_button = false;
+                    self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
                 }
             }
             PdfReaderMsg::ScrollDelta(dir) => {
+                if self.show_bottom_pill && !self.mouse_in_bottom_edge {
+                    self.show_bottom_pill = false;
+                    self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
+                }
+                if self.show_back_button && !self.mouse_in_top_edge {
+                    self.show_back_button = false;
+                    self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
+                }
                 if self.scroll_mode == PdfScrollMode::HorizontalScrolling {
                     let hadj = widgets.viewport_scroll.hadjustment();
                     let step = (self.arrow_step as f64) * dir;
@@ -2995,6 +3080,14 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::ClearSelection => {
                 self.clear_selection();
             }
+            PdfReaderMsg::HideZoomOsd(seq) => {
+                if seq == self.zoom_osd_seq {
+                    self.show_zoom_osd = false;
+                }
+            }
+            PdfReaderMsg::ViewportResized => {
+                self.update_scroll_policies(&widgets.viewport_scroll);
+            }
         }
 
         if let Some(ref sw) = self.settings_widgets {
@@ -3042,13 +3135,16 @@ fn populate_toc_list(
             continue;
         }
 
+        let is_top = is_top_level_title(&item.title);
+        let effective_depth = if is_top { 0 } else { item.depth };
         let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let indent = (item.depth.saturating_sub(1) * 14) as i32;
+        let indent = (effective_depth.saturating_sub(1) * 14) as i32;
         row_box.set_margin_start(indent);
 
         let title_lbl = gtk::Label::new(Some(&item.title));
         title_lbl.set_halign(gtk::Align::Start);
-        title_lbl.set_valign(gtk::Align::Center);
+        title_lbl.set_valign(gtk::Align::Start);
+        title_lbl.set_xalign(0.0);
         title_lbl.set_hexpand(true);
         title_lbl.set_wrap(true);
         title_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
@@ -3060,6 +3156,7 @@ fn populate_toc_list(
         page_lbl.add_css_class("dim-label");
         page_lbl.set_halign(gtk::Align::End);
         page_lbl.set_valign(gtk::Align::Start);
+        page_lbl.set_margin_top(1);
         row_box.append(&page_lbl);
 
         let btn = gtk::Button::new();

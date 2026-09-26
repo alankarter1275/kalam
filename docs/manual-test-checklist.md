@@ -514,6 +514,21 @@ but renders as boxes.
 - `Escape` key dismisses active selection before closing sidebar or reader.
 **Report if:** selection doesn't highlight, handles are misplaced, floating toolbar doesn't show, or Copy/Define/Quote fails.
 
+### T17 · PDF Spread Centering, Multi-Line TOC Alignment, Scroll Autohiding Chrome & VLC Zoom HUD
+**Do:**
+- Open any PDF in Kalam. Set view mode to **Two-Page Spreads** (Odd Spreads) with **Vertical Scrolling**.
+- Scroll vertically through the document from Page 1 (single cover) through subsequent two-page spreads.
+- Open the left sidebar and select the **Contents (TOC)** tab. Observe entries with long titles that wrap onto two or three lines (e.g. peer chapter headings).
+- Hover over the top-left area to reveal the top dock, and bottom-center area to reveal the bottom navigation pill. Begin scrolling the viewport via mouse wheel or touchpad.
+- Zoom in and out using `Ctrl + Mouse Wheel`, touchpad pinch-to-zoom, or `+` / `-` in settings.
+**Look for:**
+- Consistent viewport horizontal centering: both single-page covers and two-page spreads stay anchored along the central vertical axis of the reading window without jumping left or right during scroll.
+- Zero horizontal jitter or unintentional horizontal drift during vertical scrolling: horizontal scrollbar policy stays locked to `Never` when content width fits within the window.
+- Clean TOC indentation & alignment: multi-line wrapped TOC chapter entries start at the exact same left margin as single-line entries, with left-aligned text (`xalign: 0.0`) and top-aligned page numbers.
+- Instant chrome autohiding on scroll: floating top dock and bottom pill dismiss immediately as soon as vertical or horizontal scrolling begins.
+- Sleek VLC-style Zoom HUD: zooming triggers a translucent capsule indicator in the top-right corner showing current zoom level (e.g. `125%`), which smoothly crossfades away after exactly 1 second of inactivity.
+**Report if:** spreads hop horizontally during scroll, TOC entries wrap with uneven indentation, chrome stays visible while scrolling, or zoom indicator fails to appear/fade.
+
 ---
 
 ## Part F — dictionary and annotations (earlier work, unverified on device)

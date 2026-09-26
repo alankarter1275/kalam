@@ -294,7 +294,7 @@ impl ComicsReaderModel {
 
         if self.page_style == PageStyle::Double {
             let max_start = if self.total_pages > 1 {
-                if self.total_pages % 2 == 0 {
+                if self.total_pages.is_multiple_of(2) {
                     self.total_pages - 2
                 } else {
                     self.total_pages - 1

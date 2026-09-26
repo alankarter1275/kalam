@@ -17,6 +17,7 @@ impl ReadingDirection {
         }
     }
 
+    #[allow(dead_code)]
     pub fn short_label(self) -> &'static str {
         match self {
             ReadingDirection::Ltr => "LTR",
@@ -74,6 +75,7 @@ impl FitMode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
             FitMode::Width => "zoom-fit-best-symbolic",
@@ -110,6 +112,7 @@ pub enum ComicsReaderMsg {
     KeyLeft,
     KeyRight,
     TapAtRatio(f64),
+    #[allow(dead_code)]
     ToggleDirection,
     SetDirection(ReadingDirection),
     SetPageStyle(PageStyle),
@@ -130,8 +133,11 @@ pub enum ComicsReaderMsg {
     SidebarCloseTimerTick(u64),
     UserScrolled,
     HideOsd(u64),
+    #[allow(dead_code)]
     ToggleChrome,
+    #[allow(dead_code)]
     ToggleSettings,
+    #[allow(dead_code)]
     CloseSettings,
     Close,
 }

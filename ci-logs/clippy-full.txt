@@ -19,4 +19,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 14.41s
+src/pages/comics_reader/mod.rs:934:29: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Button>` is not implemented for `gtk4::Box`: requires `gtk4::Box` to be a GObject that can be statically cast to `gtk4::Button`
+src/pages/comics_reader/mod.rs:1726:25: [1m[91merror[E0560][0m: struct `db::ReadingBookmark` has no field named `chapter_progress`: `db::ReadingBookmark` does not have this field
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors

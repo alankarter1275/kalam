@@ -642,6 +642,20 @@ shows up as its own task in the task manager.
 2. Holding `Alt` activates 2D rectangular block selection, displaying a clean marquee outline and selecting only the exact text characters inside the dragged rectangle.
 3. Selected text can be copied (`Ctrl+C`) or saved as a quote, maintaining clean line breaks.
 
+### T24 · Two-Page Spread Pair Loading & Eviction Integrity
+
+**Do:**
+1. Open a multi-page PDF document.
+2. Open Settings in the left sidebar and switch Scrolling to "Vertical Scrolling" (continuous) and Spreads to "Odd Spreads" or "Even Spreads".
+3. Scroll forward to an interior spread (e.g. pages 14–15 or 20–21).
+4. Scroll backwards slowly or quickly past previous spreads (e.g. spreads 12–13, 10–11).
+5. Flip pages using `Next` / `Prev` buttons on the bottom navigation pill or arrow keys.
+
+**Look for:**
+1. Facing pages in a two-page spread load, render, and display strictly as a complete pair — at no point does one page of a spread render while its partner shows an empty grey placeholder box.
+2. When scrolling up or down continuously, adjacent spreads arrive and leave in full pairs without half-spread cutoffs.
+3. `Next` and `Prev` advance and backtrack by entire spreads rather than splitting a spread down the middle.
+
 ---
 
 ## At the end

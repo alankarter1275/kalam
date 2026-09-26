@@ -96,6 +96,106 @@ pub enum PdfSpreadMode {
     EvenSpreads,
 }
 
+/// Calculate left and optional right pages for a given target page.
+pub fn calculate_spread_for_page(
+    mode: PdfSpreadMode,
+    total_pages: usize,
+    page: usize,
+) -> (usize, Option<usize>) {
+    if total_pages == 0 {
+        return (1, None);
+    }
+    let p = page.clamp(1, total_pages);
+    match mode {
+        PdfSpreadMode::NoSpreads => (p, None),
+        PdfSpreadMode::OddSpreads => {
+            if p <= 1 {
+                (1, None)
+            } else {
+                let left = if p % 2 == 0 { p } else { p - 1 };
+                let right = if left < total_pages {
+                    Some(left + 1)
+                } else {
+                    None
+                };
+                (left, right)
+            }
+        }
+        PdfSpreadMode::EvenSpreads => {
+            let left = if p % 2 != 0 { p } else { p - 1 };
+            let right = if left < total_pages {
+                Some(left + 1)
+            } else {
+                None
+            };
+            (left, right)
+        }
+    }
+}
+
+/// Return the spread preceding the given spread, or None if at the first spread.
+pub fn calculate_prev_spread(
+    mode: PdfSpreadMode,
+    total_pages: usize,
+    spread: (usize, Option<usize>),
+) -> Option<(usize, Option<usize>)> {
+    if spread.0 <= 1 || total_pages == 0 {
+        None
+    } else {
+        Some(calculate_spread_for_page(mode, total_pages, spread.0 - 1))
+    }
+}
+
+/// Return the spread following the given spread, or None if at the last spread.
+pub fn calculate_next_spread(
+    mode: PdfSpreadMode,
+    total_pages: usize,
+    spread: (usize, Option<usize>),
+) -> Option<(usize, Option<usize>)> {
+    if total_pages == 0 {
+        return None;
+    }
+    let last = spread.1.unwrap_or(spread.0);
+    if last >= total_pages {
+        None
+    } else {
+        Some(calculate_spread_for_page(mode, total_pages, last + 1))
+    }
+}
+
+/// Return list of (left, right) page spreads for streaming.
+pub fn calculate_all_spreads(
+    mode: PdfSpreadMode,
+    total_pages: usize,
+) -> Vec<(usize, Option<usize>)> {
+    if total_pages == 0 {
+        return Vec::new();
+    }
+    match mode {
+        PdfSpreadMode::NoSpreads => (1..=total_pages).map(|p| (p, None)).collect(),
+        PdfSpreadMode::OddSpreads => {
+            let mut list = vec![(1, None)];
+            let mut p = 2;
+            while p <= total_pages {
+                let right = if p < total_pages { Some(p + 1) } else { None };
+                list.push((p, right));
+                p += 2;
+            }
+            list
+        }
+        PdfSpreadMode::EvenSpreads => {
+            let mut list = Vec::new();
+            let mut p = 1;
+            while p <= total_pages {
+                let right = if p < total_pages { Some(p + 1) } else { None };
+                list.push((p, right));
+                p += 2;
+            }
+            list
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct CachedPageTexture {
@@ -407,24 +507,27 @@ impl PdfReaderModel {
                 model.status_text.clear();
 
                 let scale = ((1.5 * model.zoom_level).clamp(0.5, 3.5)) as f32;
-                if let Ok(rendered) = doc.render_page_rgba(model.current_page, scale, model.smart_crop) {
-                    let bytes = glib::Bytes::from_owned(rendered.samples);
-                    let texture = gdk::MemoryTexture::new(
-                        rendered.width,
-                        rendered.height,
-                        gdk::MemoryFormat::R8g8b8a8,
-                        &bytes,
-                        rendered.stride,
-                    );
-                    model.textures.insert(
-                        model.current_page,
-                        CachedPageTexture {
-                            texture: texture.upcast(),
-                            width: rendered.width,
-                            height: rendered.height,
-                            generation: 1,
-                        },
-                    );
+                let (init_left, init_right) = calculate_spread_for_page(model.spread_mode, model.total_pages, model.current_page);
+                for p in std::iter::once(init_left).chain(init_right) {
+                    if let Ok(rendered) = doc.render_page_rgba(p, scale, model.smart_crop) {
+                        let bytes = glib::Bytes::from_owned(rendered.samples);
+                        let texture = gdk::MemoryTexture::new(
+                            rendered.width,
+                            rendered.height,
+                            gdk::MemoryFormat::R8g8b8a8,
+                            &bytes,
+                            rendered.stride,
+                        );
+                        model.textures.insert(
+                            p,
+                            CachedPageTexture {
+                                texture: texture.upcast(),
+                                width: rendered.width,
+                                height: rendered.height,
+                                generation: 1,
+                            },
+                        );
+                    }
                 }
                 model.doc = Some(doc);
             } else {
@@ -475,60 +578,22 @@ impl PdfReaderModel {
 
     /// Calculate left and optional right pages for a given target page.
     pub fn spread_for_page(&self, page: usize) -> (usize, Option<usize>) {
-        match self.spread_mode {
-            PdfSpreadMode::NoSpreads => (page, None),
-            PdfSpreadMode::OddSpreads => {
-                if page <= 1 {
-                    (1, None)
-                } else {
-                    let left = if page.is_multiple_of(2) { page } else { page - 1 };
-                    let right = if left < self.total_pages {
-                        Some(left + 1)
-                    } else {
-                        None
-                    };
-                    (left, right)
-                }
-            }
-            PdfSpreadMode::EvenSpreads => {
-                let left = if !page.is_multiple_of(2) { page } else { page - 1 };
-                let right = if left < self.total_pages {
-                    Some(left + 1)
-                } else {
-                    None
-                };
-                (left, right)
-            }
-        }
+        calculate_spread_for_page(self.spread_mode, self.total_pages, page)
+    }
+
+    /// Return the spread preceding the given spread, or None if at the first spread.
+    pub fn prev_spread(&self, spread: (usize, Option<usize>)) -> Option<(usize, Option<usize>)> {
+        calculate_prev_spread(self.spread_mode, self.total_pages, spread)
+    }
+
+    /// Return the spread following the given spread, or None if at the last spread.
+    pub fn next_spread(&self, spread: (usize, Option<usize>)) -> Option<(usize, Option<usize>)> {
+        calculate_next_spread(self.spread_mode, self.total_pages, spread)
     }
 
     /// Return list of (left, right) page spreads for streaming.
     pub fn all_spreads(&self) -> Vec<(usize, Option<usize>)> {
-        match self.spread_mode {
-            PdfSpreadMode::NoSpreads => {
-                (1..=self.total_pages).map(|p| (p, None)).collect()
-            }
-            PdfSpreadMode::OddSpreads => {
-                let mut list = vec![(1, None)];
-                let mut p = 2;
-                while p <= self.total_pages {
-                    let right = if p < self.total_pages { Some(p + 1) } else { None };
-                    list.push((p, right));
-                    p += 2;
-                }
-                list
-            }
-            PdfSpreadMode::EvenSpreads => {
-                let mut list = Vec::new();
-                let mut p = 1;
-                while p <= self.total_pages {
-                    let right = if p < self.total_pages { Some(p + 1) } else { None };
-                    list.push((p, right));
-                    p += 2;
-                }
-                list
-            }
-        }
+        calculate_all_spreads(self.spread_mode, self.total_pages)
     }
 
     pub fn schedule_back_hide(&mut self, sender: &ComponentSender<Self>) {
@@ -634,21 +699,59 @@ impl PdfReaderModel {
     }
 
     pub fn prune_textures(&mut self) {
-        let cur = self.current_page;
-        let (min_keep, max_keep) = match self.scroll_mode {
-            PdfScrollMode::PageScrolling => {
-                (cur.saturating_sub(2), cur + 2)
-            }
-            _ => {
-                (cur.saturating_sub(3), cur + 3)
-            }
+        if self.total_pages == 0 {
+            return;
+        }
+
+        let effective_spread_mode = match self.scroll_mode {
+            PdfScrollMode::WrappedScrolling => PdfSpreadMode::NoSpreads,
+            _ => self.spread_mode,
         };
+
+        let cur_spread = calculate_spread_for_page(effective_spread_mode, self.total_pages, self.current_page);
+        let mut keep_pages = std::collections::HashSet::new();
+
+        keep_pages.insert(cur_spread.0);
+        if let Some(r) = cur_spread.1 {
+            keep_pages.insert(r);
+        }
+
+        let spreads_to_keep = match self.scroll_mode {
+            PdfScrollMode::PageScrolling => 1,
+            _ => 3,
+        };
+
+        let mut next_cursor = cur_spread;
+        for _ in 0..spreads_to_keep {
+            if let Some(ns) = calculate_next_spread(effective_spread_mode, self.total_pages, next_cursor) {
+                keep_pages.insert(ns.0);
+                if let Some(r) = ns.1 {
+                    keep_pages.insert(r);
+                }
+                next_cursor = ns;
+            } else {
+                break;
+            }
+        }
+
+        let mut prev_cursor = cur_spread;
+        for _ in 0..spreads_to_keep {
+            if let Some(ps) = calculate_prev_spread(effective_spread_mode, self.total_pages, prev_cursor) {
+                keep_pages.insert(ps.0);
+                if let Some(r) = ps.1 {
+                    keep_pages.insert(r);
+                }
+                prev_cursor = ps;
+            } else {
+                break;
+            }
+        }
 
         let evicted: Vec<usize> = self
             .textures
             .keys()
             .copied()
-            .filter(|&p| p < min_keep || p > max_keep)
+            .filter(|p| !keep_pages.contains(p))
             .collect();
 
         for p in &evicted {
@@ -660,7 +763,7 @@ impl PdfReaderModel {
             }
         }
 
-        self.pending_loads.retain(|&p| p >= min_keep && p <= max_keep);
+        self.pending_loads.retain(|p| keep_pages.contains(p));
 
         #[cfg(target_os = "linux")]
         if !evicted.is_empty() {
@@ -722,54 +825,59 @@ impl PdfReaderModel {
 
         let mut load_order = Vec::new();
 
+        let effective_spread_mode = match self.scroll_mode {
+            PdfScrollMode::WrappedScrolling => PdfSpreadMode::NoSpreads,
+            _ => self.spread_mode,
+        };
+
+        let cur_spread = calculate_spread_for_page(effective_spread_mode, self.total_pages, self.current_page);
+
         match self.scroll_mode {
             PdfScrollMode::PageScrolling => {
-                let (left, right) = self.spread_for_page(self.current_page);
-                load_order.push(left);
-                if let Some(r) = right {
-                    load_order.push(r);
+                let mut spreads = vec![cur_spread];
+                if let Some(ns) = calculate_next_spread(effective_spread_mode, self.total_pages, cur_spread) {
+                    spreads.push(ns);
                 }
-                let next_page = if let Some(r) = right { r + 1 } else { left + 1 };
-                if next_page <= self.total_pages {
-                    let (next_left, next_right) = self.spread_for_page(next_page);
-                    load_order.push(next_left);
-                    if let Some(nr) = next_right {
-                        load_order.push(nr);
-                    }
+                if let Some(ps) = calculate_prev_spread(effective_spread_mode, self.total_pages, cur_spread) {
+                    spreads.push(ps);
                 }
-                if left >= 2 {
-                    let (prev_left, _) = self.spread_for_page(left - 1);
-                    load_order.push(prev_left);
-                    if prev_left + 1 < left {
-                        load_order.push(prev_left + 1);
+                for (left, right) in spreads {
+                    load_order.push(left);
+                    if let Some(r) = right {
+                        load_order.push(r);
                     }
                 }
             }
             _ => {
-                let cur = self.current_page;
-                load_order.push(cur);
+                let mut spreads = vec![cur_spread];
+                let mut next_cursor = cur_spread;
+                let mut prev_cursor = cur_spread;
+                let mut has_next = true;
+                let mut has_prev = true;
 
-                if self.spread_mode != PdfSpreadMode::NoSpreads {
-                    let (left, right) = self.spread_for_page(cur);
-                    if left != cur {
-                        load_order.push(left);
+                for _ in 0..3 {
+                    if has_next {
+                        if let Some(ns) = calculate_next_spread(effective_spread_mode, self.total_pages, next_cursor) {
+                            spreads.push(ns);
+                            next_cursor = ns;
+                        } else {
+                            has_next = false;
+                        }
                     }
-                    if let Some(r) = right {
-                        if r != cur {
-                            load_order.push(r);
+                    if has_prev {
+                        if let Some(ps) = calculate_prev_spread(effective_spread_mode, self.total_pages, prev_cursor) {
+                            spreads.push(ps);
+                            prev_cursor = ps;
+                        } else {
+                            has_prev = false;
                         }
                     }
                 }
 
-                // Window of 3 pages ahead and 2 pages behind for responsive, smooth scrolling
-                for delta in 1..=3 {
-                    if cur + delta <= self.total_pages {
-                        load_order.push(cur + delta);
-                    }
-                }
-                for delta in 1..=2 {
-                    if cur > delta {
-                        load_order.push(cur - delta);
+                for (left, right) in spreads {
+                    load_order.push(left);
+                    if let Some(r) = right {
+                        load_order.push(r);
                     }
                 }
             }
@@ -1335,9 +1443,14 @@ impl PdfReaderModel {
                             left_pic.set_size_request(page_w, page_h);
                             left_pic.add_css_class("kalam-pdf-two-page");
 
-                            if let Some(cached) = self.textures.get(&left) {
-                                left_pic.set_paintable(Some(&cached.texture));
-                                left_pic.add_css_class("kalam-pdf-page-image");
+                            let spread_ready = self.textures.contains_key(&left)
+                                && right.map_or(true, |r| self.textures.contains_key(&r));
+
+                            if spread_ready {
+                                if let Some(cached) = self.textures.get(&left) {
+                                    left_pic.set_paintable(Some(&cached.texture));
+                                    left_pic.add_css_class("kalam-pdf-page-image");
+                                }
                             } else {
                                 left_pic.add_css_class("kalam-pdf-placeholder");
                             }
@@ -1355,9 +1468,11 @@ impl PdfReaderModel {
                                 right_pic.set_size_request(page_w, page_h);
                                 right_pic.add_css_class("kalam-pdf-two-page");
 
-                                if let Some(cached) = self.textures.get(&r) {
-                                    right_pic.set_paintable(Some(&cached.texture));
-                                    right_pic.add_css_class("kalam-pdf-page-image");
+                                if spread_ready {
+                                    if let Some(cached) = self.textures.get(&r) {
+                                        right_pic.set_paintable(Some(&cached.texture));
+                                        right_pic.add_css_class("kalam-pdf-page-image");
+                                    }
                                 } else {
                                     right_pic.add_css_class("kalam-pdf-placeholder");
                                 }
@@ -1428,9 +1543,14 @@ impl PdfReaderModel {
                             left_pic.set_size_request(page_w, page_h);
                             left_pic.add_css_class("kalam-pdf-two-page");
 
-                            if let Some(cached) = self.textures.get(&left) {
-                                left_pic.set_paintable(Some(&cached.texture));
-                                left_pic.add_css_class("kalam-pdf-page-image");
+                            let spread_ready = self.textures.contains_key(&left)
+                                && right.map_or(true, |r| self.textures.contains_key(&r));
+
+                            if spread_ready {
+                                if let Some(cached) = self.textures.get(&left) {
+                                    left_pic.set_paintable(Some(&cached.texture));
+                                    left_pic.add_css_class("kalam-pdf-page-image");
+                                }
                             } else {
                                 left_pic.add_css_class("kalam-pdf-placeholder");
                             }
@@ -1447,9 +1567,11 @@ impl PdfReaderModel {
                                 right_pic.set_size_request(page_w, page_h);
                                 right_pic.add_css_class("kalam-pdf-two-page");
 
-                                if let Some(cached) = self.textures.get(&r) {
-                                    right_pic.set_paintable(Some(&cached.texture));
-                                    right_pic.add_css_class("kalam-pdf-page-image");
+                                if spread_ready {
+                                    if let Some(cached) = self.textures.get(&r) {
+                                        right_pic.set_paintable(Some(&cached.texture));
+                                        right_pic.add_css_class("kalam-pdf-page-image");
+                                    }
                                 } else {
                                     right_pic.add_css_class("kalam-pdf-placeholder");
                                 }
@@ -1686,18 +1808,23 @@ impl PdfReaderModel {
             return;
         }
 
+        let effective_page = match self.spread_mode {
+            PdfSpreadMode::NoSpreads => self.current_page,
+            _ => self.spread_for_page(self.current_page).0,
+        };
+
         if self.scroll_mode == PdfScrollMode::HorizontalScrolling {
             let hadj = scroll.hadjustment();
             let max = (hadj.upper() - hadj.page_size()).max(0.0);
             if max > 0.0 {
-                let ratio = (self.current_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
+                let ratio = (effective_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
                 hadj.set_value((ratio * max).clamp(hadj.lower(), max));
             }
         } else {
             let vadj = scroll.vadjustment();
             let max = (vadj.upper() - vadj.page_size()).max(0.0);
             if max > 0.0 {
-                let ratio = (self.current_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
+                let ratio = (effective_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
                 vadj.set_value((ratio * max).clamp(vadj.lower(), max));
             }
         }
@@ -2513,14 +2640,18 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::NextPage => {
                 if self.current_page < self.total_pages {
                     self.clear_selection();
-                    let step = match (self.spread_mode, self.scroll_mode) {
-                        (PdfSpreadMode::OddSpreads | PdfSpreadMode::EvenSpreads, PdfScrollMode::PageScrolling) => {
-                            let (_, right) = self.spread_for_page(self.current_page);
-                            if right.is_some() { 2 } else { 1 }
+                    let target_page = match self.spread_mode {
+                        PdfSpreadMode::NoSpreads => self.current_page + 1,
+                        _ => {
+                            let cur_spread = self.spread_for_page(self.current_page);
+                            if let Some(next_s) = self.next_spread(cur_spread) {
+                                next_s.0
+                            } else {
+                                self.total_pages
+                            }
                         }
-                        _ => 1,
                     };
-                    self.current_page = (self.current_page + step).min(self.total_pages);
+                    self.current_page = target_page.min(self.total_pages);
                     self.save_progress();
                     self.prune_textures();
                     self.trigger_loads(&sender);
@@ -2542,15 +2673,18 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::PrevPage => {
                 if self.current_page > 1 {
                     self.clear_selection();
-                    let step = match (self.spread_mode, self.scroll_mode) {
-                        (PdfSpreadMode::OddSpreads, PdfScrollMode::PageScrolling) => {
-                            let (left, _) = self.spread_for_page(self.current_page);
-                            if left > 1 && left == 2 { 1 } else { 2 }
+                    let target_page = match self.spread_mode {
+                        PdfSpreadMode::NoSpreads => self.current_page.saturating_sub(1),
+                        _ => {
+                            let cur_spread = self.spread_for_page(self.current_page);
+                            if let Some(prev_s) = self.prev_spread(cur_spread) {
+                                prev_s.0
+                            } else {
+                                1
+                            }
                         }
-                        (PdfSpreadMode::EvenSpreads, PdfScrollMode::PageScrolling) => 2,
-                        _ => 1,
                     };
-                    self.current_page = self.current_page.saturating_sub(step).max(1);
+                    self.current_page = target_page.max(1);
                     self.save_progress();
                     self.prune_textures();
                     self.trigger_loads(&sender);
@@ -2660,6 +2794,7 @@ impl Component for PdfReaderModel {
 
                     let child = self.build_viewport_widget(&sender);
                     widgets.viewport_scroll.set_child(Some(&child));
+                    self.prune_textures();
                     self.trigger_loads(&sender);
                     if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
                         self.scroll_to_current_page(&widgets.viewport_scroll);
@@ -2680,6 +2815,7 @@ impl Component for PdfReaderModel {
                     self.update_scroll_policies(&widgets.viewport_scroll);
                     let child = self.build_viewport_widget(&sender);
                     widgets.viewport_scroll.set_child(Some(&child));
+                    self.prune_textures();
                     self.trigger_loads(&sender);
                     if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
                         self.scroll_to_current_page(&widgets.viewport_scroll);
@@ -2695,6 +2831,7 @@ impl Component for PdfReaderModel {
                         self.update_scroll_policies(&widgets.viewport_scroll);
                         let child = self.build_viewport_widget(&sender);
                         widgets.viewport_scroll.set_child(Some(&child));
+                        self.prune_textures();
                         self.trigger_loads(&sender);
                         if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
                             self.scroll_to_current_page(&widgets.viewport_scroll);
@@ -2864,26 +3001,76 @@ impl Component for PdfReaderModel {
                             }
                         }
                     }
-                    _ => {
+                    PdfScrollMode::WrappedScrolling => {
                         if let Some(pic) = self.page_pictures.get(&page) {
                             pic.set_paintable(Some(&texture));
-                            let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
-                                (
-                                    (self.base_page_width * 0.6 * self.zoom_level) as i32,
-                                    (self.base_page_height * 0.6 * self.zoom_level) as i32,
-                                )
-                            } else {
-                                (
-                                    (self.base_page_width * self.zoom_level) as i32,
-                                    (self.base_page_height * self.zoom_level) as i32,
-                                )
-                            };
+                            let target_w = (self.base_page_width * 0.6 * self.zoom_level) as i32;
+                            let target_h = (self.base_page_height * 0.6 * self.zoom_level) as i32;
                             pic.set_size_request(target_w, target_h);
                             pic.remove_css_class("kalam-pdf-placeholder");
                             pic.add_css_class("kalam-pdf-page-image");
                             pic.queue_resize();
                             pic.queue_draw();
                             widgets.viewport_scroll.queue_draw();
+                        }
+                    }
+                    _ => {
+                        match self.spread_mode {
+                            PdfSpreadMode::NoSpreads => {
+                                if let Some(pic) = self.page_pictures.get(&page) {
+                                    pic.set_paintable(Some(&texture));
+                                    let target_w = (self.base_page_width * self.zoom_level) as i32;
+                                    let target_h = (self.base_page_height * self.zoom_level) as i32;
+                                    pic.set_size_request(target_w, target_h);
+                                    pic.remove_css_class("kalam-pdf-placeholder");
+                                    pic.add_css_class("kalam-pdf-page-image");
+                                    pic.queue_resize();
+                                    pic.queue_draw();
+                                    widgets.viewport_scroll.queue_draw();
+                                }
+                            }
+                            _ => {
+                                let (left, right) = self.spread_for_page(page);
+                                let left_cached = self.textures.get(&left);
+                                let right_cached = right.and_then(|r| self.textures.get(&r));
+
+                                let spread_ready = if right.is_some() {
+                                    left_cached.is_some() && right_cached.is_some()
+                                } else {
+                                    left_cached.is_some()
+                                };
+
+                                if spread_ready {
+                                    let target_w = (self.base_page_width * self.zoom_level) as i32;
+                                    let target_h = (self.base_page_height * self.zoom_level) as i32;
+
+                                    if let Some(left_tex) = left_cached {
+                                        if let Some(pic) = self.page_pictures.get(&left) {
+                                            pic.set_paintable(Some(&left_tex.texture));
+                                            pic.set_size_request(target_w, target_h);
+                                            pic.remove_css_class("kalam-pdf-placeholder");
+                                            pic.add_css_class("kalam-pdf-page-image");
+                                            pic.queue_resize();
+                                            pic.queue_draw();
+                                        }
+                                    }
+
+                                    if let Some(r) = right {
+                                        if let Some(right_tex) = right_cached {
+                                            if let Some(pic) = self.page_pictures.get(&r) {
+                                                pic.set_paintable(Some(&right_tex.texture));
+                                                pic.set_size_request(target_w, target_h);
+                                                pic.remove_css_class("kalam-pdf-placeholder");
+                                                pic.add_css_class("kalam-pdf-page-image");
+                                                pic.queue_resize();
+                                                pic.queue_draw();
+                                            }
+                                        }
+                                    }
+
+                                    widgets.viewport_scroll.queue_draw();
+                                }
+                            }
                         }
                     }
                 }
@@ -3917,5 +4104,174 @@ fn toggle_active(button: &gtk::Button, active: bool) {
         button.add_css_class("active");
     } else {
         button.remove_css_class("active");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_spread_for_page_odd_spreads() {
+        let total = 6;
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 1), (1, None));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 2), (2, Some(3)));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 3), (2, Some(3)));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 4), (4, Some(5)));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 5), (4, Some(5)));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 6), (6, None));
+    }
+
+    #[test]
+    fn test_calculate_spread_for_page_even_spreads() {
+        let total = 5;
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 1), (1, Some(2)));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 2), (1, Some(2)));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 3), (3, Some(4)));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 4), (3, Some(4)));
+        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 5), (5, None));
+    }
+
+    #[test]
+    fn test_spread_chain_navigation() {
+        for mode in [PdfSpreadMode::NoSpreads, PdfSpreadMode::OddSpreads, PdfSpreadMode::EvenSpreads] {
+            for total in 1..=20 {
+                let spreads = calculate_all_spreads(mode, total);
+                assert!(!spreads.is_empty());
+
+                // Forward traversal
+                let mut forward = vec![spreads[0]];
+                let mut curr = spreads[0];
+                while let Some(next) = calculate_next_spread(mode, total, curr) {
+                    forward.push(next);
+                    curr = next;
+                }
+                assert_eq!(forward, spreads, "Forward chain mismatch for mode {:?}, total {}", mode, total);
+
+                // Backward traversal
+                let mut backward = vec![*spreads.last().unwrap()];
+                let mut curr = *spreads.last().unwrap();
+                while let Some(prev) = calculate_prev_spread(mode, total, curr) {
+                    backward.push(prev);
+                    curr = prev;
+                }
+                backward.reverse();
+                assert_eq!(backward, spreads, "Backward chain mismatch for mode {:?}, total {}", mode, total);
+            }
+        }
+    }
+
+    #[test]
+    fn test_prune_pair_integrity_invariant() {
+        // Ensure that pruning never splits a 2-page spread: both pages must either be kept or evicted together.
+        for mode in [PdfSpreadMode::OddSpreads, PdfSpreadMode::EvenSpreads] {
+            for total in 1..=25 {
+                let all_spreads = calculate_all_spreads(mode, total);
+                for cur_page in 1..=total {
+                    let cur_spread = calculate_spread_for_page(mode, total, cur_page);
+                    let mut keep = std::collections::HashSet::new();
+                    keep.insert(cur_spread.0);
+                    if let Some(r) = cur_spread.1 {
+                        keep.insert(r);
+                    }
+
+                    let mut next_cursor = cur_spread;
+                    for _ in 0..3 {
+                        if let Some(ns) = calculate_next_spread(mode, total, next_cursor) {
+                            keep.insert(ns.0);
+                            if let Some(r) = ns.1 {
+                                keep.insert(r);
+                            }
+                            next_cursor = ns;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let mut prev_cursor = cur_spread;
+                    for _ in 0..3 {
+                        if let Some(ps) = calculate_prev_spread(mode, total, prev_cursor) {
+                            keep.insert(ps.0);
+                            if let Some(r) = ps.1 {
+                                keep.insert(r);
+                            }
+                            prev_cursor = ps;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    for spread in &all_spreads {
+                        if let Some(r) = spread.1 {
+                            let left_kept = keep.contains(&spread.0);
+                            let right_kept = keep.contains(&r);
+                            assert_eq!(
+                                left_kept, right_kept,
+                                "Spread pair {:?} split during pruning at page {} (total {}): left_kept={}, right_kept={}",
+                                spread, cur_page, total, left_kept, right_kept
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_load_queue_pair_integrity_invariant() {
+        // Ensure that load queuing in 2-page modes always requests full spread pairs.
+        for mode in [PdfSpreadMode::OddSpreads, PdfSpreadMode::EvenSpreads] {
+            for total in 1..=25 {
+                let all_spreads = calculate_all_spreads(mode, total);
+                for cur_page in 1..=total {
+                    let cur_spread = calculate_spread_for_page(mode, total, cur_page);
+                    let mut spreads_to_load = vec![cur_spread];
+                    let mut next_cursor = cur_spread;
+                    let mut prev_cursor = cur_spread;
+                    let mut has_next = true;
+                    let mut has_prev = true;
+
+                    for _ in 0..3 {
+                        if has_next {
+                            if let Some(ns) = calculate_next_spread(mode, total, next_cursor) {
+                                spreads_to_load.push(ns);
+                                next_cursor = ns;
+                            } else {
+                                has_next = false;
+                            }
+                        }
+                        if has_prev {
+                            if let Some(ps) = calculate_prev_spread(mode, total, prev_cursor) {
+                                spreads_to_load.push(ps);
+                                prev_cursor = ps;
+                            } else {
+                                has_prev = false;
+                            }
+                        }
+                    }
+
+                    let mut load_order = Vec::new();
+                    for s in &spreads_to_load {
+                        load_order.push(s.0);
+                        if let Some(r) = s.1 {
+                            load_order.push(r);
+                        }
+                    }
+
+                    let queued: std::collections::HashSet<usize> = load_order.into_iter().collect();
+                    for spread in &all_spreads {
+                        if let Some(r) = spread.1 {
+                            let left_queued = queued.contains(&spread.0);
+                            let right_queued = queued.contains(&r);
+                            assert_eq!(
+                                left_queued, right_queued,
+                                "Spread pair {:?} split in load queue at page {} (total {}): left_queued={}, right_queued={}",
+                                spread, cur_page, total, left_queued, right_queued
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -111,7 +111,6 @@ pub enum ComicsReaderMsg {
     PrevPage,
     KeyLeft,
     KeyRight,
-    TapAtRatio(f64),
     #[allow(dead_code)]
     ToggleDirection,
     SetDirection(ReadingDirection),
@@ -134,8 +133,6 @@ pub enum ComicsReaderMsg {
     UserScrolled,
     HideOsd(u64),
     ViewportResized,
-    #[allow(dead_code)]
-    ToggleChrome,
     #[allow(dead_code)]
     ToggleSettings,
     #[allow(dead_code)]

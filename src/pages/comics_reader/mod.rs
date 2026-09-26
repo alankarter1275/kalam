@@ -6,8 +6,7 @@
 //!   - Floating bottom-center pill (`[Prev]`, `Page X of Y`, `[Next]`)
 //!   - VLC-style HUD in top-right corner for zoom and fit mode feedback
 //!   - Persistent hover detection zones on root and active pill hit-testing
-//!   - Center-screen click/tap toggles chrome; side clicks navigate
-//!   - Chrome autohides on scroll and after 3.5 seconds
+//!   - Chrome reveals on hovering dock positions; autohides on scroll, page turns, or after 3.5 seconds
 //! - Zen-style slide-in left sidebar:
 //!   - Header with cover thumbnail, title, and reading progress bar
 //!   - Expanding content area: Settings (default) and Bookmarks
@@ -397,9 +396,20 @@ impl ComicsReaderModel {
         self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
         let seq = self.sidebar_close_seq;
         let s = sender.clone();
-        glib::timeout_add_local_once(Duration::from_millis(600), move || {
+        glib::timeout_add_local_once(Duration::from_millis(700), move || {
             let _ = s.input_sender().send(ComicsReaderMsg::SidebarCloseTimerTick(seq));
         });
+    }
+
+    pub fn hide_chrome_on_interaction(&mut self) {
+        if self.show_back_button && !self.mouse_in_top_edge {
+            self.show_back_button = false;
+            self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
+        }
+        if self.show_bottom_pill && !self.mouse_in_bottom_edge {
+            self.show_bottom_pill = false;
+            self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
+        }
     }
 
     pub fn update_bookmark_icon_state(&self, widgets: &ComicsReaderModelWidgets) {
@@ -869,7 +879,7 @@ impl Component for ComicsReaderModel {
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
                 add_css_class: "kalam-reader-hover-edge-left",
-                set_width_request: 24,
+                set_width_request: 18,
                 set_hexpand: false,
                 set_vexpand: true,
                 set_halign: gtk::Align::Start,
@@ -902,19 +912,6 @@ impl Component for ComicsReaderModel {
                         add_css_class: "kalam-reader-back",
                         set_tooltip_text: Some("Back to Library (Esc / Backspace)"),
                         connect_clicked => ComicsReaderMsg::Close,
-                    },
-
-                    #[name = "top_sidebar_btn"]
-                    gtk::Button {
-                        set_child: Some(&crate::icons::labelled(
-                            "emblem-system-symbolic",
-                            16,
-                            "Settings",
-                            6,
-                        )),
-                        add_css_class: "kalam-reader-back",
-                        set_tooltip_text: Some("Reader Settings & Bookmarks (t / s)"),
-                        connect_clicked => ComicsReaderMsg::ToggleSidebar,
                     },
 
                     #[name = "top_bookmark_btn"]
@@ -963,10 +960,11 @@ impl Component for ComicsReaderModel {
                         },
 
                         // Page Indicator Box
-                        gtk::Button {
+                        gtk::Box {
                             add_css_class: "kalam-reader-pill-info",
-                            set_tooltip_text: Some("Toggle Sidebar (t)"),
-                            connect_clicked => ComicsReaderMsg::ToggleSidebar,
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 6,
+                            set_valign: gtk::Align::Center,
 
                             gtk::Label {
                                 add_css_class: "kalam-reader-pill-pages",
@@ -1076,19 +1074,6 @@ impl Component for ComicsReaderModel {
                                 #[watch]
                                 set_fraction: model.progress_fraction(),
                             },
-                        },
-
-                        // Close sidebar button
-                        gtk::Button {
-                            set_child: Some(&crate::icons::symbolic_with_classes(
-                                "window-close-symbolic",
-                                16,
-                                &["kalam-inline-icon"],
-                            )),
-                            add_css_class: "kalam-reader-back",
-                            set_valign: gtk::Align::Start,
-                            set_tooltip_text: Some("Close sidebar (Esc / t / s)"),
-                            connect_clicked => ComicsReaderMsg::CloseSidebar,
                         },
                     },
 
@@ -1461,12 +1446,12 @@ impl Component for ComicsReaderModel {
         root_motion.connect_motion(move |_, x, y| {
             let w = root_clone.width() as f64;
             let h = root_clone.height() as f64;
-            // Hover over top-left area where back dock lives
-            let top = x < 320.0 && y < 85.0;
-            // Hover over bottom-center area where bottom pill lives
-            let bottom = y > (h - 85.0) && h > 85.0 && (x - (w / 2.0)).abs() < 220.0;
+            // Only trigger top dock when hovering over top-left area where the pill lives
+            let top = x < 240.0 && y < 75.0;
+            // Only trigger bottom dock when hovering over bottom-center area where the pill lives
+            let bottom = y > (h - 75.0) && h > 75.0 && (x - (w / 2.0)).abs() < 180.0;
             // Left edge zone for slide-in sidebar
-            let left = x < 24.0;
+            let left = x < 20.0;
 
             if top != was_top_clone.get() {
                 was_top_clone.set(top);
@@ -1549,19 +1534,11 @@ impl Component for ComicsReaderModel {
         });
         widgets.left_edge_box.add_controller(left_edge_motion);
 
-        // 4. Viewport click gesture: left 30% = prev, right 30% = next, center 40% = toggle chrome
+        // 4. Viewport click: grab keyboard focus (no chrome toggle or page change on click)
         let click = gtk::GestureClick::new();
-        let s_click = sender.clone();
         let root_for_focus = root.clone();
-        click.connect_released(move |gesture, _, x, _| {
+        click.connect_pressed(move |_, _, _, _| {
             root_for_focus.grab_focus();
-            if let Some(widget) = gesture.widget() {
-                let width = widget.width() as f64;
-                if width > 0.0 {
-                    let ratio = x / width;
-                    let _ = s_click.input_sender().send(ComicsReaderMsg::TapAtRatio(ratio));
-                }
-            }
         });
         widgets.viewport_box.add_controller(click);
 
@@ -1681,6 +1658,7 @@ impl Component for ComicsReaderModel {
     ) {
         match msg {
             ComicsReaderMsg::SetPage(idx) => {
+                self.hide_chrome_on_interaction();
                 self.set_page(idx);
                 self.save_progress();
                 self.trigger_loads(&sender);
@@ -1711,6 +1689,7 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::NextPage => {
+                self.hide_chrome_on_interaction();
                 self.next_page();
                 self.save_progress();
                 self.trigger_loads(&sender);
@@ -1729,6 +1708,7 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::PrevPage => {
+                self.hide_chrome_on_interaction();
                 self.prev_page();
                 self.save_progress();
                 self.trigger_loads(&sender);
@@ -1747,6 +1727,7 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::KeyLeft => {
+                self.hide_chrome_on_interaction();
                 if self.direction == ReadingDirection::Rtl {
                     let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
                 } else {
@@ -1754,38 +1735,11 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::KeyRight => {
+                self.hide_chrome_on_interaction();
                 if self.direction == ReadingDirection::Rtl {
                     let _ = sender.input_sender().send(ComicsReaderMsg::PrevPage);
                 } else {
                     let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
-                }
-            }
-            ComicsReaderMsg::TapAtRatio(ratio) => {
-                if ratio < 0.30 {
-                    if self.direction == ReadingDirection::Rtl {
-                        let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
-                    } else {
-                        let _ = sender.input_sender().send(ComicsReaderMsg::PrevPage);
-                    }
-                } else if ratio > 0.70 {
-                    if self.direction == ReadingDirection::Rtl {
-                        let _ = sender.input_sender().send(ComicsReaderMsg::PrevPage);
-                    } else {
-                        let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
-                    }
-                } else {
-                    let _ = sender.input_sender().send(ComicsReaderMsg::ToggleChrome);
-                }
-            }
-            ComicsReaderMsg::ToggleChrome => {
-                let new_state = !self.show_bottom_pill;
-                self.show_bottom_pill = new_state;
-                if !self.show_sidebar {
-                    self.show_back_button = new_state;
-                }
-                if new_state {
-                    self.schedule_back_hide(&sender);
-                    self.schedule_bottom_hide(&sender);
                 }
             }
             ComicsReaderMsg::PageLoaded(idx, ref maybe_tex) => {
@@ -1968,9 +1922,6 @@ impl Component for ComicsReaderModel {
                 self.sidebar_pinned = false;
                 self.mouse_in_sidebar = false;
                 self.mouse_in_left_edge = false;
-                if !self.mouse_in_top_edge {
-                    self.schedule_back_hide(&sender);
-                }
             }
             ComicsReaderMsg::SetSidebarTab(tab) => {
                 self.sidebar_tab = tab;
@@ -2079,12 +2030,7 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::UserScrolled => {
-                if !self.mouse_in_top_edge {
-                    self.show_back_button = false;
-                }
-                if !self.mouse_in_bottom_edge {
-                    self.show_bottom_pill = false;
-                }
+                self.hide_chrome_on_interaction();
             }
             ComicsReaderMsg::HideOsd(seq) => {
                 if seq == self.zoom_osd_seq {

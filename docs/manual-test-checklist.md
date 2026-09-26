@@ -660,29 +660,27 @@ shows up as its own task in the task manager.
 
 ## Part I — Comic & Manga Reader Verifications (2.12)
 
-### T25 · Comic Reader Chrome Autohide, Center Click Toggle & Edge Hover Recovery
+### T25 · Comic Reader Chrome Autohide, Navigation Hide & Dock Hover Recovery
 
 **Do:**
 1. Open a comic book (CBZ/CBR) or remote manga chapter in Kalam.
 2. Observe the initial state of the floating chrome. Wait 3.5 seconds without moving the cursor.
-3. Move cursor directly over the top-left area where the "Library" and "Bookmark" buttons live.
-4. Move cursor directly over the bottom-center area where the page navigation pill lives.
-5. Click in the center 40% of the screen.
-6. Click near the left 30% or right 30% of the viewport.
-7. Scroll the page vertically (or using the trackpad/wheel).
+3. Move cursor directly over the top-left area where the "Library" and "Bookmark" buttons live (`x < 240, y < 75`).
+4. Move cursor directly over the bottom-center area where the page navigation pill lives (`y > h - 75, |x - w/2| < 180`).
+5. Click anywhere on the viewport image.
+6. Press Left / Right arrow keys or scroll the page vertically.
 
 **Look for:**
 1. Chrome starts visible, then automatically slides out of view after 3.5s of inactivity.
 2. Hovering over the top-left dock zone recovers the Library and Bookmark buttons even after autohide.
 3. Hovering over the bottom-center dock zone recovers `[Prev]`, `Page X of Y`, and `[Next]` even after autohide.
-4. Clicking in the center 40% immediately toggles the floating chrome (reveals when hidden, hides when visible).
-5. Clicking the left 30% steps back a page (or advances in Manga RTL); clicking the right 30% advances a page (or steps back in Manga RTL).
-6. Scrolling immediately autohides both the top dock and bottom pill.
+4. Clicking anywhere on the screen grabs focus for keyboard navigation but does NOT toggle chrome or change pages (matching PDF/EPUB reader behavior).
+5. Scrolling or turning pages via keyboard immediately autohides both the top dock and bottom pill unless the cursor is actively hovering directly over them.
 
 ### T26 · Comic Reader Zen-Style Left Sidebar, Bottom Tabs & Fit Mode Engine
 
 **Do:**
-1. Move the cursor to the left edge (within 24px of the left border) to reveal the Zen sidebar.
+1. Move the cursor to the left edge (within 20px of the left border, or press `t` / `s`) to reveal the Zen sidebar.
 2. Observe the cover thumbnail, title, author, and reading progress bar in the header.
 3. Observe the bottom tab bar pinned to the bottom of the sidebar with Settings and Bookmarks (Settings active by default).
 4. In Settings, change Page Style between Single, Double, and Webtoon (Continuous vertical strip).
@@ -691,8 +689,8 @@ shows up as its own task in the task manager.
 7. Change Fit Mode between Width, Height, Screen, and 1:1 Original.
 
 **Look for:**
-1. Sidebar smoothly slides in from the left edge over a subtle dim backdrop. Moving cursor away or clicking the dim backdrop dismisses the sidebar.
-2. Settings is open by default. The bottom tab bar allows quick switching between Settings and Bookmarks.
+1. Sidebar smoothly slides in from the left edge over a subtle dim backdrop. Moving cursor away slides it out after 700ms; clicking the dim backdrop or pressing `Esc` / `t` / `s` dismisses it immediately.
+2. Settings is open by default. The bottom tab bar allows quick switching between Settings and Bookmarks. Header has no extraneous close buttons.
 3. Double mode shows facing pages side by side with the selected spread gap (0px joins pages seamlessly without border gap). Spread gap selector is enabled in Double mode and disabled in Single/Webtoon mode.
 4. Right → Left mode flips page placement and arrow key orientation so Left arrow advances and Right arrow steps backward.
 5. In Fit Mode:

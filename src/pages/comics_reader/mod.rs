@@ -1090,7 +1090,8 @@ impl Component for ComicsReaderModel {
                         set_transition_type: gtk::StackTransitionType::Crossfade,
 
                         // Settings View (Default)
-                        add_named[Some("settings")] = &gtk::ScrolledWindow {
+                        #[name = "settings_scroll"]
+                        gtk::ScrolledWindow {
                             set_hexpand: true,
                             set_vexpand: true,
                             set_hscrollbar_policy: gtk::PolicyType::Never,
@@ -1358,7 +1359,8 @@ impl Component for ComicsReaderModel {
                         },
 
                         // Bookmarks Tab View
-                        add_named[Some("bookmarks")] = &gtk::ScrolledWindow {
+                        #[name = "bookmarks_scroll"]
+                        gtk::ScrolledWindow {
                             set_hexpand: true,
                             set_vexpand: true,
                             set_hscrollbar_policy: gtk::PolicyType::Never,
@@ -1429,14 +1431,8 @@ impl Component for ComicsReaderModel {
         model.sync_settings_ui(&widgets);
 
         // Explicitly register stack page names so GTK child lookup succeeds without warnings
-        if let Some(settings_child) = widgets.left_stack.first_child() {
-            let page = widgets.left_stack.page(&settings_child);
-            page.set_name("settings");
-            if let Some(bookmarks_child) = settings_child.next_sibling() {
-                let page_bm = widgets.left_stack.page(&bookmarks_child);
-                page_bm.set_name("bookmarks");
-            }
-        }
+        widgets.left_stack.page(&widgets.settings_scroll).set_name("settings");
+        widgets.left_stack.page(&widgets.bookmarks_scroll).set_name("bookmarks");
         widgets.left_stack.set_visible_child_name("settings");
 
         model.schedule_back_hide(&sender);

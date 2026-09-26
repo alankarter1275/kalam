@@ -879,7 +879,7 @@ impl Component for ComicsReaderModel {
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
                 add_css_class: "kalam-reader-hover-edge-left",
-                set_width_request: 18,
+                set_width_request: 24,
                 set_hexpand: false,
                 set_vexpand: true,
                 set_halign: gtk::Align::Start,
@@ -1083,6 +1083,11 @@ impl Component for ComicsReaderModel {
                         set_hexpand: true,
                         set_vexpand: true,
                         set_transition_type: gtk::StackTransitionType::Crossfade,
+                        #[watch]
+                        set_visible_child_name: match model.sidebar_tab {
+                            ComicSidebarTab::Settings => "settings",
+                            ComicSidebarTab::Bookmarks => "bookmarks",
+                        },
 
                         // Settings View (Default)
                         add_named[Some("settings")] = &gtk::ScrolledWindow {
@@ -1432,16 +1437,18 @@ impl Component for ComicsReaderModel {
         let child = rebuild_viewport_widget(&model, 850);
         widgets.viewport_box.set_child(Some(&child));
 
-        // 1. Motion controller on root (Edge hover zones)
+        // 1. Motion controller on root (Edge hover zones & sidebar hover tracking)
         let root_motion = gtk::EventControllerMotion::new();
         let tx_rm = sender.clone();
         let root_clone = root.clone();
         let was_top = std::rc::Rc::new(std::cell::Cell::new(false));
         let was_bottom = std::rc::Rc::new(std::cell::Cell::new(false));
-        let was_left = std::rc::Rc::new(std::cell::Cell::new(false));
+        let was_left_edge = std::rc::Rc::new(std::cell::Cell::new(false));
+        let was_sidebar_zone = std::rc::Rc::new(std::cell::Cell::new(false));
         let was_top_clone = was_top.clone();
         let was_bottom_clone = was_bottom.clone();
-        let was_left_clone = was_left.clone();
+        let was_left_edge_clone = was_left_edge.clone();
+        let was_sidebar_zone_clone = was_sidebar_zone.clone();
 
         root_motion.connect_motion(move |_, x, y| {
             let w = root_clone.width() as f64;
@@ -1450,8 +1457,10 @@ impl Component for ComicsReaderModel {
             let top = x < 240.0 && y < 75.0;
             // Only trigger bottom dock when hovering over bottom-center area where the pill lives
             let bottom = y > (h - 75.0) && h > 75.0 && (x - (w / 2.0)).abs() < 180.0;
-            // Left edge zone for slide-in sidebar
-            let left = x < 20.0;
+            // Left edge zone for revealing sidebar
+            let left_edge = x < 24.0;
+            // Entire sidebar width region (sidebar is 340px wide + margins)
+            let in_sidebar = x < 360.0;
 
             if top != was_top_clone.get() {
                 was_top_clone.set(top);
@@ -1461,16 +1470,21 @@ impl Component for ComicsReaderModel {
                 was_bottom_clone.set(bottom);
                 let _ = tx_rm.input_sender().send(ComicsReaderMsg::BottomEdgeHover(bottom));
             }
-            if left != was_left_clone.get() {
-                was_left_clone.set(left);
-                let _ = tx_rm.input_sender().send(ComicsReaderMsg::LeftEdgeHover(left));
+            if left_edge != was_left_edge_clone.get() {
+                was_left_edge_clone.set(left_edge);
+                let _ = tx_rm.input_sender().send(ComicsReaderMsg::LeftEdgeHover(left_edge));
+            }
+            if in_sidebar != was_sidebar_zone_clone.get() {
+                was_sidebar_zone_clone.set(in_sidebar);
+                let _ = tx_rm.input_sender().send(ComicsReaderMsg::SidebarHover(in_sidebar));
             }
         });
 
         let tx_leave = sender.clone();
         let was_top_leave = was_top.clone();
         let was_bottom_leave = was_bottom.clone();
-        let was_left_leave = was_left.clone();
+        let was_left_edge_leave = was_left_edge.clone();
+        let was_sidebar_zone_leave = was_sidebar_zone.clone();
         root_motion.connect_leave(move |_| {
             if was_top_leave.get() {
                 was_top_leave.set(false);
@@ -1480,9 +1494,13 @@ impl Component for ComicsReaderModel {
                 was_bottom_leave.set(false);
                 let _ = tx_leave.input_sender().send(ComicsReaderMsg::BottomEdgeHover(false));
             }
-            if was_left_leave.get() {
-                was_left_leave.set(false);
+            if was_left_edge_leave.get() {
+                was_left_edge_leave.set(false);
                 let _ = tx_leave.input_sender().send(ComicsReaderMsg::LeftEdgeHover(false));
+            }
+            if was_sidebar_zone_leave.get() {
+                was_sidebar_zone_leave.set(false);
+                let _ = tx_leave.input_sender().send(ComicsReaderMsg::SidebarHover(false));
             }
         });
         root.add_controller(root_motion);
@@ -1516,9 +1534,9 @@ impl Component for ComicsReaderModel {
         sidebar_motion.connect_enter(move |_, _, _| {
             let _ = s_sm.input_sender().send(ComicsReaderMsg::SidebarHover(true));
         });
-        let s_sml = sender.clone();
-        sidebar_motion.connect_leave(move |_| {
-            let _ = s_sml.input_sender().send(ComicsReaderMsg::SidebarHover(false));
+        let s_smm = sender.clone();
+        sidebar_motion.connect_motion(move |_, _, _| {
+            let _ = s_smm.input_sender().send(ComicsReaderMsg::SidebarHover(true));
         });
         widgets.left_sidebar_box.add_controller(sidebar_motion);
 
@@ -1528,11 +1546,14 @@ impl Component for ComicsReaderModel {
         left_edge_motion.connect_enter(move |_, _, _| {
             let _ = s_lem.input_sender().send(ComicsReaderMsg::LeftEdgeHover(true));
         });
-        let s_leml = sender.clone();
-        left_edge_motion.connect_leave(move |_| {
-            let _ = s_leml.input_sender().send(ComicsReaderMsg::LeftEdgeHover(false));
-        });
         widgets.left_edge_box.add_controller(left_edge_motion);
+
+        let left_edge_click = gtk::GestureClick::new();
+        let s_lec = sender.clone();
+        left_edge_click.connect_pressed(move |_, _, _, _| {
+            let _ = s_lec.input_sender().send(ComicsReaderMsg::ToggleSidebar);
+        });
+        widgets.left_edge_box.add_controller(left_edge_click);
 
         // 4. Viewport click: grab keyboard focus (no chrome toggle or page change on click)
         let click = gtk::GestureClick::new();
@@ -1545,15 +1566,13 @@ impl Component for ComicsReaderModel {
         // 5. Continuous scroll listener
         let vadj = widgets.viewport_box.vadjustment();
         let s_scroll = sender.clone();
-        let page_count = model.total_pages;
         vadj.connect_value_changed(move |adj| {
-            let max = (adj.upper() - adj.page_size()).max(1.0);
-            if max > 0.0 && page_count > 0 {
-                let ratio = (adj.value() / max).clamp(0.0, 1.0);
-                let page = ((page_count - 1) as f64 * ratio).round() as usize;
-                let _ = s_scroll.input_sender().send(ComicsReaderMsg::UpdateScrollPage(page));
-            }
             let _ = s_scroll.input_sender().send(ComicsReaderMsg::UserScrolled);
+            let max = (adj.upper() - adj.page_size()).max(1.0);
+            if max > 0.0 {
+                let ratio = (adj.value() / max).clamp(0.0, 1.0);
+                let _ = s_scroll.input_sender().send(ComicsReaderMsg::UpdateScrollPage(ratio));
+            }
         });
 
         let scroll_ctrl = gtk::EventControllerScroll::new(
@@ -1590,20 +1609,20 @@ impl Component for ComicsReaderModel {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::Close);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Left | gdk::Key::h | gdk::Key::H => {
+                gdk::Key::Left | gdk::Key::Page_Up | gdk::Key::h | gdk::Key::H => {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::KeyLeft);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Right | gdk::Key::l | gdk::Key::L => {
+                gdk::Key::Right | gdk::Key::Page_Down | gdk::Key::space | gdk::Key::l | gdk::Key::L => {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::KeyRight);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Page_Up | gdk::Key::Up | gdk::Key::k | gdk::Key::K => {
-                    let _ = s_key.input_sender().send(ComicsReaderMsg::PrevPage);
+                gdk::Key::Up | gdk::Key::k | gdk::Key::K => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::ScrollDelta(-1.0));
                     glib::Propagation::Stop
                 }
-                gdk::Key::Page_Down | gdk::Key::Down | gdk::Key::space | gdk::Key::j | gdk::Key::J => {
-                    let _ = s_key.input_sender().send(ComicsReaderMsg::NextPage);
+                gdk::Key::Down | gdk::Key::j | gdk::Key::J => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::ScrollDelta(1.0));
                     glib::Propagation::Stop
                 }
                 gdk::Key::Home => {
@@ -1676,17 +1695,27 @@ impl Component for ComicsReaderModel {
                     update_viewport_policies(&widgets.viewport_box, self.fit_mode, false);
                 }
             }
-            ComicsReaderMsg::UpdateScrollPage(idx) => {
-                let total = self.total_pages;
-                if total > 0 {
-                    let clamped = idx.clamp(0, total - 1);
-                    if self.current_page != clamped {
-                        self.current_page = clamped;
-                        self.save_progress();
-                        self.trigger_loads(&sender);
-                        self.update_bookmark_icon_state(widgets);
-                    }
+            ComicsReaderMsg::UpdateScrollPage(ratio) => {
+                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                if !is_webtoon || self.total_pages <= 1 {
+                    return;
                 }
+                let target_page = ((self.total_pages - 1) as f64 * ratio).round() as usize;
+                let clamped = target_page.clamp(0, self.total_pages - 1);
+                if self.current_page != clamped {
+                    self.current_page = clamped;
+                    self.save_progress();
+                    self.trigger_loads(&sender);
+                    self.update_bookmark_icon_state(widgets);
+                }
+            }
+            ComicsReaderMsg::ScrollDelta(dir) => {
+                self.hide_chrome_on_interaction();
+                let vadj = widgets.viewport_box.vadjustment();
+                let step = 80.0 * dir;
+                let target = (vadj.value() + step)
+                    .clamp(vadj.lower(), (vadj.upper() - vadj.page_size()).max(0.0));
+                vadj.set_value(target);
             }
             ComicsReaderMsg::NextPage => {
                 self.hide_chrome_on_interaction();
@@ -1910,6 +1939,7 @@ impl Component for ComicsReaderModel {
                 self.show_sidebar = !self.show_sidebar;
                 self.sidebar_pinned = self.show_sidebar;
                 if self.show_sidebar {
+                    self.mouse_in_sidebar = true;
                     self.show_back_button = false;
                     self.sync_settings_ui(widgets);
                     if self.sidebar_tab == ComicSidebarTab::Bookmarks {
@@ -1991,12 +2021,16 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::LeftEdgeHover(inside) => {
                 self.mouse_in_left_edge = inside;
                 if inside {
+                    let was_hidden = !self.show_sidebar;
                     self.show_sidebar = true;
+                    self.mouse_in_sidebar = true;
                     self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
                     self.show_back_button = false;
-                    self.sync_settings_ui(widgets);
-                    if self.sidebar_tab == ComicSidebarTab::Bookmarks {
-                        populate_bookmarks_list(&widgets.bookmarks_list_box, &self.bookmarks, &sender);
+                    if was_hidden {
+                        self.sync_settings_ui(widgets);
+                        if self.sidebar_tab == ComicSidebarTab::Bookmarks {
+                            populate_bookmarks_list(&widgets.bookmarks_list_box, &self.bookmarks, &sender);
+                        }
                     }
                 } else if !self.mouse_in_sidebar && !self.sidebar_pinned {
                     self.schedule_sidebar_close(&sender);
@@ -2234,5 +2268,36 @@ mod tests {
         assert_eq!(model.two_page_gap, 0);
         model.two_page_gap = 8;
         assert_eq!(model.two_page_gap, 8);
+    }
+
+    #[test]
+    fn test_touchpad_scroll_guarded_in_paged_modes() {
+        let dummy = Arc::new(DummyProvider { count: 20 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Test Scroll".to_string(),
+            provider: dummy,
+            catalog: None,
+            book_id: None,
+            cover_path: None,
+        });
+
+        model.page_style = PageStyle::Single;
+        model.direction = ReadingDirection::Ltr;
+        model.current_page = 0;
+
+        let is_webtoon = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
+        assert!(!is_webtoon, "Single page mode must not be treated as webtoon");
+
+        model.page_style = PageStyle::Double;
+        let is_webtoon_double = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
+        assert!(!is_webtoon_double, "Double page mode must not be treated as webtoon");
+
+        // Webtoon mode
+        model.direction = ReadingDirection::Webtoon;
+        let is_webtoon_active = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
+        assert!(is_webtoon_active);
+        let ratio = 0.5;
+        let target = ((model.total_pages - 1) as f64 * ratio).round() as usize;
+        assert_eq!(target, 10);
     }
 }

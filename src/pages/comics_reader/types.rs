@@ -106,7 +106,8 @@ pub enum ComicSidebarTab {
 pub enum ComicsReaderMsg {
     PageLoaded(usize, Option<gtk::gdk::Texture>),
     SetPage(usize),
-    UpdateScrollPage(usize),
+    UpdateScrollPage(f64),
+    ScrollDelta(f64),
     NextPage,
     PrevPage,
     KeyLeft,

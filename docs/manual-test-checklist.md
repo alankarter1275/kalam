@@ -668,7 +668,8 @@ shows up as its own task in the task manager.
 3. Move cursor directly over the top-left area where the "Library" and "Bookmark" buttons live (`x < 240, y < 75`).
 4. Move cursor directly over the bottom-center area where the page navigation pill lives (`y > h - 75, |x - w/2| < 180`).
 5. Click anywhere on the viewport image.
-6. Press Left / Right arrow keys or scroll the page vertically.
+6. Press Left / Right arrow keys, or scroll with two-finger touchpad / mouse wheel in Single and Double page modes.
+7. Press Up / Down arrow keys (or j / k).
 
 **Look for:**
 1. Chrome starts visible, then automatically slides out of view after 3.5s of inactivity.
@@ -676,20 +677,23 @@ shows up as its own task in the task manager.
 3. Hovering over the bottom-center dock zone recovers `[Prev]`, `Page X of Y`, and `[Next]` even after autohide.
 4. Clicking anywhere on the screen grabs focus for keyboard navigation but does NOT toggle chrome or change pages (matching PDF/EPUB reader behavior).
 5. Scrolling or turning pages via keyboard immediately autohides both the top dock and bottom pill unless the cursor is actively hovering directly over them.
+6. Two-finger touchpad or mouse wheel scrolling in Single and Double page modes smoothly pans the viewport and NEVER triggers page navigation (page navigation on scroll is exclusive to continuous Webtoon mode).
+7. Up / Down arrow keys smoothly scroll the viewport vertically by 80px without turning pages; Left / Right arrow keys turn pages.
 
 ### T26 · Comic Reader Zen-Style Left Sidebar, Bottom Tabs & Fit Mode Engine
 
 **Do:**
-1. Move the cursor to the left edge (within 20px of the left border, or press `t` / `s`) to reveal the Zen sidebar.
-2. Observe the cover thumbnail, title, author, and reading progress bar in the header.
-3. Observe the bottom tab bar pinned to the bottom of the sidebar with Settings and Bookmarks (Settings active by default).
-4. In Settings, change Page Style between Single, Double, and Webtoon (Continuous vertical strip).
-5. In Double mode, change Spread Gap between 0px (seamless), 4px, 8px, 12px, and 16px.
-6. Toggle Reading Direction between Left → Right and Right → Left (Manga).
-7. Change Fit Mode between Width, Height, Screen, and 1:1 Original.
+1. Move the cursor to the left edge (within 24px of the left border, or click the left edge strip, or press `t` / `s`) to reveal the Zen sidebar.
+2. Move the cursor into the sidebar and interact with controls across tabs.
+3. Observe the cover thumbnail, title, author, and reading progress bar in the header.
+4. Observe the bottom tab bar pinned to the bottom of the sidebar with Settings and Bookmarks (Settings active by default).
+5. In Settings, change Page Style between Single, Double, and Webtoon (Continuous vertical strip).
+6. In Double mode, change Spread Gap between 0px (seamless), 4px, 8px, 12px, and 16px.
+7. Toggle Reading Direction between Left → Right and Right → Left (Manga).
+8. Change Fit Mode between Width, Height, Screen, and 1:1 Original.
 
 **Look for:**
-1. Sidebar smoothly slides in from the left edge over a subtle dim backdrop. Moving cursor away slides it out after 700ms; clicking the dim backdrop or pressing `Esc` / `t` / `s` dismisses it immediately.
+1. Sidebar smoothly slides in from the left edge over a subtle dim backdrop. Moving cursor into the sidebar keeps it open stably without premature close timer expiration. Moving cursor away slides it out after 700ms; clicking the dim backdrop or pressing `Esc` / `t` / `s` dismisses it immediately.
 2. Settings is open by default. The bottom tab bar allows quick switching between Settings and Bookmarks. Header has no extraneous close buttons.
 3. Double mode shows facing pages side by side with the selected spread gap (0px joins pages seamlessly without border gap). Spread gap selector is enabled in Double mode and disabled in Single/Webtoon mode.
 4. Right → Left mode flips page placement and arrow key orientation so Left arrow advances and Right arrow steps backward.

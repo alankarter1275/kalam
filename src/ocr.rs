@@ -122,7 +122,8 @@ pub fn perform_ocr(
 
     // Convert RGBA samples to RGB buffer
     let mut rgb = Vec::with_capacity((w * h * 3) as usize);
-    for chunk in rendered.samples.chunks_exact(4) {
+    let (chunks, _) = rendered.samples.as_chunks::<4>();
+    for chunk in chunks {
         rgb.push(chunk[0]);
         rgb.push(chunk[1]);
         rgb.push(chunk[2]);

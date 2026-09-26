@@ -1025,7 +1025,6 @@ impl PdfReaderModel {
             let is_block = drag_ctrl_up.current_event_state().contains(gdk::ModifierType::ALT_MASK);
             let _ = tx_drag_update.send(PdfReaderMsg::SelectionDragUpdate { slot: slot_copy, dx, dy, is_block });
         });
-        let drag_ctrl_end = drag.clone();
         drag.connect_drag_end(move |_, dx, dy| {
             let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy });
         });

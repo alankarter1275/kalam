@@ -67,6 +67,12 @@ pub struct ComicsReaderModel {
     pub bookmarks_list_box: Option<gtk::Box>,
 }
 
+#[allow(dead_code)]
+enum DecodedPage {
+    Rgba { width: i32, height: i32, bytes: Vec<u8> },
+    RawBytes(Vec<u8>),
+}
+
 impl ComicsReaderModel {
     pub fn new(init: types::ComicsReaderInit) -> Self {
         let total_pages = init.provider.page_count();
@@ -256,31 +262,49 @@ impl ComicsReaderModel {
             self.pending_loads.insert(idx);
             let s = sender.input_sender().clone();
             let prov = provider.clone();
-            crate::tasks::spawn(
-                "Loading comic pages",
-                move |_| -> Option<gdk::Texture> {
-                    let b = prov.fetch_page(idx).ok()?;
+            crate::tasks::spawn_internal(
+                "Loading comic page",
+                move |_| -> Option<DecodedPage> {
+                    let b = match prov.fetch_page(idx) {
+                        Ok(bytes) => bytes,
+                        Err(err) => {
+                            eprintln!("kalam: comic reader failed to fetch page {idx}: {err}");
+                            return None;
+                        }
+                    };
                     if let Ok(img) = image::load_from_memory(&b) {
                         let rgba = img.to_rgba8();
                         let width = rgba.width() as i32;
                         let height = rgba.height() as i32;
-                        let stride = (width * 4) as usize;
-                        let raw_pixels = rgba.into_raw();
-                        let gbytes = glib::Bytes::from_owned(raw_pixels);
-                        let mem_tex = gdk::MemoryTexture::new(
+                        Some(DecodedPage::Rgba {
                             width,
                             height,
-                            gdk::MemoryFormat::R8g8b8a8,
-                            &gbytes,
-                            stride,
-                        );
-                        Some(mem_tex.upcast::<gdk::Texture>())
+                            bytes: rgba.into_raw(),
+                        })
                     } else {
-                        gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok()
+                        Some(DecodedPage::RawBytes(b))
                     }
                 },
                 |_| {},
-                move |tex_opt| {
+                move |decoded_opt| {
+                    let tex_opt = match decoded_opt {
+                        Some(DecodedPage::Rgba { width, height, bytes }) => {
+                            let stride = (width * 4) as usize;
+                            let gbytes = glib::Bytes::from_owned(bytes);
+                            let mem_tex = gdk::MemoryTexture::new(
+                                width,
+                                height,
+                                gdk::MemoryFormat::R8g8b8a8,
+                                &gbytes,
+                                stride,
+                            );
+                            Some(mem_tex.upcast::<gdk::Texture>())
+                        }
+                        Some(DecodedPage::RawBytes(b)) => {
+                            gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok()
+                        }
+                        None => None,
+                    };
                     let _ = s.send(types::ComicsReaderMsg::PageLoaded(idx, tex_opt));
                 },
             );
@@ -431,6 +455,17 @@ impl Drop for ComicsReaderModel {
     }
 }
 
+fn get_webtoon_vbox(scrolled_window: &gtk::ScrolledWindow) -> Option<gtk::Box> {
+    let child = scrolled_window.child()?;
+    if child.has_css_class("kalam-webtoon-container") {
+        child.downcast::<gtk::Box>().ok()
+    } else if let Ok(vp) = child.downcast::<gtk::Viewport>() {
+        vp.child().and_then(|c| c.downcast::<gtk::Box>().ok())
+    } else {
+        None
+    }
+}
+
 fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
     let fit_content_fit = match model.fit_mode {
         FitMode::Width | FitMode::Height | FitMode::Screen => gtk::ContentFit::Contain,
@@ -467,7 +502,7 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
                 placeholder.set_valign(gtk::Align::Center);
 
                 let spinner = gtk::Spinner::new();
-                spinner.start();
+                spinner.set_spinning(true);
                 spinner.set_size_request(32, 32);
                 spinner.set_halign(gtk::Align::Center);
                 spinner.set_valign(gtk::Align::Center);
@@ -523,7 +558,7 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
                     placeholder.set_valign(gtk::Align::Center);
 
                     let spinner = gtk::Spinner::new();
-                    spinner.start();
+                    spinner.set_spinning(true);
                     spinner.set_size_request(36, 36);
                     spinner.set_halign(gtk::Align::Center);
                     spinner.set_valign(gtk::Align::Center);
@@ -558,7 +593,7 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
         match model.fit_mode {
             FitMode::Width => {
                 pic.set_hexpand(true);
-                pic.set_vexpand(false);
+                pic.set_vexpand(true);
             }
             FitMode::Height => {
                 pic.set_hexpand(false);
@@ -576,7 +611,7 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
         vbox.append(&pic);
     } else {
         let spinner = gtk::Spinner::new();
-        spinner.start();
+        spinner.set_spinning(true);
         spinner.set_size_request(48, 48);
         vbox.append(&spinner);
     }
@@ -1469,8 +1504,6 @@ impl Component for ComicsReaderModel {
         sender: ComponentSender<Self>,
         _root: &Self::Root,
     ) {
-        let mut loaded_page_idx = None;
-
         match msg {
             ComicsReaderMsg::SetPage(idx) => {
                 self.set_page(idx);
@@ -1579,8 +1612,52 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::PageLoaded(idx, ref maybe_tex) => {
                 self.pending_loads.remove(&idx);
                 if let Some(tex) = maybe_tex.clone() {
-                    self.textures.insert(idx, tex);
-                    loaded_page_idx = Some(idx);
+                    self.textures.insert(idx, tex.clone());
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+
+                    if is_webtoon {
+                        let mut in_place_applied = false;
+                        if let Some(vbox) = get_webtoon_vbox(&widgets.viewport_box) {
+                            let mut curr = vbox.first_child();
+                            let mut i = 0;
+                            while let Some(item) = curr {
+                                if i == idx {
+                                    if let Ok(item_box) = item.downcast::<gtk::Box>() {
+                                        while let Some(old) = item_box.first_child() {
+                                            item_box.remove(&old);
+                                        }
+                                        let fit_content_fit = match self.fit_mode {
+                                            FitMode::Width | FitMode::Height | FitMode::Screen => gtk::ContentFit::Contain,
+                                            FitMode::Original => gtk::ContentFit::ScaleDown,
+                                        };
+                                        let pic = gtk::Picture::for_paintable(&tex);
+                                        pic.set_can_shrink(true);
+                                        pic.set_content_fit(fit_content_fit);
+                                        pic.set_halign(gtk::Align::Center);
+                                        item_box.append(&pic);
+                                        in_place_applied = true;
+                                    }
+                                    break;
+                                }
+                                curr = item.next_sibling();
+                                i += 1;
+                            }
+                        }
+                        if !in_place_applied {
+                            let child = rebuild_viewport_widget(self);
+                            widgets.viewport_box.set_child(Some(&child));
+                        }
+                    } else {
+                        let in_view = if self.page_style == PageStyle::Double {
+                            idx == self.current_page || idx == self.current_page + 1
+                        } else {
+                            idx == self.current_page
+                        };
+                        if in_view {
+                            let child = rebuild_viewport_widget(self);
+                            widgets.viewport_box.set_child(Some(&child));
+                        }
+                    }
                 }
             }
             ComicsReaderMsg::ToggleDirection => {
@@ -1837,40 +1914,6 @@ impl Component for ComicsReaderModel {
                     self.sidebar_pinned = false;
                 } else {
                     let _ = sender.output(ComicsReaderOut::Close);
-                }
-            }
-        }
-
-        let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-
-        if is_webtoon && loaded_page_idx.is_some() {
-            if let Some(child_widget) = widgets.viewport_box.child() {
-                if child_widget.has_css_class("kalam-webtoon-container") {
-                    if let Ok(vbox) = child_widget.downcast::<gtk::Box>() {
-                        if let Some(idx) = loaded_page_idx {
-                            if let Some(tex) = self.textures.get(&idx) {
-                                let mut curr = vbox.first_child();
-                                let mut i = 0;
-                                while let Some(item) = curr {
-                                    if i == idx {
-                                        if let Ok(item_box) = item.downcast::<gtk::Box>() {
-                                            while let Some(old) = item_box.first_child() {
-                                                item_box.remove(&old);
-                                            }
-                                            let pic = gtk::Picture::for_paintable(tex);
-                                            pic.set_can_shrink(true);
-                                            pic.set_content_fit(gtk::ContentFit::Contain);
-                                            pic.set_halign(gtk::Align::Center);
-                                            item_box.append(&pic);
-                                        }
-                                        break;
-                                    }
-                                    curr = item.next_sibling();
-                                    i += 1;
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }

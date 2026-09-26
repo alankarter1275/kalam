@@ -397,7 +397,7 @@ impl ComicsReaderModel {
         self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
         let seq = self.sidebar_close_seq;
         let s = sender.clone();
-        glib::timeout_add_local_once(Duration::from_millis(350), move || {
+        glib::timeout_add_local_once(Duration::from_millis(600), move || {
             let _ = s.input_sender().send(ComicsReaderMsg::SidebarCloseTimerTick(seq));
         });
     }
@@ -904,6 +904,19 @@ impl Component for ComicsReaderModel {
                         connect_clicked => ComicsReaderMsg::Close,
                     },
 
+                    #[name = "top_sidebar_btn"]
+                    gtk::Button {
+                        set_child: Some(&crate::icons::labelled(
+                            "emblem-system-symbolic",
+                            16,
+                            "Settings",
+                            6,
+                        )),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Reader Settings & Bookmarks (t / s)"),
+                        connect_clicked => ComicsReaderMsg::ToggleSidebar,
+                    },
+
                     #[name = "top_bookmark_btn"]
                     gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes(
@@ -1014,10 +1027,11 @@ impl Component for ComicsReaderModel {
                     set_margin_start: 8,
                     set_margin_top: 8,
                     set_margin_bottom: 8,
+                    set_vexpand: true,
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-left",
 
-                    // 1. Header (Cover + Title + Progress)
+                    // 1. Header (Cover + Title + Progress + Close Button)
                     gtk::Box {
                         add_css_class: "kalam-reader-book-head",
                         set_orientation: gtk::Orientation::Horizontal,
@@ -1062,6 +1076,19 @@ impl Component for ComicsReaderModel {
                                 #[watch]
                                 set_fraction: model.progress_fraction(),
                             },
+                        },
+
+                        // Close sidebar button
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "window-close-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-back",
+                            set_valign: gtk::Align::Start,
+                            set_tooltip_text: Some("Close sidebar (Esc / t / s)"),
+                            connect_clicked => ComicsReaderMsg::CloseSidebar,
                         },
                     },
 
@@ -1327,7 +1354,7 @@ impl Component for ComicsReaderModel {
                                         set_halign: gtk::Align::Start,
                                     },
                                     gtk::Label {
-                                        set_label: "t                 Toggle sidebar",
+                                        set_label: "t / s             Toggle sidebar",
                                         add_css_class: "dim-label",
                                         set_halign: gtk::Align::Start,
                                     },
@@ -1435,7 +1462,7 @@ impl Component for ComicsReaderModel {
             let w = root_clone.width() as f64;
             let h = root_clone.height() as f64;
             // Hover over top-left area where back dock lives
-            let top = x < 260.0 && y < 85.0;
+            let top = x < 320.0 && y < 85.0;
             // Hover over bottom-center area where bottom pill lives
             let bottom = y > (h - 85.0) && h > 85.0 && (x - (w / 2.0)).abs() < 220.0;
             // Left edge zone for slide-in sidebar
@@ -1510,6 +1537,18 @@ impl Component for ComicsReaderModel {
         });
         widgets.left_sidebar_box.add_controller(sidebar_motion);
 
+        // Hover controller on dedicated left edge strip
+        let left_edge_motion = gtk::EventControllerMotion::new();
+        let s_lem = sender.clone();
+        left_edge_motion.connect_enter(move |_, _, _| {
+            let _ = s_lem.input_sender().send(ComicsReaderMsg::LeftEdgeHover(true));
+        });
+        let s_leml = sender.clone();
+        left_edge_motion.connect_leave(move |_| {
+            let _ = s_leml.input_sender().send(ComicsReaderMsg::LeftEdgeHover(false));
+        });
+        widgets.left_edge_box.add_controller(left_edge_motion);
+
         // 4. Viewport click gesture: left 30% = prev, right 30% = next, center 40% = toggle chrome
         let click = gtk::GestureClick::new();
         let s_click = sender.clone();
@@ -1555,13 +1594,22 @@ impl Component for ComicsReaderModel {
         widgets.viewport_box.hadjustment().connect_page_size_notify(move |_| {
             let _ = s_hadj.input_sender().send(ComicsReaderMsg::ViewportResized);
         });
+        let s_vadj_size = sender.clone();
+        widgets.viewport_box.vadjustment().connect_page_size_notify(move |_| {
+            let _ = s_vadj_size.input_sender().send(ComicsReaderMsg::ViewportResized);
+        });
 
-        // 7. Keyboard shortcuts on root
+        // 7. Keyboard shortcuts on root with Capture propagation phase
         let key_controller = gtk::EventControllerKey::new();
+        key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
         let s_key = sender.clone();
         key_controller.connect_key_pressed(move |_, keyval, _, _| {
             match keyval {
-                gdk::Key::Escape | gdk::Key::BackSpace => {
+                gdk::Key::Escape => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::Close);
+                    glib::Propagation::Stop
+                }
+                gdk::Key::BackSpace | gdk::Key::q | gdk::Key::Q => {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::Close);
                     glib::Propagation::Stop
                 }
@@ -1581,6 +1629,14 @@ impl Component for ComicsReaderModel {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::NextPage);
                     glib::Propagation::Stop
                 }
+                gdk::Key::Home => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::SetPage(0));
+                    glib::Propagation::Stop
+                }
+                gdk::Key::End => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::SetPage(usize::MAX));
+                    glib::Propagation::Stop
+                }
                 gdk::Key::b | gdk::Key::B => {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::ToggleBookmark);
                     glib::Propagation::Stop
@@ -1589,7 +1645,7 @@ impl Component for ComicsReaderModel {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::ToggleFitMode);
                     glib::Propagation::Stop
                 }
-                gdk::Key::t | gdk::Key::T => {
+                gdk::Key::t | gdk::Key::T | gdk::Key::s | gdk::Key::S => {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::ToggleSidebar);
                     glib::Propagation::Stop
                 }
@@ -1597,9 +1653,22 @@ impl Component for ComicsReaderModel {
             }
         });
         root.add_controller(key_controller);
+
         root.set_can_focus(true);
+        root.set_focusable(true);
         root.grab_focus();
-        widgets.viewport_box.set_can_focus(true);
+        let root_for_map = root.clone();
+        root.connect_map(move |r| {
+            r.grab_focus();
+        });
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || {
+                root.grab_focus();
+            }
+        });
+        widgets.viewport_box.set_can_focus(false);
+        widgets.viewport_box.set_focusable(false);
 
         ComponentParts { model, widgets }
     }
@@ -1886,6 +1955,7 @@ impl Component for ComicsReaderModel {
             }
             ComicsReaderMsg::ToggleSidebar => {
                 self.show_sidebar = !self.show_sidebar;
+                self.sidebar_pinned = self.show_sidebar;
                 if self.show_sidebar {
                     self.show_back_button = false;
                     self.sync_settings_ui(widgets);
@@ -2031,6 +2101,7 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::Close => {
                 if self.show_sidebar {
                     self.show_sidebar = false;
+                    self.sidebar_pinned = false;
                 } else {
                     let _ = sender.output(ComicsReaderOut::Close);
                 }

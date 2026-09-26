@@ -966,6 +966,7 @@ impl Component for ComicsReaderModel {
                             set_spacing: 6,
                             set_valign: gtk::Align::Center,
 
+                            #[name = "page_indicator_label"]
                             gtk::Label {
                                 add_css_class: "kalam-reader-pill-pages",
                                 #[watch]
@@ -1009,6 +1010,7 @@ impl Component for ComicsReaderModel {
             },
 
             // ── 7. Zen-Style Left Sidebar (Settings + Bookmarks) ───────
+            #[name = "sidebar_revealer"]
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-sidebar-shell",
                 add_css_class: "kalam-reader-sidebar-shell-left",
@@ -1682,7 +1684,8 @@ impl Component for ComicsReaderModel {
                 self.save_progress();
                 self.trigger_loads(&sender);
                 self.update_bookmark_icon_state(widgets);
-                if self.page_style == PageStyle::LongStrip {
+                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
                     let max = (vadj.upper() - vadj.page_size()).max(0.0);
                     if self.total_pages > 1 && max > 0.0 {
@@ -1723,7 +1726,8 @@ impl Component for ComicsReaderModel {
                 self.save_progress();
                 self.trigger_loads(&sender);
                 self.update_bookmark_icon_state(widgets);
-                if self.page_style == PageStyle::LongStrip {
+                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
                     let max = (vadj.upper() - vadj.page_size()).max(0.0);
                     if self.total_pages > 1 && max > 0.0 {
@@ -1742,7 +1746,8 @@ impl Component for ComicsReaderModel {
                 self.save_progress();
                 self.trigger_loads(&sender);
                 self.update_bookmark_icon_state(widgets);
-                if self.page_style == PageStyle::LongStrip {
+                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
                     let max = (vadj.upper() - vadj.page_size()).max(0.0);
                     if self.total_pages > 1 && max > 0.0 {
@@ -2086,6 +2091,8 @@ impl Component for ComicsReaderModel {
                 }
             }
         }
+
+        self.update_view(widgets, sender);
     }
 }
 
@@ -2299,5 +2306,31 @@ mod tests {
         let ratio = 0.5;
         let target = ((model.total_pages - 1) as f64 * ratio).round() as usize;
         assert_eq!(target, 10);
+    }
+
+    #[test]
+    fn test_live_page_indicator_and_progress_updates() {
+        let dummy = Arc::new(DummyProvider { count: 10 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Test Manga".to_string(),
+            provider: dummy,
+            catalog: None,
+            book_id: None,
+            cover_path: None,
+        });
+
+        assert_eq!(model.current_page, 0);
+        assert_eq!(model.page_indicator_label(), "Page 1 of 10");
+        assert!((model.progress_fraction() - 0.1).abs() < 1e-4);
+
+        model.next_page();
+        assert_eq!(model.current_page, 1);
+        assert_eq!(model.page_indicator_label(), "Page 2 of 10");
+        assert!((model.progress_fraction() - 0.2).abs() < 1e-4);
+
+        model.set_page(9);
+        assert_eq!(model.current_page, 9);
+        assert_eq!(model.page_indicator_label(), "Page 10 of 10");
+        assert!((model.progress_fraction() - 1.0).abs() < 1e-4);
     }
 }

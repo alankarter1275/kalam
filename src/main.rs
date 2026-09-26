@@ -20,6 +20,7 @@ mod logging;
 mod metadata;
 mod models;
 mod notify;
+mod ocr;
 mod pages;
 mod paths;
 mod pdf;

@@ -154,6 +154,10 @@ epub-builder = "0.8.3"
 # PDF (MuPDF safe Rust engine with base14 fonts and system fontconfig support)
 mupdf = { version = "0.8", default-features = false, features = ["base14-fonts", "system-fonts"] }
 
+# Pure-Rust OCR engine and inference runtime
+ocrs = "0.13"
+rten = "0.26"
+
 [profile.dev]
 opt-level = 1
 debug = "line-tables-only"

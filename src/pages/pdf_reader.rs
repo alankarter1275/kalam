@@ -175,6 +175,11 @@ pub enum PdfReaderMsg {
     SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64 },
     SelectionWordAt { slot: PageSlot, x: f64, y: f64 },
     SelectionLineAt { slot: PageSlot, x: f64, y: f64 },
+    PageOcrResult {
+        generation: u64,
+        page: usize,
+        text: Box<Result<PdfPageText, String>>,
+    },
     CopySelection,
     QuoteSelection,
     LookUpWord(String),
@@ -248,6 +253,8 @@ pub struct PdfReaderModel {
     pub active_selection: std::rc::Rc<std::cell::RefCell<Option<PdfActiveSelection>>>,
     pub selection_drag_state: Option<(PageSlot, f64, f64, bool)>,
     pub selection_chip: Option<gtk::Popover>,
+    pub ocr_tx: Option<async_channel::Sender<crate::ocr::PdfOcrRequest>>,
+    pub ocr_in_progress: HashSet<usize>,
     pub show_zoom_osd: bool,
     pub zoom_osd_seq: u64,
 }
@@ -376,6 +383,8 @@ impl PdfReaderModel {
             active_selection: std::rc::Rc::new(std::cell::RefCell::new(None)),
             selection_drag_state: None,
             selection_chip: None,
+            ocr_tx: None,
+            ocr_in_progress: HashSet::new(),
             show_zoom_osd: false,
             zoom_osd_seq: 0,
         };
@@ -734,11 +743,39 @@ impl PdfReaderModel {
         }
     }
 
+    pub fn trigger_page_ocr(&mut self, page: usize) {
+        if self.page_text_cache.contains_key(&page) {
+            return;
+        }
+        if self.ocr_in_progress.contains(&page) {
+            return;
+        }
+        let Some(ref tx) = self.ocr_tx else {
+            return;
+        };
+        let Some(ref doc) = self.doc else {
+            return;
+        };
+
+        self.ocr_in_progress.insert(page);
+        let _ = tx.send_blocking(crate::ocr::PdfOcrRequest {
+            generation: self.render_generation,
+            page,
+            path: doc.path.clone(),
+        });
+    }
+
     pub fn ensure_page_text(&mut self, page: usize) -> Option<&PdfPageText> {
         if !self.page_text_cache.contains_key(&page) {
             if let Some(ref doc) = self.doc {
                 if let Ok(text) = doc.extract_page_text(page) {
-                    self.page_text_cache.insert(page, text);
+                    if text.total_chars() > 0 {
+                        self.page_text_cache.insert(page, text);
+                    } else {
+                        // Digital vector text returned 0 characters (scanned page).
+                        // Automatically trigger background OCR!
+                        self.trigger_page_ocr(page);
+                    }
                 }
             }
         }
@@ -2286,6 +2323,72 @@ impl Component for PdfReaderModel {
         model.active_generation = Some(active_gen);
         model.render_generation = 1;
 
+        // Start background OCR worker thread for scanned PDF pages
+        let (ocr_tx, ocr_rx) = async_channel::unbounded::<crate::ocr::PdfOcrRequest>();
+        let ocr_gen = active_gen.clone();
+        let tx_ocr_msg = sender.input_sender().clone();
+
+        let _ = std::thread::Builder::new()
+            .name("kalam-pdf-ocr-worker".to_string())
+            .spawn(move || {
+                let mut cached_path: Option<PathBuf> = None;
+                let mut cached_doc: Option<PdfDocument> = None;
+                let mut ocr_engine: Option<ocrs::OcrEngine> = None;
+                let mut engine_attempted = false;
+
+                while let Ok(req) = ocr_rx.recv_blocking() {
+                    if req.generation != ocr_gen.load(Ordering::Relaxed) {
+                        continue;
+                    }
+
+                    if !engine_attempted {
+                        ocr_engine = crate::ocr::init_ocr_engine();
+                        engine_attempted = true;
+                    }
+
+                    let Some(ref engine) = ocr_engine else {
+                        continue;
+                    };
+
+                    if cached_path.as_ref() != Some(&req.path) {
+                        cached_path = Some(req.path.clone());
+                        cached_doc = PdfDocument::open(&req.path).ok();
+                    }
+
+                    if let Some(ref doc) = cached_doc {
+                        let scale = 2.0f32; // 144 DPI for crisp OCR character boundaries
+                        if let Ok(rendered) = doc.render_page_rgba(req.page, scale, false) {
+                            let (width_pts, height_pts) = doc.page_dimensions(req.page)
+                                .unwrap_or((rendered.width as f32 / scale, rendered.height as f32 / scale));
+                            match crate::ocr::perform_ocr(engine, &rendered, req.page, width_pts, height_pts) {
+                                Ok(page_text) => {
+                                    if req.generation == ocr_gen.load(Ordering::Relaxed) {
+                                        let _ = tx_ocr_msg.send(PdfReaderMsg::PageOcrResult {
+                                            generation: req.generation,
+                                            page: req.page,
+                                            text: Box::new(Ok(page_text)),
+                                        });
+                                    }
+                                }
+                                Err(err) => {
+                                    if req.generation == ocr_gen.load(Ordering::Relaxed) {
+                                        let _ = tx_ocr_msg.send(PdfReaderMsg::PageOcrResult {
+                                            generation: req.generation,
+                                            page: req.page,
+                                            text: Box::new(Err(err.to_string())),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+        model.ocr_tx = Some(ocr_tx);
+        let cur = model.current_page;
+        let _ = model.ensure_page_text(cur);
+
         model.schedule_back_hide(&sender);
         model.schedule_bottom_hide(&sender);
         model.trigger_loads(&sender);
@@ -2659,6 +2762,11 @@ impl Component for PdfReaderModel {
                     },
                 );
 
+                // Auto-detect if scanned page needs OCR
+                if !self.page_text_cache.contains_key(&page) {
+                    let _ = self.ensure_page_text(page);
+                }
+
                 match self.scroll_mode {
                     PdfScrollMode::PageScrolling => {
                         match self.spread_mode {
@@ -2696,6 +2804,31 @@ impl Component for PdfReaderModel {
                             pic.queue_draw();
                             widgets.viewport_scroll.queue_draw();
                         }
+                    }
+                }
+            }
+            PdfReaderMsg::PageOcrResult {
+                generation,
+                page,
+                text,
+            } => {
+                if generation != self.render_generation {
+                    return;
+                }
+                self.ocr_in_progress.remove(&page);
+                match *text {
+                    Ok(ocr_text) => {
+                        log::info!(
+                            "OCR completed for page {page}: {} lines recognized",
+                            ocr_text.lines.len()
+                        );
+                        self.page_text_cache.insert(page, ocr_text);
+                        for da in self.page_draw_areas.values() {
+                            da.queue_draw();
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!("OCR failed for page {page}: {err}");
                     }
                 }
             }

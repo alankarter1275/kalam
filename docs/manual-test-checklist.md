@@ -529,6 +529,27 @@ but renders as boxes.
 - Sleek VLC-style Zoom HUD: zooming triggers a translucent capsule indicator in the top-right corner showing current zoom level (e.g. `125%`), which smoothly crossfades away after exactly 1 second of inactivity.
 **Report if:** spreads hop horizontally during scroll, TOC entries wrap with uneven indentation, chrome stays visible while scrolling, or zoom indicator fails to appear/fade.
 
+### T18 · Pure-Rust Offline OCR Text Selection on Scanned / Image-Based PDFs
+**Do:**
+- Open any scanned or image-based PDF document (a document containing images of printed book pages where MuPDF digital vector text layer returns 0 characters).
+- Observe that the page renders normally in any view mode (Page Scrolling, Vertical Scrolling, Two-Page Spreads).
+- In the background, the dedicated pure-Rust neural OCR worker (`kalam-pdf-ocr-worker`) automatically detects that the page has 0 vector text and runs neural character recognition (DBNet + CRNN) offline.
+- Click and drag across lines of scanned text on the page with mouse or touchpad.
+- Double-click on any recognized word in the scan.
+- Triple-click on any recognized line in the scan.
+- Observe the blue selection highlight (`rgba(53, 132, 228, 0.35)`) and handles snapping to the recognized text lines and words.
+- In the floating action popover:
+  - Click **Copy** (or press `Ctrl+C`). Paste into a text editor to verify the OCR recognized characters match the page text.
+  - Click **Define**: verify dictionary definition popover opens for the OCR-recognized word.
+  - Click **Quote**: verify the OCR text is saved as a quote annotation in the book's notes.
+- Press `Escape` (or click outside) to dismiss the selection cleanly.
+**Look for:**
+- Completely transparent automatic detection: scanned pages gain text selection without any manual "Run OCR" button or modal dialogs.
+- 100% offline operation: zero external network requests or internet access required.
+- Accurate character bounding boxes mapped from 144 DPI neural inference back to PDF document coordinates.
+- Full selection parity with vector PDFs: drag selection, word/line expansion, `Ctrl+C` copying, dictionary definitions, and quote creation all work identically on scanned books.
+**Report if:** scanned text cannot be selected after rendering, selection quads are wildly misaligned, or Copy/Define/Quote fails on scanned pages.
+
 ---
 
 ## Part F — dictionary and annotations (earlier work, unverified on device)

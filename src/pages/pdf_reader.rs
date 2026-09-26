@@ -112,7 +112,7 @@ pub fn calculate_spread_for_page(
             if p <= 1 {
                 (1, None)
             } else {
-                let left = if p % 2 == 0 { p } else { p - 1 };
+                let left = if p.is_multiple_of(2) { p } else { p - 1 };
                 let right = if left < total_pages {
                     Some(left + 1)
                 } else {
@@ -122,7 +122,7 @@ pub fn calculate_spread_for_page(
             }
         }
         PdfSpreadMode::EvenSpreads => {
-            let left = if p % 2 != 0 { p } else { p - 1 };
+            let left = if !p.is_multiple_of(2) { p } else { p - 1 };
             let right = if left < total_pages {
                 Some(left + 1)
             } else {
@@ -1443,8 +1443,11 @@ impl PdfReaderModel {
                             left_pic.set_size_request(page_w, page_h);
                             left_pic.add_css_class("kalam-pdf-two-page");
 
-                            let spread_ready = self.textures.contains_key(&left)
-                                && right.map_or(true, |r| self.textures.contains_key(&r));
+                            let spread_ready = if let Some(r) = right {
+                                self.textures.contains_key(&left) && self.textures.contains_key(&r)
+                            } else {
+                                self.textures.contains_key(&left)
+                            };
 
                             if spread_ready {
                                 if let Some(cached) = self.textures.get(&left) {
@@ -1543,8 +1546,11 @@ impl PdfReaderModel {
                             left_pic.set_size_request(page_w, page_h);
                             left_pic.add_css_class("kalam-pdf-two-page");
 
-                            let spread_ready = self.textures.contains_key(&left)
-                                && right.map_or(true, |r| self.textures.contains_key(&r));
+                            let spread_ready = if let Some(r) = right {
+                                self.textures.contains_key(&left) && self.textures.contains_key(&r)
+                            } else {
+                                self.textures.contains_key(&left)
+                            };
 
                             if spread_ready {
                                 if let Some(cached) = self.textures.get(&left) {

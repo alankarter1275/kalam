@@ -1173,7 +1173,7 @@ mod tests {
         };
 
         // Drag down Column 1 across lines 1 and 3
-        let (text, rects) = page_text.select_between((50.0, 105.0), (240.0, 135.0));
+        let (text, rects) = page_text.select_between((50.0, 105.0), (250.0, 135.0));
         assert!(text.contains("Aristotle wrote books."));
         assert!(text.contains("He studied natural philosophy."));
         // Critically: STARFACT sidebar at the same vertical height MUST NOT be included!

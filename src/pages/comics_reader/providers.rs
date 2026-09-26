@@ -29,10 +29,6 @@ impl ImageProvider for LocalProvider {
         let page_name = self.pages.get(idx).ok_or_else(|| anyhow!("Page index out of bounds"))?;
         extract_comic_page(&self.file_path, page_name)
     }
-
-    fn page_title(&self, idx: usize) -> Option<String> {
-        self.pages.get(idx).cloned()
-    }
 }
 
 pub struct RemoteProvider {

@@ -93,6 +93,13 @@ impl FitMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComicSidebarTab {
+    Pages,
+    Bookmarks,
+    Settings,
+}
+
 #[derive(Debug)]
 pub enum ComicsReaderMsg {
     PageLoaded(usize, Option<gtk::gdk::Texture>),
@@ -108,6 +115,21 @@ pub enum ComicsReaderMsg {
     SetPageStyle(PageStyle),
     ToggleFitMode,
     SetFitMode(FitMode),
+    SetSpreadGap(i32),
+    ToggleSidebar,
+    CloseSidebar,
+    SetSidebarTab(ComicSidebarTab),
+    ToggleBookmark,
+    DeleteBookmark(i64),
+    TopEdgeHover(bool),
+    BottomEdgeHover(bool),
+    LeftEdgeHover(bool),
+    SidebarHover(bool),
+    BackHideTimerTick(u64),
+    BottomHideTimerTick(u64),
+    SidebarCloseTimerTick(u64),
+    UserScrolled,
+    HideOsd(u64),
     ToggleChrome,
     ToggleSettings,
     CloseSettings,
@@ -119,7 +141,6 @@ pub enum ComicsReaderOut {
     Close,
 }
 
-
 #[allow(dead_code)] // menu/context actions for the comics reader UI
 pub enum ReaderContext {
     Local(i64), // book_id
@@ -129,4 +150,7 @@ pub enum ReaderContext {
 pub struct ComicsReaderInit {
     pub title: String,
     pub provider: std::sync::Arc<dyn super::provider::ImageProvider>,
+    pub catalog: Option<std::sync::Arc<crate::db::Catalog>>,
+    pub book_id: Option<i64>,
+    pub cover_path: Option<std::path::PathBuf>,
 }

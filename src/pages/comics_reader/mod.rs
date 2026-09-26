@@ -1,8 +1,18 @@
-//! Moku-style comics reader page component.
+//! Modernized Comic and Manga Reader component for Kalam.
 //!
-//! Provides an immersive image-pager reader for CBZ/CBR comic archives with
-//! LTR/RTL/Webtoon reading modes, page scrubbing, slide-out settings panel,
-//! floating minimal chrome, and bounded memory caching.
+//! Provides an immersive image-pager reader for CBZ/CBR comic archives and remote manga with:
+//! - Unified floating chrome matching EPUB and PDF readers:
+//!   - Floating top-left dock (`[← Library]` + `[Bookmark]` with live active state)
+//!   - Floating bottom-center pill (`[Prev]`, `Page X of Y`, `[Next]`)
+//!   - VLC-style HUD in top-right corner for zoom and fit mode feedback
+//!   - Non-intrusive edge hover zones (no full-width triggers, no screen-tap toggling)
+//!   - Chrome autohides on scroll and after 3 seconds
+//! - Zen-style slide-in left sidebar:
+//!   - Header with cover thumbnail, title, and reading progress bar
+//!   - Three tabs: Pages list (quick jump), Bookmarks (jump and delete), and Settings
+//!   - Categorized settings panel: Page Style (Single, Double, Long Strip), Reading Direction (LTR, RTL/Manga),
+//!     Spread Gap (0px seamless to 16px), and Fit Mode
+//! - Reading progress checkpointing, bookmark persistence, and memory release on close.
 
 pub mod types;
 pub mod provider;
@@ -11,43 +21,198 @@ pub mod providers;
 pub use types::*;
 
 use gtk::gdk;
+use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
+
+use crate::db::{Catalog, ReadingBookmark};
 
 pub struct ComicsReaderModel {
     pub title: String,
     pub provider: Arc<dyn provider::ImageProvider>,
+    pub catalog: Option<Arc<Catalog>>,
+    pub book_id: Option<i64>,
+    pub cover_path: Option<PathBuf>,
     pub current_page: usize,
+    pub total_pages: usize,
     pub direction: ReadingDirection,
     pub page_style: PageStyle,
     pub fit_mode: FitMode,
-    pub show_chrome: bool,
-    pub show_settings: bool,
+    pub two_page_gap: i32,
+    pub sidebar_tab: ComicSidebarTab,
+    pub show_back_button: bool,
+    pub show_bottom_pill: bool,
+    pub show_sidebar: bool,
+    pub sidebar_pinned: bool,
+    pub mouse_in_top_edge: bool,
+    pub mouse_in_bottom_edge: bool,
+    pub mouse_in_left_edge: bool,
+    pub mouse_in_sidebar: bool,
+    pub back_hide_seq: u64,
+    pub bottom_hide_seq: u64,
+    pub sidebar_close_seq: u64,
+    pub show_zoom_osd: bool,
+    pub zoom_osd_seq: u64,
+    pub osd_text: String,
+    pub bookmarks: Vec<ReadingBookmark>,
     pub textures: HashMap<usize, gdk::Texture>,
     pub pending_loads: HashSet<usize>,
+    pub session_id: Option<i64>,
+    pub session_start: std::time::Instant,
+    pub pages_list_box: Option<gtk::Box>,
+    pub bookmarks_list_box: Option<gtk::Box>,
 }
 
 impl ComicsReaderModel {
     pub fn new(init: types::ComicsReaderInit) -> Self {
+        let total_pages = init.provider.page_count();
+
+        let saved_page = if let (Some(ref catalog), Some(book_id)) = (&init.catalog, init.book_id) {
+            match catalog.get_reading_progress(book_id) {
+                Ok(Some((page, _))) if page < total_pages => page,
+                _ => 0,
+            }
+        } else {
+            0
+        };
+
+        let bookmarks = if let (Some(ref catalog), Some(book_id)) = (&init.catalog, init.book_id) {
+            let _ = catalog.mark_book_opened(book_id);
+            catalog.list_reading_bookmarks(book_id).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        let session_id = if let (Some(ref catalog), Some(book_id)) = (&init.catalog, init.book_id) {
+            let start_pct = match catalog.get_book(book_id) {
+                Ok(Some(b)) => b.progress as i64,
+                _ => 0,
+            };
+            catalog.start_reading_session(book_id, start_pct).ok()
+        } else {
+            None
+        };
+
+        // Preference resolution: per-book -> global default -> built-in default
+        let (direction, page_style, fit_mode, two_page_gap) = if let Some(ref catalog) = init.catalog {
+            let bid = init.book_id;
+            let dir_pref = bid
+                .and_then(|id| catalog.get_pref(&format!("book.{id}.comic.direction")))
+                .or_else(|| catalog.get_pref("reader.comic.direction"));
+            let dir = match dir_pref.as_deref() {
+                Some("rtl") => ReadingDirection::Rtl,
+                Some("webtoon") => ReadingDirection::Webtoon,
+                _ => ReadingDirection::Ltr,
+            };
+
+            let style_pref = bid
+                .and_then(|id| catalog.get_pref(&format!("book.{id}.comic.page_style")))
+                .or_else(|| catalog.get_pref("reader.comic.page_style"));
+            let style = match style_pref.as_deref() {
+                Some("double") => PageStyle::Double,
+                Some("fade") => PageStyle::Fade,
+                Some("strip") => PageStyle::LongStrip,
+                _ => PageStyle::Single,
+            };
+
+            let fit_pref = bid
+                .and_then(|id| catalog.get_pref(&format!("book.{id}.comic.fit_mode")))
+                .or_else(|| catalog.get_pref("reader.comic.fit_mode"));
+            let fit = match fit_pref.as_deref() {
+                Some("height") => FitMode::Height,
+                Some("screen") => FitMode::Screen,
+                Some("original") => FitMode::Original,
+                _ => FitMode::Width,
+            };
+
+            let gap = catalog.get_pref_i64("reader.comic.two_page_gap", 0).clamp(0, 48) as i32;
+
+            (dir, style, fit, gap)
+        } else {
+            (
+                ReadingDirection::Ltr,
+                PageStyle::Single,
+                FitMode::Width,
+                0,
+            )
+        };
+
         Self {
             title: init.title,
             provider: init.provider,
-            current_page: 0,
-            direction: ReadingDirection::Ltr,
-            page_style: PageStyle::LongStrip,
-            fit_mode: FitMode::Width,
-            show_chrome: true,
-            show_settings: false,
+            catalog: init.catalog,
+            book_id: init.book_id,
+            cover_path: init.cover_path,
+            current_page: saved_page,
+            total_pages,
+            direction,
+            page_style,
+            fit_mode,
+            two_page_gap,
+            sidebar_tab: ComicSidebarTab::Pages,
+            show_back_button: true,
+            show_bottom_pill: true,
+            show_sidebar: false,
+            sidebar_pinned: false,
+            mouse_in_top_edge: false,
+            mouse_in_bottom_edge: false,
+            mouse_in_left_edge: false,
+            mouse_in_sidebar: false,
+            back_hide_seq: 0,
+            bottom_hide_seq: 0,
+            sidebar_close_seq: 0,
+            show_zoom_osd: false,
+            zoom_osd_seq: 0,
+            osd_text: String::new(),
+            bookmarks,
             textures: HashMap::new(),
             pending_loads: HashSet::new(),
+            session_id,
+            session_start: std::time::Instant::now(),
+            pages_list_box: None,
+            bookmarks_list_box: None,
+        }
+    }
+
+    pub fn reload_bookmarks(&mut self) {
+        if let (Some(ref catalog), Some(book_id)) = (&self.catalog, self.book_id) {
+            self.bookmarks = catalog.list_reading_bookmarks(book_id).unwrap_or_default();
+        }
+    }
+
+    pub fn progress_fraction(&self) -> f64 {
+        if self.total_pages > 0 {
+            (self.current_page + 1) as f64 / self.total_pages as f64
+        } else {
+            0.0
+        }
+    }
+
+    pub fn save_progress(&self) {
+        if let (Some(ref catalog), Some(book_id)) = (&self.catalog, self.book_id) {
+            let fraction = self.progress_fraction();
+            let _ = catalog.set_reading_progress(
+                book_id,
+                self.current_page,
+                fraction,
+                self.total_pages,
+            );
+
+            if let Some(sid) = self.session_id {
+                let elapsed = self.session_start.elapsed().as_secs() as i64;
+                let end_pct = (fraction * 100.0).round() as i64;
+                let _ = catalog.checkpoint_reading_session(sid, elapsed, end_pct);
+            }
         }
     }
 
     /// Ask the provider for images in the window `curr ± 2` (or wider for webtoon/double).
-    fn get_missing_pages(&mut self) -> Vec<usize> {
-        let total = self.provider.page_count();
+    pub fn get_missing_pages(&mut self) -> Vec<usize> {
+        let total = self.total_pages;
         if total == 0 {
             return Vec::new();
         }
@@ -76,11 +241,10 @@ impl ComicsReaderModel {
     }
 
     pub fn set_page(&mut self, idx: usize) {
-        let total = self.provider.page_count();
-        if total == 0 {
+        if self.total_pages == 0 {
             return;
         }
-        let clamped = idx.clamp(0, total - 1);
+        let clamped = idx.clamp(0, self.total_pages - 1);
         self.current_page = clamped;
     }
 
@@ -124,14 +288,17 @@ impl ComicsReaderModel {
     }
 
     pub fn next_page(&mut self) {
-        let total = self.provider.page_count();
-        if total == 0 {
+        if self.total_pages == 0 {
             return;
         }
 
         if self.page_style == PageStyle::Double {
-            let max_start = if total > 1 {
-                if total.is_multiple_of(2) { total - 2 } else { total - 1 }
+            let max_start = if self.total_pages > 1 {
+                if self.total_pages % 2 == 0 {
+                    self.total_pages - 2
+                } else {
+                    self.total_pages - 1
+                }
             } else {
                 0
             };
@@ -141,10 +308,8 @@ impl ComicsReaderModel {
             } else {
                 self.set_page(max_start);
             }
-        } else {
-            if self.current_page + 1 < total {
-                self.set_page(self.current_page + 1);
-            }
+        } else if self.current_page + 1 < self.total_pages {
+            self.set_page(self.current_page + 1);
         }
     }
 
@@ -152,13 +317,123 @@ impl ComicsReaderModel {
         let step = if self.page_style == PageStyle::Double { 2 } else { 1 };
         self.set_page(self.current_page.saturating_sub(step));
     }
+
+    pub fn page_indicator_label(&self) -> String {
+        if self.total_pages == 0 {
+            return "Page 0 of 0".to_string();
+        }
+        if self.page_style == PageStyle::Double {
+            if self.current_page + 1 < self.total_pages {
+                format!(
+                    "Pages {}-{} of {}",
+                    self.current_page + 1,
+                    self.current_page + 2,
+                    self.total_pages
+                )
+            } else {
+                format!("Page {} of {}", self.current_page + 1, self.total_pages)
+            }
+        } else {
+            format!("Page {} of {}", self.current_page + 1, self.total_pages)
+        }
+    }
+
+    pub fn trigger_osd(&mut self, text: &str, sender: &ComponentSender<Self>) {
+        self.osd_text = text.to_string();
+        self.show_zoom_osd = true;
+        self.zoom_osd_seq = self.zoom_osd_seq.wrapping_add(1);
+        let seq = self.zoom_osd_seq;
+        let s = sender.clone();
+        glib::timeout_add_local_once(Duration::from_millis(1000), move || {
+            let _ = s.input_sender().send(ComicsReaderMsg::HideOsd(seq));
+        });
+    }
+
+    pub fn schedule_back_hide(&mut self, sender: &ComponentSender<Self>) {
+        self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
+        let seq = self.back_hide_seq;
+        let s = sender.clone();
+        glib::timeout_add_local_once(Duration::from_millis(3000), move || {
+            let _ = s.input_sender().send(ComicsReaderMsg::BackHideTimerTick(seq));
+        });
+    }
+
+    pub fn schedule_bottom_hide(&mut self, sender: &ComponentSender<Self>) {
+        self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
+        let seq = self.bottom_hide_seq;
+        let s = sender.clone();
+        glib::timeout_add_local_once(Duration::from_millis(3500), move || {
+            let _ = s.input_sender().send(ComicsReaderMsg::BottomHideTimerTick(seq));
+        });
+    }
+
+    pub fn schedule_sidebar_close(&mut self, sender: &ComponentSender<Self>) {
+        self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
+        let seq = self.sidebar_close_seq;
+        let s = sender.clone();
+        glib::timeout_add_local_once(Duration::from_millis(350), move || {
+            let _ = s.input_sender().send(ComicsReaderMsg::SidebarCloseTimerTick(seq));
+        });
+    }
+
+    pub fn update_bookmark_icon_state(&self, widgets: &ComicsReaderModelWidgets) {
+        let is_bookmarked = self
+            .bookmarks
+            .iter()
+            .any(|b| b.chapter_index as usize == self.current_page);
+        toggle_active(&widgets.top_bookmark_btn, is_bookmarked);
+    }
+
+    pub fn sync_settings_ui(&self, widgets: &ComicsReaderModelWidgets) {
+        toggle_active(&widgets.style_single_btn, self.page_style == PageStyle::Single);
+        toggle_active(&widgets.style_double_btn, self.page_style == PageStyle::Double);
+        toggle_active(&widgets.style_strip_btn, self.page_style == PageStyle::LongStrip);
+
+        toggle_active(&widgets.dir_ltr_btn, self.direction == ReadingDirection::Ltr);
+        toggle_active(&widgets.dir_rtl_btn, self.direction == ReadingDirection::Rtl);
+
+        widgets.gap_box.set_sensitive(self.page_style == PageStyle::Double);
+        toggle_active(&widgets.gap_0_btn, self.two_page_gap == 0);
+        toggle_active(&widgets.gap_4_btn, self.two_page_gap == 4);
+        toggle_active(&widgets.gap_8_btn, self.two_page_gap == 8);
+        toggle_active(&widgets.gap_12_btn, self.two_page_gap == 12);
+        toggle_active(&widgets.gap_16_btn, self.two_page_gap == 16);
+
+        toggle_active(&widgets.fit_width_btn, self.fit_mode == FitMode::Width);
+        toggle_active(&widgets.fit_height_btn, self.fit_mode == FitMode::Height);
+        toggle_active(&widgets.fit_screen_btn, self.fit_mode == FitMode::Screen);
+        toggle_active(&widgets.fit_orig_btn, self.fit_mode == FitMode::Original);
+    }
+
+    pub fn cleanup_memory(&mut self) {
+        self.textures.clear();
+        self.pending_loads.clear();
+
+        #[cfg(target_os = "linux")]
+        unsafe {
+            libc::malloc_trim(0);
+        }
+    }
+}
+
+impl Drop for ComicsReaderModel {
+    fn drop(&mut self) {
+        if let (Some(ref catalog), Some(sid)) = (&self.catalog, self.session_id) {
+            let elapsed = self.session_start.elapsed().as_secs() as i64;
+            let pct = if self.total_pages > 0 {
+                (((self.current_page + 1) as f64 / self.total_pages as f64) * 100.0).round() as i64
+            } else {
+                0
+            };
+            let _ = catalog.end_reading_session(sid, elapsed, pct);
+        }
+        self.cleanup_memory();
+    }
 }
 
 fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
     let fit_content_fit = match model.fit_mode {
-        FitMode::Width => gtk::ContentFit::Fill,
-        FitMode::Height => gtk::ContentFit::Contain,
-        FitMode::Screen => gtk::ContentFit::Cover,
+        FitMode::Width | FitMode::Height | FitMode::Screen => gtk::ContentFit::Contain,
         FitMode::Original => gtk::ContentFit::ScaleDown,
     };
 
@@ -171,7 +446,7 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
         vbox.set_hexpand(true);
         vbox.add_css_class("kalam-webtoon-container");
 
-        let total = model.provider.page_count();
+        let total = model.total_pages;
         for idx in 0..total {
             let item_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
             item_box.set_halign(gtk::Align::Center);
@@ -192,7 +467,7 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
                 placeholder.set_valign(gtk::Align::Center);
 
                 let spinner = gtk::Spinner::new();
-                spinner.set_spinning(true);
+                spinner.start();
                 spinner.set_size_request(32, 32);
                 spinner.set_halign(gtk::Align::Center);
                 spinner.set_valign(gtk::Align::Center);
@@ -206,14 +481,14 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
     }
 
     if model.page_style == PageStyle::Double {
-        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, model.two_page_gap);
         hbox.set_halign(gtk::Align::Center);
         hbox.set_valign(gtk::Align::Center);
         hbox.set_hexpand(true);
         hbox.set_vexpand(true);
 
         let page_a = model.current_page;
-        let page_b = if model.current_page + 1 < model.provider.page_count() {
+        let page_b = if model.current_page + 1 < model.total_pages {
             Some(model.current_page + 1)
         } else {
             None
@@ -226,33 +501,43 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
             _ => (Some(page_a), page_b),
         };
 
-        let create_page_widget = |opt_idx: Option<usize>| -> gtk::Widget {
+        let create_page_widget = |opt_idx: Option<usize>, is_left: bool| -> gtk::Widget {
             let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            container.set_halign(gtk::Align::Center);
             container.set_valign(gtk::Align::Center);
             container.set_hexpand(true);
             container.set_vexpand(true);
 
             if let Some(idx) = opt_idx {
+                container.set_halign(if is_left { gtk::Align::End } else { gtk::Align::Start });
                 if let Some(texture) = model.textures.get(&idx) {
                     let pic = gtk::Picture::for_paintable(texture);
                     pic.set_can_shrink(true);
                     pic.set_content_fit(fit_content_fit);
-                    pic.set_halign(gtk::Align::Center);
+                    pic.set_halign(if is_left { gtk::Align::End } else { gtk::Align::Start });
                     pic.set_valign(gtk::Align::Center);
                     container.append(&pic);
                 } else {
+                    let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                    placeholder.set_size_request(320, 480);
+                    placeholder.set_halign(gtk::Align::Center);
+                    placeholder.set_valign(gtk::Align::Center);
+
                     let spinner = gtk::Spinner::new();
-                    spinner.set_spinning(true);
-                    spinner.set_size_request(48, 48);
-                    container.append(&spinner);
+                    spinner.start();
+                    spinner.set_size_request(36, 36);
+                    spinner.set_halign(gtk::Align::Center);
+                    spinner.set_valign(gtk::Align::Center);
+                    placeholder.append(&spinner);
+                    container.append(&placeholder);
                 }
+            } else {
+                container.set_halign(gtk::Align::Center);
             }
             container.upcast()
         };
 
-        hbox.append(&create_page_widget(left_idx));
-        hbox.append(&create_page_widget(right_idx));
+        hbox.append(&create_page_widget(left_idx, true));
+        hbox.append(&create_page_widget(right_idx, false));
 
         return hbox.upcast();
     }
@@ -270,15 +555,178 @@ fn rebuild_viewport_widget(model: &ComicsReaderModel) -> gtk::Widget {
         pic.set_content_fit(fit_content_fit);
         pic.set_halign(gtk::Align::Center);
         pic.set_valign(gtk::Align::Center);
+        match model.fit_mode {
+            FitMode::Width => {
+                pic.set_hexpand(true);
+                pic.set_vexpand(false);
+            }
+            FitMode::Height => {
+                pic.set_hexpand(false);
+                pic.set_vexpand(true);
+            }
+            FitMode::Screen => {
+                pic.set_hexpand(true);
+                pic.set_vexpand(true);
+            }
+            FitMode::Original => {
+                pic.set_hexpand(false);
+                pic.set_vexpand(false);
+            }
+        }
         vbox.append(&pic);
     } else {
         let spinner = gtk::Spinner::new();
-        spinner.set_spinning(true);
+        spinner.start();
         spinner.set_size_request(48, 48);
         vbox.append(&spinner);
     }
 
     vbox.upcast()
+}
+
+fn populate_pages_list(
+    list: &gtk::Box,
+    total_pages: usize,
+    current_page: usize,
+    provider: &dyn provider::ImageProvider,
+    sender: &ComponentSender<ComicsReaderModel>,
+) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    for i in 0..total_pages {
+        let btn = gtk::Button::new();
+        btn.add_css_class("kalam-reader-toc-item");
+        if i == current_page {
+            btn.add_css_class("active");
+        }
+
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        hbox.set_hexpand(true);
+
+        let title_str = if let Some(t) = provider.page_title(i) {
+            format!("Page {} · {}", i + 1, t)
+        } else {
+            format!("Page {}", i + 1)
+        };
+
+        let title_lbl = gtk::Label::new(Some(&title_str));
+        title_lbl.set_halign(gtk::Align::Start);
+        title_lbl.set_hexpand(true);
+        title_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        hbox.append(&title_lbl);
+
+        btn.set_child(Some(&hbox));
+
+        let s = sender.clone();
+        btn.connect_clicked(move |_| {
+            let _ = s.input_sender().send(ComicsReaderMsg::SetPage(i));
+        });
+
+        list.append(&btn);
+    }
+}
+
+fn populate_bookmarks_list(
+    list: &gtk::Box,
+    bookmarks: &[ReadingBookmark],
+    sender: &ComponentSender<ComicsReaderModel>,
+) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    if bookmarks.is_empty() {
+        let empty_lbl = gtk::Label::new(Some("No bookmarks saved yet.\nPress 'b' to bookmark the current page."));
+        empty_lbl.add_css_class("kalam-reader-empty");
+        empty_lbl.set_halign(gtk::Align::Center);
+        empty_lbl.set_valign(gtk::Align::Center);
+        empty_lbl.set_justify(gtk::Justification::Center);
+        list.append(&empty_lbl);
+        return;
+    }
+
+    for mark in bookmarks {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        row.add_css_class("kalam-reader-bookmark-row");
+        row.set_hexpand(true);
+
+        let jump_btn = gtk::Button::new();
+        jump_btn.add_css_class("kalam-reader-list-hit");
+        jump_btn.set_hexpand(true);
+
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        hbox.append(&crate::icons::symbolic_with_classes(
+            "bookmark-new-symbolic",
+            15,
+            &["kalam-reader-bookmark-icon"],
+        ));
+
+        let lbl = gtk::Label::new(Some(&format!("Page {}", mark.chapter_index + 1)));
+        lbl.add_css_class("kalam-reader-bookmark-title");
+        lbl.set_halign(gtk::Align::Start);
+        lbl.set_hexpand(true);
+        hbox.append(&lbl);
+
+        jump_btn.set_child(Some(&hbox));
+        let page_target = mark.chapter_index as usize;
+        let s_jump = sender.clone();
+        jump_btn.connect_clicked(move |_| {
+            let _ = s_jump.input_sender().send(ComicsReaderMsg::SetPage(page_target));
+        });
+        row.append(&jump_btn);
+
+        let del_btn = gtk::Button::new();
+        del_btn.set_child(Some(&crate::icons::symbolic_with_classes(
+            "user-trash-symbolic",
+            14,
+            &["kalam-inline-icon"],
+        )));
+        del_btn.add_css_class("kalam-reader-pill-nav");
+        del_btn.set_tooltip_text(Some("Delete Bookmark"));
+        let mark_id = mark.id;
+        let s_del = sender.clone();
+        del_btn.connect_clicked(move |_| {
+            let _ = s_del.input_sender().send(ComicsReaderMsg::DeleteBookmark(mark_id));
+        });
+        row.append(&del_btn);
+
+        list.append(&row);
+    }
+}
+
+fn reader_settings_section(label: &str) -> gtk::Box {
+    let section = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    section.add_css_class("kalam-reader-section");
+    let heading = gtk::Label::new(Some(label));
+    heading.add_css_class("kalam-reader-section-label");
+    heading.set_halign(gtk::Align::Start);
+    section.append(&heading);
+    section
+}
+
+fn reader_sidebar_tab_content(icon: &str, label: &str) -> gtk::Box {
+    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    box_.set_halign(gtk::Align::Center);
+    box_.set_hexpand(true);
+    box_.append(&crate::icons::symbolic_with_classes(
+        icon,
+        17,
+        &["kalam-inline-icon"],
+    ));
+    let label_widget = gtk::Label::new(Some(label));
+    label_widget.set_halign(gtk::Align::Center);
+    box_.append(&label_widget);
+    box_
+}
+
+fn toggle_active(button: &gtk::Button, active: bool) {
+    if active {
+        button.add_css_class("active");
+    } else {
+        button.remove_css_class("active");
+    }
 }
 
 #[relm4::component(pub)]
@@ -291,6 +739,7 @@ impl Component for ComicsReaderModel {
     view! {
         #[root]
         gtk::Overlay {
+            add_css_class: "kalam-reader-overlay",
             add_css_class: "kalam-comics-overlay",
             set_hexpand: true,
             set_vexpand: true,
@@ -303,473 +752,549 @@ impl Component for ComicsReaderModel {
                 set_vexpand: true,
             },
 
-            // ── 2. Overlay: Dim Backdrop for Settings Drawer ───────────
+            // ── 2. Overlay: Dim Backdrop for Dismissing Left Sidebar ──
             add_overlay = &gtk::Button {
                 add_css_class: "kalam-reader-dim",
                 #[watch]
-                set_visible: model.show_settings,
+                set_visible: model.show_sidebar,
                 set_hexpand: true,
                 set_vexpand: true,
                 set_halign: gtk::Align::Fill,
                 set_valign: gtk::Align::Fill,
-                connect_clicked => ComicsReaderMsg::CloseSettings,
+                connect_clicked => ComicsReaderMsg::CloseSidebar,
             },
 
-            // ── 3. Overlay: Floating Minimal Top Bar (Moku-style) ───────
+            // ── 3. Overlay: Invisible Left Edge Hover Strip ───────────
+            #[name = "left_edge_box"]
+            add_overlay = &gtk::Box {
+                add_css_class: "kalam-reader-hover-edge",
+                add_css_class: "kalam-reader-hover-edge-left",
+                set_width_request: 18,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Fill,
+            },
+
+            // ── 4. Floating Top-Left Back Dock ────────────────────────
             add_overlay = &gtk::Revealer {
                 #[watch]
-                set_reveal_child: model.show_chrome,
+                set_reveal_child: model.show_back_button && !model.show_sidebar,
                 set_transition_type: gtk::RevealerTransitionType::SlideDown,
-                set_halign: gtk::Align::Fill,
+                set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
 
-                #[wrap(Some)]
-                set_child = &gtk::Box {
+                #[name = "back_dock"]
+                gtk::Box {
+                    add_css_class: "kalam-reader-back-dock",
                     set_orientation: gtk::Orientation::Horizontal,
-                    add_css_class: "kalam-comics-topbar",
-                    set_spacing: 12,
+                    set_spacing: 6,
+                    set_margin_start: 24,
+                    set_margin_top: 18,
 
-                    // Clean close button
                     gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("window-close-symbolic", 16, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-comics-icon-btn",
-                        set_tooltip_text: Some("Close reader (Esc)"),
+                        set_child: Some(&crate::icons::labelled(
+                            "go-previous-symbolic",
+                            16,
+                            "Library",
+                            6,
+                        )),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Back to Library (Esc / Backspace)"),
                         connect_clicked => ComicsReaderMsg::Close,
                     },
 
-                    // Breadcrumb title: Title / Page X of Y
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 8,
-                        set_hexpand: true,
-                        set_valign: gtk::Align::Center,
-
-                        gtk::Label {
-                            #[watch]
-                            set_label: &model.title,
-                            add_css_class: "kalam-comics-title",
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                            set_halign: gtk::Align::Start,
-                        },
-
-                        gtk::Label {
-                            set_label: "/",
-                            add_css_class: "kalam-comics-separator",
-                        },
-
-                        gtk::Label {
-                            #[watch]
-                            set_label: &format!(
-                                "Page {} of {}",
-                                model.current_page + 1,
-                                model.provider.page_count().max(1)
-                            ),
-                            add_css_class: "kalam-comics-page-count",
-                        },
-                    },
-
-                    // Right controls: Fit Mode, Direction Badge, Settings Gear
+                    #[name = "top_bookmark_btn"]
                     gtk::Button {
-                        #[watch]
-                        set_child: Some(&crate::icons::symbolic_with_classes(model.fit_mode.icon(), 16, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-comics-icon-btn",
-                        #[watch]
-                        set_tooltip_text: Some(&format!("Fit Mode: {} (F)", model.fit_mode.label())),
-                        connect_clicked => ComicsReaderMsg::ToggleFitMode,
-                    },
-
-                    gtk::Button {
-                        #[watch]
-                        set_label: model.direction.short_label(),
-                        add_css_class: "kalam-comics-badge-btn",
-                        #[watch]
-                        set_tooltip_text: Some(&format!("Direction: {}", model.direction.label())),
-                        connect_clicked => ComicsReaderMsg::ToggleDirection,
-                    },
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("emblem-system-symbolic", 16, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-comics-icon-btn",
-                        set_tooltip_text: Some("Reader Settings"),
-                        connect_clicked => ComicsReaderMsg::ToggleSettings,
+                        set_child: Some(&crate::icons::symbolic_with_classes(
+                            "bookmark-new-symbolic",
+                            16,
+                            &["kalam-inline-icon"],
+                        )),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Bookmark Page (b)"),
+                        connect_clicked => ComicsReaderMsg::ToggleBookmark,
                     },
                 },
             },
 
-            // ── 4. Overlay: Edge-to-Edge Bottom Scrubber Bar (Moku-style) ──
+            // ── 5. Floating Bottom Navigation Pill ────────────────────
             add_overlay = &gtk::Revealer {
                 #[watch]
-                set_reveal_child: model.show_chrome,
+                set_reveal_child: model.show_bottom_pill,
                 set_transition_type: gtk::RevealerTransitionType::SlideUp,
-                set_halign: gtk::Align::Fill,
+                set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::End,
 
-                #[wrap(Some)]
-                set_child = &gtk::Box {
-                    add_css_class: "kalam-comics-bottombar",
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 12,
-                    set_valign: gtk::Align::Center,
+                #[name = "bottom_dock"]
+                gtk::Box {
+                    add_css_class: "kalam-reader-bottom-dock",
+                    set_margin_bottom: 24,
 
-                    // Prev page button
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("go-previous-symbolic", 15, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-comics-icon-btn",
-                        set_tooltip_text: Some("Previous page (Left arrow)"),
-                        connect_clicked => ComicsReaderMsg::PrevPage,
-                    },
-
-                    // Full-width Scrubber Slider
-                    gtk::Scale {
+                    gtk::Box {
+                        add_css_class: "kalam-reader-bottom-pill",
                         set_orientation: gtk::Orientation::Horizontal,
-                        set_hexpand: true,
-                        set_draw_value: false,
-                        add_css_class: "kalam-comics-slider",
-                        #[watch]
-                        set_range: (0.0, (model.provider.page_count().saturating_sub(1)) as f64),
-                        #[watch]
-                        set_value: model.current_page as f64,
-                        connect_value_changed[sender] => move |scale| {
-                            let val = scale.value().round() as usize;
-                            sender.input(ComicsReaderMsg::SetPage(val));
-                        },
-                    },
-
-                    // Page indicator pill
-                    gtk::Label {
-                        #[watch]
-                        set_label: &format!("{}/{}", model.current_page + 1, model.provider.page_count().max(1)),
-                        add_css_class: "kalam-comics-pill-label",
+                        set_spacing: 4,
                         set_valign: gtk::Align::Center,
-                    },
 
-                    // Next page button
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("go-next-symbolic", 15, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-comics-icon-btn",
-                        set_tooltip_text: Some("Next page (Right arrow / Space)"),
-                        connect_clicked => ComicsReaderMsg::NextPage,
+                        // Previous Page
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "go-previous-symbolic",
+                                15,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-pill-nav",
+                            set_tooltip_text: Some("Previous Page (Left / h)"),
+                            connect_clicked => ComicsReaderMsg::PrevPage,
+                        },
+
+                        // Page Indicator Box
+                        gtk::Box {
+                            add_css_class: "kalam-reader-pill-info",
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 6,
+                            set_valign: gtk::Align::Center,
+
+                            gtk::Label {
+                                add_css_class: "kalam-reader-pill-pages",
+                                #[watch]
+                                set_label: &model.page_indicator_label(),
+                            },
+                        },
+
+                        // Next Page
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "go-next-symbolic",
+                                15,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-pill-nav",
+                            set_tooltip_text: Some("Next Page (Right / Space / l)"),
+                            connect_clicked => ComicsReaderMsg::NextPage,
+                        },
                     },
                 },
             },
 
-            // ── 5. Overlay: Slide-out Reader Settings Drawer ───────────
+            // ── 6. VLC-Style Top-Right HUD ─────────────────────────────
             add_overlay = &gtk::Revealer {
                 #[watch]
-                set_reveal_child: model.show_settings,
-                set_transition_type: gtk::RevealerTransitionType::SlideLeft,
+                set_reveal_child: model.show_zoom_osd,
+                set_transition_type: gtk::RevealerTransitionType::Crossfade,
+                set_transition_duration: 250,
                 set_halign: gtk::Align::End,
-                set_valign: gtk::Align::Fill,
+                set_valign: gtk::Align::Start,
+                set_can_target: false,
+                set_margin_top: 24,
+                set_margin_end: 28,
 
                 #[wrap(Some)]
-                set_child = &gtk::Box {
+                set_child = &gtk::Label {
+                    add_css_class: "kalam-zoom-osd",
+                    #[watch]
+                    set_label: &model.osd_text,
+                },
+            },
+
+            // ── 7. Zen-Style Left Sidebar (Pages + Bookmarks + Settings) ─
+            add_overlay = &gtk::Revealer {
+                add_css_class: "kalam-reader-sidebar-shell",
+                add_css_class: "kalam-reader-sidebar-shell-left",
+                #[watch]
+                set_reveal_child: model.show_sidebar,
+                set_transition_type: gtk::RevealerTransitionType::SlideRight,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Fill,
+
+                #[name = "left_sidebar_box"]
+                gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    add_css_class: "kalam-comics-settings-drawer",
-                    set_width_request: 320,
+                    set_size_request: (340, -1),
+                    set_margin_start: 8,
+                    set_margin_top: 8,
+                    set_margin_bottom: 8,
+                    add_css_class: "kalam-reader-sidebar",
+                    add_css_class: "kalam-reader-sidebar-left",
 
-                    // Header
+                    // Book Header (Cover + Title + Progress)
                     gtk::Box {
+                        add_css_class: "kalam-reader-book-head",
                         set_orientation: gtk::Orientation::Horizontal,
-                        add_css_class: "kalam-comics-drawer-header",
-                        set_spacing: 8,
+                        set_spacing: 12,
+                        set_halign: gtk::Align::Fill,
 
-                        gtk::Label {
-                            set_label: "Reader Settings",
-                            add_css_class: "kalam-comics-drawer-title",
-                            set_hexpand: true,
+                        // Cover slot
+                        gtk::Box {
+                            add_css_class: "kalam-reader-cover-slot",
+                            set_size_request: (48, 70),
+                            set_valign: gtk::Align::Start,
                             set_halign: gtk::Align::Start,
+                            set_child: Some(&crate::widgets::book_row::cover_widget(
+                                model.cover_path.as_deref(),
+                                48,
+                                70,
+                            )),
                         },
 
-                        gtk::Button {
-                            set_child: Some(&crate::icons::symbolic_with_classes("window-close-symbolic", 15, &["kalam-inline-icon"])),
-                            add_css_class: "kalam-comics-icon-btn",
-                            set_tooltip_text: Some("Close Settings"),
-                            connect_clicked => ComicsReaderMsg::CloseSettings,
+                        // Title & Progress info
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 4,
+                            set_hexpand: true,
+                            set_valign: gtk::Align::Center,
+
+                            gtk::Label {
+                                add_css_class: "kalam-reader-book-title",
+                                #[watch]
+                                set_label: &model.title,
+                                set_halign: gtk::Align::Start,
+                                set_wrap: true,
+                                set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                                set_lines: 2,
+                                set_ellipsize: gtk::pango::EllipsizeMode::End,
+                            },
+
+                            gtk::Label {
+                                add_css_class: "kalam-reader-book-author",
+                                #[watch]
+                                set_label: &format!("Page {} of {}", model.current_page + 1, model.total_pages),
+                                set_halign: gtk::Align::Start,
+                            },
+
+                            gtk::ProgressBar {
+                                add_css_class: "kalam-reader-progress",
+                                #[watch]
+                                set_fraction: model.progress_fraction(),
+                            },
                         },
                     },
 
-                    // Scrollable Drawer Body
-                    gtk::ScrolledWindow {
+                    // Tab bar
+                    gtk::Box {
+                        add_css_class: "kalam-reader-tabbar",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 4,
+                        set_homogeneous: true,
+
+                        #[name = "tab_pages_btn"]
+                        gtk::Button {
+                            add_css_class: "kalam-reader-tab",
+                            #[watch]
+                            set_css_classes: if model.sidebar_tab == ComicSidebarTab::Pages {
+                                &["kalam-reader-tab", "active"]
+                            } else {
+                                &["kalam-reader-tab"]
+                            },
+                            set_child: Some(&reader_sidebar_tab_content("view-grid-symbolic", "Pages")),
+                            connect_clicked => ComicsReaderMsg::SetSidebarTab(ComicSidebarTab::Pages),
+                        },
+
+                        #[name = "tab_bookmarks_btn"]
+                        gtk::Button {
+                            add_css_class: "kalam-reader-tab",
+                            #[watch]
+                            set_css_classes: if model.sidebar_tab == ComicSidebarTab::Bookmarks {
+                                &["kalam-reader-tab", "active"]
+                            } else {
+                                &["kalam-reader-tab"]
+                            },
+                            set_child: Some(&reader_sidebar_tab_content("bookmark-new-symbolic", "Bookmarks")),
+                            connect_clicked => ComicsReaderMsg::SetSidebarTab(ComicSidebarTab::Bookmarks),
+                        },
+
+                        #[name = "tab_settings_btn"]
+                        gtk::Button {
+                            add_css_class: "kalam-reader-tab",
+                            #[watch]
+                            set_css_classes: if model.sidebar_tab == ComicSidebarTab::Settings {
+                                &["kalam-reader-tab", "active"]
+                            } else {
+                                &["kalam-reader-tab"]
+                            },
+                            set_child: Some(&reader_sidebar_tab_content("emblem-system-symbolic", "Settings")),
+                            connect_clicked => ComicsReaderMsg::SetSidebarTab(ComicSidebarTab::Settings),
+                        },
+                    },
+
+                    // Tab Content Stack
+                    #[name = "left_stack"]
+                    gtk::Stack {
                         set_hexpand: true,
                         set_vexpand: true,
+                        set_transition_type: gtk::StackTransitionType::Crossfade,
 
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 20,
-                            add_css_class: "kalam-comics-drawer-body",
+                        // 1. Pages Tab View
+                        add_named[Some("pages")] = &gtk::ScrolledWindow {
+                            set_hexpand: true,
+                            set_vexpand: true,
+                            set_hscrollbar_policy: gtk::PolicyType::Never,
 
-                            // Section: PAGE STYLE
+                            #[name = "pages_list_box"]
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 8,
+                                set_spacing: 0,
+                            },
+                        },
 
-                                gtk::Label {
-                                    set_label: "PAGE STYLE",
-                                    add_css_class: "kalam-comics-section-label",
-                                    set_halign: gtk::Align::Start,
-                                },
+                        // 2. Bookmarks Tab View
+                        add_named[Some("bookmarks")] = &gtk::ScrolledWindow {
+                            set_hexpand: true,
+                            set_vexpand: true,
+                            set_hscrollbar_policy: gtk::PolicyType::Never,
 
+                            #[name = "bookmarks_list_box"]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 0,
+                            },
+                        },
+
+                        // 3. Settings Tab View
+                        add_named[Some("settings")] = &gtk::ScrolledWindow {
+                            set_hexpand: true,
+                            set_vexpand: true,
+                            set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 12,
+                                set_margin_top: 8,
+                                set_margin_bottom: 24,
+
+                                // Section: PAGE STYLE / FLOW
+                                append = &reader_settings_section("Page Style / Flow"),
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Horizontal,
                                     set_spacing: 4,
+                                    set_margin_start: 16,
+                                    set_margin_end: 16,
                                     set_homogeneous: true,
 
+                                    #[name = "style_single_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 4,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("view-paged-symbolic") },
-                                            gtk::Label { set_label: "Single", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.page_style == PageStyle::Single {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
+                                        set_child: Some(&crate::icons::labelled(
+                                            "view-paged-symbolic",
+                                            16,
+                                            "Single",
+                                            6,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Single page display"),
                                         connect_clicked => ComicsReaderMsg::SetPageStyle(PageStyle::Single),
                                     },
 
+                                    #[name = "style_double_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 4,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("view-dual-symbolic") },
-                                            gtk::Label { set_label: "Double", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.page_style == PageStyle::Double {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
+                                        set_child: Some(&crate::icons::labelled(
+                                            "view-dual-symbolic",
+                                            16,
+                                            "Double",
+                                            6,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Two facing pages"),
                                         connect_clicked => ComicsReaderMsg::SetPageStyle(PageStyle::Double),
                                     },
 
+                                    #[name = "style_strip_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 4,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("media-playlist-consecutive-symbolic") },
-                                            gtk::Label { set_label: "Fade", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.page_style == PageStyle::Fade {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
-                                        connect_clicked => ComicsReaderMsg::SetPageStyle(PageStyle::Fade),
-                                    },
-
-                                    gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 4,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("format-justify-fill-symbolic") },
-                                            gtk::Label { set_label: "Long Strip", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.page_style == PageStyle::LongStrip {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
+                                        set_child: Some(&crate::icons::labelled(
+                                            "format-justify-fill-symbolic",
+                                            16,
+                                            "Webtoon",
+                                            6,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Continuous vertical strip"),
                                         connect_clicked => ComicsReaderMsg::SetPageStyle(PageStyle::LongStrip),
                                     },
                                 },
-                            },
 
-                            // Section: READING DIRECTION
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 8,
-
-                                gtk::Label {
-                                    set_label: "READING DIRECTION",
-                                    add_css_class: "kalam-comics-section-label",
-                                    set_halign: gtk::Align::Start,
-                                },
-
+                                // Section: READING DIRECTION
+                                append = &reader_settings_section("Reading Direction"),
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 6,
+                                    set_spacing: 4,
+                                    set_margin_start: 16,
+                                    set_margin_end: 16,
                                     set_homogeneous: true,
 
+                                    #[name = "dir_ltr_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Horizontal,
-                                            set_spacing: 6,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Label { set_label: "Left to Right", add_css_class: "kalam-comics-seg-label" },
-                                            gtk::Image { set_icon_name: Some("go-next-symbolic"), set_icon_size: gtk::IconSize::Inherit },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.direction == ReadingDirection::Ltr {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
-                                        set_tooltip_text: Some("Left to Right"),
+                                        set_child: Some(&crate::icons::labelled(
+                                            "go-next-symbolic",
+                                            16,
+                                            "Left → Right",
+                                            6,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Left to Right (Western comics)"),
                                         connect_clicked => ComicsReaderMsg::SetDirection(ReadingDirection::Ltr),
                                     },
 
+                                    #[name = "dir_rtl_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Horizontal,
-                                            set_spacing: 6,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("go-previous-symbolic"), set_icon_size: gtk::IconSize::Inherit },
-                                            gtk::Label { set_label: "Right to Left", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.direction == ReadingDirection::Rtl {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
+                                        set_child: Some(&crate::icons::labelled(
+                                            "go-previous-symbolic",
+                                            16,
+                                            "Right → Left",
+                                            6,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
                                         set_tooltip_text: Some("Right to Left (Manga)"),
                                         connect_clicked => ComicsReaderMsg::SetDirection(ReadingDirection::Rtl),
                                     },
                                 },
-                            },
 
-                            // Section: FIT MODE
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 8,
-
-                                gtk::Label {
-                                    set_label: "FIT MODE",
-                                    add_css_class: "kalam-comics-section-label",
-                                    set_halign: gtk::Align::Start,
-                                },
-
+                                // Section: SPREAD GAP
+                                append = &reader_settings_section("Spread Gap"),
+                                #[name = "gap_box"]
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Horizontal,
                                     set_spacing: 4,
+                                    set_margin_start: 16,
+                                    set_margin_end: 16,
+                                    set_homogeneous: true,
+                                    add_css_class: "kalam-reader-spread-gap-box",
+
+                                    #[name = "gap_0_btn"]
+                                    gtk::Button {
+                                        set_label: "0px",
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Seamless (No gap between facing pages)"),
+                                        connect_clicked => ComicsReaderMsg::SetSpreadGap(0),
+                                    },
+
+                                    #[name = "gap_4_btn"]
+                                    gtk::Button {
+                                        set_label: "4px",
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("4px spread gap"),
+                                        connect_clicked => ComicsReaderMsg::SetSpreadGap(4),
+                                    },
+
+                                    #[name = "gap_8_btn"]
+                                    gtk::Button {
+                                        set_label: "8px",
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("8px spread gap"),
+                                        connect_clicked => ComicsReaderMsg::SetSpreadGap(8),
+                                    },
+
+                                    #[name = "gap_12_btn"]
+                                    gtk::Button {
+                                        set_label: "12px",
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("12px spread gap"),
+                                        connect_clicked => ComicsReaderMsg::SetSpreadGap(12),
+                                    },
+
+                                    #[name = "gap_16_btn"]
+                                    gtk::Button {
+                                        set_label: "16px",
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("16px spread gap"),
+                                        connect_clicked => ComicsReaderMsg::SetSpreadGap(16),
+                                    },
+                                },
+
+                                // Section: FIT MODE
+                                append = &reader_settings_section("Fit Mode"),
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 4,
+                                    set_margin_start: 16,
+                                    set_margin_end: 16,
                                     set_homogeneous: true,
 
+                                    #[name = "fit_width_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 4,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("zoom-fit-width-symbolic") },
-                                            gtk::Label { set_label: "Fit Width", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.fit_mode == FitMode::Width {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
+                                        set_child: Some(&crate::icons::labelled(
+                                            "zoom-fit-best-symbolic",
+                                            16,
+                                            "Width",
+                                            4,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Fit image to viewport width"),
                                         connect_clicked => ComicsReaderMsg::SetFitMode(FitMode::Width),
                                     },
 
+                                    #[name = "fit_height_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 4,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("zoom-fit-height-symbolic") },
-                                            gtk::Label { set_label: "Fit Height", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.fit_mode == FitMode::Height {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
+                                        set_child: Some(&crate::icons::labelled(
+                                            "view-fullscreen-symbolic",
+                                            16,
+                                            "Height",
+                                            4,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Fit image to viewport height"),
                                         connect_clicked => ComicsReaderMsg::SetFitMode(FitMode::Height),
                                     },
 
+                                    #[name = "fit_screen_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 4,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("zoom-fit-best-symbolic") },
-                                            gtk::Label { set_label: "Fit Screen", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.fit_mode == FitMode::Screen {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
+                                        set_child: Some(&crate::icons::labelled(
+                                            "zoom-fit-best-symbolic",
+                                            16,
+                                            "Screen",
+                                            4,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Fit entire image inside screen"),
                                         connect_clicked => ComicsReaderMsg::SetFitMode(FitMode::Screen),
                                     },
 
+                                    #[name = "fit_orig_btn"]
                                     gtk::Button {
-                                        #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 4,
-                                            set_halign: gtk::Align::Center,
-                                            set_valign: gtk::Align::Center,
-                                            gtk::Image { set_icon_name: Some("zoom-original-symbolic") },
-                                            gtk::Label { set_label: "Original", add_css_class: "kalam-comics-seg-label" },
-                                        },
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.fit_mode == FitMode::Original {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
+                                        set_child: Some(&crate::icons::labelled(
+                                            "zoom-original-symbolic",
+                                            16,
+                                            "1:1",
+                                            4,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Display at 100% original size"),
                                         connect_clicked => ComicsReaderMsg::SetFitMode(FitMode::Original),
                                     },
                                 },
-                            },
 
-                            // Section: SHORTCUTS
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 8,
-                                add_css_class: "kalam-comics-shortcuts-box",
+                                // Section: SHORTCUTS
+                                append = &reader_settings_section("Shortcuts"),
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 6,
+                                    set_margin_start: 16,
+                                    set_margin_end: 16,
 
-                                gtk::Label {
-                                    set_label: "KEYBOARD SHORTCUTS",
-                                    add_css_class: "kalam-comics-section-label",
-                                    set_halign: gtk::Align::Start,
-                                },
-
-                                gtk::Label {
-                                    set_label: "← / →       Turn page\nSpace       Next page\nClick image Toggle chrome\nF           Toggle fit mode\nEsc         Close",
-                                    add_css_class: "kalam-comics-shortcut-text",
-                                    set_halign: gtk::Align::Start,
+                                    gtk::Label {
+                                        set_label: "← / →, h / l      Turn page",
+                                        add_css_class: "dim-label",
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                    gtk::Label {
+                                        set_label: "Space            Next page",
+                                        add_css_class: "dim-label",
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                    gtk::Label {
+                                        set_label: "b                Bookmark page",
+                                        add_css_class: "dim-label",
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                    gtk::Label {
+                                        set_label: "f                Toggle fit mode",
+                                        add_css_class: "dim-label",
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                    gtk::Label {
+                                        set_label: "Esc / Backspace  Back to Library",
+                                        add_css_class: "dim-label",
+                                        set_halign: gtk::Align::Start,
+                                    },
                                 },
                             },
                         },
@@ -788,65 +1313,147 @@ impl Component for ComicsReaderModel {
         model.trigger_loads(&sender);
         let widgets = view_output!();
 
+        model.pages_list_box = Some(widgets.pages_list_box.clone());
+        model.bookmarks_list_box = Some(widgets.bookmarks_list_box.clone());
+
+        populate_pages_list(
+            &widgets.pages_list_box,
+            model.total_pages,
+            model.current_page,
+            model.provider.as_ref(),
+            &sender,
+        );
+        populate_bookmarks_list(&widgets.bookmarks_list_box, &model.bookmarks, &sender);
+        model.update_bookmark_icon_state(&widgets);
+        model.sync_settings_ui(&widgets);
+
+        model.schedule_back_hide(&sender);
+        model.schedule_bottom_hide(&sender);
+
         let child = rebuild_viewport_widget(&model);
         widgets.viewport_box.set_child(Some(&child));
 
-        // Tap/click on the comic viewport: left = prev/next, right = next/prev, center = toggle chrome
+        // 1. Margin click gesture: left 30% = prev/next, right 30% = next/prev, center = no-op
         let click = gtk::GestureClick::new();
-        let s = sender.clone();
+        let s_click = sender.clone();
         click.connect_released(move |gesture, _, x, _| {
             if let Some(widget) = gesture.widget() {
                 let width = widget.width() as f64;
                 if width > 0.0 {
                     let ratio = x / width;
-                    s.input(ComicsReaderMsg::TapAtRatio(ratio));
-                } else {
-                    s.input(ComicsReaderMsg::ToggleChrome);
+                    let _ = s_click.input_sender().send(ComicsReaderMsg::TapAtRatio(ratio));
                 }
             }
         });
         widgets.viewport_box.add_controller(click);
 
-        // Webtoon scroll position listener
+        // 2. Continuous scroll listener to dismiss chrome and update current page
         let vadj = widgets.viewport_box.vadjustment();
         let s_scroll = sender.clone();
-        let page_count = model.provider.page_count();
+        let page_count = model.total_pages;
         vadj.connect_value_changed(move |adj| {
             let max = (adj.upper() - adj.page_size()).max(1.0);
             if max > 0.0 && page_count > 0 {
                 let ratio = (adj.value() / max).clamp(0.0, 1.0);
                 let page = ((page_count - 1) as f64 * ratio).round() as usize;
-                s_scroll.input(ComicsReaderMsg::UpdateScrollPage(page));
+                let _ = s_scroll.input_sender().send(ComicsReaderMsg::UpdateScrollPage(page));
             }
+            let _ = s_scroll.input_sender().send(ComicsReaderMsg::UserScrolled);
         });
 
-        // Keyboard navigation controller
+        let scroll_ctrl = gtk::EventControllerScroll::new(
+            gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::HORIZONTAL,
+        );
+        let s_sc = sender.clone();
+        scroll_ctrl.connect_scroll(move |_, _, _| {
+            let _ = s_sc.input_sender().send(ComicsReaderMsg::UserScrolled);
+            gtk::glib::Propagation::Proceed
+        });
+        widgets.viewport_box.add_controller(scroll_ctrl);
+
+        // 3. Floating top dock hover controller
+        let top_motion = gtk::EventControllerMotion::new();
+        let s_tm = sender.clone();
+        top_motion.connect_enter(move |_, _, _| {
+            let _ = s_tm.input_sender().send(ComicsReaderMsg::TopEdgeHover(true));
+        });
+        let s_tml = sender.clone();
+        top_motion.connect_leave(move |_| {
+            let _ = s_tml.input_sender().send(ComicsReaderMsg::TopEdgeHover(false));
+        });
+        widgets.back_dock.add_controller(top_motion);
+
+        // 4. Floating bottom dock hover controller
+        let bottom_motion = gtk::EventControllerMotion::new();
+        let s_bm = sender.clone();
+        bottom_motion.connect_enter(move |_, _, _| {
+            let _ = s_bm.input_sender().send(ComicsReaderMsg::BottomEdgeHover(true));
+        });
+        let s_bml = sender.clone();
+        bottom_motion.connect_leave(move |_| {
+            let _ = s_bml.input_sender().send(ComicsReaderMsg::BottomEdgeHover(false));
+        });
+        widgets.bottom_dock.add_controller(bottom_motion);
+
+        // 5. Left edge hover controller
+        let left_edge_motion = gtk::EventControllerMotion::new();
+        let s_lem = sender.clone();
+        left_edge_motion.connect_enter(move |_, _, _| {
+            let _ = s_lem.input_sender().send(ComicsReaderMsg::LeftEdgeHover(true));
+        });
+        let s_leml = sender.clone();
+        left_edge_motion.connect_leave(move |_| {
+            let _ = s_leml.input_sender().send(ComicsReaderMsg::LeftEdgeHover(false));
+        });
+        widgets.left_edge_box.add_controller(left_edge_motion);
+
+        // 6. Left sidebar hover controller
+        let sidebar_motion = gtk::EventControllerMotion::new();
+        let s_sm = sender.clone();
+        sidebar_motion.connect_enter(move |_, _, _| {
+            let _ = s_sm.input_sender().send(ComicsReaderMsg::SidebarHover(true));
+        });
+        let s_sml = sender.clone();
+        sidebar_motion.connect_leave(move |_| {
+            let _ = s_sml.input_sender().send(ComicsReaderMsg::SidebarHover(false));
+        });
+        widgets.left_sidebar_box.add_controller(sidebar_motion);
+
+        // 7. Keyboard navigation controller
         let key_controller = gtk::EventControllerKey::new();
-        let s = sender.clone();
-        key_controller.connect_key_pressed(move |_, key, _, _| {
-            match key {
+        let s_key = sender.clone();
+        key_controller.connect_key_pressed(move |_, keyval, _keycode, _state| {
+            match keyval {
                 gdk::Key::Escape => {
-                    s.input(ComicsReaderMsg::Close);
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::Close);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Left => {
-                    s.input(ComicsReaderMsg::KeyLeft);
+                gdk::Key::BackSpace | gdk::Key::q | gdk::Key::Q => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::Close);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Right => {
-                    s.input(ComicsReaderMsg::KeyRight);
+                gdk::Key::Left | gdk::Key::h | gdk::Key::H => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::KeyLeft);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Page_Up | gdk::Key::Up => {
-                    s.input(ComicsReaderMsg::PrevPage);
+                gdk::Key::Right | gdk::Key::l | gdk::Key::L => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::KeyRight);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Page_Down | gdk::Key::Down | gdk::Key::space => {
-                    s.input(ComicsReaderMsg::NextPage);
+                gdk::Key::Page_Up | gdk::Key::Up | gdk::Key::k | gdk::Key::K => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::PrevPage);
+                    glib::Propagation::Stop
+                }
+                gdk::Key::Page_Down | gdk::Key::Down | gdk::Key::space | gdk::Key::j | gdk::Key::J => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::NextPage);
+                    glib::Propagation::Stop
+                }
+                gdk::Key::b | gdk::Key::B => {
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::ToggleBookmark);
                     glib::Propagation::Stop
                 }
                 gdk::Key::f | gdk::Key::F => {
-                    s.input(ComicsReaderMsg::ToggleFitMode);
+                    let _ = s_key.input_sender().send(ComicsReaderMsg::ToggleFitMode);
                     glib::Propagation::Stop
                 }
                 _ => glib::Propagation::Proceed,
@@ -869,59 +1476,106 @@ impl Component for ComicsReaderModel {
         match msg {
             ComicsReaderMsg::SetPage(idx) => {
                 self.set_page(idx);
+                self.save_progress();
                 self.trigger_loads(&sender);
+                self.update_bookmark_icon_state(widgets);
+                if let Some(ref list) = self.pages_list_box {
+                    populate_pages_list(list, self.total_pages, self.current_page, self.provider.as_ref(), &sender);
+                }
+                if self.page_style == PageStyle::LongStrip {
+                    let vadj = widgets.viewport_box.vadjustment();
+                    let max = (vadj.upper() - vadj.page_size()).max(0.0);
+                    if self.total_pages > 1 && max > 0.0 {
+                        let ratio = self.current_page as f64 / (self.total_pages - 1) as f64;
+                        vadj.set_value(ratio * max);
+                    }
+                } else {
+                    let child = rebuild_viewport_widget(self);
+                    widgets.viewport_box.set_child(Some(&child));
+                }
             }
             ComicsReaderMsg::UpdateScrollPage(idx) => {
-                let total = self.provider.page_count();
+                let total = self.total_pages;
                 if total > 0 {
                     let clamped = idx.clamp(0, total - 1);
                     if self.current_page != clamped {
                         self.current_page = clamped;
+                        self.save_progress();
                         self.trigger_loads(&sender);
+                        self.update_bookmark_icon_state(widgets);
+                        if let Some(ref list) = self.pages_list_box {
+                            populate_pages_list(list, self.total_pages, self.current_page, self.provider.as_ref(), &sender);
+                        }
                     }
                 }
             }
             ComicsReaderMsg::NextPage => {
                 self.next_page();
+                self.save_progress();
                 self.trigger_loads(&sender);
+                self.update_bookmark_icon_state(widgets);
+                if let Some(ref list) = self.pages_list_box {
+                    populate_pages_list(list, self.total_pages, self.current_page, self.provider.as_ref(), &sender);
+                }
+                if self.page_style == PageStyle::LongStrip {
+                    let vadj = widgets.viewport_box.vadjustment();
+                    let max = (vadj.upper() - vadj.page_size()).max(0.0);
+                    if self.total_pages > 1 && max > 0.0 {
+                        let ratio = self.current_page as f64 / (self.total_pages - 1) as f64;
+                        vadj.set_value(ratio * max);
+                    }
+                } else {
+                    let child = rebuild_viewport_widget(self);
+                    widgets.viewport_box.set_child(Some(&child));
+                }
             }
             ComicsReaderMsg::PrevPage => {
                 self.prev_page();
+                self.save_progress();
                 self.trigger_loads(&sender);
+                self.update_bookmark_icon_state(widgets);
+                if let Some(ref list) = self.pages_list_box {
+                    populate_pages_list(list, self.total_pages, self.current_page, self.provider.as_ref(), &sender);
+                }
+                if self.page_style == PageStyle::LongStrip {
+                    let vadj = widgets.viewport_box.vadjustment();
+                    let max = (vadj.upper() - vadj.page_size()).max(0.0);
+                    if self.total_pages > 1 && max > 0.0 {
+                        let ratio = self.current_page as f64 / (self.total_pages - 1) as f64;
+                        vadj.set_value(ratio * max);
+                    }
+                } else {
+                    let child = rebuild_viewport_widget(self);
+                    widgets.viewport_box.set_child(Some(&child));
+                }
             }
             ComicsReaderMsg::KeyLeft => {
                 if self.direction == ReadingDirection::Rtl {
-                    self.next_page();
+                    let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
                 } else {
-                    self.prev_page();
+                    let _ = sender.input_sender().send(ComicsReaderMsg::PrevPage);
                 }
-                self.trigger_loads(&sender);
             }
             ComicsReaderMsg::KeyRight => {
                 if self.direction == ReadingDirection::Rtl {
-                    self.prev_page();
+                    let _ = sender.input_sender().send(ComicsReaderMsg::PrevPage);
                 } else {
-                    self.next_page();
+                    let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
                 }
-                self.trigger_loads(&sender);
             }
             ComicsReaderMsg::TapAtRatio(ratio) => {
-                if ratio < 0.35 {
+                if ratio < 0.30 {
                     if self.direction == ReadingDirection::Rtl {
-                        self.next_page();
+                        let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
                     } else {
-                        self.prev_page();
+                        let _ = sender.input_sender().send(ComicsReaderMsg::PrevPage);
                     }
-                    self.trigger_loads(&sender);
-                } else if ratio > 0.65 {
+                } else if ratio > 0.70 {
                     if self.direction == ReadingDirection::Rtl {
-                        self.prev_page();
+                        let _ = sender.input_sender().send(ComicsReaderMsg::PrevPage);
                     } else {
-                        self.next_page();
+                        let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
                     }
-                    self.trigger_loads(&sender);
-                } else {
-                    self.show_chrome = !self.show_chrome;
                 }
             }
             ComicsReaderMsg::PageLoaded(idx, ref maybe_tex) => {
@@ -932,104 +1586,295 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::ToggleDirection => {
-                self.direction = self.direction.next();
+                let next = self.direction.next();
+                let _ = sender.input_sender().send(ComicsReaderMsg::SetDirection(next));
             }
             ComicsReaderMsg::SetDirection(dir) => {
-                self.direction = dir;
+                if self.direction != dir {
+                    self.direction = dir;
+                    if let Some(ref catalog) = self.catalog {
+                        let dir_str = match dir {
+                            ReadingDirection::Ltr => "ltr",
+                            ReadingDirection::Rtl => "rtl",
+                            ReadingDirection::Webtoon => "webtoon",
+                        };
+                        if let Some(bid) = self.book_id {
+                            catalog.set_pref(&format!("book.{bid}.comic.direction"), dir_str);
+                        }
+                        catalog.set_pref("reader.comic.direction", dir_str);
+                    }
+                    self.trigger_osd(dir.label(), &sender);
+                    let child = rebuild_viewport_widget(self);
+                    widgets.viewport_box.set_child(Some(&child));
+                    self.sync_settings_ui(widgets);
+                }
             }
             ComicsReaderMsg::SetPageStyle(style) => {
-                self.page_style = style;
+                if self.page_style != style {
+                    self.page_style = style;
+                    if let Some(ref catalog) = self.catalog {
+                        let style_str = match style {
+                            PageStyle::Single => "single",
+                            PageStyle::Double => "double",
+                            PageStyle::Fade => "fade",
+                            PageStyle::LongStrip => "strip",
+                        };
+                        if let Some(bid) = self.book_id {
+                            catalog.set_pref(&format!("book.{bid}.comic.page_style"), style_str);
+                        }
+                        catalog.set_pref("reader.comic.page_style", style_str);
+                    }
+                    self.trigger_osd(style.label(), &sender);
+                    self.trigger_loads(&sender);
+                    let child = rebuild_viewport_widget(self);
+                    widgets.viewport_box.set_child(Some(&child));
+                    self.sync_settings_ui(widgets);
+                }
             }
             ComicsReaderMsg::ToggleFitMode => {
-                self.fit_mode = self.fit_mode.next();
+                let next = self.fit_mode.next();
+                let _ = sender.input_sender().send(ComicsReaderMsg::SetFitMode(next));
             }
             ComicsReaderMsg::SetFitMode(fit) => {
-                self.fit_mode = fit;
+                if self.fit_mode != fit {
+                    self.fit_mode = fit;
+                    if let Some(ref catalog) = self.catalog {
+                        let fit_str = match fit {
+                            FitMode::Width => "width",
+                            FitMode::Height => "height",
+                            FitMode::Screen => "screen",
+                            FitMode::Original => "original",
+                        };
+                        if let Some(bid) = self.book_id {
+                            catalog.set_pref(&format!("book.{bid}.comic.fit_mode"), fit_str);
+                        }
+                        catalog.set_pref("reader.comic.fit_mode", fit_str);
+                    }
+                    self.trigger_osd(fit.label(), &sender);
+                    let child = rebuild_viewport_widget(self);
+                    widgets.viewport_box.set_child(Some(&child));
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::SetSpreadGap(gap) => {
+                let clamped = gap.clamp(0, 48);
+                if self.two_page_gap != clamped {
+                    self.two_page_gap = clamped;
+                    if let Some(ref catalog) = self.catalog {
+                        catalog.set_pref_i64("reader.comic.two_page_gap", clamped as i64);
+                    }
+                    if self.page_style == PageStyle::Double {
+                        let child = rebuild_viewport_widget(self);
+                        widgets.viewport_box.set_child(Some(&child));
+                    }
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::ToggleSidebar => {
+                self.show_sidebar = !self.show_sidebar;
+                if self.show_sidebar {
+                    self.show_back_button = false;
+                }
+            }
+            ComicsReaderMsg::CloseSidebar => {
+                self.show_sidebar = false;
+                self.sidebar_pinned = false;
+                self.mouse_in_sidebar = false;
+                self.mouse_in_left_edge = false;
+            }
+            ComicsReaderMsg::SetSidebarTab(tab) => {
+                self.sidebar_tab = tab;
+                let tab_name = match tab {
+                    ComicSidebarTab::Pages => "pages",
+                    ComicSidebarTab::Bookmarks => "bookmarks",
+                    ComicSidebarTab::Settings => "settings",
+                };
+                widgets.left_stack.set_visible_child_name(tab_name);
+                if tab == ComicSidebarTab::Pages {
+                    if let Some(ref list) = self.pages_list_box {
+                        populate_pages_list(list, self.total_pages, self.current_page, self.provider.as_ref(), &sender);
+                    }
+                } else if tab == ComicSidebarTab::Bookmarks {
+                    if let Some(ref list) = self.bookmarks_list_box {
+                        populate_bookmarks_list(list, &self.bookmarks, &sender);
+                    }
+                }
+            }
+            ComicsReaderMsg::ToggleBookmark => {
+                if let (Some(ref catalog), Some(book_id)) = (&self.catalog, self.book_id) {
+                    if let Some(mark) = self.bookmarks.iter().find(|b| b.chapter_index as usize == self.current_page) {
+                        let _ = catalog.delete_reading_bookmark(mark.id);
+                        crate::notify::compact("Bookmark removed", "");
+                    } else {
+                        let _ = catalog.insert_reading_bookmark(
+                            book_id,
+                            self.current_page as i64,
+                            self.progress_fraction(),
+                            &format!("Page {}", self.current_page + 1),
+                        );
+                        crate::notify::compact("Bookmark saved", &format!("Page {}", self.current_page + 1));
+                    }
+                    self.reload_bookmarks();
+                } else if let Some(pos) = self.bookmarks.iter().position(|b| b.chapter_index as usize == self.current_page) {
+                    self.bookmarks.remove(pos);
+                    crate::notify::compact("Bookmark removed", "");
+                } else {
+                    self.bookmarks.push(ReadingBookmark {
+                        id: self.current_page as i64,
+                        book_id: 0,
+                        chapter_index: self.current_page as i64,
+                        chapter_progress: self.progress_fraction(),
+                        label: format!("Page {}", self.current_page + 1),
+                        created_at: String::new(),
+                    });
+                    crate::notify::compact("Bookmark saved", &format!("Page {}", self.current_page + 1));
+                }
+                self.update_bookmark_icon_state(widgets);
+                if let Some(ref list) = self.bookmarks_list_box {
+                    populate_bookmarks_list(list, &self.bookmarks, &sender);
+                }
+            }
+            ComicsReaderMsg::DeleteBookmark(id) => {
+                if let Some(ref catalog) = self.catalog {
+                    let _ = catalog.delete_reading_bookmark(id);
+                    crate::notify::compact("Bookmark removed", "");
+                    self.reload_bookmarks();
+                } else {
+                    self.bookmarks.retain(|b| b.id != id);
+                    crate::notify::compact("Bookmark removed", "");
+                }
+                self.update_bookmark_icon_state(widgets);
+                if let Some(ref list) = self.bookmarks_list_box {
+                    populate_bookmarks_list(list, &self.bookmarks, &sender);
+                }
+            }
+            ComicsReaderMsg::TopEdgeHover(inside) => {
+                self.mouse_in_top_edge = inside;
+                if inside {
+                    self.show_back_button = true;
+                    self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
+                } else {
+                    self.schedule_back_hide(&sender);
+                }
+            }
+            ComicsReaderMsg::BottomEdgeHover(inside) => {
+                self.mouse_in_bottom_edge = inside;
+                if inside {
+                    self.show_bottom_pill = true;
+                    self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
+                } else {
+                    self.schedule_bottom_hide(&sender);
+                }
+            }
+            ComicsReaderMsg::LeftEdgeHover(inside) => {
+                self.mouse_in_left_edge = inside;
+                if inside {
+                    self.show_sidebar = true;
+                    self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
+                    self.show_back_button = false;
+                    if let Some(ref list) = self.pages_list_box {
+                        populate_pages_list(list, self.total_pages, self.current_page, self.provider.as_ref(), &sender);
+                    }
+                } else if !self.mouse_in_sidebar && !self.sidebar_pinned {
+                    self.schedule_sidebar_close(&sender);
+                }
+            }
+            ComicsReaderMsg::SidebarHover(inside) => {
+                self.mouse_in_sidebar = inside;
+                if inside {
+                    self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
+                } else if !self.mouse_in_left_edge && !self.sidebar_pinned {
+                    self.schedule_sidebar_close(&sender);
+                }
+            }
+            ComicsReaderMsg::BackHideTimerTick(seq) => {
+                if seq == self.back_hide_seq && !self.mouse_in_top_edge {
+                    self.show_back_button = false;
+                }
+            }
+            ComicsReaderMsg::BottomHideTimerTick(seq) => {
+                if seq == self.bottom_hide_seq && !self.mouse_in_bottom_edge {
+                    self.show_bottom_pill = false;
+                }
+            }
+            ComicsReaderMsg::SidebarCloseTimerTick(seq) => {
+                if seq == self.sidebar_close_seq && !self.mouse_in_sidebar && !self.mouse_in_left_edge && !self.sidebar_pinned {
+                    self.show_sidebar = false;
+                }
+            }
+            ComicsReaderMsg::UserScrolled => {
+                if self.show_bottom_pill && !self.mouse_in_bottom_edge {
+                    self.show_bottom_pill = false;
+                    self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
+                }
+                if self.show_back_button && !self.mouse_in_top_edge {
+                    self.show_back_button = false;
+                    self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
+                }
+            }
+            ComicsReaderMsg::HideOsd(seq) => {
+                if seq == self.zoom_osd_seq {
+                    self.show_zoom_osd = false;
+                }
             }
             ComicsReaderMsg::ToggleChrome => {
-                self.show_chrome = !self.show_chrome;
+                self.show_back_button = !self.show_back_button;
+                self.show_bottom_pill = !self.show_bottom_pill;
+                if self.show_back_button {
+                    self.schedule_back_hide(&sender);
+                }
+                if self.show_bottom_pill {
+                    self.schedule_bottom_hide(&sender);
+                }
             }
             ComicsReaderMsg::ToggleSettings => {
-                self.show_settings = !self.show_settings;
+                let _ = sender.input_sender().send(ComicsReaderMsg::ToggleSidebar);
             }
             ComicsReaderMsg::CloseSettings => {
-                self.show_settings = false;
+                let _ = sender.input_sender().send(ComicsReaderMsg::CloseSidebar);
             }
             ComicsReaderMsg::Close => {
-                if self.show_settings {
-                    self.show_settings = false;
+                if self.show_sidebar {
+                    self.show_sidebar = false;
+                    self.sidebar_pinned = false;
                 } else {
                     let _ = sender.output(ComicsReaderOut::Close);
                 }
             }
         }
 
-        let fit_content_fit = match self.fit_mode {
-            FitMode::Width => gtk::ContentFit::Fill,
-            FitMode::Height => gtk::ContentFit::Contain,
-            FitMode::Screen => gtk::ContentFit::Cover,
-            FitMode::Original => gtk::ContentFit::ScaleDown,
-        };
         let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
 
-        let mut updated_in_place = false;
-        if is_webtoon {
-            if loaded_page_idx.is_some() {
-                if let Some(child_widget) = widgets.viewport_box.child() {
-                    if child_widget.has_css_class("kalam-webtoon-container") {
-                        if let Ok(vbox) = child_widget.downcast::<gtk::Box>() {
-                            if let Some(idx) = loaded_page_idx {
-                                if let Some(tex) = self.textures.get(&idx) {
-                                    let mut curr = vbox.first_child();
-                                    let mut i = 0;
-                                    while let Some(item) = curr {
-                                        if i == idx {
-                                            if let Ok(item_box) = item.downcast::<gtk::Box>() {
-                                                while let Some(old) = item_box.first_child() {
-                                                    item_box.remove(&old);
-                                                }
-                                                let pic = gtk::Picture::for_paintable(tex);
-                                                pic.set_can_shrink(true);
-                                                pic.set_content_fit(fit_content_fit);
-                                                pic.set_halign(gtk::Align::Center);
-                                                item_box.append(&pic);
+        if is_webtoon && loaded_page_idx.is_some() {
+            if let Some(child_widget) = widgets.viewport_box.child() {
+                if child_widget.has_css_class("kalam-webtoon-container") {
+                    if let Ok(vbox) = child_widget.downcast::<gtk::Box>() {
+                        if let Some(idx) = loaded_page_idx {
+                            if let Some(tex) = self.textures.get(&idx) {
+                                let mut curr = vbox.first_child();
+                                let mut i = 0;
+                                while let Some(item) = curr {
+                                    if i == idx {
+                                        if let Ok(item_box) = item.downcast::<gtk::Box>() {
+                                            while let Some(old) = item_box.first_child() {
+                                                item_box.remove(&old);
                                             }
-                                            break;
+                                            let pic = gtk::Picture::for_paintable(tex);
+                                            pic.set_can_shrink(true);
+                                            pic.set_content_fit(gtk::ContentFit::Contain);
+                                            pic.set_halign(gtk::Align::Center);
+                                            item_box.append(&pic);
                                         }
-                                        curr = item.next_sibling();
-                                        i += 1;
+                                        break;
                                     }
+                                    curr = item.next_sibling();
+                                    i += 1;
                                 }
                             }
-                            updated_in_place = true;
                         }
                     }
                 }
             }
-
-            // Adjust vertical scroll position on navigation actions
-            let is_nav_msg = matches!(
-                msg,
-                ComicsReaderMsg::SetPage(_)
-                    | ComicsReaderMsg::NextPage
-                    | ComicsReaderMsg::PrevPage
-                    | ComicsReaderMsg::KeyLeft
-                    | ComicsReaderMsg::KeyRight
-            );
-            if is_nav_msg {
-                let vadj = widgets.viewport_box.vadjustment();
-                let max = (vadj.upper() - vadj.page_size()).max(0.0);
-                let total = self.provider.page_count();
-                if total > 1 && max > 0.0 {
-                    let target_ratio = self.current_page as f64 / (total - 1) as f64;
-                    vadj.set_value(target_ratio * max);
-                }
-            }
-        }
-
-        if !updated_in_place {
-            let child = rebuild_viewport_widget(self);
-            widgets.viewport_box.set_child(Some(&child));
         }
 
         self.update_view(widgets, sender);
@@ -1061,6 +1906,9 @@ mod tests {
         let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
             title: "Test Manga".to_string(),
             provider: dummy,
+            catalog: None,
+            book_id: None,
+            cover_path: None,
         });
 
         model.page_style = PageStyle::Single;
@@ -1077,6 +1925,9 @@ mod tests {
         let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
             title: "Test Manga".to_string(),
             provider: dummy,
+            catalog: None,
+            book_id: None,
+            cover_path: None,
         });
 
         model.page_style = PageStyle::Double;
@@ -1108,6 +1959,9 @@ mod tests {
         let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
             title: "Test Preload".to_string(),
             provider: dummy,
+            catalog: None,
+            book_id: None,
+            cover_path: None,
         });
         model.page_style = PageStyle::Single;
         model.current_page = 0;
@@ -1136,6 +1990,9 @@ mod tests {
         let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
             title: "Test Webtoon".to_string(),
             provider: dummy,
+            catalog: None,
+            book_id: None,
+            cover_path: None,
         });
 
         model.direction = ReadingDirection::Webtoon;
@@ -1144,5 +2001,42 @@ mod tests {
         let missing = model.get_missing_pages();
         assert_eq!(missing, (1..=11).collect::<Vec<_>>());
     }
-}
 
+    #[test]
+    fn test_page_indicator_label() {
+        let dummy = Arc::new(DummyProvider { count: 20 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Test Indicator".to_string(),
+            provider: dummy,
+            catalog: None,
+            book_id: None,
+            cover_path: None,
+        });
+
+        model.page_style = PageStyle::Single;
+        model.current_page = 0;
+        assert_eq!(model.page_indicator_label(), "Page 1 of 20");
+
+        model.page_style = PageStyle::Double;
+        assert_eq!(model.page_indicator_label(), "Pages 1-2 of 20");
+
+        model.current_page = 19;
+        assert_eq!(model.page_indicator_label(), "Page 20 of 20");
+    }
+
+    #[test]
+    fn test_comic_spread_gap() {
+        let dummy = Arc::new(DummyProvider { count: 10 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Test Gap".to_string(),
+            provider: dummy,
+            catalog: None,
+            book_id: None,
+            cover_path: None,
+        });
+
+        assert_eq!(model.two_page_gap, 0);
+        model.two_page_gap = 8;
+        assert_eq!(model.two_page_gap, 8);
+    }
+}

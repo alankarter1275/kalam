@@ -20,4 +20,10 @@ pub trait ImageProvider: Send + Sync {
     
     /// Optionally blocks to fetch the image bytes for a given page index.
     fn fetch_page(&self, idx: usize) -> Result<Vec<u8>>;
+
+    /// Optional title or filename for a given page index.
+    fn page_title(&self, idx: usize) -> Option<String> {
+        let _ = idx;
+        None
+    }
 }

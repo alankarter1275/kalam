@@ -658,6 +658,59 @@ shows up as its own task in the task manager.
 
 ---
 
+## Part I — Comic & Manga Reader Verifications (2.12)
+
+### T25 · Comic Reader Chrome Autohide & Edge Hover
+
+**Do:**
+1. Open a comic book (CBZ/CBR) or remote manga chapter in Kalam.
+2. Observe the initial state of the floating chrome. Wait 3.5 seconds without moving the cursor.
+3. Move cursor directly over the top-left area where the "Library" and "Bookmark" buttons live.
+4. Move cursor directly over the bottom-center area where the page navigation pill lives.
+5. Move cursor to the middle of the page and click.
+6. Scroll the page vertically (or using the trackpad/wheel).
+
+**Look for:**
+1. Chrome starts visible, then automatically slides out of view after 3–3.5s of inactivity.
+2. Hovering directly over the top-left dock reveals the Library button and Bookmark button.
+3. Hovering directly over the bottom-center dock reveals `[Prev]`, `Page X of Y`, and `[Next]`. Hovering arbitrary edge areas away from the docks does NOT trigger them.
+4. Clicking in the center area does NOT toggle or pop up the chrome (no tap toggling).
+5. Scrolling immediately autohides both the top dock and bottom pill.
+
+### T26 · Comic Reader Zen-Style Left Sidebar & Settings
+
+**Do:**
+1. Move the cursor to the far left edge (within 18px of the left border) to reveal the Zen sidebar.
+2. Observe the cover thumbnail, title, author, and reading progress bar in the header.
+3. Switch between the 3 tabs: Pages, Bookmarks, and Settings.
+4. In Settings, change Page Style between Single, Double, and Webtoon (Long Strip).
+5. In Double mode, change Spread Gap between 0px (seamless), 4px, 8px, 12px, and 16px.
+6. Toggle Reading Direction between Left → Right and Right → Left (Manga).
+7. Change Fit Mode between Width, Height, Screen, and 1:1.
+
+**Look for:**
+1. Sidebar smoothly slides in from the left edge over a subtle dim backdrop. Moving cursor away or clicking the dim backdrop dismisses the sidebar.
+2. Pages tab lists archive pages with clean filenames and titles. Clicking any page navigates directly to it.
+3. Double mode shows facing pages side by side with the selected spread gap (0px joins pages seamlessly without border gap). Spread gap selector is enabled in Double mode and disabled in Single/Webtoon mode.
+4. Right → Left mode flips page placement and arrow key orientation so Left arrow advances and Right arrow steps backward.
+5. Fit mode changes display an instant VLC-style crossfading HUD indicator in the top-right corner showing the active mode.
+
+### T27 · Comic Reader Bookmarks & Reading Progress Persistence
+
+**Do:**
+1. In the comic reader, navigate to page 5 and press `b` (or click the bookmark button in the top dock).
+2. Open the sidebar and switch to the Bookmarks tab.
+3. Navigate to page 12 and close the reader using `Escape` or the "Library" button.
+4. Reopen the comic book from the library.
+
+**Look for:**
+1. Pressing `b` shows a compact notification ("Bookmark saved") and turns the top dock bookmark icon active.
+2. The Bookmarks tab lists Page 5. Clicking it jumps to page 5. Clicking the trash can icon deletes the bookmark and removes the active icon state if on that page.
+3. Reopening the comic book resumes exactly at Page 12, preserving reading progress and session statistics.
+4. Exiting the reader completely unbinds cached textures and triggers `malloc_trim(0)` to return memory to the operating system.
+
+---
+
 ## At the end
 
 Send me whatever you have, in this shape:

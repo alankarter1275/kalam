@@ -673,6 +673,9 @@ impl AppModel {
                         let init = crate::pages::comics_reader::types::ComicsReaderInit {
                             title: title.clone(),
                             provider: std::sync::Arc::new(provider),
+                            catalog: Some(catalog.clone()),
+                            book_id: None,
+                            cover_path: None,
                         };
                         let ctrl = ComicsReaderModel::builder()
                             .launch(init)
@@ -703,6 +706,9 @@ impl AppModel {
                                 let init = crate::pages::comics_reader::types::ComicsReaderInit {
                                     title: book.title.clone(),
                                     provider: std::sync::Arc::new(provider),
+                                    catalog: Some(catalog.clone()),
+                                    book_id: Some(id),
+                                    cover_path: book.cover_path.clone(),
                                 };
                                 let ctrl = ComicsReaderModel::builder()
                                     .launch(init)

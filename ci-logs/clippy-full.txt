@@ -19,4 +19,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.87s
+src/pages/pdf_reader.rs:1832:24: [1m[91merror[0m: Can't use wrapper types in container assignment.
+src/pages/pdf_reader.rs:582:54: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::allocated_width`: Since 4.12
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors

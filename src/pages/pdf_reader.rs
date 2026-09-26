@@ -173,7 +173,7 @@ pub enum PdfReaderMsg {
     UpdateScrollPage(usize),
     SelectionDragBegin { slot: PageSlot, x: f64, y: f64, is_block: bool },
     SelectionDragUpdate { slot: PageSlot, dx: f64, dy: f64, is_block: bool },
-    SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64, is_block: bool },
+    SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64 },
     SelectionWordAt { slot: PageSlot, x: f64, y: f64 },
     SelectionLineAt { slot: PageSlot, x: f64, y: f64 },
     PageOcrResult {
@@ -1027,8 +1027,7 @@ impl PdfReaderModel {
         });
         let drag_ctrl_end = drag.clone();
         drag.connect_drag_end(move |_, dx, dy| {
-            let is_block = drag_ctrl_end.current_event_state().contains(gdk::ModifierType::ALT_MASK);
-            let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy, is_block });
+            let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy });
         });
         overlay.add_controller(drag);
 
@@ -3154,7 +3153,7 @@ impl Component for PdfReaderModel {
                     da.queue_draw();
                 }
             }
-            PdfReaderMsg::SelectionDragEnd { slot, dx, dy, .. } => {
+            PdfReaderMsg::SelectionDragEnd { slot, dx, dy } => {
                 self.selection_drag_state = None;
                 if dx.abs() > 4.0 || dy.abs() > 4.0 {
                     if self.active_selection.borrow().is_some() {

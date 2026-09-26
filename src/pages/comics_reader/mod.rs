@@ -1657,8 +1657,7 @@ impl Component for ComicsReaderModel {
         root.set_can_focus(true);
         root.set_focusable(true);
         root.grab_focus();
-        let root_for_map = root.clone();
-        root.connect_map(move |r| {
+        root.connect_map(|r| {
             r.grab_focus();
         });
         gtk::glib::idle_add_local_once({

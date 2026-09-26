@@ -95,11 +95,11 @@ impl FitMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ComicSidebarTab {
-    Pages,
-    Bookmarks,
+    #[default]
     Settings,
+    Bookmarks,
 }
 
 #[derive(Debug)]
@@ -133,6 +133,7 @@ pub enum ComicsReaderMsg {
     SidebarCloseTimerTick(u64),
     UserScrolled,
     HideOsd(u64),
+    ViewportResized,
     #[allow(dead_code)]
     ToggleChrome,
     #[allow(dead_code)]

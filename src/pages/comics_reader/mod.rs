@@ -863,6 +863,7 @@ impl Component for ComicsReaderModel {
             },
 
             // ── 2. Overlay: Dim Backdrop for Dismissing Left Sidebar ──
+            #[name = "dim_backdrop"]
             add_overlay = &gtk::Button {
                 add_css_class: "kalam-reader-dim",
                 #[watch]
@@ -887,6 +888,7 @@ impl Component for ComicsReaderModel {
             },
 
             // ── 4. Floating Top-Left Back Dock ────────────────────────
+            #[name = "top_back_revealer"]
             add_overlay = &gtk::Revealer {
                 #[watch]
                 set_reveal_child: model.show_back_button && !model.show_sidebar,
@@ -929,6 +931,7 @@ impl Component for ComicsReaderModel {
             },
 
             // ── 5. Floating Bottom Navigation Pill ────────────────────
+            #[name = "bottom_pill_revealer"]
             add_overlay = &gtk::Revealer {
                 #[watch]
                 set_reveal_child: model.show_bottom_pill,
@@ -1085,11 +1088,6 @@ impl Component for ComicsReaderModel {
                         set_hexpand: true,
                         set_vexpand: true,
                         set_transition_type: gtk::StackTransitionType::Crossfade,
-                        #[watch]
-                        set_visible_child_name: match model.sidebar_tab {
-                            ComicSidebarTab::Settings => "settings",
-                            ComicSidebarTab::Bookmarks => "bookmarks",
-                        },
 
                         // Settings View (Default)
                         add_named[Some("settings")] = &gtk::ScrolledWindow {
@@ -1429,6 +1427,16 @@ impl Component for ComicsReaderModel {
         populate_bookmarks_list(&widgets.bookmarks_list_box, &model.bookmarks, &sender);
         model.update_bookmark_icon_state(&widgets);
         model.sync_settings_ui(&widgets);
+
+        // Explicitly register stack page names so GTK child lookup succeeds without warnings
+        if let Some(settings_child) = widgets.left_stack.first_child() {
+            let page = widgets.left_stack.page(&settings_child);
+            page.set_name(Some("settings"));
+            if let Some(bookmarks_child) = settings_child.next_sibling() {
+                let page_bm = widgets.left_stack.page(&bookmarks_child);
+                page_bm.set_name(Some("bookmarks"));
+            }
+        }
         widgets.left_stack.set_visible_child_name("settings");
 
         model.schedule_back_hide(&sender);
@@ -1684,6 +1692,7 @@ impl Component for ComicsReaderModel {
                 self.save_progress();
                 self.trigger_loads(&sender);
                 self.update_bookmark_icon_state(widgets);
+                widgets.page_indicator_label.set_label(&self.page_indicator_label());
                 let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
                 if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
@@ -1710,6 +1719,7 @@ impl Component for ComicsReaderModel {
                     self.save_progress();
                     self.trigger_loads(&sender);
                     self.update_bookmark_icon_state(widgets);
+                    widgets.page_indicator_label.set_label(&self.page_indicator_label());
                 }
             }
             ComicsReaderMsg::ScrollDelta(dir) => {
@@ -1726,6 +1736,7 @@ impl Component for ComicsReaderModel {
                 self.save_progress();
                 self.trigger_loads(&sender);
                 self.update_bookmark_icon_state(widgets);
+                widgets.page_indicator_label.set_label(&self.page_indicator_label());
                 let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
                 if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
@@ -1746,6 +1757,7 @@ impl Component for ComicsReaderModel {
                 self.save_progress();
                 self.trigger_loads(&sender);
                 self.update_bookmark_icon_state(widgets);
+                widgets.page_indicator_label.set_label(&self.page_indicator_label());
                 let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
                 if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
@@ -1880,6 +1892,7 @@ impl Component for ComicsReaderModel {
                     }
                     self.trigger_osd(style.label(), &sender);
                     self.trigger_loads(&sender);
+                    widgets.page_indicator_label.set_label(&self.page_indicator_label());
                     let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
                     update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon);
                     let child = rebuild_viewport_widget(self, widgets.viewport_box.width());
@@ -1943,10 +1956,18 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::ToggleSidebar => {
                 self.show_sidebar = !self.show_sidebar;
                 self.sidebar_pinned = self.show_sidebar;
+                widgets.sidebar_revealer.set_reveal_child(self.show_sidebar);
+                widgets.dim_backdrop.set_visible(self.show_sidebar);
                 if self.show_sidebar {
                     self.mouse_in_sidebar = true;
                     self.show_back_button = false;
+                    widgets.top_back_revealer.set_reveal_child(false);
                     self.sync_settings_ui(widgets);
+                    let tab_name = match self.sidebar_tab {
+                        ComicSidebarTab::Settings => "settings",
+                        ComicSidebarTab::Bookmarks => "bookmarks",
+                    };
+                    widgets.left_stack.set_visible_child_name(tab_name);
                     if self.sidebar_tab == ComicSidebarTab::Bookmarks {
                         populate_bookmarks_list(&widgets.bookmarks_list_box, &self.bookmarks, &sender);
                     }
@@ -1957,6 +1978,8 @@ impl Component for ComicsReaderModel {
                 self.sidebar_pinned = false;
                 self.mouse_in_sidebar = false;
                 self.mouse_in_left_edge = false;
+                widgets.sidebar_revealer.set_reveal_child(false);
+                widgets.dim_backdrop.set_visible(false);
             }
             ComicsReaderMsg::SetSidebarTab(tab) => {
                 self.sidebar_tab = tab;
@@ -2008,6 +2031,7 @@ impl Component for ComicsReaderModel {
                 if inside {
                     if !self.show_sidebar {
                         self.show_back_button = true;
+                        widgets.top_back_revealer.set_reveal_child(true);
                     }
                     self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
                 } else if self.show_back_button {
@@ -2018,6 +2042,7 @@ impl Component for ComicsReaderModel {
                 self.mouse_in_bottom_edge = inside;
                 if inside {
                     self.show_bottom_pill = true;
+                    widgets.bottom_pill_revealer.set_reveal_child(true);
                     self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
                 } else if self.show_bottom_pill {
                     self.schedule_bottom_hide(&sender);
@@ -2031,8 +2056,16 @@ impl Component for ComicsReaderModel {
                     self.mouse_in_sidebar = true;
                     self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
                     self.show_back_button = false;
+                    widgets.top_back_revealer.set_reveal_child(false);
+                    widgets.sidebar_revealer.set_reveal_child(true);
+                    widgets.dim_backdrop.set_visible(true);
                     if was_hidden {
                         self.sync_settings_ui(widgets);
+                        let tab_name = match self.sidebar_tab {
+                            ComicSidebarTab::Settings => "settings",
+                            ComicSidebarTab::Bookmarks => "bookmarks",
+                        };
+                        widgets.left_stack.set_visible_child_name(tab_name);
                         if self.sidebar_tab == ComicSidebarTab::Bookmarks {
                             populate_bookmarks_list(&widgets.bookmarks_list_box, &self.bookmarks, &sender);
                         }
@@ -2052,11 +2085,13 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::BackHideTimerTick(seq) => {
                 if seq == self.back_hide_seq && !self.mouse_in_top_edge {
                     self.show_back_button = false;
+                    widgets.top_back_revealer.set_reveal_child(false);
                 }
             }
             ComicsReaderMsg::BottomHideTimerTick(seq) => {
                 if seq == self.bottom_hide_seq && !self.mouse_in_bottom_edge {
                     self.show_bottom_pill = false;
+                    widgets.bottom_pill_revealer.set_reveal_child(false);
                 }
             }
             ComicsReaderMsg::SidebarCloseTimerTick(seq) => {
@@ -2066,10 +2101,18 @@ impl Component for ComicsReaderModel {
                     && !self.mouse_in_left_edge
                 {
                     self.show_sidebar = false;
+                    widgets.sidebar_revealer.set_reveal_child(false);
+                    widgets.dim_backdrop.set_visible(false);
                 }
             }
             ComicsReaderMsg::UserScrolled => {
                 self.hide_chrome_on_interaction();
+                if !self.show_back_button {
+                    widgets.top_back_revealer.set_reveal_child(false);
+                }
+                if !self.show_bottom_pill {
+                    widgets.bottom_pill_revealer.set_reveal_child(false);
+                }
             }
             ComicsReaderMsg::HideOsd(seq) => {
                 if seq == self.zoom_osd_seq {
@@ -2081,11 +2124,15 @@ impl Component for ComicsReaderModel {
             }
             ComicsReaderMsg::CloseSettings => {
                 self.show_sidebar = false;
+                widgets.sidebar_revealer.set_reveal_child(false);
+                widgets.dim_backdrop.set_visible(false);
             }
             ComicsReaderMsg::Close => {
                 if self.show_sidebar {
                     self.show_sidebar = false;
                     self.sidebar_pinned = false;
+                    widgets.sidebar_revealer.set_reveal_child(false);
+                    widgets.dim_backdrop.set_visible(false);
                 } else {
                     let _ = sender.output(ComicsReaderOut::Close);
                 }

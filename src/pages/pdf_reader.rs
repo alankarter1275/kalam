@@ -2319,13 +2319,13 @@ impl Component for PdfReaderModel {
                 });
         }
 
+        let ocr_gen = active_gen.clone();
         model.render_tx = Some(render_tx);
         model.active_generation = Some(active_gen);
         model.render_generation = 1;
 
         // Start background OCR worker thread for scanned PDF pages
         let (ocr_tx, ocr_rx) = async_channel::unbounded::<crate::ocr::PdfOcrRequest>();
-        let ocr_gen = active_gen.clone();
         let tx_ocr_msg = sender.input_sender().clone();
 
         let _ = std::thread::Builder::new()

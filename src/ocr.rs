@@ -5,7 +5,7 @@
 //! and scanned PDF pages without requiring external system dependencies or network connectivity.
 
 use anyhow::{anyhow, Result};
-use ocrs::{ImageSource, OcrEngine, OcrEngineParams};
+use ocrs::{ImageSource, OcrEngine, OcrEngineParams, TextItem};
 use rten::Model;
 use std::path::PathBuf;
 

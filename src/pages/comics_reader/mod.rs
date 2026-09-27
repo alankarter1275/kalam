@@ -241,7 +241,7 @@ impl ComicsReaderModel {
             ocr_enabled: init
                 .catalog
                 .as_ref()
-                .and_then(|c| c.get_pref("reader.comic.ocr").ok().flatten())
+                .and_then(|c| c.get_pref("reader.comic.ocr"))
                 .map(|v| v != "false")
                 .unwrap_or(true),
             ocr_tx: None,
@@ -3180,8 +3180,18 @@ impl Component for ComicsReaderModel {
                 let text_and_page = self.active_selection.borrow().as_ref().map(|s| (s.text.clone(), s.page));
                 if let Some((text, page)) = text_and_page {
                     if let (Some(ref catalog), Some(bid)) = (&self.catalog, self.book_id) {
-                        let cfi = format!("comic:p{}", page + 1);
-                        let _ = catalog.insert_annotation(bid, &cfi, &text, "", "quote", "yellow");
+                        let _ = catalog.insert_annotation(
+                            bid,
+                            "quote",
+                            page as i64,
+                            "",
+                            0,
+                            "",
+                            0,
+                            "yellow",
+                            &text,
+                            "",
+                        );
                     }
                     let preview = if text.len() > 36 {
                         format!("{}...", &text[..36])

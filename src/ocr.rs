@@ -5,7 +5,7 @@
 //! and scanned PDF pages without requiring external system dependencies or network connectivity.
 
 use anyhow::{anyhow, Result};
-use ocrs::{ImageSource, OcrEngine, OcrEngineParams};
+use ocrs::{ImageSource, OcrEngine, OcrEngineParams, TextItem};
 use rten::Model;
 use std::path::PathBuf;
 
@@ -130,7 +130,8 @@ pub fn perform_ocr_rgba(
 
     // Convert RGBA samples to RGB buffer
     let mut rgb = Vec::with_capacity((w * h * 3) as usize);
-    for chunk in samples.chunks_exact(4) {
+    let (chunks, _) = samples.as_chunks::<4>();
+    for chunk in chunks {
         rgb.push(chunk[0]);
         rgb.push(chunk[1]);
         rgb.push(chunk[2]);

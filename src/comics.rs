@@ -130,7 +130,7 @@ pub struct ComicInfo {
 }
 
 fn strip_bracket_tags(s: &str) -> String {
-    let mut result = s.to_string();
+    let mut result = s.replace(['–', '—'], "-");
     while let Some(start) = result.find('[') {
         if let Some(end) = result[start..].find(']') {
             result.replace_range(start..=start + end, " ");
@@ -145,40 +145,41 @@ fn strip_bracket_tags(s: &str) -> String {
             break;
         }
     }
-    let mut cleaned = String::new();
-    let mut i = 0;
-    let bytes = result.as_bytes();
-    while i < bytes.len() {
-        if bytes[i] == b'(' {
-            if let Some(close_rel) = result[i..].find(')') {
-                let content = result[i + 1..i + close_rel].trim();
-                let lower = content.to_lowercase();
-                let is_meta = lower.contains("digital")
-                    || lower.contains("official")
-                    || lower.contains("colored")
-                    || lower.contains("colour")
-                    || lower.contains("scan")
-                    || lower.contains("raw")
-                    || lower.contains("web")
-                    || lower.contains("cbr")
-                    || lower.contains("cbz")
-                    || lower.starts_with('v')
-                    || lower.starts_with('c')
-                    || content.chars().all(|c| c.is_ascii_digit())
-                    || i + close_rel + 1 == bytes.len();
-                if is_meta {
-                    cleaned.push(' ');
-                    i += close_rel + 1;
-                    continue;
-                }
-            }
-        }
-        cleaned.push(bytes[i] as char);
-        i += 1;
-    }
 
-    let normalized = cleaned.replace(['–', '—'], "-");
-    let words: Vec<&str> = normalized.split_whitespace().collect();
+    let mut cleaned = String::new();
+    let mut rem = result.as_str();
+    while let Some(open_idx) = rem.find('(') {
+        cleaned.push_str(&rem[..open_idx]);
+        if let Some(close_idx) = rem[open_idx..].find(')') {
+            let content = rem[open_idx + 1..open_idx + close_idx].trim();
+            let lower = content.to_lowercase();
+            let is_meta = lower.contains("digital")
+                || lower.contains("official")
+                || lower.contains("colored")
+                || lower.contains("colour")
+                || lower.contains("scan")
+                || lower.contains("raw")
+                || lower.contains("web")
+                || lower.contains("cbr")
+                || lower.contains("cbz")
+                || lower.starts_with('v')
+                || lower.starts_with('c')
+                || content.chars().all(|c| c.is_ascii_digit())
+                || open_idx + close_idx + 1 == rem.len();
+            if is_meta {
+                cleaned.push(' ');
+            } else {
+                cleaned.push_str(&rem[open_idx..=open_idx + close_idx]);
+            }
+            rem = &rem[open_idx + close_idx + 1..];
+        } else {
+            rem = &rem[open_idx..];
+            break;
+        }
+    }
+    cleaned.push_str(rem);
+
+    let words: Vec<&str> = cleaned.split_whitespace().collect();
     words.join(" ")
 }
 

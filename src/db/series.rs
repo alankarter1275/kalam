@@ -445,33 +445,36 @@ impl Catalog {
 
     /// List all chapters belonging to a comic series in ascending numerical order.
     pub fn chapters_for_series(&self, series_id: i64) -> Result<Vec<ComicChapter>> {
-        let conn = self.conn();
-        let sql = "
-            SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
-            FROM comic_chapters
-            WHERE series_id = ?1
-            ORDER BY chapter_number ASC
-        ";
-        let mut stmt = conn.prepare_cached(sql)?;
-        let rows = stmt.query_map(params![series_id], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, i64>(1)?,
-                r.get::<_, i64>(2)?,
-                r.get::<_, f64>(3)? as f32,
-                r.get::<_, Option<f64>>(4)?.map(|v| v as f32),
-                r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?,
-            ))
-        })?;
+        let (raw_chapters, book_ids) = {
+            let conn = self.conn();
+            let sql = "
+                SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
+                FROM comic_chapters
+                WHERE series_id = ?1
+                ORDER BY chapter_number ASC
+            ";
+            let mut stmt = conn.prepare_cached(sql)?;
+            let rows = stmt.query_map(params![series_id], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, f64>(3)? as f32,
+                    r.get::<_, Option<f64>>(4)?.map(|v| v as f32),
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                ))
+            })?;
 
-        let mut raw_chapters = Vec::new();
-        let mut book_ids = Vec::new();
-        for r in rows {
-            let row_val = r?;
-            book_ids.push(row_val.2);
-            raw_chapters.push(row_val);
-        }
+            let mut raw = Vec::new();
+            let mut ids = Vec::new();
+            for r in rows {
+                let row_val = r?;
+                ids.push(row_val.2);
+                raw.push(row_val);
+            }
+            (raw, ids)
+        };
 
         let mut books_map = self.books_by_ids(&book_ids)?;
 
@@ -499,9 +502,9 @@ impl Catalog {
         &self,
         book_id: i64,
     ) -> Result<Option<(ComicSeries, ComicChapter)>> {
-        let conn = self.conn();
-        let row: Option<RawChapterRow> = conn
-            .query_row(
+        let row: Option<RawChapterRow> = {
+            let conn = self.conn();
+            conn.query_row(
                 "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
                  FROM comic_chapters
                  WHERE book_id = ?1",
@@ -518,7 +521,8 @@ impl Catalog {
                     ))
                 },
             )
-            .optional()?;
+            .optional()?
+        };
 
         let Some((c_id, series_id, b_id, ch_num, vol_num, ch_title, created_at)) = row else {
             return Ok(None);
@@ -554,9 +558,9 @@ impl Catalog {
         series_id: i64,
         current_chapter_number: f32,
     ) -> Result<Option<ComicChapter>> {
-        let conn = self.conn();
-        let row: Option<RawChapterRow> = conn
-            .query_row(
+        let row: Option<RawChapterRow> = {
+            let conn = self.conn();
+            conn.query_row(
                 "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
                  FROM comic_chapters
                  WHERE series_id = ?1 AND chapter_number > ?2
@@ -575,7 +579,8 @@ impl Catalog {
                     ))
                 },
             )
-            .optional()?;
+            .optional()?
+        };
 
         let Some((id, s_id, book_id, ch_num, vol_num, title, created_at)) = row else {
             return Ok(None);
@@ -605,9 +610,9 @@ impl Catalog {
         series_id: i64,
         current_chapter_number: f32,
     ) -> Result<Option<ComicChapter>> {
-        let conn = self.conn();
-        let row: Option<RawChapterRow> = conn
-            .query_row(
+        let row: Option<RawChapterRow> = {
+            let conn = self.conn();
+            conn.query_row(
                 "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
                  FROM comic_chapters
                  WHERE series_id = ?1 AND chapter_number < ?2
@@ -626,7 +631,8 @@ impl Catalog {
                     ))
                 },
             )
-            .optional()?;
+            .optional()?
+        };
 
         let Some((id, s_id, book_id, ch_num, vol_num, title, created_at)) = row else {
             return Ok(None);
@@ -651,8 +657,8 @@ impl Catalog {
 
     /// One-time migration: migrate legacy CBZ/CBR books into `comic_series` and `comic_chapters`.
     pub fn migrate_comic_series_and_chapters(&self) -> Result<usize> {
-        let conn = self.conn();
         let unmigrated_ids: Vec<i64> = {
+            let conn = self.conn();
             let mut stmt = conn.prepare(
                 "SELECT id FROM books 
                  WHERE (format = 'CBZ' OR format = 'CBR')

@@ -111,12 +111,16 @@ pub enum Route {
         source_id: String,
         query: String,
     },
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 impl Route {
     pub fn sidebar_item(&self) -> NavItem {
         match self {
             Route::Module(item) => *item,
+            Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,

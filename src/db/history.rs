@@ -228,6 +228,8 @@ impl Catalog {
     }
 
     /// Books ordered by most recently opened — powers Home → Continue.
+    /// Chapters belonging to the same comic series are collapsed so that reading
+    /// multiple chapters of a comic series only occupies one slot in Continue.
     pub fn recently_opened(&self, limit: usize) -> Result<Vec<Book>> {
         let conn = self.conn();
         let sql = format!(
@@ -239,9 +241,48 @@ impl Catalog {
              LIMIT ?1"
         );
         let mut stmt = conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params![limit as i64], row_to_book)?;
-        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
-        hydrate_books(&conn, &mut books)?;
+        let rows = stmt.query_map(params![(limit * 4) as i64], row_to_book)?;
+        let mut raw_books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        hydrate_books(&conn, &mut raw_books)?;
+
+        let mut seen_series = HashSet::new();
+        let mut books = Vec::new();
+
+        for mut b in raw_books {
+            let series_meta: Option<(i64, String, String, f32)> = conn
+                .query_row(
+                    "SELECT s.id, s.title, s.author, c.chapter_number
+                     FROM comic_chapters c
+                     JOIN comic_series s ON s.id = c.series_id
+                     WHERE c.book_id = ?1",
+                    params![b.id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, f64>(3)? as f32)),
+                )
+                .optional()?;
+
+            if let Some((s_id, s_title, s_author, ch_num)) = series_meta {
+                if seen_series.contains(&s_id) {
+                    continue;
+                }
+                seen_series.insert(s_id);
+
+                b.series = Some(s_title.clone());
+                if ch_num > 0.0 {
+                    b.title = format!("{s_title} · #{ch_num}");
+                } else {
+                    b.title = s_title;
+                }
+                if !s_author.is_empty() {
+                    b.authors = s_author;
+                }
+            }
+
+            books.push(b);
+            if books.len() >= limit {
+                break;
+            }
+        }
+
         Ok(books)
     }
 

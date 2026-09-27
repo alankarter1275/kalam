@@ -117,14 +117,50 @@ impl Catalog {
         let one =
             |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(0) };
 
+        let total_books = one(
+            "SELECT (SELECT COUNT(*) FROM books WHERE id NOT IN (SELECT book_id FROM comic_chapters)) + (SELECT COUNT(*) FROM comic_series)",
+        );
+        let finished = one(
+            "SELECT (
+                SELECT COUNT(*) FROM books 
+                WHERE id NOT IN (SELECT book_id FROM comic_chapters) 
+                  AND (IFNULL(finished_at,'') <> '' OR progress >= 100)
+             ) + (
+                SELECT COUNT(*) FROM comic_series s
+                WHERE (SELECT COUNT(*) FROM comic_chapters cc WHERE cc.series_id = s.id) > 0
+                  AND (
+                      SELECT COUNT(*) FROM comic_chapters cc 
+                      JOIN books b ON b.id = cc.book_id 
+                      WHERE cc.series_id = s.id AND (b.progress < 100 OR IFNULL(b.finished_at,'') = '')
+                  ) = 0
+             )",
+        );
+        let reading = one(
+            "SELECT (
+                SELECT COUNT(*) FROM books 
+                WHERE id NOT IN (SELECT book_id FROM comic_chapters) 
+                  AND progress > 0 AND progress < 100 AND IFNULL(finished_at,'') = ''
+             ) + (
+                SELECT COUNT(*) FROM comic_series s
+                WHERE EXISTS (
+                    SELECT 1 FROM comic_chapters cc 
+                    JOIN books b ON b.id = cc.book_id 
+                    WHERE cc.series_id = s.id AND (b.progress > 0 OR b.last_opened_at IS NOT NULL)
+                )
+                AND EXISTS (
+                    SELECT 1 FROM comic_chapters cc 
+                    JOIN books b ON b.id = cc.book_id 
+                    WHERE cc.series_id = s.id AND b.progress < 100 AND IFNULL(b.finished_at,'') = ''
+                )
+             )",
+        );
+        let unread = total_books.saturating_sub(finished).saturating_sub(reading);
+
         let mut s = LibraryStats {
-            total_books: one("SELECT COUNT(*) FROM books"),
-            finished: one("SELECT COUNT(*) FROM books
-                 WHERE IFNULL(finished_at,'') <> '' OR progress >= 100"),
-            reading: one("SELECT COUNT(*) FROM books
-                 WHERE progress > 0 AND progress < 100 AND IFNULL(finished_at,'') = ''"),
-            unread: one("SELECT COUNT(*) FROM books
-                 WHERE progress <= 0 AND IFNULL(finished_at,'') = ''"),
+            total_books,
+            finished,
+            reading,
+            unread,
             highlights: one("SELECT COUNT(*) FROM annotations WHERE kind = 'highlight'"),
             quotes: one("SELECT COUNT(*) FROM annotations WHERE kind = 'quote'"),
             saved_words: one("SELECT COUNT(*) FROM saved_words"),

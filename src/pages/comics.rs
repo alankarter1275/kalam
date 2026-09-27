@@ -643,7 +643,12 @@ fn rebuild_comics_view(model: &ComicsModel, sender: &ComponentSender<ComicsModel
     }
 
     if let Some(ref sname) = model.active_drawer_series {
-        if let Some(group) = model.series_groups.iter().find(|g| &g.series_name == sname) {
+        let sname_lower = sname.to_lowercase();
+        if let Some(group) = model
+            .series_groups
+            .iter()
+            .find(|g| g.series_name.to_lowercase() == sname_lower)
+        {
             return build_series_drawer_view(group, sender).upcast();
         }
     }
@@ -924,10 +929,9 @@ impl Component for ComicsModel {
                 set_vexpand: true,
 
                 // Search Bar (visible if comics exist and not inside series drawer)
-                #[watch]
-                set_visible: (!model.comics.is_empty() || !model.remote_manga.is_empty()) && model.active_drawer_series.is_none(),
-
                 gtk::SearchEntry {
+                    #[watch]
+                    set_visible: (!model.comics.is_empty() || !model.remote_manga.is_empty()) && model.active_drawer_series.is_none(),
                     set_placeholder_text: Some("Search comics by title or author…"),
                     connect_search_changed[sender] => move |entry| {
                         sender.input(ComicsMsg::SearchChanged(entry.text().to_string()));

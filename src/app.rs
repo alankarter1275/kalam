@@ -228,6 +228,7 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::TagBooks { .. }
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
+        | Route::ComicSeries { .. }
         | Route::Reader { .. }
         | Route::PdfReader { .. }
         | Route::ComicsReader { .. }
@@ -444,6 +445,9 @@ impl AppModel {
                         HomeOut::AllBooks => {
                             AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
                         }
+                        HomeOut::ComicSeries { series_name } => {
+                            AppMsg::Push(Route::ComicSeries { series_name })
+                        }
                     },
                 );
                 PageSlot::Home(ctrl)
@@ -623,10 +627,16 @@ impl AppModel {
                         BookPageOut::OpenSeries {
                             series,
                             first_author,
-                        } => AppMsg::OpenSeriesFloat {
-                            series,
-                            first_author,
-                        },
+                        } => {
+                            if let Ok(Some(s)) = catalog.get_comic_series_by_title(&series) {
+                                AppMsg::Push(Route::ComicSeries { series_name: s.title })
+                            } else {
+                                AppMsg::OpenSeriesFloat {
+                                    series,
+                                    first_author,
+                                }
+                            }
+                        }
                         BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat { book_id: id },
                         BookPageOut::ShowShelves => AppMsg::OpenShelvesFloat {
                             book_id: id,
@@ -750,6 +760,20 @@ impl AppModel {
                             AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
                         }
                     });
+                PageSlot::Comics(ctrl)
+            }
+            Route::ComicSeries { series_name } => {
+                let sname = series_name.clone();
+                let ctrl = ComicsModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        ComicsOut::OpenComic { book_id } => AppMsg::OpenReader { book_id },
+                        ComicsOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                        ComicsOut::OpenRemoteManga { source_id, remote_id } => {
+                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
+                        }
+                    });
+                ctrl.sender().send(ComicsMsg::OpenSeriesDrawer(sname));
                 PageSlot::Comics(ctrl)
             }
             Route::Module(NavItem::Downloads) => {

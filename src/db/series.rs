@@ -370,6 +370,23 @@ impl Catalog {
         Ok(series)
     }
 
+    /// Look up a comic series by title (case-insensitive).
+    pub fn get_comic_series_by_title(&self, title: &str) -> Result<Option<ComicSeries>> {
+        let series_id: Option<i64> = {
+            let conn = self.conn();
+            let mut stmt = conn.prepare_cached(
+                "SELECT id FROM comic_series WHERE title = ?1 COLLATE NOCASE LIMIT 1",
+            )?;
+            stmt.query_row(params![title.trim()], |r| r.get(0)).optional()?
+        };
+
+        if let Some(id) = series_id {
+            self.get_comic_series(id)
+        } else {
+            Ok(None)
+        }
+    }
+
     /// List all comic series matching an optional search query, ordered by title.
     pub fn list_comic_series(&self, query: &str) -> Result<Vec<ComicSeries>> {
         let conn = self.conn();
@@ -915,5 +932,121 @@ mod tests {
         let (found_series, found_ch) = cat.get_comic_series_for_book(b2).unwrap().unwrap();
         assert_eq!(found_series.title, "Naruto");
         assert_eq!(found_ch.chapter_number, 2.0);
+    }
+
+    #[test]
+    fn test_comic_series_recent_books_recently_opened_and_stats() {
+        let cat = Catalog::open_in_memory().unwrap();
+
+        // Seed 2 regular books
+        let reg1 = cat
+            .insert_book(
+                "reg-1",
+                "Dune",
+                "Frank Herbert",
+                None,
+                "",
+                BookFormat::Epub,
+                "dune.epub",
+                "h-dune",
+                None,
+                &[],
+            )
+            .unwrap();
+        let _reg2 = cat
+            .insert_book(
+                "reg-2",
+                "Foundation",
+                "Isaac Asimov",
+                None,
+                "",
+                BookFormat::Epub,
+                "foundation.epub",
+                "h-found",
+                None,
+                &[],
+            )
+            .unwrap();
+
+        // Seed 3 chapters of a comic series
+        let c1 = cat
+            .insert_book(
+                "c-1",
+                "Horimiya - c001",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_01.cbz",
+                "h-c1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let c2 = cat
+            .insert_book(
+                "c-2",
+                "Horimiya - c002",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_02.cbz",
+                "h-c2",
+                None,
+                &[],
+            )
+            .unwrap();
+        let c3 = cat
+            .insert_book(
+                "c-3",
+                "Horimiya - c003",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_03.cbz",
+                "h-c3",
+                None,
+                &[],
+            )
+            .unwrap();
+
+        let s_id = cat
+            .get_or_create_comic_series("Horimiya", Some("HERO, Daisuke Hagiwara"), None)
+            .unwrap();
+        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
+        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+        cat.add_comic_chapter(s_id, c3, 3.0, None, "Page 3").unwrap();
+
+        // 1. get_comic_series_by_title lookup
+        let found = cat.get_comic_series_by_title("horimiya").unwrap().unwrap();
+        assert_eq!(found.id, s_id);
+        assert_eq!(found.title, "Horimiya");
+        assert_eq!(found.total_chapters, 3);
+
+        // 2. recent_books must collapse chapters: 2 regular books + 1 comic series = 3 items total
+        let recent = cat.recent_books(10).unwrap();
+        assert_eq!(recent.len(), 3);
+        let series_item = recent.iter().find(|b| b.title == "Horimiya");
+        assert!(series_item.is_some(), "Comic series should be present as 'Horimiya'");
+        assert_eq!(series_item.unwrap().authors, "HERO, Daisuke Hagiwara");
+        assert_eq!(series_item.unwrap().series.as_deref(), Some("Horimiya"));
+
+        // 3. library_stats must treat the series as 1 item, not 3 discrete books
+        let stats = cat.library_stats().unwrap();
+        assert_eq!(stats.total_books, 3); // 2 regular + 1 comic series
+
+        // 4. recently_opened must deduplicate chapters of the same series
+        cat.touch_opened(c1).unwrap();
+        cat.touch_opened(c2).unwrap();
+        cat.touch_opened(reg1).unwrap();
+
+        let opened = cat.recently_opened(5).unwrap();
+        assert_eq!(opened.len(), 2); // 1 regular book (reg1) + 1 comic series (Horimiya)
+        let comic_opened = opened.iter().find(|b| b.series.as_deref() == Some("Horimiya"));
+        assert!(comic_opened.is_some());
+        // Most recently opened chapter of Horimiya was c2
+        assert_eq!(comic_opened.unwrap().id, c2);
     }
 }

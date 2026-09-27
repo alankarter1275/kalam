@@ -1083,13 +1083,60 @@ impl Catalog {
 
     /// Newest books, capped. Pages that show a handful of covers were calling
     /// `list_books` and loading the entire library to display six of them.
+    /// When comic series exist, individual chapters are collapsed into their parent
+    /// series so that a 100-chapter comic import does not flood the recent books strip.
     pub fn recent_books(&self, limit: usize) -> Result<Vec<Book>> {
         let conn = self.conn();
-        let sql = format!("SELECT {BOOK_COLUMNS} FROM books ORDER BY books.added_at DESC LIMIT ?1");
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS}
+             FROM books
+             WHERE books.id IN (
+                 SELECT b.id
+                 FROM books b
+                 LEFT JOIN comic_chapters c ON c.book_id = b.id
+                 WHERE c.id IS NULL
+                 ORDER BY b.added_at DESC
+                 LIMIT ?1
+             )
+             OR books.id IN (
+                 SELECT COALESCE(s.cover_book_id, (
+                     SELECT cc.book_id FROM comic_chapters cc
+                     WHERE cc.series_id = s.id
+                     ORDER BY cc.chapter_number ASC LIMIT 1
+                 ))
+                 FROM comic_series s
+                 ORDER BY s.updated_at DESC
+                 LIMIT ?1
+             )
+             ORDER BY books.added_at DESC
+             LIMIT ?1"
+        );
         let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![limit as i64], row_to_book)?;
         let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         hydrate_books(&conn, &mut books)?;
+
+        for b in &mut books {
+            let series_meta: Option<(String, String)> = conn
+                .query_row(
+                    "SELECT s.title, s.author
+                     FROM comic_series s
+                     JOIN comic_chapters c ON c.series_id = s.id
+                     WHERE c.book_id = ?1",
+                    params![b.id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+
+            if let Some((s_title, s_author)) = series_meta {
+                b.title = s_title.clone();
+                if !s_author.is_empty() {
+                    b.authors = s_author;
+                }
+                b.series = Some(s_title);
+            }
+        }
+
         Ok(books)
     }
 

@@ -754,6 +754,23 @@ shows up as its own task in the task manager.
 3. The Chapters tab in the sidebar lists all chapters in the series with an active indicator on the current chapter. Clicking a chapter jumps directly to it.
 4. In Webtoon continuous mode, reaching the end immediately flows into the next chapter without interruption.
 
+### T30 · Comics Drawer Visibility & Homepage Comic Series Deduplication
+
+**Do:**
+1. Navigate to the Comics & Manga hub.
+2. Click on a series card (e.g. "Horimiya" or "Naruto") to enter the chapter drawer.
+3. Verify that the chapter drawer opens with hero card, title, author, total chapters, unread chapters, reading progress bar, "Resume / Start" button, and all chapters listed in order.
+4. Verify the "← All Series" back button is visible at the top-left of the view. Click it to return to all series cards.
+5. Navigate to the Home page (house icon in left sidebar).
+6. Inspect the "RECENTLY ADDED" section and "CONTINUE" section.
+7. Click on the comic series card in "RECENTLY ADDED".
+
+**Look for:**
+1. Entering the series drawer never produces a blank or empty screen; all chapters and the "← All Series" back button are immediately visible and clickable.
+2. On the Home page, recently imported comic series are collapsed into a single card per series with the series title (e.g. "Horimiya", not "Horimiya - c142"), series author, and series cover, rather than flooding the section with dozens of discrete chapter cards.
+3. Clicking a comic series card on the Home page immediately routes to the Comics hub with that series' chapter drawer open.
+4. In the Home counts strip, "Books" counts comic series as a single item rather than treating every chapter archive as a discrete book.
+
 ---
 
 ## At the end

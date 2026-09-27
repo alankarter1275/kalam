@@ -1,4 +1,5 @@
 use crate::db::Catalog;
+use crate::models::BookFormat;
 use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
 use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
@@ -20,6 +21,10 @@ pub enum HomeOut {
     },
     /// My Library → All books (the full searchable/sortable grid).
     AllBooks,
+    /// Open a comic series in the Comics hub
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 #[derive(Debug)]
@@ -376,12 +381,24 @@ fn rebuild(
     } else {
         for book in cont {
             let id = book.id;
+            let s_series = book.series.clone();
+            let is_comic = matches!(book.format, BookFormat::Cbz | BookFormat::Cbr);
             let s1 = sender.clone();
             let s2 = sender.clone();
             let card = build_book_card(
                 book,
-                move || {
-                    s1.output(HomeOut::Book { book_id: id }).ok();
+                {
+                    let s = s1.clone();
+                    let sname = s_series.clone();
+                    move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
+                        s.output(HomeOut::Book { book_id: id }).ok();
+                    }
                 },
                 move || {
                     s2.output(HomeOut::BookDialog { book_id: id }).ok();
@@ -462,19 +479,35 @@ fn rebuild(
 
         for book in recent {
             let id = book.id;
+            let s_series = book.series.clone();
+            let is_comic = matches!(book.format, BookFormat::Cbz | BookFormat::Cbr);
             let s1 = sender.clone();
             let s2 = sender.clone();
             let card = build_book_card(
                 book,
                 {
                     let s = s1.clone();
+                    let sname = s_series.clone();
                     move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
                         s.output(HomeOut::Book { book_id: id }).ok();
                     }
                 },
                 {
                     let s = s2.clone();
+                    let sname = s_series.clone();
                     move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
                         s.output(HomeOut::BookDialog { book_id: id }).ok();
                     }
                 },

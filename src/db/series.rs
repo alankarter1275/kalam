@@ -1038,9 +1038,9 @@ mod tests {
         assert_eq!(stats.total_books, 3); // 2 regular + 1 comic series
 
         // 4. recently_opened must deduplicate chapters of the same series
-        cat.touch_opened(c1).unwrap();
-        cat.touch_opened(c2).unwrap();
-        cat.touch_opened(reg1).unwrap();
+        cat.mark_book_opened(c1).unwrap();
+        cat.mark_book_opened(c2).unwrap();
+        cat.mark_book_opened(reg1).unwrap();
 
         let opened = cat.recently_opened(5).unwrap();
         assert_eq!(opened.len(), 2); // 1 regular book (reg1) + 1 comic series (Horimiya)

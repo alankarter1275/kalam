@@ -745,6 +745,30 @@ fn update_viewport_policies(
     }
 }
 
+/// Computes the exact rendering geometry and letterboxing offsets of a comic page image
+/// inside its overlay widget.
+///
+/// Because `gtk::Picture` uses `ContentFit::Contain`, the image is centered within the
+/// overlay allocation and scaled uniformly to preserve its aspect ratio.
+///
+/// Returns `(offset_x, offset_y, scale, drawn_w, drawn_h)`.
+pub fn compute_comic_page_layout(
+    overlay_w: f64,
+    overlay_h: f64,
+    page_w: f64,
+    page_h: f64,
+) -> (f64, f64, f64, f64, f64) {
+    if overlay_w <= 0.0 || overlay_h <= 0.0 || page_w <= 0.0 || page_h <= 0.0 {
+        return (0.0, 0.0, 1.0, 0.0, 0.0);
+    }
+    let scale = (overlay_w / page_w).min(overlay_h / page_h);
+    let drawn_w = page_w * scale;
+    let drawn_h = page_h * scale;
+    let offset_x = (overlay_w - drawn_w) * 0.5;
+    let offset_y = (overlay_h - drawn_h) * 0.5;
+    (offset_x, offset_y, scale, drawn_w, drawn_h)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn wrap_comic_page(
     model: &ComicsReaderModel,
@@ -2946,6 +2970,36 @@ impl Component for ComicsReaderModel {
                         }
                     }
                 }
+
+                // Verify the click is inside the comic page (not in the letterbox black margin)
+                let in_margin = {
+                    let (pw, ph) = if let Some(pt) = self.page_text_cache.get(&page) {
+                        (pt.width_pts as f64, pt.height_pts as f64)
+                    } else if let Some(tex) = self.textures.get(&page) {
+                        (tex.width() as f64, tex.height() as f64)
+                    } else {
+                        (0.0, 0.0)
+                    };
+                    if pw > 0.0 && ph > 0.0 {
+                        let overlays = self.page_overlays.borrow();
+                        if let Some(overlay) = overlays.get(&page) {
+                            let (ow, oh) = (overlay.width() as f64, overlay.height() as f64);
+                            let (offset_x, offset_y, _scale, drawn_w, drawn_h) = compute_comic_page_layout(ow, oh, pw, ph);
+                            x < offset_x || x > offset_x + drawn_w || y < offset_y || y > offset_y + drawn_h
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                };
+
+                if in_margin {
+                    self.clear_selection();
+                    self.selection_drag_state = None;
+                    return;
+                }
+
                 self.selection_drag_state = Some((page, x, y, is_block, false));
                 self.trigger_page_ocr(page);
             }
@@ -2963,32 +3017,40 @@ impl Component for ComicsReaderModel {
                     return;
                 }
 
-                let (target_w, target_h) = {
+                let (ow, oh) = {
                     let overlays = self.page_overlays.borrow();
                     let Some(overlay) = overlays.get(&page) else { return };
                     (overlay.width() as f64, overlay.height() as f64)
                 };
-                if target_w <= 0.0 || target_h <= 0.0 { return };
+                if ow <= 0.0 || oh <= 0.0 { return };
 
                 let sel_data = {
                     let Some(page_text) = self.page_text_cache.get(&page) else { return };
-                    if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+                    let pw = page_text.width_pts as f64;
+                    let ph = page_text.height_pts as f64;
+                    if pw <= 0.0 || ph <= 0.0 { return };
 
-                    let scale_x = target_w / (page_text.width_pts as f64);
-                    let scale_y = target_h / (page_text.height_pts as f64);
+                    let (offset_x, offset_y, scale, _, _) = compute_comic_page_layout(ow, oh, pw, ph);
+                    if scale <= 0.0 { return };
 
-                    let p0 = ((start_x / scale_x) as f32, (start_y / scale_y) as f32);
-                    let p1 = (((start_x + dx) / scale_x) as f32, (((start_y + dy).max(0.0)) / scale_y) as f32);
+                    let p0 = (
+                        (((start_x - offset_x) / scale) as f32).clamp(0.0, page_text.width_pts),
+                        (((start_y - offset_y) / scale) as f32).clamp(0.0, page_text.height_pts),
+                    );
+                    let p1 = (
+                        ((((start_x + dx) - offset_x) / scale) as f32).clamp(0.0, page_text.width_pts),
+                        ((((start_y + dy) - offset_y) / scale) as f32).clamp(0.0, page_text.height_pts),
+                    );
 
                     let (selected_text, highlight_rects) = if is_block {
                         page_text.select_rect(p0, p1)
                     } else {
-                        page_text.select_between(p0, p1)
+                        page_text.select_comic_dialogue(p0, p1)
                     };
-                    Some((selected_text, highlight_rects, scale_x, scale_y, p0, p1))
+                    Some((selected_text, highlight_rects, offset_x, offset_y, scale, p0, p1))
                 };
 
-                let Some((selected_text, highlight_rects, scale_x, scale_y, p0, p1)) = sel_data else { return };
+                let Some((selected_text, highlight_rects, offset_x, offset_y, scale, p0, p1)) = sel_data else { return };
 
                 if highlight_rects.is_empty() {
                     self.active_selection.replace(None);
@@ -3000,10 +3062,10 @@ impl Component for ComicsReaderModel {
                     let mut max_y = f64::MIN;
 
                     for r in &highlight_rects {
-                        let rx = r.0 as f64 * scale_x;
-                        let ry = r.1 as f64 * scale_y;
-                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
-                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
+                        let rx = offset_x + (r.0 as f64) * scale;
+                        let ry = offset_y + (r.1 as f64) * scale;
+                        let rw = ((r.2 - r.0).max(1.0) as f64) * scale;
+                        let rh = ((r.3 - r.1).max(1.0) as f64) * scale;
                         screen_rects.push((rx, ry, rw, rh));
                         min_x = min_x.min(rx);
                         min_y = min_y.min(ry);
@@ -3051,27 +3113,36 @@ impl Component for ComicsReaderModel {
                     return;
                 }
 
-                let (target_w, target_h) = {
+                let (ow, oh) = {
                     let overlays = self.page_overlays.borrow();
                     let Some(overlay) = overlays.get(&page) else { return };
                     (overlay.width() as f64, overlay.height() as f64)
                 };
-                if target_w <= 0.0 || target_h <= 0.0 { return };
+                if ow <= 0.0 || oh <= 0.0 { return };
 
                 let word_data = {
                     let Some(page_text) = self.page_text_cache.get(&page) else { return };
-                    if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+                    let pw = page_text.width_pts as f64;
+                    let ph = page_text.height_pts as f64;
+                    if pw <= 0.0 || ph <= 0.0 { return };
 
-                    let scale_x = target_w / (page_text.width_pts as f64);
-                    let scale_y = target_h / (page_text.height_pts as f64);
+                    let (offset_x, offset_y, scale, drawn_w, drawn_h) = compute_comic_page_layout(ow, oh, pw, ph);
+                    if scale <= 0.0 { return };
 
-                    let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
+                    if x < offset_x || x > offset_x + drawn_w || y < offset_y || y > offset_y + drawn_h {
+                        return;
+                    }
+
+                    let pt = (
+                        (((x - offset_x) / scale) as f32).clamp(0.0, page_text.width_pts),
+                        (((y - offset_y) / scale) as f32).clamp(0.0, page_text.height_pts),
+                    );
                     page_text.word_at(pt).map(|(word_text, highlight_rects)| {
-                        (word_text, highlight_rects, scale_x, scale_y, pt)
+                        (word_text, highlight_rects, offset_x, offset_y, scale, pt)
                     })
                 };
 
-                let Some((word_text, highlight_rects, scale_x, scale_y, pt)) = word_data else { return };
+                let Some((word_text, highlight_rects, offset_x, offset_y, scale, pt)) = word_data else { return };
 
                 let mut screen_rects = Vec::with_capacity(highlight_rects.len());
                 let mut min_x = f64::MAX;
@@ -3080,10 +3151,10 @@ impl Component for ComicsReaderModel {
                 let mut max_y = f64::MIN;
 
                 for r in &highlight_rects {
-                    let rx = r.0 as f64 * scale_x;
-                    let ry = r.1 as f64 * scale_y;
-                    let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
-                    let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
+                    let rx = offset_x + (r.0 as f64) * scale;
+                    let ry = offset_y + (r.1 as f64) * scale;
+                    let rw = ((r.2 - r.0).max(1.0) as f64) * scale;
+                    let rh = ((r.3 - r.1).max(1.0) as f64) * scale;
                     screen_rects.push((rx, ry, rw, rh));
                     min_x = min_x.min(rx);
                     min_y = min_y.min(ry);
@@ -3121,27 +3192,36 @@ impl Component for ComicsReaderModel {
                     return;
                 }
 
-                let (target_w, target_h) = {
+                let (ow, oh) = {
                     let overlays = self.page_overlays.borrow();
                     let Some(overlay) = overlays.get(&page) else { return };
                     (overlay.width() as f64, overlay.height() as f64)
                 };
-                if target_w <= 0.0 || target_h <= 0.0 { return };
+                if ow <= 0.0 || oh <= 0.0 { return };
 
                 let line_data = {
                     let Some(page_text) = self.page_text_cache.get(&page) else { return };
-                    if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+                    let pw = page_text.width_pts as f64;
+                    let ph = page_text.height_pts as f64;
+                    if pw <= 0.0 || ph <= 0.0 { return };
 
-                    let scale_x = target_w / (page_text.width_pts as f64);
-                    let scale_y = target_h / (page_text.height_pts as f64);
+                    let (offset_x, offset_y, scale, drawn_w, drawn_h) = compute_comic_page_layout(ow, oh, pw, ph);
+                    if scale <= 0.0 { return };
 
-                    let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
+                    if x < offset_x || x > offset_x + drawn_w || y < offset_y || y > offset_y + drawn_h {
+                        return;
+                    }
+
+                    let pt = (
+                        (((x - offset_x) / scale) as f32).clamp(0.0, page_text.width_pts),
+                        (((y - offset_y) / scale) as f32).clamp(0.0, page_text.height_pts),
+                    );
                     page_text.line_at(pt).map(|(line_text, highlight_rects)| {
-                        (line_text, highlight_rects, scale_x, scale_y, pt)
+                        (line_text, highlight_rects, offset_x, offset_y, scale, pt)
                     })
                 };
 
-                let Some((line_text, highlight_rects, scale_x, scale_y, pt)) = line_data else { return };
+                let Some((line_text, highlight_rects, offset_x, offset_y, scale, pt)) = line_data else { return };
 
                 let mut screen_rects = Vec::with_capacity(highlight_rects.len());
                 let mut min_x = f64::MAX;
@@ -3150,10 +3230,10 @@ impl Component for ComicsReaderModel {
                 let mut max_y = f64::MIN;
 
                 for r in &highlight_rects {
-                    let rx = r.0 as f64 * scale_x;
-                    let ry = r.1 as f64 * scale_y;
-                    let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
-                    let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
+                    let rx = offset_x + (r.0 as f64) * scale;
+                    let ry = offset_y + (r.1 as f64) * scale;
+                    let rw = ((r.2 - r.0).max(1.0) as f64) * scale;
+                    let rh = ((r.3 - r.1).max(1.0) as f64) * scale;
                     screen_rects.push((rx, ry, rw, rh));
                     min_x = min_x.min(rx);
                     min_y = min_y.min(ry);
@@ -3183,6 +3263,8 @@ impl Component for ComicsReaderModel {
                 if let Some(da) = self.page_draw_areas.borrow().get(&page) {
                     da.queue_draw();
                 }
+                self.show_selection_chip(page, &sender);
+            }
                 self.show_selection_chip(page, &sender);
             }
             ComicsReaderMsg::CopySelection => {
@@ -3677,5 +3759,30 @@ mod tests {
         let (block_text, block_rects) = page_text.select_rect((90.0, 140.0), (160.0, 180.0));
         assert_eq!(block_text, "Nani?");
         assert!(!block_rects.is_empty());
+
+        // Dialogue bubble selection test
+        let (dialogue_text, dialogue_rects) = page_text.select_comic_dialogue((95.0, 155.0), (145.0, 165.0));
+        assert_eq!(dialogue_text, "Nani?");
+        assert_eq!(dialogue_rects.len(), 1);
+    }
+
+    #[test]
+    fn test_compute_comic_page_layout() {
+        // Horizontal letterboxing (widescreen window, portrait manga):
+        // Overlay is 1920x1080, manga page is 800x1200
+        let (ox, oy, scale, drawn_w, drawn_h) = compute_comic_page_layout(1920.0, 1080.0, 800.0, 1200.0);
+        assert_eq!(scale, 1080.0 / 1200.0); // 0.9
+        assert_eq!(drawn_h, 1080.0);
+        assert_eq!(drawn_w, 720.0);
+        assert_eq!(ox, (1920.0 - 720.0) * 0.5); // 600.0 left margin
+        assert_eq!(oy, 0.0);
+
+        // Vertical letterboxing (narrow window, landscape spread):
+        // Overlay is 1000x1500, page is 1200x800
+        let (ox2, oy2, scale2, drawn_w2, drawn_h2) = compute_comic_page_layout(1000.0, 1500.0, 1200.0, 800.0);
+        assert_eq!(scale2, 1000.0 / 1200.0);
+        assert_eq!(drawn_w2, 1000.0);
+        assert_eq!(ox2, 0.0);
+        assert_eq!(oy2, (1500.0 - drawn_h2) * 0.5);
     }
 }

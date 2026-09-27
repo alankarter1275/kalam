@@ -95,8 +95,13 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
             )
         } else if ext == "cbz" || ext == "cbr" {
             let meta = crate::comics::parse_comic_info(source);
-            let s_opt = meta.series;
-            let s_idx = meta.number.unwrap_or(0.0);
+            let (s_opt, s_num) = if let Some(ref s) = meta.series {
+                let (clean_s, num) = crate::comics::sanitize_comic_series(s);
+                (Some(clean_s), num)
+            } else {
+                (None, None)
+            };
+            let s_idx = meta.number.or(s_num).unwrap_or(0.0);
             series_index = s_idx;
 
             let title = if let Some(ct) = meta.title {

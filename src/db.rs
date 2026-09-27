@@ -2500,6 +2500,29 @@ mod tests {
     }
 
     #[test]
+    fn series_display_sanitizes_polluted_series() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &[]);
+        cat.update_book_metadata(
+            id,
+            "Naruto – Digital Colored Comics - Ch. 2",
+            "Unknown",
+            Some("Naruto – Digital Colored Comics - Ch. 2"),
+            0.0,
+            "",
+            "",
+            "",
+            &[],
+        )
+        .unwrap();
+        let b = cat.get_book(id).unwrap().unwrap();
+        assert_eq!(
+            b.series_display().as_deref(),
+            Some("Naruto - Digital Colored Comics #2")
+        );
+    }
+
+    #[test]
     fn editing_tags_prunes_orphans() {
         let cat = Catalog::open_in_memory().unwrap();
         let id = seed(&cat, "A", "x", &["temporary"]);

@@ -129,76 +129,6 @@ pub struct ComicInfo {
     pub summary: Option<String>,
 }
 
-fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
-    let lower_xml = xml.to_lowercase();
-    let tag_lower = tag.to_lowercase();
-    let close = format!("</{}>", tag_lower);
-
-    let mut search_from = 0;
-    while let Some(open_rel) = lower_xml[search_from..].find('<') {
-        let actual_open = search_from + open_rel;
-        let rest = &lower_xml[actual_open + 1..];
-        if rest.starts_with(&tag_lower) {
-            let after_tag = &rest[tag_lower.len()..];
-            if let Some(c) = after_tag.chars().next() {
-                if c == '>' || c.is_whitespace() || c == '/' {
-                    if let Some(end_tag_bracket) = after_tag.find('>') {
-                        let content_start = actual_open + 1 + tag_lower.len() + end_tag_bracket + 1;
-                        if let Some(close_rel) = lower_xml[content_start..].find(&close) {
-                            let content_end = content_start + close_rel;
-                            let mut val = xml[content_start..content_end].trim();
-                            if val.starts_with("<![CDATA[") && val.ends_with("]]>") {
-                                val = val[9..val.len() - 3].trim();
-                            }
-                            if !val.is_empty() {
-                                return Some(val.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        search_from = actual_open + 1;
-    }
-    None
-}
-
-/// Parse an XML string adhering to the ComicRack ComicInfo.xml schema.
-pub fn parse_comic_info_xml(xml: &str) -> ComicInfo {
-    let series = extract_xml_tag(xml, "Series");
-    let number = extract_xml_tag(xml, "Number").and_then(|s| s.parse::<f32>().ok());
-    let volume = extract_xml_tag(xml, "Volume").and_then(|s| s.parse::<i32>().ok());
-    let title = extract_xml_tag(xml, "Title");
-    let writer = extract_xml_tag(xml, "Writer");
-    let summary = extract_xml_tag(xml, "Summary");
-
-    ComicInfo {
-        series,
-        number,
-        volume,
-        title,
-        writer,
-        summary,
-    }
-}
-
-/// Read `ComicInfo.xml` from a CBZ zip archive if present.
-pub fn read_comic_info_from_zip(archive_path: &Path) -> Result<Option<ComicInfo>> {
-    let file = File::open(archive_path)?;
-    let mut archive = ZipArchive::new(file)?;
-    for i in 0..archive.len() {
-        let entry = archive.by_index(i)?;
-        let name = entry.name().to_lowercase();
-        if name == "comicinfo.xml" || name.ends_with("/comicinfo.xml") {
-            let mut buf = String::new();
-            let mut reader = std::io::BufReader::new(entry);
-            reader.read_to_string(&mut buf)?;
-            return Ok(Some(parse_comic_info_xml(&buf)));
-        }
-    }
-    Ok(None)
-}
-
 fn strip_bracket_tags(s: &str) -> String {
     let mut result = s.to_string();
     while let Some(start) = result.find('[') {
@@ -266,6 +196,174 @@ fn extract_leading_number(token: &str) -> Option<f32> {
     } else {
         None
     }
+}
+
+/// Clean and sanitize a comic series name by removing extraneous chapter/issue suffixes
+/// (e.g. "Naruto – Digital Colored Comics - Ch. 2" -> ("Naruto - Digital Colored Comics", Some(2.0)))
+pub fn sanitize_comic_series(raw: &str) -> (String, Option<f32>) {
+    let stripped = strip_bracket_tags(raw);
+    let normalized = stripped.replace(['–', '—'], "-");
+    let trimmed = normalized.trim();
+    if trimmed.is_empty() {
+        return (String::new(), None);
+    }
+
+    // 1. Check for trailing " - Ch. X", " - Chapter X", " - c0X", " - #X", " - Vol. X"
+    if let Some(dash_idx) = trimmed.rfind(" - ") {
+        let after_dash = trimmed[dash_idx + 3..].trim();
+        if let Some(num) = extract_leading_number(after_dash) {
+            let prefix = trimmed[..dash_idx].trim();
+            if !prefix.is_empty() && prefix.chars().any(|c| c.is_alphabetic()) {
+                return (prefix.to_string(), Some(num));
+            }
+        }
+    }
+
+    // 2. Check for explicit keywords: "chapter", "ch.", "ch ", "vol.", "vol ", "issue ", "#"
+    let lower = trimmed.to_lowercase();
+    let keywords = [
+        "chapter ", "chapter",
+        "chap. ", "chap.", "chap ",
+        "ch. ", "ch.", "ch ",
+        " c ", " c",
+        "volume ", "volume",
+        "vol. ", "vol.", "vol ",
+        " v ", " v",
+        "issue ", "issue",
+        "#",
+    ];
+    for kw in &keywords {
+        if let Some(idx) = lower.rfind(kw) {
+            let after = &trimmed[idx + kw.len()..];
+            if let Some(num) = extract_leading_number(after) {
+                let prefix = trimmed[..idx]
+                    .trim_end_matches([' ', '-', '_', '.', ','])
+                    .trim();
+                if !prefix.is_empty() && prefix.chars().any(|c| c.is_alphabetic()) {
+                    return (prefix.to_string(), Some(num));
+                }
+            }
+        }
+    }
+
+    // 3. Check for trailing digits preceded by separator (e.g. "Naruto 01", "Naruto_05")
+    let chars: Vec<char> = trimmed.chars().collect();
+    if !chars.is_empty() {
+        let mut end = chars.len();
+        while end > 0 && chars[end - 1].is_whitespace() {
+            end -= 1;
+        }
+        let mut start = end;
+        let mut has_dot = false;
+        while start > 0 {
+            let c = chars[start - 1];
+            if c.is_ascii_digit() {
+                start -= 1;
+            } else if c == '.' && !has_dot && start > 1 && chars[start - 2].is_ascii_digit() {
+                has_dot = true;
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        if start < end {
+            let num_str: String = chars[start..end].iter().collect();
+            if let Ok(num) = num_str.parse::<f32>() {
+                if start > 0 {
+                    let sep = chars[start - 1];
+                    if sep == ' ' || sep == '-' || sep == '_' || sep == '.' || sep == ',' {
+                        let prefix: String = chars[..start - 1].iter().collect();
+                        let prefix = prefix
+                            .trim_end_matches([' ', '-', '_', '.', ','])
+                            .trim();
+                        if !prefix.is_empty() && prefix.chars().any(|c| c.is_alphabetic()) {
+                            return (prefix.to_string(), Some(num));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    (trimmed.to_string(), None)
+}
+
+fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
+    let lower_xml = xml.to_lowercase();
+    let tag_lower = tag.to_lowercase();
+    let close = format!("</{}>", tag_lower);
+
+    let mut search_from = 0;
+    while let Some(open_rel) = lower_xml[search_from..].find('<') {
+        let actual_open = search_from + open_rel;
+        let rest = &lower_xml[actual_open + 1..];
+        if rest.starts_with(&tag_lower) {
+            let after_tag = &rest[tag_lower.len()..];
+            if let Some(c) = after_tag.chars().next() {
+                if c == '>' || c.is_whitespace() || c == '/' {
+                    if let Some(end_tag_bracket) = after_tag.find('>') {
+                        let content_start = actual_open + 1 + tag_lower.len() + end_tag_bracket + 1;
+                        if let Some(close_rel) = lower_xml[content_start..].find(&close) {
+                            let content_end = content_start + close_rel;
+                            let mut val = xml[content_start..content_end].trim();
+                            if val.starts_with("<![CDATA[") && val.ends_with("]]>") {
+                                val = val[9..val.len() - 3].trim();
+                            }
+                            if !val.is_empty() {
+                                return Some(val.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        search_from = actual_open + 1;
+    }
+    None
+}
+
+/// Parse an XML string adhering to the ComicRack ComicInfo.xml schema.
+pub fn parse_comic_info_xml(xml: &str) -> ComicInfo {
+    let raw_series = extract_xml_tag(xml, "Series");
+    let (series, series_num) = if let Some(ref s) = raw_series {
+        let (clean_s, num) = sanitize_comic_series(s);
+        (Some(clean_s), num)
+    } else {
+        (None, None)
+    };
+    let number = extract_xml_tag(xml, "Number")
+        .and_then(|s| s.parse::<f32>().ok())
+        .or(series_num);
+    let volume = extract_xml_tag(xml, "Volume").and_then(|s| s.parse::<i32>().ok());
+    let title = extract_xml_tag(xml, "Title");
+    let writer = extract_xml_tag(xml, "Writer");
+    let summary = extract_xml_tag(xml, "Summary");
+
+    ComicInfo {
+        series,
+        number,
+        volume,
+        title,
+        writer,
+        summary,
+    }
+}
+
+/// Read `ComicInfo.xml` from a CBZ zip archive if present.
+pub fn read_comic_info_from_zip(archive_path: &Path) -> Result<Option<ComicInfo>> {
+    let file = File::open(archive_path)?;
+    let mut archive = ZipArchive::new(file)?;
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i)?;
+        let name = entry.name().to_lowercase();
+        if name == "comicinfo.xml" || name.ends_with("/comicinfo.xml") {
+            let mut buf = String::new();
+            let mut reader = std::io::BufReader::new(entry);
+            reader.read_to_string(&mut buf)?;
+            return Ok(Some(parse_comic_info_xml(&buf)));
+        }
+    }
+    Ok(None)
 }
 
 fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> ComicInfo {

@@ -176,9 +176,35 @@ impl Catalog {
         let books = self.list_books(SortKey::Added, "")?;
         let mut updated = 0;
         for book in books {
-            if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr)
-                && (book.series.is_none() || book.series.as_deref() == Some(""))
-            {
+            if !matches!(book.format, BookFormat::Cbz | BookFormat::Cbr) {
+                continue;
+            }
+            let current_series = book.series.as_deref().unwrap_or("").trim().to_string();
+            let current_idx = book.series_index;
+
+            let (cleaned_series, detected_idx) = if !current_series.is_empty() {
+                crate::comics::sanitize_comic_series(&current_series)
+            } else {
+                (String::new(), None)
+            };
+
+            let needs_clean = !current_series.is_empty()
+                && (cleaned_series != current_series || (current_idx <= 0.0 && detected_idx.is_some()));
+            let needs_detect = current_series.is_empty();
+
+            if needs_clean {
+                let final_idx = if let Some(idx) = detected_idx {
+                    idx
+                } else if current_idx > 0.0 {
+                    current_idx
+                } else {
+                    crate::comics::parse_comic_title(&book.title)
+                        .number
+                        .unwrap_or(0.0)
+                };
+                self.set_book_series(book.id, Some(&cleaned_series), final_idx)?;
+                updated += 1;
+            } else if needs_detect {
                 let mut meta = crate::comics::parse_comic_info(&book.file_path);
                 if meta.series.is_none() {
                     let title_meta = crate::comics::parse_comic_title(&book.title);
@@ -195,8 +221,9 @@ impl Catalog {
                     }
                 }
                 if let Some(ref s) = meta.series {
-                    let idx = meta.number.unwrap_or(0.0);
-                    self.set_book_series(book.id, Some(s), idx)?;
+                    let (clean_s, ch_opt) = crate::comics::sanitize_comic_series(s);
+                    let idx = meta.number.or(ch_opt).unwrap_or(0.0);
+                    self.set_book_series(book.id, Some(&clean_s), idx)?;
                     updated += 1;
                 }
             }

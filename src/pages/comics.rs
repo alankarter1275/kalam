@@ -81,15 +81,26 @@ pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<
     let mut standalone = Vec::new();
 
     for book in comics {
-        let mut series_name = book
+        let raw_series = book
             .series
             .as_deref()
             .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(String::from);
+            .filter(|s| !s.is_empty());
 
         let mut book_clone = book.clone();
-        if series_name.is_none() {
+        let series_name = if let Some(s) = raw_series {
+            let (clean_s, ch_opt) = crate::comics::sanitize_comic_series(s);
+            if book_clone.series_index <= 0.0 {
+                if let Some(num) = ch_opt {
+                    book_clone.series_index = num;
+                }
+            }
+            if !clean_s.is_empty() {
+                Some(clean_s)
+            } else {
+                None
+            }
+        } else {
             let meta = crate::comics::parse_comic_title(&book.title);
             if let Some(ref s) = meta.series {
                 if book_clone.series_index <= 0.0 {
@@ -97,9 +108,11 @@ pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<
                         book_clone.series_index = num;
                     }
                 }
-                series_name = Some(s.clone());
+                Some(s.clone())
+            } else {
+                None
             }
-        }
+        };
 
         if let Some(s) = series_name {
             series_map.entry(s).or_default().push(book_clone);
@@ -1113,6 +1126,26 @@ mod tests {
         let (groups, standalone) = group_comics_into_series(&books);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].series_name, "Naruto");
+        assert_eq!(groups[0].total_chapters, 5);
+        let ch_ids: Vec<i64> = groups[0].chapters.iter().map(|c| c.id).collect();
+        assert_eq!(ch_ids, vec![1, 2, 3, 4, 5]);
+        assert_eq!(standalone.len(), 0);
+    }
+
+    #[test]
+    fn test_group_comics_into_series_polluted_series_tags_bundle_cleanly() {
+        // Exact user case: Naruto – Digital Colored Comics - Ch. X in title and/or series
+        let books = vec![
+            make_test_book(1, "Naruto – Digital Colored Comics - Ch. 1", Some("Naruto – Digital Colored Comics - Ch. 1"), 0.0, 0),
+            make_test_book(2, "Naruto – Digital Colored Comics - Ch. 2", Some("Naruto – Digital Colored Comics - Ch. 2"), 0.0, 0),
+            make_test_book(3, "Naruto – Digital Colored Comics - Ch. 3", Some("Naruto - Digital Colored Comics - Ch. 3"), 0.0, 0),
+            make_test_book(4, "Naruto – Digital Colored Comics - Ch. 4", Some("Naruto - Digital Colored Comics - Ch. 4"), 0.0, 0),
+            make_test_book(5, "Naruto – Digital Colored Comics - Ch. 5", Some("Naruto - Digital Colored Comics - Ch. 5"), 0.0, 0),
+        ];
+
+        let (groups, standalone) = group_comics_into_series(&books);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].series_name, "Naruto - Digital Colored Comics");
         assert_eq!(groups[0].total_chapters, 5);
         let ch_ids: Vec<i64> = groups[0].chapters.iter().map(|c| c.id).collect();
         assert_eq!(ch_ids, vec![1, 2, 3, 4, 5]);

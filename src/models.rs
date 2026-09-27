@@ -263,14 +263,25 @@ impl Book {
         if series.is_empty() {
             return None;
         }
-        if self.series_index <= 0.0 {
-            return Some(series.to_string());
+        let (clean_series, ch_opt) = crate::comics::sanitize_comic_series(series);
+        let display_series = if !clean_series.is_empty() {
+            clean_series
+        } else {
+            series.to_string()
+        };
+        let idx = if self.series_index > 0.0 {
+            self.series_index
+        } else {
+            ch_opt.unwrap_or(0.0)
+        };
+        if idx <= 0.0 {
+            return Some(display_series);
         }
         // Whole numbers should not render as "3.0".
-        if (self.series_index.fract()).abs() < f32::EPSILON {
-            Some(format!("{series} #{}", self.series_index as i64))
+        if (idx.fract()).abs() < f32::EPSILON {
+            Some(format!("{display_series} #{}", idx as i64))
         } else {
-            Some(format!("{series} #{}", self.series_index))
+            Some(format!("{display_series} #{}", idx))
         }
     }
 

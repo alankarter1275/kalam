@@ -103,9 +103,59 @@ pub enum ComicSidebarTab {
     Bookmarks,
 }
 
+#[derive(Debug, Clone)]
+pub struct ComicActiveSelection {
+    pub page: usize,
+    pub text: String,
+    pub screen_rects: Vec<(f64, f64, f64, f64)>,
+    pub bounds: (f64, f64, f64, f64),
+    pub start_handle: (f64, f64, f64),
+    pub end_handle: (f64, f64, f64),
+    pub anchor_pt: (f32, f32),
+    pub active_pt: (f32, f32),
+    pub is_block: bool,
+}
+
 #[derive(Debug)]
 pub enum ComicsReaderMsg {
     PageLoaded(usize, Option<gtk::gdk::Texture>),
+    PageOcrResult {
+        page: usize,
+        text: Box<Result<crate::pdf::PdfPageText, String>>,
+    },
+    SelectionDragBegin {
+        page: usize,
+        x: f64,
+        y: f64,
+        is_block: bool,
+    },
+    SelectionDragUpdate {
+        page: usize,
+        dx: f64,
+        dy: f64,
+        is_block: bool,
+    },
+    SelectionDragEnd {
+        page: usize,
+        dx: f64,
+        dy: f64,
+    },
+    SelectionWordAt {
+        page: usize,
+        x: f64,
+        y: f64,
+    },
+    SelectionLineAt {
+        page: usize,
+        x: f64,
+        y: f64,
+    },
+    CopySelection,
+    QuoteSelection,
+    LookUpWord(String),
+    ClearSelection,
+    ToggleOcr,
+    SetOcrEnabled(bool),
     SetPage(usize),
     UpdateScrollPage(f64),
     ScrollDelta(f64),

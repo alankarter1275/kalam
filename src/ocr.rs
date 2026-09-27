@@ -5,7 +5,7 @@
 //! and scanned PDF pages without requiring external system dependencies or network connectivity.
 
 use anyhow::{anyhow, Result};
-use ocrs::{ImageSource, OcrEngine, OcrEngineParams, TextItem};
+use ocrs::{ImageSource, OcrEngine, OcrEngineParams};
 use rten::Model;
 use std::path::PathBuf;
 
@@ -23,6 +23,14 @@ pub struct PdfOcrRequest {
     pub generation: u64,
     pub page: usize,
     pub path: PathBuf,
+}
+
+/// Represents a single OCR recognition request for a comic page.
+#[derive(Debug, Clone)]
+pub struct ComicOcrRequest {
+    pub generation: u64,
+    pub page: usize,
+    pub raw_bytes: Vec<u8>,
 }
 
 /// Initialize the OCR engine.
@@ -100,30 +108,29 @@ pub fn init_ocr_engine() -> Option<OcrEngine> {
     }
 }
 
-/// Run OCR on a rendered RGBA page and produce a `PdfPageText` struct
-/// with character and line coordinates mapped back to PDF point coordinates.
-pub fn perform_ocr(
+/// Run OCR on a raw RGBA buffer and produce a `PdfPageText` struct
+/// with character and line coordinates mapped to `dest_width` and `dest_height`.
+pub fn perform_ocr_rgba(
     engine: &OcrEngine,
-    rendered: &RenderedPage,
+    samples: &[u8],
+    w: u32,
+    h: u32,
     page_num: usize,
-    width_pts: f32,
-    height_pts: f32,
+    dest_width: f32,
+    dest_height: f32,
 ) -> Result<PdfPageText> {
-    let w = rendered.width as u32;
-    let h = rendered.height as u32;
-    if w == 0 || h == 0 || rendered.samples.is_empty() {
+    if w == 0 || h == 0 || samples.is_empty() {
         return Ok(PdfPageText {
             page_num,
-            width_pts,
-            height_pts,
+            width_pts: dest_width,
+            height_pts: dest_height,
             lines: Vec::new(),
         });
     }
 
     // Convert RGBA samples to RGB buffer
     let mut rgb = Vec::with_capacity((w * h * 3) as usize);
-    let (chunks, _) = rendered.samples.as_chunks::<4>();
-    for chunk in chunks {
+    for chunk in samples.chunks_exact(4) {
         rgb.push(chunk[0]);
         rgb.push(chunk[1]);
         rgb.push(chunk[2]);
@@ -144,8 +151,8 @@ pub fn perform_ocr(
         .recognize_text(&ocr_input, &line_rects)
         .map_err(|e| anyhow!("OCR text recognition failed: {:?}", e))?;
 
-    let scale_x = w as f32 / width_pts.max(1.0);
-    let scale_y = h as f32 / height_pts.max(1.0);
+    let scale_x = w as f32 / dest_width.max(1.0);
+    let scale_y = h as f32 / dest_height.max(1.0);
 
     let mut lines = Vec::new();
 
@@ -196,10 +203,56 @@ pub fn perform_ocr(
 
     Ok(PdfPageText {
         page_num,
-        width_pts,
-        height_pts,
+        width_pts: dest_width,
+        height_pts: dest_height,
         lines,
     })
+}
+
+/// Run OCR on a rendered RGBA page and produce a `PdfPageText` struct
+/// with character and line coordinates mapped back to PDF point coordinates.
+pub fn perform_ocr(
+    engine: &OcrEngine,
+    rendered: &RenderedPage,
+    page_num: usize,
+    width_pts: f32,
+    height_pts: f32,
+) -> Result<PdfPageText> {
+    perform_ocr_rgba(
+        engine,
+        &rendered.samples,
+        rendered.width as u32,
+        rendered.height as u32,
+        page_num,
+        width_pts,
+        height_pts,
+    )
+}
+
+/// Run OCR on encoded image bytes (JPEG, PNG, WebP, etc.).
+pub fn perform_ocr_image_bytes(
+    engine: &OcrEngine,
+    raw_bytes: &[u8],
+    page_num: usize,
+) -> Result<PdfPageText> {
+    let img = image::load_from_memory(raw_bytes)
+        .map_err(|e| anyhow!("Failed to decode image bytes for OCR: {e}"))?;
+    let orig_w = img.width();
+    let orig_h = img.height();
+
+    // If page is very high resolution, resize to max 1800px on longest side for fast neural inference
+    let (rgba, w, h) = if orig_w > 1800 || orig_h > 1800 {
+        let resized = img.resize(1800, 1800, image::imageops::FilterType::Triangle);
+        let rgba = resized.to_rgba8();
+        let w = rgba.width();
+        let h = rgba.height();
+        (rgba, w, h)
+    } else {
+        let rgba = img.to_rgba8();
+        (rgba, orig_w, orig_h)
+    };
+
+    perform_ocr_rgba(engine, &rgba, w, h, page_num, orig_w as f32, orig_h as f32)
 }
 
 #[cfg(test)]
@@ -249,5 +302,21 @@ mod tests {
         let (sel, rects) = page_text.select_between((5.0, 5.0), (30.0, 30.0));
         assert_eq!(sel, "Hi");
         assert_eq!(rects.len(), 1);
+    }
+
+    #[test]
+    fn test_perform_ocr_rgba_empty() {
+        if let Some(engine) = init_ocr_engine() {
+            let res = perform_ocr_rgba(&engine, &[], 0, 0, 1, 100.0, 100.0).unwrap();
+            assert!(res.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_perform_ocr_image_bytes_invalid() {
+        if let Some(engine) = init_ocr_engine() {
+            let res = perform_ocr_image_bytes(&engine, b"not an image", 0);
+            assert!(res.is_err());
+        }
     }
 }

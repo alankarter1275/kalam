@@ -25,12 +25,16 @@ use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::ReadingBookmark;
+use crate::pdf::PdfPageText;
 
 pub struct ComicsReaderModel {
     pub title: String,
@@ -72,6 +76,16 @@ pub struct ComicsReaderModel {
     pub current_chapter_idx: Option<usize>,
     pub at_chapter_end: bool,
     pub chapters_list_box: Option<gtk::ListBox>,
+    pub ocr_enabled: bool,
+    pub ocr_tx: Option<async_channel::Sender<crate::ocr::ComicOcrRequest>>,
+    pub ocr_in_progress: HashSet<usize>,
+    pub ocr_generation: Arc<AtomicU64>,
+    pub page_text_cache: HashMap<usize, PdfPageText>,
+    pub active_selection: Rc<RefCell<Option<ComicActiveSelection>>>,
+    pub selection_drag_state: Option<(usize, f64, f64, bool, bool)>,
+    pub selection_chip: Option<gtk::Popover>,
+    pub page_overlays: Rc<RefCell<HashMap<usize, gtk::Overlay>>>,
+    pub page_draw_areas: Rc<RefCell<HashMap<usize, gtk::DrawingArea>>>,
 }
 
 #[allow(dead_code)]
@@ -224,6 +238,21 @@ impl ComicsReaderModel {
             current_chapter_idx,
             at_chapter_end: false,
             chapters_list_box: None,
+            ocr_enabled: init
+                .catalog
+                .as_ref()
+                .and_then(|c| c.get_pref("reader.comic.ocr").ok().flatten())
+                .map(|v| v != "false")
+                .unwrap_or(true),
+            ocr_tx: None,
+            ocr_in_progress: HashSet::new(),
+            ocr_generation: Arc::new(AtomicU64::new(1)),
+            page_text_cache: HashMap::new(),
+            active_selection: Rc::new(RefCell::new(None)),
+            selection_drag_state: None,
+            selection_chip: None,
+            page_overlays: Rc::new(RefCell::new(HashMap::new())),
+            page_draw_areas: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
@@ -502,9 +531,152 @@ impl ComicsReaderModel {
         toggle_active(&widgets.fit_height_btn, self.fit_mode == FitMode::Height);
         toggle_active(&widgets.fit_screen_btn, self.fit_mode == FitMode::Screen);
         toggle_active(&widgets.fit_orig_btn, self.fit_mode == FitMode::Original);
+
+        if self.ocr_enabled {
+            widgets.ocr_toggle_btn.set_label("Enabled");
+            widgets.ocr_toggle_btn.add_css_class("active");
+        } else {
+            widgets.ocr_toggle_btn.set_label("Disabled");
+            widgets.ocr_toggle_btn.remove_css_class("active");
+        }
+    }
+
+    pub fn trigger_page_ocr(&mut self, page: usize) {
+        if !self.ocr_enabled {
+            return;
+        }
+        if page >= self.total_pages {
+            return;
+        }
+        if self.page_text_cache.contains_key(&page) || self.ocr_in_progress.contains(&page) {
+            return;
+        }
+        let Some(ref tx) = self.ocr_tx else {
+            return;
+        };
+
+        self.ocr_in_progress.insert(page);
+        let prov = self.provider.clone();
+        let generation = self.ocr_generation.load(Ordering::Relaxed);
+        let tx = tx.clone();
+
+        crate::tasks::spawn_internal(
+            "Fetching comic page for OCR",
+            move |_| {
+                if let Ok(raw_bytes) = prov.fetch_page(page) {
+                    let _ = tx.send_blocking(crate::ocr::ComicOcrRequest {
+                        generation,
+                        page,
+                        raw_bytes,
+                    });
+                }
+            },
+            |_| {},
+            |_| {},
+        );
+    }
+
+    pub fn dismiss_selection_chip(&mut self) {
+        if let Some(popover) = self.selection_chip.take() {
+            popover.popdown();
+            popover.unparent();
+        }
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.dismiss_selection_chip();
+        let old = self.active_selection.replace(None);
+        if let Some(sel) = old {
+            if let Some(da) = self.page_draw_areas.borrow().get(&sel.page) {
+                da.queue_draw();
+            }
+        }
+    }
+
+    pub fn show_selection_chip(&mut self, page: usize, sender: &ComponentSender<Self>) {
+        self.dismiss_selection_chip();
+        let sel_opt = self.active_selection.borrow().clone();
+        let Some(sel) = sel_opt else { return };
+        if sel.text.is_empty() { return };
+        let overlays = self.page_overlays.borrow();
+        let Some(overlay) = overlays.get(&page) else { return };
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+        row.add_css_class("k-sel-toolbar");
+
+        // Copy button
+        let copy_btn = gtk::Button::new();
+        let copy_icon = crate::icons::symbolic_with_classes("edit-copy-symbolic", 14, &["kalam-inline-icon"]);
+        copy_btn.set_child(Some(&copy_icon));
+        copy_btn.set_tooltip_text(Some("Copy (Ctrl+C)"));
+        copy_btn.add_css_class("k-sel-action");
+        copy_btn.add_css_class("accent");
+        let tx_copy = sender.input_sender().clone();
+        copy_btn.connect_clicked(move |_| {
+            let _ = tx_copy.send(types::ComicsReaderMsg::CopySelection);
+        });
+        row.append(&copy_btn);
+
+        let sep1 = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        sep1.add_css_class("k-sel-divider");
+        row.append(&sep1);
+
+        // Define / Dictionary lookup button
+        let dict_btn = gtk::Button::new();
+        let dict_icon = crate::icons::symbolic_with_classes("accessories-dictionary-symbolic", 14, &["kalam-inline-icon"]);
+        dict_btn.set_child(Some(&dict_icon));
+        dict_btn.set_tooltip_text(Some("Define"));
+        dict_btn.add_css_class("k-sel-action");
+        let tx_dict = sender.input_sender().clone();
+        let word_text = sel.text.clone();
+        dict_btn.connect_clicked(move |_| {
+            let _ = tx_dict.send(types::ComicsReaderMsg::LookUpWord(word_text.clone()));
+        });
+        row.append(&dict_btn);
+
+        let sep2 = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        sep2.add_css_class("k-sel-divider");
+        row.append(&sep2);
+
+        // Quote button
+        let quote_btn = gtk::Button::new();
+        let quote_icon = crate::icons::symbolic_with_classes("kalam-quote-symbolic", 14, &["kalam-inline-icon"]);
+        quote_btn.set_child(Some(&quote_icon));
+        quote_btn.set_tooltip_text(Some("Save Quote"));
+        quote_btn.add_css_class("k-sel-action");
+        let tx_quote = sender.input_sender().clone();
+        quote_btn.connect_clicked(move |_| {
+            let _ = tx_quote.send(types::ComicsReaderMsg::QuoteSelection);
+        });
+        row.append(&quote_btn);
+
+        let popover = gtk::Popover::new();
+        popover.set_child(Some(&row));
+        popover.set_parent(overlay);
+        popover.set_autohide(false);
+        popover.set_has_arrow(false);
+        popover.set_position(gtk::PositionType::Top);
+
+        let anchor = gdk::Rectangle::new(
+            sel.bounds.0 as i32,
+            (sel.bounds.1 - 10.0).max(0.0) as i32,
+            sel.bounds.2.max(1.0) as i32,
+            sel.bounds.3.max(1.0) as i32,
+        );
+        popover.set_pointing_to(Some(&anchor));
+        popover.add_css_class("k-sel-toolbar-popover");
+        popover.popup();
+        self.selection_chip = Some(popover);
     }
 
     pub fn cleanup_memory(&mut self) {
+        self.dismiss_selection_chip();
+        self.active_selection.replace(None);
+        self.page_overlays.borrow_mut().clear();
+        self.page_draw_areas.borrow_mut().clear();
+        self.page_text_cache.clear();
+        self.ocr_in_progress.clear();
+        self.ocr_tx = None;
         self.textures.clear();
         self.pending_loads.clear();
 
@@ -571,11 +743,138 @@ fn update_viewport_policies(
     }
 }
 
+fn wrap_comic_page(
+    model: &ComicsReaderModel,
+    page_idx: usize,
+    pic: gtk::Picture,
+    target_w: i32,
+    target_h: i32,
+    _orig_w: i32,
+    _orig_h: i32,
+    sender: Option<&ComponentSender<ComicsReaderModel>>,
+) -> gtk::Widget {
+    let overlay = gtk::Overlay::new();
+    overlay.set_halign(pic.halign());
+    overlay.set_valign(pic.valign());
+    if target_w > 0 && target_h > 0 {
+        overlay.set_size_request(target_w, target_h);
+    }
+    overlay.set_child(Some(&pic));
+    overlay.set_cursor_from_name(Some("text"));
+
+    let draw_area = gtk::DrawingArea::new();
+    draw_area.set_can_target(false);
+
+    let active_sel_ref = model.active_selection.clone();
+    let page_copy = page_idx;
+    draw_area.set_draw_func(move |_, cr, _w, _h| {
+        if let Some(ref sel) = *active_sel_ref.borrow() {
+            if sel.page == page_copy && !sel.screen_rects.is_empty() {
+                // Kalam selection blue: rgba(53, 132, 228, 0.35)
+                cr.set_source_rgba(53.0 / 255.0, 132.0 / 255.0, 228.0 / 255.0, 0.35);
+                for &(rx, ry, rw, rh) in &sel.screen_rects {
+                    cr.rectangle(rx, ry, rw, rh);
+                    let _ = cr.fill();
+                }
+
+                if sel.is_block {
+                    // Marquee box outline for rectangular selection
+                    cr.set_source_rgba(53.0 / 255.0, 132.0 / 255.0, 228.0 / 255.0, 0.85);
+                    cr.set_line_width(1.5);
+                    cr.rectangle(sel.bounds.0, sel.bounds.1, sel.bounds.2, sel.bounds.3);
+                    let _ = cr.stroke();
+                } else {
+                    // Handles (start and end) for continuous reading selection
+                    cr.set_source_rgba(53.0 / 255.0, 132.0 / 255.0, 228.0 / 255.0, 0.95);
+                    let (sx, sy, sh) = sel.start_handle;
+                    cr.rectangle(sx - 1.0, sy, 2.0, sh);
+                    let _ = cr.fill();
+                    cr.arc(sx, (sy - 4.5).max(4.5), 4.5, 0.0, 2.0 * std::f64::consts::PI);
+                    let _ = cr.fill();
+
+                    let (ex, ey, eh) = sel.end_handle;
+                    cr.rectangle(ex - 1.0, ey, 2.0, eh);
+                    let _ = cr.fill();
+                    cr.arc(ex, ey + eh + 4.5, 4.5, 0.0, 2.0 * std::f64::consts::PI);
+                    let _ = cr.fill();
+                }
+            }
+        }
+    });
+
+    overlay.add_overlay(&draw_area);
+
+    if let Some(s) = sender {
+        let drag = gtk::GestureDrag::new();
+        drag.set_button(1);
+        let tx_drag_begin = s.input_sender().clone();
+        let tx_drag_update = s.input_sender().clone();
+        let tx_drag_end = s.input_sender().clone();
+
+        let drag_ctrl_begin = drag.clone();
+        drag.connect_drag_begin(move |_, x, y| {
+            let is_block = drag_ctrl_begin.current_event_state().contains(gdk::ModifierType::ALT_MASK);
+            let _ = tx_drag_begin.send(types::ComicsReaderMsg::SelectionDragBegin {
+                page: page_copy,
+                x,
+                y,
+                is_block,
+            });
+        });
+        let drag_ctrl_up = drag.clone();
+        drag.connect_drag_update(move |_, dx, dy| {
+            let is_block = drag_ctrl_up.current_event_state().contains(gdk::ModifierType::ALT_MASK);
+            let _ = tx_drag_update.send(types::ComicsReaderMsg::SelectionDragUpdate {
+                page: page_copy,
+                dx,
+                dy,
+                is_block,
+            });
+        });
+        drag.connect_drag_end(move |_, dx, dy| {
+            let _ = tx_drag_end.send(types::ComicsReaderMsg::SelectionDragEnd {
+                page: page_copy,
+                dx,
+                dy,
+            });
+        });
+        overlay.add_controller(drag);
+
+        let click = gtk::GestureClick::new();
+        click.set_button(1);
+        let tx_click = s.input_sender().clone();
+        click.connect_pressed(move |_, n_press, x, y| {
+            if n_press == 2 {
+                let _ = tx_click.send(types::ComicsReaderMsg::SelectionWordAt {
+                    page: page_copy,
+                    x,
+                    y,
+                });
+            } else if n_press >= 3 {
+                let _ = tx_click.send(types::ComicsReaderMsg::SelectionLineAt {
+                    page: page_copy,
+                    x,
+                    y,
+                });
+            }
+        });
+        overlay.add_controller(click);
+    }
+
+    model.page_overlays.borrow_mut().insert(page_idx, overlay.clone());
+    model.page_draw_areas.borrow_mut().insert(page_idx, draw_area);
+
+    overlay.upcast()
+}
+
 fn rebuild_viewport_widget(
     model: &ComicsReaderModel,
     viewport_width: i32,
     sender: Option<&ComponentSender<ComicsReaderModel>>,
 ) -> gtk::Widget {
+    model.page_overlays.borrow_mut().clear();
+    model.page_draw_areas.borrow_mut().clear();
+
     let win_w = if viewport_width > 100 { viewport_width } else { 850 };
     let is_webtoon = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
 
@@ -667,7 +966,17 @@ fn rebuild_viewport_widget(
                 pic.set_can_shrink(false);
                 pic.set_content_fit(gtk::ContentFit::Contain);
                 pic.set_halign(gtk::Align::Center);
-                item_box.append(&pic);
+                let wrapped = wrap_comic_page(
+                    model,
+                    idx,
+                    pic,
+                    avail_w,
+                    target_h,
+                    tw,
+                    th,
+                    sender,
+                );
+                item_box.append(&wrapped);
             } else {
                 let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 placeholder.set_size_request(avail_w, (avail_w as f64 * 1.4).round() as i32);
@@ -733,7 +1042,7 @@ fn rebuild_viewport_widget(
                     let pic = gtk::Picture::for_paintable(texture);
                     pic.set_halign(if is_left { gtk::Align::End } else { gtk::Align::Start });
 
-                    match model.fit_mode {
+                    let (target_w, target_h) = match model.fit_mode {
                         FitMode::Screen => {
                             pic.set_can_shrink(true);
                             pic.set_content_fit(gtk::ContentFit::Contain);
@@ -741,6 +1050,7 @@ fn rebuild_viewport_widget(
                             pic.set_vexpand(true);
                             pic.set_valign(gtk::Align::Center);
                             pic.set_size_request(-1, -1);
+                            (-1, -1)
                         }
                         FitMode::Height => {
                             pic.set_can_shrink(true);
@@ -749,6 +1059,7 @@ fn rebuild_viewport_widget(
                             pic.set_vexpand(true);
                             pic.set_valign(gtk::Align::Center);
                             pic.set_size_request(-1, -1);
+                            (-1, -1)
                         }
                         FitMode::Width => {
                             let avail_w = (win_w - 32 - model.two_page_gap).max(400) / 2;
@@ -761,15 +1072,27 @@ fn rebuild_viewport_widget(
                             pic.set_can_shrink(false);
                             pic.set_content_fit(gtk::ContentFit::Contain);
                             pic.set_valign(gtk::Align::Start);
+                            (avail_w, target_h)
                         }
                         FitMode::Original => {
                             pic.set_size_request(tw, th);
                             pic.set_can_shrink(false);
                             pic.set_content_fit(gtk::ContentFit::Contain);
                             pic.set_valign(gtk::Align::Center);
+                            (tw, th)
                         }
-                    }
-                    container.append(&pic);
+                    };
+                    let wrapped = wrap_comic_page(
+                        model,
+                        idx,
+                        pic,
+                        target_w,
+                        target_h,
+                        tw,
+                        th,
+                        sender,
+                    );
+                    container.append(&wrapped);
                 } else {
                     let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
                     placeholder.set_size_request(320, 480);
@@ -814,7 +1137,7 @@ fn rebuild_viewport_widget(
         let pic = gtk::Picture::for_paintable(texture);
         pic.set_halign(gtk::Align::Center);
 
-        match model.fit_mode {
+        let (target_w, target_h) = match model.fit_mode {
             FitMode::Screen => {
                 pic.set_can_shrink(true);
                 pic.set_content_fit(gtk::ContentFit::Contain);
@@ -822,6 +1145,7 @@ fn rebuild_viewport_widget(
                 pic.set_vexpand(true);
                 pic.set_valign(gtk::Align::Center);
                 pic.set_size_request(-1, -1);
+                (-1, -1)
             }
             FitMode::Height => {
                 pic.set_can_shrink(true);
@@ -830,6 +1154,7 @@ fn rebuild_viewport_widget(
                 pic.set_vexpand(true);
                 pic.set_valign(gtk::Align::Center);
                 pic.set_size_request(-1, -1);
+                (-1, -1)
             }
             FitMode::Width => {
                 let avail_w = (win_w - 24).max(300);
@@ -842,15 +1167,27 @@ fn rebuild_viewport_widget(
                 pic.set_can_shrink(false);
                 pic.set_content_fit(gtk::ContentFit::Contain);
                 pic.set_valign(gtk::Align::Start);
+                (avail_w, target_h)
             }
             FitMode::Original => {
                 pic.set_size_request(tw, th);
                 pic.set_can_shrink(false);
                 pic.set_content_fit(gtk::ContentFit::Contain);
                 pic.set_valign(gtk::Align::Center);
+                (tw, th)
             }
-        }
-        vbox.append(&pic);
+        };
+        let wrapped = wrap_comic_page(
+            model,
+            model.current_page,
+            pic,
+            target_w,
+            target_h,
+            tw,
+            th,
+            sender,
+        );
+        vbox.append(&wrapped);
     } else {
         let spinner = gtk::Spinner::new();
         spinner.set_spinning(true);
@@ -1506,6 +1843,29 @@ impl Component for ComicsReaderModel {
                                     },
                                 },
 
+                                // Section: SPEECH BUBBLE OCR
+                                append = &reader_settings_section("Speech Bubble OCR"),
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 8,
+                                    set_margin_start: 16,
+                                    set_margin_end: 16,
+
+                                    gtk::Label {
+                                        set_label: "Dialogue Detection",
+                                        set_hexpand: true,
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    #[name = "ocr_toggle_btn"]
+                                    gtk::Button {
+                                        set_label: "Enabled",
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Detect dialogue in speech bubbles for text selection & lookup"),
+                                        connect_clicked => ComicsReaderMsg::ToggleOcr,
+                                    },
+                                },
+
                                 // Section: SHORTCUTS
                                 append = &reader_settings_section("Shortcuts"),
                                 gtk::Box {
@@ -1514,6 +1874,16 @@ impl Component for ComicsReaderModel {
                                     set_margin_start: 16,
                                     set_margin_end: 16,
 
+                                    gtk::Label {
+                                        set_label: "Drag / Alt+Drag   Select text / Bubble",
+                                        add_css_class: "dim-label",
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                    gtk::Label {
+                                        set_label: "Ctrl+C            Copy selected dialogue",
+                                        add_css_class: "dim-label",
+                                        set_halign: gtk::Align::Start,
+                                    },
                                     gtk::Label {
                                         set_label: "← / →, h / l      Turn page",
                                         add_css_class: "dim-label",
@@ -1638,6 +2008,55 @@ impl Component for ComicsReaderModel {
     ) -> ComponentParts<Self> {
         let mut model = ComicsReaderModel::new(init);
         model.trigger_loads(&sender);
+
+        let ocr_gen = model.ocr_generation.clone();
+        let (ocr_tx, ocr_rx) = async_channel::unbounded::<crate::ocr::ComicOcrRequest>();
+        let tx_ocr_msg = sender.input_sender().clone();
+        std::thread::Builder::new()
+            .name("kalam-comic-ocr-worker".to_string())
+            .spawn(move || {
+                let mut ocr_engine: Option<ocrs::OcrEngine> = None;
+                while let Ok(req) = ocr_rx.recv_blocking() {
+                    if req.generation != ocr_gen.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    if ocr_engine.is_none() {
+                        ocr_engine = crate::ocr::init_ocr_engine();
+                    }
+                    let Some(ref engine) = ocr_engine else {
+                        continue;
+                    };
+                    if req.generation != ocr_gen.load(Ordering::Relaxed) {
+                        continue;
+                    }
+
+                    match crate::ocr::perform_ocr_image_bytes(engine, &req.raw_bytes, req.page) {
+                        Ok(ocr_text) => {
+                            if req.generation == ocr_gen.load(Ordering::Relaxed) {
+                                let _ = tx_ocr_msg.send(types::ComicsReaderMsg::PageOcrResult {
+                                    page: req.page,
+                                    text: Box::new(Ok(ocr_text)),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Comic OCR failed for page {}: {e}", req.page);
+                            if req.generation == ocr_gen.load(Ordering::Relaxed) {
+                                let _ = tx_ocr_msg.send(types::ComicsReaderMsg::PageOcrResult {
+                                    page: req.page,
+                                    text: Box::new(Err(e.to_string())),
+                                });
+                            }
+                        }
+                    }
+                }
+            })
+            .expect("Failed to spawn comic OCR worker thread");
+        model.ocr_tx = Some(ocr_tx);
+        model.trigger_page_ocr(model.current_page);
+        if model.page_style == PageStyle::Double {
+            model.trigger_page_ocr(model.current_page + 1);
+        }
 
         let widgets = view_output!();
 
@@ -1829,11 +2248,25 @@ impl Component for ComicsReaderModel {
         let key_controller = gtk::EventControllerKey::new();
         key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
         let s_key = sender.clone();
-        key_controller.connect_key_pressed(move |_, keyval, _, _| {
+        let active_sel_for_key = model.active_selection.clone();
+        key_controller.connect_key_pressed(move |ctrl, keyval, _, _| {
             match keyval {
                 gdk::Key::Escape => {
-                    let _ = s_key.input_sender().send(ComicsReaderMsg::Close);
+                    if active_sel_for_key.borrow().is_some() {
+                        let _ = s_key.input_sender().send(ComicsReaderMsg::ClearSelection);
+                    } else {
+                        let _ = s_key.input_sender().send(ComicsReaderMsg::Close);
+                    }
                     glib::Propagation::Stop
+                }
+                gdk::Key::c | gdk::Key::C => {
+                    let is_ctrl = ctrl.current_event_state().contains(gdk::ModifierType::CONTROL_MASK);
+                    if is_ctrl && active_sel_for_key.borrow().is_some() {
+                        let _ = s_key.input_sender().send(ComicsReaderMsg::CopySelection);
+                        glib::Propagation::Stop
+                    } else {
+                        glib::Propagation::Proceed
+                    }
                 }
                 gdk::Key::BackSpace | gdk::Key::q | gdk::Key::Q => {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::Close);
@@ -1907,10 +2340,15 @@ impl Component for ComicsReaderModel {
     ) {
         match msg {
             ComicsReaderMsg::SetPage(idx) => {
+                self.clear_selection();
                 self.hide_chrome_on_interaction();
                 self.set_page(idx);
                 self.save_progress();
                 self.trigger_loads(&sender);
+                self.trigger_page_ocr(idx);
+                if self.page_style == PageStyle::Double {
+                    self.trigger_page_ocr(idx + 1);
+                }
                 self.update_bookmark_icon_state(widgets);
                 widgets.page_indicator_label.set_label(&self.page_indicator_label());
                 let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
@@ -1938,6 +2376,7 @@ impl Component for ComicsReaderModel {
                     self.current_page = clamped;
                     self.save_progress();
                     self.trigger_loads(&sender);
+                    self.trigger_page_ocr(clamped);
                     self.update_bookmark_icon_state(widgets);
                     widgets.page_indicator_label.set_label(&self.page_indicator_label());
                 }
@@ -1978,9 +2417,14 @@ impl Component for ComicsReaderModel {
                     }
                 }
 
+                self.clear_selection();
                 self.next_page();
                 self.save_progress();
                 self.trigger_loads(&sender);
+                self.trigger_page_ocr(self.current_page);
+                if self.page_style == PageStyle::Double {
+                    self.trigger_page_ocr(self.current_page + 1);
+                }
                 self.update_bookmark_icon_state(widgets);
                 widgets.page_indicator_label.set_label(&self.page_indicator_label());
                 if is_webtoon {
@@ -2005,9 +2449,14 @@ impl Component for ComicsReaderModel {
                     widgets.page_indicator_label.set_label(&self.page_indicator_label());
                     return;
                 }
+                self.clear_selection();
                 self.prev_page();
                 self.save_progress();
                 self.trigger_loads(&sender);
+                self.trigger_page_ocr(self.current_page);
+                if self.page_style == PageStyle::Double {
+                    self.trigger_page_ocr(self.current_page + 1);
+                }
                 self.update_bookmark_icon_state(widgets);
                 widgets.page_indicator_label.set_label(&self.page_indicator_label());
                 let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
@@ -2073,7 +2522,17 @@ impl Component for ComicsReaderModel {
                                         pic.set_can_shrink(false);
                                         pic.set_content_fit(gtk::ContentFit::Contain);
                                         pic.set_halign(gtk::Align::Center);
-                                        item_box.append(&pic);
+                                        let wrapped = wrap_comic_page(
+                                            self,
+                                            idx,
+                                            pic,
+                                            avail_w,
+                                            target_h,
+                                            tw,
+                                            th,
+                                            Some(&sender),
+                                        );
+                                        item_box.append(&wrapped);
                                         in_place_applied = true;
                                     }
                                     break;
@@ -2087,6 +2546,7 @@ impl Component for ComicsReaderModel {
                             widgets.viewport_box.set_child(Some(&child));
                             update_viewport_policies(&widgets.viewport_box, self.fit_mode, true);
                         }
+                        self.trigger_page_ocr(idx);
                     } else {
                         let in_view = if self.page_style == PageStyle::Double {
                             idx == self.current_page || idx == self.current_page + 1
@@ -2094,6 +2554,7 @@ impl Component for ComicsReaderModel {
                             idx == self.current_page
                         };
                         if in_view {
+                            self.trigger_page_ocr(idx);
                             let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), Some(&sender));
                             widgets.viewport_box.set_child(Some(&child));
                             update_viewport_policies(&widgets.viewport_box, self.fit_mode, false);
@@ -2233,6 +2694,10 @@ impl Component for ComicsReaderModel {
                             self.textures.clear();
                             self.pending_loads.clear();
                             self.at_chapter_end = false;
+                            self.clear_selection();
+                            self.ocr_generation.fetch_add(1, Ordering::Relaxed);
+                            self.ocr_in_progress.clear();
+                            self.page_text_cache.clear();
 
                             let saved_page = match catalog.get_reading_progress(new_bid) {
                                 Ok(Some((page, _))) if page < self.total_pages => page,
@@ -2256,6 +2721,10 @@ impl Component for ComicsReaderModel {
                             }
 
                             self.trigger_loads(&sender);
+                            self.trigger_page_ocr(self.current_page);
+                            if self.page_style == PageStyle::Double {
+                                self.trigger_page_ocr(self.current_page + 1);
+                            }
                             let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), Some(&sender));
                             widgets.viewport_box.set_child(Some(&child));
                             let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
@@ -2438,6 +2907,7 @@ impl Component for ComicsReaderModel {
             }
             ComicsReaderMsg::UserScrolled => {
                 self.hide_chrome_on_interaction();
+                self.dismiss_selection_chip();
                 if !self.show_back_button {
                     widgets.top_back_revealer.set_reveal_child(false);
                 }
@@ -2458,6 +2928,324 @@ impl Component for ComicsReaderModel {
                 widgets.sidebar_revealer.set_reveal_child(false);
                 widgets.dim_backdrop.set_visible(false);
             }
+            ComicsReaderMsg::PageOcrResult { page, text } => {
+                self.ocr_in_progress.remove(&page);
+                match *text {
+                    Ok(page_text) => {
+                        log::info!("Comic OCR completed for page {}: found {} lines", page, page_text.lines.len());
+                        self.page_text_cache.insert(page, page_text);
+                    }
+                    Err(e) => {
+                        log::warn!("Comic OCR failed for page {}: {e}", page);
+                    }
+                }
+            }
+            ComicsReaderMsg::SelectionDragBegin { page, x, y, is_block } => {
+                self.dismiss_selection_chip();
+                let old_page = self.active_selection.borrow().as_ref().map(|s| s.page);
+                if old_page.is_some() && old_page != Some(page) {
+                    self.active_selection.replace(None);
+                    if let Some(op) = old_page {
+                        if let Some(da) = self.page_draw_areas.borrow().get(&op) {
+                            da.queue_draw();
+                        }
+                    }
+                }
+                self.selection_drag_state = Some((page, x, y, is_block, false));
+                self.trigger_page_ocr(page);
+            }
+            ComicsReaderMsg::SelectionDragUpdate { page, dx, dy, is_block } => {
+                let Some((p_idx, start_x, start_y, _, _)) = self.selection_drag_state else { return };
+                if p_idx != page { return };
+                if dx.abs() > 3.0 || dy.abs() > 3.0 {
+                    self.selection_drag_state = Some((page, start_x, start_y, is_block, true));
+                } else {
+                    return;
+                }
+
+                let overlays = self.page_overlays.borrow();
+                let Some(overlay) = overlays.get(&page) else { return };
+                let (target_w, target_h) = (overlay.width() as f64, overlay.height() as f64);
+                if target_w <= 0.0 || target_h <= 0.0 { return };
+
+                let Some(page_text) = self.page_text_cache.get(&page) else {
+                    self.trigger_page_ocr(page);
+                    return;
+                };
+                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+
+                let scale_x = target_w / (page_text.width_pts as f64);
+                let scale_y = target_h / (page_text.height_pts as f64);
+
+                let p0 = ((start_x / scale_x) as f32, (start_y / scale_y) as f32);
+                let p1 = (((start_x + dx) / scale_x) as f32, (((start_y + dy).max(0.0)) / scale_y) as f32);
+
+                let (selected_text, highlight_rects) = if is_block {
+                    page_text.select_rect(p0, p1)
+                } else {
+                    page_text.select_between(p0, p1)
+                };
+
+                if highlight_rects.is_empty() {
+                    self.active_selection.replace(None);
+                } else {
+                    let mut screen_rects = Vec::with_capacity(highlight_rects.len());
+                    let mut min_x = f64::MAX;
+                    let mut min_y = f64::MAX;
+                    let mut max_x = f64::MIN;
+                    let mut max_y = f64::MIN;
+
+                    for r in &highlight_rects {
+                        let rx = r.0 as f64 * scale_x;
+                        let ry = r.1 as f64 * scale_y;
+                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
+                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
+                        screen_rects.push((rx, ry, rw, rh));
+                        min_x = min_x.min(rx);
+                        min_y = min_y.min(ry);
+                        max_x = max_x.max(rx + rw);
+                        max_y = max_y.max(ry + rh);
+                    }
+
+                    let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+                    let start_handle = (first.0, first.1, first.3);
+                    let end_handle = (last.0 + last.2, last.1, last.3);
+                    let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+
+                    self.active_selection.replace(Some(types::ComicActiveSelection {
+                        page,
+                        text: selected_text,
+                        screen_rects,
+                        bounds,
+                        start_handle,
+                        end_handle,
+                        anchor_pt: p0,
+                        active_pt: p1,
+                        is_block,
+                    }));
+                }
+
+                if let Some(da) = self.page_draw_areas.borrow().get(&page) {
+                    da.queue_draw();
+                }
+            }
+            ComicsReaderMsg::SelectionDragEnd { page, dx, dy } => {
+                self.selection_drag_state = None;
+                if dx.abs() > 4.0 || dy.abs() > 4.0 {
+                    if self.active_selection.borrow().is_some() {
+                        self.show_selection_chip(page, &sender);
+                    }
+                } else if self.active_selection.borrow().is_some() {
+                    self.clear_selection();
+                }
+            }
+            ComicsReaderMsg::SelectionWordAt { page, x, y } => {
+                let overlays = self.page_overlays.borrow();
+                let Some(overlay) = overlays.get(&page) else { return };
+                let (target_w, target_h) = (overlay.width() as f64, overlay.height() as f64);
+                if target_w <= 0.0 || target_h <= 0.0 { return };
+
+                let Some(page_text) = self.page_text_cache.get(&page) else {
+                    self.trigger_page_ocr(page);
+                    return;
+                };
+                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+
+                let scale_x = target_w / (page_text.width_pts as f64);
+                let scale_y = target_h / (page_text.height_pts as f64);
+
+                let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
+                if let Some((word_text, highlight_rects)) = page_text.word_at(pt) {
+                    let mut screen_rects = Vec::with_capacity(highlight_rects.len());
+                    let mut min_x = f64::MAX;
+                    let mut min_y = f64::MAX;
+                    let mut max_x = f64::MIN;
+                    let mut max_y = f64::MIN;
+
+                    for r in &highlight_rects {
+                        let rx = r.0 as f64 * scale_x;
+                        let ry = r.1 as f64 * scale_y;
+                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
+                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
+                        screen_rects.push((rx, ry, rw, rh));
+                        min_x = min_x.min(rx);
+                        min_y = min_y.min(ry);
+                        max_x = max_x.max(rx + rw);
+                        max_y = max_y.max(ry + rh);
+                    }
+
+                    let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+                    let start_handle = (first.0, first.1, first.3);
+                    let end_handle = (last.0 + last.2, last.1, last.3);
+                    let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+
+                    self.active_selection.replace(Some(types::ComicActiveSelection {
+                        page,
+                        text: word_text,
+                        screen_rects,
+                        bounds,
+                        start_handle,
+                        end_handle,
+                        anchor_pt: pt,
+                        active_pt: pt,
+                        is_block: false,
+                    }));
+
+                    if let Some(da) = self.page_draw_areas.borrow().get(&page) {
+                        da.queue_draw();
+                    }
+                    self.show_selection_chip(page, &sender);
+                }
+            }
+            ComicsReaderMsg::SelectionLineAt { page, x, y } => {
+                let overlays = self.page_overlays.borrow();
+                let Some(overlay) = overlays.get(&page) else { return };
+                let (target_w, target_h) = (overlay.width() as f64, overlay.height() as f64);
+                if target_w <= 0.0 || target_h <= 0.0 { return };
+
+                let Some(page_text) = self.page_text_cache.get(&page) else {
+                    self.trigger_page_ocr(page);
+                    return;
+                };
+                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+
+                let scale_x = target_w / (page_text.width_pts as f64);
+                let scale_y = target_h / (page_text.height_pts as f64);
+
+                let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
+                if let Some((line_text, highlight_rects)) = page_text.line_at(pt) {
+                    let mut screen_rects = Vec::with_capacity(highlight_rects.len());
+                    let mut min_x = f64::MAX;
+                    let mut min_y = f64::MAX;
+                    let mut max_x = f64::MIN;
+                    let mut max_y = f64::MIN;
+
+                    for r in &highlight_rects {
+                        let rx = r.0 as f64 * scale_x;
+                        let ry = r.1 as f64 * scale_y;
+                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
+                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
+                        screen_rects.push((rx, ry, rw, rh));
+                        min_x = min_x.min(rx);
+                        min_y = min_y.min(ry);
+                        max_x = max_x.max(rx + rw);
+                        max_y = max_y.max(ry + rh);
+                    }
+
+                    let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+                    let start_handle = (first.0, first.1, first.3);
+                    let end_handle = (last.0 + last.2, last.1, last.3);
+                    let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+
+                    self.active_selection.replace(Some(types::ComicActiveSelection {
+                        page,
+                        text: line_text,
+                        screen_rects,
+                        bounds,
+                        start_handle,
+                        end_handle,
+                        anchor_pt: pt,
+                        active_pt: pt,
+                        is_block: false,
+                    }));
+
+                    if let Some(da) = self.page_draw_areas.borrow().get(&page) {
+                        da.queue_draw();
+                    }
+                    self.show_selection_chip(page, &sender);
+                }
+            }
+            ComicsReaderMsg::CopySelection => {
+                let text = self.active_selection.borrow().as_ref().map(|s| s.text.clone());
+                if let Some(text) = text {
+                    if let Some(display) = gdk::Display::default() {
+                        display.clipboard().set_text(&text);
+                    }
+                    let preview = if text.len() > 36 {
+                        format!("{}...", &text[..36])
+                    } else {
+                        text
+                    };
+                    crate::notify::info("Copied to clipboard", &preview);
+                }
+                self.clear_selection();
+            }
+            ComicsReaderMsg::QuoteSelection => {
+                let text_and_page = self.active_selection.borrow().as_ref().map(|s| (s.text.clone(), s.page));
+                if let Some((text, page)) = text_and_page {
+                    if let (Some(ref catalog), Some(bid)) = (&self.catalog, self.book_id) {
+                        let cfi = format!("comic:p{}", page + 1);
+                        let _ = catalog.insert_annotation(bid, &cfi, &text, "", "quote", "yellow");
+                    }
+                    let preview = if text.len() > 36 {
+                        format!("{}...", &text[..36])
+                    } else {
+                        text
+                    };
+                    crate::notify::info("Quote saved", &preview);
+                }
+                self.clear_selection();
+            }
+            ComicsReaderMsg::LookUpWord(word) => {
+                let trimmed = word.trim().to_string();
+                if !trimmed.is_empty() {
+                    if let Some(ref catalog) = self.catalog {
+                        let entry = catalog.lookup_entry(&trimmed).unwrap_or_else(|_| crate::db::EntryData {
+                            word: trimmed.clone(),
+                            ..Default::default()
+                        });
+                        let def = entry.senses.first().map(|s| s.def.clone()).unwrap_or_else(|| "No dictionary definition found".to_string());
+                        crate::notify::info(&trimmed, &def);
+                        let _ = catalog.log_dict_lookup(&trimmed, self.book_id, Some(self.current_page as i64), None, !entry.senses.is_empty());
+                    } else {
+                        crate::notify::info(&trimmed, "Dictionary lookup unavailable");
+                    }
+                }
+                self.clear_selection();
+            }
+            ComicsReaderMsg::ClearSelection => {
+                self.clear_selection();
+            }
+            ComicsReaderMsg::ToggleOcr => {
+                self.ocr_enabled = !self.ocr_enabled;
+                if let Some(ref catalog) = self.catalog {
+                    let _ = catalog.set_pref("reader.comic.ocr", if self.ocr_enabled { "true" } else { "false" });
+                }
+                let status = if self.ocr_enabled { "Bubble OCR Enabled" } else { "Bubble OCR Disabled" };
+                self.trigger_osd(status, &sender);
+                if self.ocr_enabled {
+                    self.trigger_page_ocr(self.current_page);
+                    if self.page_style == PageStyle::Double {
+                        self.trigger_page_ocr(self.current_page + 1);
+                    }
+                } else {
+                    self.clear_selection();
+                }
+                self.sync_settings_ui(widgets);
+            }
+            ComicsReaderMsg::SetOcrEnabled(enabled) => {
+                if self.ocr_enabled != enabled {
+                    self.ocr_enabled = enabled;
+                    if let Some(ref catalog) = self.catalog {
+                        let _ = catalog.set_pref("reader.comic.ocr", if self.ocr_enabled { "true" } else { "false" });
+                    }
+                    if self.ocr_enabled {
+                        self.trigger_page_ocr(self.current_page);
+                        if self.page_style == PageStyle::Double {
+                            self.trigger_page_ocr(self.current_page + 1);
+                        }
+                    } else {
+                        self.clear_selection();
+                    }
+                    self.sync_settings_ui(widgets);
+                }
+            }
             ComicsReaderMsg::Close => {
                 if self.show_sidebar {
                     self.show_sidebar = false;
@@ -2465,6 +3253,7 @@ impl Component for ComicsReaderModel {
                     widgets.sidebar_revealer.set_reveal_child(false);
                     widgets.dim_backdrop.set_visible(false);
                 } else {
+                    self.cleanup_memory();
                     let _ = sender.output(ComicsReaderOut::Close);
                 }
             }
@@ -2777,5 +3566,82 @@ mod tests {
 
         model.at_chapter_end = true;
         assert!(model.page_indicator_label().contains("Completed · Next: Chapter 2"));
+    }
+
+    #[test]
+    fn test_comic_ocr_and_selection_state() {
+        let dummy = Arc::new(DummyProvider { count: 5 });
+        let mut model = ComicsReaderModel::new(types::ComicsReaderInit {
+            title: "Berserk - Chapter 1".to_string(),
+            provider: dummy,
+            catalog: None,
+            book_id: Some(1),
+            cover_path: None,
+        });
+
+        assert!(model.ocr_enabled);
+        assert!(model.page_text_cache.is_empty());
+        assert!(model.active_selection.borrow().is_none());
+
+        // Test active selection creation & clear
+        model.active_selection.replace(Some(ComicActiveSelection {
+            page: 0,
+            text: "Hello from comic dialogue!".to_string(),
+            screen_rects: vec![(10.0, 20.0, 100.0, 16.0)],
+            bounds: (10.0, 20.0, 100.0, 16.0),
+            start_handle: (10.0, 20.0, 16.0),
+            end_handle: (110.0, 20.0, 16.0),
+            anchor_pt: (10.0, 20.0),
+            active_pt: (110.0, 36.0),
+            is_block: false,
+        }));
+
+        assert!(model.active_selection.borrow().is_some());
+        assert_eq!(
+            model.active_selection.borrow().as_ref().unwrap().text,
+            "Hello from comic dialogue!"
+        );
+
+        model.clear_selection();
+        assert!(model.active_selection.borrow().is_none());
+    }
+
+    #[test]
+    fn test_comic_dialogue_selection_geometry() {
+        use crate::pdf::{PdfPageText, PdfTextChar, PdfTextLine};
+
+        // Simulate dialogue in speech bubbles on a comic page (width 800 x height 1200)
+        let bubble_chars = vec![
+            PdfTextChar { ch: 'N', x0: 100.0, y0: 150.0, x1: 112.0, y1: 168.0 },
+            PdfTextChar { ch: 'a', x0: 112.0, y0: 150.0, x1: 122.0, y1: 168.0 },
+            PdfTextChar { ch: 'n', x0: 122.0, y0: 150.0, x1: 132.0, y1: 168.0 },
+            PdfTextChar { ch: 'i', x0: 132.0, y0: 150.0, x1: 138.0, y1: 168.0 },
+            PdfTextChar { ch: '?', x0: 138.0, y0: 150.0, x1: 148.0, y1: 168.0 },
+        ];
+        let bubble_line = PdfTextLine {
+            text: "Nani?".to_string(),
+            x0: 100.0,
+            y0: 150.0,
+            x1: 148.0,
+            y1: 168.0,
+            chars: bubble_chars,
+        };
+
+        let page_text = PdfPageText {
+            page_num: 0,
+            width_pts: 800.0,
+            height_pts: 1200.0,
+            lines: vec![bubble_line],
+        };
+
+        // Word selection test
+        let (word, rects) = page_text.word_at((120.0, 160.0)).expect("Word hit");
+        assert_eq!(word, "Nani?");
+        assert_eq!(rects.len(), 1);
+
+        // Rect marquee / block selection test
+        let (block_text, block_rects) = page_text.select_rect((90.0, 140.0), (160.0, 180.0));
+        assert_eq!(block_text, "Nani?");
+        assert!(!block_rects.is_empty());
     }
 }

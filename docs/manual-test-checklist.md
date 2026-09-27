@@ -771,6 +771,29 @@ shows up as its own task in the task manager.
 3. Clicking a comic series card on the Home page immediately routes to the Comics hub with that series' chapter drawer open.
 4. In the Home counts strip, "Books" counts comic series as a single item rather than treating every chapter archive as a discrete book.
 
+### T31 · Comic & Manga Speech Bubble OCR & Dialogue Selection
+
+**Do:**
+1. Open any comic or manga book in the Comic Reader (Single, Double, or Webtoon mode).
+2. Hover the cursor over dialogue inside a speech bubble; notice text cursor.
+3. Click and drag across dialogue text, or hold Alt and drag to select an entire rectangular dialogue bubble.
+4. Release the mouse button; observe the highlighted text and floating action chip popover.
+5. Double-click a single word in a speech bubble, then click `[Define]` in the floating popover.
+6. Press `Ctrl+C` or click `[Copy]` to copy selected dialogue to the system clipboard.
+7. Click `[Save Quote]` to save dialogue as an annotation quote.
+8. Press `Escape` or scroll the view; observe that the active selection and toolbar chip dismiss immediately.
+9. Open the left Zen sidebar -> Settings -> "Speech Bubble OCR" -> click "Enabled" to toggle detection off/on.
+
+**Look for:**
+1. Background OCR runs asynchronously without stuttering, freezing, or blocking UI page turns or scroll gestures.
+2. Drag-selecting dialogue draws a smooth blue highlight (`rgba(53, 132, 228, 0.35)`) and handle indicators matching PDF reader selection.
+3. Alt+drag draws a clean rectangular marquee box around the speech bubble.
+4. Floating popover chip (`.k-sel-toolbar`) appears right above the selection offering `[Copy]`, `[Define]`, and `[Save Quote]`.
+5. `[Define]` looks up the term in the dictionary and displays the definition card without navigating away from the page.
+6. `[Save Quote]` saves the quote under Annotations.
+7. Pressing `Escape` clears the active selection before triggering reader close.
+8. Toggling Speech Bubble OCR in Settings successfully disables or re-enables dialogue detection with an instant OSD notification.
+
 ---
 
 ## At the end

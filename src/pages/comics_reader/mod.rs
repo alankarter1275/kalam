@@ -199,6 +199,13 @@ impl ComicsReaderModel {
             )
         };
 
+        let ocr_enabled = init
+            .catalog
+            .as_ref()
+            .and_then(|c| c.get_pref("reader.comic.ocr"))
+            .map(|v| v != "false")
+            .unwrap_or(true);
+
         Self {
             title: init.title,
             provider: init.provider,
@@ -238,12 +245,7 @@ impl ComicsReaderModel {
             current_chapter_idx,
             at_chapter_end: false,
             chapters_list_box: None,
-            ocr_enabled: init
-                .catalog
-                .as_ref()
-                .and_then(|c| c.get_pref("reader.comic.ocr"))
-                .map(|v| v != "false")
-                .unwrap_or(true),
+            ocr_enabled,
             ocr_tx: None,
             ocr_in_progress: HashSet::new(),
             ocr_generation: Arc::new(AtomicU64::new(1)),
@@ -2683,7 +2685,7 @@ impl Component for ComicsReaderModel {
                     }
                     self.save_progress();
                 }
-                if let (Some(ref catalog), Some(book_id)) = (&self.catalog, Some(new_bid)) {
+                if let (Some(catalog), Some(book_id)) = (self.catalog.clone(), Some(new_bid)) {
                     if let Ok(Some(new_book)) = catalog.get_book(book_id) {
                         if let Ok(new_prov) = crate::pages::comics_reader::providers::LocalProvider::new(new_book.file_path.clone()) {
                             self.book_id = Some(new_bid);
@@ -2963,28 +2965,37 @@ impl Component for ComicsReaderModel {
                     return;
                 }
 
-                let overlays = self.page_overlays.borrow();
-                let Some(overlay) = overlays.get(&page) else { return };
-                let (target_w, target_h) = (overlay.width() as f64, overlay.height() as f64);
-                if target_w <= 0.0 || target_h <= 0.0 { return };
-
-                let Some(page_text) = self.page_text_cache.get(&page) else {
+                if !self.page_text_cache.contains_key(&page) {
                     self.trigger_page_ocr(page);
                     return;
+                }
+
+                let (target_w, target_h) = {
+                    let overlays = self.page_overlays.borrow();
+                    let Some(overlay) = overlays.get(&page) else { return };
+                    (overlay.width() as f64, overlay.height() as f64)
                 };
-                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+                if target_w <= 0.0 || target_h <= 0.0 { return };
 
-                let scale_x = target_w / (page_text.width_pts as f64);
-                let scale_y = target_h / (page_text.height_pts as f64);
+                let sel_data = {
+                    let Some(page_text) = self.page_text_cache.get(&page) else { return };
+                    if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
 
-                let p0 = ((start_x / scale_x) as f32, (start_y / scale_y) as f32);
-                let p1 = (((start_x + dx) / scale_x) as f32, (((start_y + dy).max(0.0)) / scale_y) as f32);
+                    let scale_x = target_w / (page_text.width_pts as f64);
+                    let scale_y = target_h / (page_text.height_pts as f64);
 
-                let (selected_text, highlight_rects) = if is_block {
-                    page_text.select_rect(p0, p1)
-                } else {
-                    page_text.select_between(p0, p1)
+                    let p0 = ((start_x / scale_x) as f32, (start_y / scale_y) as f32);
+                    let p1 = (((start_x + dx) / scale_x) as f32, (((start_y + dy).max(0.0)) / scale_y) as f32);
+
+                    let (selected_text, highlight_rects) = if is_block {
+                        page_text.select_rect(p0, p1)
+                    } else {
+                        page_text.select_between(p0, p1)
+                    };
+                    Some((selected_text, highlight_rects, scale_x, scale_y, p0, p1))
                 };
+
+                let Some((selected_text, highlight_rects, scale_x, scale_y, p0, p1)) = sel_data else { return };
 
                 if highlight_rects.is_empty() {
                     self.active_selection.replace(None);
@@ -3042,124 +3053,144 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::SelectionWordAt { page, x, y } => {
-                let overlays = self.page_overlays.borrow();
-                let Some(overlay) = overlays.get(&page) else { return };
-                let (target_w, target_h) = (overlay.width() as f64, overlay.height() as f64);
-                if target_w <= 0.0 || target_h <= 0.0 { return };
-
-                let Some(page_text) = self.page_text_cache.get(&page) else {
+                if !self.page_text_cache.contains_key(&page) {
                     self.trigger_page_ocr(page);
                     return;
-                };
-                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
-
-                let scale_x = target_w / (page_text.width_pts as f64);
-                let scale_y = target_h / (page_text.height_pts as f64);
-
-                let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
-                if let Some((word_text, highlight_rects)) = page_text.word_at(pt) {
-                    let mut screen_rects = Vec::with_capacity(highlight_rects.len());
-                    let mut min_x = f64::MAX;
-                    let mut min_y = f64::MAX;
-                    let mut max_x = f64::MIN;
-                    let mut max_y = f64::MIN;
-
-                    for r in &highlight_rects {
-                        let rx = r.0 as f64 * scale_x;
-                        let ry = r.1 as f64 * scale_y;
-                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
-                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
-                        screen_rects.push((rx, ry, rw, rh));
-                        min_x = min_x.min(rx);
-                        min_y = min_y.min(ry);
-                        max_x = max_x.max(rx + rw);
-                        max_y = max_y.max(ry + rh);
-                    }
-
-                    let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
-                    let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
-
-                    let start_handle = (first.0, first.1, first.3);
-                    let end_handle = (last.0 + last.2, last.1, last.3);
-                    let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
-
-                    self.active_selection.replace(Some(types::ComicActiveSelection {
-                        page,
-                        text: word_text,
-                        screen_rects,
-                        bounds,
-                        start_handle,
-                        end_handle,
-                        anchor_pt: pt,
-                        active_pt: pt,
-                        is_block: false,
-                    }));
-
-                    if let Some(da) = self.page_draw_areas.borrow().get(&page) {
-                        da.queue_draw();
-                    }
-                    self.show_selection_chip(page, &sender);
                 }
+
+                let (target_w, target_h) = {
+                    let overlays = self.page_overlays.borrow();
+                    let Some(overlay) = overlays.get(&page) else { return };
+                    (overlay.width() as f64, overlay.height() as f64)
+                };
+                if target_w <= 0.0 || target_h <= 0.0 { return };
+
+                let word_data = {
+                    let Some(page_text) = self.page_text_cache.get(&page) else { return };
+                    if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+
+                    let scale_x = target_w / (page_text.width_pts as f64);
+                    let scale_y = target_h / (page_text.height_pts as f64);
+
+                    let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
+                    page_text.word_at(pt).map(|(word_text, highlight_rects)| {
+                        (word_text, highlight_rects, scale_x, scale_y, pt)
+                    })
+                };
+
+                let Some((word_text, highlight_rects, scale_x, scale_y, pt)) = word_data else { return };
+
+                let mut screen_rects = Vec::with_capacity(highlight_rects.len());
+                let mut min_x = f64::MAX;
+                let mut min_y = f64::MAX;
+                let mut max_x = f64::MIN;
+                let mut max_y = f64::MIN;
+
+                for r in &highlight_rects {
+                    let rx = r.0 as f64 * scale_x;
+                    let ry = r.1 as f64 * scale_y;
+                    let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
+                    let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
+                    screen_rects.push((rx, ry, rw, rh));
+                    min_x = min_x.min(rx);
+                    min_y = min_y.min(ry);
+                    max_x = max_x.max(rx + rw);
+                    max_y = max_y.max(ry + rh);
+                }
+
+                let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+                let start_handle = (first.0, first.1, first.3);
+                let end_handle = (last.0 + last.2, last.1, last.3);
+                let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+
+                self.active_selection.replace(Some(types::ComicActiveSelection {
+                    page,
+                    text: word_text,
+                    screen_rects,
+                    bounds,
+                    start_handle,
+                    end_handle,
+                    anchor_pt: pt,
+                    active_pt: pt,
+                    is_block: false,
+                }));
+
+                if let Some(da) = self.page_draw_areas.borrow().get(&page) {
+                    da.queue_draw();
+                }
+                self.show_selection_chip(page, &sender);
             }
             ComicsReaderMsg::SelectionLineAt { page, x, y } => {
-                let overlays = self.page_overlays.borrow();
-                let Some(overlay) = overlays.get(&page) else { return };
-                let (target_w, target_h) = (overlay.width() as f64, overlay.height() as f64);
-                if target_w <= 0.0 || target_h <= 0.0 { return };
-
-                let Some(page_text) = self.page_text_cache.get(&page) else {
+                if !self.page_text_cache.contains_key(&page) {
                     self.trigger_page_ocr(page);
                     return;
-                };
-                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
-
-                let scale_x = target_w / (page_text.width_pts as f64);
-                let scale_y = target_h / (page_text.height_pts as f64);
-
-                let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
-                if let Some((line_text, highlight_rects)) = page_text.line_at(pt) {
-                    let mut screen_rects = Vec::with_capacity(highlight_rects.len());
-                    let mut min_x = f64::MAX;
-                    let mut min_y = f64::MAX;
-                    let mut max_x = f64::MIN;
-                    let mut max_y = f64::MIN;
-
-                    for r in &highlight_rects {
-                        let rx = r.0 as f64 * scale_x;
-                        let ry = r.1 as f64 * scale_y;
-                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
-                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
-                        screen_rects.push((rx, ry, rw, rh));
-                        min_x = min_x.min(rx);
-                        min_y = min_y.min(ry);
-                        max_x = max_x.max(rx + rw);
-                        max_y = max_y.max(ry + rh);
-                    }
-
-                    let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
-                    let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
-
-                    let start_handle = (first.0, first.1, first.3);
-                    let end_handle = (last.0 + last.2, last.1, last.3);
-                    let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
-
-                    self.active_selection.replace(Some(types::ComicActiveSelection {
-                        page,
-                        text: line_text,
-                        screen_rects,
-                        bounds,
-                        start_handle,
-                        end_handle,
-                        anchor_pt: pt,
-                        active_pt: pt,
-                        is_block: false,
-                    }));
-
-                    if let Some(da) = self.page_draw_areas.borrow().get(&page) {
-                        da.queue_draw();
-                    }
-                    self.show_selection_chip(page, &sender);
                 }
+
+                let (target_w, target_h) = {
+                    let overlays = self.page_overlays.borrow();
+                    let Some(overlay) = overlays.get(&page) else { return };
+                    (overlay.width() as f64, overlay.height() as f64)
+                };
+                if target_w <= 0.0 || target_h <= 0.0 { return };
+
+                let line_data = {
+                    let Some(page_text) = self.page_text_cache.get(&page) else { return };
+                    if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+
+                    let scale_x = target_w / (page_text.width_pts as f64);
+                    let scale_y = target_h / (page_text.height_pts as f64);
+
+                    let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
+                    page_text.line_at(pt).map(|(line_text, highlight_rects)| {
+                        (line_text, highlight_rects, scale_x, scale_y, pt)
+                    })
+                };
+
+                let Some((line_text, highlight_rects, scale_x, scale_y, pt)) = line_data else { return };
+
+                let mut screen_rects = Vec::with_capacity(highlight_rects.len());
+                let mut min_x = f64::MAX;
+                let mut min_y = f64::MAX;
+                let mut max_x = f64::MIN;
+                let mut max_y = f64::MIN;
+
+                for r in &highlight_rects {
+                    let rx = r.0 as f64 * scale_x;
+                    let ry = r.1 as f64 * scale_y;
+                    let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
+                    let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
+                    screen_rects.push((rx, ry, rw, rh));
+                    min_x = min_x.min(rx);
+                    min_y = min_y.min(ry);
+                    max_x = max_x.max(rx + rw);
+                    max_y = max_y.max(ry + rh);
+                }
+
+                let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+                let start_handle = (first.0, first.1, first.3);
+                let end_handle = (last.0 + last.2, last.1, last.3);
+                let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+
+                self.active_selection.replace(Some(types::ComicActiveSelection {
+                    page,
+                    text: line_text,
+                    screen_rects,
+                    bounds,
+                    start_handle,
+                    end_handle,
+                    anchor_pt: pt,
+                    active_pt: pt,
+                    is_block: false,
+                }));
+
+                if let Some(da) = self.page_draw_areas.borrow().get(&page) {
+                    da.queue_draw();
+                }
+                self.show_selection_chip(page, &sender);
             }
             ComicsReaderMsg::CopySelection => {
                 let text = self.active_selection.borrow().as_ref().map(|s| s.text.clone());

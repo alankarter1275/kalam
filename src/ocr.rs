@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn test_perform_ocr_image_bytes_invalid() {
         if let Some(engine) = init_ocr_engine() {
-            let res = perform_ocr_image_bytes(&engine, b"not an image", 0);
+            let res = perform_ocr_image_bytes(&engine, b"not an image", 0, false);
             assert!(res.is_err());
         }
     }

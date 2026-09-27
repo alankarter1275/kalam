@@ -3398,11 +3398,11 @@ impl Component for ComicsReaderModel {
                     ComicOcrMode::AlwaysOn => ComicOcrMode::Off,
                     ComicOcrMode::Off => ComicOcrMode::AutoColor,
                 };
-                let _ = sender.input(ComicsReaderMsg::SetOcrMode(next_mode));
+                sender.input(ComicsReaderMsg::SetOcrMode(next_mode));
             }
             ComicsReaderMsg::SetOcrEnabled(enabled) => {
                 let mode = if enabled { ComicOcrMode::AutoColor } else { ComicOcrMode::Off };
-                let _ = sender.input(ComicsReaderMsg::SetOcrMode(mode));
+                sender.input(ComicsReaderMsg::SetOcrMode(mode));
             }
             ComicsReaderMsg::Close => {
                 if self.show_sidebar {

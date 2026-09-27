@@ -120,6 +120,7 @@ impl ComicOcrMode {
         self == ComicOcrMode::AutoColor
     }
 
+    #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
             ComicOcrMode::AutoColor => "Color Only",
@@ -182,6 +183,7 @@ pub enum ComicsReaderMsg {
     QuoteSelection,
     LookUpWord(String),
     ClearSelection,
+    #[allow(dead_code)]
     ToggleOcr,
     SetOcrMode(ComicOcrMode),
     #[allow(dead_code)]

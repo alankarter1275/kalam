@@ -176,14 +176,14 @@ impl Catalog {
         let books = self.list_books(SortKey::Added, "")?;
         let mut updated = 0;
         for book in books {
-            if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr) {
-                if book.series.is_none() || book.series.as_deref() == Some("") {
-                    let meta = crate::comics::parse_comic_info(&book.file_path);
-                    if let Some(ref s) = meta.series {
-                        let idx = meta.number.unwrap_or(0.0);
-                        self.set_book_series(book.id, Some(s), idx)?;
-                        updated += 1;
-                    }
+            if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr)
+                && (book.series.is_none() || book.series.as_deref() == Some(""))
+            {
+                let meta = crate::comics::parse_comic_info(&book.file_path);
+                if let Some(ref s) = meta.series {
+                    let idx = meta.number.unwrap_or(0.0);
+                    self.set_book_series(book.id, Some(s), idx)?;
+                    updated += 1;
                 }
             }
         }

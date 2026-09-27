@@ -134,7 +134,7 @@ pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<
         });
     }
 
-    groups.sort_by(|a, b| a.series_name.to_lowercase().cmp(&b.series_name.to_lowercase()));
+    groups.sort_by_key(|a| a.series_name.to_lowercase());
     standalone.sort_by(|a, b| a.title.cmp(&b.title));
 
     (groups, standalone)

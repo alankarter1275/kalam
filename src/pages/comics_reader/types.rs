@@ -127,6 +127,7 @@ pub enum ComicsReaderMsg {
     DeleteBookmark(i64),
     SwitchChapter(i64),
     NextChapter,
+    #[allow(dead_code)]
     PrevChapter,
     TopEdgeHover(bool),
     BottomEdgeHover(bool),

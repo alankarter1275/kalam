@@ -66,6 +66,7 @@ pub struct ComicsReaderModel {
     pub session_start: std::time::Instant,
     pub last_viewport_width: i32,
     pub bookmarks_list_box: Option<gtk::Box>,
+    #[allow(dead_code)]
     pub series_name: Option<String>,
     pub series_chapters: Vec<crate::models::Book>,
     pub current_chapter_idx: Option<usize>,

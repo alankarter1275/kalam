@@ -1116,24 +1116,35 @@ impl Catalog {
         let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         hydrate_books(&conn, &mut books)?;
 
-        for b in &mut books {
-            let series_meta: Option<(String, String)> = conn
-                .query_row(
-                    "SELECT s.title, s.author
-                     FROM comic_series s
-                     JOIN comic_chapters c ON c.series_id = s.id
-                     WHERE c.book_id = ?1",
-                    params![b.id],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?;
-
-            if let Some((s_title, s_author)) = series_meta {
-                b.title = s_title.clone();
-                if !s_author.is_empty() {
-                    b.authors = s_author;
+        if !books.is_empty() {
+            let holders = vec!["?"; books.len()].join(",");
+            let sql = format!(
+                "SELECT c.book_id, s.title, s.author
+                 FROM comic_series s
+                 JOIN comic_chapters c ON c.series_id = s.id
+                 WHERE c.book_id IN ({holders})"
+            );
+            let ids: Vec<i64> = books.iter().map(|b| b.id).collect();
+            let mut by_book: std::collections::HashMap<i64, (String, String)> = std::collections::HashMap::new();
+            {
+                let mut stmt = conn.prepare(&sql)?;
+                let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+                    Ok((r.get::<_, i64>(0)?, (r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+                })?;
+                for row in rows {
+                    let (book_id, meta) = row?;
+                    by_book.insert(book_id, meta);
                 }
-                b.series = Some(s_title);
+            }
+
+            for b in &mut books {
+                if let Some((s_title, s_author)) = by_book.remove(&b.id) {
+                    b.title = s_title.clone();
+                    if !s_author.is_empty() {
+                        b.authors = s_author;
+                    }
+                    b.series = Some(s_title);
+                }
             }
         }
 

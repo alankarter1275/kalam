@@ -237,7 +237,7 @@ impl Catalog {
              FROM books
              WHERE books.last_opened_at IS NOT NULL
                AND IFNULL(books.finished_at, '') = ''
-             ORDER BY books.last_opened_at DESC
+             ORDER BY books.last_opened_at DESC, books.id DESC
              LIMIT ?1"
         );
         let mut stmt = conn.prepare_cached(&sql)?;
@@ -245,22 +245,39 @@ impl Catalog {
         let mut raw_books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         hydrate_books(&conn, &mut raw_books)?;
 
+        let mut by_book: HashMap<i64, (i64, String, String, f32)> = HashMap::new();
+        if !raw_books.is_empty() {
+            let holders = vec!["?"; raw_books.len()].join(",");
+            let sql = format!(
+                "SELECT c.book_id, s.id, s.title, s.author, c.chapter_number
+                 FROM comic_chapters c
+                 JOIN comic_series s ON s.id = c.series_id
+                 WHERE c.book_id IN ({holders})"
+            );
+            let ids: Vec<i64> = raw_books.iter().map(|b| b.id).collect();
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    (
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, f64>(4)? as f32,
+                    ),
+                ))
+            })?;
+            for row in rows {
+                let (book_id, meta) = row?;
+                by_book.insert(book_id, meta);
+            }
+        }
+
         let mut seen_series = HashSet::new();
         let mut books = Vec::new();
 
         for mut b in raw_books {
-            let series_meta: Option<(i64, String, String, f32)> = conn
-                .query_row(
-                    "SELECT s.id, s.title, s.author, c.chapter_number
-                     FROM comic_chapters c
-                     JOIN comic_series s ON s.id = c.series_id
-                     WHERE c.book_id = ?1",
-                    params![b.id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, f64>(3)? as f32)),
-                )
-                .optional()?;
-
-            if let Some((s_id, s_title, s_author, ch_num)) = series_meta {
+            if let Some((s_id, s_title, s_author, ch_num)) = by_book.remove(&b.id) {
                 if seen_series.contains(&s_id) {
                     continue;
                 }

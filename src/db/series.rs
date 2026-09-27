@@ -1038,9 +1038,15 @@ mod tests {
         assert_eq!(stats.total_books, 3); // 2 regular + 1 comic series
 
         // 4. recently_opened must deduplicate chapters of the same series
-        cat.mark_book_opened(c1).unwrap();
-        cat.mark_book_opened(c2).unwrap();
-        cat.mark_book_opened(reg1).unwrap();
+        cat.conn()
+            .execute("UPDATE books SET last_opened_at = '2026-01-01T10:00:00Z' WHERE id = ?1", params![c1])
+            .unwrap();
+        cat.conn()
+            .execute("UPDATE books SET last_opened_at = '2026-01-01T10:05:00Z' WHERE id = ?1", params![c2])
+            .unwrap();
+        cat.conn()
+            .execute("UPDATE books SET last_opened_at = '2026-01-01T10:10:00Z' WHERE id = ?1", params![reg1])
+            .unwrap();
 
         let opened = cat.recently_opened(5).unwrap();
         assert_eq!(opened.len(), 2); // 1 regular book (reg1) + 1 comic series (Horimiya)

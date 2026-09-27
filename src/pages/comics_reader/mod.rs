@@ -745,14 +745,13 @@ fn update_viewport_policies(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn wrap_comic_page(
     model: &ComicsReaderModel,
     page_idx: usize,
     pic: gtk::Picture,
     target_w: i32,
     target_h: i32,
-    _orig_w: i32,
-    _orig_h: i32,
     sender: Option<&ComponentSender<ComicsReaderModel>>,
 ) -> gtk::Widget {
     let overlay = gtk::Overlay::new();
@@ -974,8 +973,6 @@ fn rebuild_viewport_widget(
                     pic,
                     avail_w,
                     target_h,
-                    tw,
-                    th,
                     sender,
                 );
                 item_box.append(&wrapped);
@@ -1090,8 +1087,6 @@ fn rebuild_viewport_widget(
                         pic,
                         target_w,
                         target_h,
-                        tw,
-                        th,
                         sender,
                     );
                     container.append(&wrapped);
@@ -1185,8 +1180,6 @@ fn rebuild_viewport_widget(
             pic,
             target_w,
             target_h,
-            tw,
-            th,
             sender,
         );
         vbox.append(&wrapped);
@@ -2530,8 +2523,6 @@ impl Component for ComicsReaderModel {
                                             pic,
                                             avail_w,
                                             target_h,
-                                            tw,
-                                            th,
                                             Some(&sender),
                                         );
                                         item_box.append(&wrapped);
@@ -3256,7 +3247,7 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::ToggleOcr => {
                 self.ocr_enabled = !self.ocr_enabled;
                 if let Some(ref catalog) = self.catalog {
-                    let _ = catalog.set_pref("reader.comic.ocr", if self.ocr_enabled { "true" } else { "false" });
+                    catalog.set_pref("reader.comic.ocr", if self.ocr_enabled { "true" } else { "false" });
                 }
                 let status = if self.ocr_enabled { "Bubble OCR Enabled" } else { "Bubble OCR Disabled" };
                 self.trigger_osd(status, &sender);
@@ -3274,7 +3265,7 @@ impl Component for ComicsReaderModel {
                 if self.ocr_enabled != enabled {
                     self.ocr_enabled = enabled;
                     if let Some(ref catalog) = self.catalog {
-                        let _ = catalog.set_pref("reader.comic.ocr", if self.ocr_enabled { "true" } else { "false" });
+                        catalog.set_pref("reader.comic.ocr", if self.ocr_enabled { "true" } else { "false" });
                     }
                     if self.ocr_enabled {
                         self.trigger_page_ocr(self.current_page);

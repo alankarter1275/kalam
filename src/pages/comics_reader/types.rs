@@ -111,7 +111,9 @@ pub struct ComicActiveSelection {
     pub bounds: (f64, f64, f64, f64),
     pub start_handle: (f64, f64, f64),
     pub end_handle: (f64, f64, f64),
+    #[allow(dead_code)]
     pub anchor_pt: (f32, f32),
+    #[allow(dead_code)]
     pub active_pt: (f32, f32),
     pub is_block: bool,
 }
@@ -155,6 +157,7 @@ pub enum ComicsReaderMsg {
     LookUpWord(String),
     ClearSelection,
     ToggleOcr,
+    #[allow(dead_code)]
     SetOcrEnabled(bool),
     SetPage(usize),
     UpdateScrollPage(f64),

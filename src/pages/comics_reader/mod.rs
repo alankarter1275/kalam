@@ -2007,7 +2007,7 @@ impl Component for ComicsReaderModel {
         let ocr_gen = model.ocr_generation.clone();
         let (ocr_tx, ocr_rx) = async_channel::unbounded::<crate::ocr::ComicOcrRequest>();
         let tx_ocr_msg = sender.input_sender().clone();
-        std::thread::Builder::new()
+        let spawn_res = std::thread::Builder::new()
             .name("kalam-comic-ocr-worker".to_string())
             .spawn(move || {
                 let mut ocr_engine: Option<ocrs::OcrEngine> = None;
@@ -2045,8 +2045,10 @@ impl Component for ComicsReaderModel {
                         }
                     }
                 }
-            })
-            .expect("Failed to spawn comic OCR worker thread");
+            });
+        if let Err(e) = spawn_res {
+            log::warn!("Failed to spawn comic OCR worker thread: {e}");
+        }
         model.ocr_tx = Some(ocr_tx);
         model.trigger_page_ocr(model.current_page);
         if model.page_style == PageStyle::Double {

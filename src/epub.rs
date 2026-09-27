@@ -63,6 +63,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         });
     }
 
+    let mut series_index: f32 = 0.0;
     let (title, authors, description, series, tags, format, file_name, cover_name) =
         if ext == "pdf" {
             // A PDF carries no title a library can trust — the file name is the
@@ -93,11 +94,37 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
                 cover_name,
             )
         } else if ext == "cbz" || ext == "cbr" {
-            let title = source
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Untitled Comic".into());
-            let authors = "Unknown".to_string();
+            let meta = crate::comics::parse_comic_info(source);
+            let s_opt = meta.series;
+            let s_idx = meta.number.unwrap_or(0.0);
+            series_index = s_idx;
+
+            let title = if let Some(ct) = meta.title {
+                if let Some(ref s) = s_opt {
+                    if s_idx > 0.0 {
+                        format!("{s} - Ch. {s_idx}")
+                    } else {
+                        ct
+                    }
+                } else {
+                    ct
+                }
+            } else if let Some(ref s) = s_opt {
+                if s_idx > 0.0 {
+                    format!("{s} - Ch. {s_idx}")
+                } else {
+                    source
+                        .file_stem()
+                        .map(|stem| stem.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Untitled Comic".into())
+                }
+            } else {
+                source
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Untitled Comic".into())
+            };
+            let authors = meta.writer.unwrap_or_else(|| "Unknown".to_string());
             let format = if ext == "cbz" {
                 BookFormat::Cbz
             } else {
@@ -117,8 +144,8 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
             (
                 title,
                 authors,
-                String::new(),
-                None,
+                meta.summary.unwrap_or_default(),
+                s_opt,
                 Vec::new(),
                 format,
                 file_name,
@@ -199,6 +226,10 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         final_cover_name.as_deref(),
         &tags,
     )?;
+
+    if series_index > 0.0 {
+        let _ = catalog.set_book_series(id, series.as_deref(), series_index);
+    }
 
     // P4: imports show up in History. Best-effort — a logging failure must not
     // undo an otherwise successful import.

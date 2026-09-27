@@ -156,6 +156,39 @@ impl Catalog {
     pub fn detect_local_series(&self, series: &str) -> Result<Vec<Book>> {
         self.books_in_series(series)
     }
+
+    /// Update the series name and series index for a book.
+    pub fn set_book_series(&self, book_id: i64, series: Option<&str>, series_index: f32) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE books SET series = ?1, series_index = ?2 WHERE id = ?3",
+            params![
+                series.map(|s| s.trim()).filter(|s| !s.is_empty()),
+                series_index.max(0.0) as f64,
+                book_id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Auto-detect and populate series metadata for comic archives (CBZ/CBR) in the library.
+    pub fn backfill_comic_series(&self) -> Result<usize> {
+        let books = self.list_books(SortKey::Added, "")?;
+        let mut updated = 0;
+        for book in books {
+            if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr) {
+                if book.series.is_none() || book.series.as_deref() == Some("") {
+                    let meta = crate::comics::parse_comic_info(&book.file_path);
+                    if let Some(ref s) = meta.series {
+                        let idx = meta.number.unwrap_or(0.0);
+                        self.set_book_series(book.id, Some(s), idx)?;
+                        updated += 1;
+                    }
+                }
+            }
+        }
+        Ok(updated)
+    }
 }
 
 #[cfg(test)]

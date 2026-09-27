@@ -118,6 +118,228 @@ pub fn extract_comic_cover(archive_path: &Path) -> Result<Vec<u8>> {
     extract_comic_page(archive_path, first_page)
 }
 
+/// Structured metadata for a comic issue or manga chapter.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ComicInfo {
+    pub series: Option<String>,
+    pub number: Option<f32>,
+    pub volume: Option<i32>,
+    pub title: Option<String>,
+    pub writer: Option<String>,
+    pub summary: Option<String>,
+}
+
+fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
+    let lower_xml = xml.to_lowercase();
+    let open = format!("<{}>", tag.to_lowercase());
+    let close = format!("</{}>", tag.to_lowercase());
+    let start_idx = lower_xml.find(&open)? + open.len();
+    let end_idx = lower_xml[start_idx..].find(&close)? + start_idx;
+    let val = xml[start_idx..end_idx].trim();
+    if val.is_empty() {
+        None
+    } else {
+        Some(val.to_string())
+    }
+}
+
+/// Parse an XML string adhering to the ComicRack ComicInfo.xml schema.
+pub fn parse_comic_info_xml(xml: &str) -> ComicInfo {
+    let series = extract_xml_tag(xml, "Series");
+    let number = extract_xml_tag(xml, "Number").and_then(|s| s.parse::<f32>().ok());
+    let volume = extract_xml_tag(xml, "Volume").and_then(|s| s.parse::<i32>().ok());
+    let title = extract_xml_tag(xml, "Title");
+    let writer = extract_xml_tag(xml, "Writer");
+    let summary = extract_xml_tag(xml, "Summary");
+
+    ComicInfo {
+        series,
+        number,
+        volume,
+        title,
+        writer,
+        summary,
+    }
+}
+
+/// Read `ComicInfo.xml` from a CBZ zip archive if present.
+pub fn read_comic_info_from_zip(archive_path: &Path) -> Result<Option<ComicInfo>> {
+    let file = File::open(archive_path)?;
+    let mut archive = ZipArchive::new(file)?;
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i)?;
+        let name = entry.name().to_lowercase();
+        if name == "comicinfo.xml" || name.ends_with("/comicinfo.xml") {
+            let mut buf = String::new();
+            let mut reader = std::io::BufReader::new(entry);
+            reader.read_to_string(&mut buf)?;
+            return Ok(Some(parse_comic_info_xml(&buf)));
+        }
+    }
+    Ok(None)
+}
+
+/// Parse comic series name, chapter number, and title using filename and directory heuristics.
+pub fn parse_comic_filename(path: &Path) -> ComicInfo {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if stem.is_empty() {
+        return ComicInfo::default();
+    }
+
+    fn strip_outer_brackets(s: &str) -> String {
+        let mut result = s.to_string();
+        while let Some(start) = result.find('[') {
+            if let Some(end) = result[start..].find(']') {
+                result.replace_range(start..=start + end, "");
+            } else {
+                break;
+            }
+        }
+        while let Some(start) = result.find('(') {
+            if let Some(end) = result[start..].find(')') {
+                result.replace_range(start..=start + end, "");
+            } else {
+                break;
+            }
+        }
+        result.trim().to_string()
+    }
+
+    fn extract_chapter_number(token: &str) -> Option<f32> {
+        let cleaned = token
+            .trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.')
+            .trim();
+        let num_str: String = cleaned
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        num_str.parse::<f32>().ok()
+    }
+
+    let trimmed_stem = strip_outer_brackets(&stem);
+
+    // Case 1: Stem is just a number or chapter token (e.g. "001", "Ch. 5", "c12") -> use parent directory
+    if let Some(num) = extract_chapter_number(&trimmed_stem) {
+        let rest: String = trimmed_stem
+            .to_lowercase()
+            .replace("chapter", "")
+            .replace("ch.", "")
+            .replace("ch", "")
+            .replace("vol.", "")
+            .replace("vol", "")
+            .replace("v", "")
+            .replace("#", "")
+            .chars()
+            .filter(|c| !c.is_ascii_digit() && *c != '.' && !c.is_whitespace() && *c != '-' && *c != '_')
+            .collect();
+        if rest.is_empty() {
+            if let Some(parent) = path.parent().and_then(|p| p.file_name()) {
+                let parent_name = parent.to_string_lossy().trim().to_string();
+                let lower = parent_name.to_lowercase();
+                if !parent_name.is_empty()
+                    && lower != "comics"
+                    && lower != "downloads"
+                    && lower != "manga"
+                    && lower != "desktop"
+                {
+                    return ComicInfo {
+                        series: Some(parent_name),
+                        number: Some(num),
+                        ..Default::default()
+                    };
+                }
+            }
+        }
+    }
+
+    // Case 2: "Series - Chapter Part - Title Part"
+    let parts: Vec<&str> = trimmed_stem.split(" - ").collect();
+    if parts.len() >= 2 {
+        let series = parts[0].trim().to_string();
+        let mut chapter_num = extract_chapter_number(parts[1]);
+        let mut title = if parts.len() >= 3 {
+            Some(parts[2].trim().to_string())
+        } else {
+            None
+        };
+        if chapter_num.is_none() && parts.len() >= 3 {
+            chapter_num = extract_chapter_number(parts[2]);
+            title = Some(parts[1].trim().to_string());
+        }
+        if !series.is_empty() {
+            return ComicInfo {
+                series: Some(series),
+                number: chapter_num,
+                title,
+                ..Default::default()
+            };
+        }
+    }
+
+    // Case 3: "Series #12"
+    if let Some(hash_idx) = trimmed_stem.find('#') {
+        let series = trimmed_stem[..hash_idx].trim().to_string();
+        let num = extract_chapter_number(&trimmed_stem[hash_idx + 1..]);
+        if !series.is_empty() {
+            return ComicInfo {
+                series: Some(series),
+                number: num,
+                ..Default::default()
+            };
+        }
+    }
+
+    // Case 4: "Series Ch 12" / "Series Chapter 12" / "Series c12"
+    for prefix in &["chapter ", "chapter", "ch. ", "ch.", "ch ", " c"] {
+        if let Some(idx) = trimmed_stem.to_lowercase().rfind(prefix) {
+            let series = trimmed_stem[..idx].trim_end_matches(&[' ', '-', '_'][..]).trim().to_string();
+            let num = extract_chapter_number(&trimmed_stem[idx + prefix.len()..]);
+            if !series.is_empty() && num.is_some() {
+                return ComicInfo {
+                    series: Some(series),
+                    number: num,
+                    ..Default::default()
+                };
+            }
+        }
+    }
+
+    // Case 5: "Series_01" or "Series-01"
+    if let Some(sep_idx) = trimmed_stem.rfind(&['_', '-'][..]) {
+        let potential_num = extract_chapter_number(&trimmed_stem[sep_idx + 1..]);
+        if let Some(num) = potential_num {
+            let series = trimmed_stem[..sep_idx].trim().to_string();
+            if !series.is_empty() {
+                return ComicInfo {
+                    series: Some(series),
+                    number: Some(num),
+                    ..Default::default()
+                };
+            }
+        }
+    }
+
+    ComicInfo {
+        series: None,
+        number: None,
+        title: Some(trimmed_stem),
+        ..Default::default()
+    }
+}
+
+/// Comprehensive comic info parser checking ComicInfo.xml first, then filename heuristics.
+pub fn parse_comic_info(archive_path: &Path) -> ComicInfo {
+    if let Ok(Some(info)) = read_comic_info_from_zip(archive_path) {
+        if info.series.is_some() || info.title.is_some() {
+            return info;
+        }
+    }
+    parse_comic_filename(archive_path)
+}
+
 /// Upscale all image pages in a CBZ archive using Lanczos3 resampling filter.
 ///
 /// Unpacks the CBZ file, rescales each page image by `scale_factor` (e.g. 2.0x) using `image::imageops::FilterType::Lanczos3`
@@ -308,5 +530,60 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_parse_comic_info_xml() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<ComicInfo>
+  <Series>Berserk</Series>
+  <Number>12.5</Number>
+  <Volume>2</Volume>
+  <Title>The Golden Age</Title>
+  <Writer>Kentaro Miura</Writer>
+  <Summary>Guts battles on.</Summary>
+</ComicInfo>"#;
+        let info = parse_comic_info_xml(xml);
+        assert_eq!(info.series.as_deref(), Some("Berserk"));
+        assert_eq!(info.number, Some(12.5));
+        assert_eq!(info.volume, Some(2));
+        assert_eq!(info.title.as_deref(), Some("The Golden Age"));
+        assert_eq!(info.writer.as_deref(), Some("Kentaro Miura"));
+        assert_eq!(info.summary.as_deref(), Some("Guts battles on."));
+    }
+
+    #[test]
+    fn test_parse_comic_filename_patterns() {
+        // Case 1: Series - Chapter - Title
+        let p1 = Path::new("/comics/Berserk - c001 - The Black Swordsman.cbz");
+        let i1 = parse_comic_filename(p1);
+        assert_eq!(i1.series.as_deref(), Some("Berserk"));
+        assert_eq!(i1.number, Some(1.0));
+        assert_eq!(i1.title.as_deref(), Some("The Black Swordsman"));
+
+        // Case 2: Brackets + Chapter
+        let p2 = Path::new("[ScanGroup] Chainsaw Man - Chapter 12 [Digital].cbz");
+        let i2 = parse_comic_filename(p2);
+        assert_eq!(i2.series.as_deref(), Some("Chainsaw Man"));
+        assert_eq!(i2.number, Some(12.0));
+
+        // Case 3: Hash Issue
+        let p3 = Path::new("Batman #04 (2016).cbr");
+        let i3 = parse_comic_filename(p3);
+        assert_eq!(i3.series.as_deref(), Some("Batman"));
+        assert_eq!(i3.number, Some(4.0));
+
+        // Case 4: Parent directory
+        let p4 = Path::new("/home/user/Comics/Solo Leveling/005.cbz");
+        let i4 = parse_comic_filename(p4);
+        assert_eq!(i4.series.as_deref(), Some("Solo Leveling"));
+        assert_eq!(i4.number, Some(5.0));
+
+        // Case 5: Fractional chapter
+        let p5 = Path::new("Spy x Family - c009.5.cbz");
+        let i5 = parse_comic_filename(p5);
+        assert_eq!(i5.series.as_deref(), Some("Spy x Family"));
+        assert_eq!(i5.number, Some(9.5));
+    }
 }
+
 

@@ -718,6 +718,41 @@ shows up as its own task in the task manager.
 3. Reopening the comic book resumes exactly at Page 12, preserving reading progress and session statistics.
 4. Exiting the reader completely unbinds cached textures and triggers `malloc_trim(0)` to return memory to the operating system.
 
+### T28 · Comic & Manga Series Hub, Quick Resume & Chapter Drawer
+
+**Do:**
+1. Import multiple comic files belonging to a series (e.g. `One Piece - c001.cbz`, `One Piece - c002.cbz`) or files containing `ComicInfo.xml`.
+2. Open the Comics & Manga hub page.
+3. Observe the Comics hub view: verify it is grouped by Series by default with series cards showing cover, title, total chapter count, and unread count.
+4. Click the "View: Series" button in the header bar to toggle between "Grouped by Series" and "All Files" flat view.
+5. In Series view, click "Start Ch. 1" / "Resume Ch. X" on the series card to jump directly into reading.
+6. Return to the Comics hub and click on the series card cover/title to open the Series Chapter Drawer.
+7. Observe the drawer banner (cover, title, author, completion progress bar, Resume button) and chapter list. Click a chapter row to read that chapter, or click the details icon to view metadata.
+8. Click "← Back to Series" to return to the series grid.
+
+**Look for:**
+1. Files are automatically grouped into Series based on ComicInfo.xml metadata or filename heuristics.
+2. Clicking Resume opens the current or next unread chapter directly.
+3. The chapter drawer lists all chapters sorted in sequential numerical order with read/reading/unread status badges.
+4. Toggling to "All Files" presents the flat grid of all comic archives.
+
+### T29 · Comic Reader Chapter Transition & End-of-Chapter Card
+
+**Do:**
+1. Open a multi-chapter comic series in Single or Double page mode.
+2. Turn pages until reaching the final page of Chapter 1.
+3. Advance one more page past the end (press `Right` arrow, `PageDown`, or `Space`).
+4. On the End-of-Chapter Card, press `Return` / `KP_Enter` or click the "Read Next Chapter" button.
+5. Open the Zen left sidebar and switch to the "Chapters" tab at the bottom.
+6. Select another chapter from the sidebar list.
+7. Switch page style to Webtoon / Long Strip mode and scroll to the bottom of the chapter.
+
+**Look for:**
+1. In paged Single/Double mode, reaching the end does not suddenly quit or jump unexpectedly; it presents a clean End-of-Chapter Card showing current chapter completion, reading stats, and options to proceed to the next chapter or return to the library.
+2. Pressing `Return` or clicking "Read Next Chapter" smoothly loads Chapter 2 starting at page 1.
+3. The Chapters tab in the sidebar lists all chapters in the series with an active indicator on the current chapter. Clicking a chapter jumps directly to it.
+4. In Webtoon continuous mode, reaching the end immediately flows into the next chapter without interruption.
+
 ---
 
 ## At the end

@@ -97,6 +97,7 @@ impl FitMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ComicSidebarTab {
+    Chapters,
     #[default]
     Settings,
     Bookmarks,
@@ -124,6 +125,9 @@ pub enum ComicsReaderMsg {
     SetSidebarTab(ComicSidebarTab),
     ToggleBookmark,
     DeleteBookmark(i64),
+    SwitchChapter(i64),
+    NextChapter,
+    PrevChapter,
     TopEdgeHover(bool),
     BottomEdgeHover(bool),
     LeftEdgeHover(bool),

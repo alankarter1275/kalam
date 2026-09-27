@@ -1,8 +1,9 @@
-src/pages/comics.rs:537:55: [1m[91merror[E0599][0m: the method `to_string` exists for enum `models::BookFormat`, but its trait bounds were not satisfied: method cannot be called on `models::BookFormat` due to unsatisfied trait bounds
-src/pages/comics_reader/mod.rs:2763:9: [1m[91merror[E0369][0m: binary operation `==` cannot be applied to type `std::option::Option<&models::Book>`: std::option::Option<&models::Book>, std::option::Option<&models::Book>
-src/pages/comics_reader/mod.rs:2206:30: [1m[91merror[0m: unused variable: `catalog`: help: if this is intentional, prefix it with an underscore: `_catalog`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+src/pages/comics_reader/mod.rs:69:9: [1m[91merror[0m: field `series_name` is never read
+src/pages/comics_reader/types.rs:130:5: [1m[91merror[0m: variant `PrevChapter` is never constructed
+src/db/series.rs:179:13: [1m[91merror[0m: this `if` statement can be collapsed
+src/pages/comics.rs:137:5: [1m[91merror[0m: consider using `sort_by_key`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -24,12 +25,13 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/comics.rs:537:55: [1m[91merror[E0599][0m: the method `to_string` exists for enum `models::BookFormat`, but its trait bounds were not satisfied: method cannot be called on `models::BookFormat` due to unsatisfied trait bounds
-src/pages/comics_reader/mod.rs:2763:9: [1m[91merror[E0369][0m: binary operation `==` cannot be applied to type `std::option::Option<&models::Book>`: std::option::Option<&models::Book>, std::option::Option<&models::Book>
-src/pages/comics_reader/mod.rs:2206:30: [1m[91merror[0m: unused variable: `catalog`: help: if this is intentional, prefix it with an underscore: `_catalog`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/comics_reader/mod.rs:69:9: [1m[91merror[0m: field `series_name` is never read
+src/pages/comics_reader/types.rs:130:5: [1m[91merror[0m: variant `PrevChapter` is never constructed
+src/db/series.rs:179:13: [1m[91merror[0m: this `if` statement can be collapsed
+src/pages/comics.rs:137:5: [1m[91merror[0m: consider using `sort_by_key`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
---- run 36281476254 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+--- run 36281626922 ---

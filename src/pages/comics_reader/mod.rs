@@ -3265,8 +3265,6 @@ impl Component for ComicsReaderModel {
                 }
                 self.show_selection_chip(page, &sender);
             }
-                self.show_selection_chip(page, &sender);
-            }
             ComicsReaderMsg::CopySelection => {
                 let text = self.active_selection.borrow().as_ref().map(|s| s.text.clone());
                 if let Some(text) = text {

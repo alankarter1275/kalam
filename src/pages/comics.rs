@@ -534,7 +534,7 @@ fn build_series_drawer_view(
         badge.set_valign(gtk::Align::Center);
         main_click_area.append(&badge);
 
-        let fmt_lbl = gtk::Label::new(Some(&ch.format.to_string().to_uppercase()));
+        let fmt_lbl = gtk::Label::new(Some(ch.format.as_str()));
         fmt_lbl.add_css_class("kalam-card-meta");
         fmt_lbl.set_valign(gtk::Align::Center);
         main_click_area.append(&fmt_lbl);

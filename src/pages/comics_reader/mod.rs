@@ -2203,7 +2203,7 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::SwitchChapter(new_bid) => {
-                if let (Some(ref catalog), Some(curr_bid)) = (&self.catalog, self.book_id) {
+                if let (Some(_), Some(curr_bid)) = (&self.catalog, self.book_id) {
                     if curr_bid == new_bid {
                         return;
                     }
@@ -2760,7 +2760,7 @@ mod tests {
         model.current_page = 4; // last page of 5
 
         assert_eq!(model.next_chapter().map(|b| b.id), Some(2));
-        assert_eq!(model.prev_chapter(), None);
+        assert_eq!(model.prev_chapter().map(|b| b.id), None);
 
         model.at_chapter_end = true;
         assert!(model.page_indicator_label().contains("Completed · Next: Chapter 2"));

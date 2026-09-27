@@ -189,7 +189,7 @@ impl ComicsModel {
     }
 
     fn reload(&mut self) {
-        let _ = self.service.catalog().backfill_comic_series();
+        let _ = self.service.catalog().migrate_comic_series_and_chapters();
 
         if let Ok(all_books) = self.service.catalog().list_books(SortKey::Added, "") {
             self.comics = all_books
@@ -205,7 +205,49 @@ impl ComicsModel {
             .list_remote_books(Some("weebcentral"))
             .unwrap_or_default();
 
-        let (groups, standalone) = group_comics_into_series(&self.comics);
+        let series_list = self
+            .service
+            .catalog()
+            .list_comic_series("")
+            .unwrap_or_default();
+
+        let mut groups = Vec::new();
+        let mut chapter_book_ids = std::collections::HashSet::new();
+
+        for s in series_list {
+            let chs = self
+                .service
+                .catalog()
+                .chapters_for_series(s.id)
+                .unwrap_or_default();
+            for c in &chs {
+                chapter_book_ids.insert(c.book_id);
+            }
+            let chapters: Vec<Book> = chs.into_iter().map(|c| c.book).collect();
+            let next_to_read = chapters
+                .iter()
+                .find(|b| b.progress < 100)
+                .cloned()
+                .or_else(|| chapters.first().cloned());
+
+            groups.push(ComicSeriesGroup {
+                series_name: s.title,
+                authors: s.author,
+                cover_path: s.cover_path,
+                total_chapters: s.total_chapters,
+                unread_count: s.unread_chapters,
+                chapters,
+                next_to_read,
+            });
+        }
+
+        let standalone = self
+            .comics
+            .iter()
+            .filter(|b| !chapter_book_ids.contains(&b.id))
+            .cloned()
+            .collect();
+
         self.series_groups = groups;
         self.standalone_comics = standalone;
 

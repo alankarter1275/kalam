@@ -1,6 +1,6 @@
 //! SQLite catalog access — P1 books + P2 progress + P3 annotations & dictionary.
 
-use crate::models::{Book, BookFormat};
+use crate::models::{Book, BookFormat, ComicChapter, ComicSeries};
 use crate::paths::{book_dir, catalog_db, ensure_data_dirs};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
@@ -841,6 +841,36 @@ impl Catalog {
                 ON remote_chapters(book_id);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_chapters_book_chapter
                 ON remote_chapters(book_id, chapter_id);
+
+            -- v13: dedicated local comic series & chapters hierarchy
+            CREATE TABLE IF NOT EXISTS comic_series (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                title          TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                sort_title     TEXT NOT NULL,
+                author         TEXT NOT NULL DEFAULT 'Unknown',
+                description    TEXT NOT NULL DEFAULT '',
+                cover_book_id  INTEGER REFERENCES books(id) ON DELETE SET NULL,
+                status         TEXT NOT NULL DEFAULT 'Ongoing',
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT NOT NULL,
+                last_read_at   TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_comic_series_sort_title 
+                ON comic_series(sort_title);
+            CREATE INDEX IF NOT EXISTS idx_comic_series_last_read 
+                ON comic_series(last_read_at);
+
+            CREATE TABLE IF NOT EXISTS comic_chapters (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_id      INTEGER NOT NULL REFERENCES comic_series(id) ON DELETE CASCADE,
+                book_id        INTEGER NOT NULL UNIQUE REFERENCES books(id) ON DELETE CASCADE,
+                chapter_number REAL NOT NULL,
+                volume_number  REAL,
+                chapter_title  TEXT NOT NULL DEFAULT '',
+                created_at     TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_comic_chapters_series 
+                ON comic_chapters(series_id, chapter_number);
             "#,
         )?;
 
@@ -935,6 +965,9 @@ impl Catalog {
                 )?;
             }
         }
+        drop(conn);
+
+        self.migrate_comic_series_and_chapters()?;
         Ok(())
     }
 

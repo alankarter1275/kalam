@@ -230,6 +230,482 @@ impl Catalog {
         }
         Ok(updated)
     }
+
+    /// Get or create a comic series entry by title (case-insensitive).
+    pub fn get_or_create_comic_series(
+        &self,
+        title: &str,
+        author: Option<&str>,
+        description: Option<&str>,
+    ) -> Result<i64> {
+        let conn = self.conn();
+        let title_clean = title.trim();
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM comic_series WHERE title = ?1 COLLATE NOCASE",
+                params![title_clean],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+
+        let sort_title = title_clean.to_lowercase();
+        let author_str = author.unwrap_or("Unknown").trim();
+        let desc_str = description.unwrap_or("").trim();
+
+        conn.execute(
+            "INSERT INTO comic_series (title, sort_title, author, description, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now'))",
+            params![title_clean, sort_title, author_str, desc_str],
+        )?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Add a chapter to a comic series, mapping it to a book row.
+    pub fn add_comic_chapter(
+        &self,
+        series_id: i64,
+        book_id: i64,
+        chapter_number: f32,
+        volume_number: Option<f32>,
+        chapter_title: &str,
+    ) -> Result<i64> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO comic_chapters (series_id, book_id, chapter_number, volume_number, chapter_title, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+             ON CONFLICT(book_id) DO UPDATE SET
+                 series_id = excluded.series_id,
+                 chapter_number = excluded.chapter_number,
+                 volume_number = excluded.volume_number,
+                 chapter_title = excluded.chapter_title",
+            params![
+                series_id,
+                book_id,
+                chapter_number as f64,
+                volume_number.map(|v| v as f64),
+                chapter_title.trim(),
+            ],
+        )?;
+        let chapter_id = conn.last_insert_rowid();
+
+        // Ensure series has a cover_book_id (prefer chapter 1.0 or first imported)
+        conn.execute(
+            "UPDATE comic_series
+             SET cover_book_id = ?1, updated_at = datetime('now')
+             WHERE id = ?2 AND (cover_book_id IS NULL OR ?3 <= 1.0)",
+            params![book_id, series_id, chapter_number as f64],
+        )?;
+
+        Ok(chapter_id)
+    }
+
+    /// Get a single comic series by its ID, with total chapter counts and cover resolution.
+    pub fn get_comic_series(&self, series_id: i64) -> Result<Option<ComicSeries>> {
+        let conn = self.conn();
+        let sql = "
+            SELECT 
+                s.id,
+                s.title,
+                s.sort_title,
+                s.author,
+                s.description,
+                s.cover_book_id,
+                COALESCE(cover_book.uuid, first_b.uuid) AS cover_uuid,
+                COALESCE(cover_book.cover_name, first_b.cover_name) AS cover_name,
+                s.status,
+                COUNT(c.id) AS total_chapters,
+                SUM(CASE WHEN b.progress >= 100 THEN 1 ELSE 0 END) AS completed_chapters,
+                SUM(CASE WHEN b.progress = 0 THEN 1 ELSE 0 END) AS unread_chapters,
+                s.created_at,
+                s.updated_at,
+                s.last_read_at
+            FROM comic_series s
+            LEFT JOIN books cover_book ON cover_book.id = s.cover_book_id
+            LEFT JOIN comic_chapters c ON c.series_id = s.id
+            LEFT JOIN books b ON b.id = c.book_id
+            LEFT JOIN comic_chapters first_c ON first_c.series_id = s.id AND first_c.chapter_number = (
+                SELECT MIN(sub_c.chapter_number) FROM comic_chapters sub_c WHERE sub_c.series_id = s.id
+            )
+            LEFT JOIN books first_b ON first_b.id = first_c.book_id
+            WHERE s.id = ?1
+            GROUP BY s.id
+        ";
+
+        let mut stmt = conn.prepare_cached(sql)?;
+        let series = stmt
+            .query_row(params![series_id], |r| {
+                let cover_uuid: Option<String> = r.get(6)?;
+                let cover_name: Option<String> = r.get(7)?;
+                let cover_path = cover_uuid.and_then(|u| {
+                    cover_name.map(|n| book_dir(&u).join(n))
+                });
+
+                Ok(ComicSeries {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    sort_title: r.get(2)?,
+                    author: r.get(3)?,
+                    description: r.get(4)?,
+                    cover_book_id: r.get(5)?,
+                    cover_path,
+                    status: r.get(8)?,
+                    total_chapters: r.get::<_, i64>(9)? as usize,
+                    completed_chapters: r.get::<_, i64>(10)? as usize,
+                    unread_chapters: r.get::<_, i64>(11)? as usize,
+                    created_at: r.get(12)?,
+                    updated_at: r.get(13)?,
+                    last_read_at: r.get(14)?,
+                })
+            })
+            .optional()?;
+
+        Ok(series)
+    }
+
+    /// List all comic series matching an optional search query, ordered by title.
+    pub fn list_comic_series(&self, query: &str) -> Result<Vec<ComicSeries>> {
+        let conn = self.conn();
+        let q = query.trim().to_lowercase();
+        let has_filter = !q.is_empty();
+        let like_pattern = format!("%{q}%");
+
+        let sql = "
+            SELECT 
+                s.id,
+                s.title,
+                s.sort_title,
+                s.author,
+                s.description,
+                s.cover_book_id,
+                COALESCE(cover_book.uuid, first_b.uuid) AS cover_uuid,
+                COALESCE(cover_book.cover_name, first_b.cover_name) AS cover_name,
+                s.status,
+                COUNT(c.id) AS total_chapters,
+                SUM(CASE WHEN b.progress >= 100 THEN 1 ELSE 0 END) AS completed_chapters,
+                SUM(CASE WHEN b.progress = 0 THEN 1 ELSE 0 END) AS unread_chapters,
+                s.created_at,
+                s.updated_at,
+                s.last_read_at
+            FROM comic_series s
+            LEFT JOIN books cover_book ON cover_book.id = s.cover_book_id
+            LEFT JOIN comic_chapters c ON c.series_id = s.id
+            LEFT JOIN books b ON b.id = c.book_id
+            LEFT JOIN comic_chapters first_c ON first_c.series_id = s.id AND first_c.chapter_number = (
+                SELECT MIN(sub_c.chapter_number) FROM comic_chapters sub_c WHERE sub_c.series_id = s.id
+            )
+            LEFT JOIN books first_b ON first_b.id = first_c.book_id
+            WHERE (?1 = 0 OR s.title LIKE ?2 OR s.author LIKE ?2)
+            GROUP BY s.id
+            ORDER BY s.sort_title COLLATE NOCASE ASC
+        ";
+
+        let mut stmt = conn.prepare_cached(sql)?;
+        let rows = stmt.query_map(
+            params![if has_filter { 1 } else { 0 }, like_pattern],
+            |r| {
+                let cover_uuid: Option<String> = r.get(6)?;
+                let cover_name: Option<String> = r.get(7)?;
+                let cover_path = cover_uuid.and_then(|u| {
+                    cover_name.map(|n| book_dir(&u).join(n))
+                });
+
+                Ok(ComicSeries {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    sort_title: r.get(2)?,
+                    author: r.get(3)?,
+                    description: r.get(4)?,
+                    cover_book_id: r.get(5)?,
+                    cover_path,
+                    status: r.get(8)?,
+                    total_chapters: r.get::<_, i64>(9)? as usize,
+                    completed_chapters: r.get::<_, i64>(10)? as usize,
+                    unread_chapters: r.get::<_, i64>(11)? as usize,
+                    created_at: r.get(12)?,
+                    updated_at: r.get(13)?,
+                    last_read_at: r.get(14)?,
+                })
+            },
+        )?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    /// List all chapters belonging to a comic series in ascending numerical order.
+    pub fn chapters_for_series(&self, series_id: i64) -> Result<Vec<ComicChapter>> {
+        let conn = self.conn();
+        let sql = "
+            SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
+            FROM comic_chapters
+            WHERE series_id = ?1
+            ORDER BY chapter_number ASC
+        ";
+        let mut stmt = conn.prepare_cached(sql)?;
+        let rows = stmt.query_map(params![series_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, f64>(3)? as f32,
+                r.get::<_, Option<f64>>(4)?.map(|v| v as f32),
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+            ))
+        })?;
+
+        let mut raw_chapters = Vec::new();
+        let mut book_ids = Vec::new();
+        for r in rows {
+            let row_val = r?;
+            book_ids.push(row_val.2);
+            raw_chapters.push(row_val);
+        }
+
+        let mut books_map = self.books_by_ids(&book_ids)?;
+
+        let mut chapters = Vec::new();
+        for (id, s_id, book_id, ch_num, vol_num, title, created_at) in raw_chapters {
+            if let Some(book) = books_map.remove(&book_id) {
+                chapters.push(ComicChapter {
+                    id,
+                    series_id: s_id,
+                    book_id,
+                    chapter_number: ch_num,
+                    volume_number: vol_num,
+                    chapter_title: title,
+                    created_at,
+                    book,
+                });
+            }
+        }
+
+        Ok(chapters)
+    }
+
+    /// Find the comic series and chapter entry for a given book_id.
+    pub fn get_comic_series_for_book(
+        &self,
+        book_id: i64,
+    ) -> Result<Option<(ComicSeries, ComicChapter)>> {
+        let conn = self.conn();
+        let row: Option<(i64, i64, i64, f32, Option<f32>, String, String)> = conn
+            .query_row(
+                "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
+                 FROM comic_chapters
+                 WHERE book_id = ?1",
+                params![book_id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get::<_, f64>(3)? as f32,
+                        r.get::<_, Option<f64>>(4)?.map(|v| v as f32),
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+
+        let Some((c_id, series_id, b_id, ch_num, vol_num, ch_title, created_at)) = row else {
+            return Ok(None);
+        };
+
+        let Some(series) = self.get_comic_series(series_id)? else {
+            return Ok(None);
+        };
+
+        let mut books = self.books_by_ids(&[b_id])?;
+        let Some(book) = books.remove(&b_id) else {
+            return Ok(None);
+        };
+
+        let chapter = ComicChapter {
+            id: c_id,
+            series_id,
+            book_id: b_id,
+            chapter_number: ch_num,
+            volume_number: vol_num,
+            chapter_title: ch_title,
+            created_at,
+            book,
+        };
+
+        Ok(Some((series, chapter)))
+    }
+
+    /// Retrieve the next chapter in the series by chapter number.
+    pub fn next_comic_chapter(
+        &self,
+        series_id: i64,
+        current_chapter_number: f32,
+    ) -> Result<Option<ComicChapter>> {
+        let conn = self.conn();
+        let row: Option<(i64, i64, i64, f32, Option<f32>, String, String)> = conn
+            .query_row(
+                "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
+                 FROM comic_chapters
+                 WHERE series_id = ?1 AND chapter_number > ?2
+                 ORDER BY chapter_number ASC
+                 LIMIT 1",
+                params![series_id, current_chapter_number as f64],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get::<_, f64>(3)? as f32,
+                        r.get::<_, Option<f64>>(4)?.map(|v| v as f32),
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+
+        let Some((id, s_id, book_id, ch_num, vol_num, title, created_at)) = row else {
+            return Ok(None);
+        };
+
+        let mut books = self.books_by_ids(&[book_id])?;
+        let Some(book) = books.remove(&book_id) else {
+            return Ok(None);
+        };
+
+        Ok(Some(ComicChapter {
+            id,
+            series_id: s_id,
+            book_id,
+            chapter_number: ch_num,
+            volume_number: vol_num,
+            chapter_title: title,
+            created_at,
+            book,
+        }))
+    }
+
+    /// Retrieve the previous chapter in the series by chapter number.
+    pub fn prev_comic_chapter(
+        &self,
+        series_id: i64,
+        current_chapter_number: f32,
+    ) -> Result<Option<ComicChapter>> {
+        let conn = self.conn();
+        let row: Option<(i64, i64, i64, f32, Option<f32>, String, String)> = conn
+            .query_row(
+                "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
+                 FROM comic_chapters
+                 WHERE series_id = ?1 AND chapter_number < ?2
+                 ORDER BY chapter_number DESC
+                 LIMIT 1",
+                params![series_id, current_chapter_number as f64],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get::<_, f64>(3)? as f32,
+                        r.get::<_, Option<f64>>(4)?.map(|v| v as f32),
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+
+        let Some((id, s_id, book_id, ch_num, vol_num, title, created_at)) = row else {
+            return Ok(None);
+        };
+
+        let mut books = self.books_by_ids(&[book_id])?;
+        let Some(book) = books.remove(&book_id) else {
+            return Ok(None);
+        };
+
+        Ok(Some(ComicChapter {
+            id,
+            series_id: s_id,
+            book_id,
+            chapter_number: ch_num,
+            volume_number: vol_num,
+            chapter_title: title,
+            created_at,
+            book,
+        }))
+    }
+
+    /// One-time migration: migrate legacy CBZ/CBR books into `comic_series` and `comic_chapters`.
+    pub fn migrate_comic_series_and_chapters(&self) -> Result<usize> {
+        let conn = self.conn();
+        let unmigrated_ids: Vec<i64> = {
+            let mut stmt = conn.prepare(
+                "SELECT id FROM books 
+                 WHERE (format = 'CBZ' OR format = 'CBR')
+                   AND id NOT IN (SELECT book_id FROM comic_chapters)
+                 ORDER BY id ASC",
+            )?;
+            let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+            let mut ids = Vec::new();
+            for r in rows {
+                ids.push(r?);
+            }
+            ids
+        };
+
+        if unmigrated_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let books_map = self.books_by_ids(&unmigrated_ids)?;
+        let mut migrated = 0;
+
+        for id in unmigrated_ids {
+            let Some(book) = books_map.get(&id) else {
+                continue;
+            };
+
+            // Determine canonical series title and chapter number
+            let raw_series = book.series.as_deref().unwrap_or("").trim();
+            let (series_title, detected_num) = if !raw_series.is_empty() {
+                crate::comics::sanitize_comic_series(raw_series)
+            } else {
+                let meta = crate::comics::parse_comic_title(&book.title);
+                (meta.series.unwrap_or_else(|| book.title.clone()), meta.number)
+            };
+
+            let series_title = if series_title.trim().is_empty() {
+                book.title.clone()
+            } else {
+                series_title
+            };
+
+            let ch_num = if book.series_index > 0.0 {
+                book.series_index
+            } else {
+                detected_num.unwrap_or(1.0)
+            };
+
+            let series_id = self.get_or_create_comic_series(
+                &series_title,
+                Some(&book.authors),
+                Some(&book.description),
+            )?;
+            let _ = self.add_comic_chapter(series_id, book.id, ch_num, None, &book.title)?;
+            migrated += 1;
+        }
+
+        Ok(migrated)
+    }
 }
 
 #[cfg(test)]
@@ -363,5 +839,70 @@ mod tests {
         let books = cat.detect_local_series("Foundation").unwrap();
         let titles: Vec<&str> = books.iter().map(|b| b.title.as_str()).collect();
         assert_eq!(titles, vec!["Book One", "Book Two", "Book Three"]);
+    }
+
+    #[test]
+    fn test_comic_series_and_chapters_relational_hierarchy() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let b1 = cat
+            .insert_book(
+                "u1",
+                "Naruto - Ch. 1",
+                "Masashi Kishimoto",
+                None,
+                "",
+                BookFormat::Cbz,
+                "b1.cbz",
+                "h1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let b2 = cat
+            .insert_book(
+                "u2",
+                "Naruto - Ch. 2",
+                "Masashi Kishimoto",
+                None,
+                "",
+                BookFormat::Cbz,
+                "b2.cbz",
+                "h2",
+                None,
+                &[],
+            )
+            .unwrap();
+
+        let s_id = cat
+            .get_or_create_comic_series(
+                "Naruto",
+                Some("Masashi Kishimoto"),
+                Some("Ninja story"),
+            )
+            .unwrap();
+        cat.add_comic_chapter(s_id, b1, 1.0, None, "Chapter 1")
+            .unwrap();
+        cat.add_comic_chapter(s_id, b2, 2.0, None, "Chapter 2")
+            .unwrap();
+
+        let series_list = cat.list_comic_series("").unwrap();
+        assert_eq!(series_list.len(), 1);
+        assert_eq!(series_list[0].title, "Naruto");
+        assert_eq!(series_list[0].total_chapters, 2);
+
+        let chapters = cat.chapters_for_series(s_id).unwrap();
+        assert_eq!(chapters.len(), 2);
+        assert_eq!(chapters[0].chapter_number, 1.0);
+        assert_eq!(chapters[1].chapter_number, 2.0);
+
+        let next = cat.next_comic_chapter(s_id, 1.0).unwrap().unwrap();
+        assert_eq!(next.chapter_number, 2.0);
+
+        let prev = cat.prev_comic_chapter(s_id, 2.0).unwrap().unwrap();
+        assert_eq!(prev.chapter_number, 1.0);
+
+        let (found_series, found_ch) = cat.get_comic_series_for_book(b2).unwrap().unwrap();
+        assert_eq!(found_series.title, "Naruto");
+        assert_eq!(found_ch.chapter_number, 2.0);
     }
 }

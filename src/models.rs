@@ -293,3 +293,45 @@ impl Book {
         }
     }
 }
+
+/// A first-class Comic / Manga Series in the library catalog.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ComicSeries {
+    pub id: i64,
+    pub title: String,
+    pub sort_title: String,
+    pub author: String,
+    pub description: String,
+    pub cover_book_id: Option<i64>,
+    pub cover_path: Option<PathBuf>,
+    pub status: String,
+    pub total_chapters: usize,
+    pub completed_chapters: usize,
+    pub unread_chapters: usize,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_read_at: Option<String>,
+}
+
+/// An individual chapter within a `ComicSeries`, joined with its underlying `Book` row.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ComicChapter {
+    pub id: i64,
+    pub series_id: i64,
+    pub book_id: i64,
+    pub chapter_number: f32,
+    pub volume_number: Option<f32>,
+    pub chapter_title: String,
+    pub created_at: String,
+    pub book: Book,
+}
+
+impl ComicChapter {
+    pub fn display_number(&self) -> String {
+        if (self.chapter_number.fract()).abs() < f32::EPSILON {
+            format!("Ch. {}", self.chapter_number as i64)
+        } else {
+            format!("Ch. {}", self.chapter_number)
+        }
+    }
+}

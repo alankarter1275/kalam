@@ -236,6 +236,22 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         let _ = catalog.set_book_series(id, series.as_deref(), series_index);
     }
 
+    if format == BookFormat::Cbz || format == BookFormat::Cbr {
+        let series_name = series.clone().unwrap_or_else(|| {
+            crate::comics::parse_comic_title(&title)
+                .series
+                .unwrap_or_else(|| title.clone())
+        });
+        if let Ok(s_id) = catalog.get_or_create_comic_series(&series_name, Some(&authors), Some(&description)) {
+            let ch_num = if series_index > 0.0 {
+                series_index
+            } else {
+                crate::comics::parse_comic_title(&title).number.unwrap_or(1.0)
+            };
+            let _ = catalog.add_comic_chapter(s_id, id, ch_num, None, &title);
+        }
+    }
+
     // P4: imports show up in History. Best-effort — a logging failure must not
     // undo an otherwise successful import.
     let _ = catalog.log_event(id, crate::db::EventKind::Imported, "");

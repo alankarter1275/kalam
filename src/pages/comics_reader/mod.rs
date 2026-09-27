@@ -76,7 +76,7 @@ pub struct ComicsReaderModel {
     pub current_chapter_idx: Option<usize>,
     pub at_chapter_end: bool,
     pub chapters_list_box: Option<gtk::ListBox>,
-    pub ocr_enabled: bool,
+    pub ocr_mode: types::ComicOcrMode,
     pub ocr_tx: Option<async_channel::Sender<crate::ocr::ComicOcrRequest>>,
     pub ocr_in_progress: HashSet<usize>,
     pub ocr_generation: Arc<AtomicU64>,
@@ -199,12 +199,23 @@ impl ComicsReaderModel {
             )
         };
 
-        let ocr_enabled = init
+        let ocr_mode = init
             .catalog
             .as_ref()
-            .and_then(|c| c.get_pref("reader.comic.ocr"))
-            .map(|v| v != "false")
-            .unwrap_or(true);
+            .and_then(|c| c.get_pref("reader.comic.ocr_mode"))
+            .map(|v| match v.as_str() {
+                "always" => types::ComicOcrMode::AlwaysOn,
+                "off" => types::ComicOcrMode::Off,
+                _ => types::ComicOcrMode::AutoColor,
+            })
+            .unwrap_or_else(|| {
+                if let Some(c) = init.catalog.as_ref() {
+                    if c.get_pref("reader.comic.ocr").as_deref() == Some("false") {
+                        return types::ComicOcrMode::Off;
+                    }
+                }
+                types::ComicOcrMode::AutoColor
+            });
 
         Self {
             title: init.title,
@@ -245,7 +256,7 @@ impl ComicsReaderModel {
             current_chapter_idx,
             at_chapter_end: false,
             chapters_list_box: None,
-            ocr_enabled,
+            ocr_mode,
             ocr_tx: None,
             ocr_in_progress: HashSet::new(),
             ocr_generation: Arc::new(AtomicU64::new(1)),
@@ -534,17 +545,13 @@ impl ComicsReaderModel {
         toggle_active(&widgets.fit_screen_btn, self.fit_mode == FitMode::Screen);
         toggle_active(&widgets.fit_orig_btn, self.fit_mode == FitMode::Original);
 
-        if self.ocr_enabled {
-            widgets.ocr_toggle_btn.set_label("Enabled");
-            widgets.ocr_toggle_btn.add_css_class("active");
-        } else {
-            widgets.ocr_toggle_btn.set_label("Disabled");
-            widgets.ocr_toggle_btn.remove_css_class("active");
-        }
+        toggle_active(&widgets.ocr_auto_btn, self.ocr_mode == ComicOcrMode::AutoColor);
+        toggle_active(&widgets.ocr_always_btn, self.ocr_mode == ComicOcrMode::AlwaysOn);
+        toggle_active(&widgets.ocr_off_btn, self.ocr_mode == ComicOcrMode::Off);
     }
 
     pub fn trigger_page_ocr(&mut self, page: usize) {
-        if !self.ocr_enabled {
+        if !self.ocr_mode.is_enabled() {
             return;
         }
         if page >= self.total_pages {
@@ -560,6 +567,7 @@ impl ComicsReaderModel {
         self.ocr_in_progress.insert(page);
         let prov = self.provider.clone();
         let generation = self.ocr_generation.load(Ordering::Relaxed);
+        let is_color_only = self.ocr_mode.is_color_only();
         let tx = tx.clone();
 
         crate::tasks::spawn_internal(
@@ -570,6 +578,7 @@ impl ComicsReaderModel {
                         generation,
                         page,
                         raw_bytes,
+                        is_color_only,
                     });
                 }
             },
@@ -1866,22 +1875,48 @@ impl Component for ComicsReaderModel {
                                 append = &reader_settings_section("Speech Bubble OCR"),
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 8,
+                                    set_spacing: 4,
                                     set_margin_start: 16,
                                     set_margin_end: 16,
+                                    set_homogeneous: true,
 
-                                    gtk::Label {
-                                        set_label: "Dialogue Detection",
-                                        set_hexpand: true,
-                                        set_halign: gtk::Align::Start,
+                                    #[name = "ocr_auto_btn"]
+                                    gtk::Button {
+                                        set_child: Some(&crate::icons::labelled(
+                                            "applications-graphics-symbolic",
+                                            16,
+                                            "Color Only",
+                                            4,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Auto-detect: Only enable text selection for color comics, manhwa, and colored manga"),
+                                        connect_clicked => ComicsReaderMsg::SetOcrMode(ComicOcrMode::AutoColor),
                                     },
 
-                                    #[name = "ocr_toggle_btn"]
+                                    #[name = "ocr_always_btn"]
                                     gtk::Button {
-                                        set_label: "Enabled",
+                                        set_child: Some(&crate::icons::labelled(
+                                            "edit-find-symbolic",
+                                            16,
+                                            "Always On",
+                                            4,
+                                        )),
                                         add_css_class: "kalam-reader-seg-btn",
-                                        set_tooltip_text: Some("Detect dialogue in speech bubbles for text selection & lookup"),
-                                        connect_clicked => ComicsReaderMsg::ToggleOcr,
+                                        set_tooltip_text: Some("Enable text selection on all pages (including black & white)"),
+                                        connect_clicked => ComicsReaderMsg::SetOcrMode(ComicOcrMode::AlwaysOn),
+                                    },
+
+                                    #[name = "ocr_off_btn"]
+                                    gtk::Button {
+                                        set_child: Some(&crate::icons::labelled(
+                                            "action-unavailable-symbolic",
+                                            16,
+                                            "Off",
+                                            4,
+                                        )),
+                                        add_css_class: "kalam-reader-seg-btn",
+                                        set_tooltip_text: Some("Disable text selection and OCR completely"),
+                                        connect_clicked => ComicsReaderMsg::SetOcrMode(ComicOcrMode::Off),
                                     },
                                 },
 
@@ -2049,7 +2084,7 @@ impl Component for ComicsReaderModel {
                         continue;
                     }
 
-                    match crate::ocr::perform_ocr_image_bytes(engine, &req.raw_bytes, req.page) {
+                    match crate::ocr::perform_ocr_image_bytes(engine, &req.raw_bytes, req.page, req.is_color_only) {
                         Ok(ocr_text) => {
                             if req.generation == ocr_gen.load(Ordering::Relaxed) {
                                 let _ = tx_ocr_msg.send(types::ComicsReaderMsg::PageOcrResult {
@@ -3326,39 +3361,48 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::ClearSelection => {
                 self.clear_selection();
             }
-            ComicsReaderMsg::ToggleOcr => {
-                self.ocr_enabled = !self.ocr_enabled;
-                if let Some(ref catalog) = self.catalog {
-                    catalog.set_pref("reader.comic.ocr", if self.ocr_enabled { "true" } else { "false" });
-                }
-                let status = if self.ocr_enabled { "Bubble OCR Enabled" } else { "Bubble OCR Disabled" };
-                self.trigger_osd(status, &sender);
-                if self.ocr_enabled {
-                    self.trigger_page_ocr(self.current_page);
-                    if self.page_style == PageStyle::Double {
-                        self.trigger_page_ocr(self.current_page + 1);
-                    }
-                } else {
-                    self.clear_selection();
-                }
-                self.sync_settings_ui(widgets);
-            }
-            ComicsReaderMsg::SetOcrEnabled(enabled) => {
-                if self.ocr_enabled != enabled {
-                    self.ocr_enabled = enabled;
+            ComicsReaderMsg::SetOcrMode(mode) => {
+                if self.ocr_mode != mode {
+                    self.ocr_mode = mode;
                     if let Some(ref catalog) = self.catalog {
-                        catalog.set_pref("reader.comic.ocr", if self.ocr_enabled { "true" } else { "false" });
+                        let pref = match mode {
+                            ComicOcrMode::AutoColor => "auto",
+                            ComicOcrMode::AlwaysOn => "always",
+                            ComicOcrMode::Off => "off",
+                        };
+                        catalog.set_pref("reader.comic.ocr_mode", pref);
+                        catalog.set_pref("reader.comic.ocr", if mode.is_enabled() { "true" } else { "false" });
                     }
-                    if self.ocr_enabled {
+                    let status = match mode {
+                        ComicOcrMode::AutoColor => "Speech Bubble OCR: Auto (Color Only)",
+                        ComicOcrMode::AlwaysOn => "Speech Bubble OCR: Always On",
+                        ComicOcrMode::Off => "Speech Bubble OCR: Disabled",
+                    };
+                    self.trigger_osd(status, &sender);
+                    self.clear_selection();
+                    self.page_text_cache.clear();
+                    self.ocr_in_progress.clear();
+                    self.ocr_generation.fetch_add(1, Ordering::Relaxed);
+                    if self.ocr_mode.is_enabled() {
                         self.trigger_page_ocr(self.current_page);
                         if self.page_style == PageStyle::Double {
                             self.trigger_page_ocr(self.current_page + 1);
                         }
-                    } else {
-                        self.clear_selection();
                     }
                     self.sync_settings_ui(widgets);
                 }
+            }
+            ComicsReaderMsg::ToggleOcr => {
+                let next_mode = match self.ocr_mode {
+                    ComicOcrMode::AutoColor => ComicOcrMode::AlwaysOn,
+                    ComicOcrMode::AlwaysOn => ComicOcrMode::Off,
+                    ComicOcrMode::Off => ComicOcrMode::AutoColor,
+                };
+                let _ = sender.input(ComicsReaderMsg::SetOcrMode(next_mode));
+            }
+            ComicsReaderMsg::SetOcrEnabled(enabled) => {
+                let mode = if enabled { ComicOcrMode::AutoColor } else { ComicOcrMode::Off };
+                let _ = sender.input(ComicsReaderMsg::SetOcrMode(mode));
             }
             ComicsReaderMsg::Close => {
                 if self.show_sidebar {
@@ -3693,7 +3737,7 @@ mod tests {
             cover_path: None,
         });
 
-        assert!(model.ocr_enabled);
+        assert_eq!(model.ocr_mode, types::ComicOcrMode::AutoColor);
         assert!(model.page_text_cache.is_empty());
         assert!(model.active_selection.borrow().is_none());
 

@@ -103,6 +103,32 @@ pub enum ComicSidebarTab {
     Bookmarks,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ComicOcrMode {
+    #[default]
+    AutoColor,
+    AlwaysOn,
+    Off,
+}
+
+impl ComicOcrMode {
+    pub fn is_enabled(self) -> bool {
+        self != ComicOcrMode::Off
+    }
+
+    pub fn is_color_only(self) -> bool {
+        self == ComicOcrMode::AutoColor
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ComicOcrMode::AutoColor => "Color Only",
+            ComicOcrMode::AlwaysOn => "Always On",
+            ComicOcrMode::Off => "Off",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ComicActiveSelection {
     pub page: usize,
@@ -157,6 +183,7 @@ pub enum ComicsReaderMsg {
     LookUpWord(String),
     ClearSelection,
     ToggleOcr,
+    SetOcrMode(ComicOcrMode),
     #[allow(dead_code)]
     SetOcrEnabled(bool),
     SetPage(usize),

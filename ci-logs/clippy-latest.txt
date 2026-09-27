@@ -1,8 +1,12 @@
-src/ocr.rs:161:30: [1m[91merror[E0599][0m: no method named `chars` found for struct `ocrs::TextLine` in the current scope: private field, not a method
-src/pages/comics_reader/mod.rs:244:62: [1m[91merror[E0599][0m: no method named `ok` found for enum `std::option::Option<T>` in the current scope
-src/pages/comics_reader/mod.rs:3184:41: [1m[91merror[E0061][0m: this method takes 10 arguments but 6 arguments were supplied
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+src/pages/comics_reader/mod.rs:241:26: [1m[91merror[E0382][0m: borrow of moved value: `init.catalog`: value borrowed here after move
+src/pages/comics_reader/mod.rs:2697:29: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:2972:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:3051:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:3101:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:3111:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:3161:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -23,13 +27,17 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/ocr.rs:161:30: [1m[91merror[E0599][0m: no method named `chars` found for struct `ocrs::TextLine` in the current scope: private field, not a method
-src/pages/comics_reader/mod.rs:244:62: [1m[91merror[E0599][0m: no method named `ok` found for enum `std::option::Option<T>` in the current scope
-src/pages/comics_reader/mod.rs:3184:41: [1m[91merror[E0061][0m: this method takes 10 arguments but 6 arguments were supplied
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/pages/comics_reader/mod.rs:241:26: [1m[91merror[E0382][0m: borrow of moved value: `init.catalog`: value borrowed here after move
+src/pages/comics_reader/mod.rs:2697:29: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:2972:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:3051:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:3101:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:3111:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/comics_reader/mod.rs:3161:21: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
---- run 36311535369 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
+--- run 36311700449 ---

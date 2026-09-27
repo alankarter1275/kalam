@@ -524,12 +524,12 @@ impl PdfPageText {
         let mut selected_lines = Vec::new();
         let mut highlight_rects = Vec::new();
 
-        for pos in s_pos..=e_pos {
-            let line_idx = bubble_indices[pos];
+        let total_selected = e_pos - s_pos;
+        for (rel_idx, &line_idx) in bubble_indices[s_pos..=e_pos].iter().enumerate() {
             let line = &self.lines[line_idx];
 
-            let is_first = pos == s_pos;
-            let is_last = pos == e_pos;
+            let is_first = rel_idx == 0;
+            let is_last = rel_idx == total_selected;
 
             let mut line_chars = Vec::new();
             let mut line_rect_x0 = f32::MAX;

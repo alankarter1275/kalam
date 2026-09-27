@@ -16,13 +16,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/comics_reader/mod.rs:69:9: [1m[91merror[0m: field `series_name` is never read
-src/pages/comics_reader/types.rs:130:5: [1m[91merror[0m: variant `PrevChapter` is never constructed
-src/db/series.rs:179:13: [1m[91merror[0m: this `if` statement can be collapsed
-src/pages/comics.rs:137:5: [1m[91merror[0m: consider using `sort_by_key`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.90s

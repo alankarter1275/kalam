@@ -774,7 +774,7 @@ impl AppModel {
                             AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
                         }
                     });
-                ctrl.sender().send(ComicsMsg::OpenSeriesDrawer(sname));
+                let _ = ctrl.sender().send(ComicsMsg::OpenSeriesDrawer(sname));
                 PageSlot::Comics(ctrl)
             }
             Route::Module(NavItem::Downloads) => {

@@ -28,7 +28,7 @@ After=default.target
 Type=oneshot
 # %h is your home directory. Adjust both paths if your checkout lives
 # elsewhere or you launch an installed binary.
-ExecStart=%h/kalam/scripts/warm-cache.sh %h/kalam/target/release/kalam
+ExecStart=%h/Projects/kalam/scripts/warm-cache.sh %h/Projects/kalam/target/release/kalam
 
 [Install]
 WantedBy=default.target

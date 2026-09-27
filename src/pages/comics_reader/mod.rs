@@ -3666,12 +3666,12 @@ mod tests {
             lines: vec![bubble_line],
         };
 
-        // Word selection test
+        // Word selection test (punctuation trimmed for dictionary lookups)
         let (word, rects) = page_text.word_at((120.0, 160.0)).expect("Word hit");
-        assert_eq!(word, "Nani?");
+        assert_eq!(word, "Nani");
         assert_eq!(rects.len(), 1);
 
-        // Rect marquee / block selection test
+        // Rect marquee / block selection test (preserves full verbatim text)
         let (block_text, block_rects) = page_text.select_rect((90.0, 140.0), (160.0, 180.0));
         assert_eq!(block_text, "Nani?");
         assert!(!block_rects.is_empty());

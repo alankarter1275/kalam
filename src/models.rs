@@ -295,7 +295,7 @@ impl Book {
 }
 
 /// A first-class Comic / Manga Series in the library catalog.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ComicSeries {
     pub id: i64,
     pub title: String,
@@ -314,7 +314,7 @@ pub struct ComicSeries {
 }
 
 /// An individual chapter within a `ComicSeries`, joined with its underlying `Book` row.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ComicChapter {
     pub id: i64,
     pub series_id: i64,

@@ -179,7 +179,21 @@ impl Catalog {
             if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr)
                 && (book.series.is_none() || book.series.as_deref() == Some(""))
             {
-                let meta = crate::comics::parse_comic_info(&book.file_path);
+                let mut meta = crate::comics::parse_comic_info(&book.file_path);
+                if meta.series.is_none() {
+                    let title_meta = crate::comics::parse_comic_title(&book.title);
+                    if title_meta.series.is_some() {
+                        meta.series = title_meta.series;
+                        if meta.number.is_none() {
+                            meta.number = title_meta.number;
+                        }
+                    }
+                } else if meta.number.is_none() {
+                    let title_meta = crate::comics::parse_comic_title(&book.title);
+                    if title_meta.number.is_some() {
+                        meta.number = title_meta.number;
+                    }
+                }
                 if let Some(ref s) = meta.series {
                     let idx = meta.number.unwrap_or(0.0);
                     self.set_book_series(book.id, Some(s), idx)?;

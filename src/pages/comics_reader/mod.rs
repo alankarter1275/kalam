@@ -86,8 +86,15 @@ impl ComicsReaderModel {
 
         let (series_name, series_chapters) = if let (Some(ref catalog), Some(book_id)) = (&init.catalog, init.book_id) {
             if let Ok(Some(book)) = catalog.get_book(book_id) {
-                if let Some(ref s) = book.series {
-                    let chapters = catalog.books_in_series(s).unwrap_or_default();
+                let s_name = book.series.or_else(|| {
+                    crate::comics::parse_comic_title(&book.title).series
+                });
+                if let Some(ref s) = s_name {
+                    let mut chapters = catalog.books_in_series(s).unwrap_or_default();
+                    if chapters.len() <= 1 {
+                        let _ = catalog.backfill_comic_series();
+                        chapters = catalog.books_in_series(s).unwrap_or_default();
+                    }
                     (Some(s.clone()), chapters)
                 } else {
                     (None, Vec::new())

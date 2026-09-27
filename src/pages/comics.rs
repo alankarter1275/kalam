@@ -81,17 +81,31 @@ pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<
     let mut standalone = Vec::new();
 
     for book in comics {
-        if let Some(ref s) = book.series {
-            let trimmed = s.trim();
-            if !trimmed.is_empty() {
-                series_map
-                    .entry(trimmed.to_string())
-                    .or_default()
-                    .push(book.clone());
-                continue;
+        let mut series_name = book
+            .series
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+
+        let mut book_clone = book.clone();
+        if series_name.is_none() {
+            let meta = crate::comics::parse_comic_title(&book.title);
+            if let Some(ref s) = meta.series {
+                if book_clone.series_index <= 0.0 {
+                    if let Some(num) = meta.number {
+                        book_clone.series_index = num;
+                    }
+                }
+                series_name = Some(s.clone());
             }
         }
-        standalone.push(book.clone());
+
+        if let Some(s) = series_name {
+            series_map.entry(s).or_default().push(book_clone);
+        } else {
+            standalone.push(book_clone);
+        }
     }
 
     let mut groups = Vec::new();
@@ -1083,5 +1097,25 @@ mod tests {
         assert_eq!(groups[0].unread_count, 0);
         // When all completed, next_to_read is first chapter
         assert_eq!(groups[0].next_to_read.as_ref().unwrap().id, 1);
+    }
+
+    #[test]
+    fn test_group_comics_into_series_with_unfilled_series_metadata() {
+        // User reports 5 chapters of Naruto showing as separate entries when series is None
+        let books = vec![
+            make_test_book(1, "Naruto 01", None, 0.0, 0),
+            make_test_book(2, "Naruto 02", None, 0.0, 0),
+            make_test_book(3, "Naruto 03", None, 0.0, 0),
+            make_test_book(4, "Naruto 04", None, 0.0, 0),
+            make_test_book(5, "Naruto 05", None, 0.0, 0),
+        ];
+
+        let (groups, standalone) = group_comics_into_series(&books);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].series_name, "Naruto");
+        assert_eq!(groups[0].total_chapters, 5);
+        let ch_ids: Vec<i64> = groups[0].chapters.iter().map(|c| c.id).collect();
+        assert_eq!(ch_ids, vec![1, 2, 3, 4, 5]);
+        assert_eq!(standalone.len(), 0);
     }
 }

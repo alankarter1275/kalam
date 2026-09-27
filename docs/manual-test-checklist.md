@@ -721,9 +721,9 @@ shows up as its own task in the task manager.
 ### T28 · Comic & Manga Series Hub, Quick Resume & Chapter Drawer
 
 **Do:**
-1. Import multiple comic files belonging to a series (e.g. `One Piece - c001.cbz`, `One Piece - c002.cbz`) or files containing `ComicInfo.xml`.
+1. Import multiple comic files belonging to a series (e.g. `Naruto 01.cbz`, `Naruto 02.cbz`, `Naruto Vol. 1.cbz`, `One Piece - c001.cbz`, or archives containing `ComicInfo.xml`).
 2. Open the Comics & Manga hub page.
-3. Observe the Comics hub view: verify it is grouped by Series by default with series cards showing cover, title, total chapter count, and unread count.
+3. Observe the Comics hub view: verify it is grouped by Series by default with series cards showing cover, title, total chapter count, and unread count. All chapters of a series (e.g. 5 chapters of Naruto) collapse cleanly into a single series card.
 4. Click the "View: Series" button in the header bar to toggle between "Grouped by Series" and "All Files" flat view.
 5. In Series view, click "Start Ch. 1" / "Resume Ch. X" on the series card to jump directly into reading.
 6. Return to the Comics hub and click on the series card cover/title to open the Series Chapter Drawer.
@@ -731,10 +731,11 @@ shows up as its own task in the task manager.
 8. Click "← Back to Series" to return to the series grid.
 
 **Look for:**
-1. Files are automatically grouped into Series based on ComicInfo.xml metadata or filename heuristics.
-2. Clicking Resume opens the current or next unread chapter directly.
-3. The chapter drawer lists all chapters sorted in sequential numerical order with read/reading/unread status badges.
-4. Toggling to "All Files" presents the flat grid of all comic archives.
+1. Files are automatically grouped into Series based on ComicInfo.xml metadata or filename heuristics (including space-delimited numbers like `Naruto 01`, `Naruto 1`, `Naruto Vol. 1`, `Naruto v01`, dot/dash/underscore separators, and bracketed tag patterns).
+2. All chapters of the same comic show under one unified series card rather than cluttering the hub with separate standalone cards.
+3. Clicking Resume opens the current or next unread chapter directly.
+4. The chapter drawer lists all chapters sorted in sequential numerical order with read/reading/unread status badges.
+5. Toggling to "All Files" presents the flat grid of all comic archives.
 
 ### T29 · Comic Reader Chapter Transition & End-of-Chapter Card
 

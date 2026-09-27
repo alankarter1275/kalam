@@ -247,7 +247,7 @@ fn strip_bracket_tags(s: &str) -> String {
         i += 1;
     }
 
-    let normalized = cleaned.replace('–', "-").replace('—', "-");
+    let normalized = cleaned.replace(['–', '—'], "-");
     let words: Vec<&str> = normalized.split_whitespace().collect();
     words.join(" ")
 }
@@ -382,7 +382,7 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
     for kw in &keywords {
         if let Some(idx) = lower_stem.rfind(kw) {
             let series_cand = trimmed[..idx]
-                .trim_end_matches(&[' ', '-', '_', '.', ','])
+                .trim_end_matches([' ', '-', '_', '.', ','])
                 .trim();
             let num_cand = &trimmed[idx + kw.len()..];
             if !series_cand.is_empty() && series_cand.chars().any(|c| c.is_alphabetic()) {
@@ -390,7 +390,7 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
                     let mut title = None;
                     if let Some(after_num_idx) = num_cand.find(|c: char| c.is_alphabetic()) {
                         let potential_title = num_cand[after_num_idx..]
-                            .trim_start_matches(&[' ', '-', '_', ':', '.'])
+                            .trim_start_matches([' ', '-', '_', ':', '.'])
                             .trim();
                         if !potential_title.is_empty() {
                             title = Some(potential_title.to_string());
@@ -435,7 +435,7 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
                     if sep == ' ' || sep == '-' || sep == '_' || sep == '.' || sep == ',' {
                         let series_cand: String = chars[..start - 1].iter().collect();
                         let series_cand = series_cand
-                            .trim_end_matches(&[' ', '-', '_', '.', ','])
+                            .trim_end_matches([' ', '-', '_', '.', ','])
                             .trim();
                         if !series_cand.is_empty() && series_cand.chars().any(|c| c.is_alphabetic()) {
                             return ComicInfo {

@@ -1482,7 +1482,7 @@ mod tests {
         };
 
         // User starts dragging in left bubble and drags across screen toward right
-        let (text, rects) = page_text.select_comic_dialogue((65.0, 110.0), (600.0, 110.0));
+        let (text, rects) = page_text.select_comic_dialogue((55.0, 110.0), (600.0, 110.0));
         assert!(text.contains("Left bubble"));
         assert!(!text.contains("Right bubble"));
         assert_eq!(rects.len(), 1);

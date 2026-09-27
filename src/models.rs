@@ -296,6 +296,7 @@ impl Book {
 
 /// A first-class Comic / Manga Series in the library catalog.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ComicSeries {
     pub id: i64,
     pub title: String,
@@ -315,6 +316,7 @@ pub struct ComicSeries {
 
 /// An individual chapter within a `ComicSeries`, joined with its underlying `Book` row.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ComicChapter {
     pub id: i64,
     pub series_id: i64,
@@ -327,6 +329,7 @@ pub struct ComicChapter {
 }
 
 impl ComicChapter {
+    #[allow(dead_code)]
     pub fn display_number(&self) -> String {
         if (self.chapter_number.fract()).abs() < f32::EPSILON {
             format!("Ch. {}", self.chapter_number as i64)

@@ -75,6 +75,7 @@ pub struct ComicsModel {
     active_drawer_series: Option<String>,
 }
 
+#[allow(dead_code)]
 pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<Book>) {
     let mut series_map: std::collections::HashMap<String, Vec<Book>> =
         std::collections::HashMap::new();

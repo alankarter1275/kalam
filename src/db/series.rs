@@ -40,6 +40,8 @@ pub struct SeriesCacheEntry {
     pub works: Vec<SeriesWork>,
 }
 
+type RawChapterRow = (i64, i64, i64, f32, Option<f32>, String, String);
+
 /// Normalised key for a series: what the listing is *about*, not how one
 /// book's OPF spells it. A leading article is dropped from the series name
 /// so "The Kingkiller Chronicle" and "Kingkiller Chronicle" share one cache
@@ -172,6 +174,7 @@ impl Catalog {
     }
 
     /// Auto-detect and populate series metadata for comic archives (CBZ/CBR) in the library.
+    #[allow(dead_code)]
     pub fn backfill_comic_series(&self) -> Result<usize> {
         let books = self.list_books(SortKey::Added, "")?;
         let mut updated = 0;
@@ -497,7 +500,7 @@ impl Catalog {
         book_id: i64,
     ) -> Result<Option<(ComicSeries, ComicChapter)>> {
         let conn = self.conn();
-        let row: Option<(i64, i64, i64, f32, Option<f32>, String, String)> = conn
+        let row: Option<RawChapterRow> = conn
             .query_row(
                 "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
                  FROM comic_chapters
@@ -545,13 +548,14 @@ impl Catalog {
     }
 
     /// Retrieve the next chapter in the series by chapter number.
+    #[allow(dead_code)]
     pub fn next_comic_chapter(
         &self,
         series_id: i64,
         current_chapter_number: f32,
     ) -> Result<Option<ComicChapter>> {
         let conn = self.conn();
-        let row: Option<(i64, i64, i64, f32, Option<f32>, String, String)> = conn
+        let row: Option<RawChapterRow> = conn
             .query_row(
                 "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
                  FROM comic_chapters
@@ -595,13 +599,14 @@ impl Catalog {
     }
 
     /// Retrieve the previous chapter in the series by chapter number.
+    #[allow(dead_code)]
     pub fn prev_comic_chapter(
         &self,
         series_id: i64,
         current_chapter_number: f32,
     ) -> Result<Option<ComicChapter>> {
         let conn = self.conn();
-        let row: Option<(i64, i64, i64, f32, Option<f32>, String, String)> = conn
+        let row: Option<RawChapterRow> = conn
             .query_row(
                 "SELECT id, series_id, book_id, chapter_number, volume_number, chapter_title, created_at
                  FROM comic_chapters

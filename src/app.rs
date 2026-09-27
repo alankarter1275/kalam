@@ -616,6 +616,7 @@ impl AppModel {
             }
             Route::BookPage { book_id } => {
                 let id = *book_id;
+                let cat_for_series = catalog.clone();
                 let ctrl = BookPageModel::builder()
                     .launch((catalog.clone(), id))
                     .forward(sender.input_sender(), move |out| match out {
@@ -628,7 +629,7 @@ impl AppModel {
                             series,
                             first_author,
                         } => {
-                            if let Ok(Some(s)) = catalog.get_comic_series_by_title(&series) {
+                            if let Ok(Some(s)) = cat_for_series.get_comic_series_by_title(&series) {
                                 AppMsg::Push(Route::ComicSeries { series_name: s.title })
                             } else {
                                 AppMsg::OpenSeriesFloat {

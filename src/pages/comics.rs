@@ -48,6 +48,7 @@ pub enum ComicsMsg {
     OpenSeriesDrawer(String),
     CloseSeriesDrawer,
     PickFiles,
+    PickFolder,
     FilesChosen(Vec<PathBuf>),
     ImportStep {
         done: usize,
@@ -901,9 +902,17 @@ impl Component for ComicsModel {
                 },
 
                 gtk::Button {
-                    set_label: "+ Import Comics",
-                    add_css_class: "kalam-btn-filled",
+                    set_label: "+ Import Files",
+                    add_css_class: "kalam-btn-subtle",
+                    set_tooltip_text: Some("Select one or more comic files (.cbz, .cbr)"),
                     connect_clicked => ComicsMsg::PickFiles,
+                },
+
+                gtk::Button {
+                    set_label: "+ Import Folder",
+                    add_css_class: "kalam-btn-filled",
+                    set_tooltip_text: Some("Select a folder containing comic chapters"),
+                    connect_clicked => ComicsMsg::PickFolder,
                 },
             },
 
@@ -1024,8 +1033,35 @@ impl Component for ComicsModel {
                     },
                 );
             }
+            ComicsMsg::PickFolder => {
+                let dialog = gtk::FileDialog::builder()
+                    .title("Import Comic Folder")
+                    .modal(true)
+                    .build();
+
+                let window = root.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+                let window = window.or_else(|| {
+                    relm4::main_application()
+                        .active_window()
+                        .and_then(|w| w.downcast::<gtk::Window>().ok())
+                });
+
+                let s = sender.clone();
+                dialog.select_folder(
+                    window.as_ref(),
+                    gtk::gio::Cancellable::NONE,
+                    move |res| {
+                        if let Ok(folder) = res {
+                            if let Some(p) = folder.path() {
+                                s.input(ComicsMsg::FilesChosen(vec![p]));
+                            }
+                        }
+                    },
+                );
+            }
             ComicsMsg::FilesChosen(paths) => {
-                let total = paths.len();
+                let expanded = expand_comic_paths(paths);
+                let total = expanded.len();
                 if total == 0 {
                     return;
                 }
@@ -1033,7 +1069,7 @@ impl Component for ComicsModel {
                 let s_done = sender.input_sender().clone();
                 spawn_import(
                     self.service.catalog().clone(),
-                    paths,
+                    expanded,
                     move |done, total, title| {
                         let _ = s_progress.send(ComicsMsg::ImportStep { done, total, title });
                     },
@@ -1068,6 +1104,40 @@ impl Component for ComicsModel {
 
         self.update_view(widgets, sender);
     }
+}
+
+fn expand_comic_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for p in paths {
+        if p.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&p) {
+                let mut sub: Vec<PathBuf> = entries
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|path| {
+                        let ext = path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        ext == "cbz" || ext == "cbr"
+                    })
+                    .collect();
+                sub.sort();
+                files.extend(sub);
+            }
+        } else {
+            let ext = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ext == "cbz" || ext == "cbr" {
+                files.push(p);
+            }
+        }
+    }
+    files
 }
 
 #[cfg(test)]

@@ -2760,6 +2760,36 @@ separator.kalam-section-divider {
     color: @kalam_text_dim;
 }
 
+/* ── Watch folder rule cards ── */
+.kalam-watch-card {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-top: 10px;
+}
+
+.kalam-watch-card-header {
+    padding-bottom: 8px;
+    border-bottom: 1px solid @kalam_border;
+}
+
+.kalam-watch-card-path {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-watch-format-row {
+    padding: 6px 0;
+}
+
+.kalam-watch-format-label {
+    font-size: 0.8rem;
+    color: @kalam_text;
+    min-width: 170px;
+}
+
 /* The app's switch, Material-You style: 40x22 pill, accent when on.
    Margins and borders zeroed per the house rules before sizing. */
 switch.kalam-switch {

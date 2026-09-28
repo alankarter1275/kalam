@@ -1,8 +1,9 @@
 //! Auto-import watch folder service.
 //!
-//! Watches a user-configured directory for new ebooks and comics,
+//! Watches user-configured directories for new ebooks and comics,
 //! ensures downloads/copies have completed (debounce with size stabilization),
-//! automatically imports them into the library, and notifies the user.
+//! automatically imports them into the library with format filtering and
+//! target shelf routing, and notifies the user.
 
 use crate::app::AppMsg;
 use crate::db::Catalog;
@@ -12,40 +13,171 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+pub const PREF_WATCH_RULES: &str = "import.watch_folder_rules";
 pub const PREF_WATCH_ENABLED: &str = "import.watch_folder_enabled";
 pub const PREF_WATCH_PATH: &str = "import.watch_folder_path";
 
 static RELOAD_SENDER: Mutex<Option<relm4::Sender<AppMsg>>> = Mutex::new(None);
 
-/// Check if watch folder auto-import is enabled.
-pub fn is_watch_enabled(catalog: &Catalog) -> bool {
-    catalog
-        .get_pref(PREF_WATCH_ENABLED)
-        .map(|v| v == "1" || v == "true")
-        .unwrap_or(false)
+/// Configuration rule for a watched folder.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WatchFolderRule {
+    pub id: String,
+    pub path: PathBuf,
+    pub enabled: bool,
+    pub import_epub: bool,
+    pub epub_shelf_id: Option<i64>,
+    pub import_pdf: bool,
+    pub pdf_shelf_id: Option<i64>,
+    pub import_comics: bool,
+    pub comics_shelf_id: Option<i64>,
+    pub subfolder_shelves: bool,
+    pub cleanup_original: bool,
 }
 
-/// Set watch folder auto-import enabled state.
+impl WatchFolderRule {
+    /// Create a new rule with sensible defaults.
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            path,
+            enabled: true,
+            import_epub: true,
+            epub_shelf_id: None,
+            import_pdf: true,
+            pdf_shelf_id: None,
+            import_comics: true,
+            comics_shelf_id: None,
+            subfolder_shelves: true,
+            cleanup_original: false,
+        }
+    }
+
+    /// Check if this rule permits importing the given file.
+    pub fn allows_file(&self, path: &Path) -> bool {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        match ext.as_str() {
+            "epub" => self.import_epub,
+            "pdf" => self.import_pdf,
+            "cbz" | "cbr" => self.import_comics,
+            _ => false,
+        }
+    }
+
+    /// Get target shelf for this format, if specified.
+    pub fn target_shelf_for_file(&self, path: &Path) -> Option<i64> {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        match ext.as_str() {
+            "epub" => self.epub_shelf_id,
+            "pdf" => self.pdf_shelf_id,
+            "cbz" | "cbr" => self.comics_shelf_id,
+            _ => None,
+        }
+    }
+}
+
+/// Load configured watch folder rules from preferences.
+pub fn load_watch_rules(catalog: &Catalog) -> Vec<WatchFolderRule> {
+    if let Some(json_str) = catalog.get_pref(PREF_WATCH_RULES) {
+        if let Ok(rules) = serde_json::from_str::<Vec<WatchFolderRule>>(&json_str) {
+            return rules;
+        }
+    }
+
+    // Backward compatibility with previous single-path preference
+    if let Some(path) = watch_path(catalog) {
+        let enabled = is_watch_enabled(catalog);
+        let default_rule = WatchFolderRule {
+            id: uuid::Uuid::new_v4().to_string(),
+            path,
+            enabled,
+            import_epub: true,
+            epub_shelf_id: None,
+            import_pdf: true,
+            pdf_shelf_id: None,
+            import_comics: true,
+            comics_shelf_id: None,
+            subfolder_shelves: true,
+            cleanup_original: false,
+        };
+        let rules = vec![default_rule];
+        save_watch_rules(catalog, &rules);
+        return rules;
+    }
+
+    Vec::new()
+}
+
+/// Save watch folder rules to preferences.
+pub fn save_watch_rules(catalog: &Catalog, rules: &[WatchFolderRule]) {
+    if let Ok(json_str) = serde_json::to_string(rules) {
+        catalog.set_pref(PREF_WATCH_RULES, &json_str);
+    }
+}
+
+/// Check if any watch folder auto-import rule is enabled.
+pub fn is_watch_enabled(catalog: &Catalog) -> bool {
+    let rules = load_watch_rules(catalog);
+    if !rules.is_empty() {
+        rules.iter().any(|r| r.enabled)
+    } else {
+        catalog
+            .get_pref(PREF_WATCH_ENABLED)
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false)
+    }
+}
+
+/// Set watch folder auto-import enabled state on all rules.
 pub fn set_watch_enabled(catalog: &Catalog, enabled: bool) {
+    let mut rules = load_watch_rules(catalog);
+    for r in &mut rules {
+        r.enabled = enabled;
+    }
+    save_watch_rules(catalog, &rules);
     catalog.set_pref(PREF_WATCH_ENABLED, if enabled { "1" } else { "0" });
 }
 
-/// Get the configured watch folder path, if any.
+/// Get the first configured watch folder path, if any.
 pub fn watch_path(catalog: &Catalog) -> Option<PathBuf> {
+    let rules = load_watch_rules(catalog);
+    if let Some(first) = rules.first() {
+        return Some(first.path.clone());
+    }
     catalog
         .get_pref(PREF_WATCH_PATH)
         .filter(|p| !p.trim().is_empty())
         .map(PathBuf::from)
 }
 
-/// Set the watch folder path.
+/// Set the watch folder path (creates or updates the first rule).
 pub fn set_watch_path(catalog: &Catalog, path: &Path) {
+    let mut rules = load_watch_rules(catalog);
+    if let Some(first) = rules.first_mut() {
+        first.path = path.to_path_buf();
+        first.enabled = true;
+    } else {
+        rules.push(WatchFolderRule::new(path.to_path_buf()));
+    }
+    save_watch_rules(catalog, &rules);
     catalog.set_pref(PREF_WATCH_PATH, path.to_string_lossy().as_ref());
 }
 
-/// Clear the watch folder path.
+/// Clear all watch folder rules.
 pub fn clear_watch_path(catalog: &Catalog) {
+    save_watch_rules(catalog, &[]);
     catalog.set_pref(PREF_WATCH_PATH, "");
+    catalog.set_pref(PREF_WATCH_ENABLED, "0");
 }
 
 /// Request a reload of the watch folder service from anywhere (e.g. Settings).
@@ -82,6 +214,31 @@ pub fn is_ignored_file(path: &Path) -> bool {
     false
 }
 
+/// Recursively collect supported book files in `dir` up to `max_depth` matching `rule`.
+pub fn collect_book_files_for_rule(
+    dir: &Path,
+    max_depth: usize,
+    rule: &WatchFolderRule,
+    out: &mut Vec<PathBuf>,
+) {
+    if max_depth == 0 {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if is_ignored_file(&p) {
+                continue;
+            }
+            if p.is_dir() {
+                collect_book_files_for_rule(&p, max_depth - 1, rule, out);
+            } else if p.is_file() && rule.allows_file(&p) {
+                out.push(p);
+            }
+        }
+    }
+}
+
 /// Recursively collect supported book files in `dir` up to `max_depth`.
 pub fn collect_book_files(dir: &Path, max_depth: usize, out: &mut Vec<PathBuf>) {
     if max_depth == 0 {
@@ -102,16 +259,22 @@ pub fn collect_book_files(dir: &Path, max_depth: usize, out: &mut Vec<PathBuf>) 
     }
 }
 
-/// Worker function to import a batch of files and update the catalog and UI.
-pub fn import_watch_files(
+/// Worker function to import a batch of files and apply folder rules (shelves, cleanups).
+pub fn import_watch_files_with_rules(
     catalog: &Arc<Catalog>,
-    paths: Vec<PathBuf>,
+    items: Vec<(PathBuf, String)>,
     app_sender: Option<relm4::Sender<AppMsg>>,
 ) {
+    let rules = load_watch_rules(catalog);
+    let rules_by_id: HashMap<String, WatchFolderRule> =
+        rules.into_iter().map(|r| (r.id.clone(), r)).collect();
+
     let mut imported_count = 0;
     let mut last_title = String::new();
 
-    for path in paths {
+    for (path, rule_id) in items {
+        let rule_opt = rules_by_id.get(&rule_id);
+
         match crate::epub::import_epub(catalog, &path) {
             Ok(res) => {
                 if !res.duplicate {
@@ -119,7 +282,58 @@ pub fn import_watch_files(
                     last_title = res.title;
                     log::info!("Watch folder: imported '{}' from {}", last_title, path.display());
                 } else {
-                    log::debug!("Watch folder: skipped duplicate '{}' ({})", res.title, path.display());
+                    log::debug!("Watch folder: duplicate '{}' ({})", res.title, path.display());
+                }
+
+                // Apply target shelf & subfolder rules
+                if let Some(rule) = rule_opt {
+                    // 1. Format-specific target shelf
+                    if let Some(shelf_id) = rule.target_shelf_for_file(&path) {
+                        let _ = catalog.add_book_to_shelf(shelf_id, res.book_id);
+                    }
+
+                    // 2. Subfolder auto-shelving
+                    if rule.subfolder_shelves {
+                        if let Ok(rel) = path.strip_prefix(&rule.path) {
+                            if let Some(first_comp) = rel.components().next() {
+                                if rel.components().count() > 1 {
+                                    let subfolder_name = first_comp
+                                        .as_os_str()
+                                        .to_string_lossy()
+                                        .trim()
+                                        .to_string();
+                                    if !subfolder_name.is_empty() {
+                                        let shelf_id = if let Ok(shelves) = catalog.list_shelves() {
+                                            shelves
+                                                .iter()
+                                                .find(|s| s.name.eq_ignore_ascii_case(&subfolder_name))
+                                                .map(|s| s.id)
+                                        } else {
+                                            None
+                                        };
+                                        let final_id = match shelf_id {
+                                            Some(id) => Ok(id),
+                                            None => catalog.create_shelf(
+                                                &subfolder_name,
+                                                crate::models::ShelfKind::Standard,
+                                                "",
+                                                "",
+                                            ),
+                                        };
+                                        if let Ok(sid) = final_id {
+                                            let _ = catalog.add_book_to_shelf(sid, res.book_id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Clean up original file after successful import
+                    if rule.cleanup_original && path.is_file() {
+                        let _ = std::fs::remove_file(&path);
+                        log::info!("Watch folder: cleaned up original file {}", path.display());
+                    }
                 }
             }
             Err(err) => {
@@ -142,13 +356,12 @@ pub fn import_watch_files(
     }
 }
 
-/// Auto-import watch folder service holding the directory monitor and debounce state.
+/// Auto-import watch folder service holding directory monitors and debounce state.
 pub struct WatchFolderService {
     catalog: Arc<Catalog>,
     app_sender: relm4::Sender<AppMsg>,
-    monitor: Option<gtk::gio::FileMonitor>,
-    current_path: Option<PathBuf>,
-    pending: Arc<Mutex<HashMap<PathBuf, (u64, usize)>>>,
+    monitors: Vec<gtk::gio::FileMonitor>,
+    pending: Arc<Mutex<HashMap<PathBuf, (u64, usize, String)>>>,
     timer_source: Option<gtk::glib::SourceId>,
 }
 
@@ -162,8 +375,7 @@ impl WatchFolderService {
         let mut svc = Self {
             catalog,
             app_sender,
-            monitor: None,
-            current_path: None,
+            monitors: Vec::new(),
             pending: Arc::new(Mutex::new(HashMap::new())),
             timer_source: None,
         };
@@ -171,141 +383,135 @@ impl WatchFolderService {
         svc
     }
 
-    /// Reload the watch folder configuration, rebinding monitors as necessary.
+    /// Reload watch folder configuration and rebind monitors.
     pub fn reload(&mut self) {
-        let enabled = is_watch_enabled(&self.catalog);
-        let path_opt = watch_path(&self.catalog);
-
-        let target_path = if enabled {
-            path_opt.filter(|p| p.is_dir())
-        } else {
-            None
-        };
-
-        let Some(path) = target_path else {
-            if let Some(m) = self.monitor.take() {
-                m.cancel();
-            }
-            if let Some(source) = self.timer_source.take() {
-                source.remove();
-            }
-            if let Ok(mut map) = self.pending.lock() {
-                map.clear();
-            }
-            self.current_path = None;
-            return;
-        };
-
-        // If already monitoring this exact path, keep running
-        if self.current_path.as_deref() == Some(&path) && self.monitor.is_some() {
-            return;
-        }
-
-        // Cancel previous monitor if path changed
-        if let Some(m) = self.monitor.take() {
+        // Cancel previous monitors
+        for m in self.monitors.drain(..) {
             m.cancel();
+        }
+        if let Some(source) = self.timer_source.take() {
+            source.remove();
         }
         if let Ok(mut map) = self.pending.lock() {
             map.clear();
         }
 
-        self.current_path = Some(path.clone());
+        let rules = load_watch_rules(&self.catalog);
+        let enabled_rules: Vec<WatchFolderRule> = rules
+            .into_iter()
+            .filter(|r| r.enabled && r.path.is_dir())
+            .collect();
 
-        // Setup FileMonitor on directory
-        let file = gtk::gio::File::for_path(&path);
-        let flags = gtk::gio::FileMonitorFlags::SEND_MOVED | gtk::gio::FileMonitorFlags::WATCH_MOUNTS;
-        match file.monitor_directory(flags, gtk::gio::Cancellable::NONE) {
-            Ok(monitor) => {
-                let pending_arc = self.pending.clone();
-                monitor.connect_changed(move |_mon, file, _other, event| {
-                    use gtk::gio::FileMonitorEvent;
-                    match event {
-                        FileMonitorEvent::Created
-                        | FileMonitorEvent::Changed
-                        | FileMonitorEvent::ChangesDoneHint
-                        | FileMonitorEvent::MovedIn
-                        | FileMonitorEvent::Moved
-                        | FileMonitorEvent::Renamed => {
-                            if let Some(p) = file.path() {
-                                if !is_ignored_file(&p) && is_supported_book_file(&p) {
-                                    let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-                                    if let Ok(mut map) = pending_arc.lock() {
-                                        map.insert(p, (size, 0));
+        if enabled_rules.is_empty() {
+            return;
+        }
+
+        // Set up FileMonitor for each active watch folder
+        for rule in &enabled_rules {
+            let file = gtk::gio::File::for_path(&rule.path);
+            let flags =
+                gtk::gio::FileMonitorFlags::SEND_MOVED | gtk::gio::FileMonitorFlags::WATCH_MOUNTS;
+            match file.monitor_directory(flags, gtk::gio::Cancellable::NONE) {
+                Ok(monitor) => {
+                    let pending_arc = self.pending.clone();
+                    let r_clone = rule.clone();
+                    monitor.connect_changed(move |_mon, file, _other, event| {
+                        use gtk::gio::FileMonitorEvent;
+                        match event {
+                            FileMonitorEvent::Created
+                            | FileMonitorEvent::Changed
+                            | FileMonitorEvent::ChangesDoneHint
+                            | FileMonitorEvent::MovedIn
+                            | FileMonitorEvent::Moved
+                            | FileMonitorEvent::Renamed => {
+                                if let Some(p) = file.path() {
+                                    if !is_ignored_file(&p) && r_clone.allows_file(&p) {
+                                        let size =
+                                            std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                                        if let Ok(mut map) = pending_arc.lock() {
+                                            map.insert(p, (size, 0, r_clone.id.clone()));
+                                        }
                                     }
                                 }
                             }
+                            _ => {}
                         }
-                        _ => {}
-                    }
-                });
-                self.monitor = Some(monitor);
-            }
-            Err(e) => {
-                log::warn!("Watch folder: failed to monitor {}: {e}", path.display());
+                    });
+                    self.monitors.push(monitor);
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Watch folder: failed to monitor {}: {e}",
+                        rule.path.display()
+                    );
+                }
             }
         }
 
-        // Start debounce stabilization timer if not already active
-        if self.timer_source.is_none() {
-            let pending_arc = self.pending.clone();
-            let catalog_arc = self.catalog.clone();
-            let sender_clone = self.app_sender.clone();
-            let source_id = gtk::glib::timeout_add_local(Duration::from_millis(1500), move || {
-                let mut ready = Vec::new();
-                if let Ok(mut map) = pending_arc.lock() {
-                    let mut to_remove = Vec::new();
-                    for (path, (last_size, stable_ticks)) in map.iter_mut() {
-                        if !path.exists() {
-                            to_remove.push(path.clone());
-                            continue;
-                        }
-                        let current_size = match std::fs::metadata(path) {
-                            Ok(m) => m.len(),
-                            Err(_) => continue,
-                        };
-                        if current_size == 0 {
-                            continue;
-                        }
-                        if current_size != *last_size {
-                            *last_size = current_size;
-                            *stable_ticks = 0;
-                        } else {
-                            *stable_ticks += 1;
-                            if *stable_ticks >= 1 {
-                                // Test read access to ensure file lock is released
-                                if std::fs::File::open(path).is_ok() {
-                                    ready.push(path.clone());
-                                    to_remove.push(path.clone());
-                                }
+        // Start debounce stabilization timer
+        let pending_arc = self.pending.clone();
+        let catalog_arc = self.catalog.clone();
+        let sender_clone = self.app_sender.clone();
+        let source_id = gtk::glib::timeout_add_local(Duration::from_millis(1500), move || {
+            let mut ready = Vec::new();
+            if let Ok(mut map) = pending_arc.lock() {
+                let mut to_remove = Vec::new();
+                for (path, (last_size, stable_ticks, rule_id)) in map.iter_mut() {
+                    if !path.exists() {
+                        to_remove.push(path.clone());
+                        continue;
+                    }
+                    let current_size = match std::fs::metadata(path) {
+                        Ok(m) => m.len(),
+                        Err(_) => continue,
+                    };
+                    if current_size == 0 {
+                        continue;
+                    }
+                    if current_size != *last_size {
+                        *last_size = current_size;
+                        *stable_ticks = 0;
+                    } else {
+                        *stable_ticks += 1;
+                        if *stable_ticks >= 1 {
+                            // Test read access to ensure file lock is released
+                            if std::fs::File::open(path).is_ok() {
+                                ready.push((path.clone(), rule_id.clone()));
+                                to_remove.push(path.clone());
                             }
                         }
                     }
-                    for r in to_remove {
-                        map.remove(&r);
-                    }
                 }
-
-                if !ready.is_empty() {
-                    let cat = catalog_arc.clone();
-                    let snd = sender_clone.clone();
-                    std::thread::spawn(move || {
-                        import_watch_files(&cat, ready, Some(snd));
-                    });
+                for r in to_remove {
+                    map.remove(&r);
                 }
-                gtk::glib::ControlFlow::Continue
-            });
-            self.timer_source = Some(source_id);
-        }
+            }
 
-        // Initial scan of directory in background
-        let scan_path = path;
+            if !ready.is_empty() {
+                let cat = catalog_arc.clone();
+                let snd = sender_clone.clone();
+                std::thread::spawn(move || {
+                    import_watch_files_with_rules(&cat, ready, Some(snd));
+                });
+            }
+            gtk::glib::ControlFlow::Continue
+        });
+        self.timer_source = Some(source_id);
+
+        // Initial scan of active directories in background
         let cat = self.catalog.clone();
         let snd = self.app_sender.clone();
         std::thread::spawn(move || {
-            let mut files = Vec::new();
-            collect_book_files(&scan_path, 2, &mut files);
-            if !files.is_empty() {
-                import_watch_files(&cat, files, Some(snd));
+            let mut initial_items = Vec::new();
+            for rule in enabled_rules {
+                let mut files = Vec::new();
+                collect_book_files_for_rule(&rule.path, 2, &rule, &mut files);
+                for f in files {
+                    initial_items.push((f, rule.id.clone()));
+                }
+            }
+            if !initial_items.is_empty() {
+                import_watch_files_with_rules(&cat, initial_items, Some(snd));
             }
         });
     }
@@ -313,7 +519,7 @@ impl WatchFolderService {
 
 impl Drop for WatchFolderService {
     fn drop(&mut self) {
-        if let Some(m) = self.monitor.take() {
+        for m in self.monitors.drain(..) {
             m.cancel();
         }
         if let Some(source) = self.timer_source.take() {
@@ -350,30 +556,71 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_book_files() {
-        let temp_dir = std::env::temp_dir().join(format!("kalam_test_wf_{}", uuid::Uuid::new_v4()));
+    fn test_watch_folder_rule_filters() {
+        let rule = WatchFolderRule {
+            id: "test-rule".into(),
+            path: PathBuf::from("/tmp/manga"),
+            enabled: true,
+            import_epub: false,
+            epub_shelf_id: None,
+            import_pdf: false,
+            pdf_shelf_id: None,
+            import_comics: true,
+            comics_shelf_id: Some(42),
+            subfolder_shelves: true,
+            cleanup_original: false,
+        };
+
+        assert!(rule.allows_file(Path::new("chapter1.cbz")));
+        assert!(rule.allows_file(Path::new("chapter2.cbr")));
+        assert!(!rule.allows_file(Path::new("novel.epub")));
+        assert!(!rule.allows_file(Path::new("paper.pdf")));
+        assert_eq!(rule.target_shelf_for_file(Path::new("chapter1.cbz")), Some(42));
+        assert_eq!(rule.target_shelf_for_file(Path::new("novel.epub")), None);
+    }
+
+    #[test]
+    fn test_watch_folder_rules_serialization() {
+        let rule = WatchFolderRule::new(PathBuf::from("/tmp/books"));
+        let rules = vec![rule];
+        let json = serde_json::to_string(&rules).unwrap();
+        let deserialized: Vec<WatchFolderRule> = serde_json::from_str(&json).unwrap();
+        assert_eq!(rules, deserialized);
+    }
+
+    #[test]
+    fn test_collect_book_files_for_rule() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("kalam_test_wf_rule_{}", uuid::Uuid::new_v4()));
         let sub_dir = temp_dir.join("sub");
         std::fs::create_dir_all(&sub_dir).unwrap();
 
         std::fs::write(temp_dir.join("book1.epub"), b"test").unwrap();
-        std::fs::write(temp_dir.join(".hidden.epub"), b"test").unwrap();
-        std::fs::write(temp_dir.join("download.epub.part"), b"test").unwrap();
-        std::fs::write(temp_dir.join("notes.txt"), b"test").unwrap();
+        std::fs::write(temp_dir.join("paper.pdf"), b"test").unwrap();
         std::fs::write(sub_dir.join("comic.cbz"), b"test").unwrap();
 
+        let comic_only_rule = WatchFolderRule {
+            id: "comics-only".into(),
+            path: temp_dir.clone(),
+            enabled: true,
+            import_epub: false,
+            epub_shelf_id: None,
+            import_pdf: false,
+            pdf_shelf_id: None,
+            import_comics: true,
+            comics_shelf_id: None,
+            subfolder_shelves: true,
+            cleanup_original: false,
+        };
+
         let mut found = Vec::new();
-        collect_book_files(&temp_dir, 2, &mut found);
+        collect_book_files_for_rule(&temp_dir, 2, &comic_only_rule, &mut found);
 
-        let names: Vec<String> = found
-            .iter()
-            .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(|s| s.to_string()))
-            .collect();
-
-        assert!(names.contains(&"book1.epub".to_string()));
-        assert!(names.contains(&"comic.cbz".to_string()));
-        assert!(!names.contains(&".hidden.epub".to_string()));
-        assert!(!names.contains(&"download.epub.part".to_string()));
-        assert!(!names.contains(&"notes.txt".to_string()));
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].file_name().and_then(|n| n.to_str()),
+            Some("comic.cbz")
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

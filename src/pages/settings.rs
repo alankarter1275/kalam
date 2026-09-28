@@ -1591,6 +1591,305 @@ fn rebuild_dicts(
     body.append(&footer);
 }
 
+fn build_shelf_dropdown(
+    shelves: &[(Option<i64>, String)],
+    current_shelf_id: Option<i64>,
+    on_change: impl Fn(Option<i64>) + 'static,
+) -> gtk::DropDown {
+    let titles: Vec<&str> = shelves.iter().map(|(_, name)| name.as_str()).collect();
+    let drop = gtk::DropDown::from_strings(&titles);
+    drop.set_valign(gtk::Align::Center);
+
+    let init_idx = shelves
+        .iter()
+        .position(|(id, _)| *id == current_shelf_id)
+        .unwrap_or(0);
+    drop.set_selected(init_idx as u32);
+
+    let shelves_map = shelves.to_vec();
+    drop.connect_selected_notify(move |combo| {
+        let idx = combo.selected() as usize;
+        if let Some((shelf_id, _)) = shelves_map.get(idx) {
+            on_change(*shelf_id);
+        }
+    });
+
+    drop
+}
+
+fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::Catalog>) {
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+
+    let rules = crate::watch_folder::load_watch_rules(catalog);
+    let shelves = catalog.list_shelves().unwrap_or_default();
+    let mut shelf_choices: Vec<(Option<i64>, String)> =
+        vec![(None, "Library Default (No shelf)".to_string())];
+    for s in &shelves {
+        shelf_choices.push((Some(s.id), s.name.clone()));
+    }
+
+    if rules.is_empty() {
+        let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        placeholder.set_margin_top(12);
+        placeholder.set_margin_bottom(12);
+
+        let empty = gtk::Label::new(Some(
+            "No watch folders configured yet.\nClick “+ Add Watch Folder” to monitor folders and route books to shelves.",
+        ));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_wrap(true);
+        empty.set_justify(gtk::Justification::Center);
+        placeholder.append(&empty);
+        container.append(&placeholder);
+        return;
+    }
+
+    for rule in rules {
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        card.add_css_class("kalam-watch-card");
+
+        // Header: Path + Switch + Remove
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        header.add_css_class("kalam-watch-card-header");
+
+        let folder_icon = gtk::Image::from_icon_name("folder-symbolic");
+        header.append(&folder_icon);
+
+        let path_display = rule.path.to_string_lossy().into_owned();
+        let path_chip = chip_label(&path_display, "kalam-chip-neutral");
+        path_chip.set_tooltip_text(Some(&path_display));
+        header.append(&path_chip);
+
+        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        header.append(&spacer);
+
+        let sw = toggle_switch(rule.enabled, {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            move |active| {
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.enabled = active;
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    crate::watch_folder::request_reload();
+                }
+            }
+        });
+        sw.set_tooltip_text(Some("Enable or pause monitoring for this folder"));
+        header.append(&sw);
+
+        let remove_btn = gtk::Button::from_icon_name("user-trash-symbolic");
+        remove_btn.add_css_class("flat");
+        remove_btn.add_css_class("danger");
+        remove_btn.set_tooltip_text(Some("Remove this watch folder"));
+        {
+            let cat = catalog.clone();
+            let cont = container.clone();
+            let rule_id = rule.id.clone();
+            remove_btn.connect_clicked(move |_| {
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                all_rules.retain(|r| r.id != rule_id);
+                crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                crate::watch_folder::request_reload();
+                render_watch_cards(&cont, &cat);
+            });
+        }
+        header.append(&remove_btn);
+        card.append(&header);
+
+        // Format row 1: EPUB
+        let row_epub = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row_epub.add_css_class("kalam-watch-format-row");
+        row_epub.set_valign(gtk::Align::Center);
+
+        let epub_check = gtk::CheckButton::with_label("📘 Novels & Ebooks (EPUB)");
+        epub_check.set_active(rule.import_epub);
+        epub_check.add_css_class("kalam-watch-format-label");
+        row_epub.append(&epub_check);
+
+        let arrow_epub = gtk::Label::new(Some("Put into:"));
+        arrow_epub.add_css_class("kalam-setting-desc");
+        row_epub.append(&arrow_epub);
+
+        let epub_drop = build_shelf_dropdown(
+            &shelf_choices,
+            rule.epub_shelf_id,
+            {
+                let cat = catalog.clone();
+                let rule_id = rule.id.clone();
+                move |sid| {
+                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                        r.epub_shelf_id = sid;
+                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    }
+                }
+            },
+        );
+        epub_drop.set_sensitive(rule.import_epub);
+        row_epub.append(&epub_drop);
+
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            let drop_ref = epub_drop.clone();
+            epub_check.connect_toggled(move |chk| {
+                let active = chk.is_active();
+                drop_ref.set_sensitive(active);
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.import_epub = active;
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    crate::watch_folder::request_reload();
+                }
+            });
+        }
+        card.append(&row_epub);
+
+        // Format row 2: PDF
+        let row_pdf = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row_pdf.add_css_class("kalam-watch-format-row");
+        row_pdf.set_valign(gtk::Align::Center);
+
+        let pdf_check = gtk::CheckButton::with_label("📄 Documents & Papers (PDF)");
+        pdf_check.set_active(rule.import_pdf);
+        pdf_check.add_css_class("kalam-watch-format-label");
+        row_pdf.append(&pdf_check);
+
+        let arrow_pdf = gtk::Label::new(Some("Put into:"));
+        arrow_pdf.add_css_class("kalam-setting-desc");
+        row_pdf.append(&arrow_pdf);
+
+        let pdf_drop = build_shelf_dropdown(
+            &shelf_choices,
+            rule.pdf_shelf_id,
+            {
+                let cat = catalog.clone();
+                let rule_id = rule.id.clone();
+                move |sid| {
+                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                        r.pdf_shelf_id = sid;
+                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    }
+                }
+            },
+        );
+        pdf_drop.set_sensitive(rule.import_pdf);
+        row_pdf.append(&pdf_drop);
+
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            let drop_ref = pdf_drop.clone();
+            pdf_check.connect_toggled(move |chk| {
+                let active = chk.is_active();
+                drop_ref.set_sensitive(active);
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.import_pdf = active;
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    crate::watch_folder::request_reload();
+                }
+            });
+        }
+        card.append(&row_pdf);
+
+        // Format row 3: Comics (CBZ / CBR)
+        let row_comics = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row_comics.add_css_class("kalam-watch-format-row");
+        row_comics.set_valign(gtk::Align::Center);
+
+        let comics_check = gtk::CheckButton::with_label("🎨 Comics & Manga (CBZ/CBR)");
+        comics_check.set_active(rule.import_comics);
+        comics_check.add_css_class("kalam-watch-format-label");
+        row_comics.append(&comics_check);
+
+        let arrow_comics = gtk::Label::new(Some("Put into:"));
+        arrow_comics.add_css_class("kalam-setting-desc");
+        row_comics.append(&arrow_comics);
+
+        let comics_drop = build_shelf_dropdown(
+            &shelf_choices,
+            rule.comics_shelf_id,
+            {
+                let cat = catalog.clone();
+                let rule_id = rule.id.clone();
+                move |sid| {
+                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                        r.comics_shelf_id = sid;
+                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    }
+                }
+            },
+        );
+        comics_drop.set_sensitive(rule.import_comics);
+        row_comics.append(&comics_drop);
+
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            let drop_ref = comics_drop.clone();
+            comics_check.connect_toggled(move |chk| {
+                let active = chk.is_active();
+                drop_ref.set_sensitive(active);
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.import_comics = active;
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    crate::watch_folder::request_reload();
+                }
+            });
+        }
+        card.append(&row_comics);
+
+        // Options: Subfolder shelves + Clean up
+        let options_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        options_box.set_margin_top(4);
+
+        let subfolder_check = gtk::CheckButton::with_label(
+            "Automatically create shelves from subfolders (e.g. Manga/One Piece ➔ \"One Piece\")",
+        );
+        subfolder_check.set_active(rule.subfolder_shelves);
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            subfolder_check.connect_toggled(move |chk| {
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.subfolder_shelves = chk.is_active();
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                }
+            });
+        }
+        options_box.append(&subfolder_check);
+
+        let cleanup_check = gtk::CheckButton::with_label(
+            "Clean up: delete original file from folder after safe import",
+        );
+        cleanup_check.set_active(rule.cleanup_original);
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            cleanup_check.connect_toggled(move |chk| {
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.cleanup_original = chk.is_active();
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                }
+            });
+        }
+        options_box.append(&cleanup_check);
+
+        card.append(&options_box);
+        container.append(&card);
+    }
+}
+
 /// Toggle for writing metadata back into the EPUB itself, and deleting backups.
 fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
     use crate::epub_metadata::{set_write_enabled, write_enabled};
@@ -1622,97 +1921,54 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
         );
     }
 
-    // 2. Auto-Import Watch Folder
+    // 2. Auto-Import Watch Folders (Multi-folder routing)
     let watch_body = section_card(
         host,
         "folder-download-symbolic",
-        "Auto-import watch folder",
-        Some("Automatically import new books and comics added to a folder on your computer."),
+        "Auto-import watch folders",
+        Some("Automatically import and organize new books and comics added to folders on your computer."),
     );
     {
-        let catalog_sw = catalog.clone();
-        let sw = toggle_switch(
-            crate::watch_folder::is_watch_enabled(&catalog_sw),
-            move |on| {
-                crate::watch_folder::set_watch_enabled(&catalog_sw, on);
-                crate::watch_folder::request_reload();
-            },
-        );
-        setting_row(
-            &watch_body,
-            "Monitor folder for new books",
-            "On: watches the chosen folder for new EPUBs, PDFs, and Comic books, verifies files have finished downloading, and automatically imports them into your library.",
-            &sw,
-        );
+        let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        top_row.set_valign(gtk::Align::Center);
 
-        // Path selector row
-        let path_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        path_box.set_valign(gtk::Align::Center);
+        let add_btn = gtk::Button::with_label("+ Add Watch Folder");
+        add_btn.add_css_class("kalam-btn-subtle");
 
-        let current_path = crate::watch_folder::watch_path(catalog);
-        let path_display = current_path
-            .as_ref()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "No folder selected".to_string());
-        let path_chip = chip_label(&path_display, "kalam-chip-neutral");
-        path_box.append(&path_chip);
+        let cards_container = gtk::Box::new(gtk::Orientation::Vertical, 10);
 
-        let pick_btn = gtk::Button::with_label("Choose folder");
-        pick_btn.add_css_class("kalam-btn-subtle");
-
-        let clear_btn = gtk::Button::with_label("Clear");
-        clear_btn.add_css_class("kalam-btn-ghost");
-        clear_btn.set_sensitive(current_path.is_some());
-
-        let catalog_pick = catalog.clone();
-        let path_chip_pick = path_chip.clone();
-        let clear_btn_pick = clear_btn.clone();
-        let sw_pick = sw.clone();
-        pick_btn.connect_clicked(move |btn| {
+        let catalog_add = catalog.clone();
+        let cc_add = cards_container.clone();
+        add_btn.connect_clicked(move |btn| {
             let root = btn.root();
             let window = root.and_then(|r| r.downcast::<gtk::Window>().ok());
             let dialog = gtk::FileDialog::builder()
-                .title("Select Auto-Import Watch Folder")
+                .title("Select Folder to Watch")
                 .modal(true)
                 .build();
 
-            let cat = catalog_pick.clone();
-            let chip = path_chip_pick.clone();
-            let clr = clear_btn_pick.clone();
-            let sw = sw_pick.clone();
+            let cat = catalog_add.clone();
+            let cc = cc_add.clone();
             dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
                 let Ok(folder) = res else { return };
                 let Some(path) = folder.path() else { return };
-                crate::watch_folder::set_watch_path(&cat, &path);
-                crate::watch_folder::set_watch_enabled(&cat, true);
+                let mut rules = crate::watch_folder::load_watch_rules(&cat);
+                if rules.iter().any(|r| r.path == path) {
+                    crate::notify::info("Watch Folder", "This folder is already in your watch list.");
+                    return;
+                }
+                rules.push(crate::watch_folder::WatchFolderRule::new(path));
+                crate::watch_folder::save_watch_rules(&cat, &rules);
                 crate::watch_folder::request_reload();
-                chip.set_label(&path.to_string_lossy());
-                clr.set_sensitive(true);
-                sw.set_active(true);
+                render_watch_cards(&cc, &cat);
             });
         });
-        path_box.append(&pick_btn);
+        top_row.append(&add_btn);
 
-        let catalog_clear = catalog.clone();
-        let path_chip_clear = path_chip.clone();
-        let clear_btn_self = clear_btn.clone();
-        let sw_clear = sw.clone();
-        clear_btn.connect_clicked(move |_| {
-            crate::watch_folder::clear_watch_path(&catalog_clear);
-            crate::watch_folder::set_watch_enabled(&catalog_clear, false);
-            crate::watch_folder::request_reload();
-            path_chip_clear.set_label("No folder selected");
-            clear_btn_self.set_sensitive(false);
-            sw_clear.set_active(false);
-        });
-        path_box.append(&clear_btn);
+        watch_body.append(&top_row);
 
-        setting_row(
-            &watch_body,
-            "Watch folder path",
-            "The folder Kalam checks for newly downloaded or added ebook and comic files.",
-            &path_box,
-        );
+        render_watch_cards(&cards_container, catalog);
+        watch_body.append(&cards_container);
     }
 
     // 3. EPUB writeback & backups

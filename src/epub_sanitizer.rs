@@ -489,11 +489,22 @@ fn is_toxic_box_dimension(prop: &str, val: &str) -> bool {
         prop,
         "margin" | "margin-left" | "margin-right" | "padding-left" | "padding-right"
     ) {
-        if let Some(px) = clean
-            .strip_suffix("px")
-            .and_then(|s| s.trim().parse::<f32>().ok())
-        {
-            return px >= 40.0;
+        for part in clean.split_whitespace() {
+            if let Some(px) = part
+                .strip_suffix("px")
+                .and_then(|s| s.trim().parse::<f32>().ok())
+            {
+                if px >= 40.0 {
+                    return true;
+                }
+            } else if let Some(pt) = part
+                .strip_suffix("pt")
+                .and_then(|s| s.trim().parse::<f32>().ok())
+            {
+                if pt >= 30.0 {
+                    return true;
+                }
+            }
         }
     }
     false

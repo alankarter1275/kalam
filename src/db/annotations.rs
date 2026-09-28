@@ -209,6 +209,7 @@ impl Catalog {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn update_annotation_style(&self, id: i64, style: &str) -> Result<()> {
         let conn = self.conn();
         let now = chrono_like_now();

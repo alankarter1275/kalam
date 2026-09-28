@@ -185,6 +185,7 @@ pub enum ComicsReaderMsg {
         style: String,
         note: String,
     },
+    #[allow(dead_code)]
     QuoteSelection,
     LookUpWord(String),
     ClearSelection,

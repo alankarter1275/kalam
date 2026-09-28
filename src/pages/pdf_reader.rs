@@ -287,6 +287,7 @@ pub enum PdfReaderMsg {
         style: String,
         note: String,
     },
+    #[allow(dead_code)]
     QuoteSelection,
     LookUpWord(String),
     #[allow(dead_code)]

@@ -206,7 +206,8 @@ impl BubbleManager {
         // Setup Draggable gesture with ZERO edge snapping
         let drag = gtk::GestureDrag::new();
         let start_coord = Rc::new(RefCell::new((0.0, 0.0)));
-        let start_coord_drag = start_coord.clone();
+        let start_coord_begin = start_coord.clone();
+        let start_coord_update = start_coord.clone();
         let start_coord_end = start_coord;
         let pos_drag = pos.clone();
         let pos_end = pos.clone();
@@ -214,13 +215,13 @@ impl BubbleManager {
         let stack_drag = minimized_stack.clone();
         let s_click = sender.clone();
 
-        drag.connect_drag_begin(move |_, x, y| {
+        drag.connect_drag_begin(move |_, _x, _y| {
             let current = *pos_drag.borrow();
-            start_coord_drag.replace((current.0, current.1));
+            start_coord_begin.replace((current.0, current.1));
         });
 
         drag.connect_drag_update(move |_, offset_x, offset_y| {
-            let (sx, sy) = *start_coord_drag.borrow();
+            let (sx, sy) = *start_coord_update.borrow();
             let new_x = (sx + offset_x).max(10.0f64);
             let new_y = (sy + offset_y).max(10.0f64);
             fixed_drag.move_(&stack_drag, new_x, new_y);
@@ -687,6 +688,9 @@ impl BubbleManager {
 
         if let Some(second_id) = split_id {
             // Side-by-Side Split View (Two Books at Once)
+            let left_widget = self.ensure_primary_reader(active_id).map(|r| r.widget().clone());
+            let right_widget = self.ensure_split_reader(second_id).map(|r| r.widget().clone());
+
             let split_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
             split_box.set_hexpand(true);
             split_box.set_vexpand(true);
@@ -699,9 +703,8 @@ impl BubbleManager {
                 left_pane.add_css_class("k-bubble-pane-focused");
             }
 
-            let left_reader = self.ensure_primary_reader(active_id);
-            if let Some(r) = left_reader {
-                left_pane.append(r.widget());
+            if let Some(w) = left_widget {
+                left_pane.append(&w);
             }
 
             // Click gesture to set Left Pane as active for fair reading-time tracking
@@ -726,9 +729,8 @@ impl BubbleManager {
                 right_pane.add_css_class("k-bubble-pane-focused");
             }
 
-            let right_reader = self.ensure_split_reader(second_id);
-            if let Some(r) = right_reader {
-                right_pane.append(r.widget());
+            if let Some(w) = right_widget {
+                right_pane.append(&w);
             }
 
             // Click gesture to set Right Pane as active for fair reading-time tracking
@@ -743,9 +745,9 @@ impl BubbleManager {
             self.reader_content_box.append(&split_box);
         } else {
             // Single Book View
-            let reader = self.ensure_primary_reader(active_id);
-            if let Some(r) = reader {
-                self.reader_content_box.append(r.widget());
+            let widget = self.ensure_primary_reader(active_id).map(|r| r.widget().clone());
+            if let Some(w) = widget {
+                self.reader_content_box.append(&w);
             }
         }
     }

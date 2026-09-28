@@ -502,6 +502,9 @@ impl AppModel {
                         AllBooksOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
                         }
+                        AllBooksOut::ComicSeries { series_name } => {
+                            AppMsg::Push(Route::ComicSeries { series_name })
+                        }
                     },
                 );
                 PageSlot::AllBooks(ctrl)

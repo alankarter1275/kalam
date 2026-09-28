@@ -916,4 +916,39 @@ mod tests {
         assert!(ncx.contains("<text>Chapter 1</text>"));
         assert!(ncx.contains("src=\"ch1.xhtml#ch-1\""));
     }
+
+    #[test]
+    fn test_sanitize_messy_epub_fixture() {
+        let fixture_path = Path::new("sample_books/messy_book.epub");
+        if !fixture_path.exists() {
+            return;
+        }
+
+        let test_epub = std::env::temp_dir().join(format!("kalam-test-messy-{}.epub", uuid::Uuid::new_v4()));
+        fs::copy(fixture_path, &test_epub).expect("copy messy epub fixture");
+
+        let report = sanitize_epub(&test_epub, false).expect("sanitize messy epub");
+        assert!(report.modified);
+        assert!(report.cleaned_css_rules > 0, "cleaned toxic CSS rules");
+        assert!(report.fixed_xml_entities > 0, "fixed XML entities");
+        assert!(report.generated_toc, "generated missing TOC");
+
+        // Verify the resulting epub is a valid zip and contains toc.ncx
+        let file = fs::File::open(&test_epub).expect("open sanitized epub");
+        let mut archive = ZipArchive::new(file).expect("sanitized file is valid zip");
+        assert!(archive.by_name("mimetype").is_ok());
+        assert!(archive.by_name("OEBPS/toc.ncx").is_ok());
+
+        // Verify style.css no longer has 8px font
+        let mut css = String::new();
+        archive
+            .by_name("OEBPS/style.css")
+            .unwrap()
+            .read_to_string(&mut css)
+            .unwrap();
+        assert!(!css.contains("8px"));
+        assert!(!css.contains("120px"));
+
+        let _ = fs::remove_file(test_epub);
+    }
 }

@@ -734,6 +734,100 @@ impl Catalog {
 
         Ok(migrated)
     }
+
+    /// Collapse multiple chapters of the same comic series into a single representative item.
+    ///
+    /// For any comic books in `books` that belong to a `comic_series`, only the representative
+    /// book (cover book or first chapter) is kept, with its title updated to the series title
+    /// and author updated to the series author. Non-comic books are left untouched.
+    pub fn collapse_comic_chapters(&self, books: &mut Vec<Book>) {
+        if books.is_empty() {
+            return;
+        }
+
+        let comic_ids: Vec<i64> = books
+            .iter()
+            .filter(|b| matches!(b.format, BookFormat::Cbz | BookFormat::Cbr))
+            .map(|b| b.id)
+            .collect();
+
+        if comic_ids.is_empty() {
+            return;
+        }
+
+        let conn = self.conn();
+        let holders = vec!["?"; comic_ids.len()].join(",");
+        let sql = format!(
+            "SELECT c.book_id, s.id, s.title, s.author, s.cover_book_id
+             FROM comic_chapters c
+             JOIN comic_series s ON s.id = c.series_id
+             WHERE c.book_id IN ({holders})"
+        );
+
+        let mut book_to_series: std::collections::HashMap<i64, (i64, String, String, Option<i64>)> =
+            std::collections::HashMap::new();
+
+        if let Ok(mut stmt) = conn.prepare(&sql) {
+            if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(comic_ids.iter()), |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    (
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, Option<i64>>(4)?,
+                    ),
+                ))
+            }) {
+                for row in rows.flatten() {
+                    book_to_series.insert(row.0, row.1);
+                }
+            }
+        }
+
+        let mut seen_series: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut seen_heuristic_series: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        let mut i = 0;
+        while i < books.len() {
+            let b = &mut books[i];
+            if !matches!(b.format, BookFormat::Cbz | BookFormat::Cbr) {
+                i += 1;
+                continue;
+            }
+
+            if let Some((s_id, s_title, s_author, _cover_id)) = book_to_series.get(&b.id) {
+                if seen_series.contains(s_id) {
+                    books.remove(i);
+                    continue;
+                }
+                seen_series.insert(*s_id);
+                b.title = s_title.clone();
+                if !s_author.is_empty() {
+                    b.authors = s_author.clone();
+                }
+                b.series = Some(s_title.clone());
+                i += 1;
+            } else {
+                // Heuristic fallback for comics not yet in relational comic_chapters
+                let series_name = b
+                    .series
+                    .clone()
+                    .unwrap_or_else(|| crate::comics::parse_comic_title(&b.title));
+
+                let key = series_name.to_lowercase();
+                if seen_heuristic_series.contains(&key) {
+                    books.remove(i);
+                    continue;
+                }
+                seen_heuristic_series.insert(key);
+                b.title = series_name.clone();
+                b.series = Some(series_name);
+                i += 1;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1054,5 +1148,14 @@ mod tests {
         assert!(comic_opened.is_some());
         // Most recently opened chapter of Horimiya was c2
         assert_eq!(comic_opened.unwrap().id, c2);
+
+        // 5. collapse_comic_chapters must collapse all chapters into 1 item
+        let mut all_books = cat.list_books(crate::db::SortKey::Added, "").unwrap();
+        assert_eq!(all_books.len(), 5); // 2 regular + 3 comic chapters
+        cat.collapse_comic_chapters(&mut all_books);
+        assert_eq!(all_books.len(), 3); // 2 regular + 1 comic series
+        let series_b = all_books.iter().find(|b| b.title == "Horimiya");
+        assert!(series_b.is_some());
+        assert_eq!(series_b.unwrap().authors, "HERO, Daisuke Hagiwara");
     }
 }

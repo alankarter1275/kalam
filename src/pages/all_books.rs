@@ -13,6 +13,7 @@ use std::sync::Arc;
 pub enum AllBooksOut {
     OpenBook { book_id: i64 },
     OpenBookDialog { book_id: i64 },
+    ComicSeries { series_name: String },
 }
 
 #[derive(Debug)]
@@ -365,6 +366,7 @@ impl Component for AllBooksModel {
             model.selection_mode,
             &model.selected_books,
             &sender,
+            model.service.catalog(),
         );
 
         ComponentParts { model, widgets }
@@ -817,6 +819,7 @@ impl Component for AllBooksModel {
             self.selection_mode,
             &self.selected_books,
             &sender,
+            self.service.catalog(),
         );
         self.update_view(widgets, sender);
     }
@@ -895,6 +898,7 @@ fn rebuild_list(
     selection_mode: bool,
     selected_books: &HashSet<i64>,
     sender: &ComponentSender<AllBooksModel>,
+    catalog: &Arc<Catalog>,
 ) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
@@ -931,10 +935,23 @@ fn rebuild_list(
         );
         list.append(&grid);
     } else {
+        let cat = catalog.clone();
         let grid = build_book_grid(
             books,
             move |id| {
-                s.output(AllBooksOut::OpenBook { book_id: id }).ok();
+                if let Ok(Some((series, _))) = cat.get_comic_series_for_book(id) {
+                    s.output(AllBooksOut::ComicSeries { series_name: series.title }).ok();
+                } else if let Ok(Some(b)) = cat.get_book(id) {
+                    if matches!(b.format, crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr) {
+                        if let Some(ser_name) = b.series {
+                            s.output(AllBooksOut::ComicSeries { series_name: ser_name }).ok();
+                            return;
+                        }
+                    }
+                    s.output(AllBooksOut::OpenBook { book_id: id }).ok();
+                } else {
+                    s.output(AllBooksOut::OpenBook { book_id: id }).ok();
+                }
             },
             move |id| {
                 s2.output(AllBooksOut::OpenBookDialog { book_id: id }).ok();

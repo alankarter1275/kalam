@@ -614,6 +614,21 @@ impl ComicsReaderModel {
 
         let root_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
+        let popover = gtk::Popover::new();
+        popover.set_parent(overlay);
+        popover.set_autohide(false);
+        popover.set_has_arrow(false);
+        popover.set_position(gtk::PositionType::Top);
+
+        let anchor = gdk::Rectangle::new(
+            sel.bounds.0 as i32,
+            (sel.bounds.1 - 10.0).max(0.0) as i32,
+            sel.bounds.2.max(1.0) as i32,
+            sel.bounds.3.max(1.0) as i32,
+        );
+        popover.set_pointing_to(Some(&anchor));
+        popover.add_css_class("k-sel-toolbar-popover");
+
         let pill = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         pill.add_css_class("k-sel-toolbar");
 
@@ -627,9 +642,10 @@ impl ComicsReaderModel {
 
         let root_ref = root_box.clone();
         let pill_ref = pill.clone();
+        let pop_ref = popover.clone();
         let tx_save = sender.input_sender().clone();
         highlight_btn.connect_clicked(move |_| {
-            root_ref.remove(&pill_ref);
+            pill_ref.set_visible(false);
             let tx = tx_save.clone();
             let drawer = crate::pages::reader::engine::build_calibre_drawer_box(
                 crate::db::HighlightColor::Yellow,
@@ -646,6 +662,7 @@ impl ComicsReaderModel {
                 None,
             );
             root_ref.append(&drawer);
+            pop_ref.present();
         });
         pill.append(&highlight_btn);
 
@@ -667,22 +684,7 @@ impl ComicsReaderModel {
         pill.append(&dict_btn);
 
         root_box.append(&pill);
-
-        let popover = gtk::Popover::new();
         popover.set_child(Some(&root_box));
-        popover.set_parent(overlay);
-        popover.set_autohide(false);
-        popover.set_has_arrow(false);
-        popover.set_position(gtk::PositionType::Top);
-
-        let anchor = gdk::Rectangle::new(
-            sel.bounds.0 as i32,
-            (sel.bounds.1 - 10.0).max(0.0) as i32,
-            sel.bounds.2.max(1.0) as i32,
-            sel.bounds.3.max(1.0) as i32,
-        );
-        popover.set_pointing_to(Some(&anchor));
-        popover.add_css_class("k-sel-toolbar-popover");
         popover.popup();
         self.selection_chip = Some(popover);
     }

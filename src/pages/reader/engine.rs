@@ -524,9 +524,10 @@ pub(crate) fn build_selection_chip(
     let highlight_btn = action_button("kalam-highlight-symbolic", "Highlight", true);
     let root_ref = root_box.clone();
     let pill_ref = pill.clone();
+    let pop_ref = popover.clone();
     let tx_save = sender.input_sender().clone();
     highlight_btn.connect_clicked(move |_| {
-        root_ref.remove(&pill_ref);
+        pill_ref.set_visible(false);
         let tx = tx_save.clone();
         let drawer = build_calibre_drawer_box(
             DbColor::Yellow,
@@ -543,6 +544,7 @@ pub(crate) fn build_selection_chip(
             None,
         );
         root_ref.append(&drawer);
+        pop_ref.present();
     });
     pill.append(&highlight_btn);
 

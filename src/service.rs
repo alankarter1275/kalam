@@ -521,11 +521,15 @@ impl LibraryService {
     }
 
     /// All books page: the whole library, filtered by `query` and sorted.
+    /// When comic series exist, individual chapters are collapsed into their parent
+    /// series so that every comic is displayed as one item.
     pub fn all_books(&self, sort: SortKey, query: &str) -> AllBooksSnapshot {
         let _t = crate::timing::measure("service_all_books");
         let mut errors = Errors::new();
+        let mut books = take(self.catalog.list_books(sort, query), "books", &mut errors);
+        self.catalog.collapse_comic_chapters(&mut books);
         AllBooksSnapshot {
-            books: take(self.catalog.list_books(sort, query), "books", &mut errors),
+            books,
             errors,
         }
     }

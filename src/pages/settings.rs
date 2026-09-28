@@ -1667,6 +1667,7 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
         let catalog_pick = catalog.clone();
         let path_chip_pick = path_chip.clone();
         let clear_btn_pick = clear_btn.clone();
+        let sw_pick = sw.clone();
         pick_btn.connect_clicked(move |btn| {
             let root = btn.root();
             let window = root.and_then(|r| r.downcast::<gtk::Window>().ok());
@@ -1678,13 +1679,16 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
             let cat = catalog_pick.clone();
             let chip = path_chip_pick.clone();
             let clr = clear_btn_pick.clone();
+            let sw = sw_pick.clone();
             dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
                 let Ok(folder) = res else { return };
                 let Some(path) = folder.path() else { return };
                 crate::watch_folder::set_watch_path(&cat, &path);
+                crate::watch_folder::set_watch_enabled(&cat, true);
                 crate::watch_folder::request_reload();
                 chip.set_label(&path.to_string_lossy());
                 clr.set_sensitive(true);
+                sw.set_active(true);
             });
         });
         path_box.append(&pick_btn);
@@ -1692,11 +1696,14 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
         let catalog_clear = catalog.clone();
         let path_chip_clear = path_chip.clone();
         let clear_btn_self = clear_btn.clone();
+        let sw_clear = sw.clone();
         clear_btn.connect_clicked(move |_| {
             crate::watch_folder::clear_watch_path(&catalog_clear);
+            crate::watch_folder::set_watch_enabled(&catalog_clear, false);
             crate::watch_folder::request_reload();
             path_chip_clear.set_label("No folder selected");
             clear_btn_self.set_sensitive(false);
+            sw_clear.set_active(false);
         });
         path_box.append(&clear_btn);
 

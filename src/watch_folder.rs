@@ -213,7 +213,8 @@ impl WatchFolderService {
 
         // Setup FileMonitor on directory
         let file = gtk::gio::File::for_path(&path);
-        match file.monitor_directory(gtk::gio::FileMonitorFlags::NONE, gtk::gio::Cancellable::NONE) {
+        let flags = gtk::gio::FileMonitorFlags::SEND_MOVED | gtk::gio::FileMonitorFlags::WATCH_MOUNTS;
+        match file.monitor_directory(flags, gtk::gio::Cancellable::NONE) {
             Ok(monitor) => {
                 let pending_arc = self.pending.clone();
                 monitor.connect_changed(move |_mon, file, _other, event| {
@@ -221,7 +222,10 @@ impl WatchFolderService {
                     match event {
                         FileMonitorEvent::Created
                         | FileMonitorEvent::Changed
-                        | FileMonitorEvent::ChangesDoneHint => {
+                        | FileMonitorEvent::ChangesDoneHint
+                        | FileMonitorEvent::MovedIn
+                        | FileMonitorEvent::Moved
+                        | FileMonitorEvent::Renamed => {
                             if let Some(p) = file.path() {
                                 if !is_ignored_file(&p) && is_supported_book_file(&p) {
                                     let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);

@@ -723,6 +723,9 @@ impl AppModel {
                             .launch(init)
                             .forward(sender.input_sender(), |out| match out {
                                 ComicsReaderOut::Close => AppMsg::Back,
+                                ComicsReaderOut::MinimizeToBubble { book_id } => {
+                                    AppMsg::MinimizeToBubble { book_id }
+                                }
                             });
                         PageSlot::ComicsReader(ctrl)
                     }

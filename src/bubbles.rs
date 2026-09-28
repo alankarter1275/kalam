@@ -9,13 +9,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gtk::prelude::*;
-use gtk4 as gtk;
-use relm4::ComponentSender;
+use relm4::prelude::*;
 
-use crate::app::AppModel;
-use crate::app::AppMsg;
+use crate::app::{AppModel, AppMsg};
 use crate::db::Catalog;
-use crate::models::{Book, BookFormat};
+use crate::models::BookFormat;
 
 /// A lightweight representation of a book held in a bubble.
 /// Rule: "A bubble holds no book. It is a bookmark, not a reader."
@@ -223,21 +221,21 @@ impl BubbleManager {
 
         drag.connect_drag_update(move |_, offset_x, offset_y| {
             let (sx, sy) = *start_coord_drag.borrow();
-            let new_x = (sx + offset_x).max(10.0);
-            let new_y = (sy + offset_y).max(10.0);
+            let new_x = (sx + offset_x).max(10.0f64);
+            let new_y = (sy + offset_y).max(10.0f64);
             fixed_drag.move_(&stack_drag, new_x, new_y);
         });
 
         drag.connect_drag_end(move |_, offset_x, offset_y| {
             let (sx, sy) = *start_coord_end.borrow();
             let dist = offset_x.hypot(offset_y);
-            if dist < 6.0 {
+            if dist < 6.0f64 {
                 // Short movement counts as a click: expand reading window!
                 s_click.input(AppMsg::BubbleSelect { book_id: 0 }); // 0 means expand top/active
             } else {
                 // Free drop: stays right where dropped, ZERO snapping!
-                let final_x = (sx + offset_x).max(10.0);
-                let final_y = (sy + offset_y).max(10.0);
+                let final_x = (sx + offset_x).max(10.0f64);
+                let final_y = (sy + offset_y).max(10.0f64);
                 pos_end.replace((final_x, final_y));
             }
         });
@@ -369,10 +367,11 @@ impl BubbleManager {
 
     fn load_bubble_item(&self, book_id: i64) -> Option<BubbleItem> {
         let book = self.catalog.get_book(book_id).ok()??;
+        let author = book.authors_display().to_string();
         Some(BubbleItem {
             book_id,
             title: book.title,
-            author: book.authors_display().to_string(),
+            author,
             format: book.format,
             progress: book.progress,
             cover_path: book.cover_path,

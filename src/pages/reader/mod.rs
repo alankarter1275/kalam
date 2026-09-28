@@ -736,6 +736,15 @@ impl Component for ReaderModel {
         let catalog_autohide = catalog.get_pref_i64("reader.autohide_cursor", 1) != 0;
         let catalog_wheel = catalog.get_pref_i64("reader.wheel_step", 92).clamp(20, 400) as i32;
         let catalog_arrow = catalog.get_pref_i64("reader.arrow_step", 45).clamp(10, 200) as i32;
+        let word_memory_scope = catalog
+            .get_pref("reader.word_memory_scope")
+            .unwrap_or_else(|| "library".into());
+        if let Some(v) = &view {
+            let wm_words = catalog
+                .get_saved_words_for_scope(book_id, &word_memory_scope)
+                .unwrap_or_default();
+            v.set_word_memory(wm_words.into_iter().map(|w| w.word));
+        }
         let font_families = view
             .as_ref()
             .map(|v| v.font_families())
@@ -803,6 +812,7 @@ impl Component for ReaderModel {
             catalog_wheel,
             catalog_arrow,
             &keybinds,
+            &word_memory_scope,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -863,6 +873,8 @@ impl Component for ReaderModel {
             can_jump_back: false,
             back_depth: 0,
             selection_chip: None,
+            word_preview_popover: None,
+            word_memory_scope,
             note_popover: None,
             dict_popover: None,
             dict_anchor: None,
@@ -1750,6 +1762,121 @@ impl Component for ReaderModel {
                     self.selection_chip = Some(chip);
                 }
             }
+            ReaderMsg::SaveAnnotationDetails { color, style, note } => {
+                engine::dismiss(self.selection_chip.take());
+                let Some(view) = self.view.clone() else {
+                    return;
+                };
+                let color_val = engine::engine_color(&color);
+                let Some(h) = view.capture_highlight_with_style(color_val, &style) else {
+                    return;
+                };
+                let cfi = engine::range_to_json(&h.start, &h.end);
+                let inserted = self.service.catalog().insert_annotation(
+                    self.book_id,
+                    "highlight",
+                    h.start.spine_index as i64,
+                    "",
+                    0,
+                    "",
+                    0,
+                    color_val.name(),
+                    &style,
+                    &h.text,
+                    &note,
+                );
+                match inserted {
+                    Ok(id) => {
+                        crate::notify::report(
+                            self.service.catalog().update_annotation_cfi(id, &cfi),
+                            "Could not place the highlight",
+                        );
+                        view.show_highlight(id, &h);
+                        self.reload_annotations();
+                        refresh_highlights = true;
+                    }
+                    Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
+                }
+            }
+            ReaderMsg::EditAnnotationDetails { id, color, style, note } => {
+                engine::dismiss(self.selection_chip.take());
+                let color_val = engine::engine_color(&color);
+                let res = self.service.catalog().update_annotation_details(
+                    id,
+                    color_val.name(),
+                    &style,
+                    &note,
+                );
+                match res {
+                    Ok(()) => {
+                        if let Some(view) = self.view.clone() {
+                            view.update_highlight(id, color_val, &style);
+                        }
+                        self.reload_annotations();
+                        refresh_highlights = true;
+                    }
+                    Err(e) => crate::notify::error("Could not update highlight", &e.to_string()),
+                }
+            }
+            ReaderMsg::HighlightTapped(id, x, y) => {
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                engine::dismiss(self.word_preview_popover.take());
+                let anno_opt = self.service.catalog().get_annotation_by_id(id).ok().flatten();
+                if let (Some(anno), Some(view)) = (anno_opt, self.view.clone()) {
+                    let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                    let popover = engine::build_annotation_edit_popover(
+                        view.widget().upcast_ref(),
+                        &rect,
+                        &anno,
+                        &sender,
+                    );
+                    popover.popup();
+                    self.selection_chip = Some(popover);
+                }
+            }
+            ReaderMsg::WordMemoryTapped(word, x, y) => {
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                engine::dismiss(self.word_preview_popover.take());
+                let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                self.dict_lookup(word, None, rect, &sender);
+            }
+            ReaderMsg::WordMemoryHover(word_opt, x, y) => {
+                if word_opt.is_none() {
+                    engine::dismiss(self.word_preview_popover.take());
+                    return;
+                }
+                let word = word_opt.unwrap_or_default();
+                if self.dict_popover.is_some() || self.selection_chip.is_some() {
+                    return;
+                }
+                let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                if let Some(view) = self.view.clone() {
+                    engine::dismiss(self.word_preview_popover.take());
+                    if let Some(pop) = engine::build_word_preview_tooltip(
+                        view.widget().upcast_ref(),
+                        &rect,
+                        &word,
+                        self.service.catalog(),
+                    ) {
+                        pop.popup();
+                        self.word_preview_popover = Some(pop);
+                    }
+                }
+            }
+            ReaderMsg::SetWordMemoryScope(scope) => {
+                self.word_memory_scope = scope.clone();
+                self.service.catalog().set_pref("reader.word_memory_scope", &scope);
+                if let Some(view) = &self.view {
+                    let wm_words = self
+                        .service
+                        .catalog()
+                        .get_saved_words_for_scope(self.book_id, &self.word_memory_scope)
+                        .unwrap_or_default();
+                    view.set_word_memory(wm_words.into_iter().map(|w| w.word));
+                }
+            }
             ReaderMsg::HighlightSelection(color_name) => {
                 engine::dismiss(self.selection_chip.take());
                 let Some(view) = self.view.clone() else {
@@ -1769,6 +1896,7 @@ impl Component for ReaderModel {
                     "",
                     0,
                     color.name(),
+                    "solid",
                     &h.text,
                     "",
                 );
@@ -1804,6 +1932,7 @@ impl Component for ReaderModel {
                     "",
                     0,
                     "yellow",
+                    "solid",
                     &h.text,
                     "",
                 );
@@ -2351,6 +2480,7 @@ impl Component for ReaderModel {
         }
         engine::dismiss(self.selection_chip.take());
         engine::dismiss(self.dict_popover.take());
+        engine::dismiss(self.word_preview_popover.take());
         if let Some(view) = self.view.take() {
             view.close();
         }

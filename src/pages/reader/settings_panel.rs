@@ -34,6 +34,7 @@ pub(crate) fn build_reader_settings_panel(
     wheel_step: i32,
     arrow_step: i32,
     keybinds: &Rc<RefCell<KeyBindings>>,
+    word_memory_scope: &str,
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -290,6 +291,59 @@ pub(crate) fn build_reader_settings_panel(
         input_tx,
         ReaderMsg::SetDictHistory,
     );
+
+    // Word Memory Scope setting
+    let wm_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    wm_box.set_margin_start(16);
+    wm_box.set_margin_end(16);
+    wm_box.set_margin_top(8);
+    wm_box.set_margin_bottom(8);
+
+    let wm_label = gtk::Label::new(Some("Word memory (vocabulary dotted underline)"));
+    wm_label.set_xalign(0.0);
+    wm_label.add_css_class("kalam-reader-setting-title");
+    wm_box.append(&wm_label);
+
+    let wm_seg = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    wm_seg.set_homogeneous(true);
+
+    let scopes = [
+        ("library", "Library"),
+        ("series", "Series"),
+        ("book", "Book"),
+        ("off", "Off"),
+    ];
+    let mut wm_buttons = Vec::new();
+
+    for (scope_val, scope_label) in scopes {
+        let btn = gtk::Button::with_label(scope_label);
+        btn.add_css_class("kalam-reader-seg-btn");
+        if word_memory_scope == scope_val {
+            btn.add_css_class("active");
+        }
+        wm_seg.append(&btn);
+        wm_buttons.push((scope_val, btn));
+    }
+
+    let wm_buttons_rc = std::rc::Rc::new(wm_buttons);
+    for (scope_val, btn) in wm_buttons_rc.iter() {
+        let tx = input_tx.clone();
+        let val = scope_val.to_string();
+        let all_btns = wm_buttons_rc.clone();
+        btn.connect_clicked(move |_| {
+            for (s_val, b) in all_btns.iter() {
+                if *s_val == val {
+                    b.add_css_class("active");
+                } else {
+                    b.remove_css_class("active");
+                }
+            }
+            let _ = tx.send(ReaderMsg::SetWordMemoryScope(val.clone()));
+        });
+    }
+    wm_box.append(&wm_seg);
+    dict_section.append(&wm_box);
+
     reading_page.append(&dict_section);
     stack.add_named(
         &reading_page,

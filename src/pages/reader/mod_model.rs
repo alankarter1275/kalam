@@ -64,6 +64,8 @@ pub struct ReaderModel {
     /// the number going up.
     pub(crate) back_depth: usize,
     pub(crate) selection_chip: Option<gtk::Popover>,
+    pub(crate) word_preview_popover: Option<gtk::Popover>,
+    pub(crate) word_memory_scope: String,
     /// Roadmap 2.5: the footnote card, while it stands.
     pub(crate) note_popover: Option<gtk::Popover>,
     pub(crate) dict_popover: Option<gtk::Popover>,

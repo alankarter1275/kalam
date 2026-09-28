@@ -282,6 +282,11 @@ pub enum PdfReaderMsg {
         text: Box<Result<PdfPageText, String>>,
     },
     CopySelection,
+    SaveAnnotation {
+        color: String,
+        style: String,
+        note: String,
+    },
     QuoteSelection,
     LookUpWord(String),
     #[allow(dead_code)]
@@ -980,27 +985,48 @@ impl PdfReaderModel {
         if sel.text.is_empty() { return };
         let Some(overlay) = self.page_overlays.get(&slot) else { return };
 
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-        row.add_css_class("k-sel-toolbar");
+        let root_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
-        // Copy button
-        let copy_btn = gtk::Button::new();
-        let copy_icon = crate::icons::symbolic_with_classes("edit-copy-symbolic", 14, &["kalam-inline-icon"]);
-        copy_btn.set_child(Some(&copy_icon));
-        copy_btn.set_tooltip_text(Some("Copy (Ctrl+C)"));
-        copy_btn.add_css_class("k-sel-action");
-        copy_btn.add_css_class("accent");
-        let tx_copy = sender.input_sender().clone();
-        copy_btn.connect_clicked(move |_| {
-            let _ = tx_copy.send(PdfReaderMsg::CopySelection);
+        let pill = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+        pill.add_css_class("k-sel-toolbar");
+
+        // 1. Highlight button -> reveals Calibre drawer
+        let highlight_btn = gtk::Button::new();
+        let hl_icon = crate::icons::symbolic_with_classes("kalam-highlight-symbolic", 14, &["kalam-inline-icon"]);
+        highlight_btn.set_child(Some(&hl_icon));
+        highlight_btn.set_tooltip_text(Some("Highlight"));
+        highlight_btn.add_css_class("k-sel-action");
+        highlight_btn.add_css_class("accent");
+
+        let root_ref = root_box.clone();
+        let pill_ref = pill.clone();
+        let tx_save = sender.input_sender().clone();
+        highlight_btn.connect_clicked(move |_| {
+            root_ref.remove(&pill_ref);
+            let tx = tx_save.clone();
+            let drawer = crate::pages::reader::engine::build_calibre_drawer_box(
+                crate::db::HighlightColor::Yellow,
+                crate::db::AnnotationStyle::Solid,
+                "",
+                None,
+                move |color, style, note| {
+                    let _ = tx.send(PdfReaderMsg::SaveAnnotation {
+                        color: color.as_str().to_string(),
+                        style: style.as_str().to_string(),
+                        note,
+                    });
+                },
+                None,
+            );
+            root_ref.append(&drawer);
         });
-        row.append(&copy_btn);
+        pill.append(&highlight_btn);
 
-        let sep1 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        sep1.add_css_class("k-sel-divider");
-        row.append(&sep1);
+        let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        sep.add_css_class("k-sel-divider");
+        pill.append(&sep);
 
-        // Define / Dictionary lookup button
+        // 2. Define button
         let dict_btn = gtk::Button::new();
         let dict_icon = crate::icons::symbolic_with_classes("accessories-dictionary-symbolic", 14, &["kalam-inline-icon"]);
         dict_btn.set_child(Some(&dict_icon));
@@ -1011,26 +1037,12 @@ impl PdfReaderModel {
         dict_btn.connect_clicked(move |_| {
             let _ = tx_dict.send(PdfReaderMsg::LookUpWord(word_text.clone()));
         });
-        row.append(&dict_btn);
+        pill.append(&dict_btn);
 
-        let sep2 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        sep2.add_css_class("k-sel-divider");
-        row.append(&sep2);
-
-        // Quote button
-        let quote_btn = gtk::Button::new();
-        let quote_icon = crate::icons::symbolic_with_classes("kalam-quote-symbolic", 14, &["kalam-inline-icon"]);
-        quote_btn.set_child(Some(&quote_icon));
-        quote_btn.set_tooltip_text(Some("Save Quote"));
-        quote_btn.add_css_class("k-sel-action");
-        let tx_quote = sender.input_sender().clone();
-        quote_btn.connect_clicked(move |_| {
-            let _ = tx_quote.send(PdfReaderMsg::QuoteSelection);
-        });
-        row.append(&quote_btn);
+        root_box.append(&pill);
 
         let popover = gtk::Popover::new();
-        popover.set_child(Some(&row));
+        popover.set_child(Some(&root_box));
         popover.set_parent(overlay);
         popover.set_autohide(false);
         popover.set_has_arrow(false);
@@ -3506,6 +3518,27 @@ impl Component for PdfReaderModel {
                 }
                 self.clear_selection();
             }
+            PdfReaderMsg::SaveAnnotation { color, style, note } => {
+                let text_opt = self.active_selection.borrow().as_ref().map(|s| s.text.clone());
+                if let Some(text) = text_opt {
+                    let page_num = self.active_selection.borrow().as_ref().map(|s| s.page).unwrap_or(self.current_page);
+                    let _ = self.catalog.insert_annotation(
+                        self.book_id,
+                        "highlight",
+                        page_num as i64,
+                        "",
+                        0,
+                        "",
+                        0,
+                        &color,
+                        &style,
+                        &text,
+                        &note,
+                    );
+                    crate::notify::info("Highlight saved", "");
+                }
+                self.clear_selection();
+            }
             PdfReaderMsg::QuoteSelection => {
                 let text_opt = self.active_selection.borrow().as_ref().map(|s| s.text.clone());
                 if let Some(text) = text_opt {
@@ -3519,6 +3552,7 @@ impl Component for PdfReaderModel {
                         "",
                         0,
                         "yellow",
+                        "solid",
                         &text,
                         "",
                     );

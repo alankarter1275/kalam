@@ -23,7 +23,7 @@
 
 use super::mod_model::ReaderModel;
 use super::types::*;
-use crate::db::{Annotation, HighlightColor as DbColor};
+use crate::db::{Annotation, HighlightColor as DbColor, AnnotationStyle};
 use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use kalam_reader::{
@@ -166,6 +166,21 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
     let tx = sender.input_sender().clone();
     view.connect_image_tap(move |w: u32, h: u32, bytes: &[u8]| {
         let _ = tx.send(ReaderMsg::OpenImageLightbox(w, h, bytes.to_vec()));
+    });
+
+    let tx = sender.input_sender().clone();
+    view.connect_highlight_tap(move |id: i64, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::HighlightTapped(id, x, y));
+    });
+
+    let tx = sender.input_sender().clone();
+    view.connect_word_tap(move |word: &str, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::WordMemoryTapped(word.to_string(), x, y));
+    });
+
+    let tx = sender.input_sender().clone();
+    view.connect_word_hover(move |word_opt: Option<&str>, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::WordMemoryHover(word_opt.map(str::to_string), x, y));
     });
 }
 
@@ -330,88 +345,314 @@ fn action_button(icon_name: &str, tooltip: &str, accent: bool) -> gtk::Button {
     btn
 }
 
+pub(crate) fn build_calibre_drawer_box(
+    initial_color: DbColor,
+    initial_style: AnnotationStyle,
+    initial_note: &str,
+    existing_id: Option<i64>,
+    on_save: impl Fn(DbColor, AnnotationStyle, String) + 'static,
+    on_delete: Option<Box<dyn Fn(i64) + 'static>>,
+) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card.add_css_class("k-annotation-drawer");
+
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    header.add_css_class("k-annotation-header");
+
+    let cur_color = std::rc::Rc::new(std::cell::Cell::new(initial_color));
+    let cur_style = std::rc::Rc::new(std::cell::Cell::new(initial_style));
+
+    let colors_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    colors_row.add_css_class("k-color-bar");
+
+    let mut color_dots: Vec<(DbColor, gtk::Button)> = Vec::new();
+
+    for color in DbColor::SOFT_FIVE {
+        let dot = gtk::Button::new();
+        dot.add_css_class("k-color-dot");
+        dot.add_css_class(&format!("k-color-dot-{}", color.as_str()));
+        if *color == initial_color {
+            dot.add_css_class("active");
+        }
+        dot.set_tooltip_text(Some(&format!("Highlight {}", color.as_str())));
+        dot.set_size_request(20, 20);
+        dot.set_valign(gtk::Align::Center);
+        dot.set_halign(gtk::Align::Center);
+        colors_row.append(&dot);
+        color_dots.push((*color, dot));
+    }
+
+    let color_dots_rc = std::rc::Rc::new(color_dots);
+    for (color, dot) in color_dots_rc.iter() {
+        let cur = cur_color.clone();
+        let dots = color_dots_rc.clone();
+        let c = *color;
+        dot.connect_clicked(move |_| {
+            cur.set(c);
+            for (dot_c, btn) in dots.iter() {
+                if *dot_c == c {
+                    btn.add_css_class("active");
+                } else {
+                    btn.remove_css_class("active");
+                }
+            }
+        });
+    }
+    header.append(&colors_row);
+
+    let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    sep.add_css_class("k-sel-divider");
+    header.append(&sep);
+
+    let styles_row = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+    styles_row.add_css_class("k-style-group");
+
+    let mut style_buttons: Vec<(AnnotationStyle, gtk::Button)> = Vec::new();
+
+    for style in AnnotationStyle::ALL {
+        let btn = gtk::Button::with_label(style.label());
+        btn.add_css_class("k-style-btn");
+        if *style == initial_style {
+            btn.add_css_class("active");
+        }
+        btn.set_tooltip_text(Some(style.label()));
+        btn.set_valign(gtk::Align::Center);
+        styles_row.append(&btn);
+        style_buttons.push((*style, btn));
+    }
+
+    let style_buttons_rc = std::rc::Rc::new(style_buttons);
+    for (style, btn) in style_buttons_rc.iter() {
+        let cur = cur_style.clone();
+        let btns = style_buttons_rc.clone();
+        let st = *style;
+        btn.connect_clicked(move |_| {
+            cur.set(st);
+            for (btn_s, b) in btns.iter() {
+                if *btn_s == st {
+                    b.add_css_class("active");
+                } else {
+                    b.remove_css_class("active");
+                }
+            }
+        });
+    }
+    header.append(&styles_row);
+    card.append(&header);
+
+    // Note text view
+    let scrolled = gtk::ScrolledWindow::new();
+    scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    scrolled.set_size_request(280, 56);
+    scrolled.add_css_class("k-annotation-note-scroll");
+
+    let note_view = gtk::TextView::new();
+    note_view.add_css_class("k-annotation-note-area");
+    note_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    let buffer = note_view.buffer();
+    if !initial_note.is_empty() {
+        buffer.set_text(initial_note);
+    }
+    scrolled.set_child(Some(&note_view));
+    card.append(&scrolled);
+
+    // Footer actions
+    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    footer.add_css_class("k-annotation-actions");
+
+    if let (Some(id), Some(del_cb)) = (existing_id, on_delete) {
+        let del_btn = gtk::Button::new();
+        del_btn.set_child(Some(&crate::icons::labelled(
+            "user-trash-symbolic",
+            14,
+            "Delete",
+            4,
+        )));
+        del_btn.add_css_class("k-annotation-del-btn");
+        del_btn.add_css_class("danger");
+        del_btn.set_tooltip_text(Some("Delete this annotation"));
+        del_btn.connect_clicked(move |_| {
+            del_cb(id);
+        });
+        footer.append(&del_btn);
+    }
+
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    footer.append(&spacer);
+
+    let save_btn = gtk::Button::with_label("Save");
+    save_btn.add_css_class("k-annotation-save-btn");
+    save_btn.add_css_class("accent");
+    let buf_clone = buffer.clone();
+    save_btn.connect_clicked(move |_| {
+        let text = buf_clone.text(&buf_clone.start_iter(), &buf_clone.end_iter(), false).to_string();
+        on_save(cur_color.get(), cur_style.get(), text);
+    });
+    footer.append(&save_btn);
+
+    card.append(&footer);
+    card
+}
+
 pub(crate) fn build_selection_chip(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
-    // Roadmap 1.13: the two custom icons below resolve through the icon theme,
-    // which `main()` now populates on an idle callback instead of before the
-    // first paint. This is a no-op once that has run; if it somehow has not,
-    // the rescan happens here — the old cost in the old place — rather than
-    // the buttons showing a fallback glyph.
     crate::icons::init();
 
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    row.add_css_class("k-sel-toolbar");
-
-    let highlight = action_button("kalam-highlight-symbolic", "Highlight", true);
-    row.append(&highlight);
-
-    let colors_box = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    let sep0 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    sep0.add_css_class("k-sel-divider");
-    colors_box.append(&sep0);
-
-    let colors = gtk::Box::new(gtk::Orientation::Horizontal, 3);
-    colors.add_css_class("k-color-bar");
-    for color in [
-        HighlightColor::Yellow,
-        HighlightColor::Green,
-        HighlightColor::Blue,
-        HighlightColor::Pink,
-        HighlightColor::Orange,
-        HighlightColor::Underline,
-    ] {
-        let dot = gtk::Button::new();
-        dot.add_css_class("k-color-dot");
-        dot.add_css_class(&format!("k-color-dot-{}", color.name()));
-        dot.set_tooltip_text(Some(&format!("Highlight {}", color.name())));
-        dot.set_size_request(16, 16);
-        dot.set_valign(gtk::Align::Center);
-        dot.set_halign(gtk::Align::Center);
-        let tx = sender.input_sender().clone();
-        dot.connect_clicked(move |_| {
-            let _ = tx.send(ReaderMsg::HighlightSelection(color.name().to_string()));
-        });
-        colors.append(&dot);
-    }
-    colors_box.append(&colors);
-    row.append(&colors_box);
-
-    for (icon_name, tooltip, msg) in [
-        ("kalam-quote-symbolic", "Quote", ReaderMsg::QuoteSelection),
-        ("accessories-dictionary-symbolic", "Define", ReaderMsg::LookUpSelection),
-        ("edit-copy-symbolic", "Copy", ReaderMsg::CopySelection),
-    ] {
-        let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        sep.add_css_class("k-sel-divider");
-        row.append(&sep);
-
-        let button = action_button(icon_name, tooltip, false);
-        let tx = sender.input_sender().clone();
-        button.connect_clicked(move |_| {
-            let _ = tx.send(msg.clone());
-        });
-        row.append(&button);
-    }
+    let root_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let popover = gtk::Popover::new();
-    popover.set_child(Some(&row));
     popover.set_parent(host);
     popover.set_autohide(false);
     popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Top);
+
     let mut anchor = *rect;
     anchor.set_y(anchor.y() - HANDLE_HEADROOM);
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
     popover.add_css_class("k-sel-toolbar-popover");
 
-    {
-    }
+    let pill = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+    pill.add_css_class("k-sel-toolbar");
 
+    // 1. Highlight button
+    let highlight_btn = action_button("kalam-highlight-symbolic", "Highlight", true);
+    let root_ref = root_box.clone();
+    let pill_ref = pill.clone();
+    let tx_save = sender.input_sender().clone();
+    highlight_btn.connect_clicked(move |_| {
+        root_ref.remove(&pill_ref);
+        let tx = tx_save.clone();
+        let drawer = build_calibre_drawer_box(
+            DbColor::Yellow,
+            AnnotationStyle::Solid,
+            "",
+            None,
+            move |color, style, note| {
+                let _ = tx.send(ReaderMsg::SaveAnnotationDetails {
+                    color: color.as_str().to_string(),
+                    style: style.as_str().to_string(),
+                    note,
+                });
+            },
+            None,
+        );
+        root_ref.append(&drawer);
+    });
+    pill.append(&highlight_btn);
+
+    let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    sep.add_css_class("k-sel-divider");
+    pill.append(&sep);
+
+    // 2. Define button
+    let define_btn = action_button("accessories-dictionary-symbolic", "Define", false);
+    let tx_def = sender.input_sender().clone();
+    define_btn.connect_clicked(move |_| {
+        let _ = tx_def.send(ReaderMsg::LookUpSelection);
+    });
+    pill.append(&define_btn);
+
+    root_box.append(&pill);
+    popover.set_child(Some(&root_box));
     popover
+}
+
+pub(crate) fn build_annotation_edit_popover(
+    host: &gtk::Widget,
+    rect: &gtk::gdk::Rectangle,
+    anno: &Annotation,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::Popover {
+    crate::icons::init();
+
+    let popover = gtk::Popover::new();
+    popover.set_parent(host);
+    popover.set_autohide(true);
+    popover.set_has_arrow(true);
+    popover.set_position(gtk::PositionType::Top);
+
+    let mut anchor = *rect;
+    anchor.set_y(anchor.y() - HANDLE_HEADROOM);
+    anchor.set_height(anchor.height() + HANDLE_HEADROOM);
+    popover.set_pointing_to(Some(&anchor));
+    popover.add_css_class("k-sel-toolbar-popover");
+
+    let tx_save = sender.input_sender().clone();
+    let tx_del = sender.input_sender().clone();
+    let id = anno.id;
+
+    let initial_color = DbColor::from_str_lossy(&anno.color);
+    let initial_style = AnnotationStyle::from_str_lossy(&anno.style);
+
+    let drawer = build_calibre_drawer_box(
+        initial_color,
+        initial_style,
+        &anno.note,
+        Some(id),
+        move |color, style, note| {
+            let _ = tx_save.send(ReaderMsg::EditAnnotationDetails {
+                id,
+                color: color.as_str().to_string(),
+                style: style.as_str().to_string(),
+                note,
+            });
+        },
+        Some(Box::new(move |del_id| {
+            let _ = tx_del.send(ReaderMsg::DeleteAnnotation(del_id));
+        })),
+    );
+
+    popover.set_child(Some(&drawer));
+    popover
+}
+
+pub(crate) fn build_word_preview_tooltip(
+    host: &gtk::Widget,
+    rect: &gtk::gdk::Rectangle,
+    word: &str,
+    catalog: &crate::db::Catalog,
+) -> Option<gtk::Popover> {
+    let clean = word.trim().to_string();
+    if clean.is_empty() {
+        return None;
+    }
+    let data = catalog.lookup_entry(&clean).ok()?;
+    let def = data.senses.first().map(|s| s.def.as_str())?;
+
+    let popover = gtk::Popover::new();
+    popover.set_parent(host);
+    popover.set_autohide(true);
+    popover.set_has_arrow(true);
+    popover.set_position(gtk::PositionType::Top);
+    popover.set_pointing_to(Some(rect));
+    popover.add_css_class("k-word-preview-popover");
+
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    card.add_css_class("k-word-preview-card");
+
+    let head = gtk::Label::new(Some(&clean));
+    head.add_css_class("k-word-preview-head");
+    head.set_xalign(0.0);
+    card.append(&head);
+
+    let preview = if def.len() > 120 {
+        format!("{}…", &def[..118])
+    } else {
+        def.to_string()
+    };
+    let body = gtk::Label::new(Some(&preview));
+    body.add_css_class("k-word-preview-def");
+    body.set_wrap(true);
+    body.set_xalign(0.0);
+    card.append(&body);
+
+    popover.set_child(Some(&card));
+    Some(popover)
 }
 
 const HANDLE_HEADROOM: i32 = 8;

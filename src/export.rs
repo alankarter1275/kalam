@@ -214,6 +214,7 @@ mod tests {
             "",
             0,
             "yellow",
+            "solid",
             "To be or not to be.",
             "Famous soliloquy",
         )
@@ -229,6 +230,7 @@ mod tests {
             "",
             0,
             "green",
+            "solid",
             "Important key concept text",
             "My custom note",
         )

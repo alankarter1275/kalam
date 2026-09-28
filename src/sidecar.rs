@@ -40,7 +40,13 @@ pub struct SidecarHighlight {
     pub text_excerpt: String,
     pub note: String,
     pub color: String,
+    #[serde(default = "default_annotation_style")]
+    pub style: String,
     pub created_at: String,
+}
+
+fn default_annotation_style() -> String {
+    "solid".into()
 }
 
 /// Everything worth keeping about one book, in one file.
@@ -97,6 +103,7 @@ impl Sidecar {
                     text_excerpt: a.text_excerpt.clone(),
                     note: a.note.clone(),
                     color: a.color.clone(),
+                    style: a.style.clone(),
                     created_at: a.created_at.clone(),
                 })
                 .collect(),
@@ -277,6 +284,7 @@ mod tests {
             end_path: "/1/2".into(),
             end_offset: 24,
             color: "yellow".into(),
+            style: "solid".into(),
             text_excerpt: "fear is the mind-killer".into(),
             note: "remember this".into(),
             cfi: None,

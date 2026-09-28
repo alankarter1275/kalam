@@ -180,6 +180,11 @@ pub enum ComicsReaderMsg {
         y: f64,
     },
     CopySelection,
+    SaveAnnotation {
+        color: String,
+        style: String,
+        note: String,
+    },
     QuoteSelection,
     LookUpWord(String),
     ClearSelection,

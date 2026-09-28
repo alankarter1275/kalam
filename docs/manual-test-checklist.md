@@ -794,6 +794,31 @@ shows up as its own task in the task manager.
 7. Pressing `Escape` clears the active selection before triggering reader close.
 8. Toggling Speech Bubble OCR in Settings successfully disables or re-enables dialogue detection with an instant OSD notification.
 
+### T32 · Unified Annotation Revision & Word Memory System
+
+**Do:**
+1. Open an EPUB, PDF, or Comic in the reader and select a passage of text.
+2. Observe the 2-button floating pill: `[Highlight]` and `[Define]`.
+3. Click `[Highlight]`; observe the smooth slide-open of the Calibre-style drawer card.
+4. Test picking from the 5 soft colors (Yellow, Green, Blue, Pink, Orange) and 4 styles (Solid tint, Straight Underline, Squiggly Underline, Strikeout).
+5. Type an optional note in the "Add a note..." area and click `[Save]`.
+6. Single-click directly on the newly created highlight on the page.
+7. Observe that the Calibre drawer opens pointing at the highlight with its color, style, and note pre-filled, and displaying a `[Delete]` button.
+8. Edit the style or color and click `[Save]`, or click `[Delete]` to remove the highlight.
+9. Save any word into vocabulary (via Dictionary lookup `[Save Word]`).
+10. Return to the book where that word appears; observe the subtle dotted underline beneath the word (Word Memory).
+11. Hover cursor over the dotted word; observe the instant quick definition preview tooltip.
+12. Single-click the dotted word; observe that the full dictionary definition card opens immediately (zero friction).
+13. Open Settings -> Dictionary -> "Word memory" and toggle between "Whole Library", "Series", "Book Only", and "Off"; verify the scope filtering behaves as configured.
+
+**Look for:**
+1. The floating selection pill starts compact with only `[Highlight]` and `[Define]`.
+2. Clicking `[Highlight]` expands the Calibre drawer with 5 color swatches, 4 styles, note text area, and Save button.
+3. Highlights render on the page according to chosen style (Solid band, Straight underline, Squiggly wavy line, Strikeout central line).
+4. Clicking an existing highlight re-opens the card for editing and deleting.
+5. Saved vocabulary words display subtle dotted underlines matching the configured preference scope.
+6. Hovering displays quick definition preview; clicking opens full dictionary card directly.
+
 ---
 
 ## At the end

@@ -74,6 +74,8 @@ pub struct Highlight {
     pub text: Option<String>,
     /// Stored color as written (`#rrggbb`); `None` follows the theme.
     pub color: Option<String>,
+    /// Stored style (`solid`, `underline`, `squiggly`, `strikeout`).
+    pub style: Option<String>,
 }
 
 // Everything a shell needs to consume what the session produces, so it
@@ -317,6 +319,8 @@ pub struct Session {
     /// kalam: highlights the host stores in its own database and asked
     /// the session to paint. See `host_highlights.rs`.
     host_highlights: Vec<HostHighlight>,
+    /// Words for Word Memory dotted underlines (case-folded)
+    pub word_memory: std::collections::HashSet<String>,
     /// Fragment to land on once the target unit has laid out — the
     /// anchor-flavored sibling of `pending_offset`, unit-paired for the
     /// same reason.
@@ -481,6 +485,20 @@ impl std::fmt::Debug for SessionConfig {
 impl Session {
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    pub fn set_word_memory(&mut self, words: impl IntoIterator<Item = String>) {
+        self.word_memory = words
+            .into_iter()
+            .map(|w| w.trim().to_lowercase())
+            .filter(|w| !w.is_empty())
+            .collect();
+        self.mark(FrameIntent::Annotation);
+    }
+
+    pub fn is_word_in_memory(&self, word: &str) -> bool {
+        let clean = word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        !clean.is_empty() && self.word_memory.contains(&clean)
     }
 
     pub fn kind(&self) -> BookKind {

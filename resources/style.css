@@ -4014,6 +4014,137 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-color-dot-pink   { background: rgba(198,120,221,0.38); }
 .k-color-dot-orange { background: rgba(209,154,102,0.38); }
 
+.k-color-dot.active {
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 2px rgba(97, 175, 239, 0.8);
+}
+
+/* ── Calibre-style annotation drawer ──────────────────── */
+.k-annotation-drawer {
+  background: rgba(22, 24, 30, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.k-annotation-header {
+  padding-bottom: 2px;
+}
+
+.k-style-group {
+  padding: 0 2px;
+}
+
+.k-style-btn {
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.75);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.k-style-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgb(255, 255, 255);
+}
+
+.k-style-btn.active {
+  background: alpha(@kalam_accent, 0.35);
+  border-color: @kalam_accent;
+  color: rgb(255, 255, 255);
+  font-weight: 600;
+}
+
+.k-annotation-note-scroll {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.k-annotation-note-area {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px;
+  padding: 6px;
+}
+
+.k-annotation-actions {
+  padding-top: 2px;
+}
+
+.k-annotation-del-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(235, 87, 87, 0.4);
+  background: rgba(235, 87, 87, 0.15);
+  color: rgb(235, 87, 87);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.k-annotation-del-btn:hover {
+  background: rgba(235, 87, 87, 0.28);
+  color: rgb(255, 255, 255);
+}
+
+.k-annotation-save-btn {
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid alpha(@kalam_accent, 0.6);
+  background: @kalam_accent;
+  color: rgb(255, 255, 255);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.k-annotation-save-btn:hover {
+  background: alpha(@kalam_accent, 0.85);
+}
+
+/* ── Word Memory preview tooltip ──────────────────────── */
+.k-word-preview-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.k-word-preview-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.k-word-preview-card {
+  background: rgba(24, 27, 34, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.k-word-preview-head {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 13px;
+  color: @kalam_accent;
+}
+
+.k-word-preview-def {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.35;
+}
+
 /* ── dictionary popup (v3 design) ─────────────────────── */
 /* Palette + type from docs/design/kalam_dictionary_popup_v3.html. Fonts fall
    back to generic families when Fraunces / IBM Plex are not installed. */

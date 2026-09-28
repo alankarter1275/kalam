@@ -196,6 +196,9 @@ type SelectionCallback = dyn Fn(Option<&SelectedText>);
 type LinkCallback = dyn Fn(&str);
 type NoteCallback = dyn Fn(&str, &str, f64, f64) -> bool;
 type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
+type HighlightTapCallback = dyn Fn(i64, f64, f64);
+type WordTapCallback = dyn Fn(&str, f64, f64);
+type WordHoverCallback = dyn Fn(Option<&str>, f64, f64);
 
 /// Callbacks a shell installs. All run on the GTK main thread, from inside
 /// the widget's own handlers — keep them quick, or defer to an idle. A
@@ -209,6 +212,9 @@ struct Callbacks {
     link: Option<Box<LinkCallback>>,
     note: Option<Box<NoteCallback>>,
     image_tap: Option<Box<ImageTapCallback>>,
+    highlight_tap: Option<Box<HighlightTapCallback>>,
+    word_tap: Option<Box<WordTapCallback>>,
+    word_hover: Option<Box<WordHoverCallback>>,
 }
 
 struct Inner {
@@ -623,6 +629,27 @@ impl ReaderView {
         self.inner.callbacks.borrow_mut().image_tap = Some(Box::new(f));
     }
 
+    /// Called when the user clicks or taps an existing highlight on the page.
+    pub fn connect_highlight_tap(&self, f: impl Fn(i64, f64, f64) + 'static) {
+        self.inner.callbacks.borrow_mut().highlight_tap = Some(Box::new(f));
+    }
+
+    /// Called when the user clicks a Word Memory vocabulary word with dotted underline.
+    pub fn connect_word_tap(&self, f: impl Fn(&str, f64, f64) + 'static) {
+        self.inner.callbacks.borrow_mut().word_tap = Some(Box::new(f));
+    }
+
+    /// Called when the pointer hovers over a Word Memory word (Some(word)) or moves away (None).
+    pub fn connect_word_hover(&self, f: impl Fn(Option<&str>, f64, f64) + 'static) {
+        self.inner.callbacks.borrow_mut().word_hover = Some(Box::new(f));
+    }
+
+    /// Set the vocabulary words list for Word Memory dotted underlines.
+    pub fn set_word_memory(&self, words: impl IntoIterator<Item = String>) {
+        self.inner.session.borrow_mut().set_word_memory(words);
+        self.area.queue_draw();
+    }
+
     // ---- Preferences ----
 
     pub fn prefs(&self) -> KalamPrefs {
@@ -1009,6 +1036,15 @@ impl ReaderView {
     /// with the row's id — that id is the handle for everything after.
     /// `None` without a selection.
     pub fn capture_highlight(&self, color: HighlightColor) -> Option<NewHighlight> {
+        self.capture_highlight_with_style(color, "solid")
+    }
+
+    /// Capture the current selection with a specific style (solid, underline, squiggly, strikeout).
+    pub fn capture_highlight_with_style(
+        &self,
+        color: HighlightColor,
+        style: &str,
+    ) -> Option<NewHighlight> {
         let result = {
             let mut s = self.inner.session.borrow_mut();
             let (start, end) = s.selected_range()?;
@@ -1018,6 +1054,7 @@ impl ReaderView {
             s.selection_clear();
             NewHighlight {
                 color,
+                style: style.to_string(),
                 text,
                 start: start_locator,
                 end: end_locator,
@@ -1062,6 +1099,15 @@ impl ReaderView {
             .session
             .borrow_mut()
             .recolor_host_highlight(id, Some(color.css()));
+        self.area.queue_draw();
+    }
+
+    /// Update a shown highlight's color and style.
+    pub fn update_highlight(&self, id: i64, color: HighlightColor, style: &str) {
+        self.inner
+            .session
+            .borrow_mut()
+            .update_host_highlight(id, Some(color.css()), Some(style));
         self.area.queue_draw();
     }
 
@@ -2247,6 +2293,58 @@ impl ReaderView {
                     view.area.queue_draw();
                     return;
                 }
+
+                // Check if an existing highlight was tapped
+                let band = view.band_at(y);
+                let tapped_highlight = match band {
+                    Some((band, py)) => s.host_highlight_at_page(band.spine, band.page, x, py),
+                    None if view.mode() == ReadingMode::Paged => {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
+                            s.host_highlight_at_page(spine, page, px, py)
+                        } else {
+                            None
+                        }
+                    }
+                    None => None,
+                };
+                if let Some(hl_id) = tapped_highlight {
+                    drop(s);
+                    if let Some(cb) = &view.inner.callbacks.borrow().highlight_tap {
+                        cb(hl_id, x as f64, y as f64);
+                    }
+                    return;
+                }
+
+                // Check if a Word Memory word with dotted underline was tapped (single click opens full dictionary definition)
+                let tapped_word = match band {
+                    Some((band, py)) => s.word_at_page(band.spine, band.page, x, py),
+                    None if view.mode() == ReadingMode::Paged => {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
+                            s.word_at_page(spine, page, px, py)
+                        } else {
+                            None
+                        }
+                    }
+                    None => None,
+                };
+                if let Some((w_start, w_end)) = tapped_word {
+                    let spine = s.spine();
+                    if let Some(text) = s.cached_unit_text(spine) {
+                        if (w_end as usize) <= text.len() {
+                            let raw_word = &text[w_start as usize..w_end as usize];
+                            let clean = raw_word.trim_matches(|c: char| !c.is_alphanumeric());
+                            if s.is_word_in_memory(clean) {
+                                let word_to_lookup = clean.to_string();
+                                drop(s);
+                                if let Some(cb) = &view.inner.callbacks.borrow().word_tap {
+                                    cb(&word_to_lookup, x as f64, y as f64);
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 // Tap zones turn pages in paged mode only; a strip has no
                 // pages to turn, and the wheel is right there.
                 if view.mode() == ReadingMode::Scrolled {
@@ -2289,6 +2387,39 @@ impl ReaderView {
                 // The pointer is moving, so it stays — and starts the
                 // count towards getting out of the way again.
                 view.arm_cursor_timer();
+
+                // Check hover over Word Memory words
+                let (hover_word, hx, hy) = {
+                    let mut s = view.inner.session.borrow_mut();
+                    let band = view.band_at(y as f32);
+                    let word_span = match band {
+                        Some((band, py)) => s.word_at_page(band.spine, band.page, x as f32, py),
+                        None if view.mode() == ReadingMode::Paged => {
+                            if let Some((spine, page, px, py)) = view.paged_point(&mut s, x as f32, y as f32) {
+                                s.word_at_page(spine, page, px, py)
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    };
+                    let word_found = word_span.and_then(|(start, end)| {
+                        let spine = s.spine();
+                        let text = s.cached_unit_text(spine)?;
+                        if (end as usize) <= text.len() {
+                            let raw = &text[start as usize..end as usize];
+                            let clean = raw.trim_matches(|c: char| !c.is_alphanumeric());
+                            if s.is_word_in_memory(clean) {
+                                return Some(clean.to_string());
+                            }
+                        }
+                        None
+                    });
+                    (word_found, x, y)
+                };
+                if let Some(cb) = &view.inner.callbacks.borrow().word_hover {
+                    cb(hover_word.as_deref(), hx, hy);
+                }
             });
         }
         {
@@ -2296,6 +2427,9 @@ impl ReaderView {
             motion.connect_leave(move |_| {
                 view.disarm_cursor_timer();
                 view.set_cursor(None);
+                if let Some(cb) = &view.inner.callbacks.borrow().word_hover {
+                    cb(None, 0.0, 0.0);
+                }
             });
         }
         self.keep_controller(&motion);
@@ -2353,6 +2487,7 @@ impl ReaderView {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NewHighlight {
     pub color: HighlightColor,
+    pub style: String,
     /// The highlighted text — Kalam's `text_excerpt`.
     pub text: String,
     /// Start and end of the highlighted span as durable locators — the
@@ -2367,6 +2502,7 @@ fn host_highlight(id: i64, h: &NewHighlight) -> HostHighlight {
         start: h.start.clone(),
         end: h.end.clone(),
         color: Some(h.color.css().to_string()),
+        style: Some(h.style.clone()),
         text: Some(h.text.clone()),
     }
 }

@@ -360,6 +360,7 @@ impl Session {
             char_counts: std::cell::OnceCell::new(),
             unit_text_cache: std::cell::RefCell::new(None),
             host_highlights: Vec::new(),
+            word_memory: std::collections::HashSet::new(),
             layout_generation: 0,
             pinned_units: 0..0,
         })

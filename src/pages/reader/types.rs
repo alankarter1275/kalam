@@ -176,6 +176,21 @@ pub enum ReaderMsg {
     EngineSelection(Option<(String, gtk::gdk::Rectangle)>),
     /// From the selection chip.
     HighlightSelection(String),
+    SaveAnnotationDetails {
+        color: String,
+        style: String,
+        note: String,
+    },
+    EditAnnotationDetails {
+        id: i64,
+        color: String,
+        style: String,
+        note: String,
+    },
+    HighlightTapped(i64, f64, f64),
+    WordMemoryTapped(String, f64, f64),
+    WordMemoryHover(Option<String>, f64, f64),
+    SetWordMemoryScope(String),
     QuoteSelection,
     LookUpSelection,
     CopySelection,

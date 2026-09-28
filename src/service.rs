@@ -737,7 +737,7 @@ mod tests {
         let svc = LibraryService::new(Arc::new(cat));
         let id = seed(svc.catalog(), "Dune", &[]);
         svc.catalog()
-            .insert_annotation(id, "highlight", 0, "/1", 0, "/1", 9, "", "the spice", "")
+            .insert_annotation(id, "highlight", 0, "/1", 0, "/1", 9, "", "solid", "the spice", "")
             .expect("insert annotation");
         svc.catalog()
             .insert_saved_word("melange", "a spice", None, Some(id), None, None)
@@ -938,7 +938,7 @@ mod tests {
         let id = seed(svc.catalog(), "Dune", &["scifi"]);
         for excerpt in ["the spice must flow", "fear is the mind-killer"] {
             svc.catalog()
-                .insert_annotation(id, "quote", 0, "/1", 0, "/1", 5, "", excerpt, "")
+                .insert_annotation(id, "quote", 0, "/1", 0, "/1", 5, "", "solid", excerpt, "")
                 .expect("insert annotation");
         }
 

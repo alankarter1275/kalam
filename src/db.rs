@@ -95,6 +95,7 @@ pub struct Annotation {
     pub end_path: String,
     pub end_offset: i64,
     pub color: String,
+    pub style: String,
     pub text_excerpt: String,
     pub note: String,
     pub cfi: Option<String>,
@@ -434,6 +435,59 @@ impl HighlightColor {
         HighlightColor::Orange,
         HighlightColor::Underline,
     ];
+
+    pub const SOFT_FIVE: &'static [HighlightColor] = &[
+        HighlightColor::Yellow,
+        HighlightColor::Green,
+        HighlightColor::Blue,
+        HighlightColor::Pink,
+        HighlightColor::Orange,
+    ];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnnotationStyle {
+    #[default]
+    Solid,
+    Underline,
+    Squiggly,
+    Strikeout,
+}
+
+impl AnnotationStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AnnotationStyle::Solid => "solid",
+            AnnotationStyle::Underline => "underline",
+            AnnotationStyle::Squiggly => "squiggly",
+            AnnotationStyle::Strikeout => "strikeout",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            AnnotationStyle::Solid => "Solid tint",
+            AnnotationStyle::Underline => "Underline",
+            AnnotationStyle::Squiggly => "Squiggly",
+            AnnotationStyle::Strikeout => "Strikeout",
+        }
+    }
+
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "underline" | "straight" => AnnotationStyle::Underline,
+            "squiggly" | "wavy" => AnnotationStyle::Squiggly,
+            "strikeout" | "strike" => AnnotationStyle::Strikeout,
+            _ => AnnotationStyle::Solid,
+        }
+    }
+
+    pub const ALL: &'static [AnnotationStyle] = &[
+        AnnotationStyle::Solid,
+        AnnotationStyle::Underline,
+        AnnotationStyle::Squiggly,
+        AnnotationStyle::Strikeout,
+    ];
 }
 
 // ---------------------------------------------------------------------------
@@ -611,6 +665,7 @@ impl Catalog {
                 end_path      TEXT    NOT NULL,
                 end_offset    INTEGER NOT NULL,
                 color         TEXT    NOT NULL DEFAULT 'yellow',
+                style         TEXT    NOT NULL DEFAULT 'solid',
                 text_excerpt  TEXT    NOT NULL DEFAULT '',
                 note          TEXT    NOT NULL DEFAULT '',
                 cfi           TEXT,
@@ -946,6 +1001,9 @@ impl Catalog {
         add_column_if_missing(&conn, "saved_words", "srs_due", "INTEGER NOT NULL DEFAULT 0")?;
         add_column_if_missing(&conn, "saved_words", "srs_interval", "REAL NOT NULL DEFAULT 0")?;
         add_column_if_missing(&conn, "saved_words", "srs_ease", "REAL NOT NULL DEFAULT 2.5")?;
+
+        // Unified annotation system: style column (solid, underline, squiggly, strikeout)
+        add_column_if_missing(&conn, "annotations", "style", "TEXT NOT NULL DEFAULT 'solid'")?;
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
@@ -1832,11 +1890,12 @@ fn row_to_annotation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Annotation> {
         end_path: row.get(6)?,
         end_offset: row.get(7)?,
         color: row.get(8)?,
-        text_excerpt: row.get(9)?,
-        note: row.get(10)?,
-        cfi: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        style: row.get(9)?,
+        text_excerpt: row.get(10)?,
+        note: row.get(11)?,
+        cfi: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 
@@ -2523,6 +2582,7 @@ mod tests {
             "p",
             9,
             "yellow",
+            "solid",
             "Fear is the mind-killer",
             "",
         )

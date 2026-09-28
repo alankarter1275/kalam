@@ -39,7 +39,17 @@ impl ReaderModel {
 
     pub(crate) fn reload_saved_words(&mut self) {
         match self.service.catalog().list_saved_words("", None) {
-            Ok(rows) => self.saved_words = rows,
+            Ok(rows) => {
+                self.saved_words = rows;
+                if let Some(view) = &self.view {
+                    let wm_words = self
+                        .service
+                        .catalog()
+                        .get_saved_words_for_scope(self.book_id, &self.word_memory_scope)
+                        .unwrap_or_default();
+                    view.set_word_memory(wm_words.into_iter().map(|w| w.word));
+                }
+            }
             Err(err) => crate::notify::error("Could not read your saved words", &err.to_string()),
         }
     }
@@ -168,7 +178,7 @@ impl ReaderModel {
                         anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
                     }
                     HighlightFilter::Underline => {
-                        anno.kind == "highlight" && (anno.color.eq_ignore_ascii_case("underline") || HighlightColor::from_str_lossy(&anno.color) == HighlightColor::Underline)
+                        anno.kind == "highlight" && (anno.color.eq_ignore_ascii_case("underline") || anno.style == "underline" || HighlightColor::from_str_lossy(&anno.color) == HighlightColor::Underline)
                     }
                     HighlightFilter::Quotes => anno.kind == "quote",
                 };

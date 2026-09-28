@@ -210,6 +210,7 @@ pub(crate) fn highlight_of(annotation: &Annotation) -> Option<NewHighlight> {
     let (start, end) = range_from_json(annotation.cfi.as_deref()?)?;
     Some(NewHighlight {
         color: engine_color(&annotation.color),
+        style: annotation.style.clone(),
         text: annotation.text_excerpt.clone(),
         start,
         end,

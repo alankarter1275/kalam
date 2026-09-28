@@ -2,7 +2,7 @@
 
 mod chapter;
 mod chrome;
-mod engine;
+pub(crate) mod engine;
 mod dictionary_popover;
 mod keybinds;
 mod lists;
@@ -2615,6 +2615,7 @@ impl ReaderModel {
         };
         let hl = kalam_reader::NewHighlight {
             color: kalam_reader::HighlightColor::Yellow,
+            style: "solid".to_string(),
             text: res.locator.quote.exact.clone(),
             start: res.locator.clone(),
             end: end_locator,

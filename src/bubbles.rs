@@ -3,7 +3,7 @@
 //! Provides Android-style floating chat-head bubbles for multiple open books
 //! and an inset floating reading window with side-by-side split screen capability.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -35,17 +35,34 @@ pub enum ActivePane {
 
 /// Active reader instance held only while being read.
 pub enum BubbleReaderInstance {
-    Epub(relm4::Controller<crate::pages::reader::ReaderModel>),
-    Pdf(relm4::Controller<crate::pages::pdf_reader::PdfReaderModel>),
-    Comic(relm4::Controller<crate::pages::comics_reader::ComicsReaderModel>),
+    Epub {
+        book_id: i64,
+        ctrl: relm4::Controller<crate::pages::reader::ReaderModel>,
+    },
+    Pdf {
+        book_id: i64,
+        ctrl: relm4::Controller<crate::pages::pdf_reader::PdfReaderModel>,
+    },
+    Comic {
+        book_id: i64,
+        ctrl: relm4::Controller<crate::pages::comics_reader::ComicsReaderModel>,
+    },
 }
 
 impl BubbleReaderInstance {
+    pub fn book_id(&self) -> i64 {
+        match self {
+            BubbleReaderInstance::Epub { book_id, .. } => *book_id,
+            BubbleReaderInstance::Pdf { book_id, .. } => *book_id,
+            BubbleReaderInstance::Comic { book_id, .. } => *book_id,
+        }
+    }
+
     pub fn widget(&self) -> &gtk::Widget {
         match self {
-            BubbleReaderInstance::Epub(ctrl) => ctrl.widget().upcast_ref(),
-            BubbleReaderInstance::Pdf(ctrl) => ctrl.widget().upcast_ref(),
-            BubbleReaderInstance::Comic(ctrl) => ctrl.widget().upcast_ref(),
+            BubbleReaderInstance::Epub { ctrl, .. } => ctrl.widget().upcast_ref(),
+            BubbleReaderInstance::Pdf { ctrl, .. } => ctrl.widget().upcast_ref(),
+            BubbleReaderInstance::Comic { ctrl, .. } => ctrl.widget().upcast_ref(),
         }
     }
 }
@@ -55,19 +72,20 @@ pub struct BubbleManager {
     sender: ComponentSender<AppModel>,
     items: Vec<BubbleItem>,
     active_book_id: Option<i64>,
+    previous_active_book_id: Option<i64>,
     split_book_id: Option<i64>,
     window_open: bool,
     active_pane: ActivePane,
     _pos: Rc<RefCell<(f64, f64)>>,
 
-    // Root UI container overlay
+    // Root UI container overlay mounted in kalam-main content_overlay
     root_overlay: gtk::Overlay,
     _fixed_layer: gtk::Fixed,
     minimized_stack: gtk::Box,
 
     // Window widgets
     window_scrim: gtk::Box,
-    window_card: gtk::Box,
+    window_container: gtk::Box,
     top_bubbles_box: gtk::Box,
     reader_content_box: gtk::Box,
     drop_zone_indicator: gtk::Box,
@@ -83,8 +101,16 @@ impl BubbleManager {
         let root_overlay = gtk::Overlay::new();
         root_overlay.set_hexpand(true);
         root_overlay.set_vexpand(true);
-        // By default, the root overlay does not catch clicks meant for the app underneath
-        root_overlay.set_can_target(false);
+        root_overlay.set_halign(gtk::Align::Fill);
+        root_overlay.set_valign(gtk::Align::Fill);
+        root_overlay.set_can_target(true);
+
+        // Base stage ensures root_overlay has full allocated size of content_overlay
+        let base_stage = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        base_stage.set_hexpand(true);
+        base_stage.set_vexpand(true);
+        base_stage.set_can_target(false);
+        root_overlay.set_child(Some(&base_stage));
 
         // Fixed layer for freely draggable minimized bubbles with zero edge snapping
         let fixed_layer = gtk::Fixed::new();
@@ -101,11 +127,13 @@ impl BubbleManager {
         fixed_layer.put(&minimized_stack, 720.0, 480.0);
         root_overlay.add_overlay(&fixed_layer);
 
-        // Window scrim (dimmed backdrop behind floating inset window)
+        // Window scrim (dimmed backdrop behind floating window, clicking outside minimizes)
         let window_scrim = gtk::Box::new(gtk::Orientation::Vertical, 0);
         window_scrim.add_css_class("k-bubble-window-scrim");
         window_scrim.set_hexpand(true);
         window_scrim.set_vexpand(true);
+        window_scrim.set_halign(gtk::Align::Fill);
+        window_scrim.set_valign(gtk::Align::Fill);
         window_scrim.set_visible(false);
         window_scrim.set_can_target(true);
 
@@ -117,59 +145,48 @@ impl BubbleManager {
         window_scrim.add_controller(scrim_click);
         root_overlay.add_overlay(&window_scrim);
 
-        // Android-style inset floating window card
+        // Floating Window Container (maintains 80% content width/height centered in content area)
+        let window_container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        window_container.set_hexpand(true);
+        window_container.set_vexpand(true);
+        window_container.set_halign(gtk::Align::Fill);
+        window_container.set_valign(gtk::Align::Fill);
+        window_container.set_visible(false);
+        window_container.set_can_target(true);
+
+        let last_w = Rc::new(Cell::new(0));
+        let last_h = Rc::new(Cell::new(0));
+        let c_ref = window_container.clone();
+        root_overlay.connect_size_allocate(move |_, width, height, _| {
+            if (width - last_w.get()).abs() > 4 || (height - last_h.get()).abs() > 4 {
+                last_w.set(width);
+                last_h.set(height);
+                let margin_x = ((width as f64) * 0.10) as i32;
+                let margin_y = ((height as f64) * 0.10) as i32;
+                c_ref.set_margin_start(margin_x);
+                c_ref.set_margin_end(margin_x);
+                c_ref.set_margin_top(margin_y);
+                c_ref.set_margin_bottom(margin_y);
+            }
+        });
+
+        // Top Floating Strip (Free-floating row, ZERO background bar!)
+        let top_floating_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        top_floating_row.add_css_class("k-bubble-floating-strip");
+        top_floating_row.set_halign(gtk::Align::Start);
+        top_floating_row.set_valign(gtk::Align::Center);
+        top_floating_row.set_margin_bottom(8);
+
+        let top_bubbles_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        top_bubbles_box.set_halign(gtk::Align::Start);
+        top_floating_row.append(&top_bubbles_box);
+        window_container.append(&top_floating_row);
+
+        // Reading Window Card
         let window_card = gtk::Box::new(gtk::Orientation::Vertical, 0);
         window_card.add_css_class("k-bubble-window-card");
         window_card.set_hexpand(true);
         window_card.set_vexpand(true);
-        window_card.set_margin_start(24);
-        window_card.set_margin_end(24);
-        window_card.set_margin_top(20);
-        window_card.set_margin_bottom(20);
-        window_card.set_visible(false);
-        window_card.set_can_target(true);
-
-        // Top Switcher Strip
-        let top_bar = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        top_bar.add_css_class("k-bubble-topbar");
-
-        let top_bubbles_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        top_bubbles_box.set_hexpand(true);
-        top_bar.append(&top_bubbles_box);
-
-        // Right-aligned window actions
-        let actions_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        actions_box.set_halign(gtk::Align::End);
-
-        let s_split = sender.clone();
-        let split_btn = gtk::Button::from_icon_name("view-dual-symbolic");
-        split_btn.add_css_class("flat");
-        split_btn.set_tooltip_text(Some("Toggle Side-by-Side Split View"));
-        split_btn.connect_clicked(move |_| {
-            s_split.input(AppMsg::BubbleToggleSplit);
-        });
-        actions_box.append(&split_btn);
-
-        let s_min = sender.clone();
-        let min_btn = gtk::Button::from_icon_name("window-minimize-symbolic");
-        min_btn.add_css_class("flat");
-        min_btn.set_tooltip_text(Some("Minimize to Bubble"));
-        min_btn.connect_clicked(move |_| {
-            s_min.input(AppMsg::BubbleMinimizeWindow);
-        });
-        actions_box.append(&min_btn);
-
-        let s_close = sender.clone();
-        let close_btn = gtk::Button::from_icon_name("window-close-symbolic");
-        close_btn.add_css_class("flat");
-        close_btn.set_tooltip_text(Some("Close Reading Window"));
-        close_btn.connect_clicked(move |_| {
-            s_close.input(AppMsg::BubbleCloseWindow);
-        });
-        actions_box.append(&close_btn);
-
-        top_bar.append(&actions_box);
-        window_card.append(&top_bar);
 
         // Reader Area Overlay (hosts reader content and translucent drag-to-split drop indicator)
         let reader_overlay = gtk::Overlay::new();
@@ -193,13 +210,16 @@ impl BubbleManager {
 
         let drop_zone_label = gtk::Label::new(Some("Drop to split side-by-side"));
         drop_zone_label.add_css_class("k-bubble-drop-label");
+        drop_zone_label.set_justify(gtk::Justification::Center);
         drop_zone_label.set_valign(gtk::Align::Center);
         drop_zone_label.set_vexpand(true);
         drop_zone_indicator.append(&drop_zone_label);
 
         reader_overlay.add_overlay(&drop_zone_indicator);
         window_card.append(&reader_overlay);
-        root_overlay.add_overlay(&window_card);
+        window_container.append(&window_card);
+
+        root_overlay.add_overlay(&window_container);
 
         let pos = Rc::new(RefCell::new((720.0, 480.0)));
 
@@ -231,8 +251,8 @@ impl BubbleManager {
             let (sx, sy) = *start_coord_end.borrow();
             let dist = offset_x.hypot(offset_y);
             if dist < 6.0f64 {
-                // Short movement counts as a click: expand reading window!
-                s_click.input(AppMsg::BubbleSelect { book_id: 0 }); // 0 means expand top/active
+                // Short movement counts as a click: expand reading window
+                s_click.input(AppMsg::BubbleSelect { book_id: 0 });
             } else {
                 // Free drop: stays right where dropped, ZERO snapping!
                 let final_x = (sx + offset_x).max(10.0f64);
@@ -248,6 +268,7 @@ impl BubbleManager {
             sender,
             items: Vec::new(),
             active_book_id: None,
+            previous_active_book_id: None,
             split_book_id: None,
             window_open: false,
             active_pane: ActivePane::Left,
@@ -256,7 +277,7 @@ impl BubbleManager {
             _fixed_layer: fixed_layer,
             minimized_stack,
             window_scrim,
-            window_card,
+            window_container,
             top_bubbles_box,
             reader_content_box,
             drop_zone_indicator,
@@ -272,6 +293,9 @@ impl BubbleManager {
 
     pub fn open_bubble(&mut self, book_id: i64) {
         self.add_or_bring_to_front(book_id);
+        if self.active_book_id != Some(book_id) {
+            self.previous_active_book_id = self.active_book_id;
+        }
         self.active_book_id = Some(book_id);
         self.window_open = true;
         self.refresh_ui();
@@ -279,29 +303,60 @@ impl BubbleManager {
 
     pub fn minimize_book(&mut self, book_id: i64) {
         self.add_or_bring_to_front(book_id);
+        if self.active_book_id != Some(book_id) {
+            self.previous_active_book_id = self.active_book_id;
+        }
         self.active_book_id = Some(book_id);
         self.window_open = false;
         self.refresh_ui();
     }
 
     pub fn close_bubble(&mut self, book_id: i64) {
+        let closed_idx = self.items.iter().position(|item| item.book_id == book_id);
         self.items.retain(|item| item.book_id != book_id);
-        if self.split_book_id == Some(book_id) {
-            self.split_book_id = None;
-            self.split_reader = None;
-        }
-        if self.active_book_id == Some(book_id) {
-            self.active_book_id = self.items.first().map(|i| i.book_id);
+
+        if self.primary_reader.as_ref().map(|r| r.book_id()) == Some(book_id) {
             self.primary_reader = None;
         }
-        if self.items.is_empty() {
-            self.window_open = false;
-            self.active_book_id = None;
+        if self.split_reader.as_ref().map(|r| r.book_id()) == Some(book_id) {
+            self.split_reader = None;
             self.split_book_id = None;
+        }
+
+        if self.items.is_empty() {
+            self.active_book_id = None;
+            self.previous_active_book_id = None;
+            self.split_book_id = None;
+            self.window_open = false;
             self.primary_reader = None;
             self.split_reader = None;
             unsafe { libc::malloc_trim(0); }
+            self.refresh_ui();
+            return;
         }
+
+        if self.active_book_id == Some(book_id) {
+            // First choice: last active book if still in items
+            let candidate = if let Some(prev) = self.previous_active_book_id {
+                if self.items.iter().any(|i| i.book_id == prev) {
+                    Some(prev)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Second choice: book right beside it
+            let next_active = candidate.or_else(|| {
+                let idx = closed_idx.unwrap_or(0).min(self.items.len().saturating_sub(1));
+                self.items.get(idx).map(|i| i.book_id)
+            });
+
+            self.active_book_id = next_active;
+            self.primary_reader = None;
+        }
+
         self.refresh_ui();
     }
 
@@ -313,8 +368,15 @@ impl BubbleManager {
         };
         let Some(target_id) = target_id else { return };
 
+        if self.active_book_id != Some(target_id) {
+            self.previous_active_book_id = self.active_book_id;
+        }
         self.add_or_bring_to_front(target_id);
         self.active_book_id = Some(target_id);
+        if self.split_book_id == Some(target_id) {
+            self.split_book_id = None;
+            self.split_reader = None;
+        }
         self.window_open = true;
         self.refresh_ui();
     }
@@ -384,26 +446,28 @@ impl BubbleManager {
         if self.items.is_empty() {
             self.minimized_stack.set_visible(false);
             self.window_scrim.set_visible(false);
-            self.window_card.set_visible(false);
+            self.window_container.set_visible(false);
             return;
         }
 
         if self.window_open {
-            self.minimized_stack.set_visible(false);
-            self.window_scrim.set_visible(true);
-            self.window_card.set_visible(true);
             self.render_top_strip();
             self.render_readers();
+            self.minimized_stack.set_visible(false);
+            self.window_scrim.set_visible(true);
+            self.window_container.set_visible(true);
         } else {
-            self.window_scrim.set_visible(false);
-            self.window_card.set_visible(false);
-            self.minimized_stack.set_visible(true);
             self.render_minimized_stack();
+            self.minimized_stack.set_visible(true);
+            self.window_scrim.set_visible(false);
+            self.window_container.set_visible(false);
         }
     }
 
-    /// Renders the compact circular disc for the minimized bubble stack.
-    /// The last active book is on top, displaying its cover art and progress ring.
+    /// Renders the collapsed floating bubble stack.
+    /// - Shows the most recently active book's cover art and progress ring on the top circle.
+    /// - Free-floating: stays anywhere dropped without edge snapping.
+    /// - Reveals a hover [✕] button to dismiss with a click.
     fn render_minimized_stack(&self) {
         while let Some(child) = self.minimized_stack.first_child() {
             self.minimized_stack.remove(&child);
@@ -412,66 +476,73 @@ impl BubbleManager {
         let Some(top_item) = self.items.first() else { return };
         let top_id = top_item.book_id;
 
-        let bubble_overlay = gtk::Overlay::new();
-        bubble_overlay.add_css_class("k-bubble-mini-circle");
-        bubble_overlay.set_size_request(60, 60);
+        let root_circle = gtk::Overlay::new();
+        root_circle.add_css_class("k-bubble-mini-circle");
+        root_circle.set_size_request(56, 56);
+        root_circle.set_valign(gtk::Align::Center);
+        root_circle.set_halign(gtk::Align::Center);
 
-        // Progress ring drawn on DrawingArea
+        // Circular Progress Ring
         let progress_frac = (top_item.progress as f64 / 100.0).clamp(0.0, 1.0);
         let da = gtk::DrawingArea::new();
-        da.set_content_width(60);
-        da.set_content_height(60);
-        da.set_draw_func(move |_area, cr, width, height| {
-            let w = width as f64;
-            let h = height as f64;
-            let center_x = w / 2.0;
-            let center_y = h / 2.0;
-            let radius = (w.min(h) / 2.0) - 2.5;
-            if radius <= 0.0 {
-                return;
-            }
-            // Background track
-            cr.set_line_width(2.5);
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.20);
-            cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
+        da.set_draw_func(move |_, cr, w, h| {
+            let center_x = w as f64 / 2.0;
+            let center_y = h as f64 / 2.0;
+            let radius = (center_x.min(center_y) - 3.0).max(2.0);
+            cr.set_line_width(3.0);
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.15);
+            let _ = cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
             let _ = cr.stroke();
-
-            // Progress arc
-            if progress_frac > 0.001 {
-                cr.set_line_width(3.0);
-                cr.set_source_rgba(0.21, 0.52, 0.89, 0.95);
+            if progress_frac > 0.0 {
+                cr.set_source_rgba(0.208, 0.518, 0.894, 0.95);
                 let start_angle = -std::f64::consts::FRAC_PI_2;
-                let end_angle = start_angle + progress_frac * 2.0 * std::f64::consts::PI;
-                cr.arc(center_x, center_y, radius, start_angle, end_angle);
+                let end_angle = start_angle + (2.0 * std::f64::consts::PI * progress_frac);
+                let _ = cr.arc(center_x, center_y, radius, start_angle, end_angle);
                 let _ = cr.stroke();
             }
         });
-        bubble_overlay.set_child(Some(&da));
+        root_circle.set_child(Some(&da));
 
-        // Center circular cover
+        // Cover thumbnail inside the circular ring
         let cover_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        cover_box.add_css_class("k-bubble-inner-cover");
         cover_box.set_halign(gtk::Align::Center);
         cover_box.set_valign(gtk::Align::Center);
-        cover_box.add_css_class("k-bubble-inner-cover");
-        let cover = crate::widgets::book_row::cover_widget(top_item.cover_path.as_deref(), 50, 50);
-        cover_box.append(&cover);
-        bubble_overlay.add_overlay(&cover_box);
 
-        // Stack count badge if more than 1 book
+        if let Some(cover_path) = &top_item.cover_path {
+            if cover_path.exists() {
+                let pic = gtk::Picture::for_filename(cover_path);
+                pic.set_content_fit(gtk::ContentFit::Cover);
+                pic.set_size_request(42, 42);
+                cover_box.append(&pic);
+            } else {
+                let icon = gtk::Image::from_icon_name("book-open-symbolic");
+                icon.set_pixel_size(24);
+                cover_box.append(&icon);
+            }
+        } else {
+            let icon = gtk::Image::from_icon_name("book-open-symbolic");
+            icon.set_pixel_size(24);
+            cover_box.append(&icon);
+        }
+        root_circle.add_overlay(&cover_box);
+
+        // Multiple books badge count
         if self.items.len() > 1 {
-            let badge = gtk::Label::new(Some(&format!("{}", self.items.len())));
-            badge.add_css_class("k-bubble-count-badge");
-            badge.set_halign(gtk::Align::End);
-            badge.set_valign(gtk::Align::End);
-            badge.set_margin_end(2);
-            badge.set_margin_bottom(2);
-            bubble_overlay.add_overlay(&badge);
+            let count_lbl = gtk::Label::new(Some(&format!("{}", self.items.len())));
+            count_lbl.add_css_class("k-bubble-count-badge");
+            count_lbl.set_halign(gtk::Align::End);
+            count_lbl.set_valign(gtk::Align::End);
+            count_lbl.set_margin_end(2);
+            count_lbl.set_margin_bottom(2);
+            root_circle.add_overlay(&count_lbl);
         }
 
-        // Quick close [✕] button on hover (left-click closes directly)
+        // Left-click [✕] button revealed on hover for desktop convenience
         let close_btn = gtk::Button::from_icon_name("window-close-symbolic");
         close_btn.add_css_class("k-bubble-mini-close");
-        close_btn.set_halign(gtk::Align::End);
+        close_btn.set_tooltip_text(Some("Dismiss Bubble"));
+        close_btn.set_halign(gtk::Align::Start);
         close_btn.set_valign(gtk::Align::Start);
         close_btn.set_visible(false);
 
@@ -479,28 +550,26 @@ impl BubbleManager {
         close_btn.connect_clicked(move |_| {
             s_close.input(AppMsg::BubbleClose { book_id: top_id });
         });
-        bubble_overlay.add_overlay(&close_btn);
+        root_circle.add_overlay(&close_btn);
 
-        // Reveal close button on hover
-        let close_ref = close_btn.clone();
         let hover = gtk::EventControllerMotion::new();
+        let close_ref = close_btn.clone();
         hover.connect_enter(move |_, _, _| {
             close_ref.set_visible(true);
         });
-        let close_leave = close_btn;
+        let close_ref2 = close_btn;
         hover.connect_leave(move |_| {
-            close_leave.set_visible(false);
+            close_ref2.set_visible(false);
         });
-        bubble_overlay.add_controller(hover);
+        root_circle.add_controller(hover);
 
-        self.minimized_stack.append(&bubble_overlay);
+        self.minimized_stack.append(&root_circle);
     }
 
-    /// Renders the top switcher strip inside the expanded window card:
-    /// - Active book: Fixed-size horizontal pill displaying its book title and [✕].
+    /// Renders the floating icons row above the reading card.
+    /// - Active book: Compact fixed pill (~165px wide) with cover morphing into [✕] on hover.
     /// - Inactive books: Circular discs with cover and progress ring.
-    /// - Hovering inactive circles gives rich popover with Title, Author, Progress, and Format.
-    /// - Dragging an inactive circle into the reader splits the screen side-by-side (Zen Browser style).
+    /// - Hovering inactive circles slides out an action drawer with [Split Screen] and [Close].
     fn render_top_strip(&self) {
         while let Some(child) = self.top_bubbles_box.first_child() {
             self.top_bubbles_box.remove(&child);
@@ -515,139 +584,176 @@ impl BubbleManager {
             let id = item.book_id;
 
             if is_active {
-                // Fixed-size horizontal pill showing title only
+                // Compact fixed-size horizontal pill (165px wide)
                 let pill = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 pill.add_css_class("k-bubble-pill-active");
-                pill.set_size_request(190, 36);
+                pill.set_size_request(165, 34);
                 pill.set_valign(gtk::Align::Center);
 
-                let icon = gtk::Image::from_icon_name("book-open-symbolic");
-                icon.set_pixel_size(14);
-                pill.append(&icon);
+                let icon_stack = gtk::Stack::new();
+                icon_stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+                icon_stack.set_transition_duration(150);
+
+                let cover_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                cover_box.set_size_request(22, 22);
+                cover_box.set_valign(gtk::Align::Center);
+                cover_box.set_halign(gtk::Align::Center);
+                cover_box.add_css_class("k-bubble-cover-disc");
+
+                if let Some(cp) = &item.cover_path {
+                    if cp.exists() {
+                        let pic = gtk::Picture::for_filename(cp);
+                        pic.set_content_fit(gtk::ContentFit::Cover);
+                        pic.set_size_request(22, 22);
+                        cover_box.append(&pic);
+                    } else {
+                        let ic = gtk::Image::from_icon_name("book-open-symbolic");
+                        ic.set_pixel_size(14);
+                        cover_box.append(&ic);
+                    }
+                } else {
+                    let ic = gtk::Image::from_icon_name("book-open-symbolic");
+                    ic.set_pixel_size(14);
+                    cover_box.append(&ic);
+                }
+                icon_stack.add_named(&cover_box, Some("cover"));
+
+                // [✕] Close button revealed in place of cover on hover
+                let close_btn = gtk::Button::from_icon_name("window-close-symbolic");
+                close_btn.add_css_class("k-bubble-mini-close-btn");
+                close_btn.set_tooltip_text(Some("Close book"));
+                let s_close = self.sender.clone();
+                close_btn.connect_clicked(move |_| {
+                    s_close.input(AppMsg::BubbleClose { book_id: id });
+                });
+                icon_stack.add_named(&close_btn, Some("close"));
+                icon_stack.set_visible_child_name("cover");
+
+                let hover = gtk::EventControllerMotion::new();
+                let stack_h = icon_stack.clone();
+                hover.connect_enter(move |_, _, _| {
+                    stack_h.set_visible_child_name("close");
+                });
+                let stack_l = icon_stack.clone();
+                hover.connect_leave(move |_| {
+                    stack_l.set_visible_child_name("cover");
+                });
+                pill.add_controller(hover);
 
                 let title_lbl = gtk::Label::new(Some(&item.title));
                 title_lbl.add_css_class("k-bubble-pill-title");
                 title_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
                 title_lbl.set_hexpand(true);
                 title_lbl.set_halign(gtk::Align::Start);
-                pill.append(&title_lbl);
 
-                let s_close = self.sender.clone();
-                let close_pill_btn = gtk::Button::from_icon_name("window-close-symbolic");
-                close_pill_btn.add_css_class("k-bubble-pill-close");
-                close_pill_btn.set_tooltip_text(Some("Close book"));
-                close_pill_btn.connect_clicked(move |_| {
-                    s_close.input(AppMsg::BubbleClose { book_id: id });
-                });
-                pill.append(&close_pill_btn);
+                pill.append(&icon_stack);
+                pill.append(&title_lbl);
 
                 self.top_bubbles_box.append(&pill);
             } else {
-                // Inactive book: Circular disc
+                // Inactive book: Circular disc with slide-out hover drawer
+                let container = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+                container.add_css_class("k-bubble-inactive-container");
+                container.set_valign(gtk::Align::Center);
+
                 let circle_overlay = gtk::Overlay::new();
                 circle_overlay.add_css_class("k-bubble-circle-inactive");
                 if is_split {
                     circle_overlay.add_css_class("k-bubble-circle-split");
                 }
-                circle_overlay.set_size_request(36, 36);
+                circle_overlay.set_size_request(34, 34);
                 circle_overlay.set_valign(gtk::Align::Center);
+                circle_overlay.set_cursor_from_name(Some("pointer"));
 
                 // Progress ring
                 let progress_frac = (item.progress as f64 / 100.0).clamp(0.0, 1.0);
                 let da = gtk::DrawingArea::new();
-                da.set_content_width(36);
-                da.set_content_height(36);
-                da.set_draw_func(move |_area, cr, width, height| {
-                    let w = width as f64;
-                    let h = height as f64;
-                    let center_x = w / 2.0;
-                    let center_y = h / 2.0;
-                    let radius = (w.min(h) / 2.0) - 1.8;
-                    if radius <= 0.0 {
-                        return;
-                    }
-                    cr.set_line_width(2.0);
-                    cr.set_source_rgba(1.0, 1.0, 1.0, 0.18);
-                    cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
+                da.set_draw_func(move |_, cr, w, h| {
+                    let center_x = w as f64 / 2.0;
+                    let center_y = h as f64 / 2.0;
+                    let radius = (center_x.min(center_y) - 2.0).max(2.0);
+                    cr.set_line_width(2.5);
+                    cr.set_source_rgba(1.0, 1.0, 1.0, 0.15);
+                    let _ = cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
                     let _ = cr.stroke();
-
-                    if progress_frac > 0.001 {
-                        cr.set_line_width(2.2);
-                        cr.set_source_rgba(0.21, 0.52, 0.89, 0.95);
+                    if progress_frac > 0.0 {
+                        cr.set_source_rgba(0.208, 0.518, 0.894, 0.95);
                         let start_angle = -std::f64::consts::FRAC_PI_2;
-                        let end_angle = start_angle + progress_frac * 2.0 * std::f64::consts::PI;
-                        cr.arc(center_x, center_y, radius, start_angle, end_angle);
+                        let end_angle = start_angle + (2.0 * std::f64::consts::PI * progress_frac);
+                        let _ = cr.arc(center_x, center_y, radius, start_angle, end_angle);
                         let _ = cr.stroke();
                     }
                 });
                 circle_overlay.set_child(Some(&da));
 
-                let cover = crate::widgets::book_row::cover_widget(item.cover_path.as_deref(), 30, 30);
-                cover.set_halign(gtk::Align::Center);
-                cover.set_valign(gtk::Align::Center);
-                circle_overlay.add_overlay(&cover);
+                let inner_cover = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                inner_cover.add_css_class("k-bubble-inner-cover");
+                inner_cover.set_halign(gtk::Align::Center);
+                inner_cover.set_valign(gtk::Align::Center);
+                if let Some(cp) = &item.cover_path {
+                    if cp.exists() {
+                        let pic = gtk::Picture::for_filename(cp);
+                        pic.set_content_fit(gtk::ContentFit::Cover);
+                        pic.set_size_request(24, 24);
+                        inner_cover.append(&pic);
+                    } else {
+                        let ic = gtk::Image::from_icon_name("book-open-symbolic");
+                        ic.set_pixel_size(14);
+                        inner_cover.append(&ic);
+                    }
+                } else {
+                    let ic = gtk::Image::from_icon_name("book-open-symbolic");
+                    ic.set_pixel_size(14);
+                    inner_cover.append(&ic);
+                }
+                circle_overlay.add_overlay(&inner_cover);
 
-                // Left click to switch active book
-                let s_sel = self.sender.clone();
+                // Clicking the circle directly activates this book
+                let s_select = self.sender.clone();
                 let click = gtk::GestureClick::new();
-                click.set_button(1);
                 click.connect_released(move |_, _, _, _| {
-                    s_sel.input(AppMsg::BubbleSelect { book_id: id });
+                    s_select.input(AppMsg::BubbleSelect { book_id: id });
                 });
                 circle_overlay.add_controller(click);
 
-                // Right click context menu for quick side-by-side split
-                let s_ctx = self.sender.clone();
-                let right_click = gtk::GestureClick::new();
-                right_click.set_button(3);
-                let pop_parent = circle_overlay.clone();
-                right_click.connect_released(move |_, _, _, _| {
-                    let popover = gtk::Popover::new();
-                    popover.set_parent(&pop_parent);
-                    let box_menu = gtk::Box::new(gtk::Orientation::Vertical, 4);
+                // Hover Drawer with [Split Screen] and [Close]
+                let drawer = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+                drawer.add_css_class("k-bubble-drawer");
+                drawer.set_valign(gtk::Align::Center);
+                drawer.set_visible(false);
 
-                    let split_action = gtk::Button::with_label("Split Side-by-Side");
-                    split_action.add_css_class("flat");
-                    let s_split = s_ctx.clone();
-                    let pop_c = popover.clone();
-                    split_action.connect_clicked(move |_| {
-                        pop_c.popdown();
-                        s_split.input(AppMsg::BubbleSetSplit { book_id: id });
-                    });
-                    box_menu.append(&split_action);
-
-                    let close_action = gtk::Button::with_label("Close Bubble");
-                    close_action.add_css_class("flat");
-                    let s_close = s_ctx.clone();
-                    let pop_c2 = popover.clone();
-                    close_action.connect_clicked(move |_| {
-                        pop_c2.popdown();
-                        s_close.input(AppMsg::BubbleClose { book_id: id });
-                    });
-                    box_menu.append(&close_action);
-
-                    popover.set_child(Some(&box_menu));
-                    popover.popup();
+                // Split button
+                let split_btn = gtk::Button::from_icon_name("view-dual-symbolic");
+                split_btn.add_css_class("k-bubble-drawer-btn");
+                split_btn.set_tooltip_text(Some("Split Side-by-Side"));
+                let s_split = self.sender.clone();
+                split_btn.connect_clicked(move |_| {
+                    s_split.input(AppMsg::BubbleSetSplit { book_id: id });
                 });
-                circle_overlay.add_controller(right_click);
+                drawer.append(&split_btn);
 
-                // Rich Hover Tooltip with Title, Author, Progress, and Format
+                // Close button
+                let close_btn = gtk::Button::from_icon_name("window-close-symbolic");
+                close_btn.add_css_class("k-bubble-drawer-btn");
+                close_btn.set_tooltip_text(Some("Close book"));
+                let s_close = self.sender.clone();
+                close_btn.connect_clicked(move |_| {
+                    s_close.input(AppMsg::BubbleClose { book_id: id });
+                });
+                drawer.append(&close_btn);
+
                 let hover = gtk::EventControllerMotion::new();
-                let title_h = item.title.clone();
-                let author_h = item.author.clone();
-                let format_h = item.format.as_str().to_uppercase();
-                let progress_h = item.progress;
-                let pop_anchor = circle_overlay.clone();
+                let d_h = drawer.clone();
                 hover.connect_enter(move |_, _, _| {
-                    let tooltip_text = format!(
-                        "{}\nby {}\n{} · {}% read",
-                        title_h, author_h, format_h, progress_h
-                    );
-                    pop_anchor.set_tooltip_text(Some(&tooltip_text));
+                    d_h.set_visible(true);
                 });
-                circle_overlay.add_controller(hover);
+                let d_l = drawer.clone();
+                hover.connect_leave(move |_| {
+                    d_l.set_visible(false);
+                });
+                container.add_controller(hover);
 
-                // Zen Browser-Style Drag & Drop to Split
+                // Drag & Drop to split side-by-side
                 let drag = gtk::GestureDrag::new();
                 let drop_zone = self.drop_zone_indicator.clone();
                 let drop_lbl = self.drop_zone_label.clone();
@@ -672,7 +778,9 @@ impl BubbleManager {
                 });
                 circle_overlay.add_controller(drag);
 
-                self.top_bubbles_box.append(&circle_overlay);
+                container.append(&circle_overlay);
+                container.append(&drawer);
+                self.top_bubbles_box.append(&container);
             }
         }
     }
@@ -753,20 +861,27 @@ impl BubbleManager {
     }
 
     fn ensure_primary_reader(&mut self, book_id: i64) -> Option<&BubbleReaderInstance> {
-        if self.primary_reader.is_none() {
+        let needs_build = match &self.primary_reader {
+            Some(r) => r.book_id() != book_id,
+            None => true,
+        };
+        if needs_build {
             self.primary_reader = self.build_reader_instance(book_id);
         }
         self.primary_reader.as_ref()
     }
 
     fn ensure_split_reader(&mut self, book_id: i64) -> Option<&BubbleReaderInstance> {
-        if self.split_reader.is_none() {
+        let needs_build = match &self.split_reader {
+            Some(r) => r.book_id() != book_id,
+            None => true,
+        };
+        if needs_build {
             self.split_reader = self.build_reader_instance(book_id);
         }
         self.split_reader.as_ref()
     }
 
-    /// Builds the appropriate reader controller based on book format (EPUB, PDF, or Comic).
     fn build_reader_instance(&self, book_id: i64) -> Option<BubbleReaderInstance> {
         let book = self.catalog.get_book(book_id).ok()??;
         match book.format {
@@ -782,7 +897,7 @@ impl BubbleManager {
                             AppMsg::Push(crate::models::Route::AuthorPage { author: name })
                         }
                     });
-                Some(BubbleReaderInstance::Epub(ctrl))
+                Some(BubbleReaderInstance::Epub { book_id, ctrl })
             }
             BookFormat::Pdf => {
                 let init = crate::pages::pdf_reader::PdfReaderInit {
@@ -797,7 +912,7 @@ impl BubbleManager {
                             AppMsg::MinimizeToBubble { book_id }
                         }
                     });
-                Some(BubbleReaderInstance::Pdf(ctrl))
+                Some(BubbleReaderInstance::Pdf { book_id, ctrl })
             }
             BookFormat::Cbz | BookFormat::Cbr => {
                 let provider = crate::pages::comics_reader::providers::LocalProvider::new(book.file_path.clone()).ok()?;
@@ -816,7 +931,7 @@ impl BubbleManager {
                             AppMsg::MinimizeToBubble { book_id }
                         }
                     });
-                Some(BubbleReaderInstance::Comic(ctrl))
+                Some(BubbleReaderInstance::Comic { book_id, ctrl })
             }
             _ => None,
         }
@@ -862,5 +977,48 @@ mod tests {
         assert_eq!(pane, ActivePane::Left);
         let pane_r = ActivePane::Right;
         assert_ne!(pane, pane_r);
+    }
+
+    #[test]
+    fn test_smart_fallback_selection_on_close() {
+        let b1 = BubbleItem {
+            book_id: 1,
+            title: "Book One".to_string(),
+            author: "Author A".to_string(),
+            format: BookFormat::Epub,
+            progress: 45,
+            cover_path: None,
+        };
+        let b2 = BubbleItem {
+            book_id: 2,
+            title: "Book Two".to_string(),
+            author: "Author B".to_string(),
+            format: BookFormat::Pdf,
+            progress: 80,
+            cover_path: None,
+        };
+        let b3 = BubbleItem {
+            book_id: 3,
+            title: "Book Three".to_string(),
+            author: "Author C".to_string(),
+            format: BookFormat::Cbz,
+            progress: 10,
+            cover_path: None,
+        };
+
+        let mut items = vec![b1, b2, b3];
+        let closed_id = 2;
+        let closed_idx = items.iter().position(|i| i.book_id == closed_id);
+        items.retain(|i| i.book_id != closed_id);
+
+        let previous_active = Some(1);
+        let next_active = previous_active
+            .filter(|&prev| items.iter().any(|i| i.book_id == prev))
+            .or_else(|| {
+                let idx = closed_idx.unwrap_or(0).min(items.len().saturating_sub(1));
+                items.get(idx).map(|i| i.book_id)
+            });
+
+        assert_eq!(next_active, Some(1));
     }
 }

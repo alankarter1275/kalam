@@ -1159,6 +1159,7 @@ impl Component for AppModel {
                         set_hexpand: true,
                         set_vexpand: true,
 
+                        #[name = "content_overlay"]
                         gtk::Overlay {
                             add_overlay = &gtk::Box {
                                 set_halign: gtk::Align::Start,
@@ -1308,7 +1309,7 @@ impl Component for AppModel {
         let widgets = view_output!();
         widgets.root_overlay.add_overlay(&float_scrim);
         widgets.root_overlay.add_overlay(&float_host);
-        widgets.root_overlay.add_overlay(model.bubbles.widget());
+        widgets.content_overlay.add_overlay(model.bubbles.widget());
 
         // Clicking the dimmed area closes the float. The scrim already
         // swallowed those clicks so they could not reach the page behind it;

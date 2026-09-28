@@ -13,6 +13,7 @@ mod downloads;
 mod epub;
 mod epub_book;
 mod epub_metadata;
+pub mod epub_sanitizer;
 mod export;
 mod epub_writer;
 mod icons;
@@ -37,6 +38,7 @@ mod tasks;
 mod theme;
 mod thumbs;
 mod timing;
+pub mod watch_folder;
 mod widgets;
 
 use app::AppModel;

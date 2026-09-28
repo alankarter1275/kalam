@@ -1598,6 +1598,117 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
+
+    // 1. EPUB Sanitizer / Polish Engine
+    let polish_body = section_card(
+        host,
+        "edit-clear-symbolic",
+        "EPUB polish & sanitizer",
+        Some("Clean, repair, and normalize EPUB files when importing into Kalam."),
+    );
+    {
+        let catalog = catalog.clone();
+        let sw = toggle_switch(
+            crate::epub_sanitizer::clean_on_import_enabled(&catalog),
+            move |on| {
+                crate::epub_sanitizer::set_clean_on_import(&catalog, on);
+            },
+        );
+        setting_row(
+            &polish_body,
+            "Sanitize and polish EPUBs on import",
+            "On: automatically removes toxic styles (tiny fonts, forced black/white colors, fixed margins), repairs malformed XML tags, and regenerates missing Table of Contents (toc.ncx) so books look consistent and readable. Off: EPUBs are stored untouched as imported.",
+            &sw,
+        );
+    }
+
+    // 2. Auto-Import Watch Folder
+    let watch_body = section_card(
+        host,
+        "folder-download-symbolic",
+        "Auto-import watch folder",
+        Some("Automatically import new books and comics added to a folder on your computer."),
+    );
+    {
+        let catalog_sw = catalog.clone();
+        let sw = toggle_switch(
+            crate::watch_folder::is_watch_enabled(&catalog_sw),
+            move |on| {
+                crate::watch_folder::set_watch_enabled(&catalog_sw, on);
+                crate::watch_folder::request_reload();
+            },
+        );
+        setting_row(
+            &watch_body,
+            "Monitor folder for new books",
+            "On: watches the chosen folder for new EPUBs, PDFs, and Comic books, verifies files have finished downloading, and automatically imports them into your library.",
+            &sw,
+        );
+
+        // Path selector row
+        let path_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        path_box.set_valign(gtk::Align::Center);
+
+        let current_path = crate::watch_folder::watch_path(catalog);
+        let path_display = current_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "No folder selected".to_string());
+        let path_chip = chip_label(&path_display, "kalam-chip-neutral");
+        path_box.append(&path_chip);
+
+        let pick_btn = gtk::Button::with_label("Choose folder");
+        pick_btn.add_css_class("kalam-btn-subtle");
+
+        let clear_btn = gtk::Button::with_label("Clear");
+        clear_btn.add_css_class("kalam-btn-ghost");
+        clear_btn.set_sensitive(current_path.is_some());
+
+        let catalog_pick = catalog.clone();
+        let path_chip_pick = path_chip.clone();
+        let clear_btn_pick = clear_btn.clone();
+        pick_btn.connect_clicked(move |btn| {
+            let root = btn.root();
+            let window = root.and_then(|r| r.downcast::<gtk::Window>().ok());
+            let dialog = gtk::FileDialog::builder()
+                .title("Select Auto-Import Watch Folder")
+                .modal(true)
+                .build();
+
+            let cat = catalog_pick.clone();
+            let chip = path_chip_pick.clone();
+            let clr = clear_btn_pick.clone();
+            dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+                let Ok(folder) = res else { return };
+                let Some(path) = folder.path() else { return };
+                crate::watch_folder::set_watch_path(&cat, &path);
+                crate::watch_folder::request_reload();
+                chip.set_label(&path.to_string_lossy());
+                clr.set_sensitive(true);
+            });
+        });
+        path_box.append(&pick_btn);
+
+        let catalog_clear = catalog.clone();
+        let path_chip_clear = path_chip.clone();
+        let clear_btn_self = clear_btn.clone();
+        clear_btn.connect_clicked(move |_| {
+            crate::watch_folder::clear_watch_path(&catalog_clear);
+            crate::watch_folder::request_reload();
+            path_chip_clear.set_label("No folder selected");
+            clear_btn_self.set_sensitive(false);
+        });
+        path_box.append(&clear_btn);
+
+        setting_row(
+            &watch_body,
+            "Watch folder path",
+            "The folder Kalam checks for newly downloaded or added ebook and comic files.",
+            &path_box,
+        );
+    }
+
+    // 3. EPUB writeback & backups
     let body = section_card(host, "text-x-generic-symbolic", "EPUB writeback", None);
 
     {

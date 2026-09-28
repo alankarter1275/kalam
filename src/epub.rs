@@ -199,9 +199,19 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     fs::copy(source, &dest_file)
         .with_context(|| format!("copy {} → {}", source.display(), dest_file.display()))?;
 
+    if format == BookFormat::Epub && crate::epub_sanitizer::clean_on_import_enabled(catalog) {
+        let keep_orig = crate::epub_metadata::write_enabled(catalog);
+        if let Err(e) = crate::epub_sanitizer::sanitize_epub(&dest_file, keep_orig) {
+            log::warn!("Failed to sanitize/polish EPUB {}: {e:#}", dest_file.display());
+        }
+    }
+
     let final_cover_name = if format == BookFormat::Epub {
-        let meta = parse_epub_meta(source)?;
-        extract_cover(source, &meta, &dest_dir)?
+        let meta = parse_epub_meta(&dest_file).or_else(|_| parse_epub_meta(source))?;
+        match extract_cover(&dest_file, &meta, &dest_dir) {
+            Ok(Some(c)) => Some(c),
+            _ => extract_cover(source, &meta, &dest_dir).unwrap_or(None),
+        }
     } else if let Some((cover_filename, cover_bytes)) = cover_name {
         if fs::write(dest_dir.join(&cover_filename), cover_bytes).is_ok() {
             Some(cover_filename)

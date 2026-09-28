@@ -107,6 +107,8 @@ pub enum AppMsg {
     BubbleMinimizeWindow,
     BubbleCloseWindow,
     BubbleSetActivePane(crate::bubbles::ActivePane),
+    /// Reload auto-import watch folder preferences and rebind monitors.
+    ReloadWatchFolder,
 }
 
 enum PageSlot {
@@ -232,6 +234,7 @@ pub struct AppModel {
     /// remember to invalidate.
     cache_token: i64,
     pub bubbles: crate::bubbles::BubbleManager,
+    pub watch_folder: Option<crate::watch_folder::WatchFolderService>,
 }
 
 /// Cache key for a route, or `None` for pages that must always be rebuilt.
@@ -1287,6 +1290,10 @@ impl Component for AppModel {
         });
 
         let bubbles = crate::bubbles::BubbleManager::new(catalog.clone(), sender.clone());
+        let watch_folder = Some(crate::watch_folder::WatchFolderService::new(
+            catalog.clone(),
+            tick_sender.clone(),
+        ));
         let model = AppModel {
             catalog,
             source_manager,
@@ -1304,6 +1311,7 @@ impl Component for AppModel {
             cache: Vec::new(),
             cache_token,
             bubbles,
+            watch_folder,
         };
 
         let widgets = view_output!();
@@ -1656,6 +1664,11 @@ impl Component for AppModel {
             }
             AppMsg::RefreshCurrentPage => {
                 self.refresh_if_stale(&widgets.content_host, &sender);
+            }
+            AppMsg::ReloadWatchFolder => {
+                if let Some(wf) = self.watch_folder.as_mut() {
+                    wf.reload();
+                }
             }
             AppMsg::OpenReader { book_id } => {
                 self.close_floating();

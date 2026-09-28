@@ -838,7 +838,7 @@ shows up as its own task in the task manager.
 14. Release the drop; observe the screen splits side-by-side into two independent reading panes!
 15. Alternatively, right-click an inactive circle in the top strip and select "Split Side-by-Side".
 16. Verify each pane has its own independent scrolling and page navigation.
-17. Click the `[✕]` unsplit button or toggle split to return to single-book view.
+    17. Click the `[✕]` unsplit button or toggle split to return to single-book view.
 
 **Look for:**
 1. Minimized bubbles float freely and can be dragged anywhere on the screen with zero snapping.
@@ -846,6 +846,52 @@ shows up as its own task in the task manager.
 3. Hovering over inactive circles displays title, author, progress %, and format.
 4. Dragging an inactive circle into the reader shows the translucent blue drop zone and snaps into side-by-side split view.
 5. In split mode, both books read side-by-side independently.
+
+---
+
+### T34 · EPUB Ingestion Sanitizer & Polish
+
+**Goal:** Messy real-world EPUBs arrive clean, readable, and properly formatted without user intervention.
+
+**Do:**
+1. Navigate to Settings -> Book Files tab.
+2. Verify the "EPUB polish & sanitizer" section exists with the "Sanitize and polish EPUBs on import" switch (default ON).
+3. Import an EPUB file that has toxic styling (e.g. forced tiny 8px fonts, wide fixed margins, forced black background / white text) or missing Table of Contents.
+4. Open the imported book in the Kalam EPUB Reader.
+5. Check chapter headings and text rendering: verify text renders with clean, theme-respecting fonts, readable sizing, normal line height, and responsive margins.
+6. Open the left sidebar and inspect the Table of Contents: verify chapters and sections appear properly even if the original EPUB lacked a TOC.
+7. Check the book directory under `~/.local/share/kalam/library/<uuid>/`: verify the original untouched file was preserved as `book.epub.orig` if writeback backup is enabled, while `book.epub` contains the clean, repacked archive with uncompressed `mimetype`.
+
+**Look for:**
+1. Toxic styling is stripped cleanly without altering body text content.
+2. Malformed XML entities (bare `&`) and unclosed void tags are repaired.
+3. Missing Table of Contents is generated from chapter headings (`<h1>`/`<h2>`).
+4. Original book backup `.orig` is safely preserved.
+
+---
+
+### T35 · Auto-Import Watch Folder
+
+**Goal:** Dropping ebook and comic files into a designated folder automatically imports them into Kalam without blocking or freezing the application.
+
+**Do:**
+1. Navigate to Settings -> Book Files tab.
+2. In the "Auto-import watch folder" card, click `[Choose folder]`.
+3. Select a folder on your computer (e.g. `~/Downloads/Books` or a test folder).
+4. Verify the folder path chip updates with the selected path, and toggle the switch to ON.
+5. Drop an EPUB, PDF, or Comic (`.cbz`/`.cbr`) file into the watched folder.
+6. If the file is being downloaded (e.g. accompanied by `.crdownload` or `.part`), observe that Kalam waits until the download completes and the file size stabilizes.
+7. Observe a toast notification appear in Kalam: `"Watch Folder: Imported <book title>"`.
+8. Verify that the current library view (Home or All Books) automatically refreshes to display the newly imported book.
+9. Verify that dropping a file that is already in the library is safely recognized as a duplicate and does not duplicate entries or spam notifications.
+10. In Settings -> Book Files, click `[Clear]`; verify the path is cleared and auto-import is cleanly disabled.
+
+**Look for:**
+1. Smooth non-blocking background import using `gio::FileMonitor`.
+2. Debounce correctly waits for file size stabilization before importing.
+3. Automatic toast notification upon successful import.
+4. Live library refresh without needing manual reload.
+5. Duplicate files are ignored cleanly.
 
 ---
 

@@ -315,7 +315,7 @@ pub fn import_watch_files_with_rules(
                                             Some(id) => Ok(id),
                                             None => catalog.create_shelf(
                                                 &subfolder_name,
-                                                crate::db::ShelfKind::Standard,
+                                                crate::db::ShelfKind::Manual,
                                                 "",
                                                 "",
                                             ),

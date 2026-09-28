@@ -2330,8 +2330,7 @@ impl ReaderView {
                 if let Some((w_start, w_end)) = tapped_word {
                     let spine = s.spine();
                     if let Some(text) = s.cached_unit_text(spine) {
-                        if (w_end as usize) <= text.len() {
-                            let raw_word = &text[w_start as usize..w_end as usize];
+                        if let Some(raw_word) = char_slice(&text, w_start as usize, w_end as usize) {
                             let clean = raw_word.trim_matches(|c: char| !c.is_alphanumeric());
                             if s.is_word_in_memory(clean) {
                                 let word_to_lookup = clean.to_string();
@@ -2406,12 +2405,10 @@ impl ReaderView {
                     let word_found = word_span.and_then(|(start, end)| {
                         let spine = s.spine();
                         let text = s.cached_unit_text(spine)?;
-                        if (end as usize) <= text.len() {
-                            let raw = &text[start as usize..end as usize];
-                            let clean = raw.trim_matches(|c: char| !c.is_alphanumeric());
-                            if s.is_word_in_memory(clean) {
-                                return Some(clean.to_string());
-                            }
+                        let raw = char_slice(&text, start as usize, end as usize)?;
+                        let clean = raw.trim_matches(|c: char| !c.is_alphanumeric());
+                        if s.is_word_in_memory(clean) {
+                            return Some(clean.to_string());
                         }
                         None
                     });
@@ -2643,6 +2640,20 @@ fn engine_key(name: &str) -> Option<Key> {
     })
 }
 
+/// Safely extracts a substring from `text` by character indices `[start_char..end_char)`.
+/// Never panics on UTF-8 multi-byte character boundaries (e.g. em dashes, smart quotes, accents).
+fn char_slice(text: &str, start_char: usize, end_char: usize) -> Option<String> {
+    if start_char >= end_char {
+        return None;
+    }
+    let s: String = text.chars().skip(start_char).take(end_char - start_char).collect();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2720,5 +2731,21 @@ mod tests {
             vec!["Cover", "Chapter 2", "The Riddle House", "Chapter 4"]
         );
         assert!(chapter_titles(&[], 0).is_empty());
+    }
+
+    #[test]
+    fn test_char_slice_utf8_boundaries() {
+        let text = "He had a headache—the distant thunder.";
+        // '—' is at char offset 17..18 (3 bytes: 17, 18, 19).
+        let slice = char_slice(text, 17, 18);
+        assert_eq!(slice.as_deref(), Some("—"));
+
+        let word = char_slice(text, 18, 21);
+        assert_eq!(word.as_deref(), Some("the"));
+
+        // Out of bounds / invalid ranges never panic
+        assert_eq!(char_slice(text, 100, 110), None);
+        assert_eq!(char_slice(text, 5, 5), None);
+        assert_eq!(char_slice(text, 10, 5), None);
     }
 }

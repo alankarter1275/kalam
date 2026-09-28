@@ -58,11 +58,11 @@ pub struct BubbleManager {
     split_book_id: Option<i64>,
     window_open: bool,
     active_pane: ActivePane,
-    pos: Rc<RefCell<(f64, f64)>>,
+    _pos: Rc<RefCell<(f64, f64)>>,
 
     // Root UI container overlay
     root_overlay: gtk::Overlay,
-    fixed_layer: gtk::Fixed,
+    _fixed_layer: gtk::Fixed,
     minimized_stack: gtk::Box,
 
     // Window widgets
@@ -251,9 +251,9 @@ impl BubbleManager {
             split_book_id: None,
             window_open: false,
             active_pane: ActivePane::Left,
-            pos,
+            _pos: pos,
             root_overlay,
-            fixed_layer,
+            _fixed_layer: fixed_layer,
             minimized_stack,
             window_scrim,
             window_card,
@@ -753,22 +753,14 @@ impl BubbleManager {
     }
 
     fn ensure_primary_reader(&mut self, book_id: i64) -> Option<&BubbleReaderInstance> {
-        let needs_rebuild = match &self.primary_reader {
-            None => true,
-            Some(_) => false,
-        };
-        if needs_rebuild {
+        if self.primary_reader.is_none() {
             self.primary_reader = self.build_reader_instance(book_id);
         }
         self.primary_reader.as_ref()
     }
 
     fn ensure_split_reader(&mut self, book_id: i64) -> Option<&BubbleReaderInstance> {
-        let needs_rebuild = match &self.split_reader {
-            None => true,
-            Some(_) => false,
-        };
-        if needs_rebuild {
+        if self.split_reader.is_none() {
             self.split_reader = self.build_reader_instance(book_id);
         }
         self.split_reader.as_ref()

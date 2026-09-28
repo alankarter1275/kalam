@@ -122,7 +122,7 @@ pub(crate) const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 2
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // reader->app messages; some variants are not yet emitted
-pub enum ReaderMsg {
+pub(crate) enum ReaderMsg {
     Close,
     MinimizeToBubble,
     TocSelect(usize),

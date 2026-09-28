@@ -16,20 +16,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/reader/types.rs:149:19: [1m[91merror[0m: type `pages::reader::keybinds::ReaderAction` is more private than the item `pages::reader::types::ReaderMsg::SetKeyBinding::0`: field `pages::reader::types::ReaderMsg::SetKeyBinding::0` is reachable at visibility `pub`
-src/pages/reader/types.rs:167:24: [1m[91merror[0m: type `pages::reader::types::ReaderSettingsPane` is more private than the item `pages::reader::types::ReaderMsg::SwitchSettingsPane::0`: field `pages::reader::types::ReaderMsg::SwitchSettingsPane::0` is reachable at visibility `pub`
-src/pages/reader/types.rs:168:18: [1m[91merror[0m: type `pages::reader::types::ReaderUiSetting` is more private than the item `pages::reader::types::ReaderMsg::SetUiSetting::0`: field `pages::reader::types::ReaderMsg::SetUiSetting::0` is reachable at visibility `pub`
-src/pages/reader/types.rs:169:21: [1m[91merror[0m: type `pages::reader::types::ReaderUiSetting` is more private than the item `pages::reader::types::ReaderMsg::AdjustUiSetting::0`: field `pages::reader::types::ReaderMsg::AdjustUiSetting::0` is reachable at visibility `pub`
-src/pages/reader/types.rs:222:19: [1m[91merror[0m: type `pages::reader::types::LeftSidebarTab` is more private than the item `pages::reader::types::ReaderMsg::SwitchLeftTab::0`: field `pages::reader::types::ReaderMsg::SwitchLeftTab::0` is reachable at visibility `pub`
-src/pages/reader/types.rs:223:20: [1m[91merror[0m: type `pages::reader::types::RightSidebarTab` is more private than the item `pages::reader::types::ReaderMsg::SwitchRightTab::0`: field `pages::reader::types::ReaderMsg::SwitchRightTab::0` is reachable at visibility `pub`
-src/pages/reader/types.rs:224:24: [1m[91merror[0m: type `pages::reader::types::HighlightFilter` is more private than the item `pages::reader::types::ReaderMsg::SetHighlightFilter::0`: field `pages::reader::types::ReaderMsg::SetHighlightFilter::0` is reachable at visibility `pub`
-src/pages/reader/types.rs:227:18: [1m[91merror[0m: type `pages::reader::types::WordScope` is more private than the item `pages::reader::types::ReaderMsg::SetWordScope::0`: field `pages::reader::types::ReaderMsg::SetWordScope::0` is reachable at visibility `pub`
-src/bubbles.rs:61:5: [1m[91merror[0m: fields `pos` and `fixed_layer` are never read
-src/bubbles.rs:756:29: [1m[91merror[0m: redundant pattern matching
-src/bubbles.rs:767:29: [1m[91merror[0m: redundant pattern matching
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 11 previous errors
+src/pages/reader/mod.rs:127:5: [1m[91merror[E0446][0m: crate-private type `pages::reader::types::ReaderMsg` in public interface: can't leak crate-private type
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 11 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error

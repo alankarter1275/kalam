@@ -92,6 +92,37 @@ pub struct BubbleManager {
     split_reader: Option<BubbleReaderInstance>,
 }
 
+fn create_bubble_cover(cover_path: Option<&PathBuf>, size: i32, icon_size: i32) -> gtk::Widget {
+    if let Some(cp) = cover_path {
+        if cp.exists() {
+            let thumb = crate::paths::thumbnail_for_cover(cp).filter(|p| p.is_file());
+            let path_to_load = thumb.as_deref().unwrap_or(cp.as_path());
+
+            let pic = if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file_at_scale(path_to_load, size, size, false) {
+                let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
+                gtk::Picture::for_paintable(&texture)
+            } else {
+                gtk::Picture::for_filename(cp)
+            };
+
+            pic.set_content_fit(gtk::ContentFit::Cover);
+            pic.set_can_shrink(true);
+            pic.set_size_request(size, size);
+            pic.set_hexpand(false);
+            pic.set_vexpand(false);
+            pic.set_halign(gtk::Align::Center);
+            pic.set_valign(gtk::Align::Center);
+            return pic.upcast::<gtk::Widget>();
+        }
+    }
+
+    let icon = gtk::Image::from_icon_name("book-open-symbolic");
+    icon.set_pixel_size(icon_size);
+    icon.set_halign(gtk::Align::Center);
+    icon.set_valign(gtk::Align::Center);
+    icon.upcast::<gtk::Widget>()
+}
+
 impl BubbleManager {
     pub fn new(catalog: Arc<Catalog>, sender: ComponentSender<AppModel>) -> Self {
         // Window scrim (dimmed backdrop behind floating window, clicking outside minimizes)
@@ -185,6 +216,7 @@ impl BubbleManager {
         minimized_stack.set_margin_top(300);
         minimized_stack.set_hexpand(false);
         minimized_stack.set_vexpand(false);
+        minimized_stack.set_overflow(gtk::Overflow::Hidden);
         minimized_stack.set_visible(false);
         minimized_stack.set_can_target(true);
 
@@ -448,6 +480,11 @@ impl BubbleManager {
             self.minimized_stack.remove(&child);
         }
 
+        self.minimized_stack.set_size_request(60, 60);
+        self.minimized_stack.set_hexpand(false);
+        self.minimized_stack.set_vexpand(false);
+        self.minimized_stack.set_overflow(gtk::Overflow::Hidden);
+
         let Some(top_item) = self.items.first() else { return };
         let top_id = top_item.book_id;
 
@@ -456,10 +493,14 @@ impl BubbleManager {
         root_circle.set_size_request(56, 56);
         root_circle.set_valign(gtk::Align::Center);
         root_circle.set_halign(gtk::Align::Center);
+        root_circle.set_hexpand(false);
+        root_circle.set_vexpand(false);
+        root_circle.set_overflow(gtk::Overflow::Hidden);
 
         // Circular Progress Ring
         let progress_frac = (top_item.progress as f64 / 100.0).clamp(0.0, 1.0);
         let da = gtk::DrawingArea::new();
+        da.set_size_request(56, 56);
         da.set_draw_func(move |_, cr, w, h| {
             let center_x = w as f64 / 2.0;
             let center_y = h as f64 / 2.0;
@@ -481,25 +522,13 @@ impl BubbleManager {
         // Cover thumbnail inside the circular ring
         let cover_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
         cover_box.add_css_class("k-bubble-inner-cover");
+        cover_box.set_size_request(44, 44);
         cover_box.set_halign(gtk::Align::Center);
         cover_box.set_valign(gtk::Align::Center);
-
-        if let Some(cover_path) = &top_item.cover_path {
-            if cover_path.exists() {
-                let pic = gtk::Picture::for_filename(cover_path);
-                pic.set_content_fit(gtk::ContentFit::Cover);
-                pic.set_size_request(42, 42);
-                cover_box.append(&pic);
-            } else {
-                let icon = gtk::Image::from_icon_name("book-open-symbolic");
-                icon.set_pixel_size(24);
-                cover_box.append(&icon);
-            }
-        } else {
-            let icon = gtk::Image::from_icon_name("book-open-symbolic");
-            icon.set_pixel_size(24);
-            cover_box.append(&icon);
-        }
+        cover_box.set_hexpand(false);
+        cover_box.set_vexpand(false);
+        cover_box.set_overflow(gtk::Overflow::Hidden);
+        cover_box.append(&create_bubble_cover(top_item.cover_path.as_ref(), 44, 24));
         root_circle.add_overlay(&cover_box);
 
         // Multiple books badge count
@@ -573,24 +602,11 @@ impl BubbleManager {
                 cover_box.set_size_request(22, 22);
                 cover_box.set_valign(gtk::Align::Center);
                 cover_box.set_halign(gtk::Align::Center);
+                cover_box.set_hexpand(false);
+                cover_box.set_vexpand(false);
+                cover_box.set_overflow(gtk::Overflow::Hidden);
                 cover_box.add_css_class("k-bubble-cover-disc");
-
-                if let Some(cp) = &item.cover_path {
-                    if cp.exists() {
-                        let pic = gtk::Picture::for_filename(cp);
-                        pic.set_content_fit(gtk::ContentFit::Cover);
-                        pic.set_size_request(22, 22);
-                        cover_box.append(&pic);
-                    } else {
-                        let ic = gtk::Image::from_icon_name("book-open-symbolic");
-                        ic.set_pixel_size(14);
-                        cover_box.append(&ic);
-                    }
-                } else {
-                    let ic = gtk::Image::from_icon_name("book-open-symbolic");
-                    ic.set_pixel_size(14);
-                    cover_box.append(&ic);
-                }
+                cover_box.append(&create_bubble_cover(item.cover_path.as_ref(), 22, 14));
                 icon_stack.add_named(&cover_box, Some("cover"));
 
                 // [✕] Close button revealed in place of cover on hover
@@ -663,24 +679,13 @@ impl BubbleManager {
 
                 let inner_cover = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 inner_cover.add_css_class("k-bubble-inner-cover");
+                inner_cover.set_size_request(24, 24);
                 inner_cover.set_halign(gtk::Align::Center);
                 inner_cover.set_valign(gtk::Align::Center);
-                if let Some(cp) = &item.cover_path {
-                    if cp.exists() {
-                        let pic = gtk::Picture::for_filename(cp);
-                        pic.set_content_fit(gtk::ContentFit::Cover);
-                        pic.set_size_request(24, 24);
-                        inner_cover.append(&pic);
-                    } else {
-                        let ic = gtk::Image::from_icon_name("book-open-symbolic");
-                        ic.set_pixel_size(14);
-                        inner_cover.append(&ic);
-                    }
-                } else {
-                    let ic = gtk::Image::from_icon_name("book-open-symbolic");
-                    ic.set_pixel_size(14);
-                    inner_cover.append(&ic);
-                }
+                inner_cover.set_hexpand(false);
+                inner_cover.set_vexpand(false);
+                inner_cover.set_overflow(gtk::Overflow::Hidden);
+                inner_cover.append(&create_bubble_cover(item.cover_path.as_ref(), 24, 14));
                 circle_overlay.add_overlay(&inner_cover);
 
                 // Clicking the circle directly activates this book

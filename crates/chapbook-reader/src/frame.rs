@@ -202,10 +202,15 @@ impl Session {
         if !self.word_memory.is_empty() {
             if let Some(speakable) = self.speakable_unit_page(spine, page_idx) {
                 let dot_color = Rgba::new(89, 140, 242, 180);
+                let chars: Vec<char> = speakable.text.chars().collect();
                 for w in &speakable.words {
-                    if (w.text_end as usize) <= speakable.text.len() {
-                        let word_str = &speakable.text[w.text_start as usize..w.text_end as usize];
-                        let clean = word_str.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+                    let s = w.text_start as usize;
+                    let e = w.text_end as usize;
+                    if s < chars.len() && e <= chars.len() && s < e {
+                        let word_str: String = chars[s..e].iter().collect();
+                        let clean = word_str
+                            .trim_matches(|c: char| !c.is_alphanumeric())
+                            .to_lowercase();
                         if !clean.is_empty() && self.word_memory.contains(&clean) {
                             selections.push(Selection {
                                 start: w.locator_start,

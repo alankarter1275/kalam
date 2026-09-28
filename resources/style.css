@@ -4363,16 +4363,22 @@ popover.kalam-reader-dict-popover > contents {
 }
 
 .k-bubble-mini-circle {
+    min-width: 56px;
+    min-height: 56px;
     border-radius: 9999px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.42);
     background: rgba(30, 30, 36, 0.85);
 }
 
 .k-bubble-cover-disc {
+    min-width: 22px;
+    min-height: 22px;
     border-radius: 9999px;
 }
 
 .k-bubble-inner-cover {
+    min-width: 44px;
+    min-height: 44px;
     border-radius: 9999px;
 }
 

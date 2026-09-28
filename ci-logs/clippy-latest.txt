@@ -1,9 +1,8 @@
-src/pages/comics_reader/mod.rs:634:48: [1m[91merror[E0603][0m: module `engine` is private: private module
-src/pages/pdf_reader.rs:1007:48: [1m[91merror[E0603][0m: module `engine` is private: private module
-src/pages/reader/engine.rs:211:10: [1m[91merror[E0063][0m: missing field `style` in initializer of `kalam_reader::NewHighlight`: missing `style`
-src/pages/reader/mod.rs:2616:18: [1m[91merror[E0063][0m: missing field `style` in initializer of `kalam_reader::NewHighlight`: missing `style`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+src/db/annotations.rs:212:12: [1m[91merror[0m: method `update_annotation_style` is never used
+src/pages/comics_reader/types.rs:188:5: [1m[91merror[0m: variant `QuoteSelection` is never constructed
+src/pages/pdf_reader.rs:290:5: [1m[91merror[0m: variant `QuoteSelection` is never constructed
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -27,11 +26,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/comics_reader/mod.rs:634:48: [1m[91merror[E0603][0m: module `engine` is private: private module
-src/pages/pdf_reader.rs:1007:48: [1m[91merror[E0603][0m: module `engine` is private: private module
-src/pages/reader/engine.rs:211:10: [1m[91merror[E0063][0m: missing field `style` in initializer of `kalam_reader::NewHighlight`: missing `style`
-src/pages/reader/mod.rs:2616:18: [1m[91merror[E0063][0m: missing field `style` in initializer of `kalam_reader::NewHighlight`: missing `style`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+src/db/annotations.rs:212:12: [1m[91merror[0m: method `update_annotation_style` is never used
+src/pages/comics_reader/types.rs:188:5: [1m[91merror[0m: variant `QuoteSelection` is never constructed
+src/pages/pdf_reader.rs:290:5: [1m[91merror[0m: variant `QuoteSelection` is never constructed
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
---- run 36381222991 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+--- run 36381448285 ---

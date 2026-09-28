@@ -356,12 +356,17 @@ pub fn import_watch_files_with_rules(
     }
 }
 
+/// (size in bytes, stability ticks, rule ID)
+pub type PendingFileEntry = (u64, usize, String);
+pub type PendingMap = HashMap<PathBuf, PendingFileEntry>;
+
 /// Auto-import watch folder service holding directory monitors and debounce state.
+#[allow(clippy::type_complexity)]
 pub struct WatchFolderService {
     catalog: Arc<Catalog>,
     app_sender: relm4::Sender<AppMsg>,
     monitors: Vec<gtk::gio::FileMonitor>,
-    pending: Arc<Mutex<HashMap<PathBuf, (u64, usize, String)>>>,
+    pending: Arc<Mutex<PendingMap>>,
     timer_source: Option<gtk::glib::SourceId>,
 }
 

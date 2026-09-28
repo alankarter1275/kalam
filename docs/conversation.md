@@ -2014,4 +2014,73 @@ carefully; the third by measuring. **Where a number decides a design, log the
 number rather than inferring it.** That is why the logger landed before the
 bubble design was settled, and why the image fix reports its own savings.
 
-*Last updated: 2026-09-19.*
+---
+
+## 7. The Annotation Revision & Word Memory Conversation (2026-09-24)
+
+### Background & Problem
+Readers previously had disjointed highlight and quote concepts, rigid yellow-only highlights, and no vocabulary memory for learning new words while reading.
+
+### Accepted: Unified Model & Two-Tier Interaction
+1. **Unified Schema:** Merged highlights and quotes into a single model with `style` (`solid`, `underline`, `squiggly`, `strikeout`), 5 soft colors, and optional personal notes.
+2. **2-Button Selection Pill:** Text selection reveals a minimal floating pill (`[Highlight]`, `[Define]`). Clicking `[Highlight]` smoothly opens an expandable Calibre-style styling and note drawer.
+3. **Word Memory System:** Saved vocabulary words receive subtle dotted underlines while reading. Hovering reveals a definition preview; clicking opens the full definition card. Configurable scope (Whole Library, Series, Book, Off).
+4. **UTF-8 Character Safety:** Replaced byte-slicing locators with character iterators to avoid panics on multi-byte characters (em-dashes, smart quotes, accented letters).
+
+---
+
+## 8. The Floating Bubbles & Zen Split Screen Conversation (2026-09-26 – 2026-09-28)
+
+### Accepted Decisions & Constraints
+1. **Free-Floating Draggable Bubbles (Zero Snapping):** Minimized bubbles must be draggable anywhere across the screen without snapping to edges. Dropped positions persist.
+2. **Compact Minimized Discs:** Collapsed stack shows compact circular icons with the most recently active book's cover art and Cairo progress ring on top.
+3. **Hover [✕] Button Dismissal:** Dismissing a bubble uses a small left-click `[✕]` button revealed on hover. Drag-to-dismiss was rejected for desktop convenience.
+4. **Permanent Sidebar Untouched:** Left navigation sidebar is permanent and never covered or dimmed by bubbles, scrim, or dialogs.
+5. **80% Content Card & Floating Top Icons:** Expanded reader card occupies 80% of content width and height, centered inside the content area. Action buttons float freely without solid background panels.
+6. **Zen Browser-Style Drag-to-Split:** Dragging an inactive book circle over the reader card reveals a translucent drop zone to snap side-by-side. Fair reading time tracking ensures reading time only accumulates for the focused book pane.
+
+---
+
+## 9. The EPUB Ingestion Sanitizer Conversation (2026-09-28)
+
+### Problem
+Real-world EPUBs from the web often contain toxic CSS (e.g. 7pt/8px hardcoded fonts, fixed 120px margins, forced black text on white backgrounds), unescaped XML ampersands (`&` instead of `&amp;`), unclosed void tags (`<br>`, `<hr>`), and missing Tables of Contents (`toc.ncx`).
+
+### Accepted: Clean In-Place at Ingestion
+1. **Automated Polish on Import:** When enabled in Settings, the sanitizer inspects and repairs CSS and XHTML syntax in-place during import.
+2. **TOC Regeneration:** When `toc.ncx` is missing from the manifest, the sanitizer extracts `<h1>` and `<h2>` headings and generates a clean, valid NCX table of contents.
+3. **Safe Temp-File Repacking:** Repacks EPUB archives preserving uncompressed `mimetype` at byte offset 0.
+4. **Verified Test Fixture:** Added `sample_books/messy_book.epub` and automated tests verifying repair without crashing or UI blocking.
+
+---
+
+## 10. The Multi-Folder Auto-Import & Smart Shelving Conversation (2026-09-29)
+
+### User Question 1: "When I deleted a file from the watched folder, it was not deleted from the app. Is it by design? Why is this needed?"
+
+**Verdict: Yes, strictly by design.**
+- **The Mailbox / Inbox Model:** The watch folder is an inbox, not a synchronized file mirror. Once a book is imported, Kalam makes its own copy in library storage and associates the user's bookmarks, highlights, reading stats, and notes with it.
+- **Data Protection:** If deleting a file from the download folder deleted it from Kalam, clearing the browser's `Downloads` folder would wipe out the user's library and annotations.
+- **Use Cases:** Zero-click browser downloads (downloading an ebook or manga chapter from the web imports it in the background) and cross-device sync (Nextcloud, Dropbox, Syncthing dropping files into the computer).
+
+### User Feature Request: Folder Filters, Format Constraints, and Smart Shelf Routing
+**Proposed by user:**
+- Allow multiple watch folders, each with its own independent configuration.
+- Add format filters so a folder only imports specific types (e.g. only EPUB, only PDF, or only CBZ/CBR).
+- Decide which shelves books go to (e.g. from a certain folder, EPUB goes to Shelf X, PDF goes to Shelf Y).
+- Keep UI modern, clean, and intuitive (avoiding Calibre-style complexity).
+
+### Accepted Architecture & UI Design:
+1. **Multi-Folder Rules Registry:** Replaced single `import.watch_folder_path` string with `WatchFolderRule` JSON registry (`import.watch_folder_rules`), keeping backwards compatibility with legacy configurations.
+2. **Format Selection & Per-Format Shelf Dropdowns:**
+   - `[✓] 📘 Novels & Ebooks (EPUB)` ➔ Target Shelf dropdown (e.g. "Fiction" or "Default").
+   - `[✓] 📄 Documents & Papers (PDF)` ➔ Target Shelf dropdown (e.g. "Study" or "Default").
+   - `[✓] 🎨 Comics & Manga (CBZ/CBR)` ➔ Target Shelf dropdown (e.g. "Manga" or "Default").
+3. **Subfolder Auto-Shelving:**
+   - When enabled, files placed in subdirectories (e.g. `Manga/Naruto/ch1.cbz`) automatically assign books to a shelf named `"Naruto"`, creating the standard shelf dynamically if it does not yet exist.
+4. **Optional Original File Cleanup:**
+   - Optional toggle: *"Clean up: delete original file from folder after safe import"*. When disabled (default), the source file is left untouched. When enabled, original files are safely removed only after confirmed database insertion.
+5. **Calibre-Free Clean GTK4 Settings Cards:**
+   - Each folder is represented by a clean card with an ON/OFF toggle, remove button, format checkboxes, shelf dropdowns, and clear descriptions. An `[+ Add Watch Folder]` button allows adding any directory easily.
+
+*Last updated: 2026-09-29.*

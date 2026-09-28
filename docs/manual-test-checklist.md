@@ -895,6 +895,38 @@ shows up as its own task in the task manager.
 
 ---
 
+### T35b · Multi-Folder Auto-Import, Format Filtering & Smart Shelves
+
+**Goal:** Verify multiple watch folders can be added with independent format filters, target shelves, and subfolder auto-shelving.
+
+**Do:**
+1. Open Settings -> Book Files tab.
+2. In the "Auto-import watch folders" card, click `[+ Add Watch Folder]` and pick a test folder `Folder A`.
+3. In `Folder A`'s card:
+   - Check `[✓] Novels (EPUB)` and set its target shelf to "Fiction".
+   - Uncheck `[ ] Documents (PDF)`.
+   - Check `[✓] Comics (CBZ/CBR)` and set its target shelf to "Manga".
+   - Check `[✓] Automatically create shelves from subfolders`.
+4. Click `[+ Add Watch Folder]` again and pick a second test folder `Folder B` (e.g. for study notes).
+   - In `Folder B`'s card, enable only `[✓] Documents (PDF)` and set target shelf to "Study".
+5. Drop an EPUB file into `Folder A`: verify it imports and is automatically assigned to the "Fiction" shelf.
+6. Drop a PDF file into `Folder A`: verify it is ignored (since PDF is unchecked for `Folder A`).
+7. Drop a PDF file into `Folder B`: verify it imports and is placed into the "Study" shelf.
+8. Inside `Folder A`, create a subfolder `Naruto` and drop a comic `.cbz` file into `Folder A/Naruto/`:
+   - Verify Kalam automatically creates the shelf "Naruto" and adds the comic to both "Manga" and "Naruto".
+9. Delete a file from `Folder A` using your system file manager: verify the book remains intact in Kalam with its highlights and reading history.
+10. Toggle the `[ ON / OFF ]` switch on `Folder B`: verify monitoring is paused for `Folder B` without affecting `Folder A`.
+11. Click the trash `[ ✕ ]` button on `Folder B`: verify `Folder B` is removed cleanly from the watch list.
+
+**Look for:**
+1. Multiple cards render cleanly with zero clutter or GTK warnings.
+2. Per-format filtering strictly honors user checkmarks.
+3. Shelf dropdowns correctly route imported books to designated shelves.
+4. Subfolder names automatically generate matching shelves.
+5. Deleting files externally never touches or damages the user's library.
+
+---
+
 ## At the end
 
 Send me whatever you have, in this shape:

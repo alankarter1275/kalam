@@ -479,13 +479,13 @@ impl BubbleManager {
             let radius = (center_x.min(center_y) - 3.0).max(2.0);
             cr.set_line_width(3.0);
             cr.set_source_rgba(1.0, 1.0, 1.0, 0.15);
-            let _ = cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
+            cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
             let _ = cr.stroke();
             if progress_frac > 0.0 {
                 cr.set_source_rgba(0.208, 0.518, 0.894, 0.95);
                 let start_angle = -std::f64::consts::FRAC_PI_2;
                 let end_angle = start_angle + (2.0 * std::f64::consts::PI * progress_frac);
-                let _ = cr.arc(center_x, center_y, radius, start_angle, end_angle);
+                cr.arc(center_x, center_y, radius, start_angle, end_angle);
                 let _ = cr.stroke();
             }
         });
@@ -662,13 +662,13 @@ impl BubbleManager {
                     let radius = (center_x.min(center_y) - 2.0).max(2.0);
                     cr.set_line_width(2.5);
                     cr.set_source_rgba(1.0, 1.0, 1.0, 0.15);
-                    let _ = cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
+                    cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
                     let _ = cr.stroke();
                     if progress_frac > 0.0 {
                         cr.set_source_rgba(0.208, 0.518, 0.894, 0.95);
                         let start_angle = -std::f64::consts::FRAC_PI_2;
                         let end_angle = start_angle + (2.0 * std::f64::consts::PI * progress_frac);
-                        let _ = cr.arc(center_x, center_y, radius, start_angle, end_angle);
+                        cr.arc(center_x, center_y, radius, start_angle, end_angle);
                         let _ = cr.stroke();
                     }
                 });

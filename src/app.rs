@@ -1282,6 +1282,7 @@ impl Component for AppModel {
         crate::pages::task_manager::apply_badge(&tasks_btn, badge0);
 
         let tick_sender = sender.input_sender().clone();
+        let watch_sender = sender.input_sender().clone();
         let tasks_tick = gtk::glib::timeout_add_local(TASK_TICK, move || {
             match tick_sender.send(AppMsg::TasksTick) {
                 Ok(()) => gtk::glib::ControlFlow::Continue,
@@ -1292,7 +1293,7 @@ impl Component for AppModel {
         let bubbles = crate::bubbles::BubbleManager::new(catalog.clone(), sender.clone());
         let watch_folder = Some(crate::watch_folder::WatchFolderService::new(
             catalog.clone(),
-            tick_sender.clone(),
+            watch_sender,
         ));
         let model = AppModel {
             catalog,

@@ -57,7 +57,7 @@ pub fn sanitize_epub(path: &Path, backup: bool) -> Result<SanitizerReport> {
     let mut report = SanitizerReport::default();
 
     // ── 1. Read existing archive and manifest ────────────────────────────
-    let (opf_path, opf_xml, mut entries_to_clean) = {
+    let (opf_path, opf_xml, entries_to_clean) = {
         let file = fs::File::open(path)?;
         let mut archive = ZipArchive::new(file).context("open EPUB for sanitizing")?;
         let opf_path = crate::epub::find_opf_path_pub(&mut archive)?;
@@ -284,16 +284,16 @@ fn parse_manifest_items(opf_xml: &str, opf_path: &str) -> ManifestInfo {
 pub fn sanitize_css_content(css: &str) -> (String, usize) {
     let mut cleaned_count = 0;
     let mut out = String::with_capacity(css.len());
-    let mut chars = css.char_indices().peekable();
+    let mut chars = css.chars().peekable();
 
-    while let Some((idx, ch)) = chars.next() {
-        if ch == '/' && chars.peek().map(|&(_, c)| c) == Some('*') {
+    while let Some(ch) = chars.next() {
+        if ch == '/' && chars.peek() == Some(&'*') {
             // Preserve comment verbatim
             chars.next();
             out.push_str("/*");
-            while let Some((_, c)) = chars.next() {
+            while let Some(c) = chars.next() {
                 out.push(c);
-                if c == '*' && chars.peek().map(|&(_, next)| next) == Some('/') {
+                if c == '*' && chars.peek() == Some(&'/') {
                     chars.next();
                     out.push('/');
                     break;
@@ -310,7 +310,7 @@ pub fn sanitize_css_content(css: &str) -> (String, usize) {
             // Extract declarations block
             let mut block = String::new();
             let mut depth = 1;
-            while let Some((_, c)) = chars.next() {
+            while let Some(c) = chars.next() {
                 if c == '{' {
                     depth += 1;
                 } else if c == '}' {

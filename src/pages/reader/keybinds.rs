@@ -27,7 +27,7 @@ use crate::db::Catalog;
 
 /// One of Kalam's reader actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ReaderAction {
+pub enum ReaderAction {
     Define,
     NextChapter,
     PrevChapter,

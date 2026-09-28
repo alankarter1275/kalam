@@ -14,20 +14,20 @@ pub enum ReaderOut {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LeftSidebarTab {
+pub enum LeftSidebarTab {
     Toc,
     Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RightSidebarTab {
+pub enum RightSidebarTab {
     Highlights,
     Bookmarks,
     Words,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HighlightFilter {
+pub enum HighlightFilter {
     All,
     Yellow,
     Green,
@@ -39,21 +39,21 @@ pub(crate) enum HighlightFilter {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum WordScope {
+pub enum WordScope {
     Chapter,
     Book,
     All,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReaderSettingsPane {
+pub enum ReaderSettingsPane {
     Reading,
     Ui,
     Shortcuts,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReaderUiSetting {
+pub enum ReaderUiSetting {
     SidebarGap,
     LeftSidebarWidth,
     RightSidebarWidth,
@@ -122,7 +122,7 @@ pub(crate) const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 2
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // reader->app messages; some variants are not yet emitted
-pub(crate) enum ReaderMsg {
+pub enum ReaderMsg {
     Close,
     MinimizeToBubble,
     TocSelect(usize),

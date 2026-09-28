@@ -3,7 +3,7 @@
 //! Provides Android-style floating chat-head bubbles for multiple open books
 //! and an inset floating reading window with side-by-side split screen capability.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -145,30 +145,18 @@ impl BubbleManager {
         window_scrim.add_controller(scrim_click);
         root_overlay.add_overlay(&window_scrim);
 
-        // Floating Window Container (maintains 80% content width/height centered in content area)
+        // Floating Window Container (occupies ~80% content width/height centered in content area)
         let window_container = gtk::Box::new(gtk::Orientation::Vertical, 0);
         window_container.set_hexpand(true);
         window_container.set_vexpand(true);
         window_container.set_halign(gtk::Align::Fill);
         window_container.set_valign(gtk::Align::Fill);
+        window_container.set_margin_start(54);
+        window_container.set_margin_end(54);
+        window_container.set_margin_top(28);
+        window_container.set_margin_bottom(28);
         window_container.set_visible(false);
         window_container.set_can_target(true);
-
-        let last_w = Rc::new(Cell::new(0));
-        let last_h = Rc::new(Cell::new(0));
-        let c_ref = window_container.clone();
-        root_overlay.connect_size_allocate(move |_, width, height, _| {
-            if (width - last_w.get()).abs() > 4 || (height - last_h.get()).abs() > 4 {
-                last_w.set(width);
-                last_h.set(height);
-                let margin_x = ((width as f64) * 0.10) as i32;
-                let margin_y = ((height as f64) * 0.10) as i32;
-                c_ref.set_margin_start(margin_x);
-                c_ref.set_margin_end(margin_x);
-                c_ref.set_margin_top(margin_y);
-                c_ref.set_margin_bottom(margin_y);
-            }
-        });
 
         // Top Floating Strip (Free-floating row, ZERO background bar!)
         let top_floating_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);

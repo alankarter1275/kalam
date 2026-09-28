@@ -310,7 +310,7 @@ pub fn sanitize_css_content(css: &str) -> (String, usize) {
             // Extract declarations block
             let mut block = String::new();
             let mut depth = 1;
-            while let Some(c) = chars.next() {
+            for c in chars.by_ref() {
                 if c == '{' {
                     depth += 1;
                 } else if c == '}' {
@@ -375,19 +375,18 @@ fn clean_css_declarations(selector: &str, block: &str) -> (String, usize) {
         }
 
         // 2. Forced black/white text colors
-        if prop_clean == "color" && is_root_target {
-            if is_forced_color(&val_clean) {
-                cleaned_count += 1;
-                continue;
-            }
+        if prop_clean == "color" && is_root_target && is_forced_color(&val_clean) {
+            cleaned_count += 1;
+            continue;
         }
 
         // 3. Forced background colors
-        if (prop_clean == "background" || prop_clean == "background-color") && is_root_target {
-            if is_forced_background(&val_clean) {
-                cleaned_count += 1;
-                continue;
-            }
+        if (prop_clean == "background" || prop_clean == "background-color")
+            && is_root_target
+            && is_forced_background(&val_clean)
+        {
+            cleaned_count += 1;
+            continue;
         }
 
         // 4. Fixed width or huge margins on body/html
@@ -482,19 +481,19 @@ fn is_forced_background(val: &str) -> bool {
 
 fn is_toxic_box_dimension(prop: &str, val: &str) -> bool {
     let clean = val.replace("!important", "").trim().to_ascii_lowercase();
-    if prop == "width" || prop == "max-width" {
-        if clean.ends_with("px") || clean.ends_with("pt") {
-            return true;
-        }
+    if (prop == "width" || prop == "max-width") && (clean.ends_with("px") || clean.ends_with("pt"))
+    {
+        return true;
     }
     if matches!(
         prop,
         "margin" | "margin-left" | "margin-right" | "padding-left" | "padding-right"
     ) {
-        if let Some(px_str) = clean.strip_suffix("px") {
-            if let Ok(px) = px_str.trim().parse::<f32>() {
-                return px >= 40.0;
-            }
+        if let Some(px) = clean
+            .strip_suffix("px")
+            .and_then(|s| s.trim().parse::<f32>().ok())
+        {
+            return px >= 40.0;
         }
     }
     false

@@ -4356,3 +4356,116 @@ popover.kalam-reader-dict-popover > contents {
     letter-spacing: 0.5px;
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.38);
 }
+
+/* ── Bubbles (Multi-Book Floating Chat Heads & Split Reader) ─────── */
+.k-bubble-minimized-host {
+    background: transparent;
+}
+
+.k-bubble-mini-circle {
+    border-radius: 9999px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.42);
+    background: rgba(30, 30, 36, 0.85);
+}
+
+.k-bubble-inner-cover {
+    border-radius: 9999px;
+    overflow: hidden;
+}
+
+.k-bubble-count-badge {
+    background: rgba(53, 132, 228, 0.95);
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 9999px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.k-bubble-mini-close {
+    background: rgba(224, 27, 36, 0.90);
+    color: rgba(255, 255, 255, 1.0);
+    border-radius: 9999px;
+    padding: 2px;
+    margin: 2px;
+    min-height: 18px;
+    min-width: 18px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.k-bubble-window-scrim {
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.k-bubble-window-card {
+    background: @kalam_surface;
+    border: 1px solid alpha(@kalam_border, 0.6);
+    border-radius: 14px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+.k-bubble-topbar {
+    background: alpha(@kalam_surface, 0.96);
+    border-bottom: 1px solid alpha(@kalam_border, 0.4);
+    padding: 8px 16px;
+}
+
+.k-bubble-pill-active {
+    background: alpha(@kalam_accent, 0.18);
+    border: 1px solid alpha(@kalam_accent, 0.65);
+    border-radius: 9999px;
+    padding: 3px 10px;
+}
+
+.k-bubble-pill-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: @kalam_text;
+}
+
+.k-bubble-pill-close {
+    background: transparent;
+    border-radius: 9999px;
+    padding: 2px;
+    min-height: 18px;
+    min-width: 18px;
+    color: @kalam_text_dim;
+}
+
+.k-bubble-circle-inactive {
+    border-radius: 9999px;
+    border: 1px solid alpha(@kalam_border, 0.5);
+    background: alpha(@kalam_surface, 0.8);
+    padding: 1px;
+}
+
+.k-bubble-circle-split {
+    border: 1.5px solid rgba(53, 132, 228, 0.95);
+}
+
+.k-bubble-drop-zone {
+    background: rgba(53, 132, 228, 0.22);
+    border: 2px dashed rgba(53, 132, 228, 0.85);
+    border-radius: 10px;
+    margin: 12px;
+    min-width: 240px;
+}
+
+.k-bubble-drop-label {
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 1.05rem;
+    font-weight: 600;
+    text-align: center;
+    padding: 20px;
+}
+
+.k-bubble-split-divider {
+    background: alpha(@kalam_border, 0.6);
+    min-width: 3px;
+}
+
+.k-bubble-pane-focused {
+    border: 1px solid alpha(@kalam_accent, 0.4);
+}

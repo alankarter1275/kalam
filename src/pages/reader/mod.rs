@@ -213,6 +213,13 @@ impl Component for ReaderModel {
                         set_tooltip_text: Some("Bookmark (B)"),
                         connect_clicked => ReaderMsg::AddBookmark,
                     },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("window-minimize-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Minimize to Bubble"),
+                        connect_clicked => ReaderMsg::MinimizeToBubble,
+                    },
                 },
             },
 
@@ -1365,6 +1372,12 @@ impl Component for ReaderModel {
                     self.save_progress();
                     sender.output(ReaderOut::Close).ok();
                 }
+            }
+            ReaderMsg::MinimizeToBubble => {
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                self.save_progress();
+                sender.output(ReaderOut::MinimizeToBubble { book_id: self.book_id }).ok();
             }
             ReaderMsg::TocSelect(idx) | ReaderMsg::JumpToChapter(idx) => {
                 if idx < self.chapter_count {

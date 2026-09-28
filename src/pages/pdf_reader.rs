@@ -254,6 +254,7 @@ pub enum PdfReaderMsg {
     CloseSidebar,
     EscapeKey,
     Close,
+    MinimizeToBubble,
     PageRendered {
         generation: u64,
         page: usize,
@@ -299,6 +300,7 @@ pub enum PdfReaderMsg {
 #[derive(Debug)]
 pub enum PdfReaderOut {
     Close,
+    MinimizeToBubble { book_id: i64 },
 }
 
 pub struct PdfReaderModel {
@@ -1961,6 +1963,17 @@ impl Component for PdfReaderModel {
                         set_tooltip_text: Some("Bookmark Page (b)"),
                         connect_clicked => PdfReaderMsg::ToggleBookmark,
                     },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes(
+                            "window-minimize-symbolic",
+                            16,
+                            &["kalam-inline-icon"],
+                        )),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Minimize to Bubble"),
+                        connect_clicked => PdfReaderMsg::MinimizeToBubble,
+                    },
                 },
             },
 
@@ -2645,6 +2658,10 @@ impl Component for PdfReaderModel {
                 }
                 self.cleanup_memory();
                 let _ = sender.output_sender().send(PdfReaderOut::Close);
+            }
+            PdfReaderMsg::MinimizeToBubble => {
+                self.save_progress();
+                let _ = sender.output_sender().send(PdfReaderOut::MinimizeToBubble { book_id: self.book_id });
             }
             PdfReaderMsg::EscapeKey => {
                 if self.active_selection.borrow().is_some() {

@@ -5,6 +5,7 @@
 
 mod app;
 mod author;
+pub mod bubbles;
 mod comics;
 mod db;
 mod dict;

@@ -80,6 +80,9 @@ pub enum BookFloatOut {
     OpenReader {
         book_id: i64,
     },
+    OpenBubble {
+        book_id: i64,
+    },
     OpenAuthor {
         name: String,
     },
@@ -96,6 +99,7 @@ pub enum BookFloatMsg {
     Close,
     OpenFull,
     Read,
+    OpenInBubble,
     OpenAuthor(String),
     Remove,
     ToggleReadingList,
@@ -522,6 +526,20 @@ impl Component for BookFloatModel {
                             connect_clicked => BookFloatMsg::Read,
                         },
 
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "window-minimize-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            set_has_frame: false,
+                            add_css_class: "kalam-btn-icon",
+                            add_css_class: "kalam-float-icon-btn",
+                            set_valign: gtk::Align::Center,
+                            set_tooltip_text: Some("Open in Bubble"),
+                            connect_clicked => BookFloatMsg::OpenInBubble,
+                        },
+
                         #[name = "tbr_btn"]
                         gtk::Button {
                             set_child: Some(&crate::icons::symbolic_with_classes(
@@ -694,6 +712,13 @@ impl Component for BookFloatModel {
                 if let Some(book) = &self.book {
                     sender
                         .output(BookFloatOut::OpenReader { book_id: book.id })
+                        .ok();
+                }
+            }
+            BookFloatMsg::OpenInBubble => {
+                if let Some(book) = &self.book {
+                    sender
+                        .output(BookFloatOut::OpenBubble { book_id: book.id })
                         .ok();
                 }
             }

@@ -819,6 +819,34 @@ shows up as its own task in the task manager.
 5. Saved vocabulary words display subtle dotted underlines matching the configured preference scope.
 6. Hovering displays quick definition preview; clicking opens full dictionary card directly.
 
+### T33 · Bubbles & Zen-Style Side-by-Side Split Reading
+
+**Do:**
+1. Open any book in EPUB, PDF, or Comic reader.
+2. In the top-left dock, observe the new `[Bubble]` minimize button (`window-minimize-symbolic`) next to Bookmark.
+3. Click `[Bubble]`; observe the reader smoothly closes and minimizes into a circular floating bubble in the bottom-right of the Kalam window.
+4. From the Library or Home page, click any other book card to open its detail float, and click `[Open in Bubble]`.
+5. Observe the bubble expands into the Android-style inset reading window with a thin margin around the edges.
+6. Look at the top switcher bar: observe that the active book expands into a fixed-size pill displaying its title and a `[✕]` close button, while the other book appears as a compact circle with its cover and progress ring.
+7. Hover over the inactive circular bubble; observe the preview card showing Title, Author, Reading Progress, and Format.
+8. Left-click the inactive circular bubble; verify it smoothly switches to active (morphing into the pill while the previous book becomes a circle).
+9. Click `[–] Minimize` in the top-right of the window; observe the window collapses back into the draggable floating bubble stack.
+10. Click and drag the bubble anywhere across the screen (middle, left, bottom, top); verify it moves freely with zero edge snapping and stays exactly where dropped.
+11. Hover over the minimized bubble; observe the small `[✕]` close button appear.
+12. Click the minimized bubble to re-expand the window.
+13. Drag an inactive circular bubble from the top strip downwards into the reading area; observe the translucent blue drop-zone indicator appear (Zen Browser style).
+14. Release the drop; observe the screen splits side-by-side into two independent reading panes!
+15. Alternatively, right-click an inactive circle in the top strip and select "Split Side-by-Side".
+16. Verify each pane has its own independent scrolling and page navigation.
+17. Click the `[✕]` unsplit button or toggle split to return to single-book view.
+
+**Look for:**
+1. Minimized bubbles float freely and can be dragged anywhere on the screen with zero snapping.
+2. The active book in the top switcher bar is a fixed-size horizontal pill showing title only; inactive books are circular discs.
+3. Hovering over inactive circles displays title, author, progress %, and format.
+4. Dragging an inactive circle into the reader shows the translucent blue drop zone and snaps into side-by-side split view.
+5. In split mode, both books read side-by-side independently.
+
 ---
 
 ## At the end

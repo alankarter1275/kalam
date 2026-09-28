@@ -9,6 +9,7 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub enum ReaderOut {
     Close,
+    MinimizeToBubble { book_id: i64 },
     OpenAuthor { name: String },
 }
 
@@ -123,6 +124,7 @@ pub(crate) const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 2
 #[allow(dead_code)] // reader->app messages; some variants are not yet emitted
 pub enum ReaderMsg {
     Close,
+    MinimizeToBubble,
     TocSelect(usize),
     PrevChapter,
     NextChapter,

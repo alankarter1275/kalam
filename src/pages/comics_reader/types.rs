@@ -232,11 +232,13 @@ pub enum ComicsReaderMsg {
     #[allow(dead_code)]
     CloseSettings,
     Close,
+    MinimizeToBubble,
 }
 
 #[derive(Debug)]
 pub enum ComicsReaderOut {
     Close,
+    MinimizeToBubble { book_id: i64 },
 }
 
 #[allow(dead_code)] // menu/context actions for the comics reader UI

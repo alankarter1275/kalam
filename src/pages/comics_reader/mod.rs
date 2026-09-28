@@ -1490,6 +1490,17 @@ impl Component for ComicsReaderModel {
                         set_tooltip_text: Some("Bookmark Page (b)"),
                         connect_clicked => ComicsReaderMsg::ToggleBookmark,
                     },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes(
+                            "window-minimize-symbolic",
+                            16,
+                            &["kalam-inline-icon"],
+                        )),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Minimize to Bubble"),
+                        connect_clicked => ComicsReaderMsg::MinimizeToBubble,
+                    },
                 },
             },
 
@@ -3444,6 +3455,11 @@ impl Component for ComicsReaderModel {
                     self.cleanup_memory();
                     let _ = sender.output(ComicsReaderOut::Close);
                 }
+            }
+            ComicsReaderMsg::MinimizeToBubble => {
+                let id = self.book_id.unwrap_or(0);
+                self.cleanup_memory();
+                let _ = sender.output(ComicsReaderOut::MinimizeToBubble { book_id: id });
             }
         }
 

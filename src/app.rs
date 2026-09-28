@@ -84,6 +84,29 @@ pub enum AppMsg {
     OpenReader {
         book_id: i64,
     },
+    /// Open a book directly in a floating bubble window.
+    OpenBubble {
+        book_id: i64,
+    },
+    /// Minimize an open reader into the floating bubble stack.
+    MinimizeToBubble {
+        book_id: i64,
+    },
+    BubbleCloseCurrent,
+    BubbleSelect {
+        book_id: i64,
+    },
+    BubbleClose {
+        book_id: i64,
+    },
+    BubbleSetSplit {
+        book_id: i64,
+    },
+    BubbleToggleSplit,
+    BubbleCloseSplit,
+    BubbleMinimizeWindow,
+    BubbleCloseWindow,
+    BubbleSetActivePane(crate::bubbles::ActivePane),
 }
 
 enum PageSlot {
@@ -208,6 +231,7 @@ pub struct AppModel {
     /// anywhere automatically forces a rebuild — no write path has to
     /// remember to invalidate.
     cache_token: i64,
+    pub bubbles: crate::bubbles::BubbleManager,
 }
 
 /// Cache key for a route, or `None` for pages that must always be rebuilt.
@@ -297,6 +321,7 @@ impl AppModel {
             .forward(sender.input_sender(), move |out| match out {
                 BookFloatOut::Close | BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
                 BookFloatOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
+                BookFloatOut::OpenBubble { book_id } => AppMsg::OpenBubble { book_id },
                 BookFloatOut::OpenFullPage { book_id } => AppMsg::FloatOpenFull { book_id },
                 BookFloatOut::OpenAuthor { name } => {
                     AppMsg::Push(Route::AuthorPage { author: name })
@@ -654,6 +679,9 @@ impl AppModel {
                     .launch((catalog.clone(), id))
                     .forward(sender.input_sender(), |out| match out {
                         ReaderOut::Close => AppMsg::Back,
+                        ReaderOut::MinimizeToBubble { book_id } => {
+                            AppMsg::MinimizeToBubble { book_id }
+                        }
                         ReaderOut::OpenAuthor { name } => {
                             AppMsg::Push(Route::AuthorPage { author: name })
                         }
@@ -670,6 +698,9 @@ impl AppModel {
                     .launch(init)
                     .forward(sender.input_sender(), |out| match out {
                         PdfReaderOut::Close => AppMsg::Back,
+                        PdfReaderOut::MinimizeToBubble { book_id } => {
+                            AppMsg::MinimizeToBubble { book_id }
+                        }
                     });
                 PageSlot::PdfReader(ctrl)
             }
@@ -725,6 +756,9 @@ impl AppModel {
                                     .launch(init)
                                     .forward(sender.input_sender(), |out| match out {
                                         ComicsReaderOut::Close => AppMsg::Back,
+                                        ComicsReaderOut::MinimizeToBubble { book_id } => {
+                                            AppMsg::MinimizeToBubble { book_id }
+                                        }
                                     });
                                 PageSlot::ComicsReader(ctrl)
                             }
@@ -1248,6 +1282,7 @@ impl Component for AppModel {
             }
         });
 
+        let bubbles = crate::bubbles::BubbleManager::new(catalog.clone(), sender.clone());
         let model = AppModel {
             catalog,
             source_manager,
@@ -1264,11 +1299,13 @@ impl Component for AppModel {
             _tasks_tick: tasks_tick,
             cache: Vec::new(),
             cache_token,
+            bubbles,
         };
 
         let widgets = view_output!();
         widgets.root_overlay.add_overlay(&float_scrim);
         widgets.root_overlay.add_overlay(&float_host);
+        widgets.root_overlay.add_overlay(model.bubbles.widget());
 
         // Clicking the dimmed area closes the float. The scrim already
         // swallowed those clicks so they could not reach the page behind it;
@@ -1633,6 +1670,43 @@ impl Component for AppModel {
                     true,
                     &sender,
                 );
+            }
+            AppMsg::OpenBubble { book_id } => {
+                self.close_floating();
+                self.bubbles.open_bubble(book_id);
+            }
+            AppMsg::MinimizeToBubble { book_id } => {
+                self.bubbles.minimize_book(book_id);
+                if self.route.is_reader() {
+                    sender.input(AppMsg::Back);
+                }
+            }
+            AppMsg::BubbleCloseCurrent => {
+                self.bubbles.close_window();
+            }
+            AppMsg::BubbleSelect { book_id } => {
+                self.bubbles.select_bubble(book_id);
+            }
+            AppMsg::BubbleClose { book_id } => {
+                self.bubbles.close_bubble(book_id);
+            }
+            AppMsg::BubbleSetSplit { book_id } => {
+                self.bubbles.set_split_book(book_id);
+            }
+            AppMsg::BubbleToggleSplit => {
+                self.bubbles.toggle_split();
+            }
+            AppMsg::BubbleCloseSplit => {
+                self.bubbles.close_split();
+            }
+            AppMsg::BubbleMinimizeWindow => {
+                self.bubbles.minimize_window();
+            }
+            AppMsg::BubbleCloseWindow => {
+                self.bubbles.close_window();
+            }
+            AppMsg::BubbleSetActivePane(pane) => {
+                self.bubbles.set_active_pane(pane);
             }
         }
 

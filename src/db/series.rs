@@ -814,7 +814,8 @@ impl Catalog {
                 let series_name = b
                     .series
                     .clone()
-                    .unwrap_or_else(|| crate::comics::parse_comic_title(&b.title));
+                    .or_else(|| crate::comics::parse_comic_title(&b.title).series)
+                    .unwrap_or_else(|| b.title.clone());
 
                 let key = series_name.to_lowercase();
                 if seen_heuristic_series.contains(&key) {

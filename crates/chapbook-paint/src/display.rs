@@ -413,7 +413,7 @@ fn push_selection_rect(
                 let base_y = fragment.rect.origin.y + bottom - 2.0;
                 let mut x = fragment.rect.origin.x + from;
                 let end_x = fragment.rect.origin.x + to;
-                let step = 2.5;
+                let step: f32 = 2.5;
                 let mut up = false;
                 while x < end_x {
                     let w = step.min(end_x - x);
@@ -430,8 +430,8 @@ fn push_selection_rect(
                 let dot_y = fragment.rect.origin.y + bottom - 1.5;
                 let mut x = fragment.rect.origin.x + from;
                 let end_x = fragment.rect.origin.x + to;
-                let dot_w = 2.0;
-                let gap = 2.5;
+                let dot_w: f32 = 2.0;
+                let gap: f32 = 2.5;
                 while x < end_x {
                     let w = dot_w.min(end_x - x);
                     ops.push(DisplayOp::FillRect {

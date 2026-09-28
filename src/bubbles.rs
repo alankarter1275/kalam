@@ -78,12 +78,8 @@ pub struct BubbleManager {
     active_pane: ActivePane,
     _pos: Rc<RefCell<(f64, f64)>>,
 
-    // Root UI container overlay mounted in kalam-main content_overlay
-    root_overlay: gtk::Overlay,
-    _fixed_layer: gtk::Fixed,
+    // Window widgets directly mounted in content_overlay
     minimized_stack: gtk::Box,
-
-    // Window widgets
     window_scrim: gtk::Box,
     window_container: gtk::Box,
     top_bubbles_box: gtk::Box,
@@ -98,35 +94,6 @@ pub struct BubbleManager {
 
 impl BubbleManager {
     pub fn new(catalog: Arc<Catalog>, sender: ComponentSender<AppModel>) -> Self {
-        let root_overlay = gtk::Overlay::new();
-        root_overlay.set_hexpand(true);
-        root_overlay.set_vexpand(true);
-        root_overlay.set_halign(gtk::Align::Fill);
-        root_overlay.set_valign(gtk::Align::Fill);
-        root_overlay.set_can_target(true);
-
-        // Base stage ensures root_overlay has full allocated size of content_overlay
-        let base_stage = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        base_stage.set_hexpand(true);
-        base_stage.set_vexpand(true);
-        base_stage.set_can_target(false);
-        root_overlay.set_child(Some(&base_stage));
-
-        // Fixed layer for freely draggable minimized bubbles with zero edge snapping
-        let fixed_layer = gtk::Fixed::new();
-        fixed_layer.set_hexpand(true);
-        fixed_layer.set_vexpand(true);
-        fixed_layer.set_can_target(false);
-
-        let minimized_stack = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        minimized_stack.add_css_class("k-bubble-minimized-host");
-        minimized_stack.set_size_request(60, 60);
-        minimized_stack.set_visible(false);
-        minimized_stack.set_can_target(true);
-
-        fixed_layer.put(&minimized_stack, 720.0, 480.0);
-        root_overlay.add_overlay(&fixed_layer);
-
         // Window scrim (dimmed backdrop behind floating window, clicking outside minimizes)
         let window_scrim = gtk::Box::new(gtk::Orientation::Vertical, 0);
         window_scrim.add_css_class("k-bubble-window-scrim");
@@ -143,7 +110,6 @@ impl BubbleManager {
             s_scrim.input(AppMsg::BubbleMinimizeWindow);
         });
         window_scrim.add_controller(scrim_click);
-        root_overlay.add_overlay(&window_scrim);
 
         // Floating Window Container (occupies ~80% content width/height centered in content area)
         let window_container = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -207,9 +173,20 @@ impl BubbleManager {
         window_card.append(&reader_overlay);
         window_container.append(&window_card);
 
-        root_overlay.add_overlay(&window_container);
+        let pos = Rc::new(RefCell::new((500.0, 300.0)));
 
-        let pos = Rc::new(RefCell::new((720.0, 480.0)));
+        // Minimized floating circular stack (positioned via margins, non-interfering 60x60 bounds)
+        let minimized_stack = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        minimized_stack.add_css_class("k-bubble-minimized-host");
+        minimized_stack.set_size_request(60, 60);
+        minimized_stack.set_halign(gtk::Align::Start);
+        minimized_stack.set_valign(gtk::Align::Start);
+        minimized_stack.set_margin_start(500);
+        minimized_stack.set_margin_top(300);
+        minimized_stack.set_hexpand(false);
+        minimized_stack.set_vexpand(false);
+        minimized_stack.set_visible(false);
+        minimized_stack.set_can_target(true);
 
         // Setup Draggable gesture with ZERO edge snapping
         let drag = gtk::GestureDrag::new();
@@ -219,7 +196,6 @@ impl BubbleManager {
         let start_coord_end = start_coord;
         let pos_drag = pos.clone();
         let pos_end = pos.clone();
-        let fixed_drag = fixed_layer.clone();
         let stack_drag = minimized_stack.clone();
         let s_click = sender.clone();
 
@@ -232,7 +208,8 @@ impl BubbleManager {
             let (sx, sy) = *start_coord_update.borrow();
             let new_x = (sx + offset_x).max(10.0f64);
             let new_y = (sy + offset_y).max(10.0f64);
-            fixed_drag.move_(&stack_drag, new_x, new_y);
+            stack_drag.set_margin_start(new_x as i32);
+            stack_drag.set_margin_top(new_y as i32);
         });
 
         drag.connect_drag_end(move |_, offset_x, offset_y| {
@@ -261,8 +238,6 @@ impl BubbleManager {
             window_open: false,
             active_pane: ActivePane::Left,
             _pos: pos,
-            root_overlay,
-            _fixed_layer: fixed_layer,
             minimized_stack,
             window_scrim,
             window_container,
@@ -275,8 +250,20 @@ impl BubbleManager {
         }
     }
 
+    pub fn scrim_widget(&self) -> &gtk::Widget {
+        self.window_scrim.upcast_ref()
+    }
+
+    pub fn window_widget(&self) -> &gtk::Widget {
+        self.window_container.upcast_ref()
+    }
+
+    pub fn bubble_widget(&self) -> &gtk::Widget {
+        self.minimized_stack.upcast_ref()
+    }
+
     pub fn widget(&self) -> &gtk::Widget {
-        self.root_overlay.upcast_ref()
+        self.minimized_stack.upcast_ref()
     }
 
     pub fn open_bubble(&mut self, book_id: i64) {

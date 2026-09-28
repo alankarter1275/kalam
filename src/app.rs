@@ -1309,7 +1309,9 @@ impl Component for AppModel {
         let widgets = view_output!();
         widgets.root_overlay.add_overlay(&float_scrim);
         widgets.root_overlay.add_overlay(&float_host);
-        widgets.content_overlay.add_overlay(model.bubbles.widget());
+        widgets.content_overlay.add_overlay(model.bubbles.scrim_widget());
+        widgets.content_overlay.add_overlay(model.bubbles.window_widget());
+        widgets.content_overlay.add_overlay(model.bubbles.bubble_widget());
 
         // Clicking the dimmed area closes the float. The scrim already
         // swallowed those clicks so they could not reach the page behind it;

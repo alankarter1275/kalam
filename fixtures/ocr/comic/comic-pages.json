@@ -249,6 +249,56 @@
     }
    ],
    "sfx": []
+  },
+  {
+   "file": "comic-page5.png",
+   "width": 1200,
+   "height": 1800,
+   "reading": "ltr",
+   "color": false,
+   "experimental": true,
+   "balloons": [
+    {
+     "rect": [
+      110,
+      90,
+      610,
+      360
+     ],
+     "kind": "ellipse",
+     "text": [
+      "The print faded",
+      "over the years."
+     ]
+    },
+    {
+     "rect": [
+      640,
+      130,
+      1130,
+      430
+     ],
+     "kind": "ellipse",
+     "text": [
+      "This ink was cheap",
+      "and grey from the start."
+     ]
+    },
+    {
+     "rect": [
+      150,
+      950,
+      700,
+      1230
+     ],
+     "kind": "ellipse",
+     "text": [
+      "Barely legible",
+      "even to young eyes."
+     ]
+    }
+   ],
+   "sfx": []
   }
  ]
 }

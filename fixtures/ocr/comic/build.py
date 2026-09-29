@@ -15,14 +15,25 @@ Pages are deliberately hard for a balloon detector:
   double-outline thought bubble.
 - page3 (color manhwa): tinted background, colored art, white balloons with
   dark outlines, stacked vertically like a webtoon slice.
+- page5 (faded print, ROADMAP 2.16): old tan paper, balloons at three text
+  fade levels (crisp black control, mildly faded grey, badly faded grey just
+  under the detector's dark threshold). Detection must still find every
+  balloon; recognition difficulty is the variable under test, so the page is
+  marked "experimental" in the JSON and the CI probe scores it instead of
+  asserting it. (page4, the aged scan, is generated between them.)
 
-Run:  python3 build.py     (from this directory)
+Run:  python3 build.py            (regenerates every page + the JSON)
+      python3 build.py 5          (renders only page 5, still rewrites the
+                                   full JSON from the deterministic specs,
+                                   so adding a page never touches the other
+                                   binaries)
 """
 
 import json
 import math
 import os
 import random
+import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -103,7 +114,7 @@ def screentone(draw, rect, cell=8, dot=3, grey=120):
             draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(grey, grey, grey))
 
 
-def build_page1():
+def build_page1(render=True):
     """B&W manga page, 1200x1800."""
     W, H = 1200, 1800
     img = Image.new("RGB", (W, H), (245, 245, 245))
@@ -167,7 +178,7 @@ def build_page1():
     }
 
 
-def build_page2():
+def build_page2(render=True):
     """Reading-order page: same-height pair, staggered pair, thought bubble."""
     W, H = 1200, 1800
     img = Image.new("RGB", (W, H), (250, 248, 245))
@@ -215,7 +226,7 @@ def build_page2():
     }
 
 
-def build_page3():
+def build_page3(render=True):
     """Color manhwa/webtoon slice, 800x1200, stacked balloons."""
     W, H = 800, 1200
     img = Image.new("RGB", (W, H), (247, 242, 232))
@@ -248,7 +259,7 @@ def build_page3():
     }
 
 
-def build_page4():
+def build_page4(render=True):
     """Aged-scan stress page: yellowed paper, noise, wobbly outlines, a grey
     caption, an overlapping pair, JPEG artifacts, and one balloon that
     touches the page edge (a documented v1 miss)."""
@@ -308,14 +319,15 @@ def build_page4():
     draw_text_block(d, 1110, (edge[1] + edge[3]) / 2, ["edge!"], fnt, fill=(25, 22, 20))
 
     # Sensor noise + JPEG artifacts
-    import numpy as np
-    arr = np.asarray(img).astype(np.int16)
-    noise = np.array([[[rng.randint(-6, 6)] * 3 for _ in range(arr.shape[1])]
-                      for _ in range(arr.shape[0])], dtype=np.int16)
-    arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
-    out = Image.fromarray(arr)
-    path = os.path.join(HERE, "comic-page4.jpg")
-    out.save(path, quality=82)
+    if render:
+        import numpy as np
+        arr = np.asarray(img).astype(np.int16)
+        noise = np.array([[[rng.randint(-6, 6)] * 3 for _ in range(arr.shape[1])]
+                          for _ in range(arr.shape[0])], dtype=np.int16)
+        arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+        out = Image.fromarray(arr)
+        path = os.path.join(HERE, "comic-page4.jpg")
+        out.save(path, quality=82)
 
     return {
         "file": "comic-page4.jpg", "width": W, "height": H, "reading": "ltr",
@@ -331,8 +343,75 @@ def build_page4():
     }
 
 
+def build_page5(render=True):
+    """Faded-print experiment page (ROADMAP 2.16), 1200x1800.
+
+    Old tan paper (not white to the detector), balloons with near-white fill,
+    and three text fade levels: a crisp black control, mildly faded grey, and
+    badly faded grey kept just under the detector's DARK_T (128) — bold, so
+    the stroke cores still count as ink and every balloon is detected. The
+    page is marked "experimental": the probe scores recognition instead of
+    asserting it.
+    """
+    W, H = 1200, 1800
+    img = Image.new("RGB", (W, H), (176, 162, 134))
+    d = ImageDraw.Draw(img)
+    fnt = font(FONT_BOLD, 32)
+
+    d.rectangle((25, 25, 1175, 870), outline=(70, 62, 50), width=6)
+    d.rectangle((25, 905, 1175, 1775), outline=(70, 62, 50), width=6)
+    # art: muted shapes, all darker than the paper
+    d.ellipse((80, 480, 420, 830), fill=(120, 108, 88))
+    d.polygon([(100, 1650), (560, 1150), (1000, 1700)], fill=(104, 94, 76))
+
+    # Control: crisp black text
+    a = (110, 90, 610, 360)
+    draw_tail(d, (260, 450), ((a[0] + a[2]) / 2, a[3] - 10), outline=(85, 78, 66))
+    draw_bubble(d, a, "ellipse", outline=(85, 78, 66), width=5, fill=(238, 236, 228))
+    draw_text_block(d, (a[0] + a[2]) / 2, (a[1] + a[3]) / 2, [
+        "The print faded", "over the years.",
+    ], fnt, fill=(30, 28, 24))
+
+    # Mild fade: grey text (luminance ~98)
+    b = (640, 130, 1130, 430)
+    draw_bubble(d, b, "ellipse", outline=(85, 78, 66), width=5, fill=(238, 236, 228))
+    draw_text_block(d, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2, [
+        "This ink was cheap", "and grey from the start.",
+    ], fnt, fill=(102, 98, 90))
+
+    # Bad fade: luminance ~118, just under DARK_T so the ink test still passes
+    c = (150, 950, 700, 1230)
+    draw_bubble(d, c, "ellipse", outline=(85, 78, 66), width=5, fill=(238, 236, 228))
+    draw_text_block(d, (c[0] + c[2]) / 2, (c[1] + c[3]) / 2, [
+        "Barely legible", "even to young eyes.",
+    ], fnt, fill=(122, 118, 110))
+
+    if render:
+        path = os.path.join(HERE, "comic-page5.png")
+        img.save(path)
+
+    return {
+        "file": "comic-page5.png", "width": W, "height": H, "reading": "ltr",
+        "color": False, "experimental": True,
+        "balloons": [
+            {"rect": list(a), "kind": "ellipse", "text": ["The print faded", "over the years."]},
+            {"rect": list(b), "kind": "ellipse", "text": ["This ink was cheap", "and grey from the start."]},
+            {"rect": list(c), "kind": "ellipse", "text": ["Barely legible", "even to young eyes."]},
+        ],
+        "sfx": [],
+    }
+
+
 def main():
-    pages = [build_page1(), build_page2(), build_page3(), build_page4()]
+    builders = {
+        "1": build_page1,
+        "2": build_page2,
+        "3": build_page3,
+        "4": build_page4,
+        "5": build_page5,
+    }
+    wanted = set(sys.argv[1:]) or set(builders)
+    pages = [builders[n](n in wanted) for n in ("1", "2", "3", "4", "5")]
     out = os.path.join(HERE, "comic-pages.json")
     with open(out, "w") as f:
         json.dump({"pages": pages}, f, indent=1)

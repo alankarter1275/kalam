@@ -53,8 +53,17 @@ const MAX_INK: f32 = 0.60;
 /// least this fraction of the shorter one; bands read top-to-bottom, within a
 /// band left-to-right (or right-to-left for manga).
 const BAND_OVERLAP: f32 = 0.50;
-/// Padding added around a detected balloon before cropping for recognition.
+/// Padding added around a detected balloon before cropping for recognition:
+/// the crop carries a little margin beyond the balloon box, so the
+/// recognizer sees the outline rather than touching it.
 const CROP_PAD: u32 = 6;
+
+/// Each detected word box is grown by this many pixels on every side before
+/// ocrs groups words into lines and crops them for recognition (ROADMAP
+/// 2.15) — a tight line crop can clip ascenders and descenders. Kept well
+/// under ocrs's 5 px vertical-overlap threshold for joining words, so two
+/// stacked lines of lettering cannot fuse.
+const LINE_BOX_PAD: f32 = 2.0;
 /// Pages larger than this on the long side are downscaled for detection and
 /// recognition (same cap as the whole-page path in `ocr.rs`).
 const WORK_LIMIT: u32 = 1800;
@@ -215,6 +224,19 @@ pub fn bubble_ocr_page(
     page_num: usize,
     is_color_only: bool,
 ) -> Result<ComicPageOcr> {
+    bubble_ocr_page_prep(engine, raw_bytes, page_num, is_color_only, CropPrep::None)
+}
+
+/// [`bubble_ocr_page`] with an explicit crop-preprocessing mode (ROADMAP
+/// 2.16). The shipped default is [`CropPrep::None`]; the grayscale/contrast
+/// experiment probe runs both modes and compares them on the fixtures.
+pub fn bubble_ocr_page_prep(
+    engine: &OcrEngine,
+    raw_bytes: &[u8],
+    page_num: usize,
+    is_color_only: bool,
+    prep: CropPrep,
+) -> Result<ComicPageOcr> {
     let img = image::load_from_memory(raw_bytes)
         .map_err(|e| anyhow::anyhow!("Failed to decode comic page for OCR: {e}"))?;
     let orig_w = img.width();
@@ -278,6 +300,10 @@ pub fn bubble_ocr_page(
                 rgb.push(px[2]);
             }
         }
+        let rgb = match prep {
+            CropPrep::None => rgb,
+            CropPrep::GrayscaleContrast => grayscale_contrast_stretch(&rgb),
+        };
 
         let mut lines = recognize_lines(
             engine,
@@ -353,7 +379,16 @@ fn recognize_lines(
     let words = engine
         .detect_words(&input)
         .map_err(|e| anyhow::anyhow!("OCR word detection failed: {e:?}"))?;
-    let line_rects = engine.find_text_lines(&input, &words);
+    // ROADMAP 2.15: ocrs crops each line for recognition to the tight
+    // outline of its word boxes (its `prepare_text_line` adds no margin), so
+    // ascenders, descenders and edge punctuation can be clipped away before
+    // the recognizer ever sees them. Grow every word box a little first; the
+    // line images then carry context around the glyphs.
+    let padded: Vec<_> = words
+        .iter()
+        .map(|w| w.expanded(LINE_BOX_PAD * 2.0, LINE_BOX_PAD * 2.0))
+        .collect();
+    let line_rects = engine.find_text_lines(&input, &padded);
     let recognized = engine
         .recognize_text(&input, &line_rects)
         .map_err(|e| anyhow::anyhow!("OCR text recognition failed: {e:?}"))?;
@@ -394,6 +429,77 @@ fn recognize_lines(
         });
     }
     Ok(lines)
+}
+
+// --- ROADMAP 2.16: the grayscale/contrast experiment -----------------------
+
+/// How a balloon crop is prepared before recognition.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CropPrep {
+    /// The crop passes to ocrs untouched — the shipped behaviour.
+    None,
+    /// Grayscale, then stretch the crop's own 2nd–98th percentile luminance
+    /// range to full black–white. Faded print is grey on off-white; the
+    /// stretch turns it back into black on white, one balloon at a time.
+    GrayscaleContrast,
+}
+
+/// A crop whose 2nd–98th percentile spread is below this is nearly flat;
+/// stretching it would only amplify noise, so it is left as plain grayscale.
+const MIN_STRETCH_SPREAD: u8 = 48;
+
+/// [`CropPrep::GrayscaleContrast`]: BT.601 luma, then a percentile stretch.
+fn grayscale_contrast_stretch(rgb: &[u8]) -> Vec<u8> {
+    let n = rgb.len() / 3;
+    let mut hist = [0u32; 256];
+    let mut luma = Vec::with_capacity(n);
+    for px in rgb.chunks_exact(3) {
+        let y = (u32::from(px[0]) * 299 + u32::from(px[1]) * 587 + u32::from(px[2]) * 114) / 1000;
+        let y = y.min(255) as u8;
+        hist[y as usize] += 1;
+        luma.push(y);
+    }
+    let lo = percentile_from_dark_end(&hist, n, 0.02);
+    let hi = percentile_from_bright_end(&hist, n, 0.02);
+    let spread = i32::from(hi) - i32::from(lo);
+    let mut out = Vec::with_capacity(rgb.len());
+    for y in luma {
+        let v = if spread >= i32::from(MIN_STRETCH_SPREAD) {
+            (((i32::from(y) - i32::from(lo)) * 255) / spread).clamp(0, 255) as u8
+        } else {
+            y
+        };
+        out.push(v);
+        out.push(v);
+        out.push(v);
+    }
+    out
+}
+
+/// The luminance value at `frac` of all pixels, counting from the dark end.
+fn percentile_from_dark_end(hist: &[u32; 256], n: usize, frac: f32) -> u8 {
+    let target = ((n as f32) * frac).ceil().max(1.0) as u32;
+    let mut acc = 0u32;
+    for (v, &count) in hist.iter().enumerate() {
+        acc += count;
+        if acc >= target {
+            return v as u8;
+        }
+    }
+    255
+}
+
+/// The luminance value at `frac` of all pixels, counting from the bright end.
+fn percentile_from_bright_end(hist: &[u32; 256], n: usize, frac: f32) -> u8 {
+    let target = ((n as f32) * frac).ceil().max(1.0) as u32;
+    let mut acc = 0u32;
+    for (v, &count) in hist.iter().enumerate().rev() {
+        acc += count;
+        if acc >= target {
+            return v as u8;
+        }
+    }
+    0
 }
 
 /// A connected white region found during labeling.
@@ -646,6 +752,11 @@ mod tests {
     struct GtPage {
         file: String,
         balloons: Vec<GtBalloon>,
+        /// Experiment pages (ROADMAP 2.16) carry deliberately hard text:
+        /// detection is still asserted, word recognition is scored by the
+        /// grayscale/contrast probe instead of asserted here.
+        #[serde(default)]
+        experimental: bool,
     }
 
     #[derive(Debug, Deserialize)]
@@ -681,6 +792,43 @@ mod tests {
             && bcx <= a.2
             && a.1 <= bcy
             && bcy <= a.3
+    }
+
+    /// The detected balloon matching `gt_rect` (mutual center containment),
+    /// with its recognized text joined by " | ".
+    fn matched_balloon_text(
+        ocr: &ComicPageOcr,
+        gt_rect: (f32, f32, f32, f32),
+    ) -> Option<(&ComicBalloon, String)> {
+        let b = ocr
+            .balloons
+            .iter()
+            .find(|b| centers_mutually_inside(gt_rect, (b.x0, b.y0, b.x1, b.y1)))?;
+        let first = b.first_line as usize;
+        let last = first + b.line_count as usize;
+        let text = ocr.lines[first..last]
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        Some((b, text))
+    }
+
+    /// How many of `expected` (already lowercased, alphanumeric-only) the
+    /// matched balloon's recognized text contains.
+    fn count_words_found(
+        ocr: &ComicPageOcr,
+        gt_rect: (f32, f32, f32, f32),
+        expected: &[String],
+    ) -> usize {
+        let Some((_, text)) = matched_balloon_text(ocr, gt_rect) else {
+            return 0;
+        };
+        let lower = text.to_lowercase();
+        expected
+            .iter()
+            .filter(|w| lower.contains(w.as_str()))
+            .count()
     }
 
     #[test]
@@ -932,20 +1080,9 @@ mod tests {
                 // Detection order is scan order, not ground-truth order:
                 // match balloons by geometry (mutual center containment).
                 let gt_rect = (gt.rect[0], gt.rect[1], gt.rect[2], gt.rect[3]);
-                let Some(b) = ocr
-                    .balloons
-                    .iter()
-                    .find(|b| centers_mutually_inside(gt_rect, (b.x0, b.y0, b.x1, b.y1)))
-                else {
+                let Some((b, balloon_text)) = matched_balloon_text(&ocr, gt_rect) else {
                     panic!("{}: balloon {i} {:?} not detected", page.file, gt.rect);
                 };
-                let first = b.first_line as usize;
-                let last = first + b.line_count as usize;
-                let balloon_text: String = ocr.lines[first..last]
-                    .iter()
-                    .map(|l| l.text.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" | ");
                 println!(
                     "  balloon {i} [{:.0},{:.0} - {:.0},{:.0}]: {balloon_text}",
                     b.x0,
@@ -953,6 +1090,11 @@ mod tests {
                     b.x1,
                     b.y1
                 );
+                if page.experimental {
+                    // Experiment pages (2.16) carry deliberately hard text;
+                    // the grayscale/contrast probe scores them.
+                    continue;
+                }
                 let lower = balloon_text.to_lowercase();
                 for want in &gt.text {
                     let want_words: Vec<&str> = want.split_whitespace().collect();
@@ -978,5 +1120,150 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    /// ROADMAP 2.16 — the grayscale/contrast experiment, published on every
+    /// CI push beside the main probe. Every fixture page is recognized twice
+    /// — plain crops, and crops with the per-balloon grayscale + contrast
+    /// stretch — and both are scored against the ground-truth words.
+    /// Decision rule (2026-09-29): the stretch becomes the default only if
+    /// it finds words the plain pipeline misses without losing any it finds.
+    #[test]
+    #[ignore = "full-pipeline probe: needs the models, runs for seconds"]
+    fn comic_bubble_probe_grayscale_contrast() -> Result<()> {
+        let Some(engine) = crate::ocr::init_ocr_engine() else {
+            panic!("OCR models unavailable; probe cannot run");
+        };
+        let pages: Vec<GtPage> = {
+            let raw = std::fs::read_to_string("fixtures/ocr/comic/comic-pages.json")?;
+            #[derive(Deserialize)]
+            struct All {
+                pages: Vec<GtPage>,
+            }
+            let all: All = serde_json::from_str(&raw)?;
+            all.pages
+        };
+
+        let mut plain_total = 0usize;
+        let mut stretch_total = 0usize;
+        let mut expected_total = 0usize;
+
+        for page in &pages {
+            let bytes = std::fs::read(format!("fixtures/ocr/comic/{}", page.file))?;
+            let plain = bubble_ocr_page_prep(&engine, &bytes, 0, false, CropPrep::None)?;
+            let stretched =
+                bubble_ocr_page_prep(&engine, &bytes, 0, false, CropPrep::GrayscaleContrast)?;
+            assert!(
+                !plain.balloons.is_empty() && !stretched.balloons.is_empty(),
+                "{}: no balloons detected under one of the prep modes",
+                page.file
+            );
+
+            let mut plain_found = 0usize;
+            let mut stretch_found = 0usize;
+            let mut expected_here = 0usize;
+            for (i, gt) in page.balloons.iter().enumerate() {
+                if gt.expect_miss {
+                    continue;
+                }
+                let mut expected: Vec<String> = Vec::new();
+                for want in &gt.text {
+                    for wd in want.split_whitespace() {
+                        let w = wd.trim_matches(|c: char| !c.is_alphanumeric());
+                        if !w.is_empty() {
+                            expected.push(w.to_lowercase());
+                        }
+                    }
+                }
+                if expected.is_empty() {
+                    continue;
+                }
+                expected_here += expected.len();
+                let gt_rect = (gt.rect[0], gt.rect[1], gt.rect[2], gt.rect[3]);
+                let p = count_words_found(&plain, gt_rect, &expected);
+                let s = count_words_found(&stretched, gt_rect, &expected);
+                plain_found += p;
+                stretch_found += s;
+                if p != s {
+                    let pt = matched_balloon_text(&plain, gt_rect)
+                        .map(|(_, t)| t)
+                        .unwrap_or_else(|| "<not detected>".to_string());
+                    let st = matched_balloon_text(&stretched, gt_rect)
+                        .map(|(_, t)| t)
+                        .unwrap_or_else(|| "<not detected>".to_string());
+                    println!(
+                        "  {}: balloon {i} differs — plain {p}/{}: {pt:?} | stretched {s}/{}: {st:?}",
+                        page.file,
+                        expected.len(),
+                        expected.len()
+                    );
+                }
+            }
+            println!(
+                "=== {}: plain {plain_found}/{expected_here} words, stretched {stretch_found}/{expected_here}",
+                page.file
+            );
+            plain_total += plain_found;
+            stretch_total += stretch_found;
+            expected_total += expected_here;
+        }
+
+        println!("=== TOTAL: plain {plain_total}/{expected_total}, stretched {stretch_total}/{expected_total}");
+        if stretch_total > plain_total {
+            println!(
+                "VERDICT: the stretch recovers {} word(s) the plain pipeline misses — candidate to ship as the default (ROADMAP 2.16).",
+                stretch_total - plain_total
+            );
+        } else if stretch_total == plain_total {
+            println!(
+                "VERDICT: no difference on the fixtures — keep plain crops as the default (ROADMAP 2.16)."
+            );
+        } else {
+            println!(
+                "VERDICT: the stretch loses {} word(s) — do not ship it (ROADMAP 2.16).",
+                plain_total - stretch_total
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn stretch_turns_faded_text_full_range() {
+        // A balloon-ish crop: mostly near-white fill, a block of faded text.
+        let mut rgb = Vec::new();
+        for _ in 0..180 {
+            rgb.extend_from_slice(&[236, 234, 228]);
+        }
+        for _ in 0..20 {
+            rgb.extend_from_slice(&[120, 116, 110]);
+        }
+        let out = grayscale_contrast_stretch(&rgb);
+        assert_eq!(out.len(), rgb.len());
+        let luma: Vec<u8> = out.chunks_exact(3).map(|p| p[0]).collect();
+        // The faded text (luma 116) becomes black, the fill (luma 233) white.
+        assert_eq!(luma.iter().filter(|&&v| v == 0).count(), 20);
+        assert_eq!(luma.iter().filter(|&&v| v == 255).count(), 180);
+    }
+
+    #[test]
+    fn stretch_keeps_black_text_black() {
+        let mut rgb = Vec::new();
+        for _ in 0..90 {
+            rgb.extend_from_slice(&[250, 250, 250]);
+        }
+        for _ in 0..10 {
+            rgb.extend_from_slice(&[20, 20, 20]);
+        }
+        let out = grayscale_contrast_stretch(&rgb);
+        let luma: Vec<u8> = out.chunks_exact(3).map(|p| p[0]).collect();
+        assert_eq!(luma.iter().filter(|&&v| v == 0).count(), 10);
+        assert_eq!(luma.iter().filter(|&&v| v == 255).count(), 90);
+    }
+
+    #[test]
+    fn stretch_leaves_flat_crops_as_grayscale() {
+        let rgb = vec![200u8; 300]; // 100 uniform grey pixels
+        let out = grayscale_contrast_stretch(&rgb);
+        assert_eq!(out, vec![200u8; 300]);
     }
 }

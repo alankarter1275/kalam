@@ -244,6 +244,23 @@ pub struct TagBooksSnapshot {
     pub errors: Errors,
 }
 
+/// Library-wide full-text content search snapshot.
+#[derive(Debug, Default)]
+pub struct ContentSearchSnapshot {
+    pub results: Vec<crate::content_index::BookContentSearchResult>,
+    pub total_matches: usize,
+    pub total_books: usize,
+    pub duration_ms: u128,
+    pub errors: Errors,
+}
+
+/// Library content search index status snapshot.
+#[derive(Debug, Default)]
+pub struct ContentIndexStatusSnapshot {
+    pub status: crate::content_index::ContentIndexStatus,
+    pub errors: Errors,
+}
+
 impl LibraryService {
     pub fn new(catalog: Arc<Catalog>) -> Self {
         Self { catalog }
@@ -534,6 +551,53 @@ impl LibraryService {
         }
     }
 
+    /// Deep content search across full book text in the library.
+    pub fn search_content(&self, query: &str) -> ContentSearchSnapshot {
+        let _t = crate::timing::measure("service_search_content");
+        let start = std::time::Instant::now();
+        let mut errors = Errors::new();
+        let results = take(
+            self.catalog.search_book_contents(query),
+            "search_content",
+            &mut errors,
+        );
+        let total_matches: usize = results.iter().map(|r| r.total_matches).sum();
+        let total_books = results.len();
+        let duration_ms = start.elapsed().as_millis();
+        ContentSearchSnapshot {
+            results,
+            total_matches,
+            total_books,
+            duration_ms,
+            errors,
+        }
+    }
+
+    /// Read the library content index status.
+    pub fn index_status(&self) -> ContentIndexStatusSnapshot {
+        let mut errors = Errors::new();
+        let status = take(
+            self.catalog.get_content_index_status(),
+            "index_status",
+            &mut errors,
+        );
+        ContentIndexStatusSnapshot { status, errors }
+    }
+
+    /// Index all unindexed books into the full-text search index.
+    pub fn index_unindexed_books(&self) -> Result<usize, String> {
+        self.catalog
+            .index_all_unindexed_books()
+            .map_err(|e| e.to_string())
+    }
+
+    /// Rebuild the library full-text search index from scratch.
+    pub fn reindex_all_books(&self) -> Result<usize, String> {
+        self.catalog
+            .reindex_all_books()
+            .map_err(|e| e.to_string())
+    }
+
     /// Shelves page: every shelf, ordered as stored.
     pub fn shelves(&self) -> ShelvesSnapshot {
         let _t = crate::timing::measure("service_shelves");
@@ -643,6 +707,8 @@ mod tests {
         // thread boundary, so the property has to be compile-checked rather
         // than assumed.
         assert_send::<AllBooksSnapshot>();
+        assert_send::<ContentSearchSnapshot>();
+        assert_send::<ContentIndexStatusSnapshot>();
         // History joins them in the same 1.2b pass. Deliberately *not* the
         // snapshots for pages that stay synchronous (shelves, reading list,
         // analytics, reader, book detail) — asserting `Send` on a type that

@@ -13,12 +13,21 @@ use std::sync::Arc;
 pub enum AllBooksOut {
     OpenBook { book_id: i64 },
     OpenBookDialog { book_id: i64 },
+    OpenReader { book_id: i64, chapter: Option<usize> },
     ComicSeries { series_name: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchMode {
+    #[default]
+    Metadata,
+    Content,
 }
 
 #[derive(Debug)]
 pub enum AllBooksMsg {
     SearchChanged(String),
+    SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
     FilesChosen(Vec<PathBuf>),
@@ -36,6 +45,15 @@ pub enum AllBooksMsg {
     /// older query cannot land after a newer one and put the wrong list on
     /// screen — which typing quickly into the search box makes easy to hit.
     BooksLoaded { gen: u64, snap: AllBooksSnapshot },
+    ContentSearchLoaded {
+        gen: u64,
+        snap: crate::service::ContentSearchSnapshot,
+    },
+    IndexStatusLoaded(crate::service::ContentIndexStatusSnapshot),
+    TriggerIndexLibrary,
+    TriggerReindexLibrary,
+    IndexFinished(Result<usize, String>),
+    ToggleExpandBook(i64),
     ToggleSelectionMode,
     ToggleSelectBook(i64),
     SelectAll,
@@ -170,6 +188,15 @@ pub struct AllBooksModel {
     /// it was started with, and a reply that no longer matches has been
     /// superseded and is dropped.
     reload_gen: u64,
+    search_mode: SearchMode,
+    content_results: Vec<crate::content_index::BookContentSearchResult>,
+    content_total_matches: usize,
+    content_total_books: usize,
+    content_duration_ms: u128,
+    content_searching: bool,
+    index_status: crate::content_index::ContentIndexStatus,
+    indexing: bool,
+    expanded_books: HashSet<i64>,
 }
 
 #[relm4::component(pub)]
@@ -205,12 +232,42 @@ impl Component for AllBooksModel {
                     },
                 },
 
+                #[name = "mode_box"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    add_css_class: "linked",
+
+                    #[name = "mode_meta_btn"]
+                    gtk::ToggleButton {
+                        set_label: "Titles & Authors",
+                        set_active: true,
+                        set_tooltip_text: Some("Filter library by title, author, tag, reading status, or rating"),
+                        connect_toggled[sender] => move |btn| {
+                            if btn.is_active() {
+                                sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Metadata));
+                            }
+                        },
+                    },
+
+                    #[name = "mode_content_btn"]
+                    gtk::ToggleButton {
+                        set_label: "Book Content",
+                        set_tooltip_text: Some("Deep search inside the full text of all books in your library"),
+                        connect_toggled[sender] => move |btn| {
+                            if btn.is_active() {
+                                sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Content));
+                            }
+                        },
+                    },
+                },
+
                 #[name = "sort_box"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 4,
                 },
 
+                #[name = "select_btn"]
                 gtk::Button {
                     #[watch]
                     set_label: if model.selection_mode {
@@ -329,7 +386,7 @@ impl Component for AllBooksModel {
             None => status_line(snap.books.len(), ""),
         };
 
-        let model = AllBooksModel {
+        let mut model = AllBooksModel {
             service,
             books: snap.books,
             query: String::new(),
@@ -339,8 +396,19 @@ impl Component for AllBooksModel {
             selection_mode: false,
             selected_books: HashSet::new(),
             reload_gen: 0,
+            search_mode: SearchMode::Metadata,
+            content_results: Vec::new(),
+            content_total_matches: 0,
+            content_total_books: 0,
+            content_duration_ms: 0,
+            content_searching: false,
+            index_status: crate::content_index::ContentIndexStatus::default(),
+            indexing: false,
+            expanded_books: HashSet::new(),
         };
         let widgets = view_output!();
+        widgets.mode_content_btn.set_group(Some(&widgets.mode_meta_btn));
+        model.check_index_status(&sender);
 
         for key in SortKey::ALL {
             let btn = gtk::ToggleButton::with_label(key.label());
@@ -429,7 +497,118 @@ impl Component for AllBooksModel {
             AllBooksMsg::SearchChanged(q) => {
                 self.query = q;
                 self.status.clear();
-                self.reload(&sender);
+                if self.search_mode == SearchMode::Content {
+                    if self.query.trim().len() >= 2 {
+                        self.search_content(&sender);
+                    } else {
+                        self.content_results.clear();
+                        self.content_searching = false;
+                    }
+                } else {
+                    self.reload(&sender);
+                }
+            }
+            AllBooksMsg::SearchModeChanged(mode) => {
+                if self.search_mode != mode {
+                    self.search_mode = mode;
+                    self.status.clear();
+                    if mode == SearchMode::Content {
+                        self.check_index_status(&sender);
+                        if self.query.trim().len() >= 2 {
+                            self.search_content(&sender);
+                        } else {
+                            self.content_results.clear();
+                            self.content_searching = false;
+                        }
+                    } else {
+                        self.reload(&sender);
+                    }
+                }
+            }
+            AllBooksMsg::ContentSearchLoaded { gen, snap } => {
+                if gen != self.reload_gen {
+                    return;
+                }
+                self.content_searching = false;
+                match snap.errors.first() {
+                    Some(err) => self.status = format!("Search error: {err}"),
+                    None => {
+                        self.content_results = snap.results;
+                        self.content_total_matches = snap.total_matches;
+                        self.content_total_books = snap.total_books;
+                        self.content_duration_ms = snap.duration_ms;
+                        if self.content_results.is_empty() {
+                            self.status = format!("No matches found for “{}”", self.query.trim());
+                        } else {
+                            self.status = format!(
+                                "Found {} match{} across {} book{} ({} ms)",
+                                self.content_total_matches,
+                                if self.content_total_matches == 1 { "" } else { "es" },
+                                self.content_total_books,
+                                if self.content_total_books == 1 { "" } else { "s" },
+                                self.content_duration_ms,
+                            );
+                        }
+                    }
+                }
+            }
+            AllBooksMsg::IndexStatusLoaded(snap) => {
+                self.index_status = snap.status;
+            }
+            AllBooksMsg::TriggerIndexLibrary => {
+                self.indexing = true;
+                let catalog = self.service.catalog().clone();
+                let done = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    "Indexing library",
+                    move |_reporter| {
+                        LibraryService::new(catalog).index_unindexed_books()
+                    },
+                    |_update| {},
+                    move |res| {
+                        let _ = done.send(AllBooksMsg::IndexFinished(res));
+                    },
+                );
+            }
+            AllBooksMsg::TriggerReindexLibrary => {
+                self.indexing = true;
+                let catalog = self.service.catalog().clone();
+                let done = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    "Reindexing library",
+                    move |_reporter| {
+                        LibraryService::new(catalog).reindex_all_books()
+                    },
+                    |_update| {},
+                    move |res| {
+                        let _ = done.send(AllBooksMsg::IndexFinished(res));
+                    },
+                );
+            }
+            AllBooksMsg::IndexFinished(res) => {
+                self.indexing = false;
+                self.check_index_status(&sender);
+                match res {
+                    Ok(count) => {
+                        crate::notify::success(
+                            "Content search index updated",
+                            &format!("{count} books indexed and ready for deep search."),
+                        );
+                        if self.query.trim().len() >= 2 {
+                            self.search_content(&sender);
+                        }
+                    }
+                    Err(err) => {
+                        crate::notify::error("Indexing error", &err);
+                    }
+                }
+            }
+            AllBooksMsg::ToggleExpandBook(b_id) => {
+                if self.expanded_books.contains(&b_id) {
+                    self.expanded_books.remove(&b_id);
+                } else {
+                    self.expanded_books.insert(b_id);
+                }
             }
             AllBooksMsg::SortChanged(sort) => {
                 self.sort = sort;
@@ -811,19 +990,71 @@ impl Component for AllBooksModel {
             }
         }
 
-        rebuild_list(
-            &widgets.list,
-            &self.books,
-            &self.query,
-            self.selection_mode,
-            &self.selected_books,
-            &sender,
-        );
+        if self.search_mode == SearchMode::Content {
+            widgets.sort_box.set_visible(false);
+            widgets.select_btn.set_visible(false);
+            widgets.selection_bar.set_visible(false);
+            widgets.search.set_placeholder_text(Some("Search inside book contents (phrases, quotes, names)…"));
+            widgets.mode_meta_btn.set_active(false);
+            widgets.mode_content_btn.set_active(true);
+            rebuild_content_search_list(&widgets.list, self, &sender);
+        } else {
+            widgets.sort_box.set_visible(true);
+            widgets.select_btn.set_visible(true);
+            widgets.selection_bar.set_visible(self.selection_mode);
+            widgets.search.set_placeholder_text(Some("Search title, author, tag:fantasy, status:unread, rating:>3…"));
+            widgets.mode_meta_btn.set_active(true);
+            widgets.mode_content_btn.set_active(false);
+            rebuild_list(
+                &widgets.list,
+                &self.books,
+                &self.query,
+                self.selection_mode,
+                &self.selected_books,
+                &sender,
+            );
+        }
         self.update_view(widgets, sender);
     }
 }
 
 impl AllBooksModel {
+    /// Search book full-text contents on a worker thread.
+    fn search_content(&mut self, sender: &ComponentSender<Self>) {
+        self.reload_gen += 1;
+        let gen = self.reload_gen;
+        self.content_searching = true;
+        let catalog = self.service.catalog().clone();
+        let query = self.query.clone();
+        let done = sender.input_sender().clone();
+        crate::tasks::spawn(
+            "Searching book contents",
+            move |_reporter| {
+                LibraryService::new(catalog).search_content(&query)
+            },
+            |_update| {},
+            move |snap| {
+                let _ = done.send(AllBooksMsg::ContentSearchLoaded { gen, snap });
+            },
+        );
+    }
+
+    /// Check content search index status on a worker thread.
+    fn check_index_status(&mut self, sender: &ComponentSender<Self>) {
+        let catalog = self.service.catalog().clone();
+        let done = sender.input_sender().clone();
+        crate::tasks::spawn(
+            "Checking search index status",
+            move |_reporter| {
+                LibraryService::new(catalog).index_status()
+            },
+            |_update| {},
+            move |snap| {
+                let _ = done.send(AllBooksMsg::IndexStatusLoaded(snap));
+            },
+        );
+    }
+
     /// Ask for the book list on a worker thread.
     ///
     /// Roadmap 1.2b pilot. `all_books` is one of the queries whose cost grows
@@ -1004,6 +1235,289 @@ fn confirm_bulk_delete(anchor: &gtk::Widget, count: usize, on_confirm: impl Fn()
             on_confirm();
             dialog.close();
         });
+    }
+}
+
+fn rebuild_content_search_list(
+    list: &gtk::Box,
+    model: &AllBooksModel,
+    sender: &ComponentSender<AllBooksModel>,
+) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    let query_trimmed = model.query.trim();
+    if query_trimmed.len() < 2 {
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        card.add_css_class("kalam-card");
+        card.set_margin_top(16);
+        card.set_margin_bottom(16);
+        card.set_margin_start(16);
+        card.set_margin_end(16);
+
+        let header_box = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let icon = gtk::Image::from_icon_name("system-search-symbolic");
+        icon.set_pixel_size(32);
+        icon.add_css_class("kalam-muted");
+        header_box.append(&icon);
+
+        let text_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        text_box.set_hexpand(true);
+        let title_lbl = gtk::Label::new(Some("Deep Content Search"));
+        title_lbl.add_css_class("kalam-card-title");
+        title_lbl.set_halign(gtk::Align::Start);
+        let desc_lbl = gtk::Label::new(Some(
+            "Search across the entire text of your library. Find character names, quotes, phrases, and specific passages.",
+        ));
+        desc_lbl.add_css_class("kalam-card-meta");
+        desc_lbl.set_halign(gtk::Align::Start);
+        desc_lbl.set_wrap(true);
+        text_box.append(&title_lbl);
+        text_box.append(&desc_lbl);
+        header_box.append(&text_box);
+        card.append(&header_box);
+
+        // Status & indexing bar
+        let status_box = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        status_box.set_margin_top(8);
+        status_box.set_valign(gtk::Align::Center);
+
+        let st = &model.index_status;
+        let status_text = if model.indexing {
+            "Indexing your books in the background…".to_string()
+        } else if st.indexed_books < st.total_books {
+            let unindexed = st.total_books.saturating_sub(st.indexed_books);
+            format!(
+                "⚠️ {} of {} books indexed ({} not yet indexed)",
+                st.indexed_books, st.total_books, unindexed
+            )
+        } else {
+            format!(
+                "✓ Full-Text Index Ready: {} books indexed ({} words searchable)",
+                st.indexed_books, st.total_words
+            )
+        };
+        let st_lbl = gtk::Label::new(Some(&status_text));
+        st_lbl.add_css_class("kalam-muted");
+        st_lbl.set_halign(gtk::Align::Start);
+        st_lbl.set_hexpand(true);
+        status_box.append(&st_lbl);
+
+        if model.indexing {
+            let spinner = gtk::Spinner::new();
+            spinner.start();
+            status_box.append(&spinner);
+        } else if st.indexed_books < st.total_books {
+            let idx_btn = gtk::Button::with_label("⚡ Index Library Now");
+            idx_btn.add_css_class("kalam-primary-btn");
+            let s = sender.clone();
+            idx_btn.connect_clicked(move |_| {
+                s.input(AllBooksMsg::TriggerIndexLibrary);
+            });
+            status_box.append(&idx_btn);
+        } else {
+            let reindex_btn = gtk::Button::with_label("⟳ Reindex");
+            reindex_btn.add_css_class("kalam-secondary-btn");
+            let s = sender.clone();
+            reindex_btn.connect_clicked(move |_| {
+                s.input(AllBooksMsg::TriggerReindexLibrary);
+            });
+            status_box.append(&reindex_btn);
+        }
+        card.append(&status_box);
+        list.append(&card);
+        return;
+    }
+
+    if model.content_searching {
+        let loading_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        loading_box.set_margin_top(32);
+        loading_box.set_halign(gtk::Align::Center);
+        let spinner = gtk::Spinner::new();
+        spinner.start();
+        spinner.set_size_request(32, 32);
+        let lbl = gtk::Label::new(Some(&format!(
+            "Searching library books for “{}”…",
+            query_trimmed
+        )));
+        lbl.add_css_class("kalam-muted");
+        loading_box.append(&spinner);
+        loading_box.append(&lbl);
+        list.append(&loading_box);
+        return;
+    }
+
+    if model.content_results.is_empty() {
+        let empty_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        empty_box.set_margin_top(32);
+        empty_box.set_halign(gtk::Align::Center);
+        let icon = gtk::Image::from_icon_name("system-search-symbolic");
+        icon.set_pixel_size(48);
+        icon.add_css_class("kalam-muted");
+        let lbl = gtk::Label::new(Some(&format!(
+            "No passages found matching “{}”.",
+            query_trimmed
+        )));
+        lbl.add_css_class("kalam-placeholder");
+        let hint = gtk::Label::new(Some(
+            "Try searching for single words, checking spelling, or indexing unindexed books.",
+        ));
+        hint.add_css_class("kalam-muted");
+        empty_box.append(&icon);
+        empty_box.append(&lbl);
+        empty_box.append(&hint);
+        list.append(&empty_box);
+        return;
+    }
+
+    let summary_lbl = gtk::Label::new(Some(&format!(
+        "Found {} match{} across {} book{} ({} ms)",
+        model.content_total_matches,
+        if model.content_total_matches == 1 { "" } else { "es" },
+        model.content_total_books,
+        if model.content_total_books == 1 { "" } else { "s" },
+        model.content_duration_ms,
+    )));
+    summary_lbl.add_css_class("kalam-muted");
+    summary_lbl.set_halign(gtk::Align::Start);
+    summary_lbl.set_margin_bottom(12);
+    list.append(&summary_lbl);
+
+    for res in &model.content_results {
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        card.add_css_class("kalam-card");
+        card.set_margin_bottom(12);
+
+        // Header row: Cover + Title/Author/Match count + Action buttons
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        header.set_valign(gtk::Align::Center);
+
+        // Cover
+        let pic = gtk::Picture::new();
+        pic.set_can_shrink(true);
+        pic.set_size_request(48, 70);
+        if let Some(ref cover_path) = res.book.cover_path {
+            if cover_path.exists() {
+                pic.set_filename(Some(cover_path));
+            }
+        }
+        header.append(&pic);
+
+        // Info
+        let info = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        info.set_hexpand(true);
+        let title_lbl = gtk::Label::new(Some(&res.book.title));
+        title_lbl.add_css_class("kalam-card-title");
+        title_lbl.set_halign(gtk::Align::Start);
+        title_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+
+        let author_lbl = gtk::Label::new(Some(&res.book.authors));
+        author_lbl.add_css_class("kalam-card-meta");
+        author_lbl.set_halign(gtk::Align::Start);
+
+        let badge_lbl = gtk::Label::new(Some(&format!(
+            "{} match{}",
+            res.total_matches,
+            if res.total_matches == 1 { "" } else { "es" },
+        )));
+        badge_lbl.add_css_class("kalam-card-badge");
+        badge_lbl.set_halign(gtk::Align::Start);
+
+        info.append(&title_lbl);
+        info.append(&author_lbl);
+        info.append(&badge_lbl);
+        header.append(&info);
+
+        // Actions: [ Read ] and [ Details ]
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        actions.set_valign(gtk::Align::Center);
+
+        let read_btn = gtk::Button::with_label("📖 Read Book");
+        read_btn.add_css_class("kalam-primary-btn");
+        let b_id = res.book.id;
+        let s = sender.clone();
+        read_btn.connect_clicked(move |_| {
+            s.output(AllBooksOut::OpenReader { book_id: b_id, chapter: None }).ok();
+        });
+        actions.append(&read_btn);
+
+        let details_btn = gtk::Button::with_label("Details");
+        details_btn.add_css_class("kalam-secondary-btn");
+        let s_det = sender.clone();
+        details_btn.connect_clicked(move |_| {
+            s_det.output(AllBooksOut::OpenBook { book_id: b_id }).ok();
+        });
+        actions.append(&details_btn);
+
+        header.append(&actions);
+        card.append(&header);
+
+        // Snippets container
+        let snippets_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        snippets_box.set_margin_top(8);
+
+        let is_expanded = model.expanded_books.contains(&res.book.id);
+        let visible_matches = if is_expanded {
+            &res.matches[..]
+        } else {
+            let cap = res.matches.len().min(3);
+            &res.matches[..cap]
+        };
+
+        for m in visible_matches {
+            let snip_btn = gtk::Button::new();
+            snip_btn.add_css_class("kalam-search-snippet-row");
+            snip_btn.set_has_frame(false);
+
+            let content_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            let ch_lbl = gtk::Label::new(Some(&m.chapter_title));
+            ch_lbl.add_css_class("kalam-search-snippet-chapter");
+            ch_lbl.set_halign(gtk::Align::Start);
+
+            let txt_lbl = gtk::Label::new(None);
+            txt_lbl.set_use_markup(true);
+            txt_lbl.set_markup(&m.snippet);
+            txt_lbl.add_css_class("kalam-search-snippet-text");
+            txt_lbl.set_halign(gtk::Align::Start);
+            txt_lbl.set_xalign(0.0);
+            txt_lbl.set_wrap(true);
+
+            content_box.append(&ch_lbl);
+            content_box.append(&txt_lbl);
+            snip_btn.set_child(Some(&content_box));
+
+            let s_snip = sender.clone();
+            let ch_idx = m.chapter_index;
+            snip_btn.connect_clicked(move |_| {
+                s_snip.output(AllBooksOut::OpenReader { book_id: b_id, chapter: Some(ch_idx) }).ok();
+            });
+            snippets_box.append(&snip_btn);
+        }
+        card.append(&snippets_box);
+
+        if res.matches.len() > 3 {
+            let toggle_btn = gtk::Button::new();
+            toggle_btn.add_css_class("kalam-secondary-btn");
+            toggle_btn.set_halign(gtk::Align::Start);
+            toggle_btn.set_margin_top(4);
+            if is_expanded {
+                toggle_btn.set_label("Show fewer matches ▲");
+            } else {
+                let more = res.matches.len() - 3;
+                toggle_btn.set_label(&format!(
+                    "Show {more} more match{} in this book ▼",
+                    if more == 1 { "" } else { "es" }
+                ));
+            }
+            let s_exp = sender.clone();
+            toggle_btn.connect_clicked(move |_| {
+                s_exp.input(AllBooksMsg::ToggleExpandBook(b_id));
+            });
+            card.append(&toggle_btn);
+        }
+
+        list.append(&card);
     }
 }
 

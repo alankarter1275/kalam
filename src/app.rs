@@ -84,6 +84,11 @@ pub enum AppMsg {
     OpenReader {
         book_id: i64,
     },
+    /// Open reader for book_id optionally positioned at chapter.
+    OpenReaderAt {
+        book_id: i64,
+        chapter: Option<usize>,
+    },
     /// Open a book directly in a floating bubble window.
     OpenBubble {
         book_id: i64,
@@ -501,6 +506,9 @@ impl AppModel {
                         }
                         AllBooksOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
+                        }
+                        AllBooksOut::OpenReader { book_id, chapter } => {
+                            AppMsg::OpenReaderAt { book_id, chapter }
                         }
                         AllBooksOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
@@ -1693,6 +1701,12 @@ impl Component for AppModel {
                     true,
                     &sender,
                 );
+            }
+            AppMsg::OpenReaderAt { book_id, chapter } => {
+                if let Some(ch) = chapter {
+                    let _ = self.catalog.set_reading_progress(book_id, ch, 0.0, 0);
+                }
+                sender.input(AppMsg::OpenReader { book_id });
             }
             AppMsg::OpenBubble { book_id } => {
                 self.close_floating();

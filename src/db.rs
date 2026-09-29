@@ -60,7 +60,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v12 = dictionary priority + combined_words merged store
 /// · v13 = saved_words.known (review status for vocabulary tools)
 /// · v14 = dict_lookups (append-only lookup history, Phase 10)
-pub const SCHEMA_VERSION: i64 = 14;
+/// · v15 = book_content_fts (SQLite FTS5 virtual table for library-wide deep search) + book_search_index_status
+pub const SCHEMA_VERSION: i64 = 15;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -926,6 +927,24 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_comic_chapters_series 
                 ON comic_chapters(series_id, chapter_number);
+
+            -- v15: Library-wide full-text content search index (SQLite FTS5)
+            CREATE VIRTUAL TABLE IF NOT EXISTS book_content_fts USING fts5(
+                book_id UNINDEXED,
+                chapter_index UNINDEXED,
+                chapter_title UNINDEXED,
+                content,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );
+
+            CREATE TABLE IF NOT EXISTS book_search_index_status (
+                book_id        INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                indexed_at     TEXT NOT NULL,
+                total_chapters INTEGER NOT NULL DEFAULT 0,
+                total_words    INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_book_search_status_indexed
+                ON book_search_index_status(indexed_at);
             "#,
         )?;
 
@@ -1137,6 +1156,34 @@ impl Catalog {
 
         hydrate_books(&conn, &mut books)?;
         Ok(books)
+    }
+
+    /// Index a book's full content for library-wide search.
+    pub fn index_book_content(&self, book_id: i64) -> Result<()> {
+        crate::content_index::index_book(self, book_id)
+    }
+
+    /// Index all unindexed books into the full-text search index.
+    pub fn index_all_unindexed_books(&self) -> Result<usize> {
+        crate::content_index::index_all_unindexed(self)
+    }
+
+    /// Rebuild the library full-text search index from scratch.
+    pub fn reindex_all_books(&self) -> Result<usize> {
+        crate::content_index::reindex_all(self)
+    }
+
+    /// Status of the library-wide content search index.
+    pub fn get_content_index_status(&self) -> Result<crate::content_index::ContentIndexStatus> {
+        crate::content_index::get_index_status(self)
+    }
+
+    /// Search across the full text of all books in the library.
+    pub fn search_book_contents(
+        &self,
+        query: &str,
+    ) -> Result<Vec<crate::content_index::BookContentSearchResult>> {
+        crate::content_index::search_content(self, query)
     }
 
     /// Newest books, capped. Pages that show a handful of covers were calling
@@ -1477,6 +1524,8 @@ impl Catalog {
         let _ = self.remember_overrides(id);
         {
             let conn = self.conn();
+            let _ = conn.execute("DELETE FROM book_content_fts WHERE book_id = ?1", params![id]);
+            let _ = conn.execute("DELETE FROM book_search_index_status WHERE book_id = ?1", params![id]);
             conn.execute("DELETE FROM books WHERE id = ?1", params![id])?;
         }
         let dir = book_dir(&book.uuid);

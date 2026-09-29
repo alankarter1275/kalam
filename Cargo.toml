@@ -118,6 +118,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 glib = "0.22"
 gio = { version = "0.22", package = "gio" }
 kalam-reader = { path = "crates/kalam-reader" }
+chapbook-core = { workspace = true }
+chapbook-epub = { workspace = true }
+chapbook-layout = { workspace = true }
 
 # Engine diagnostics. The reading engine reports through the `log` facade,
 # which discards everything unless a logger is installed — see `src/logging.rs`.

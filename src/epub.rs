@@ -285,6 +285,9 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     // the moment a book enters it rather than only after its first edit.
     crate::sidecar::refresh_for_book(catalog, id);
 
+    // Index full-text content in SQLite FTS5 for instant library-wide search
+    let _ = catalog.index_book_content(id);
+
     Ok(ImportResult {
         book_id: id,
         title,

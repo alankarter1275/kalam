@@ -7,6 +7,7 @@ mod app;
 mod author;
 pub mod bubbles;
 mod comics;
+pub mod content_index;
 mod db;
 mod dict;
 mod downloads;

@@ -1428,6 +1428,55 @@ impl Catalog {
         }
     }
 
+    /// Save a bubble-aware comic page OCR result. Same table and fingerprint
+    /// scheme as the scanned-PDF cache; the payload additionally carries the
+    /// detected balloons so Alt+click selection survives restarts.
+    pub fn save_comic_page_ocr(
+        &self,
+        book_id: i64,
+        page_num: usize,
+        file_fingerprint: &str,
+        page: &crate::bubble_ocr::ComicPageOcr,
+    ) -> Result<()> {
+        let payload = serde_json::to_string(page)
+            .map_err(|e| DbError::OcrCache(format!("serialize comic page: {e}")))?;
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR REPLACE INTO page_ocr_cache (book_id, page_num, file_fingerprint, payload)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![book_id, page_num as i64, file_fingerprint, payload],
+        )?;
+        Ok(())
+    }
+
+    /// Load a cached bubble-aware comic page OCR result. Returns `None` when
+    /// nothing is cached, or when the fingerprint no longer matches (the
+    /// archive changed — a remaster, a re-download — or the OCR mode did).
+    pub fn load_comic_page_ocr(
+        &self,
+        book_id: i64,
+        page_num: usize,
+        file_fingerprint: &str,
+    ) -> Result<Option<crate::bubble_ocr::ComicPageOcr>> {
+        let conn = self.conn();
+        let payload: Option<String> = conn
+            .query_row(
+                "SELECT payload FROM page_ocr_cache
+                 WHERE book_id = ?1 AND page_num = ?2 AND file_fingerprint = ?3",
+                params![book_id, page_num as i64, file_fingerprint],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match payload {
+            Some(json) => {
+                let page = serde_json::from_str(&json)
+                    .map_err(|e| DbError::OcrCache(format!("deserialize comic page: {e}")))?;
+                Ok(Some(page))
+            }
+            None => Ok(None),
+        }
+    }
+
     pub fn get_book(&self, id: i64) -> Result<Option<Book>> {
         let conn = self.conn();
         let mut book = conn

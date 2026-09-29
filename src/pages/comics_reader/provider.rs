@@ -20,4 +20,11 @@ pub trait ImageProvider: Send + Sync {
     
     /// Optionally blocks to fetch the image bytes for a given page index.
     fn fetch_page(&self, idx: usize) -> Result<Vec<u8>>;
+
+    /// The local file backing this provider, when there is one. The comic
+    /// OCR cache is keyed on this file's size + mtime; remote sources have
+    /// no local file and are simply not cached.
+    fn local_path(&self) -> Option<&std::path::Path> {
+        None
+    }
 }

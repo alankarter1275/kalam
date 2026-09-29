@@ -105,8 +105,11 @@ pub enum ComicSidebarTab {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ComicOcrMode {
-    #[default]
     AutoColor,
+    /// The owner's chosen default (2026-09-29): bubble-aware OCR made
+    /// black & white pages the best case, so every comic page is
+    /// recognized and cached, not just colored ones.
+    #[default]
     AlwaysOn,
     Off,
 }
@@ -150,7 +153,7 @@ pub enum ComicsReaderMsg {
     PageLoaded(usize, Option<gtk::gdk::Texture>),
     PageOcrResult {
         page: usize,
-        text: Box<Result<crate::pdf::PdfPageText, String>>,
+        text: Box<Result<crate::bubble_ocr::ComicPageOcr, String>>,
     },
     SelectionDragBegin {
         page: usize,

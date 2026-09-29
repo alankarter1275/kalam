@@ -1,0 +1,254 @@
+{
+ "pages": [
+  {
+   "file": "comic-page1.png",
+   "width": 1200,
+   "height": 1800,
+   "reading": "ltr",
+   "color": false,
+   "balloons": [
+    {
+     "rect": [
+      120,
+      90,
+      620,
+      380
+     ],
+     "kind": "ellipse",
+     "text": [
+      "THE KEEPER'S LIGHT",
+      "HAS GONE OUT.",
+      "Nobody has seen it burn"
+     ]
+    },
+    {
+     "rect": [
+      70,
+      940,
+      520,
+      1040
+     ],
+     "kind": "rect",
+     "text": [
+      "MEANWHILE, ON THE CLIFFS..."
+     ]
+    },
+    {
+     "rect": [
+      640,
+      1250,
+      1130,
+      1560
+     ],
+     "kind": "ellipse",
+     "text": [
+      "Then we climb",
+      "tonight."
+     ]
+    }
+   ],
+   "sfx": [
+    "KRAKOOM"
+   ]
+  },
+  {
+   "file": "comic-page2.png",
+   "width": 1200,
+   "height": 1800,
+   "reading": "ltr",
+   "color": false,
+   "balloons": [
+    {
+     "rect": [
+      90,
+      140,
+      540,
+      430
+     ],
+     "kind": "ellipse",
+     "text": [
+      "LEFT FIRST,",
+      "read me",
+      "before the right one"
+     ]
+    },
+    {
+     "rect": [
+      660,
+      170,
+      1110,
+      460
+     ],
+     "kind": "ellipse",
+     "text": [
+      "RIGHT SECOND,",
+      "even though",
+      "I start higher"
+     ]
+    },
+    {
+     "rect": [
+      90,
+      620,
+      540,
+      900
+     ],
+     "kind": "ellipse",
+     "text": [
+      "D: new band",
+      "starts here"
+     ]
+    },
+    {
+     "rect": [
+      660,
+      820,
+      1110,
+      1150
+     ],
+     "kind": "ellipse",
+     "text": [
+      "E: my own band,",
+      "lower still"
+     ]
+    },
+    {
+     "rect": [
+      330,
+      1250,
+      900,
+      1550
+     ],
+     "kind": "thought",
+     "text": [
+      "hmm... maybe",
+      "the lamp oil"
+     ]
+    }
+   ],
+   "sfx": []
+  },
+  {
+   "file": "comic-page3.png",
+   "width": 800,
+   "height": 1200,
+   "reading": "ltr",
+   "color": true,
+   "balloons": [
+    {
+     "rect": [
+      80,
+      70,
+      620,
+      240
+     ],
+     "kind": "ellipse",
+     "text": [
+      "Morning already?",
+      "The ferry leaves at noon."
+     ]
+    },
+    {
+     "rect": [
+      180,
+      290,
+      700,
+      470
+     ],
+     "kind": "rect",
+     "text": [
+      "She kept the ticket",
+      "in her coat pocket."
+     ]
+    },
+    {
+     "rect": [
+      100,
+      800,
+      560,
+      990
+     ],
+     "kind": "ellipse",
+     "text": [
+      "We can still",
+      "make it."
+     ]
+    }
+   ],
+   "sfx": []
+  },
+  {
+   "file": "comic-page4.jpg",
+   "width": 1200,
+   "height": 1800,
+   "reading": "ltr",
+   "color": false,
+   "balloons": [
+    {
+     "rect": [
+      110,
+      80,
+      600,
+      360
+     ],
+     "kind": "ellipse",
+     "text": [
+      "The lamp is out",
+      "and the tide is turning."
+     ]
+    },
+    {
+     "rect": [
+      60,
+      940,
+      560,
+      1050
+     ],
+     "kind": "rect",
+     "text": [
+      "THAT NIGHT, THE FERRY NEVER CAME."
+     ]
+    },
+    {
+     "rect": [
+      620,
+      1180,
+      1100,
+      1440
+     ],
+     "kind": "ellipse",
+     "text": [
+      "We row",
+      "instead."
+     ]
+    },
+    {
+     "rect": [
+      700,
+      1380,
+      1160,
+      1660
+     ],
+     "kind": "ellipse",
+     "text": [
+      "Agreed."
+     ]
+    },
+    {
+     "rect": [
+      1080,
+      60,
+      1200,
+      320
+     ],
+     "kind": "rect",
+     "text": [
+      "edge!"
+     ],
+     "expect_miss": true
+    }
+   ],
+   "sfx": []
+  }
+ ]
+}

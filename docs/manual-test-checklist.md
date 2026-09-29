@@ -1,5 +1,29 @@
 # Phase 2 test plan
 
+## Round 9 — Comic Remaster Dialog & Bubble-Aware Comic OCR (2026-09-29)
+
+- **Comic Remaster Dialog (every option yours):**
+  - From a comic's detail page (or the floating reader), press **Remaster**.
+  **Re-test:**
+  1. The dialog shows the page count and rows for Scale / Which pages / Where the result goes / Page format. Defaults: 2x, All pages, Replace keeping a `.bak`, JPEG 90.
+  2. "Only small pages" reveals a pixel-width spin (default 1400); "A page range" reveals from/to spins bounded by the page count.
+  3. Choosing PNG hides the JPEG-quality spin; choosing JPEG shows it.
+  4. Run a small job (a range of 2-3 pages at 2x, JPEG 90). Expect a background task with per-page progress; the success toast says how many pages were upscaled.
+  5. **Replace mode:** the original file is backed up as `book.cbz.bak` (or `.cbr.bak`) next to the book; the book still opens and reads; remembered metadata edits and covers are still there.
+  6. **Copy mode:** a `remastered-2x.cbz` appears next to the original; the original is untouched.
+  7. Cancel mid-job: nothing changes, no leftover temp file.
+
+- **Bubble-Aware Comic OCR (balloons only, always on by default):**
+  - Open any comic. Pages are recognized in the background on first view (seconds per page on slow hardware), then cached forever.
+  **Re-test:**
+  1. **Drag** across a speech balloon: the selection snaps to the dialogue lines, and the copy reads in correct balloon order (side-by-side balloons must NOT interleave).
+  2. **Alt+click** inside a balloon: the entire balloon's text is selected in one tap; the chip (Highlight / Define) and Ctrl+C work on it.
+  3. **Reading direction:** switch the reader to Right-to-Left (Manga) — the copied text order flips to right-to-left per band, instantly (no re-recognition).
+  4. **Persistence:** close and reopen the same book - text selection works immediately on previously visited pages (no second-long wait per page).
+  5. **Remaster interplay:** remaster a comic (replace mode) and reopen it - the OCR cache is invalidated by the file change and the pages are re-recognized against the sharper pages.
+  6. **Settings:** the Speech Bubble OCR section still offers Color Only / Always On / Off; the default for fresh installs is Always On. Sound effects outside balloons (e.g. "KRAKOOM") are deliberately NOT recognized.
+  7. **Webtoon/long-strip and B&W pages** work the same as color singles.
+
 ## Round 8 — View Modes & Naming from Reference Image, Rotation Removal, and Bookmarks Integration
 
 - **Exact View Modes & Naming (Scrolling & Spreads):**

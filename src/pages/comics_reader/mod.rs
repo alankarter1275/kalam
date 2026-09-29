@@ -34,7 +34,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::ReadingBookmark;
-use crate::pdf::PdfPageText;
 
 pub struct ComicsReaderModel {
     pub title: String,
@@ -80,7 +79,10 @@ pub struct ComicsReaderModel {
     pub ocr_tx: Option<async_channel::Sender<crate::ocr::ComicOcrRequest>>,
     pub ocr_in_progress: HashSet<usize>,
     pub ocr_generation: Arc<AtomicU64>,
-    pub page_text_cache: HashMap<usize, PdfPageText>,
+    pub page_text_cache: HashMap<usize, crate::bubble_ocr::ComicPageTexts>,
+    /// Fingerprint each in-flight OCR run started under, so a result is only
+    /// cached when the archive (and mode) is unchanged since it began.
+    pub ocr_started_fp: HashMap<usize, String>,
     pub active_selection: Rc<RefCell<Option<ComicActiveSelection>>>,
     pub selection_drag_state: Option<(usize, f64, f64, bool, bool)>,
     pub selection_chip: Option<gtk::Popover>,
@@ -214,7 +216,9 @@ impl ComicsReaderModel {
                         return types::ComicOcrMode::Off;
                     }
                 }
-                types::ComicOcrMode::AutoColor
+                // Owner decision 2026-09-29: always on by default.
+                // Bubble-aware OCR made black & white pages the best case.
+                types::ComicOcrMode::AlwaysOn
             });
 
         Self {
@@ -261,6 +265,7 @@ impl ComicsReaderModel {
             ocr_in_progress: HashSet::new(),
             ocr_generation: Arc::new(AtomicU64::new(1)),
             page_text_cache: HashMap::new(),
+            ocr_started_fp: HashMap::new(),
             active_selection: Rc::new(RefCell::new(None)),
             selection_drag_state: None,
             selection_chip: None,
@@ -560,10 +565,25 @@ impl ComicsReaderModel {
         if self.page_text_cache.contains_key(&page) || self.ocr_in_progress.contains(&page) {
             return;
         }
+        // Persistent OCR cache (shared table with scanned PDFs): a page
+        // recognized on a previous visit loads instantly instead of
+        // recomputing seconds of neural inference. The fingerprint is the
+        // archive's size + mtime plus the OCR mode, so a remaster or a mode
+        // switch invalidates it automatically.
+        if let Some(texts) = self.load_cached_page_ocr(page) {
+            self.page_text_cache.insert(page, texts);
+            if let Some(da) = self.page_draw_areas.borrow().get(&page) {
+                da.queue_draw();
+            }
+            return;
+        }
         let Some(ref tx) = self.ocr_tx else {
             return;
         };
 
+        if let Some(fp) = self.comic_ocr_fingerprint() {
+            self.ocr_started_fp.insert(page, fp);
+        }
         self.ocr_in_progress.insert(page);
         let prov = self.provider.clone();
         let generation = self.ocr_generation.load(Ordering::Relaxed);
@@ -585,6 +605,112 @@ impl ComicsReaderModel {
             |_| {},
             |_| {},
         );
+    }
+
+    /// The fingerprint OCR results are cached under: archive size + mtime
+    /// plus the OCR mode tag. Remote chapters have no local file and no
+    /// persistent cache.
+    fn comic_ocr_fingerprint(&self) -> Option<String> {
+        use std::time::UNIX_EPOCH;
+        let mode_tag = if self.ocr_mode.is_color_only() { "color" } else { "always" };
+        let path = self.provider.local_path()?;
+        let md = std::fs::metadata(path).ok()?;
+        let mtime = md
+            .modified()
+            .ok()?
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_secs();
+        Some(format!("{}:{mtime}:{mode_tag}", md.len()))
+    }
+
+    /// A cached bubble-OCR result for this page, flattened for the current
+    /// reading direction, when one exists and the fingerprint still matches.
+    fn load_cached_page_ocr(&self, page: usize) -> Option<crate::bubble_ocr::ComicPageTexts> {
+        let fp = self.comic_ocr_fingerprint()?;
+        let catalog = self.catalog.as_ref()?;
+        let book_id = self.book_id?;
+        let ocr = catalog.load_comic_page_ocr(book_id, page, &fp).ok()??;
+        let rtl = self.direction == ReadingDirection::Rtl;
+        Some(ocr.flatten_for(rtl))
+    }
+
+    /// Alt+click a balloon: select its entire recognized text in one tap.
+    fn select_balloon_at(&mut self, page: usize, x: f64, y: f64, sender: &ComponentSender<Self>) {
+        let Some(texts) = self.page_text_cache.get(&page) else { return };
+        let (ow, oh) = {
+            let overlays = self.page_overlays.borrow();
+            let Some(overlay) = overlays.get(&page) else { return };
+            (overlay.width() as f64, overlay.height() as f64)
+        };
+        let pw = texts.flat.width_pts as f64;
+        let ph = texts.flat.height_pts as f64;
+        if ow <= 0.0 || oh <= 0.0 || pw <= 0.0 || ph <= 0.0 {
+            return;
+        }
+        let (offset_x, offset_y, scale, drawn_w, drawn_h) = compute_comic_page_layout(ow, oh, pw, ph);
+        if scale <= 0.0
+            || x < offset_x
+            || x > offset_x + drawn_w
+            || y < offset_y
+            || y > offset_y + drawn_h
+        {
+            return;
+        }
+        let pt = (
+            (((x - offset_x) / scale) as f32).clamp(0.0, texts.flat.width_pts),
+            (((y - offset_y) / scale) as f32).clamp(0.0, texts.flat.height_pts),
+        );
+        let Some(balloon) = texts.flat_balloons.iter().find(|b| {
+            pt.0 >= b.x0 && pt.0 <= b.x1 && pt.1 >= b.y0 && pt.1 <= b.y1
+        }) else {
+            return;
+        };
+        let first = balloon.first_line as usize;
+        let last = (first + balloon.line_count as usize).min(texts.flat.lines.len());
+        if last <= first {
+            return;
+        }
+        let lines = &texts.flat.lines[first..last];
+        let text = lines
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut screen_rects = Vec::with_capacity(lines.len());
+        let mut min_x = f64::MAX;
+        let mut min_y = f64::MAX;
+        let mut max_x = f64::MIN;
+        let mut max_y = f64::MIN;
+        for l in lines {
+            let rx = offset_x + (l.x0 as f64) * scale;
+            let ry = offset_y + (l.y0 as f64) * scale;
+            let rw = ((l.x1 - l.x0).max(1.0) as f64) * scale;
+            let rh = ((l.y1 - l.y0).max(1.0) as f64) * scale;
+            screen_rects.push((rx, ry, rw, rh));
+            min_x = min_x.min(rx);
+            min_y = min_y.min(ry);
+            max_x = max_x.max(rx + rw);
+            max_y = max_y.max(ry + rh);
+        }
+        let first_r = screen_rects[0];
+        let last_r = screen_rects[screen_rects.len() - 1];
+        self.active_selection.replace(Some(types::ComicActiveSelection {
+            page,
+            text,
+            screen_rects,
+            bounds: (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0)),
+            start_handle: (first_r.0, first_r.1, first_r.3),
+            end_handle: (last_r.0 + last_r.2, last_r.1, last_r.3),
+            anchor_pt: pt,
+            active_pt: pt,
+            is_block: true,
+        }));
+        if let Some(da) = self.page_draw_areas.borrow().get(&page) {
+            da.queue_draw();
+        }
+        self.show_selection_chip(page, sender);
     }
 
     pub fn dismiss_selection_chip(&mut self) {
@@ -695,6 +821,7 @@ impl ComicsReaderModel {
         self.page_overlays.borrow_mut().clear();
         self.page_draw_areas.borrow_mut().clear();
         self.page_text_cache.clear();
+        self.ocr_started_fp.clear();
         self.ocr_in_progress.clear();
         self.ocr_tx = None;
         self.textures.clear();
@@ -2104,7 +2231,7 @@ impl Component for ComicsReaderModel {
                         continue;
                     }
 
-                    match crate::ocr::perform_ocr_image_bytes(engine, &req.raw_bytes, req.page, req.is_color_only) {
+                    match crate::bubble_ocr::bubble_ocr_page(engine, &req.raw_bytes, req.page, req.is_color_only) {
                         Ok(ocr_text) => {
                             if req.generation == ocr_gen.load(Ordering::Relaxed) {
                                 let _ = tx_ocr_msg.send(types::ComicsReaderMsg::PageOcrResult {
@@ -2660,6 +2787,17 @@ impl Component for ComicsReaderModel {
                     let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), Some(&sender));
                     widgets.viewport_box.set_child(Some(&child));
                     self.sync_settings_ui(widgets);
+                    // The flattened reading order follows the direction.
+                    // The direction-independent OCR results stay; only the
+                    // views are rebuilt (no re-recognition, no DB read).
+                    let rtl = self.direction == ReadingDirection::Rtl;
+                    for view in self.page_text_cache.values_mut() {
+                        let rebuilt = view.ocr.flatten_for(rtl);
+                        *view = rebuilt;
+                    }
+                    for da in self.page_draw_areas.borrow().values() {
+                        da.queue_draw();
+                    }
                 }
             }
             ComicsReaderMsg::SetPageStyle(style) => {
@@ -3005,9 +3143,37 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::PageOcrResult { page, text } => {
                 self.ocr_in_progress.remove(&page);
                 match *text {
-                    Ok(page_text) => {
-                        log::info!("Comic OCR completed for page {}: found {} lines", page, page_text.lines.len());
-                        self.page_text_cache.insert(page, page_text);
+                    Ok(ocr) => {
+                        log::info!(
+                            "Comic OCR completed for page {}: {} balloons, {} lines",
+                            page,
+                            ocr.balloons.len(),
+                            ocr.lines.len()
+                        );
+                        // Cache the result when the archive (and mode) is
+                        // unchanged since the run started; the flattened
+                        // reading order is rebuilt per direction at load.
+                        let started_fp = self.ocr_started_fp.remove(&page);
+                        if let (Some(fp), Some(catalog), Some(book_id)) =
+                            (&started_fp, &self.catalog, self.book_id)
+                        {
+                            let unchanged =
+                                self.comic_ocr_fingerprint().as_deref() == Some(fp.as_str());
+                            if unchanged {
+                                if let Err(err) =
+                                    catalog.save_comic_page_ocr(book_id, page, fp, &ocr)
+                                {
+                                    log::warn!(
+                                        "Could not cache comic OCR for page {page}: {err}"
+                                    );
+                                }
+                            }
+                        }
+                        let rtl = self.direction == ReadingDirection::Rtl;
+                        self.page_text_cache.insert(page, ocr.flatten_for(rtl));
+                        if let Some(da) = self.page_draw_areas.borrow().get(&page) {
+                            da.queue_draw();
+                        }
                     }
                     Err(e) => {
                         log::warn!("Comic OCR failed for page {}: {e}", page);
@@ -3029,7 +3195,7 @@ impl Component for ComicsReaderModel {
                 // Verify the click is inside the comic page (not in the letterbox black margin)
                 let in_margin = {
                     let (pw, ph) = if let Some(pt) = self.page_text_cache.get(&page) {
-                        (pt.width_pts as f64, pt.height_pts as f64)
+                        (pt.flat.width_pts as f64, pt.flat.height_pts as f64)
                     } else if let Some(tex) = self.textures.get(&page) {
                         (tex.width() as f64, tex.height() as f64)
                     } else {
@@ -3080,7 +3246,8 @@ impl Component for ComicsReaderModel {
                 if ow <= 0.0 || oh <= 0.0 { return };
 
                 let sel_data = {
-                    let Some(page_text) = self.page_text_cache.get(&page) else { return };
+                    let Some(texts) = self.page_text_cache.get(&page) else { return };
+                    let page_text = &texts.flat;
                     let pw = page_text.width_pts as f64;
                     let ph = page_text.height_pts as f64;
                     if pw <= 0.0 || ph <= 0.0 { return };
@@ -3153,10 +3320,17 @@ impl Component for ComicsReaderModel {
                 }
             }
             ComicsReaderMsg::SelectionDragEnd { page, dx, dy } => {
-                self.selection_drag_state = None;
+                let drag = self.selection_drag_state.take();
                 if dx.abs() > 4.0 || dy.abs() > 4.0 {
                     if self.active_selection.borrow().is_some() {
                         self.show_selection_chip(page, &sender);
+                    }
+                } else if let Some((state_page, start_x, start_y, is_block, _)) = drag {
+                    // Alt+click inside a balloon selects its whole text.
+                    if is_block && state_page == page {
+                        self.select_balloon_at(page, start_x, start_y, &sender);
+                    } else if self.active_selection.borrow().is_some() {
+                        self.clear_selection();
                     }
                 } else if self.active_selection.borrow().is_some() {
                     self.clear_selection();
@@ -3176,7 +3350,8 @@ impl Component for ComicsReaderModel {
                 if ow <= 0.0 || oh <= 0.0 { return };
 
                 let word_data = {
-                    let Some(page_text) = self.page_text_cache.get(&page) else { return };
+                    let Some(texts) = self.page_text_cache.get(&page) else { return };
+                    let page_text = &texts.flat;
                     let pw = page_text.width_pts as f64;
                     let ph = page_text.height_pts as f64;
                     if pw <= 0.0 || ph <= 0.0 { return };
@@ -3255,7 +3430,8 @@ impl Component for ComicsReaderModel {
                 if ow <= 0.0 || oh <= 0.0 { return };
 
                 let line_data = {
-                    let Some(page_text) = self.page_text_cache.get(&page) else { return };
+                    let Some(texts) = self.page_text_cache.get(&page) else { return };
+                    let page_text = &texts.flat;
                     let pw = page_text.width_pts as f64;
                     let ph = page_text.height_pts as f64;
                     if pw <= 0.0 || ph <= 0.0 { return };
@@ -3424,6 +3600,7 @@ impl Component for ComicsReaderModel {
                     self.trigger_osd(status, &sender);
                     self.clear_selection();
                     self.page_text_cache.clear();
+                    self.ocr_started_fp.clear();
                     self.ocr_in_progress.clear();
                     self.ocr_generation.fetch_add(1, Ordering::Relaxed);
                     if self.ocr_mode.is_enabled() {
@@ -3444,7 +3621,7 @@ impl Component for ComicsReaderModel {
                 sender.input(ComicsReaderMsg::SetOcrMode(next_mode));
             }
             ComicsReaderMsg::SetOcrEnabled(enabled) => {
-                let mode = if enabled { ComicOcrMode::AutoColor } else { ComicOcrMode::Off };
+                let mode = if enabled { ComicOcrMode::AlwaysOn } else { ComicOcrMode::Off };
                 sender.input(ComicsReaderMsg::SetOcrMode(mode));
             }
             ComicsReaderMsg::Close => {
@@ -3472,6 +3649,7 @@ impl Component for ComicsReaderModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pdf::PdfPageText;
     use std::sync::Arc;
 
     struct DummyProvider {
@@ -3785,7 +3963,7 @@ mod tests {
             cover_path: None,
         });
 
-        assert_eq!(model.ocr_mode, types::ComicOcrMode::AutoColor);
+        assert_eq!(model.ocr_mode, types::ComicOcrMode::AlwaysOn);
         assert!(model.page_text_cache.is_empty());
         assert!(model.active_selection.borrow().is_none());
 

@@ -29,6 +29,10 @@ impl ImageProvider for LocalProvider {
         let page_name = self.pages.get(idx).ok_or_else(|| anyhow!("Page index out of bounds"))?;
         extract_comic_page(&self.file_path, page_name)
     }
+
+    fn local_path(&self) -> Option<&std::path::Path> {
+        Some(&self.file_path)
+    }
 }
 
 pub struct RemoteProvider {

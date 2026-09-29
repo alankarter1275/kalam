@@ -2213,4 +2213,54 @@ No PDF remaster, no EPUB anything, no OCR changes. The OCR-cache fingerprint
 (size + mtime) already invalidates cached text for a remastered file by
 itself — a remaster changes both — so nothing there needed touching.
 
+## 13. Bubble-Aware Comic OCR: the Design Conversation and the Ship (2026-09-29)
+
+Per the roadmap's standing rule, the fixtures and the design conversation
+came before any code. Four synthetic fixture pages were built with exact
+ground truth (`fixtures/ocr/comic/`): a B&W manga page with screentone and
+an outline-less white highlight as decoys, a reading-order page with
+same-height and staggered balloon pairs plus a thought cloud, a color
+manhwa slice, and an aged-scan stress page (yellowed paper, sensor noise,
+wobbly outlines, a grey caption box, an overlapping pair, JPEG quality 82,
+and one balloon clipped flat by the page edge). The detection algorithm was
+prototyped in Python against that ground truth until it found 15/16 balloons
+with zero false positives, IoU 0.89–0.98 — then the owner answered three
+questions and the Rust followed the validated constants.
+
+### The owner's three decisions
+
+1. **Text outside balloons: balloons only.** Sound effects and narration
+   captions are deliberately not recognized — cleaner text, better
+   recognition quality. (The old whole-page pipeline recognized them by
+   accident, garbled.)
+2. **Default OCR mode: Always On.** Black & white pages used to be skipped
+   by the "Color Only" default; bubble detection makes B&W the best case,
+   so every comic page is now recognized and cached. The Color Only and Off
+   options remain in the sidebar.
+3. **Alt+click a balloon selects its whole text.** Included now; this is
+   why the cache payload carries balloon rectangles, not just text lines.
+
+### Two design points settled by measurement, not opinion
+
+- **The ink test had to count HOLES, not pixels.** A balloon's component is
+  by definition all-white; its glyphs are dark pixels *enclosed* by it. The
+  first prototype version computed ink over component pixels and was always
+  zero — every balloon was rejected.
+- **The outline test needs a 1px tolerance.** JPEG ringing paints a light
+  halo directly against a black outline; without the tolerance a quality-82
+  scan lost a third of its outline signal (0.56 measured against a 0.55
+  floor — one bad scan away from failure).
+
+### How the pieces fit
+
+Detection runs at the same ≤1800px working resolution as recognition.
+Balloon rects + per-balloon line ranges are cached in the scanned-PDF
+`page_ocr_cache` table under a fingerprint of archive size + mtime + mode
+tag, so a remaster (which changes both) re-recognizes against the sharper
+pages — the exact interplay the roadmap predicted when it sequenced 2.14
+behind the remaster. The stored payload is direction-independent; the
+flattened reading order (banded LTR/RTL) is rebuilt per direction at load,
+so switching a manga to right-to-left is instant. Pages where no balloon is
+detected fall back to the whole-page pipeline rather than losing selection.
+
 *Last updated: 2026-09-29.*

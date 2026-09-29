@@ -1,5 +1,5 @@
 [1m[92m   Compiling[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 12s
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 10s
 [1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-0a34a0afab25c2a2)
 
 running 1 test
@@ -165,8 +165,8 @@ page 3: reading-order regression checks passed
   ocr line 14 [x   58.0.. 506.2  y  421.2.. 438.7 pt] He wrote: Arun Vaidya, of the survey ship Kestrel. To be
 page 4: 15 lines recognized, 0 dropped as None
 
-thread 'ocr::tests::ocr_scan_probe_fixture_pages' (9407) panicked at src/ocr.rs:589:13:
-page 4: OCR output missing expected snippets ["lighthouse of its own", "To be continued"]
+thread 'ocr::tests::ocr_scan_probe_fixture_pages' (9407) panicked at src/ocr.rs:592:13:
+page 4: OCR output missing expected snippets ["a record kept in two places"]
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test ocr::tests::ocr_scan_probe_fixture_pages ... FAILED
 
@@ -175,7 +175,7 @@ failures:
 failures:
     ocr::tests::ocr_scan_probe_fixture_pages
 
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 463 filtered out; finished in 7.86s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 463 filtered out; finished in 7.71s
 
 [1m[91merror[0m: test failed, to rerun pass `--bin kalam`
---- run 36561143281 ---
+--- run 36562225773 ---

@@ -1,4 +1,4 @@
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 0.23s
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 0.22s
 [1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-0a34a0afab25c2a2)
 
 running 2 tests
@@ -17,7 +17,6 @@ running 2 tests
   balloon 0 [85,75 - 616,236]: Morning already? | The ferry leaves at noon.
   balloon 1 [185,295 - 696,466]: She kept the ticket | in her coat pocket.
   balloon 2 [105,805 - 556,986]: 1 | We can still | make it.
-=== comic-page2.png: plain 31/31 words, stretched 31/31
 === comic-page4.jpg: 4 balloons, 10 lines
   balloon 0 [108,78 - 602,361]: The lamp is out | and the tide is turning. | S
   balloon 1 [64,944 - 557,1047]: THAT NIGHT, THE FERRY NEVER CAME.
@@ -28,6 +27,7 @@ running 2 tests
   balloon 1 [645,135 - 1126,426]: This ink was cheap | and grey from the start.
   balloon 2 [155,955 - 696,1226]: Barely legible | even to young eyes.
 test bubble_ocr::tests::comic_bubble_probe_fixture_pages ... ok
+=== comic-page2.png: plain 31/31 words, stretched 31/31
 === comic-page3.png: plain 20/20 words, stretched 20/20
 === comic-page4.jpg: plain 19/19 words, stretched 19/19
 === comic-page5.png: plain 21/21 words, stretched 21/21
@@ -35,6 +35,6 @@ test bubble_ocr::tests::comic_bubble_probe_fixture_pages ... ok
 VERDICT: no difference on the fixtures — keep plain crops as the default (ROADMAP 2.16).
 test bubble_ocr::tests::comic_bubble_probe_grayscale_contrast ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 491 filtered out; finished in 14.56s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 491 filtered out; finished in 14.40s
 
---- run 36629913404 ---
+--- run 36639582481 ---

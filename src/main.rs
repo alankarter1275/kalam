@@ -5,7 +5,6 @@
 
 mod app;
 mod author;
-mod bubble_ocr;
 pub mod bubbles;
 mod comics;
 pub mod content_index;

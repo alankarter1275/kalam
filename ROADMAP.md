@@ -187,12 +187,14 @@ a year. The 2026-09-30 pass corrected a table that had last been verified
 | Bubbles — several books open at once | shipped | `src/bubbles.rs` (1,004 lines), item 2.13; changelog 2026-09-28 |
 | Comic series & chapters schema | shipped | `src/db/series.rs` (1,162 lines), ComicInfo.xml + filename heuristics; changelog 2026-09-27 |
 | Comic remaster dialog | shipped | `src/widgets/remaster_dialog.rs`, `comics::remaster_comic_archive`; changelog 2026-09-29 |
-| Bubble-aware comic OCR | shipped | `src/bubble_ocr.rs`, item 2.14; per-balloon recognition in `page_ocr_cache`, probe report `ci-logs/comic-ocr-probe-latest.txt`; changelog 2026-09-29 |
+| Bubble-aware comic OCR | **removed 2026-09-30** | Was item 2.14 (+2.15/2.16); removed entirely by item 2.17 at the owner's decision — code, wiring, settings section, CI probe, fixtures and cached rows (schema v17 purge). Recoverable from git history (`git log -- src/bubble_ocr.rs`). Scanned-PDF OCR stays. |
 
-**Test baseline (run `36628490914`, 2026-09-30):** **884 tests passed, 0
-failed**, 9 ignored (the slow neural-inference probes, run separately).
-(The earlier `36613679329` count of 881 predates items 2.15/2.16, and the
-`35399375314` baseline of 750 predates the September 28–29 batches.)
+**Test baseline:** **updated after the 2.17 removal run — the 884-count of
+run `36628490914` (2026-09-30) predates it.** The removal deletes the comic
+OCR probe tests, the `bubble_ocr` unit tests and the reader's OCR/selection
+tests, so the count drops; the exact number from the next green run is
+recorded in the changelog row of the same date. (Historical: 884 =
+`36628490914`, 881 = `36613679329`, 750 = `35399375314`.)
 
 ---
 
@@ -1238,7 +1240,9 @@ they need 1.2's asynchronous service layer underneath them.
   a Zen-style side-by-side split screen with independent navigation — full
   parity across EPUB, PDF and comics, with reading time counting only for the
   focused pane. See the changelog row of 2026-09-28.
-- **2.14 — Bubble-aware comic OCR (shipped 2026-09-29).** The owner's pick for the best comic fix
+- **2.14 — Bubble-aware comic OCR (shipped 2026-09-29; removed by 2.17 on
+  2026-09-30).** The owner's pick for the best comic fix at the time. Kept
+  below as history.
   (2026-09-29): find each speech balloon on the page, recognize the text
   inside it, and map the lines back to page coordinates — instead of running
   one OCR pass over the whole page and hoping. Why it is worth the effort:
@@ -1272,7 +1276,8 @@ they need 1.2's asynchronous service layer underneath them.
   `ci-logs/comic-ocr-probe-latest.txt` on every run. Known v1 limitation:
   a balloon clipped flat by the page edge merges with the page background
   and is missed.
-- **2.15 — Line-box padding for comic OCR (shipped 2026-09-30).** The next
+- **2.15 — Line-box padding for comic OCR (shipped 2026-09-30; removed by
+  2.17 the same day).** The next
   step of the agreed comic-OCR order. ocrs crops each text line to the tight
   outline of its detected word boxes before recognition — its
   `prepare_text_line` adds no margin — so tall ascenders, descenders and
@@ -1283,6 +1288,7 @@ they need 1.2's asynchronous service layer underneath them.
   lines of lettering cannot fuse. The fixture probe shows no regression;
   real hand-lettered pages are the beneficiary.
 - **2.16 — Grayscale/contrast experiment (run 2026-09-30; verdict in the
+  changelog row of the same date; mooted by 2.17 the same day).**
   changelog row of the same date).** The agreed cheap CI experiment, closing
   the comic-OCR order. Before recognizing a balloon crop, convert it to
   grayscale and stretch its own 2nd–98th percentile luminance range to full
@@ -1295,6 +1301,24 @@ they need 1.2's asynchronous service layer underneath them.
   misses without losing any it finds. Outcome (2026-09-30): no difference —
   110/110 words either way — so plain crops stay the default; the probe
   keeps measuring on every push.**
+
+- **2.17 — Comic OCR removed entirely (2026-09-30, owner decision).** The
+  owner never used what 2.14–2.16 built — the library is EPUBs first, a few
+  scanned PDFs, and comics are marginal and never searched — so the whole
+  comic OCR stack is gone: `src/bubble_ocr.rs`, the reader wiring (per-page
+  worker, text layer, drag/Alt+click balloon selection, the
+  Highlight/Define/Copy chip, Ctrl+C, the settings section and its
+  `reader.comic.ocr*` preferences), the comic OCR CI probe and its
+  `fixtures/ocr/comic/` pages, the comic save/load functions in `db.rs`,
+  and — via schema migration v17 — the comic rows cached in
+  `page_ocr_cache`. **What the owner accepted losing:** balloon selection,
+  Alt+click, Highlight/Define/copy in comics, and reachability of comic
+  highlights (they stay in the database but nothing links back to them);
+  existing comic pages now open with zero first-visit OCR cost. **What
+  stays:** the `page_ocr_cache` table and scanned-PDF OCR (owner decision
+  the same day: keep, cached on disk), and every EPUB/PDF reader feature.
+  Code is recoverable from git history. This item reverses 2.14, 2.15 and
+  2.16; those rows stay as history.
 
 
 **Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
@@ -1430,18 +1454,14 @@ rebuilt after Phase 3 changes them.
   **Steps 1 and 2 shipped, 2026-09-28/29** — the Ctrl+F bars with live match
   counts and "Matches at a Glance" popovers in both readers, then the
   `book_content_fts` index with background indexing and a Reindex control
-  (`src/content_index.rs`). **What is left in this phase: comics.** They are
-  the one format the content index does not cover, and since 2.14 each
-  balloon's words are already recognized and cached — see Step 3.
-- **Step 3 — Comics in the content index (proposed 2026-09-30, awaiting the
-  owner's go).** Feed the balloon text that 2.14 already recognizes and caches
-  into `book_content_fts`, so "Book Content" search covers comics too —
-  find a phrase, jump to the page. Most of the machinery exists on both sides
-  (index + feeder on one, cached per-page text keyed by archive fingerprint on
-  the other); the work is the bridge between them. Scope question for the
-  owner: index balloon text only, matching the shipped recognition scope
-  (sound effects and captions outside balloons are deliberately not
-  recognized).
+  (`src/content_index.rs`).
+- **Step 3 — Comics in the content index (proposed 2026-09-30; withdrawn the
+  same day before any work, owner decision).** The owner never searches
+  comics — the library is EPUBs first, a few scanned PDFs, comics marginal —
+  so the proposal was withdrawn before anything was built. The original idea
+  (feeding 2.14's balloon text into `book_content_fts`) also lost its premise
+  the same day: 2.17 removed comic OCR entirely. **Phase 4 is complete for
+  the owner's needs as of 2026-09-30.**
 
 **Done when:** a search for a character's name returns the right books in
 under 100 ms on a library of a few thousand books, and rebuilding the index
@@ -2079,6 +2099,7 @@ top-to-bottom like a journal.
 | 2026-09-30 | **Roadmap truth pass, ordered by the owner after the agent cited the archived plan from memory.** The owner caught the agent describing "P7 fiction sources / P9 manga / P12 Lua plugins" and "custom renderer research, parked" as current work — all four are the old P0–P12 plan archived 2026-09-18; the custom engine shipped with the 2026-09-18 engine swap. Two causes, both now recorded in `docs/pitfalls.md`: condensed session memory carrying the old plan's vocabulary, and the recurring moved-base fault (HEAD falls back to the branch point, so `git ls-files` answers for the wrong commit — the same artifact produced a false "OCR models not in git" claim this session; the models are committed, `b482d03`). **The pass:** "What is really shipped" re-verified against the code on 2026-09-30 (it said full-text search "not started" though FTS5 shipped 2026-09-29, and lacked rows for in-reader search, the sanitizer, watch folders, bubbles, comic series, the remaster dialog and bubble OCR); Phase 3 and Phase 4 Steps 1–2 marked shipped; 2.13 marked shipped; the parked-list cross-reference corrected (bubbles are 2.13, not 2.12); the north-star stack line updated (FTS5 shipped, tantivy dropped); test baseline updated to 881. Items **2.15** and **2.16** were given their permanent numbers before being built, per the numbering rule. Phase 4 gained a proposed **Step 3 — comics in the content index**, awaiting the owner's go. |
 | 2026-09-30 | **Item 2.15 shipped: line-box padding for comic OCR.** ocrs crops each recognized line to the tight outline of its detected word boxes (`prepare_text_line` adds no margin), so ascenders, descenders and edge punctuation can be clipped before recognition. Every word box is now grown 2 px per side before `find_text_lines` groups them (`LINE_BOX_PAD` in `src/bubble_ocr.rs`). 2 px is deliberately small: ocrs joins words into one line at 5 px vertical overlap, and a bigger pad could fuse stacked lines of lettering. The fixture probe passes unchanged — synthetic fixtures have clean boxes, so no gain was expected there; hand-lettered real pages are the beneficiary. |
 | 2026-09-30 | **Item 2.16 run: the grayscale/contrast experiment, with a dedicated fixture and a both-modes CI probe.** New `comic-page5.png` (generator updated): old tan paper, one control balloon with crisp black text and two faded grey ones — badly-faded text kept just under the detector's DARK_T (128) so balloon detection is unaffected (detector prototype: 3/3 balloons, zero false positives, IoU 0.95; ink margin 16×). New `CropPrep` mode in `src/bubble_ocr.rs`: per-crop BT.601 grayscale plus a 2nd–98th percentile luminance stretch (skipped when the spread is under 48, where it would only amplify noise), wired as `bubble_ocr_page_prep` — the shipped default stays `CropPrep::None`. A second `#[ignore]`d probe, `comic_bubble_probe_grayscale_contrast`, runs every fixture page both ways and publishes scores + a verdict line to `ci-logs/comic-ocr-probe-latest.txt` on every push. Decision rule unchanged from 2026-09-29: the stretch becomes the default only if it finds words the plain pipeline misses without losing any it finds. **Verdict from run `36628490914`: plain crops found 110/110 ground-truth words, stretched crops the same 110/110 — even the deliberately-faded balloons read cleanly without help, because ocrs already normalizes its input internally. No measurable gain, so the stretch does NOT ship as the default.** The mode and the probe stay: the probe re-measures on every push at zero cost, and becomes interesting again whenever ocrs publishes new models (the parked ④ from the same ladder). |
+| 2026-09-30 | **Item 2.17: comic OCR removed entirely (owner decision), and with it 2.14/2.15/2.16 are reversed.**
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

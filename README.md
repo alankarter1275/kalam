@@ -109,8 +109,9 @@ since the engine swap, verified against the code on 2026-09-30:
 - The **native engine** (`kalam-reader` crates, no WebKit) and the
   **MuPDF PDF reader**, rebuilt from scratch with unified chrome (2.11).
 - **Comic reader modernization** (2.12), **comic series & chapters** schema,
-  the **remaster dialog** and **bubble-aware comic OCR** — per-balloon
-  recognition, Alt+click whole-balloon select, cached like scanned PDFs (2.14).
+  and the **remaster dialog**. (Bubble-aware comic OCR shipped 2026-09-29 as
+  2.14 and was removed entirely on 2026-09-30 by 2.17 — the owner never used
+  it; scanned-PDF OCR stays.)
 - **Bubbles** — several books open at once, split-screen reading (2.13).
 - **EPUB ingestion sanitizer** and **multi-folder watch import** (Phase 3).
 - **In-reader search** (EPUB & PDF) and **library-wide full-text search** on

@@ -304,25 +304,6 @@ jobs:
           git push origin "HEAD:$GITHUB_REF_NAME" || true
           exit $status
 
-      # Diagnostic: replay the bubble-aware comic OCR pipeline on the comic
-      # fixtures - balloon detection, per-balloon recognition, reading
-      # order - and publish the per-balloon report for offline analysis.
-      - name: Comic bubble OCR probe (diagnostic)
-        run: |
-          set -o pipefail
-          status=0
-          cargo test --release --bin kalam comic_bubble_probe -- --ignored --nocapture 2>&1 | tee /tmp/comic-probe.txt || status=$?
-          mkdir -p ci-logs
-          cp /tmp/comic-probe.txt ci-logs/comic-ocr-probe-latest.txt
-          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/comic-ocr-probe-latest.txt
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add -f ci-logs/comic-ocr-probe-latest.txt
-          git commit -m "ci: publish comic OCR probe report [skip ci]" || true
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
-          git push origin "HEAD:$GITHUB_REF_NAME" || true
-          exit $status
-
       - name: Upload release binary
         uses: actions/upload-artifact@v4
         with:

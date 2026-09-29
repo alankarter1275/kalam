@@ -25,70 +25,6 @@ pub struct PdfOcrRequest {
     pub path: PathBuf,
 }
 
-/// Represents a single OCR recognition request for a comic page.
-#[derive(Debug, Clone)]
-pub struct ComicOcrRequest {
-    pub generation: u64,
-    pub page: usize,
-    pub raw_bytes: Vec<u8>,
-    pub is_color_only: bool,
-}
-
-/// Check if an image contains color (as opposed to being grayscale / monochrome black & white).
-/// Samples a grid of pixels across the image and checks color saturation (chroma).
-pub fn is_image_color(img: &image::DynamicImage) -> bool {
-    use image::GenericImageView;
-    let (w, h) = img.dimensions();
-    if w == 0 || h == 0 {
-        return false;
-    }
-
-    match img.color() {
-        image::ColorType::L8 | image::ColorType::La8 | image::ColorType::L16 | image::ColorType::La16 => {
-            return false;
-        }
-        _ => {}
-    }
-
-    let step_x = (w / 40).max(1);
-    let step_y = (h / 40).max(1);
-
-    let mut total_samples = 0;
-    let mut color_samples = 0;
-
-    let mut y = step_y / 2;
-    while y < h {
-        let mut x = step_x / 2;
-        while x < w {
-            let pixel = img.get_pixel(x, y);
-            let r = pixel[0] as i32;
-            let g = pixel[1] as i32;
-            let b = pixel[2] as i32;
-
-            let max_c = r.max(g).max(b);
-            let min_c = r.min(g).min(b);
-            let chroma = max_c - min_c;
-
-            // In monochrome / grayscale images (even with scanner tone or slight paper tint),
-            // chroma is typically <= 15.
-            // Vibrant colors in comics/manhwa/colored manga have chroma > 22.
-            if chroma > 22 {
-                color_samples += 1;
-            }
-            total_samples += 1;
-
-            x += step_x;
-        }
-        y += step_y;
-    }
-
-    if total_samples == 0 {
-        return false;
-    }
-
-    (color_samples as f32 / total_samples as f32) >= 0.015
-}
-
 /// Initialize the OCR engine.
 ///
 /// Tries embedded static slices first (compiled directly into the binary).
@@ -303,74 +239,9 @@ pub fn perform_ocr(
     )
 }
 
-/// Run OCR on encoded image bytes (JPEG, PNG, WebP, etc.).
-pub fn perform_ocr_image_bytes(
-    engine: &OcrEngine,
-    raw_bytes: &[u8],
-    page_num: usize,
-    is_color_only: bool,
-) -> Result<PdfPageText> {
-    let img = image::load_from_memory(raw_bytes)
-        .map_err(|e| anyhow!("Failed to decode image bytes for OCR: {e}"))?;
-    let orig_w = img.width();
-    let orig_h = img.height();
-
-    // If auto-detection is enabled and page is black & white, skip OCR
-    if is_color_only && !is_image_color(&img) {
-        log::debug!("Skipping OCR on black & white comic page {}", page_num);
-        return Ok(PdfPageText {
-            page_num,
-            width_pts: orig_w as f32,
-            height_pts: orig_h as f32,
-            lines: Vec::new(),
-        });
-    }
-
-    // If page is very high resolution, resize to max 1800px on longest side for fast neural inference
-    let (rgba, w, h) = if orig_w > 1800 || orig_h > 1800 {
-        let resized = img.resize(1800, 1800, image::imageops::FilterType::Triangle);
-        let rgba = resized.to_rgba8();
-        let w = rgba.width();
-        let h = rgba.height();
-        (rgba, w, h)
-    } else {
-        let rgba = img.to_rgba8();
-        (rgba, orig_w, orig_h)
-    };
-
-    perform_ocr_rgba(engine, &rgba, w, h, page_num, orig_w as f32, orig_h as f32)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_image_color_detection() {
-        use image::{Rgba, RgbaImage};
-
-        // 1. Grayscale black & white image (e.g. standard manga page)
-        let mut bw_img = RgbaImage::new(100, 100);
-        for pixel in bw_img.pixels_mut() {
-            *pixel = Rgba([245, 243, 240, 255]); // Slightly aged/scanned off-white paper
-        }
-        let dynamic_bw = image::DynamicImage::ImageRgba8(bw_img);
-        assert!(!is_image_color(&dynamic_bw), "B&W manga page should not be detected as color");
-
-        // 2. Colored image (e.g. colored Naruto / manhwa / comic)
-        let mut color_img = RgbaImage::new(100, 100);
-        for (x, _y, pixel) in color_img.enumerate_pixels_mut() {
-            if x < 40 {
-                *pixel = Rgba([240, 120, 30, 255]); // Orange clothes / chakra
-            } else if x < 70 {
-                *pixel = Rgba([100, 180, 240, 255]); // Blue sky
-            } else {
-                *pixel = Rgba([255, 255, 255, 255]); // Background
-            }
-        }
-        let dynamic_color = image::DynamicImage::ImageRgba8(color_img);
-        assert!(is_image_color(&dynamic_color), "Colored comic page should be detected as color");
-    }
 
     #[test]
     fn test_ocr_engine_graceful_missing() {
@@ -422,14 +293,6 @@ mod tests {
         if let Some(engine) = init_ocr_engine() {
             let res = perform_ocr_rgba(&engine, &[], 0, 0, 1, 100.0, 100.0).unwrap();
             assert!(res.is_empty());
-        }
-    }
-
-    #[test]
-    fn test_perform_ocr_image_bytes_invalid() {
-        if let Some(engine) = init_ocr_engine() {
-            let res = perform_ocr_image_bytes(&engine, b"not an image", 0, false);
-            assert!(res.is_err());
         }
     }
 

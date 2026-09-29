@@ -1154,3 +1154,27 @@ Two failure modes stacked up:
   happens to be on, and a fallen-back HEAD makes committed work look missing.
 - The cost of this one was a full session's worth of owner trust in the plan.
   The fix is cheap: read first, then talk.
+
+## 28. A removal leaves orphans: helpers whose only non-test user was the feature
+
+**The fault (2026-09-30, comic-OCR removal).** Deleting the comic OCR
+feature took its call sites with it, but three survivors looked innocent:
+`compute_comic_page_layout` in the comics reader (pure geometry, "surely
+still used"), the `k-sel-*` CSS classes in `resources/style.css`, and
+`select_rect`/`word_at`/`line_at` on `PdfPageText`. The layout helper had
+in fact lost every non-test caller — clippy runs with `-D warnings`, so the
+first CI run would have failed on a dead-code warning for a function that
+still *looked* alive because a unit test called it. The CSS classes and the
+`PdfPageText` methods were the opposite trap: they looked comic-specific
+but are shared with the PDF reader's selection toolbar, so deleting them
+would have broken live code.
+
+### The rule
+
+- **After any removal, grep every helper the removed code called for
+  non-test users (`grep -rn ... | grep -v "mod tests"` region) before
+  pushing.** A helper kept alive only by its own unit test is dead code
+  under `-D warnings`; a helper that *looks* owned by the removed feature
+  may be shared with a sibling reader.
+- Check CSS classes the same way before deleting them — class names are
+  global, and the PDF reader reuses the comics reader's toolbar styling.

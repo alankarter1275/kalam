@@ -66,7 +66,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v14 = dict_lookups (append-only lookup history, Phase 10)
 /// · v15 = book_content_fts (SQLite FTS5 virtual table for library-wide deep search) + book_search_index_status
 /// · v16 = page_ocr_cache (persistent per-page OCR results keyed by file fingerprint)
-pub const SCHEMA_VERSION: i64 = 16;
+/// · v17 = purge comic bubble-OCR rows from page_ocr_cache (feature removed in 2.17;
+///          the table itself stays because scanned-PDF OCR still uses it)
+pub const SCHEMA_VERSION: i64 = 17;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -521,8 +523,6 @@ thread_local! {
 
 #[cfg(test)]
 impl Catalog {
-
-
 
 
 
@@ -1055,6 +1055,19 @@ impl Catalog {
             )?;
         } else if let Some(v) = version {
             if v < SCHEMA_VERSION {
+                // v17: comic bubble OCR was removed entirely (ROADMAP 2.17).
+                // The page_ocr_cache table stays — scanned-PDF OCR still uses
+                // it — but every comic row in it is now dead weight. Comic
+                // fingerprints carry a trailing mode tag ("size:mtime:always"
+                // or "size:mtime:color") that PDF fingerprints ("size:mtime")
+                // never have, so this deletes exactly the comic rows and
+                // keeps every cached PDF page.
+                if v < 17 {
+                    conn.execute(
+                        "DELETE FROM page_ocr_cache WHERE file_fingerprint LIKE '%:%:%'",
+                        [],
+                    )?;
+                }
                 conn.execute(
                     "UPDATE schema_version SET version = ?1",
                     params![SCHEMA_VERSION],
@@ -1346,7 +1359,6 @@ impl Catalog {
         Ok(res)
     }
 
-
     pub fn add_remote_chapters(&self, book_remote_id: &str, source_id: &str, chapters: &[crate::sources::RemoteChapter]) -> anyhow::Result<()> {
         let book_id_str = format!("{}-{}", source_id, book_remote_id);
 
@@ -1377,7 +1389,6 @@ impl Catalog {
         tx.commit()?;
         Ok(())
     }
-
 
     /// Persist an OCR'd page's text layer so reopening the book does not
     /// recompute it. Keyed by (book, page) with a file fingerprint (size +
@@ -1422,55 +1433,6 @@ impl Catalog {
             Some(json) => {
                 let page = serde_json::from_str(&json)
                     .map_err(|e| DbError::OcrCache(format!("deserialize page: {e}")))?;
-                Ok(Some(page))
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Save a bubble-aware comic page OCR result. Same table and fingerprint
-    /// scheme as the scanned-PDF cache; the payload additionally carries the
-    /// detected balloons so Alt+click selection survives restarts.
-    pub fn save_comic_page_ocr(
-        &self,
-        book_id: i64,
-        page_num: usize,
-        file_fingerprint: &str,
-        page: &crate::bubble_ocr::ComicPageOcr,
-    ) -> Result<()> {
-        let payload = serde_json::to_string(page)
-            .map_err(|e| DbError::OcrCache(format!("serialize comic page: {e}")))?;
-        let conn = self.conn();
-        conn.execute(
-            "INSERT OR REPLACE INTO page_ocr_cache (book_id, page_num, file_fingerprint, payload)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![book_id, page_num as i64, file_fingerprint, payload],
-        )?;
-        Ok(())
-    }
-
-    /// Load a cached bubble-aware comic page OCR result. Returns `None` when
-    /// nothing is cached, or when the fingerprint no longer matches (the
-    /// archive changed — a remaster, a re-download — or the OCR mode did).
-    pub fn load_comic_page_ocr(
-        &self,
-        book_id: i64,
-        page_num: usize,
-        file_fingerprint: &str,
-    ) -> Result<Option<crate::bubble_ocr::ComicPageOcr>> {
-        let conn = self.conn();
-        let payload: Option<String> = conn
-            .query_row(
-                "SELECT payload FROM page_ocr_cache
-                 WHERE book_id = ?1 AND page_num = ?2 AND file_fingerprint = ?3",
-                params![book_id, page_num as i64, file_fingerprint],
-                |r| r.get(0),
-            )
-            .optional()?;
-        match payload {
-            Some(json) => {
-                let page = serde_json::from_str(&json)
-                    .map_err(|e| DbError::OcrCache(format!("deserialize comic page: {e}")))?;
                 Ok(Some(page))
             }
             None => Ok(None),

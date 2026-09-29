@@ -2314,4 +2314,40 @@ does not become the default — exactly the outcome the decision rule was
 written to force. The probe stays and re-measures on every push; it
 becomes interesting again if ocrs publishes new models.
 
+
+## 15. Stability First, and the Day Comic OCR Was Removed (2026-09-30)
+
+The morning after the contrast experiment, the owner set the standing order
+for everything that follows: **stability first**. No new phase begins until
+everything that exists is stable and working, and the agent talks with the
+owner before building anything. In the same breath the owner made it a hard
+rule that all AI work follows `ROADMAP.md`, with every change — built,
+removed, or merely decided in chat — recorded explicitly even when nobody
+asks for the record, and the owner gently reminded that it was.
+
+Then the scope questions the stability conversation forced, all answered the
+same day:
+
+1. **Docs showing false information** — fixed so no future AI repeats the
+   mistakes (`FEATURES_V2.md` had no banner though all four blueprints
+   shipped; `GEMINI.md` had no roadmap rule and a stale example).
+2. **Comic full-text search (Phase 4 Step 3)** — **rejected before any
+   work.** The owner never searches comics. The library is EPUBs first, a
+   few PDFs, comics marginal. Phase 4 is complete for the owner's needs.
+3. **Comic OCR** — **removed completely** (item 2.17). The agent
+   recommended removal, the owner confirmed "remove all": `bubble_ocr.rs`
+   and every trace of it — reader wiring, selection gestures, the settings
+   section, CI probe, fixtures, cache functions, and the comic rows of
+   `page_ocr_cache` (schema v17 purge). What the owner accepted losing:
+   balloon selection, Alt+click, Highlight/Define/copy in comics, and
+   reachability of old comic highlights. Pages now open instantly; code
+   lives in git history.
+4. **Scanned-PDF OCR** — **kept**, cached on disk (each page recognized
+   once, only image-only pages trigger it).
+
+Item 2.17 reverses 2.14, 2.15 and 2.16; their rows stay as history, per the
+append-only rule. The lesson the roadmap now records: a feature can be the
+owner's own pick, ship cleanly, pass its probe — and still be the wrong
+thing to keep if the owner's library never touches it.
+
 *Last updated: 2026-09-30.*

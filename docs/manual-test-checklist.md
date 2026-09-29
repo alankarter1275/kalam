@@ -5,6 +5,12 @@
 **Result (2026-09-30):** owner ran it on device — "it's alright." No copy
 artifacts, stray lines or timing complaints reported; round closed.
 
+**Historical note (2026-09-30, later the same day):** the bubble-OCR half of
+this round (T31) tests a feature that no longer exists — ROADMAP item 2.17
+removed comic OCR entirely at the owner's decision. The round is kept as a
+record of what was verified while the feature lived; the remaster-dialog half
+remains valid.
+
 - **Comic Remaster Dialog (every option yours):**
   - From a comic's detail page (or the floating reader), press **Remaster**.
   **Re-test:**
@@ -799,6 +805,8 @@ shows up as its own task in the task manager.
 4. In the Home counts strip, "Books" counts comic series as a single item rather than treating every chapter archive as a discrete book.
 
 ### T31 · Comic & Manga Speech Bubble OCR & Dialogue Selection
+
+*(Feature removed 2026-09-30 by ROADMAP 2.17 — kept for history.)*
 
 **Do:**
 1. Open any comic or manga book in the Comic Reader (Single, Double, or Webtoon mode).

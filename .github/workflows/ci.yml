@@ -285,11 +285,24 @@ jobs:
         run: cargo build --release
 
       # Diagnostic: replay the reader's OCR pipeline on the scanned-fixture
-      # pages (release profile reuses the deps just built above) and print
-      # every recognized line, so dropped lines are visible in the job log.
+      # pages (release profile reuses the deps just built above) and publish
+      # the full report - line geometry plus which lines the real selection
+      # logic can and cannot reach - to ci-logs for offline analysis.
       - name: OCR scan probe (diagnostic)
         run: |
-          cargo test --release --bin kalam ocr_scan_probe -- --ignored --nocapture 2>&1 | tee /tmp/ocr-probe.txt
+          set -o pipefail
+          status=0
+          cargo test --release --bin kalam ocr_scan_probe -- --ignored --nocapture 2>&1 | tee /tmp/ocr-probe.txt || status=$?
+          mkdir -p ci-logs
+          cp /tmp/ocr-probe.txt ci-logs/ocr-probe-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/ocr-probe-latest.txt
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f ci-logs/ocr-probe-latest.txt
+          git commit -m "ci: publish OCR probe report [skip ci]" || true
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true
+          exit $status
 
       - name: Upload release binary
         uses: actions/upload-artifact@v4

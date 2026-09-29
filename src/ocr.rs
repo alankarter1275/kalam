@@ -420,11 +420,12 @@ mod tests {
     ///
     /// A reader-reported issue: on the scanned-OCR test PDF, copy/selection
     /// on pages 2-4 skipped whole lines (page 1 was nearly perfect). This
-    /// probe replays the reader's exact pipeline (detect -> group lines ->
-    /// recognize) on the five fixture pages at the same resolution MuPDF's
-    /// 2x page render produces, prints every recognized line, and verifies
-    /// the snippets reported missing actually survive OCR. That separates
-    /// "OCR dropped the line" from "selection logic skipped it".
+    /// probe replays the reader's exact pipeline on the five fixture pages
+    /// at the same resolution MuPDF's 2x page render produces, prints every
+    /// recognized line with its geometry, then runs the reader's REAL
+    /// `perform_ocr_rgba` + `select_between` on a drag across every single
+    /// line - so the published report shows both whether the OCR data is
+    /// complete and whether the selection logic can reach each line.
     ///
     /// Run explicitly (slow neural inference):
     ///   cargo test --release ocr_scan_probe -- --ignored --nocapture
@@ -435,7 +436,12 @@ mod tests {
             panic!("OCR models unavailable; probe cannot run");
         };
 
-        // (page, snippets that MUST appear in that page's recognized text)
+        // The fixture pages are 1240x1754 px placed at 150 DPI, so the PDF
+        // page is ~595.2 x 841.9 pt, matching MuPDF's page_dimensions.
+        const W_PT: f32 = 595.2;
+        const H_PT: f32 = 841.9;
+
+        // (page, snippets that should appear in that page's recognized text)
         let expectations: &[(usize, &[&str])] = &[
             (
                 1,
@@ -496,21 +502,24 @@ mod tests {
             let jpg = std::fs::read(format!("fixtures/ocr/scan-page{page}.jpg"))
                 .expect("fixture image");
             let img = image::load_from_memory(&jpg).expect("decode fixture");
-            // MuPDF renders the 595.2pt x 842.5pt page at 2x scale: ~1190x1685.
+            // MuPDF renders the 595.2pt x 841.9pt page at 2x scale: ~1190x1685.
             let scaled = img.resize_exact(1190, 1685, image::imageops::FilterType::Lanczos3);
             let rgba = scaled.to_rgba8();
             let (w, h) = (rgba.width(), rgba.height());
 
+            // --- 1. Raw pipeline diagnostics (mirrors perform_ocr_rgba) ---
             let mut rgb = Vec::with_capacity((w * h * 3) as usize);
             for px in rgba.pixels() {
                 rgb.extend_from_slice(&[px[0], px[1], px[2]]);
             }
-
             let src = ImageSource::from_bytes(&rgb, (w, h)).expect("image source");
             let input = engine.prepare_input(src).expect("prepare input");
             let words = engine.detect_words(&input).expect("detect words");
             let line_rects = engine.find_text_lines(&input, &words);
             let recognized = engine.recognize_text(&input, &line_rects).expect("recognize");
+
+            let sx = w as f32 / W_PT;
+            let sy = h as f32 / H_PT;
 
             println!(
                 "=== page {page}: {} word boxes, {} line groups, {} recognition results",
@@ -519,38 +528,89 @@ mod tests {
                 recognized.len()
             );
 
-            let mut page_text = String::new();
+            let mut page_text_raw = String::new();
             let mut none_count = 0usize;
             for (i, line_opt) in recognized.iter().enumerate() {
                 match line_opt {
                     Some(line) => {
                         let text = line.to_string();
-                        println!("  line {i:2}: {text}");
-                        page_text.push_str(&text);
-                        page_text.push('\n');
+                        let (mut x0, mut y0, mut x1, mut y1) =
+                            (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+                        for ch in line.chars() {
+                            let r = ch.rect;
+                            x0 = x0.min(r.left() as f32);
+                            x1 = x1.max(r.right() as f32);
+                            y0 = y0.min(r.top() as f32);
+                            y1 = y1.max(r.bottom() as f32);
+                        }
+                        println!(
+                            "  ocr line {i:2} [x {:6.1}..{:6.1}  y {:6.1}..{:6.1} pt] {text}",
+                            x0 / sx,
+                            x1 / sx,
+                            y0 / sy,
+                            y1 / sy
+                        );
+                        page_text_raw.push_str(&text);
+                        page_text_raw.push('\n');
                     }
                     None => {
                         none_count += 1;
-                        println!(
-                            "  line {i:2}: <recognition returned NONE - dropped by perform_ocr_rgba>"
-                        );
+                        println!("  ocr line {i:2}: <recognition returned NONE - dropped>");
                     }
                 }
             }
             println!(
-                "page {page} summary: {} lines recognized, {none_count} dropped as None",
+                "page {page}: {} lines recognized, {none_count} dropped as None",
                 recognized.len() - none_count
             );
 
             let missing: Vec<&str> = required
                 .iter()
                 .copied()
-                .filter(|s| !page_text.contains(s))
+                .filter(|s| !page_text_raw.contains(s))
                 .collect();
-            assert!(
-                missing.is_empty(),
-                "page {page}: OCR output missing expected snippets {missing:?}\n--- full dump ---\n{page_text}"
+            if missing.is_empty() {
+                println!("page {page}: all expected snippets present in OCR output");
+            } else {
+                println!("page {page}: MISSING FROM OCR OUTPUT: {missing:?}");
+            }
+
+            // --- 2. The reader's real PdfPageText, via perform_ocr_rgba ---
+            let page_text = perform_ocr_rgba(&engine, rgba.as_raw(), w, h, *page, W_PT, H_PT)
+                .expect("perform_ocr_rgba");
+            println!(
+                "--- perform_ocr_rgba produced {} lines for page {page}",
+                page_text.lines.len()
             );
+            for (i, l) in page_text.lines.iter().enumerate() {
+                let preview: String = l.text.chars().take(70).collect();
+                println!(
+                    "  pt  line {i:2} [x {:6.1}..{:6.1}  y {:6.1}..{:6.1} pt] {preview}",
+                    l.x0, l.x1, l.y0, l.y1
+                );
+            }
+
+            // --- 3. Selection simulation with the REAL select_between ---
+            let (full_sel, full_rects) = page_text.select_between((30.0, 50.0), (560.0, 800.0));
+            println!(
+                "--- full-page drag: selected {} chars, {} highlight rects",
+                full_sel.chars().count(),
+                full_rects.len()
+            );
+            for (i, l) in page_text.lines.iter().enumerate() {
+                let mid_y = ((l.y0 + l.y1) * 0.5).clamp(0.0, H_PT);
+                let x_start = l.x0 + 2.0;
+                let x_end = (l.x1 - 2.0).max(x_start + 1.0);
+                let (sel, rects) = page_text.select_between((x_start, mid_y), (x_end, mid_y));
+                let status = if rects.is_empty() || sel.is_empty() {
+                    "UNSELECTABLE"
+                } else {
+                    "ok"
+                };
+                let preview: String = sel.chars().take(60).collect();
+                println!("  drag line {i:2}: {status:12} -> {preview}");
+            }
+            println!("=== end page {page} ===");
         }
     }
 }

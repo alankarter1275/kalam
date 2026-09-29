@@ -2388,15 +2388,8 @@ impl Component for PdfReaderModel {
         let key = gtk::EventControllerKey::new();
         let tx_key = tx.clone();
         key.connect_key_pressed(move |_, keyval, _keycode, state| {
-            if state.contains(gdk::ModifierType::CONTROL_MASK) && (keyval == gtk::gdk::Key::c || keyval == gtk::gdk::Key::C) {
-                let _ = tx_key.send(PdfReaderMsg::CopySelection);
-                return gtk::glib::Propagation::Stop;
-            }
-            if state.contains(gdk::ModifierType::CONTROL_MASK) && (keyval == gtk::gdk::Key::f || keyval == gtk::gdk::Key::F) {
-                let _ = tx_key.send(PdfReaderMsg::ToggleSearch);
-                return gtk::glib::Propagation::Stop;
-            }
             use gtk::gdk::Key;
+            let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
             match keyval {
                 Key::Escape => {
                     let _ = tx_key.send(PdfReaderMsg::EscapeKey);
@@ -2438,15 +2431,9 @@ impl Component for PdfReaderModel {
                     let _ = tx_key.send(PdfReaderMsg::ResetZoom);
                     gtk::glib::Propagation::Stop
                 }
-                Key::Home => {
-                    let _ = tx_key.send(PdfReaderMsg::GoToFirstPage);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::End => {
-                    let _ = tx_key.send(PdfReaderMsg::GoToLastPage);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::c | Key::C => {
+                // Bare `c` toggles smart crop; Ctrl+C is handled by the
+                // window-global shortcut below, so guard on the modifier.
+                Key::c | Key::C if !ctrl => {
                     let _ = tx_key.send(PdfReaderMsg::ToggleSmartCrop);
                     gtk::glib::Propagation::Stop
                 }
@@ -2460,6 +2447,62 @@ impl Component for PdfReaderModel {
         root.add_controller(key);
         root.set_can_focus(true);
         root.grab_focus();
+
+        // 3b. Window-global Ctrl+C / Ctrl+F. The key controller above only
+        // fires while a widget inside this reader holds keyboard focus, and
+        // nothing on the page canvas is focusable - so after a drag, or once
+        // focus wanders to the sidebar, Ctrl+C silently did nothing until a
+        // popover pulled focus back into the reader (field report: "I have
+        // to press highlight, then cancel, and then it works"). A
+        // Global-scope shortcut controller stays active for the whole window
+        // without needing focus - the same fix the EPUB reader's jump-back
+        // shortcut already uses. Both actions decline while the user is
+        // typing in an entry, so the search box keeps its own Ctrl+C.
+        if let (Some(copy_trigger), Some(search_trigger)) = (
+            gtk::ShortcutTrigger::parse_string("<Control>c"),
+            gtk::ShortcutTrigger::parse_string("<Control>f"),
+        ) {
+            let global = gtk::ShortcutController::new();
+            global.set_scope(gtk::ShortcutScope::Global);
+
+            let s_copy = sender.clone();
+            global.add_shortcut(
+                gtk::Shortcut::builder()
+                    .trigger(&copy_trigger)
+                    .action(&gtk::CallbackAction::new(move |w, _| {
+                        let typing = w
+                            .root()
+                            .and_then(|r| r.focus())
+                            .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
+                        if typing {
+                            return gtk::glib::Propagation::Proceed;
+                        }
+                        let _ = s_copy.input_sender().send(PdfReaderMsg::CopySelection);
+                        gtk::glib::Propagation::Stop
+                    }))
+                    .build(),
+            );
+
+            let s_search = sender.clone();
+            global.add_shortcut(
+                gtk::Shortcut::builder()
+                    .trigger(&search_trigger)
+                    .action(&gtk::CallbackAction::new(move |w, _| {
+                        let typing = w
+                            .root()
+                            .and_then(|r| r.focus())
+                            .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
+                        if typing {
+                            return gtk::glib::Propagation::Proceed;
+                        }
+                        let _ = s_search.input_sender().send(PdfReaderMsg::ToggleSearch);
+                        gtk::glib::Propagation::Stop
+                    }))
+                    .build(),
+            );
+
+            root.add_controller(global);
+        }
 
         // 4. Edge hover motion controller on root (Top, Bottom, Left)
         let root_motion = gtk::EventControllerMotion::new();

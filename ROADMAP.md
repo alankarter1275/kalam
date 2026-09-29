@@ -57,6 +57,17 @@ touching code:
   This rule is about *communication only*. It does not lower the bar for the
   engineering, the testing, or the docs.
 
+- **All work follows this roadmap, and every change is recorded — even when
+  the owner does not ask for the record.** Standing instruction, 2026-09-30.
+  Nothing is built, removed or changed outside this file's items: a new want
+  or a decision made mid-conversation gets a number and a place *before* it
+  is implemented, and a changelog row in the same commit — the record is not
+  optional and does not wait to be requested. After recording, tell the
+  owner plainly that it was recorded, so a decision made in chat can never
+  silently evaporate. This rule exists because it has gone wrong: status was
+  quoted from memory of the *old, archived* plan, and the owner had to
+  demand a truth pass (see `docs/pitfalls.md` §27). Quoting this file from
+  memory is the same mistake.
 - **Keep the docs current — in the same commit as the code.** A change that
   leaves this file stale is **not done**.
 - **Commit work regularly after major changes or completed batches.** Standing

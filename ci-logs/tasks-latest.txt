@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-tasks settle=20
-binary: 65487064 bytes
+binary: 65738104 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4080.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4091.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -21,20 +21,20 @@ WAYLAND_DISPLAY=wayland-1
 requested route: tasks
 windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
 FATAL: kalam exited during startup. Its output:
-  [timing] startup_gtk_init       78.1 ms
-  [timing] startup_style          58.4 ms
+  [timing] startup_gtk_init       77.6 ms
+  [timing] startup_style          56.0 ms
   
-  (process:4117): Gtk-WARNING **: 23:48:11.796: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:4128): Gtk-WARNING **: 01:10:23.853: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   [timing] icons_write             0.1 ms
   [timing] icons_theme             0.1 ms
-  [timing] startup_libraries       0.2 ms
-  [timing] startup_db_open         8.1 ms
-  [timing] startup_theme          14.9 ms
-  [timing] pre_run               284.2 ms
+  [timing] startup_libraries       0.1 ms
+  [timing] startup_db_open         7.8 ms
+  [timing] startup_theme          15.2 ms
+  [timing] pre_run               280.8 ms
   [timing] service_home            1.1 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      2.9 ms
+  [timing] startup_first_page      2.8 ms
   
-  thread 'main' (4117) has overflowed its stack
+  thread 'main' (4128) has overflowed its stack
   fatal runtime error: stack overflow, aborting
---- run 36499274846 ---
+--- run 36506050844 ---

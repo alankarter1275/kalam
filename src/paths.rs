@@ -103,7 +103,11 @@ fn folder_name_with_suffix(authors: &str, title: &str, suffix: &str) -> String {
     // no author. Treating it as no-author keeps those folders clean
     // ("Nausicaä 3f2ab91c", not "Unknown - Nausicaä 3f2ab91c") — the owner
     // picked exactly that shape for authorless books.
-    let authors = sanitize_folder_text(authors, 48);
+    //
+    // The byte cap is 60 because Bengali and Japanese names are three bytes
+    // per character: 48 bytes cut "রবীন্দ্রনাথ ঠাকুর" (Rabindranath Tagore,
+    // 49 bytes) mid-name — found by a CI test, not by review.
+    let authors = sanitize_folder_text(authors, 60);
     let has_author = !authors.is_empty() && !authors.eq_ignore_ascii_case("unknown");
 
     let title = sanitize_folder_text(title, 64);
@@ -138,14 +142,17 @@ fn sanitize_folder_text(raw: &str, max_bytes: usize) -> String {
     let mut out = String::with_capacity(raw.len().min(max_bytes + 4));
     let mut last_was_space = true; // also eats leading spaces
     for ch in raw.chars() {
-        if ch.is_control() || ch == '/' {
-            continue;
-        }
+        // Whitespace first, deliberately: a tab *is* a control character,
+        // and checking control first would swallow it whole — turning
+        // "A\tB" into "AB" instead of "A B".
         if ch.is_whitespace() {
             if !last_was_space {
                 out.push(' ');
                 last_was_space = true;
             }
+            continue;
+        }
+        if ch.is_control() || ch == '/' {
             continue;
         }
         out.push(ch);

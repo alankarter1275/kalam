@@ -1118,3 +1118,39 @@ whole bug.
 must live elsewhere, it must not contain `.unwrap()` or `.expect(` — use
 `match`, `?`, or `unwrap_or` — or the guardrail will count it no matter how
 test-only it is.
+
+## 27. Status claims come from the repo, never from memory
+
+The owner asked "what is P7/P9/P12?" and "isn't the custom renderer done?" —
+and was right to be angry. The reply had cited the **archived** P0–P12 phase
+plan (fiction sources, manga sources, Lua plugins, "renderer research parked")
+as if it were current. ROADMAP.md's first paragraph says it replaced that plan
+on 2026-09-18 and that the old write-ups live in
+`docs/archive/roadmap-phases-p0-p12.md` "for their lessons, not for planning."
+The custom renderer is not research — it shipped with the engine swap and is
+the core of the app.
+
+Two failure modes stacked up:
+
+1. **Condensed session memory carries old vocabulary.** A conversation summary
+   preserves phase numbers from weeks ago but not the sentence that says they
+   are dead. Speaking from that summary without re-reading the roadmap
+   resurrects the old plan.
+2. **The moved-base fault makes git lie.** The sandbox HEAD had silently
+   fallen back to the branch point `29788b4` (documented in the 2026-09-19
+   changelog row, and it recurs). `git ls-files assets/models/` answered
+   "empty" against that old commit, which became a confident "the OCR models
+   are not in git" claim and a proposed fix for a problem that did not exist —
+   the models are committed (`b482d03`).
+
+### The rule
+
+- **Before any claim about what is shipped, what is next, or what a phase
+  number means: read the "What is really shipped" table and the changelog tail
+  of ROADMAP.md in this session.** Never cite a phase number from memory.
+- **After any environment reset or surprising git output, run `git fetch`
+  followed by `git reset --mixed origin/<branch>` before believing `git
+  ls-files`, `grep`, or `git log`** — they all answer for whatever commit HEAD
+  happens to be on, and a fallen-back HEAD makes committed work look missing.
+- The cost of this one was a full session's worth of owner trust in the plan.
+  The fix is cheap: read first, then talk.

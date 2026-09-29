@@ -99,7 +99,31 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **AO3 / fanfiction browsing and the downloads hub are shells.** The routes and
   the job queue exist; there is no content source behind them. Part 2
 
+## Current status (2026-09-30)
+
+The table below is history: it uses the numbering of the **old** P0–P12 plan,
+which was replaced on 2026-09-18 by the roadmap in `ROADMAP.md` (Part 1 — the
+offline library, Phases 1–8; Part 2 — everything online). What has shipped
+since the engine swap, verified against the code on 2026-09-30:
+
+- The **native engine** (`kalam-reader` crates, no WebKit) and the
+  **MuPDF PDF reader**, rebuilt from scratch with unified chrome (2.11).
+- **Comic reader modernization** (2.12), **comic series & chapters** schema,
+  the **remaster dialog** and **bubble-aware comic OCR** — per-balloon
+  recognition, Alt+click whole-balloon select, cached like scanned PDFs (2.14).
+- **Bubbles** — several books open at once, split-screen reading (2.13).
+- **EPUB ingestion sanitizer** and **multi-folder watch import** (Phase 3).
+- **In-reader search** (EPUB & PDF) and **library-wide full-text search** on
+  SQLite FTS5 (Phase 4, Steps 1–2).
+
+The evidence-backed version of this list lives in `ROADMAP.md` → "What is
+really shipped". **Part 2 (AO3/MangaDex/Royal Road sources, plugins,
+downloads hub) has not been started** — no `impl Source` exists.
+
 ## Phase overview
+
+*Historical table — old plan's numbering, kept for context. Check
+`ROADMAP.md` for what is actually current.*
 
 | Phase | Feature |
 |-------|---------|

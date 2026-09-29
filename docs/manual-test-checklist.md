@@ -2,6 +2,9 @@
 
 ## Round 9 — Comic Remaster Dialog & Bubble-Aware Comic OCR (2026-09-29)
 
+**Result (2026-09-30):** owner ran it on device — "it's alright." No copy
+artifacts, stray lines or timing complaints reported; round closed.
+
 - **Comic Remaster Dialog (every option yours):**
   - From a comic's detail page (or the floating reader), press **Remaster**.
   **Re-test:**

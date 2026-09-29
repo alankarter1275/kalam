@@ -2263,4 +2263,48 @@ flattened reading order (banded LTR/RTL) is rebuilt per direction at load,
 so switching a manga to right-to-left is instant. Pages where no balloon is
 detected fall back to the whole-page pipeline rather than losing selection.
 
-*Last updated: 2026-09-29.*
+## 14. The Roadmap Truth Pass, Line-Box Padding, and the Contrast Experiment (2026-09-30)
+
+The owner's field report on Round 9 came back "it's alright" — the remaster
+dialog and bubble OCR pass on device. Then the session turned uncomfortable
+and useful: asked to talk about the project, the agent described "P7 fiction
+sources / P9 manga / P12 Lua plugins" and "custom renderer research, parked"
+as current work. The owner's reaction — "this was old roadmap, not the new
+roadmap! we have been working for days and you don't know which roadmap we
+are following?!?" — was correct on every count. Those are the archived
+P0–P12 phases; the custom engine shipped with the 2026-09-18 swap. A full
+truth pass followed (see the 2026-09-30 changelog rows): the shipped table
+re-verified against the code, Phase 3 and Phase 4 Steps 1–2 marked done,
+2.13 marked done, and a new pitfalls entry (§27) recording the rule: status
+claims come from the repo, never from memory, and after any environment
+reset, re-point HEAD with `git reset --mixed origin/<branch>` before
+believing anything git says. The "OCR models not in git" scare from the same
+session was the same fault — HEAD had fallen back to the branch point, so
+`git ls-files` answered for the wrong commit; the models are committed.
+
+With the plan trustworthy again, the two remaining items of the agreed
+comic-OCR order were given their permanent numbers and built:
+
+**2.15 — line-box padding.** ocrs crops each recognized line to the tight
+outline of its word boxes; its `prepare_text_line` adds no margin, so
+ascenders, descenders and edge punctuation can be clipped before recognition.
+Every word box is grown 2 px per side before `find_text_lines` groups them.
+2 px is deliberately small — ocrs joins words into one line at 5 px vertical
+overlap, and a bigger pad could fuse stacked lines of lettering.
+
+**2.16 — the grayscale/contrast experiment.** One new fixture page
+(`comic-page5.png`): tan paper, a crisp-black control balloon and two faded
+grey ones, the worst kept just under the detector's DARK_T so balloon
+detection is unaffected (prototype: 3/3 balloons, zero false positives).
+The treatment: per-crop BT.601 grayscale plus a 2nd–98th percentile
+luminance stretch, skipped when the spread is under 48 (stretching a flat
+crop only amplifies noise). It ships behind `CropPrep` with the default
+`None`; a second CI probe runs every fixture page both ways and prints a
+verdict. The 2026-09-29 decision rule stands: it becomes the default only if
+it finds words the plain pipeline misses without losing any it finds.
+
+Also proposed this session, awaiting the owner's go: Phase 4 Step 3 — comics
+in the content index. The balloon words that 2.14 caches are exactly the
+input `book_content_fts` wants; the work is the bridge.
+
+*Last updated: 2026-09-30.*

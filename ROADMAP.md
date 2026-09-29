@@ -105,7 +105,8 @@ You do **not** need to build between small commits. Only at phase boundaries.
 
 Raised, deliberately not decided, and **not** dropped.
 
-- ~~**Multiple books/readers open at once**~~ **Resolved — it is item 2.12.**
+- ~~**Multiple books/readers open at once**~~ **Resolved — it is item 2.13,
+  shipped 2026-09-28.**
   Raised 2026-09-04 as "discuss before designing", then discussed and designed
   on 2026-09-19: the bubbles. Design and recorded decisions are in
   [Bubbles](#bubbles--multiple-books-open-at-once).
@@ -129,16 +130,17 @@ Raised, deliberately not decided, and **not** dropped.
 > and nothing that needs the network to work.
 
 **Stack:** Rust · GTK4 · Relm4 · custom CSS · SQLite · **`kalam-reader`** (the
-native engine — no WebKit) · **MuPDF** (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`) for native PDF rasterization and vector outlines · `tantivy` for full-text search (planned)
+native engine — no WebKit) · **MuPDF** (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`) for native PDF rasterization and vector outlines · **SQLite FTS5** for full-text search (shipped — `book_content_fts`; `tantivy` was the earlier plan, dropped when FTS5 was built instead)
 
 ---
 
 ## What is really shipped
 
-Verified against the code on 2026-09-18, not copied from a status mark. Every
+Verified against the code on 2026-09-30, not copied from a status mark. Every
 line cites the evidence it rests on. **When a claim has no evidence to cite,
 that is the finding** — which is exactly how the downloads hub stayed "done" for
-a year.
+a year. The 2026-09-30 pass corrected a table that had last been verified
+2026-09-18 and so predated the search, ingestion, bubbles and comic work.
 
 | Area | Status | Evidence |
 |---|---|---|
@@ -164,14 +166,21 @@ a year.
 | **Downloads hub / online sources** | **NOT shipped** | Zero `impl Source` in the repo. `SourceManager::new()` builds an empty list. `Downloads`, `RemoteBrowse` and `Fanfiction` are deliberately absent from `NavItem::ALL`, so the sidebar cannot reach them. `src/models.rs` documents why. **Part 2.** |
 | **PDF reader & engine** | **shipped** | Rebuilt from scratch with MuPDF (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`). Crisp 8.7ms rasterization, unified EPUB-matching chrome (floating back chip, bottom pill with page jump and zoom, autohiding controls, slide-in TOC sidebar), continuous vertical scroll and paged modes, bounded memory cache (<80 MB). Replaced heuristic `lopdf` viewer. |
 | **Wasm plugins** | **NOT shipped** | `// mod plugins;` is commented out in `src/main.rs`; `wasmtime` is in neither `Cargo.toml` nor `Cargo.lock`. **Part 2.** |
-| Full-text library search | not started | `tantivy` is not a dependency |
+| Full-text library search | shipped | `book_content_fts` FTS5 table (`src/db.rs` schema v15), `src/content_index.rs`, background indexing + Reindex control; changelog 2026-09-29 |
 | EPUB editor | not started | — |
 | OCR page cache (scanned PDFs) | shipped | `page_ocr_cache` table, schema v16, `src/db.rs`; loaded in `ensure_page_text`, saved in the `PageOcrResult` handler, `src/pages/pdf_reader.rs` |
 | Readable book folders | shipped | `book_folder_name` + folder index in `src/paths.rs`, rename pass in `src/folders.rs`, import wiring in `src/epub.rs`, edit hook in `src/db/metadata.rs` |
+| In-reader search (EPUB & PDF) | shipped | Phase 4 Step 1: Ctrl+F bar, live match count, "Matches at a Glance" popover — `src/pages/reader/mod.rs:2918`, `src/pages/pdf_reader.rs:4188`; field-tested in checklist Round 8 |
+| EPUB ingestion sanitizer | shipped | Phase 3: `src/epub_sanitizer.rs` (954 lines); changelog 2026-09-29 |
+| Watch-folder auto-import | shipped | Phase 3: `src/watch_folder.rs` (662 lines), multi-folder + per-format shelves; changelog 2026-09-29 |
+| Bubbles — several books open at once | shipped | `src/bubbles.rs` (1,004 lines), item 2.13; changelog 2026-09-28 |
+| Comic series & chapters schema | shipped | `src/db/series.rs` (1,162 lines), ComicInfo.xml + filename heuristics; changelog 2026-09-27 |
+| Comic remaster dialog | shipped | `src/widgets/remaster_dialog.rs`, `comics::remaster_comic_archive`; changelog 2026-09-29 |
+| Bubble-aware comic OCR | shipped | `src/bubble_ocr.rs`, item 2.14; per-balloon recognition in `page_ocr_cache`, probe report `ci-logs/comic-ocr-probe-latest.txt`; changelog 2026-09-29 |
 
-**Test baseline (run `35399375314`):** 52 test binaries, **750 tests passed, 0
-failed**, 6 ignored, no panics. Before `--workspace` was added on 2026-09-18, one
-test binary ran.
+**Test baseline (run `36613679329`, 2026-09-30):** **881 tests passed, 0
+failed**, no panics. (The earlier `35399375314` baseline of 750 predates the
+September 28–29 batches.)
 
 ---
 
@@ -1209,14 +1218,14 @@ they need 1.2's asynchronous service layer underneath them.
   slide-in left sidebar (header with cover thumbnail, title, and progress bar, plus Pages, Bookmarks, and Settings
   tabs with Page Style, Reading Direction, Spread Gap 0px-16px, and Fit Mode controls). Persists reading progress,
   checkpoints reading sessions, persists bookmarks, and frees memory back to the OS upon reader exit.
-- **2.13 — Bubbles.** Several books open at once as stacked circles over any screen in
-  the app; tap one to read it in a floating window. Full design, including what
-  has to be measured first, is in
-  [Bubbles](#bubbles--multiple-books-open-at-once). This is the largest single
-  item in the phase. The measurement it was gated on is **done** (1.5); what it
-  still needs is 1.2's asynchronous service layer, which is why it sits last.
-  Per-book cache budgets come with it — `set_cache_budget` already exists, only
-  the call is missing.
+- **2.13 — Bubbles (shipped 2026-09-28).** Several books open at once as
+  stacked circles over any screen in the app; tap one to read it in a floating
+  window. Full design in [Bubbles](#bubbles--multiple-books-open-at-once).
+  Shipped as: draggable minimized circle stack with live progress rings,
+  Android-style floating reading window, switcher strip with active pill, and
+  a Zen-style side-by-side split screen with independent navigation — full
+  parity across EPUB, PDF and comics, with reading time counting only for the
+  focused pane. See the changelog row of 2026-09-28.
 - **2.14 — Bubble-aware comic OCR (shipped 2026-09-29).** The owner's pick for the best comic fix
   (2026-09-29): find each speech balloon on the page, recognize the text
   inside it, and map the lines back to page coordinates — instead of running
@@ -1251,6 +1260,27 @@ they need 1.2's asynchronous service layer underneath them.
   `ci-logs/comic-ocr-probe-latest.txt` on every run. Known v1 limitation:
   a balloon clipped flat by the page edge merges with the page background
   and is missed.
+- **2.15 — Line-box padding for comic OCR (shipped 2026-09-30).** The next
+  step of the agreed comic-OCR order. ocrs crops each text line to the tight
+  outline of its detected word boxes before recognition — its
+  `prepare_text_line` adds no margin — so tall ascenders, descenders and
+  edge punctuation can be clipped before the recognizer ever sees them.
+  Every word box is now grown by 2 px on each side before lines are grouped
+  (`LINE_BOX_PAD` in `src/bubble_ocr.rs`). The pad stays well under ocrs's
+  5 px vertical-overlap rule for joining words into a line, so stacked
+  lines of lettering cannot fuse. The fixture probe shows no regression;
+  real hand-lettered pages are the beneficiary.
+- **2.16 — Grayscale/contrast experiment (run 2026-09-30; verdict in the
+  changelog row of the same date).** The agreed cheap CI experiment, closing
+  the comic-OCR order. Before recognizing a balloon crop, convert it to
+  grayscale and stretch its own 2nd–98th percentile luminance range to full
+  black–white — faded grey-on-grey print becomes black-on-white again. A new
+  fixture page (`comic-page5.png`, generator updated) carries one control
+  balloon and two faded ones, and a second CI probe
+  (`comic_bubble_probe_grayscale_contrast`) scores every page both ways in
+  `ci-logs/comic-ocr-probe-latest.txt`. **Decision rule (2026-09-29): the
+  stretch becomes the default only if it finds words the plain pipeline
+  misses without losing any it finds.**
 
 
 **Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
@@ -1342,8 +1372,13 @@ the interface, so it needs the async service layer.
   XML, generate a TOC from `<h1>`/`<h2>` when the manifest lacks one,
   pre-extract the cover, repack. `extract_zip` is already hardened against zip
   attacks with four named tests, so the entry point is safe.
+  **Shipped 2026-09-29** — `src/epub_sanitizer.rs`, 954 lines; see the
+  changelog.
 - **Folder-watch auto-import.** A background watcher on a configured folder
   (`~/Downloads/Books`) that silently imports and sanitizes new files.
+  **Shipped 2026-09-29**, beyond the plan: multi-folder with per-format
+  filtering, per-format target shelves and subfolder auto-shelving —
+  `src/watch_folder.rs`; see the changelog.
 
 **Done when:** dropping a messy real-world EPUB into the watch folder produces
 a book that opens correctly, with a cover and a table of contents, without
@@ -1377,6 +1412,22 @@ rebuilt after Phase 3 changes them.
   - Full-text search engine index across all books (EPUB, PDF).
   - Search toggle pill in Library view: `[ Titles & Authors | Book Content ]`.
   - Sub-20 ms queries returning matching books with excerpt snippets and direct reader jump.
+
+  **Steps 1 and 2 shipped, 2026-09-28/29** — the Ctrl+F bars with live match
+  counts and "Matches at a Glance" popovers in both readers, then the
+  `book_content_fts` index with background indexing and a Reindex control
+  (`src/content_index.rs`). **What is left in this phase: comics.** They are
+  the one format the content index does not cover, and since 2.14 each
+  balloon's words are already recognized and cached — see Step 3.
+- **Step 3 — Comics in the content index (proposed 2026-09-30, awaiting the
+  owner's go).** Feed the balloon text that 2.14 already recognizes and caches
+  into `book_content_fts`, so "Book Content" search covers comics too —
+  find a phrase, jump to the page. Most of the machinery exists on both sides
+  (index + feeder on one, cached per-page text keyed by archive fingerprint on
+  the other); the work is the bridge between them. Scope question for the
+  owner: index balloon text only, matching the shipped recognition scope
+  (sound effects and captions outside balloons are deliberately not
+  recognized).
 
 **Done when:** a search for a character's name returns the right books in
 under 100 ms on a library of a few thousand books, and rebuilding the index
@@ -2010,6 +2061,10 @@ top-to-bottom like a journal.
 | 2026-09-29 | **Plan decisions: remaster dialog, model research verdict, phase order, and the owner's process rule.** (1) **Remaster (upcoming):** Lanczos3 confirmed as the right resampler for comic line art on CPU — the existing `remaster_comic_cbz` already implements it for CBZ; the work ahead is a dialog where the owner decides every option (scale, which pages, replace-with-backup vs copy, JPEG quality vs PNG), a PDF equivalent, and a background job with progress. (2) **OCR models:** research verdict is to stay on `ocrs`/`rten`. The shipped models are ocrs's own first generation (not PaddleOCR files), so "swap in PP-OCRv4/v5" is a conversion-and-glue experiment, not a file swap; the one ready-made crate for Paddle models pulls in ONNX Runtime C++ binaries against the pure-Rust offline design, and its VLM variants need more RAM than the owner's 4 GB machine has. Revisit when ocrs publishes new models — that would be a drop-in. (3) **Phase order agreed:** readable folders → remaster → bubble-aware comic OCR (new item 2.14) → line-box padding; grayscale/contrast gets one cheap CI experiment and ships only if it measurably helps. (4) **Process rule from the owner:** no code without an explicit go — "we were just talking" — after the OCR cache was built on an ambiguous greenlight. |
 | 2026-09-29 | **Comic remaster shipped with a full options dialog (step ② of the agreed order).** The old handler hardcoded everything — 2×, every page, JPEG 92, replace the file in place with no backup and no re-hash. Now every option is the owner's to decide, per the same-day rule. (1) **Engine:** `comics::remaster_comic_archive` replaces `remaster_comic_cbz`, with `RemasterOptions` (scale / page selection / format), `RemasterPages` (`All`, `BelowWidth(px)` for the low-resolution ones, or a 1-based range in **reading order** — the page map comes from `sort_comic_pages`, so zip storage order never matters), and `RemasterFormat` (JPEG at a chosen quality, alpha flattened to RGB because JPEG has no alpha channel, or lossless PNG). Untouched pages pass through byte-for-byte, so `ComicInfo.xml`, folder structure, and non-image entries survive unchanged; a page whose image fails to decode also passes through — a remaster must never lose a page. The progress callback can cancel (partial output removed, original untouched), and a `RemasterReport` counts pages remastered / skipped-as-wide / skipped-as-out-of-range. (2) **Dialog:** new `widgets::remaster_dialog`, presented from both the book detail page and the floating reader — one dialog, so the two can never drift: scale 1.5×/2×/3× (default 2×), page mode with a width spin (default 1400 px) or from/to spins bounded by the real page count, output replace-the-original-keeping-a-`.bak` (default) or save-a-copy as `remastered-2x.cbz` beside it, JPEG quality 60–100 (default 90) or PNG. (3) **Safety:** replace mode backs the original up to `book.<ext>.bak` before the swap and restores it if the swap fails; the stored `file_hash` is recomputed and `rehash_book` updates the record — the same treatment EPUB metadata writes get — so remembered metadata edits, covers, and duplicate detection survive a remaster. Copy mode touches nothing. (4) Runs as a background task with per-page progress and cancel. Comics only (CBZ/CBR — both zip); nothing rides along for PDF or EPUB. Five new engine tests: upscale+report, the width limit, reading-order ranges (fixture stores `z10, z1, z2` to prove natural order), cancel removes its partial output, and JPEG output never carries an alpha channel. |
 | 2026-09-29 | **Bubble-aware comic OCR shipped (item 2.14, step ③ of the agreed order).** Built after the recorded design conversation; the owner's three decisions: balloons only (SFX/captions deliberately not recognized), **Always On** as the default OCR mode, and **Alt+click a balloon selects its whole text**. (1) **Detector** (`src/bubble_ocr.rs`): classical CV, no new dependencies — luminance threshold → connected components → drop border-connected background → geometry filters (area 0.2–50%, fill ≥ 0.35, aspect 0.2–8) → outline test (≥ 55% of boundary neighbors dark, with a 1px JPEG-ringing tolerance) → ink test (≥ 0.3% enclosed dark pixels — glyphs live in holes; empty white shapes are decoys) → containment pruning (a region containing a balloon is a panel). Tuned on four ground-truth fixture pages (`fixtures/ocr/comic/`, generator + Python prototype committed): **15/16 balloons, zero false positives, IoU 0.89–0.98**; the miss is a balloon deliberately clipped flat by the page edge (documented v1 limitation). (2) **Pipeline:** per-balloon crops (6px pad) → ocrs detect/recognize → lines mapped back to original page pixels; balloons with no recognized words are dropped (the final arbiter); a page with no detected balloons falls back to the whole-page pipeline. (3) **Reading order:** banded top-to-bottom, within a band left-to-right or right-to-left following the reader's direction setting; direction switch re-flattens the in-memory views instantly, no re-recognition. (4) **Persistence:** comics join the scanned-PDF `page_ocr_cache` (fingerprint = archive size + mtime + mode tag), so a remaster or OCR-mode switch invalidates automatically and results survive restarts; remote-source chapters are recognized but not persisted. (5) **Reader:** drag selection, Highlight, Define, Ctrl+C unchanged on top of the new text layer; Alt+click grabs a whole balloon. Unit tests run the detector on the fixtures on every push (no models needed); a full-pipeline probe publishes per-balloon reports to `ci-logs/comic-ocr-probe-latest.txt`. |
+
+| 2026-09-30 | **Roadmap truth pass, ordered by the owner after the agent cited the archived plan from memory.** The owner caught the agent describing "P7 fiction sources / P9 manga / P12 Lua plugins" and "custom renderer research, parked" as current work — all four are the old P0–P12 plan archived 2026-09-18; the custom engine shipped with the 2026-09-18 engine swap. Two causes, both now recorded in `docs/pitfalls.md`: condensed session memory carrying the old plan's vocabulary, and the recurring moved-base fault (HEAD falls back to the branch point, so `git ls-files` answers for the wrong commit — the same artifact produced a false "OCR models not in git" claim this session; the models are committed, `b482d03`). **The pass:** "What is really shipped" re-verified against the code on 2026-09-30 (it said full-text search "not started" though FTS5 shipped 2026-09-29, and lacked rows for in-reader search, the sanitizer, watch folders, bubbles, comic series, the remaster dialog and bubble OCR); Phase 3 and Phase 4 Steps 1–2 marked shipped; 2.13 marked shipped; the parked-list cross-reference corrected (bubbles are 2.13, not 2.12); the north-star stack line updated (FTS5 shipped, tantivy dropped); test baseline updated to 881. Items **2.15** and **2.16** were given their permanent numbers before being built, per the numbering rule. Phase 4 gained a proposed **Step 3 — comics in the content index**, awaiting the owner's go. |
+| 2026-09-30 | **Item 2.15 shipped: line-box padding for comic OCR.** ocrs crops each recognized line to the tight outline of its detected word boxes (`prepare_text_line` adds no margin), so ascenders, descenders and edge punctuation can be clipped before recognition. Every word box is now grown 2 px per side before `find_text_lines` groups them (`LINE_BOX_PAD` in `src/bubble_ocr.rs`). 2 px is deliberately small: ocrs joins words into one line at 5 px vertical overlap, and a bigger pad could fuse stacked lines of lettering. The fixture probe passes unchanged — synthetic fixtures have clean boxes, so no gain was expected there; hand-lettered real pages are the beneficiary. |
+| 2026-09-30 | **Item 2.16 run: the grayscale/contrast experiment, with a dedicated fixture and a both-modes CI probe.** New `comic-page5.png` (generator updated): old tan paper, one control balloon with crisp black text and two faded grey ones — badly-faded text kept just under the detector's DARK_T (128) so balloon detection is unaffected (detector prototype: 3/3 balloons, zero false positives, IoU 0.95; ink margin 16×). New `CropPrep` mode in `src/bubble_ocr.rs`: per-crop BT.601 grayscale plus a 2nd–98th percentile luminance stretch (skipped when the spread is under 48, where it would only amplify noise), wired as `bubble_ocr_page_prep` — the shipped default stays `CropPrep::None`. A second `#[ignore]`d probe, `comic_bubble_probe_grayscale_contrast`, runs every fixture page both ways and publishes scores + a verdict line to `ci-logs/comic-ocr-probe-latest.txt` on every push. Decision rule unchanged from 2026-09-29: the stretch becomes the default only if it finds words the plain pipeline misses without losing any it finds. **Verdict from the first run: <TO BE FILLED FROM THE CI REPORT.>** |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

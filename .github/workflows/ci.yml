@@ -284,6 +284,13 @@ jobs:
       - name: build (release)
         run: cargo build --release
 
+      # Diagnostic: replay the reader's OCR pipeline on the scanned-fixture
+      # pages (release profile reuses the deps just built above) and print
+      # every recognized line, so dropped lines are visible in the job log.
+      - name: OCR scan probe (diagnostic)
+        run: |
+          cargo test --release --bin kalam ocr_scan_probe -- --ignored --nocapture 2>&1 | tee /tmp/ocr-probe.txt
+
       - name: Upload release binary
         uses: actions/upload-artifact@v4
         with:

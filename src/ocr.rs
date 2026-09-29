@@ -415,4 +415,142 @@ mod tests {
             assert!(res.is_err());
         }
     }
+
+    /// Diagnostic probe for the scanned-PDF OCR selection path.
+    ///
+    /// A reader-reported issue: on the scanned-OCR test PDF, copy/selection
+    /// on pages 2-4 skipped whole lines (page 1 was nearly perfect). This
+    /// probe replays the reader's exact pipeline (detect -> group lines ->
+    /// recognize) on the five fixture pages at the same resolution MuPDF's
+    /// 2x page render produces, prints every recognized line, and verifies
+    /// the snippets reported missing actually survive OCR. That separates
+    /// "OCR dropped the line" from "selection logic skipped it".
+    ///
+    /// Run explicitly (slow neural inference):
+    ///   cargo test --release ocr_scan_probe -- --ignored --nocapture
+    #[test]
+    #[ignore = "slow neural inference; run explicitly with --ignored"]
+    fn ocr_scan_probe_fixture_pages() {
+        let Some(engine) = init_ocr_engine() else {
+            panic!("OCR models unavailable; probe cannot run");
+        };
+
+        // (page, snippets that MUST appear in that page's recognized text)
+        let expectations: &[(usize, &[&str])] = &[
+            (
+                1,
+                &[
+                    "LIGHTHOUSE KEEPER",
+                    "Point Auburn",
+                    "4,015",
+                    "canvas bag",
+                    "only the one book",
+                ],
+            ),
+            (
+                2,
+                &[
+                    "chart table",
+                    "forty-one",
+                    "Marianne",
+                    "kayak",
+                    "3 a.m. watch",
+                    "lighthouse belongs to nobody",
+                ],
+            ),
+            (
+                3,
+                &[
+                    "Grandmother",
+                    "night shift",
+                    "lamplight",
+                    "seen weather",
+                    "passes here first",
+                ],
+            ),
+            (
+                4,
+                &[
+                    "pencil and one blank page",
+                    "Why copy them",
+                    "lighthouse of its own",
+                    "considered this",
+                    "empty line beneath",
+                    "Arun Vaidya",
+                    "Kestrel",
+                    "To be continued",
+                ],
+            ),
+            (
+                5,
+                &[
+                    "ENGLISH FIRST PERIOD",
+                    "PLEEEASE",
+                    "HANDWRITING",
+                    "DING-DONG",
+                ],
+            ),
+        ];
+
+        for (page, required) in expectations {
+            let jpg = std::fs::read(format!("fixtures/ocr/scan-page{page}.jpg"))
+                .expect("fixture image");
+            let img = image::load_from_memory(&jpg).expect("decode fixture");
+            // MuPDF renders the 595.2pt x 842.5pt page at 2x scale: ~1190x1685.
+            let scaled = img.resize_exact(1190, 1685, image::imageops::FilterType::Lanczos3);
+            let rgba = scaled.to_rgba8();
+            let (w, h) = (rgba.width(), rgba.height());
+
+            let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+            for px in rgba.pixels() {
+                rgb.extend_from_slice(&[px[0], px[1], px[2]]);
+            }
+
+            let src = ImageSource::from_bytes(&rgb, (w, h)).expect("image source");
+            let input = engine.prepare_input(src).expect("prepare input");
+            let words = engine.detect_words(&input).expect("detect words");
+            let line_rects = engine.find_text_lines(&input, &words);
+            let recognized = engine.recognize_text(&input, &line_rects).expect("recognize");
+
+            println!(
+                "=== page {page}: {} word boxes, {} line groups, {} recognition results",
+                words.len(),
+                line_rects.len(),
+                recognized.len()
+            );
+
+            let mut page_text = String::new();
+            let mut none_count = 0usize;
+            for (i, line_opt) in recognized.iter().enumerate() {
+                match line_opt {
+                    Some(line) => {
+                        let text = line.to_string();
+                        println!("  line {i:2}: {text}");
+                        page_text.push_str(&text);
+                        page_text.push('\n');
+                    }
+                    None => {
+                        none_count += 1;
+                        println!(
+                            "  line {i:2}: <recognition returned NONE - dropped by perform_ocr_rgba>"
+                        );
+                    }
+                }
+            }
+            println!(
+                "page {page} summary: {} lines recognized, {none_count} dropped as None",
+                recognized.len() - none_count
+            );
+
+            let missing: Vec<&str> = required
+                .iter()
+                .copied()
+                .filter(|s| !page_text.contains(s))
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "page {page}: OCR output missing expected snippets {missing:?}\n--- full dump ---\n{page_text}"
+            );
+        }
+    }
 }

@@ -17,6 +17,7 @@ mod epub_metadata;
 pub mod epub_sanitizer;
 mod export;
 mod epub_writer;
+mod folders;
 mod icons;
 mod libraries;
 mod logging;

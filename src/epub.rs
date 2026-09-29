@@ -2,7 +2,7 @@
 
 use crate::db::{self, Catalog};
 use crate::models::BookFormat;
-use crate::paths::{book_dir, ensure_data_dirs};
+use crate::paths::ensure_data_dirs;
 use anyhow::{anyhow, Context, Result};
 use roxmltree::Document;
 use std::fs::{self, File};
@@ -192,8 +192,28 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         };
 
     let uuid = Uuid::new_v4().to_string();
-    let dest_dir = book_dir(&uuid);
+    // Owner decision, 2026-09-29: books live in folders a person can read
+    // ("Author - Title <short-id>"), not bare uuids. The uuid stays the
+    // database key; the name is a label. See src/folders.rs.
+    let mut folder = crate::paths::book_folder_name(&authors, &title, &uuid);
+    // The short id makes a clash practically impossible, but "practically"
+    // is not "never": another book with the same author and title whose
+    // uuid agrees on its first eight characters would silently share this
+    // folder and the copy below would overwrite that book's file. When the
+    // name is taken, fall back to the full uuid, and in the vanishing case
+    // where that is taken too, to the bare uuid — fresh, so it cannot
+    // collide with anything.
+    if crate::paths::library_dir().join(&folder).exists() {
+        folder = crate::paths::book_folder_name_full(&authors, &title, &uuid);
+    }
+    if crate::paths::library_dir().join(&folder).exists() {
+        folder = uuid.clone();
+    }
+    let dest_dir = crate::paths::library_dir().join(&folder);
     fs::create_dir_all(&dest_dir)?;
+    // Teach the path resolver the new folder now, so anything that asks
+    // for this book's files during this session finds them.
+    crate::paths::note_folder(&uuid, &folder);
 
     let dest_file = dest_dir.join(&file_name);
     fs::copy(source, &dest_file)

@@ -75,6 +75,14 @@ impl Catalog {
         // silently discard the edit.
         self.remember_overrides(book_id)?;
 
+        // Owner decision, 2026-09-29: the folder follows the metadata. A
+        // book edited from "Unknown" to its real author gets a folder that
+        // says so. Best-effort, exactly like the sidecar refresh below: a
+        // stale folder name deserves a log line, never a failed edit.
+        if let Ok(Some(book)) = self.get_book(book_id) {
+            crate::folders::rename_book_folder_if_needed(&book.uuid, &book.authors, &book.title);
+        }
+
         // Keep the per-book kalam.json in step. Best-effort: a stale backup
         // deserves a log line, never a failed edit.
         crate::sidecar::refresh_for_book(self, book_id);

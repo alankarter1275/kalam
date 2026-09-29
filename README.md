@@ -147,7 +147,7 @@ does not list them.
 
 <library folder>/    default ~/.local/share/kalam
   catalog.db         books, shelves, highlights, reading progress
-  library/<uuid>/
+  library/Author - Title <short-id>/
     book.epub
     cover.jpg
     kalam.json       backup copy of this book's details, tags and highlights
@@ -155,6 +155,12 @@ does not list them.
 
 ~/.local/share/kalam/dictionaries/   shared by every library, never duplicated
 ```
+
+Book folders are named for their contents — `Author - Title` plus the first
+eight characters of the book's internal id — so the library reads well in a
+file manager. Books with no author are just `Title <short-id>`. Editing a
+book's author or title in Kalam renames its folder to match, and nothing
+inside the app depends on the name: every path is rebuilt from the id.
 
 A library folder is self-contained: copy it to another machine, point Kalam at
 it in **Settings → Storage → Libraries**, and it opens. The `cache/` folder is
@@ -276,6 +282,7 @@ src/                       THE APPLICATION (~51k lines)
   preload.rs       background cover/asset preloaders (A0 step 5)
   thumbs.rs        persistent cover thumbnails (A0 step 3)
   paths.rs         XDG paths — per-library vs shared (P6.5)
+  folders.rs       readable book folders: "Author - Title <id>", renames on edit
   libraries.rs     which library is open, the registry, global prefs (P6.5)
   sidecar.rs       kalam.json backup beside every book (P6.5)
   notify.rs        toast notifications + history

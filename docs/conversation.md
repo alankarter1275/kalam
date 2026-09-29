@@ -2084,3 +2084,90 @@ Real-world EPUBs from the web often contain toxic CSS (e.g. 7pt/8px hardcoded fo
    - Each folder is represented by a clean card with an ON/OFF toggle, remove button, format checkboxes, shelf dropdowns, and clear descriptions. An `[+ Add Watch Folder]` button allows adding any directory easily.
 
 *Last updated: 2026-09-29.*
+
+## 11. The OCR Cache, Readable Folders, and the Plan for What Comes Next (2026-09-29)
+
+### The owner's process rule, stated after the OCR cache shipped
+
+The OCR page cache was built on an ambiguous greenlight ("first, let's save the
+ocr results"). The owner's verdict: **"I didn't tell you to ship the ocr cache
+feature did I? we were just talking. whatever, just don't do it again. no code
+yet, just discussion."** The cache itself stays (it is shipped, green, and
+purely beneficial; the owner was offered a revert and did not ask for one),
+but the rule going forward is explicit: **nothing gets built until the owner
+says go.** Every item below was discussion-first, and folder renaming was
+built only after a literal "go".
+
+### What the owner asked about the OCR cache, and the answers
+
+- **Storage size:** ~20–60 KB per page as JSON; a dense 300-page scan is
+  roughly 10–18 MB — nothing on a 1 TB drive.
+- **Highlights and comments:** verified in code — PDF annotations are stored
+  by page number + text excerpt + note, completely independent of the OCR
+  layer, so the cache cannot break them. (Saved annotations still appear in
+  the book's annotation list rather than drawn on the page; on-page overlays
+  remain a separate future feature, which the cache would actually help.)
+- **Search:** the stored text is exactly what a future opt-in "index scanned
+  books" feature will consume. Deferred, as agreed.
+
+### Readable book folders — three owner choices, then built
+
+The question: "won't Author - Title interfere with the uuid?" Answer: no — the
+folder name is a label; the database key stays the uuid, and no code parses
+the name. The owner then made three explicit choices:
+
+1. **Short id, 8 characters** — `Nausicaä 3f2ab91c`, not the full uuid.
+2. **Title-only for authorless books** — no "Unknown - " prefix. The importer
+   writes the literal string "Unknown" for authorless PDFs and comics; that is
+   treated as no author, matching the spirit of the choice.
+3. **Folders rename automatically** when author or title is edited in Kalam.
+
+Design that fell out of the code, recorded for posterity: no schema change was
+needed (no path is ever stored — every path is rebuilt from the uuid through
+`book_dir`); resolution is an in-memory index with one directory scan per app
+run (a stat per lookup would be measurable on the owner's spinning disk); the
+one-time upgrade of existing libraries is a background housekeeping pass, not
+a migration; clashes fall back to the full uuid; renames preserve mtime, so
+the OCR cache fingerprint survives them.
+
+### Remaster: Lanczos3 confirmed, every option stays with the owner
+
+The owner asked whether Lanczos is the best choice. Verdict: for comic line
+art on CPU, yes — Lanczos3. Catmull-Rom/Mitchell are softer (photos), nearest
+and xBRZ are for pixel art, and AI upscalers are not realistic on the owner's
+Pentium N5030 with 4 GB RAM. `remaster_comic_cbz` (Lanczos3, CBZ in/out,
+progress callback) already exists as groundwork. The owner's standing
+instruction: **all options decided by the user** — scale (1.5×/2×/3×), which
+pages (all / below a pixel threshold / a range), replace-with-backup vs
+copy-alongside, JPEG quality vs PNG — presented in a dialog, nothing
+hardcoded. Runs as a background job with progress (~0.5–1 s per page on the
+owner's machine).
+
+### OCR models: research verdict — stay on ocrs/rten
+
+- The shipped models are ocrs's **own first generation**, trained by that
+  project — not PaddleOCR files. So "swap in PP-OCRv4/v5" means converting
+  ONNX models and writing pipeline glue against raw rten: a real experiment
+  with unknowns (operator coverage, charset dicts, detection post-processing),
+  not an afternoon.
+- The one ready-made crate for Paddle models (`oar-ocr`) works but pulls in
+  ONNX Runtime C++ binaries — against the pure-Rust, fully-offline design.
+  Its classic pipeline would run fine on the owner's CPU; its VLM variants
+  (0.6B+ parameters) are impossible on 4 GB RAM.
+- PP-OCR ONNX files are freely available (Apache 2.0) if the experiment is
+  ever wanted. Revisit when ocrs publishes new models — that would be a
+  genuine drop-in.
+
+### The order the owner agreed to
+
+1. Readable folders (built after "go", 2026-09-29).
+2. Remaster with the options dialog.
+3. Bubble-aware comic OCR — the owner's pick for the best comic fix, now
+   roadmap item **2.14**, deliberately sequenced after the two above: the OCR
+   cache means the expensive per-balloon pass runs once per page ever, and
+   remastered pages feed it better input.
+4. Line-box padding (small, slots in anywhere).
+5. Grayscale/contrast: one cheap CI experiment on the fixtures; ship only if
+   it measurably helps.
+
+*Last updated: 2026-09-29.*

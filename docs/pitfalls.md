@@ -1088,3 +1088,33 @@ failure whose cause was unrelated to what it checked, and this is a result that
 outlives the run that produced it. In all three the investigation goes to the
 wrong place, and in all three the fix is to make the signal honest rather than
 to get better at interpreting a dishonest one.
+
+---
+
+## 26. A test helper placed between test functions is invisible to the panic guardrail
+
+The guardrail that keeps production `.unwrap()`/`.expect()` counts from growing
+(`tests/guardrails.rs`) walks brace depth and suppresses everything inside a
+`#[cfg(test)] mod tests`. But the suppression is per *item*, not per module:
+when a `#[test]` function inside the module closes, the module-level
+suppression has already been overwritten by the function's own, and it is not
+restored. The practical effect: **code inside `mod tests` but sitting after the
+first test function's closing brace is counted as production code.**
+
+This repo's test modules have always placed their helpers (like `seed` in
+`db.rs`) *above* the first `#[test]`, so the baseline of 12 never moved. A new
+helper written in the natural reading order — helpers at the bottom, or between
+tests — silently pushes the count over the cap, and the failure names the
+guardrail, not the placement.
+
+Found while adding `scratch_library` to `src/paths.rs`: the count went 12 → 13,
+the debug scan showed the helper's `.expect("scratch dir")` as the only new
+hit, and no amount of reading the helper explains it — the position was the
+whole bug.
+
+### The rule
+
+**In `mod tests`, helpers go above the first `#[test]` function.** If a helper
+must live elsewhere, it must not contain `.unwrap()` or `.expect(` — use
+`match`, `?`, or `unwrap_or` — or the guardrail will count it no matter how
+test-only it is.

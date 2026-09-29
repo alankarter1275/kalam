@@ -67,9 +67,234 @@ pub fn library_dir() -> PathBuf {
     data_dir().join("library")
 }
 
-/// `~/.local/share/kalam/library/<uuid>`
+/// How many bytes of a book folder name may come from the author and title.
+///
+/// Linux allows 255 bytes per name. The allowance below (author + title +
+/// separator + the short id suffix) stays far under that even when every
+/// character is three bytes of Bengali or Japanese, so a long translated
+/// title can never produce a folder the file system rejects.
+const FOLDER_PREFIX_MAX_BYTES: usize = 120;
+
+/// Build the human-readable folder name for a book.
+///
+/// Owner decision, 2026-09-29: a folder named only by a uuid tells you
+/// nothing when you browse your library with a file manager. Folders are
+/// now named `Author - Title <short-id>` (or `Title <short-id>` when there
+/// is no author). The uuid stays the book's key inside the database — the
+/// name is a label, and the app never parses it to find anything.
+///
+/// The short id is the first 8 characters of the uuid. It is kept at the
+/// end because author + title alone can collide (two editions, two books
+/// with the same name); eight hex characters make a collision practically
+/// impossible, and on the rare clash the folder gets the full uuid instead
+/// (see [`book_folder_name_full`]).
+pub fn book_folder_name(authors: &str, title: &str, uuid: &str) -> String {
+    folder_name_with_suffix(authors, title, uuid_suffix(uuid))
+}
+
+/// Same as [`book_folder_name`], but ending in the full uuid. Used when the
+/// short form would collide with a folder that already exists.
+pub fn book_folder_name_full(authors: &str, title: &str, uuid: &str) -> String {
+    folder_name_with_suffix(authors, title, uuid)
+}
+
+fn folder_name_with_suffix(authors: &str, title: &str, suffix: &str) -> String {
+    // "Unknown" is what the importer writes for PDFs and comics that carry
+    // no author. Treating it as no-author keeps those folders clean
+    // ("Nausicaä 3f2ab91c", not "Unknown - Nausicaä 3f2ab91c") — the owner
+    // picked exactly that shape for authorless books.
+    let authors = sanitize_folder_text(authors, 48);
+    let has_author = !authors.is_empty() && !authors.eq_ignore_ascii_case("unknown");
+
+    let title = sanitize_folder_text(title, 64);
+    let title = if title.is_empty() { "Untitled" } else { title.as_str() };
+
+    let prefix = if has_author {
+        format!("{authors} - {title}")
+    } else {
+        title.to_string()
+    };
+    // Leave room for " {suffix}" whatever the character widths, then cut on
+    // a character boundary so the name never ends mid-letter.
+    let room = FOLDER_PREFIX_MAX_BYTES.saturating_sub(suffix.len() + 1);
+    let prefix = truncate_bytes(&prefix, room);
+    format!("{prefix} {suffix}")
+}
+
+/// The short id used at the end of a folder name: the first 8 characters of
+/// the uuid, or the whole uuid when it is shorter.
+fn uuid_suffix(uuid: &str) -> &str {
+    uuid.get(0..8).unwrap_or(uuid)
+}
+
+/// Make a piece of metadata safe to use inside one folder name.
+///
+/// Removes `/` (the only character Linux forbids) and invisible control
+/// characters, collapses runs of whitespace to single spaces, drops leading
+/// dots (a leading dot would hide the folder in most file managers) and
+/// trailing dots and spaces, and caps the length in bytes. An empty result
+/// is returned as-is; callers decide their own fallback.
+fn sanitize_folder_text(raw: &str, max_bytes: usize) -> String {
+    let mut out = String::with_capacity(raw.len().min(max_bytes + 4));
+    let mut last_was_space = true; // also eats leading spaces
+    for ch in raw.chars() {
+        if ch.is_control() || ch == '/' {
+            continue;
+        }
+        if ch.is_whitespace() {
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
+            continue;
+        }
+        out.push(ch);
+        last_was_space = false;
+    }
+    let trimmed = out.trim_matches(['.', ' ']).to_string();
+    truncate_bytes(&trimmed, max_bytes)
+}
+
+/// Shorten to `max_bytes` without splitting a character. Standard library
+/// byte slicing panics mid-character, and a panic here would take the app
+/// down over a long book title.
+fn truncate_bytes(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.get(0..end).unwrap_or_default().to_string()
+}
+
+/// What the folder scan found: folder names by short id (8 hex characters)
+/// and by full uuid. Two maps because a folder name ends in one or the
+/// other, never both.
+#[derive(Default)]
+struct FolderIndex {
+    by_short_id: std::collections::HashMap<String, String>,
+    by_full_uuid: std::collections::HashMap<String, String>,
+}
+
+/// Folder names discovered so far, shared by every thread. Built once by
+/// the first `book_dir` call that needs it, then kept up to date by
+/// [`note_folder`] as books are imported and folders renamed.
+static FOLDER_INDEX: std::sync::OnceLock<std::sync::Mutex<Option<FolderIndex>>> =
+    std::sync::OnceLock::new();
+
+/// Where one book's files live.
+///
+/// Used to be `library/<uuid>` and nothing else. Now folders carry readable
+/// names (`library/Hayao Miyazaki - Nausicaä 3f2ab91c/`), so this resolves
+/// the uuid to the real folder name through an in-memory index — one scan
+/// of the library directory per app run, no disk access per lookup. That
+/// matters because the library grid asks for every book's file path at
+/// once, and a stat call per book is measurable on a spinning disk.
+///
+/// Resolution order:
+///
+/// 1. The in-memory index (covers readable names, old uuid names alike).
+/// 2. Fall back to `library/<uuid>` — the shape every folder had before
+///    this change, and still what a not-yet-imported uuid resolves to.
+///    Callers get the same "missing file" behaviour they always had.
 pub fn book_dir(uuid: &str) -> PathBuf {
-    library_dir().join(uuid)
+    let lib = library_dir();
+    match resolve_library_folder(uuid) {
+        Some(name) => lib.join(name),
+        None => lib.join(uuid),
+    }
+}
+
+/// Tell the resolver about a folder it should know: a freshly imported
+/// book, or a folder that was just renamed. Cheap and safe to skip — the
+/// next full scan (next app run) finds the folder anyway; this only keeps
+/// the current session from needing that.
+///
+/// Unlike the scan, this knows the uuid the folder belongs to, so it
+/// records the pair directly — no parsing, no ambiguity.
+pub fn note_folder(uuid: &str, folder_name: &str) {
+    let lock = FOLDER_INDEX.get_or_init(|| std::sync::Mutex::new(None));
+    let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(index) = guard.as_mut() {
+        index.by_full_uuid.insert(uuid.to_string(), folder_name.to_string());
+    }
+}
+
+/// Forget every discovered folder name. The next lookup rescans the library
+/// directory. Only needed when a rename happened that [`note_folder`] could
+/// not report — tests use it; production code paths all report.
+pub fn invalidate_folder_cache() {
+    if let Some(lock) = FOLDER_INDEX.get() {
+        *lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    }
+}
+
+fn resolve_library_folder(uuid: &str) -> Option<String> {
+    let lock = FOLDER_INDEX.get_or_init(|| std::sync::Mutex::new(None));
+    let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if guard.is_none() {
+        *guard = Some(scan_library_folders(&library_dir()));
+    }
+    let index = guard.as_ref()?;
+    if let Some(name) = index.by_full_uuid.get(uuid) {
+        return Some(name.clone());
+    }
+    index.by_short_id.get(uuid_suffix(uuid)).cloned()
+}
+
+/// Read the library directory once and index every folder that ends in an
+/// id we can resolve: either 8 hex characters (the normal short id) or a
+/// full uuid (the collision-avoiding form). Folders that end in neither —
+/// a user's own folders, anything foreign — are ignored, not an error.
+fn scan_library_folders(lib: &Path) -> FolderIndex {
+    let mut index = FolderIndex::default();
+    let Ok(entries) = fs::read_dir(lib) else {
+        return index;
+    };
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let Ok(name) = entry.file_name().into_string() else {
+            continue; // not valid UTF-8: cannot be one of ours
+        };
+        index_insert(&mut index, &name);
+    }
+    index
+}
+
+/// Add one folder name to the index if it ends in a resolvable id. When two
+/// different folders claim the same id, the id becomes ambiguous and is
+/// dropped: guessing between two books is worse than an honest miss.
+fn index_insert(index: &mut FolderIndex, folder_name: &str) {
+    let Some(id) = folder_name.rsplit(' ').next() else {
+        return;
+    };
+    let looks_like_full_uuid = id.len() == 36
+        && id.matches('-').count() == 4
+        && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    let looks_like_short_id = id.len() == 8 && id.chars().all(|c| c.is_ascii_hexdigit());
+
+    let (map, key) = if looks_like_full_uuid {
+        (&mut index.by_full_uuid, id)
+    } else if looks_like_short_id {
+        (&mut index.by_short_id, id)
+    } else {
+        return;
+    };
+    match map.get(key) {
+        Some(existing) if existing == folder_name => {} // already known
+        Some(_) => {
+            // Two folders, one id. Drop it rather than pick a winner.
+            log::debug!("ambiguous folder id {id:?}: {folder_name:?} vs another folder");
+            map.remove(key);
+        }
+        None => {
+            map.insert(key.to_string(), folder_name.to_string());
+        }
+    }
 }
 
 /// Extracted EPUB cache: `cache/reader/<uuid>`, the unzipped copy that
@@ -371,6 +596,23 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
 
+    /// A scratch library directory, unique per test so parallel tests
+    /// cannot see each other's folders.
+    ///
+    /// Placed above the first `#[test]`, like every helper in this repo:
+    /// the guardrail that counts production `.unwrap()`s suppresses the
+    /// whole `mod tests` only down to the first nested test item, so a
+    /// helper with an `.expect()` that sits between test functions would
+    /// be miscounted as production code.
+    fn scratch_library(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kalam-paths-test-{tag}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
     // These test `resolve_home` rather than `home_dir` on purpose: the
     // precedence is the part with logic in it, and driving it through
     // `std::env::set_var` would race every other test in the binary, since
@@ -416,5 +658,108 @@ mod tests {
             resolve_home(None).is_some(),
             "getpwuid_r returned no home for the current uid"
         );
+    }
+
+    #[test]
+    fn folder_scan_resolves_short_ids_and_legacy_uuids() {
+        let lib = scratch_library("scan");
+        let readable = "Hayao Miyazaki - Nausicaä 3f2ab91c";
+        let legacy = "9c8b7a65-4321-4321-8765-ba9876543210";
+        std::fs::create_dir_all(lib.join(readable)).expect("readable");
+        std::fs::create_dir_all(lib.join(legacy)).expect("legacy");
+
+        let index = scan_library_folders(&lib);
+        // The readable folder is found by the short id at its end.
+        assert_eq!(
+            index.by_short_id.get("3f2ab91c").map(String::as_str),
+            Some(readable)
+        );
+        // The old bare-uuid folder is found by its uuid.
+        assert_eq!(
+            index.by_full_uuid.get(legacy).map(String::as_str),
+            Some(legacy)
+        );
+
+        let _ = std::fs::remove_dir_all(&lib);
+    }
+
+    #[test]
+    fn folder_scan_ignores_folders_without_an_id() {
+        let lib = scratch_library("foreign");
+        std::fs::create_dir_all(lib.join("My Reading Notes")).expect("foreign");
+        std::fs::create_dir_all(lib.join("backup 2024")).expect("dated");
+        // A file, not a folder: skipped without being opened.
+        std::fs::write(lib.join("readme.txt"), b"x").expect("file");
+
+        let index = scan_library_folders(&lib);
+        assert!(index.by_short_id.is_empty());
+        assert!(index.by_full_uuid.is_empty());
+
+        let _ = std::fs::remove_dir_all(&lib);
+    }
+
+    #[test]
+    fn folder_scan_drops_ambiguous_ids_rather_than_guessing() {
+        let lib = scratch_library("ambiguous");
+        std::fs::create_dir_all(lib.join("Book One 3f2ab91c")).expect("one");
+        std::fs::create_dir_all(lib.join("Book Two 3f2ab91c")).expect("two");
+
+        let index = scan_library_folders(&lib);
+        // Two folders claim "3f2ab91c". Rather than silently picking one
+        // — which could hand one book another book's files — the id is
+        // dropped and the caller falls back to the plain uuid path.
+        assert!(!index.by_short_id.contains_key("3f2ab91c"));
+
+        let _ = std::fs::remove_dir_all(&lib);
+    }
+
+    #[test]
+    fn note_folder_and_invalidations_keep_the_index_honest() {
+        // index_insert is the whole logic behind note_folder; testing it
+        // directly keeps this test independent of the process-wide cache.
+        let mut index = FolderIndex::default();
+        index_insert(&mut index, "Author - Title 11112222");
+        assert_eq!(
+            index.by_short_id.get("11112222").map(String::as_str),
+            Some("Author - Title 11112222")
+        );
+        // Noting the same folder twice is harmless.
+        index_insert(&mut index, "Author - Title 11112222");
+        assert_eq!(index.by_short_id.len(), 1);
+        // A conflicting folder with the same id makes it ambiguous.
+        index_insert(&mut index, "Other Book 11112222");
+        assert!(!index.by_short_id.contains_key("11112222"));
+        // The full-uuid form is indexed separately and never conflicts
+        // with the short form.
+        index_insert(&mut index, "Author - Title 99998888-7777-4666-8555-444433332211");
+        assert!(index
+            .by_full_uuid
+            .contains_key("99998888-7777-4666-8555-444433332211"));
+    }
+
+    #[test]
+    fn sanitize_truncates_on_a_character_boundary() {
+        // Bengali characters are three bytes each. Cutting at a byte limit
+        // mid-character would panic on byte slicing, so the helper walks
+        // back to a boundary instead.
+        let long = "ঘ".repeat(60); // 180 bytes
+        let cut = sanitize_folder_text(&long, 50);
+        assert!(cut.len() <= 50, "cut is {} bytes", cut.len());
+        assert!(!cut.is_empty());
+        // Every remaining character is whole: re-encoding never panics.
+        assert_eq!(cut.chars().count() * 3, cut.len());
+
+        // Slashes, tabs, control characters and leading dots are cleaned.
+        let messy = sanitize_folder_text("  ../A\tB\u{1}/C  .. ", 100);
+        assert_eq!(messy, "A B C");
+    }
+
+    #[test]
+    fn uuid_short_suffix_handles_short_uuids_without_panicking() {
+        assert_eq!(uuid_suffix("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6"), "3f2ab91c");
+        // Shorter than eight characters (test fixtures use these): the
+        // whole thing is the suffix, and nothing panics.
+        assert_eq!(uuid_suffix("abc-123"), "abc-123");
+        assert_eq!(uuid_suffix(""), "");
     }
 }

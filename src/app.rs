@@ -1886,6 +1886,26 @@ fn start_housekeeping(catalog: &std::sync::Arc<crate::db::Catalog>) {
         },
     );
 
+    // Owner decision, 2026-09-29: book folders are named for their contents
+    // ("Author - Title <short-id>") instead of bare uuids. This pass is the
+    // one-time upgrade for an existing library and, after that, the keeper
+    // that renames a folder when its book's metadata was edited elsewhere
+    // or by an older version. Separate task, same reasoning as the two
+    // above: renames are instant, so it never holds up the covers.
+    let folder_catalog = catalog.clone();
+    crate::tasks::spawn_internal(
+        "Naming book folders",
+        move |reporter| crate::folders::align_book_folders(&folder_catalog, &reporter),
+        // Only interesting under KALAM_TIMING=1, and only when something
+        // actually moved: a steady-state run renames nothing.
+        |_update| {},
+        |renamed: usize| {
+            if renamed > 0 {
+                crate::timing::note("folders_renamed", renamed);
+            }
+        },
+    );
+
 }
 
 fn update_nav_styles(container: &gtk::Box, active: NavItem) {

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::{Catalog, ReadingBookmark};
-use crate::pdf::{is_top_level_title, PdfDocument, PdfPageText, PdfSearchResult, PdfTextRect, PdfTocEntry};
+use crate::pdf::{is_top_level_title, PdfDocument, PdfPageText, PdfSearchResult, PdfTocEntry};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PageSlot {
@@ -32,6 +32,8 @@ pub enum PageSlot {
     PagedSpreadLeft,
     PagedSpreadRight,
 }
+
+pub type PdfSearchHighlight = (PageSlot, usize, Vec<(f64, f64, f64, f64)>);
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -379,7 +381,7 @@ pub struct PdfReaderModel {
     pub search_popover: Option<gtk::Popover>,
     pub search_list_box: Option<gtk::ListBox>,
     pub search_popover_badge: Option<gtk::Label>,
-    pub search_highlight: std::rc::Rc<std::cell::RefCell<Option<(PageSlot, usize, Vec<(f64, f64, f64, f64)>)>>>,
+    pub search_highlight: std::rc::Rc<std::cell::RefCell<Option<PdfSearchHighlight>>>,
 }
 
 impl PdfReaderModel {

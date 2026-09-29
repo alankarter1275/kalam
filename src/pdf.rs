@@ -859,8 +859,7 @@ impl PdfDocument {
             // Find section / chapter title from TOC
             let section_title = toc
                 .iter()
-                .filter(|e| e.page <= page_num)
-                .last()
+                .rfind(|e| e.page <= page_num)
                 .map(|e| e.title.clone());
 
             let raw_text = self.extract_raw_text(page_num).unwrap_or_default();

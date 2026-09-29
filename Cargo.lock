@@ -2093,6 +2093,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "chapbook-core",
+ "chapbook-epub",
+ "chapbook-layout",
  "env_logger",
  "epub-builder",
  "flate2",

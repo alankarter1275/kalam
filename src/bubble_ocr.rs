@@ -284,10 +284,12 @@ pub fn bubble_ocr_page(
             &rgb,
             cw,
             ch,
-            cx0 as f32,
-            cy0 as f32,
-            scale_x,
-            scale_y,
+            &CropGeom {
+                ox: cx0 as f32,
+                oy: cy0 as f32,
+                scale_x,
+                scale_y,
+            },
         )?;
         // Lines in crop-detection order; reading order within a balloon is
         // strictly vertical.
@@ -322,18 +324,23 @@ pub fn bubble_ocr_page(
     })
 }
 
+/// Where a crop sits on the working image and how it scales back to
+/// original-page pixels.
+struct CropGeom {
+    ox: f32,
+    oy: f32,
+    scale_x: f32,
+    scale_y: f32,
+}
+
 /// Recognize the text lines in one RGB region, mapping coordinates to
-/// original-page pixels: `(ox, oy)` is the region's origin in working pixels,
-/// `scale_x`/`scale_y` convert working pixels to original pixels.
+/// original-page pixels via the crop geometry.
 fn recognize_lines(
     engine: &OcrEngine,
     rgb: &[u8],
     w: u32,
     h: u32,
-    ox: f32,
-    oy: f32,
-    scale_x: f32,
-    scale_y: f32,
+    geom: &CropGeom,
 ) -> Result<Vec<PdfTextLine>> {
     if w == 0 || h == 0 || rgb.is_empty() {
         return Ok(Vec::new());
@@ -361,28 +368,28 @@ fn recognize_lines(
         let mut chars = Vec::with_capacity(raw.len());
         let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
         for ch in raw {
-            let cx0 = ox + ch.rect.left() as f32;
-            let cy0 = oy + ch.rect.top() as f32;
-            let cx1 = ox + ch.rect.right() as f32;
-            let cy1 = oy + ch.rect.bottom() as f32;
+            let cx0 = geom.ox + ch.rect.left() as f32;
+            let cy0 = geom.oy + ch.rect.top() as f32;
+            let cx1 = geom.ox + ch.rect.right() as f32;
+            let cy1 = geom.oy + ch.rect.bottom() as f32;
             x0 = x0.min(cx0.min(cx1));
             y0 = y0.min(cy0.min(cy1));
             x1 = x1.max(cx0.max(cx1));
             y1 = y1.max(cy0.max(cy1));
             chars.push(crate::pdf::PdfTextChar {
                 ch: ch.char,
-                x0: cx0 * scale_x,
-                y0: cy0 * scale_y,
-                x1: cx1 * scale_x,
-                y1: cy1 * scale_y,
+                x0: cx0 * geom.scale_x,
+                y0: cy0 * geom.scale_y,
+                x1: cx1 * geom.scale_x,
+                y1: cy1 * geom.scale_y,
             });
         }
         lines.push(PdfTextLine {
             text: line.to_string(),
-            x0: x0 * scale_x,
-            y0: y0 * scale_y,
-            x1: x1 * scale_x,
-            y1: y1 * scale_y,
+            x0: x0 * geom.scale_x,
+            y0: y0 * geom.scale_y,
+            x1: x1 * geom.scale_x,
+            y1: y1 * geom.scale_y,
             chars,
         });
     }

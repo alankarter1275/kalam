@@ -258,6 +258,7 @@ pub struct ContentSearchSnapshot {
 #[derive(Debug, Default)]
 pub struct ContentIndexStatusSnapshot {
     pub status: crate::content_index::ContentIndexStatus,
+    #[allow(dead_code)]
     pub errors: Errors,
 }
 

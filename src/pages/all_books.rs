@@ -553,6 +553,9 @@ impl Component for AllBooksModel {
                 }
             }
             AllBooksMsg::IndexStatusLoaded(snap) => {
+                if let Some(err) = snap.errors.first() {
+                    self.status = format!("Index status error: {err}");
+                }
                 self.index_status = snap.status;
             }
             AllBooksMsg::TriggerIndexLibrary => {

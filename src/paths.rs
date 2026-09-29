@@ -133,11 +133,13 @@ fn uuid_suffix(uuid: &str) -> &str {
 
 /// Make a piece of metadata safe to use inside one folder name.
 ///
-/// Removes `/` (the only character Linux forbids) and invisible control
-/// characters, collapses runs of whitespace to single spaces, drops leading
-/// dots (a leading dot would hide the folder in most file managers) and
-/// trailing dots and spaces, and caps the length in bytes. An empty result
-/// is returned as-is; callers decide their own fallback.
+/// Turns whitespace runs, `/` (the one character Linux forbids) and
+/// invisible control characters into single spaces — a separator most
+/// likely stood where they were, and dropping it would glue two words
+/// together ("A/B" becoming "AB"). Drops leading dots (a leading dot would
+/// hide the folder in most file managers) and trailing dots and spaces,
+/// and caps the length in bytes. An empty result is returned as-is;
+/// callers decide their own fallback.
 fn sanitize_folder_text(raw: &str, max_bytes: usize) -> String {
     let mut out = String::with_capacity(raw.len().min(max_bytes + 4));
     let mut last_was_space = true; // also eats leading spaces
@@ -153,6 +155,12 @@ fn sanitize_folder_text(raw: &str, max_bytes: usize) -> String {
             continue;
         }
         if ch.is_control() || ch == '/' {
+            // Same reasoning as above, one step further: the character
+            // goes, the word break it stood for stays.
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
             continue;
         }
         out.push(ch);

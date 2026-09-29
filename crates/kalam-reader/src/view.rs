@@ -152,6 +152,7 @@ pub struct SelectedText {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchResult {
     pub chapter: usize,
+    pub chapter_title: Option<String>,
     pub char_offset: u32,
     pub snippet: String,
     pub locator: LayeredLocator,
@@ -970,7 +971,7 @@ impl ReaderView {
     /// Search for text across every chapter in the book.
     pub fn search(&self, query: &str) -> Vec<SearchResult> {
         let query_trimmed = query.trim();
-        if query_trimmed.is_empty() {
+        if query_trimmed.chars().count() < 2 {
             return Vec::new();
         }
         let s = self.inner.session.borrow();
@@ -978,23 +979,34 @@ impl ReaderView {
         let chapter_count = s.spine_len();
         let mut results = Vec::new();
 
+        // Map chapter index to friendly TOC title if available
+        let mut chapter_titles: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+        fn collect_toc_titles(entries: &[chapbook_core::TocEntry], map: &mut std::collections::HashMap<usize, String>) {
+            for e in entries {
+                map.entry(e.spine_index).or_insert_with(|| e.title.clone());
+                collect_toc_titles(&e.children, map);
+            }
+        }
+        collect_toc_titles(s.toc(), &mut chapter_titles);
+
         for spine in 0..chapter_count {
+            if results.len() >= 500 {
+                break;
+            }
             if let Some(text) = s.cached_unit_text(spine) {
                 let text_lower = text.to_lowercase();
 
                 // Collect chars **once per chapter**, outside the match loop.
-                // Previously `text.chars().collect()` was called inside the
-                // `match_indices` loop — 100 matches of "the" in a long chapter
-                // meant 100 full heap allocations of the chapter's characters.
                 let chars: Vec<char> = text.chars().collect();
 
                 // Compute match length once per query (it is constant).
                 let match_len = query_trimmed.chars().count() as u32;
+                let ch_title = chapter_titles.get(&spine).cloned();
 
                 for (byte_idx, _) in text_lower.match_indices(&query_lower) {
-                    // `text[..byte_idx].chars().count()` is still O(N) per match
-                    // but is the standard correct approach for byte→char conversion
-                    // when the text is already cached in memory.
+                    if results.len() >= 500 {
+                        break;
+                    }
                     let char_offset = text[..byte_idx].chars().count() as u32;
                     let end_offset = char_offset + match_len;
 
@@ -1019,6 +1031,7 @@ impl ReaderView {
 
                     results.push(SearchResult {
                         chapter: spine,
+                        chapter_title: ch_title.clone(),
                         char_offset,
                         snippet: snippet_chars,
                         locator,

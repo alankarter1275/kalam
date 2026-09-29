@@ -1326,13 +1326,20 @@ rebuilt after Phase 3 changes them.
 
 **Work:**
 
-- **Library-wide full-text search** with `tantivy`. 10–20 ms queries across
-  the whole library for character names, quotes or themes. `tantivy` is not
-  currently a dependency.
-- **Extend in-book search.** Find-in-chapter already works —
-  `ReaderView::search` is wired at `src/pages/reader/mod.rs:1161` behind
-  Ctrl+F. This adds live match counting and next/previous across the whole
-  book.
+- **Step 1: Whole-Book In-Reader Search (EPUB & PDF)**:
+  - Floating search bar revealer (`Ctrl+F` toggle, Esc to close, and dock search icon).
+  - Live match count (`Match X of Y` or `0 matches`), updating instantaneously as the user types.
+  - Smooth chapter/page jumping via Next/Prev (`Enter` / `Shift+Enter` and Up/Down navigation buttons).
+  - Soft golden glow search match highlight (`rgba(244, 211, 94, 0.50)` with golden border outline) that appears over active matches and disappears cleanly on close.
+  - "Matches at a Glance" snippet dropdown popover anchored to the match count chip:
+    - Lists search result snippets with chapter/page headers.
+    - Highlights matching search terms in bold warm amber.
+    - One-click direct jumping to any match in the book.
+  - Full parity across both EPUB reader and MuPDF-native PDF reader.
+- **Step 2: Library-Wide Full-Text Deep Search with Tantivy**:
+  - Full-text search engine index across all books (EPUB, PDF, Comics OCR dialogue).
+  - Search toggle pill in Library view: Title/Author vs. Book Content.
+  - 10–20 ms queries returning matching books with excerpt snippets and direct jump.
 
 **Done when:** a search for a character's name returns the right books in
 under 100 ms on a library of a few thousand books, and rebuilding the index

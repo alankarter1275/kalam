@@ -927,6 +927,49 @@ shows up as its own task in the task manager.
 
 ---
 
+### T52 — Whole-Book In-Reader Search & "Matches at a Glance" Popover (EPUB & PDF)
+
+**What to test:**
+Find-in-book whole-book search, live match counts, soft golden glow highlight, Next/Previous jumping, and the "Matches at a Glance" snippet dropdown popover in both EPUB and PDF readers.
+
+**Do (EPUB Reader):**
+1. Open any EPUB book in Kalam.
+2. Press `Ctrl+F` (or click the search magnifying glass icon in the top-left floating dock).
+3. Verify the floating search bar smoothly reveals in the top-right corner and automatically focuses the search entry.
+4. Type a query (e.g. "Alice" or a common word):
+   - Notice the live match count badge (e.g. `1 of 24 ▾`).
+   - Notice the current match in the text is highlighted with a soft golden glow.
+5. Press `Enter` (or click the Down arrow button): verify it navigates to match 2, 3, etc., smoothly turning chapters as needed.
+6. Press `Shift+Enter` (or click the Up arrow button): verify it navigates back to previous matches.
+7. Click the match count chip (e.g. `1 of 24 ▾`):
+   - Verify the "Matches at a Glance" popover opens below the bar.
+   - Verify it shows chapter headers, match numbers (`#1`, `#2`), and excerpt snippets with the search query highlighted.
+8. Click any snippet row in the popover:
+   - Verify the reader immediately jumps to that match and centers it.
+   - Verify the popover closes cleanly.
+9. Press `Esc`: verify the search bar closes and the golden search highlight is cleared.
+
+**Do (PDF Reader):**
+1. Open any PDF document in Kalam.
+2. Press `Ctrl+F` (or click the search magnifying glass icon in the top-left floating dock).
+3. Verify the search bar smoothly slides down in the top-right corner.
+4. Type a query matching text in the PDF:
+   - Verify live match count updates (e.g. `1 of 8 ▾`).
+   - Verify the PDF jumps to the matching page, and the text is highlighted in soft golden glow with a fine border.
+5. Press `Enter` to cycle through matches across multiple pages.
+6. Click the match count chip: verify the "Matches at a Glance" popover lists snippets with `Page X · Section Title`.
+7. Click a snippet row: verify the PDF jumps directly to that page and highlights the text.
+8. Press `Esc`: verify the search bar closes and search highlights disappear.
+
+**Look for:**
+1. Zero lag during live typing; match count updates instantly.
+2. Next/Prev cycles smoothly across all chapters and pages.
+3. Soft golden glow is distinct from blue selection and does not disrupt reading.
+4. "Matches at a Glance" snippets display readable context with clear bold/amber query terms.
+5. `Esc` key cleanly closes search without exiting the reader.
+
+---
+
 ## At the end
 
 Send me whatever you have, in this shape:

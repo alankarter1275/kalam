@@ -215,6 +215,13 @@ impl Component for ReaderModel {
                     },
 
                     gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("edit-find-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Search in book (Ctrl+F)"),
+                        connect_clicked => ReaderMsg::ToggleSearch,
+                    },
+
+                    gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes("window-minimize-symbolic", 16, &["kalam-inline-icon"])),
                         add_css_class: "kalam-reader-back",
                         set_tooltip_text: Some("Minimize to Bubble"),
@@ -472,16 +479,32 @@ impl Component for ReaderModel {
                         },
                     },
 
-                    #[name = "search_count_label"]
-                    gtk::Label {
-                        add_css_class: "kalam-reader-search-count",
-                        #[watch]
-                        set_label: &if model.search_query.is_empty() {
-                            String::new()
-                        } else if model.search_results.is_empty() {
-                            "0 matches".to_string()
-                        } else {
-                            format!("{} of {}", model.search_index + 1, model.search_results.len())
+                    #[name = "search_count_btn"]
+                    gtk::MenuButton {
+                        add_css_class: "kalam-reader-search-count-btn",
+                        set_tooltip_text: Some("Matches at a glance"),
+                        #[wrap(Some)]
+                        set_child = &gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 4,
+
+                            #[name = "search_count_label"]
+                            gtk::Label {
+                                add_css_class: "kalam-reader-search-count",
+                                #[watch]
+                                set_label: &if model.search_query.is_empty() {
+                                    String::new()
+                                } else if model.search_results.is_empty() {
+                                    "0 matches".to_string()
+                                } else {
+                                    format!("{} of {}", model.search_index + 1, model.search_results.len())
+                                },
+                            },
+
+                            gtk::Label {
+                                add_css_class: "kalam-reader-search-chevron",
+                                set_label: "▾",
+                            },
                         },
                     },
 
@@ -950,6 +973,9 @@ impl Component for ReaderModel {
             search_query: String::new(),
             search_results: Vec::new(),
             search_index: 0,
+            search_popover: None,
+            search_list_box: None,
+            search_popover_badge: None,
             lightbox_active: false,
             lightbox_popover: None,
             lightbox_pixbuf: None,
@@ -1269,6 +1295,31 @@ impl Component for ReaderModel {
             &sender,
         );
 
+        let (search_pop, search_lb, search_badge) = build_search_snippets_popover();
+        widgets.search_count_btn.set_popover(Some(&search_pop));
+        model.search_popover = Some(search_pop);
+        model.search_list_box = Some(search_lb);
+        model.search_popover_badge = Some(search_badge);
+
+        let entry_key = gtk::EventControllerKey::new();
+        let s_entry = sender.clone();
+        entry_key.connect_key_pressed(move |_, keyval, _code, state| {
+            if keyval == gtk::gdk::Key::Return || keyval == gtk::gdk::Key::KP_Enter {
+                if state.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+                    s_entry.input(ReaderMsg::PrevSearchResult);
+                } else {
+                    s_entry.input(ReaderMsg::NextSearchResult);
+                }
+                gtk::glib::Propagation::Stop
+            } else if keyval == gtk::gdk::Key::Escape {
+                s_entry.input(ReaderMsg::CloseSearch);
+                gtk::glib::Propagation::Stop
+            } else {
+                gtk::glib::Propagation::Proceed
+            }
+        });
+        widgets.search_entry.add_controller(entry_key);
+
         ComponentParts { model, widgets }
     }
 
@@ -1304,6 +1355,9 @@ impl Component for ReaderModel {
                             w.grab_focus();
                         });
                     }
+                    if let Some(popover) = &self.search_popover {
+                        popover.popdown();
+                    }
                 } else {
                     let entry = widgets.search_entry.clone();
                     gtk::glib::idle_add_local_once(move || {
@@ -1321,11 +1375,13 @@ impl Component for ReaderModel {
                     self.search_results.clear();
                 }
                 self.highlight_current_search_match();
+                self.update_search_snippets_popover(&sender);
             }
             ReaderMsg::NextSearchResult => {
                 if !self.search_results.is_empty() {
                     self.search_index = (self.search_index + 1) % self.search_results.len();
                     self.highlight_current_search_match();
+                    self.update_search_snippets_popover(&sender);
                 }
             }
             ReaderMsg::PrevSearchResult => {
@@ -1336,6 +1392,17 @@ impl Component for ReaderModel {
                         self.search_index -= 1;
                     }
                     self.highlight_current_search_match();
+                    self.update_search_snippets_popover(&sender);
+                }
+            }
+            ReaderMsg::JumpToSearchResult(idx) => {
+                if idx < self.search_results.len() {
+                    self.search_index = idx;
+                    self.highlight_current_search_match();
+                    self.update_search_snippets_popover(&sender);
+                    if let Some(popover) = &self.search_popover {
+                        popover.popdown();
+                    }
                 }
             }
             ReaderMsg::CloseSearch => {
@@ -1350,6 +1417,9 @@ impl Component for ReaderModel {
                     glib::idle_add_local_once(move || {
                         w.grab_focus();
                     });
+                }
+                if let Some(popover) = &self.search_popover {
+                    popover.popdown();
                 }
             }
             ReaderMsg::OpenImageLightbox(w, h, bytes) => {
@@ -2637,6 +2707,87 @@ impl ReaderModel {
         view.goto_locator(&res.locator, true);
     }
 
+    fn update_search_snippets_popover(&self, sender: &ComponentSender<Self>) {
+        let Some(ref list_box) = self.search_list_box else { return };
+        let Some(ref badge_lbl) = self.search_popover_badge else { return };
+
+        while let Some(child) = list_box.first_child() {
+            list_box.remove(&child);
+        }
+
+        let total = self.search_results.len();
+        if total == 0 {
+            badge_lbl.set_label("0 matches");
+            let empty_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            empty_box.set_margin_all(20);
+            empty_box.set_halign(gtk::Align::Center);
+
+            let empty_lbl = gtk::Label::new(Some(if self.search_query.trim().is_empty() {
+                "Type to search across the entire book"
+            } else {
+                "No matches found"
+            }));
+            empty_lbl.add_css_class("kalam-search-popover-badge");
+            empty_box.append(&empty_lbl);
+            list_box.append(&empty_box);
+            return;
+        }
+
+        badge_lbl.set_label(&format!("{} matches", total));
+
+        let display_limit = 100.min(total);
+        for idx in 0..display_limit {
+            let res = &self.search_results[idx];
+            let row = gtk::Box::new(gtk::Orientation::Vertical, 3);
+            row.add_css_class("kalam-search-snippet-row");
+            if idx == self.search_index {
+                row.add_css_class("active");
+            }
+
+            let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            let ch_title = res.chapter_title.clone().unwrap_or_else(|| format!("Chapter {}", res.chapter + 1));
+            let ch_label = gtk::Label::new(Some(&ch_title));
+            ch_label.add_css_class("kalam-search-snippet-chapter");
+            ch_label.set_hexpand(true);
+            ch_label.set_halign(gtk::Align::Start);
+            ch_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+
+            let idx_label = gtk::Label::new(Some(&format!("#{}", idx + 1)));
+            idx_label.add_css_class("kalam-search-snippet-index");
+
+            top_row.append(&ch_label);
+            top_row.append(&idx_label);
+
+            let text_label = gtk::Label::new(None);
+            text_label.add_css_class("kalam-search-snippet-text");
+            text_label.set_use_markup(true);
+            text_label.set_markup(&format_search_snippet(&res.snippet, &self.search_query));
+            text_label.set_wrap(true);
+            text_label.set_wrap_mode(gtk::pango::WrapMode::Word);
+            text_label.set_halign(gtk::Align::Start);
+            text_label.set_xalign(0.0);
+
+            row.append(&top_row);
+            row.append(&text_label);
+
+            let gesture = gtk::GestureClick::new();
+            let s = sender.clone();
+            gesture.connect_released(move |_, _, _, _| {
+                s.input(ReaderMsg::JumpToSearchResult(idx));
+            });
+            row.add_controller(gesture);
+
+            list_box.append(&row);
+        }
+
+        if total > display_limit {
+            let more_lbl = gtk::Label::new(Some(&format!("+ {} more matches (use Next/Prev)", total - display_limit)));
+            more_lbl.add_css_class("kalam-search-snippet-index");
+            more_lbl.set_margin_all(8);
+            list_box.append(&more_lbl);
+        }
+    }
+
     pub(crate) fn schedule_back_auto_hide(&mut self, sender: ComponentSender<Self>) {
         if let Some(timer) = self.back_hide_timer.take() {
             timer.remove();
@@ -2729,4 +2880,69 @@ fn toc_title(entries: &[kalam_reader::TocEntry], spine: usize) -> Option<String>
         }
     }
     None
+}
+
+fn format_search_snippet(snippet: &str, query: &str) -> String {
+    let query_lower = query.trim().to_lowercase();
+    let snippet_lower = snippet.to_lowercase();
+    if query_lower.is_empty() {
+        return glib::markup_escape_text(snippet).to_string();
+    }
+    if let Some(idx) = snippet_lower.find(&query_lower) {
+        let prefix = &snippet[..idx];
+        let matched = &snippet[idx..idx + query.trim().len().min(snippet.len() - idx)];
+        let suffix = &snippet[(idx + matched.len()).min(snippet.len())..];
+        format!(
+            "{}<span weight=\"bold\" foreground=\"#d97706\" background=\"rgba(244, 211, 94, 0.28)\">{}</span>{}",
+            glib::markup_escape_text(prefix),
+            glib::markup_escape_text(matched),
+            glib::markup_escape_text(suffix)
+        )
+    } else {
+        glib::markup_escape_text(snippet).to_string()
+    }
+}
+
+fn build_search_snippets_popover() -> (gtk::Popover, gtk::ListBox, gtk::Label) {
+    let popover = gtk::Popover::new();
+    popover.add_css_class("kalam-search-snippet-popover");
+    popover.set_has_arrow(true);
+    popover.set_position(gtk::PositionType::Bottom);
+
+    let content_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content_box.set_width_request(340);
+
+    let header_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    header_box.add_css_class("kalam-search-popover-header");
+
+    let title_lbl = gtk::Label::new(Some("Matches at a Glance"));
+    title_lbl.add_css_class("kalam-search-popover-title");
+    title_lbl.set_hexpand(true);
+    title_lbl.set_halign(gtk::Align::Start);
+
+    let badge_lbl = gtk::Label::new(Some("0 matches"));
+    badge_lbl.add_css_class("kalam-search-popover-badge");
+
+    header_box.append(&title_lbl);
+    header_box.append(&badge_lbl);
+    content_box.append(&header_box);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .max_content_height(340)
+        .propagate_natural_height(true)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+
+    let list_box = gtk::ListBox::new();
+    list_box.set_selection_mode(gtk::SelectionMode::None);
+    list_box.add_css_class("kalam-search-popover-list");
+    scroll.set_child(Some(&list_box));
+
+    content_box.append(&scroll);
+    popover.set_child(Some(&content_box));
+
+    (popover, list_box, badge_lbl)
 }

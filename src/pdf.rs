@@ -631,6 +631,16 @@ pub struct PdfTocEntry {
     pub depth: usize,
 }
 
+/// A match result from searching text across a PDF document.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfSearchResult {
+    pub page: usize,
+    pub section_title: Option<String>,
+    pub snippet: String,
+    pub match_text: String,
+    pub rects: Vec<PdfTextRect>,
+}
+
 /// Raw RGBA rasterized page buffer.
 #[derive(Clone, Debug)]
 pub struct RenderedPage {
@@ -788,6 +798,116 @@ impl PdfDocument {
             }
         }
         Ok(entries)
+    }
+
+    /// Search for text on a page (1-indexed). Returns bounding rects (x0, y0, x1, y1) in document points.
+    pub fn search_page(&self, page_num: usize, needle: &str, hit_max: u32) -> Result<Vec<PdfTextRect>> {
+        if page_num == 0 || page_num > self.page_count {
+            return Err(anyhow!("Page number {} out of range", page_num));
+        }
+
+        let page = self
+            .doc
+            .load_page((page_num - 1) as i32)
+            .map_err(|e| anyhow!("Failed to load page {}: {}", page_num, e))?;
+
+        let quads = page
+            .search(needle, hit_max)
+            .map_err(|e| anyhow!("Failed to search page {}: {}", page_num, e))?;
+
+        let rects = quads
+            .iter()
+            .map(|q| {
+                let x0 = q.ul.x.min(q.ur.x).min(q.ll.x).min(q.lr.x);
+                let y0 = q.ul.y.min(q.ur.y).min(q.ll.y).min(q.lr.y);
+                let x1 = q.ul.x.max(q.ur.x).max(q.ll.x).max(q.lr.x);
+                let y1 = q.ul.y.max(q.ur.y).max(q.ll.y).max(q.lr.y);
+                (x0, y0, x1, y1)
+            })
+            .collect();
+
+        Ok(rects)
+    }
+
+    /// Search for text across every page in the PDF document.
+    pub fn search_document(
+        &self,
+        needle: &str,
+        toc: &[PdfTocEntry],
+        max_matches: usize,
+    ) -> Vec<PdfSearchResult> {
+        let needle_trimmed = needle.trim();
+        if needle_trimmed.chars().count() < 2 {
+            return Vec::new();
+        }
+        let needle_lower = needle_trimmed.to_lowercase();
+        let needle_len = needle_trimmed.chars().count();
+        let mut results = Vec::new();
+
+        for page_num in 1..=self.page_count {
+            if results.len() >= max_matches {
+                break;
+            }
+
+            let Ok(rects) = self.search_page(page_num, needle_trimmed, 50) else {
+                continue;
+            };
+            if rects.is_empty() {
+                continue;
+            }
+
+            // Find section / chapter title from TOC
+            let section_title = toc
+                .iter()
+                .filter(|e| e.page <= page_num)
+                .last()
+                .map(|e| e.title.clone());
+
+            let raw_text = self.extract_raw_text(page_num).unwrap_or_default();
+            let raw_lower = raw_text.to_lowercase();
+            let chars: Vec<char> = raw_text.chars().collect();
+
+            let mut match_indices = Vec::new();
+            for (byte_idx, _) in raw_lower.match_indices(&needle_lower) {
+                let char_idx = raw_text[..byte_idx].chars().count();
+                match_indices.push(char_idx);
+                if results.len() + match_indices.len() >= max_matches {
+                    break;
+                }
+            }
+
+            if match_indices.is_empty() {
+                results.push(PdfSearchResult {
+                    page: page_num,
+                    section_title,
+                    snippet: needle_trimmed.to_string(),
+                    match_text: needle_trimmed.to_string(),
+                    rects,
+                });
+            } else {
+                for (i, &char_idx) in match_indices.iter().enumerate() {
+                    let start_char = char_idx.saturating_sub(30);
+                    let end_char = (char_idx + needle_len + 40).min(chars.len());
+                    let snippet: String = chars[start_char..end_char].iter().collect();
+
+                    let r = if i < rects.len() {
+                        vec![rects[i]]
+                    } else {
+                        rects.clone()
+                    };
+
+                    results.push(PdfSearchResult {
+                        page: page_num,
+                        section_title: section_title.clone(),
+                        snippet,
+                        match_text: needle_trimmed.to_string(),
+                        rects: r,
+                    });
+                }
+            }
+        }
+
+        results
     }
 
     /// Whether this page carries visual content.

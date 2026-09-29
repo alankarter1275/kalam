@@ -238,6 +238,7 @@ pub enum ReaderMsg {
     UpdateSearchQuery(String),
     NextSearchResult,
     PrevSearchResult,
+    JumpToSearchResult(usize),
     CloseSearch,
     OpenImageLightbox(u32, u32, Vec<u8>),
     CloseImageLightbox,

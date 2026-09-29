@@ -4555,3 +4555,133 @@ popover.kalam-reader-dict-popover > contents {
 .k-bubble-pane-focused {
     border: 1px solid alpha(@kalam_accent, 0.4);
 }
+
+/* ── Whole-Book In-Reader Search Bar & Highlights ─────────────── */
+
+.kalam-reader-search-shell {
+    transition: all 200ms ease;
+}
+
+.kalam-reader-search-bar {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 5px 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+}
+
+.kalam-reader-search-btn {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: @kalam_text;
+    transition: background-color 150ms ease, color 150ms ease;
+}
+
+.kalam-reader-search-btn:hover {
+    background: @kalam_hover;
+    color: @kalam_text_bright;
+}
+
+.kalam-reader-search-count-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 2px 8px;
+    margin: 0 2px;
+    color: @kalam_text_dim;
+    transition: all 150ms ease;
+}
+
+.kalam-reader-search-count-btn:hover {
+    background: @kalam_hover;
+    border-color: @kalam_border;
+    color: @kalam_text_bright;
+}
+
+.kalam-reader-search-count {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: inherit;
+}
+
+.kalam-reader-search-chevron {
+    font-size: 0.7rem;
+    opacity: 0.7;
+    margin-left: 4px;
+}
+
+/* ── "Matches at a Glance" Popover ────────────────────────────── */
+
+.kalam-search-snippet-popover {
+    border-radius: 12px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+    padding: 0;
+}
+
+.kalam-search-snippet-popover contents {
+    padding: 8px;
+    background: @kalam_surface;
+}
+
+.kalam-search-popover-header {
+    padding: 6px 10px 8px 10px;
+    border-bottom: 1px solid @kalam_border;
+    margin-bottom: 4px;
+}
+
+.kalam-search-popover-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: @kalam_text_bright;
+}
+
+.kalam-search-popover-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: @kalam_text_dim;
+    background: @kalam_bg;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.kalam-search-snippet-row {
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    background: transparent;
+    border: 1px solid transparent;
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.kalam-search-snippet-row:hover {
+    background: @kalam_hover;
+    border-color: @kalam_border;
+}
+
+.kalam-search-snippet-row.active {
+    background: rgba(244, 211, 94, 0.12);
+    border-color: rgba(244, 211, 94, 0.35);
+}
+
+.kalam-search-snippet-chapter {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: @kalam_text_dim;
+}
+
+.kalam-search-snippet-index {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: @kalam_text_dim;
+}
+
+.kalam-search-snippet-text {
+    font-size: 0.80rem;
+    line-height: 1.35;
+    color: @kalam_text;
+    margin-top: 2px;
+}

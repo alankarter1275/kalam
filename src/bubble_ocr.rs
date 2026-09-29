@@ -441,6 +441,11 @@ pub enum CropPrep {
     /// Grayscale, then stretch the crop's own 2nd–98th percentile luminance
     /// range to full black–white. Faded print is grey on off-white; the
     /// stretch turns it back into black on white, one balloon at a time.
+    ///
+    /// Constructed only by the 2.16 experiment probe: the shipped default
+    /// is `None` until the probe shows the stretch finds words the plain
+    /// pipeline misses without losing any it finds.
+    #[allow(dead_code)]
     GrayscaleContrast,
 }
 
@@ -453,7 +458,7 @@ fn grayscale_contrast_stretch(rgb: &[u8]) -> Vec<u8> {
     let n = rgb.len() / 3;
     let mut hist = [0u32; 256];
     let mut luma = Vec::with_capacity(n);
-    for px in rgb.chunks_exact(3) {
+    for px in rgb.as_chunks::<3>().0 {
         let y = (u32::from(px[0]) * 299 + u32::from(px[1]) * 587 + u32::from(px[2]) * 114) / 1000;
         let y = y.min(255) as u8;
         hist[y as usize] += 1;
@@ -1239,7 +1244,7 @@ mod tests {
         }
         let out = grayscale_contrast_stretch(&rgb);
         assert_eq!(out.len(), rgb.len());
-        let luma: Vec<u8> = out.chunks_exact(3).map(|p| p[0]).collect();
+        let luma: Vec<u8> = out.as_chunks::<3>().0.iter().map(|p| p[0]).collect();
         // The faded text (luma 116) becomes black, the fill (luma 233) white.
         assert_eq!(luma.iter().filter(|&&v| v == 0).count(), 20);
         assert_eq!(luma.iter().filter(|&&v| v == 255).count(), 180);
@@ -1255,7 +1260,7 @@ mod tests {
             rgb.extend_from_slice(&[20, 20, 20]);
         }
         let out = grayscale_contrast_stretch(&rgb);
-        let luma: Vec<u8> = out.chunks_exact(3).map(|p| p[0]).collect();
+        let luma: Vec<u8> = out.as_chunks::<3>().0.iter().map(|p| p[0]).collect();
         assert_eq!(luma.iter().filter(|&&v| v == 0).count(), 10);
         assert_eq!(luma.iter().filter(|&&v| v == 255).count(), 90);
     }

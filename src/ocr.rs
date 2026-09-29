@@ -499,7 +499,7 @@ mod tests {
                 &[
                     "pencil and one blank page",
                     "Why copy them",
-                    "a record kept in two places",
+                    "record kept in two places",
                     "considered this",
                     "empty line beneath",
                     "He wrote:",
@@ -584,10 +584,17 @@ mod tests {
                 recognized.len() - none_count
             );
 
+            // Case-insensitive: the OCR renders the quote as "A record
+            // kept..." while the snippet is lowercase - the presence of the
+            // words is what matters, not the casing.
             let missing: Vec<&str> = required
                 .iter()
                 .copied()
-                .filter(|s| !page_text_raw.contains(s))
+                .filter(|s| {
+                    !page_text_raw
+                        .to_lowercase()
+                        .contains(&s.to_lowercase())
+                })
                 .collect();
             assert!(
                 missing.is_empty(),

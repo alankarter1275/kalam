@@ -16,13 +16,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/bubble_ocr.rs:444:5: [1m[91merror[0m: variant `GrayscaleContrast` is never constructed
-src/bubble_ocr.rs:456:19: [1m[91merror[0m: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
-src/bubble_ocr.rs:1242:33: [1m[91merror[0m: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0.iter()`
-src/bubble_ocr.rs:1258:33: [1m[91merror[0m: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0.iter()`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 12.03s

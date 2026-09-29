@@ -258,6 +258,23 @@ pub fn perform_ocr_rgba(
         });
     }
 
+    // The line grouper emits lines in detection order, which is usually but
+    // not always reading order: a line it split into two groups can arrive
+    // after the lines visually below it (the scanned-fixture probe showed a
+    // paragraph line landing at the end of the array). Selection walks a
+    // contiguous index range (`start_idx..=end_idx` in `select_between`), so
+    // any out-of-order line falls outside the range and silently vanishes
+    // from the selection and the copied text. Put the lines in visual
+    // reading order: top-to-bottom, left-to-right for lines sharing a row.
+    // (The embedded-text path is deliberately not sorted: MuPDF already
+    // orders structured blocks sensibly, and re-sorting would interleave the
+    // columns of a two-column page.)
+    lines.sort_by(|a, b| {
+        a.y0
+            .total_cmp(&b.y0)
+            .then_with(|| a.x0.total_cmp(&b.x0))
+    });
+
     Ok(PdfPageText {
         page_num,
         width_pts: dest_width,
@@ -569,11 +586,11 @@ mod tests {
                 .copied()
                 .filter(|s| !page_text_raw.contains(s))
                 .collect();
-            if missing.is_empty() {
-                println!("page {page}: all expected snippets present in OCR output");
-            } else {
-                println!("page {page}: MISSING FROM OCR OUTPUT: {missing:?}");
-            }
+            assert!(
+                missing.is_empty(),
+                "page {page}: OCR output missing expected snippets {missing:?}"
+            );
+            println!("page {page}: all expected snippets present in OCR output");
 
             // --- 2. The reader's real PdfPageText, via perform_ocr_rgba ---
             let page_text = perform_ocr_rgba(&engine, rgba.as_raw(), w, h, *page, W_PT, H_PT)
@@ -597,18 +614,55 @@ mod tests {
                 full_sel.chars().count(),
                 full_rects.len()
             );
+            let mut unselectable: Vec<usize> = Vec::new();
             for (i, l) in page_text.lines.iter().enumerate() {
                 let mid_y = ((l.y0 + l.y1) * 0.5).clamp(0.0, H_PT);
                 let x_start = l.x0 + 2.0;
                 let x_end = (l.x1 - 2.0).max(x_start + 1.0);
                 let (sel, rects) = page_text.select_between((x_start, mid_y), (x_end, mid_y));
                 let status = if rects.is_empty() || sel.is_empty() {
+                    unselectable.push(i);
                     "UNSELECTABLE"
                 } else {
                     "ok"
                 };
                 let preview: String = sel.chars().take(60).collect();
                 println!("  drag line {i:2}: {status:12} -> {preview}");
+            }
+            assert!(
+                unselectable.is_empty(),
+                "page {page}: lines {unselectable:?} cannot be selected by dragging across them"
+            );
+
+            // --- 4. Reading-order regression (prose pages 1-4): dragging
+            // from the first line down to any later line must include every
+            // line visually between them. The original bug was OCR lines
+            // arriving out of reading order and falling outside the index
+            // range select_between walks, silently vanishing from copies. ---
+            if *page <= 4 && !page_text.lines.is_empty() {
+                let first = &page_text.lines[0];
+                let p0 = (
+                    first.x0 + 2.0,
+                    ((first.y0 + first.y1) * 0.5).clamp(0.0, H_PT),
+                );
+                for i in 1..page_text.lines.len() {
+                    let l = &page_text.lines[i];
+                    let mid_y = ((l.y0 + l.y1) * 0.5).clamp(0.0, H_PT);
+                    let p1 = ((l.x1 - 2.0).max(l.x0 + 1.0), mid_y);
+                    let (sel, _) = page_text.select_between(p0, p1);
+                    for j in 1..i {
+                        let lj = &page_text.lines[j];
+                        if lj.text.trim().is_empty() {
+                            continue;
+                        }
+                        let head: String = lj.text.chars().take(16).collect();
+                        assert!(
+                            sel.contains(head.as_str()),
+                            "page {page}: dragging first line -> line {i} dropped line {j} ({head:?})\nselection was:\n{sel}"
+                        );
+                    }
+                }
+                println!("page {page}: reading-order regression checks passed");
             }
             println!("=== end page {page} ===");
         }

@@ -2307,4 +2307,11 @@ Also proposed this session, awaiting the owner's go: Phase 4 Step 3 — comics
 in the content index. The balloon words that 2.14 caches are exactly the
 input `book_content_fts` wants; the work is the bridge.
 
+The experiment's answer arrived the same day: plain crops 110/110 words,
+stretched 110/110. ocrs normalizes its input well enough that even the
+deliberately-faded fixture balloons read cleanly unaided, so the stretch
+does not become the default — exactly the outcome the decision rule was
+written to force. The probe stays and re-measures on every push; it
+becomes interesting again if ocrs publishes new models.
+
 *Last updated: 2026-09-30.*

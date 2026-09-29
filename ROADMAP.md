@@ -178,9 +178,10 @@ a year. The 2026-09-30 pass corrected a table that had last been verified
 | Comic remaster dialog | shipped | `src/widgets/remaster_dialog.rs`, `comics::remaster_comic_archive`; changelog 2026-09-29 |
 | Bubble-aware comic OCR | shipped | `src/bubble_ocr.rs`, item 2.14; per-balloon recognition in `page_ocr_cache`, probe report `ci-logs/comic-ocr-probe-latest.txt`; changelog 2026-09-29 |
 
-**Test baseline (run `36613679329`, 2026-09-30):** **881 tests passed, 0
-failed**, no panics. (The earlier `35399375314` baseline of 750 predates the
-September 28–29 batches.)
+**Test baseline (run `36628490914`, 2026-09-30):** **884 tests passed, 0
+failed**, 9 ignored (the slow neural-inference probes, run separately).
+(The earlier `36613679329` count of 881 predates items 2.15/2.16, and the
+`35399375314` baseline of 750 predates the September 28–29 batches.)
 
 ---
 
@@ -1280,7 +1281,9 @@ they need 1.2's asynchronous service layer underneath them.
   (`comic_bubble_probe_grayscale_contrast`) scores every page both ways in
   `ci-logs/comic-ocr-probe-latest.txt`. **Decision rule (2026-09-29): the
   stretch becomes the default only if it finds words the plain pipeline
-  misses without losing any it finds.**
+  misses without losing any it finds. Outcome (2026-09-30): no difference —
+  110/110 words either way — so plain crops stay the default; the probe
+  keeps measuring on every push.**
 
 
 **Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
@@ -2064,7 +2067,7 @@ top-to-bottom like a journal.
 
 | 2026-09-30 | **Roadmap truth pass, ordered by the owner after the agent cited the archived plan from memory.** The owner caught the agent describing "P7 fiction sources / P9 manga / P12 Lua plugins" and "custom renderer research, parked" as current work — all four are the old P0–P12 plan archived 2026-09-18; the custom engine shipped with the 2026-09-18 engine swap. Two causes, both now recorded in `docs/pitfalls.md`: condensed session memory carrying the old plan's vocabulary, and the recurring moved-base fault (HEAD falls back to the branch point, so `git ls-files` answers for the wrong commit — the same artifact produced a false "OCR models not in git" claim this session; the models are committed, `b482d03`). **The pass:** "What is really shipped" re-verified against the code on 2026-09-30 (it said full-text search "not started" though FTS5 shipped 2026-09-29, and lacked rows for in-reader search, the sanitizer, watch folders, bubbles, comic series, the remaster dialog and bubble OCR); Phase 3 and Phase 4 Steps 1–2 marked shipped; 2.13 marked shipped; the parked-list cross-reference corrected (bubbles are 2.13, not 2.12); the north-star stack line updated (FTS5 shipped, tantivy dropped); test baseline updated to 881. Items **2.15** and **2.16** were given their permanent numbers before being built, per the numbering rule. Phase 4 gained a proposed **Step 3 — comics in the content index**, awaiting the owner's go. |
 | 2026-09-30 | **Item 2.15 shipped: line-box padding for comic OCR.** ocrs crops each recognized line to the tight outline of its detected word boxes (`prepare_text_line` adds no margin), so ascenders, descenders and edge punctuation can be clipped before recognition. Every word box is now grown 2 px per side before `find_text_lines` groups them (`LINE_BOX_PAD` in `src/bubble_ocr.rs`). 2 px is deliberately small: ocrs joins words into one line at 5 px vertical overlap, and a bigger pad could fuse stacked lines of lettering. The fixture probe passes unchanged — synthetic fixtures have clean boxes, so no gain was expected there; hand-lettered real pages are the beneficiary. |
-| 2026-09-30 | **Item 2.16 run: the grayscale/contrast experiment, with a dedicated fixture and a both-modes CI probe.** New `comic-page5.png` (generator updated): old tan paper, one control balloon with crisp black text and two faded grey ones — badly-faded text kept just under the detector's DARK_T (128) so balloon detection is unaffected (detector prototype: 3/3 balloons, zero false positives, IoU 0.95; ink margin 16×). New `CropPrep` mode in `src/bubble_ocr.rs`: per-crop BT.601 grayscale plus a 2nd–98th percentile luminance stretch (skipped when the spread is under 48, where it would only amplify noise), wired as `bubble_ocr_page_prep` — the shipped default stays `CropPrep::None`. A second `#[ignore]`d probe, `comic_bubble_probe_grayscale_contrast`, runs every fixture page both ways and publishes scores + a verdict line to `ci-logs/comic-ocr-probe-latest.txt` on every push. Decision rule unchanged from 2026-09-29: the stretch becomes the default only if it finds words the plain pipeline misses without losing any it finds. **Verdict from the first run: <TO BE FILLED FROM THE CI REPORT.>** |
+| 2026-09-30 | **Item 2.16 run: the grayscale/contrast experiment, with a dedicated fixture and a both-modes CI probe.** New `comic-page5.png` (generator updated): old tan paper, one control balloon with crisp black text and two faded grey ones — badly-faded text kept just under the detector's DARK_T (128) so balloon detection is unaffected (detector prototype: 3/3 balloons, zero false positives, IoU 0.95; ink margin 16×). New `CropPrep` mode in `src/bubble_ocr.rs`: per-crop BT.601 grayscale plus a 2nd–98th percentile luminance stretch (skipped when the spread is under 48, where it would only amplify noise), wired as `bubble_ocr_page_prep` — the shipped default stays `CropPrep::None`. A second `#[ignore]`d probe, `comic_bubble_probe_grayscale_contrast`, runs every fixture page both ways and publishes scores + a verdict line to `ci-logs/comic-ocr-probe-latest.txt` on every push. Decision rule unchanged from 2026-09-29: the stretch becomes the default only if it finds words the plain pipeline misses without losing any it finds. **Verdict from run `36628490914`: plain crops found 110/110 ground-truth words, stretched crops the same 110/110 — even the deliberately-faded balloons read cleanly without help, because ocrs already normalizes its input internally. No measurable gain, so the stretch does NOT ship as the default.** The mode and the probe stay: the probe re-measures on every push at zero cost, and becomes interesting again whenever ocrs publishes new models (the parked ④ from the same ladder). |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

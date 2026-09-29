@@ -1,7 +1,6 @@
-src/pages/comics_reader/mod.rs:3652:9: [1m[91merror[0m: unused import: `crate::pdf::PdfPageText`
-src/bubble_ocr.rs:357:24: [1m[91merror[E0599][0m: no method named `chars` found for struct `ocrs::TextLine` in the current scope: private field, not a method
+src/bubble_ocr.rs:328:1: [1m[91merror[0m: this function has too many arguments (8/7)
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -23,11 +22,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/comics_reader/mod.rs:3652:9: [1m[91merror[0m: unused import: `crate::pdf::PdfPageText`
-src/bubble_ocr.rs:357:24: [1m[91merror[E0599][0m: no method named `chars` found for struct `ocrs::TextLine` in the current scope: private field, not a method
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/bubble_ocr.rs:328:1: [1m[91merror[0m: this function has too many arguments (8/7)
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
---- run 36612765049 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 36613242999 ---

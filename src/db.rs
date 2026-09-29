@@ -47,6 +47,8 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("content search: {0}")]
+    ContentSearch(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -1160,22 +1162,22 @@ impl Catalog {
 
     /// Index a book's full content for library-wide search.
     pub fn index_book_content(&self, book_id: i64) -> Result<()> {
-        crate::content_index::index_book(self, book_id)
+        crate::content_index::index_book(self, book_id).map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Index all unindexed books into the full-text search index.
     pub fn index_all_unindexed_books(&self) -> Result<usize> {
-        crate::content_index::index_all_unindexed(self)
+        crate::content_index::index_all_unindexed(self).map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Rebuild the library full-text search index from scratch.
     pub fn reindex_all_books(&self) -> Result<usize> {
-        crate::content_index::reindex_all(self)
+        crate::content_index::reindex_all(self).map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Status of the library-wide content search index.
     pub fn get_content_index_status(&self) -> Result<crate::content_index::ContentIndexStatus> {
-        crate::content_index::get_index_status(self)
+        crate::content_index::get_index_status(self).map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Search across the full text of all books in the library.
@@ -1183,7 +1185,7 @@ impl Catalog {
         &self,
         query: &str,
     ) -> Result<Vec<crate::content_index::BookContentSearchResult>> {
-        crate::content_index::search_content(self, query)
+        crate::content_index::search_content(self, query).map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Newest books, capped. Pages that show a handful of covers were calling

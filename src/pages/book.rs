@@ -796,39 +796,30 @@ impl Component for BookPageModel {
             BookPageMsg::RemasterComic => {
                 if let Some(book) = &self.book {
                     if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr) {
-                        let path = book.file_path.clone();
-                        let title = book.title.clone();
+                        let catalog = self.service.catalog().clone();
                         let s = sender.clone();
-                        crate::notify::info("Remastering comic...", &format!("Rescaling {} with Lanczos3 filter", title));
-                        crate::tasks::spawn(
-                            format!("Remastering {title}"),
-                            move |reporter| -> anyhow::Result<()> {
-                                let tmp = path.with_extension("remastered.cbz");
-                                crate::comics::remaster_comic_cbz(&path, &tmp, 2.0, |done, total| {
-                                    reporter.step(done, total, format!("Page {done}/{total}"));
-                                })?;
-                                std::fs::rename(&tmp, &path)?;
-                                Ok(())
-                            },
-                            |_| {},
-                            move |res| {
-                                match res {
-                                    Ok(()) => {
-                                        crate::notify::success("Comic Remastered", &format!("Successfully remastered {}", title));
-                                        // A remaster runs for minutes; the page
-                                        // may be closed before it finishes. The
-                                        // raw sender drops the message quietly
-                                        // instead of panicking on a dead page.
-                                        let _ = s.input_sender().send(BookPageMsg::Refresh);
-                                    }
-                                    Err(err) => {
-                                        crate::notify::error("Remaster failed", &err.to_string());
-                                    }
-                                }
+                        // Owner rule, 2026-09-29: every option is the user's
+                        // to decide — scale, which pages, replace-or-copy,
+                        // format. The old handler hardcoded 2×, every page,
+                        // JPEG 92, and replaced the file with no backup and
+                        // no re-hash; the dialog fixes all of that.
+                        crate::widgets::remaster_dialog::present(
+                            root,
+                            book,
+                            &catalog,
+                            move || {
+                                // A remaster runs for minutes; the page
+                                // may be closed before it finishes. The
+                                // raw sender drops the message quietly
+                                // instead of panicking on a dead page.
+                                let _ = s.input_sender().send(BookPageMsg::Refresh);
                             },
                         );
                     } else {
-                        crate::notify::info("Not a comic", "Remastering is only available for CBZ comic archives");
+                        crate::notify::info(
+                            "Not a comic",
+                            "Remastering is only available for comic archives (CBZ/CBR)",
+                        );
                     }
                 }
             }

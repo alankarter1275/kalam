@@ -593,18 +593,72 @@ pub fn parse_comic_info(archive_path: &Path) -> ComicInfo {
     info
 }
 
-/// Upscale all image pages in a CBZ archive using Lanczos3 resampling filter.
+/// Output format for remastered pages.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RemasterFormat {
+    /// Re-encode as JPEG at the given quality (1–100). Smaller files; a
+    /// little loss, which at quality 80+ is invisible on line art.
+    Jpeg(u8),
+    /// Re-encode as lossless PNG. Bigger files, pixel-perfect.
+    Png,
+}
+
+/// Which pages of an archive a remaster touches.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RemasterPages {
+    /// Every image page.
+    All,
+    /// Only image pages narrower than this many pixels — the low-resolution
+    /// ones, where upscaling actually buys something. Wider pages are
+    /// copied through byte-for-byte.
+    BelowWidth(u32),
+    /// A 1-based inclusive range in the reader's page order, so page 1 is
+    /// the first page the reader shows.
+    Range { from: usize, to: usize },
+}
+
+/// Everything the caller chooses for a remaster. Nothing is hidden: the
+/// owner's standing rule is that every option is the user's to decide.
+#[derive(Debug, Clone, Copy)]
+pub struct RemasterOptions {
+    pub scale: f32,
+    pub pages: RemasterPages,
+    pub format: RemasterFormat,
+}
+
+/// What a finished remaster did, for the completion message.
+#[derive(Debug, Default, PartialEq)]
+pub struct RemasterReport {
+    /// Image pages in the archive.
+    pub pages_total: usize,
+    /// Pages actually upscaled and re-encoded.
+    pub pages_remastered: usize,
+    /// Pages left alone for being at least the minimum width already.
+    pub skipped_wide: usize,
+    /// Pages left alone for being outside the chosen range.
+    pub skipped_range: usize,
+}
+
+/// Upscale selected pages of a comic archive with the Lanczos3 filter.
 ///
-/// Unpacks the CBZ file, rescales each page image by `scale_factor` (e.g. 2.0x) using `image::imageops::FilterType::Lanczos3`
-/// to preserve ink sharpness and smooth screentones, and repacks into `output_path`.
-pub fn remaster_comic_cbz<F>(
+/// Unpacks the archive, rescales each selected page image by `scale` using
+/// `image::imageops::FilterType::Lanczos3` (the right resampler for
+/// anti-aliased line art: it keeps ink edges sharp and screentones smooth),
+/// re-encodes in the chosen format, and repacks every entry — untouched
+/// pages pass through byte-for-byte, so nothing else in the archive
+/// (reading order, `ComicInfo.xml`, folder structure) changes.
+///
+/// `progress_cb(done, total)` is called once per archive entry and returns
+/// `false` to cancel; a cancelled remaster removes its partial output file
+/// and returns an error, leaving the original untouched.
+pub fn remaster_comic_archive<F>(
     input_path: &Path,
     output_path: &Path,
-    scale_factor: f32,
-    progress_cb: F,
-) -> Result<()>
+    opts: &RemasterOptions,
+    mut progress_cb: F,
+) -> Result<RemasterReport>
 where
-    F: Fn(usize, usize),
+    F: FnMut(usize, usize) -> bool,
 {
     let file = File::open(input_path)
         .with_context(|| format!("Could not open source comic archive at {:?}", input_path))?;
@@ -612,6 +666,29 @@ where
         .with_context(|| format!("Failed to read ZIP archive from {:?}", input_path))?;
 
     let total_entries = archive.len();
+
+    // Page numbers in the reader's order, not the archive's storage order:
+    // a "page range" must mean the same pages the reader shows.
+    let mut image_names: Vec<String> = Vec::new();
+    for i in 0..total_entries {
+        let entry = archive.by_index(i)?;
+        let name = entry.name();
+        if !entry.is_dir() && is_image_filename(name) && !name.contains("__MACOSX") {
+            image_names.push(name.to_string());
+        }
+    }
+    sort_comic_pages(&mut image_names);
+    let page_numbers: std::collections::HashMap<String, usize> = image_names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.clone(), i + 1))
+        .collect();
+
+    let mut report = RemasterReport {
+        pages_total: image_names.len(),
+        ..RemasterReport::default()
+    };
+
     let dest_file = File::create(output_path)
         .with_context(|| format!("Could not create output comic archive at {:?}", output_path))?;
     let mut zip_writer = ZipWriter::new(dest_file);
@@ -623,76 +700,174 @@ where
         let name = entry.name().to_string();
 
         if entry.is_dir() {
-            progress_cb(i + 1, total_entries);
+            if !progress_cb(i + 1, total_entries) {
+                drop(zip_writer);
+                let _ = std::fs::remove_file(output_path);
+                return Err(anyhow!("cancelled"));
+            }
             continue;
         }
 
         let mut buffer = Vec::with_capacity(entry.size() as usize);
         entry.read_to_end(&mut buffer)?;
 
-        if is_image_filename(&name) && !name.contains("__MACOSX") {
-            if let Ok(img) = image::load_from_memory(&buffer) {
-                let nwidth = (img.width() as f32 * scale_factor).round() as u32;
-                let nheight = (img.height() as f32 * scale_factor).round() as u32;
-                let nwidth = nwidth.max(1);
-                let nheight = nheight.max(1);
-
-                let resized = img.resize(nwidth, nheight, image::imageops::FilterType::Lanczos3);
-
-                let mut encoded_bytes = Vec::new();
-                let lower = name.to_lowercase();
-                let format = if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
-                    image::ImageFormat::Jpeg
-                } else if lower.ends_with(".webp") {
-                    image::ImageFormat::WebP
-                } else if lower.ends_with(".gif") {
-                    image::ImageFormat::Gif
-                } else {
-                    image::ImageFormat::Png
-                };
-
-                let encode_res = if format == image::ImageFormat::Jpeg {
-                    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded_bytes, 92);
-                    // encode_image already yields ImageError; the old
-                    // `.map_err(ImageError::from)` converted it to itself.
-                    encoder.encode_image(&resized)
-                } else {
-                    resized.write_to(&mut std::io::Cursor::new(&mut encoded_bytes), format)
-                };
-
-                if encode_res.is_ok() {
-                    zip_writer.start_file(&name, deflated_options)?;
-                    zip_writer.write_all(&encoded_bytes)?;
-                } else {
-                    // Fallback to PNG encoding if original format encoder (e.g. WebP) is unavailable in image crate
-                    let mut png_bytes = Vec::new();
-                    if resized.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png).is_ok() {
-                        zip_writer.start_file(&name, deflated_options)?;
-                        zip_writer.write_all(&png_bytes)?;
-                    } else {
-                        zip_writer.start_file(&name, deflated_options)?;
-                        zip_writer.write_all(&buffer)?;
-                    }
-                }
-            } else {
+        match remaster_entry(&name, &buffer, opts, &page_numbers, &mut report) {
+            EntryOutput::Untouched => {
                 zip_writer.start_file(&name, deflated_options)?;
                 zip_writer.write_all(&buffer)?;
             }
-        } else {
-            zip_writer.start_file(&name, deflated_options)?;
-            zip_writer.write_all(&buffer)?;
+            EntryOutput::Reencoded(bytes) => {
+                zip_writer.start_file(&name, deflated_options)?;
+                zip_writer.write_all(&bytes)?;
+            }
         }
 
-        progress_cb(i + 1, total_entries);
+        if !progress_cb(i + 1, total_entries) {
+            drop(zip_writer);
+            let _ = std::fs::remove_file(output_path);
+            return Err(anyhow!("cancelled"));
+        }
     }
 
     zip_writer.finish()?;
-    Ok(())
+    Ok(report)
+}
+
+/// What [`remaster_comic_archive`] does with one entry's bytes.
+enum EntryOutput {
+    /// Copy the original bytes through unchanged.
+    Untouched,
+    /// Write these re-encoded bytes instead.
+    Reencoded(Vec<u8>),
+}
+
+/// Decide and encode one archive entry: upscaled and re-encoded when the
+/// options select it, the untouched original bytes otherwise.
+fn remaster_entry(
+    name: &str,
+    original: &[u8],
+    opts: &RemasterOptions,
+    page_numbers: &std::collections::HashMap<String, usize>,
+    report: &mut RemasterReport,
+) -> EntryOutput {
+    if !is_image_filename(name) || name.contains("__MACOSX") {
+        return EntryOutput::Untouched;
+    }
+    // A file with an image name that does not decode (corrupt, or a format
+    // this build cannot read) must survive a remaster: pass it through.
+    let Ok(img) = image::load_from_memory(original) else {
+        return EntryOutput::Untouched;
+    };
+
+    let selected = match opts.pages {
+        RemasterPages::All => true,
+        RemasterPages::BelowWidth(limit) => img.width() < limit,
+        RemasterPages::Range { from, to } => {
+            let (lo, hi) = (from.min(to), from.max(to));
+            page_numbers.get(name).is_some_and(|&n| n >= lo && n <= hi)
+        }
+    };
+    if !selected {
+        if matches!(opts.pages, RemasterPages::BelowWidth(_)) {
+            report.skipped_wide += 1;
+        } else {
+            report.skipped_range += 1;
+        }
+        return EntryOutput::Untouched;
+    }
+
+    let nwidth = ((img.width() as f32 * opts.scale).round() as u32).max(1);
+    let nheight = ((img.height() as f32 * opts.scale).round() as u32).max(1);
+    let resized = img.resize(nwidth, nheight, image::imageops::FilterType::Lanczos3);
+
+    // JPEG cannot carry an alpha channel; flattening onto white would tint
+    // transparent manga scans, and dropping alpha to black would darken
+    // them. RGB conversion keeps the pixels' own colours.
+    let flattened = if matches!(opts.format, RemasterFormat::Jpeg(_)) && resized.color().has_alpha()
+    {
+        Some(image::DynamicImage::ImageRgb8(resized.to_rgb8()))
+    } else {
+        None
+    };
+    let to_encode = flattened.as_ref().unwrap_or(&resized);
+
+    let mut encoded = Vec::new();
+    let encode_res = match opts.format {
+        RemasterFormat::Jpeg(quality) => {
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded, quality)
+                .encode_image(to_encode)
+        }
+        RemasterFormat::Png => {
+            resized.write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Png)
+        }
+    };
+    if encode_res.is_ok() {
+        report.pages_remastered += 1;
+        return EntryOutput::Reencoded(encoded);
+    }
+    // The chosen encoder refused (a format this build cannot write): fall
+    // back to PNG, then to the untouched original. A remaster must never
+    // lose a page.
+    let mut png = Vec::new();
+    if resized
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .is_ok()
+    {
+        report.pages_remastered += 1;
+        return EntryOutput::Reencoded(png);
+    }
+    EntryOutput::Untouched
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build a throwaway CBZ in the system temp dir with the given pages.
+    /// Returns (input path, output path).
+    ///
+    /// Like every helper in this repo, this sits above the first `#[test]`:
+    /// the panic guardrail suppresses `mod tests` only down to the first
+    /// nested test item, so a helper with `.expect()` between test
+    /// functions would be miscounted as production code (pitfalls §26).
+    fn scratch_cbz(
+        tag: &str,
+        pages: &[(&str, image::DynamicImage)],
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        let uid = uuid::Uuid::new_v4().to_string();
+        let input = std::env::temp_dir().join(format!("kalam-remaster-{tag}-in-{uid}.cbz"));
+        let output = std::env::temp_dir().join(format!("kalam-remaster-{tag}-out-{uid}.cbz"));
+
+        let file = File::create(&input).expect("create input cbz");
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        for (name, img) in pages {
+            let mut bytes = Vec::new();
+            img.write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+                .expect("encode fixture page");
+            zip.start_file(*name, options).expect("add fixture page");
+            zip.write_all(&bytes).expect("write fixture page");
+        }
+        zip.finish().expect("finish fixture cbz");
+        (input, output)
+    }
+
+    /// Decode every entry of a CBZ by name, so tests can check which pages
+    /// were upscaled and which were left alone.
+    fn decoded_entries(path: &std::path::Path) -> Vec<(String, image::DynamicImage)> {
+        let file = File::open(path).expect("open output cbz");
+        let mut zip = ZipArchive::new(file).expect("read output cbz");
+        let mut out = Vec::new();
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).expect("output entry");
+            let name = entry.name().to_string();
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes).expect("read output entry");
+            let img = image::load_from_memory(&bytes).expect("decode output page");
+            out.push((name, img));
+        }
+        out
+    }
 
     #[test]
     fn image_filename_filtering() {
@@ -742,45 +917,165 @@ mod tests {
     }
 
     #[test]
-    fn test_remaster_comic_cbz() -> Result<()> {
-        let tmp_dir = std::env::temp_dir();
-        let uid = uuid::Uuid::new_v4().to_string();
-        let input_cbz = tmp_dir.join(format!("test_in_{uid}.cbz"));
-        let output_cbz = tmp_dir.join(format!("test_out_{uid}.cbz"));
+    fn remaster_upscales_every_page_and_reports() -> Result<()> {
+        let page = image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10));
+        let (input, output) = scratch_cbz("all", &[("page01.png", page)]);
 
-        // Create a dummy CBZ with a 10x10 image
-        let img = image::RgbImage::new(10, 10);
-        let mut img_bytes = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut img_bytes), image::ImageFormat::Png)?;
+        let report = remaster_comic_archive(
+            &input,
+            &output,
+            &RemasterOptions {
+                scale: 2.0,
+                pages: RemasterPages::All,
+                format: RemasterFormat::Jpeg(90),
+            },
+            |_, _| true,
+        )?;
 
-        {
-            let file = File::create(&input_cbz)?;
-            let mut zip = ZipWriter::new(file);
-            let options = SimpleFileOptions::default();
-            zip.start_file("page01.png", options)?;
-            zip.write_all(&img_bytes)?;
-            zip.finish()?;
+        let entries = decoded_entries(&output);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].1.width(), 20);
+        assert_eq!(entries[0].1.height(), 20);
+        assert_eq!(report.pages_total, 1);
+        assert_eq!(report.pages_remastered, 1);
+        assert_eq!(report.skipped_wide, 0);
+
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_file(&output);
+        Ok(())
+    }
+
+    #[test]
+    fn remaster_leaves_wide_pages_alone_below_a_width_limit() -> Result<()> {
+        let (input, output) = scratch_cbz(
+            "wide",
+            &[
+                ("a_small.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(60, 10))),
+                ("b_big.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(300, 10))),
+            ],
+        );
+
+        let report = remaster_comic_archive(
+            &input,
+            &output,
+            &RemasterOptions {
+                scale: 2.0,
+                pages: RemasterPages::BelowWidth(100),
+                format: RemasterFormat::Png,
+            },
+            |_, _| true,
+        )?;
+
+        for (name, img) in decoded_entries(&output) {
+            if name == "a_small.png" {
+                assert_eq!(img.width(), 120, "small page must be upscaled");
+            } else {
+                assert_eq!(img.width(), 300, "wide page must be untouched");
+            }
         }
+        assert_eq!(report.pages_total, 2);
+        assert_eq!(report.pages_remastered, 1);
+        assert_eq!(report.skipped_wide, 1);
 
-        // Remaster 2.0x
-        remaster_comic_cbz(&input_cbz, &output_cbz, 2.0, |_, _| {})?;
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_file(&output);
+        Ok(())
+    }
 
-        // Verify output archive
-        let out_file = File::open(&output_cbz)?;
-        let mut out_zip = ZipArchive::new(out_file)?;
-        assert_eq!(out_zip.len(), 1);
+    #[test]
+    fn remaster_page_ranges_use_reading_order_not_storage_order() -> Result<()> {
+        // Stored deliberately out of order: lexicographic order would make
+        // z10.png the second entry, natural order (what the reader shows)
+        // makes it the third.
+        let (input, output) = scratch_cbz(
+            "range",
+            &[
+                ("z10.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10))),
+                ("z1.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10))),
+                ("z2.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10))),
+            ],
+        );
 
-        let mut entry = out_zip.by_index(0)?;
-        let mut out_bytes = Vec::new();
-        entry.read_to_end(&mut out_bytes)?;
+        let report = remaster_comic_archive(
+            &input,
+            &output,
+            &RemasterOptions {
+                scale: 2.0,
+                pages: RemasterPages::Range { from: 2, to: 3 },
+                format: RemasterFormat::Png,
+            },
+            |_, _| true,
+        )?;
 
-        let remastered_img = image::load_from_memory(&out_bytes)?;
-        assert_eq!(remastered_img.width(), 20);
-        assert_eq!(remastered_img.height(), 20);
+        // Reader order is z1 (1), z2 (2), z10 (3): the range 2–3 selects
+        // z2 and z10; z1 must come through untouched.
+        for (name, img) in decoded_entries(&output) {
+            match name.as_str() {
+                "z1.png" => assert_eq!(img.width(), 10, "page 1 is outside the range"),
+                "z2.png" | "z10.png" => assert_eq!(img.width(), 20, "{name} is inside the range"),
+                other => panic!("unexpected entry {other}"),
+            }
+        }
+        assert_eq!(report.pages_total, 3);
+        assert_eq!(report.pages_remastered, 2);
+        assert_eq!(report.skipped_range, 1);
 
-        let _ = std::fs::remove_file(&input_cbz);
-        let _ = std::fs::remove_file(&output_cbz);
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_file(&output);
+        Ok(())
+    }
 
+    #[test]
+    fn a_cancelled_remaster_removes_its_partial_output() -> Result<()> {
+        let (input, output) = scratch_cbz(
+            "cancel",
+            &[("a.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10)))],
+        );
+
+        let result = remaster_comic_archive(
+            &input,
+            &output,
+            &RemasterOptions {
+                scale: 2.0,
+                pages: RemasterPages::All,
+                format: RemasterFormat::Png,
+            },
+            |_, _| false,
+        );
+
+        assert!(result.is_err(), "cancelling must surface an error");
+        assert!(!output.exists(), "partial output must be removed");
+        // And the original is still readable.
+        assert!(File::open(&input).is_ok());
+
+        let _ = std::fs::remove_file(&input);
+        Ok(())
+    }
+
+    #[test]
+    fn jpeg_output_never_carries_an_alpha_channel() -> Result<()> {
+        let (input, output) = scratch_cbz(
+            "alpha",
+            &[("a.png", image::DynamicImage::ImageRgba8(image::RgbaImage::new(10, 10)))],
+        );
+
+        remaster_comic_archive(
+            &input,
+            &output,
+            &RemasterOptions {
+                scale: 2.0,
+                pages: RemasterPages::All,
+                format: RemasterFormat::Jpeg(85),
+            },
+            |_, _| true,
+        )?;
+
+        let entries = decoded_entries(&output);
+        assert_eq!(entries.len(), 1);
+        assert!(!entries[0].1.color().has_alpha(), "JPEG has no alpha channel");
+
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_file(&output);
         Ok(())
     }
 

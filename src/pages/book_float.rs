@@ -821,40 +821,28 @@ impl Component for BookFloatModel {
             BookFloatMsg::RemasterComic => {
                 if let Some(book) = &self.book {
                     if matches!(book.format, crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr) {
-                        let path = book.file_path.clone();
-                        let title = book.title.clone();
+                        let catalog = self.service.catalog().clone();
                         let s = sender.clone();
-                        crate::notify::info("Remastering comic...", &format!("Rescaling {} with Lanczos3 filter", title));
-                        crate::tasks::spawn(
-                            format!("Remastering {title}"),
-                            move |reporter| -> anyhow::Result<()> {
-                                let tmp = path.with_extension("remastered.cbz");
-                                crate::comics::remaster_comic_cbz(&path, &tmp, 2.0, |done, total| {
-                                    reporter.step(done, total, format!("Page {done}/{total}"));
-                                })?;
-                                std::fs::rename(&tmp, &path)?;
-                                Ok(())
-                            },
-                            |_| {},
-                            move |res| {
-                                match res {
-                                    Ok(()) => {
-                                        crate::notify::success("Comic Remastered", &format!("Successfully remastered {}", title));
-                                        // A remaster runs for minutes; this
-                                        // floating window may be closed before
-                                        // it finishes. The raw sender drops
-                                        // the message quietly instead of
-                                        // panicking on a closed component.
-                                        let _ = s.input_sender().send(BookFloatMsg::Refresh);
-                                    }
-                                    Err(err) => {
-                                        crate::notify::error("Remaster failed", &err.to_string());
-                                    }
-                                }
+                        // Same dialog as the detail page — one remaster UI,
+                        // so the two pages can never drift apart.
+                        crate::widgets::remaster_dialog::present(
+                            root,
+                            book,
+                            &catalog,
+                            move || {
+                                // A remaster runs for minutes; this
+                                // floating window may be closed before
+                                // it finishes. The raw sender drops
+                                // the message quietly instead of
+                                // panicking on a closed component.
+                                let _ = s.input_sender().send(BookFloatMsg::Refresh);
                             },
                         );
                     } else {
-                        crate::notify::info("Not a comic", "Remastering is only available for CBZ comic archives");
+                        crate::notify::info(
+                            "Not a comic",
+                            "Remastering is only available for comic archives (CBZ/CBR)",
+                        );
                     }
                 }
             }

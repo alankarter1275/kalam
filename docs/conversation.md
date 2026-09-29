@@ -2170,4 +2170,47 @@ owner's machine).
 5. Grayscale/contrast: one cheap CI experiment on the fixtures; ship only if
    it measurably helps.
 
+## 12. The Remaster Ships (2026-09-29)
+
+Built after the owner's explicit "go", comics only, nothing riding along —
+the owner's words: "no needless additions without any benefits."
+
+### What the owner gets
+
+One dialog, identical from the book detail page and the floating reader:
+enlargement (1.5× / 2× / 3×, default 2×), which pages (all / only pages
+narrower than a chosen width, default 1400 px / a first-to-last range bounded
+by the real page count), where the result goes (replace the original keeping
+a `.bak` backup — default — or save a copy beside it as
+`remastered-2x.cbz`), and the page format (JPEG at a chosen quality 60–100,
+default 90, or lossless PNG). The job runs in the background with per-page
+progress and a cancel.
+
+The engine (`comics::remaster_comic_archive`) selects pages in **reading
+order**, not zip storage order — a range 2–3 means the second and third page
+the reader shows, even when the archive stores them as `z10, z1, z2`.
+Untouched pages are copied through byte-for-byte, so `ComicInfo.xml` and
+folder structure survive; a page that fails to decode passes through too — a
+remaster must never lose a page. JPEG output is flattened to RGB (JPEG has no
+alpha channel). Replacing the original backs it up first and restores it if
+the swap fails; the stored file hash is then recomputed and the book record
+re-hashed, the same treatment EPUB metadata writes get, so remembered
+metadata edits, covers, and duplicate detection all survive.
+
+### Deliberately small deviations from the plan-of-record
+
+- The width spin allows 100–8000 px in steps of 50 (plan said 200–4000) —
+  the same control, a wider honest range.
+- The page-range spinners fall back to a 9999-page ceiling when the archive
+  cannot be opened for a count, and the dialog's intro line shows the page
+  count when it can.
+- Passthrough pages are not re-compressed — the engine writes the original
+  bytes, not a re-encode (`EntryOutput::Untouched` vs `Reencoded`).
+
+### What did not ride along, on purpose
+
+No PDF remaster, no EPUB anything, no OCR changes. The OCR-cache fingerprint
+(size + mtime) already invalidates cached text for a remastered file by
+itself — a remaster changes both — so nothing there needed touching.
+
 *Last updated: 2026-09-29.*

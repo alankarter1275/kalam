@@ -6,6 +6,7 @@
 use anyhow::{anyhow, Result};
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use mupdf::{Colorspace, Document, Matrix, Outline, Rect, TextBlockContent, TextExtractOptions, TextPageFlags};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Bounding rectangle in PDF points: (x0, y0, x1, y1).
@@ -16,7 +17,7 @@ pub type PdfSelectionResult = (String, Vec<PdfTextRect>);
 
 /// Single extracted character with bounding box in PDF points (72 DPI).
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PdfTextChar {
     pub ch: char,
     pub x0: f32,
@@ -27,7 +28,7 @@ pub struct PdfTextChar {
 
 /// Single extracted text line with bounding box and character stream in PDF points.
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PdfTextLine {
     pub text: String,
     pub x0: f32,
@@ -39,7 +40,7 @@ pub struct PdfTextLine {
 
 /// Extracted page text containing line hierarchy and document point dimensions.
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PdfPageText {
     pub page_num: usize,
     pub width_pts: f32,

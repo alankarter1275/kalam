@@ -49,6 +49,8 @@ pub enum DbError {
     Io(#[from] std::io::Error),
     #[error("content search: {0}")]
     ContentSearch(String),
+    #[error("ocr cache: {0}")]
+    OcrCache(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -63,7 +65,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v13 = saved_words.known (review status for vocabulary tools)
 /// · v14 = dict_lookups (append-only lookup history, Phase 10)
 /// · v15 = book_content_fts (SQLite FTS5 virtual table for library-wide deep search) + book_search_index_status
-pub const SCHEMA_VERSION: i64 = 15;
+/// · v16 = page_ocr_cache (persistent per-page OCR results keyed by file fingerprint)
+pub const SCHEMA_VERSION: i64 = 16;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -945,6 +948,20 @@ impl Catalog {
                 total_chapters INTEGER NOT NULL DEFAULT 0,
                 total_words    INTEGER NOT NULL DEFAULT 0
             );
+
+            -- v16: Persistent OCR page cache. OCR on a scanned page takes
+            -- seconds and used to be recomputed from scratch every time the
+            -- book was opened; the results are stored here keyed by a
+            -- file fingerprint (size + mtime) so any change to the file -
+            -- a remaster, a re-download - automatically invalidates the
+            -- cached page and forces a fresh OCR.
+            CREATE TABLE IF NOT EXISTS page_ocr_cache (
+                book_id         INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                page_num        INTEGER NOT NULL,
+                file_fingerprint TEXT NOT NULL,
+                payload         TEXT NOT NULL,
+                PRIMARY KEY (book_id, page_num)
+            );
             CREATE INDEX IF NOT EXISTS idx_book_search_status_indexed
                 ON book_search_index_status(indexed_at);
             "#,
@@ -1362,6 +1379,55 @@ impl Catalog {
     }
 
 
+    /// Persist an OCR'd page's text layer so reopening the book does not
+    /// recompute it. Keyed by (book, page) with a file fingerprint (size +
+    /// mtime); any change to the book file invalidates the cached page.
+    pub fn save_page_ocr(
+        &self,
+        book_id: i64,
+        page_num: usize,
+        file_fingerprint: &str,
+        page_text: &crate::pdf::PdfPageText,
+    ) -> Result<()> {
+        let payload = serde_json::to_string(page_text)
+            .map_err(|e| DbError::OcrCache(format!("serialize page: {e}")))?;
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR REPLACE INTO page_ocr_cache (book_id, page_num, file_fingerprint, payload)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![book_id, page_num as i64, file_fingerprint, payload],
+        )?;
+        Ok(())
+    }
+
+    /// Load a previously cached OCR result for a page. Returns `None` when
+    /// nothing is cached for this book/page, or when the file fingerprint
+    /// no longer matches (the file changed since the cache was written).
+    pub fn load_page_ocr(
+        &self,
+        book_id: i64,
+        page_num: usize,
+        file_fingerprint: &str,
+    ) -> Result<Option<crate::pdf::PdfPageText>> {
+        let conn = self.conn();
+        let payload: Option<String> = conn
+            .query_row(
+                "SELECT payload FROM page_ocr_cache
+                 WHERE book_id = ?1 AND page_num = ?2 AND file_fingerprint = ?3",
+                params![book_id, page_num as i64, file_fingerprint],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match payload {
+            Some(json) => {
+                let page = serde_json::from_str(&json)
+                    .map_err(|e| DbError::OcrCache(format!("deserialize page: {e}")))?;
+                Ok(Some(page))
+            }
+            None => Ok(None),
+        }
+    }
+
     pub fn get_book(&self, id: i64) -> Result<Option<Book>> {
         let conn = self.conn();
         let mut book = conn
@@ -1528,6 +1594,7 @@ impl Catalog {
             let conn = self.conn();
             let _ = conn.execute("DELETE FROM book_content_fts WHERE book_id = ?1", params![id]);
             let _ = conn.execute("DELETE FROM book_search_index_status WHERE book_id = ?1", params![id]);
+            let _ = conn.execute("DELETE FROM page_ocr_cache WHERE book_id = ?1", params![id]);
             conn.execute("DELETE FROM books WHERE id = ?1", params![id])?;
         }
         let dir = book_dir(&book.uuid);
@@ -2758,6 +2825,51 @@ mod tests {
         // Not adjacent to today, so current is 0 but the run of 2 is longest.
         let (_, longest) = streaks(&days);
         assert_eq!(longest, 2);
+    }
+
+    #[test]
+    fn ocr_page_cache_round_trips_and_invalidates_on_file_change() {
+        use crate::pdf::{PdfPageText, PdfTextChar, PdfTextLine};
+
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Scanned Book", "Author", &[]);
+
+        let page = PdfPageText {
+            page_num: 3,
+            width_pts: 595.2,
+            height_pts: 841.9,
+            lines: vec![PdfTextLine {
+                text: "Hello scan".to_string(),
+                x0: 57.0,
+                y0: 100.0,
+                x1: 200.0,
+                y1: 118.0,
+                chars: vec![
+                    PdfTextChar { ch: 'H', x0: 57.0, y0: 100.0, x1: 66.0, y1: 118.0 },
+                    PdfTextChar { ch: 'i', x0: 68.0, y0: 100.0, x1: 73.0, y1: 118.0 },
+                ],
+            }],
+        };
+
+        // Nothing cached yet.
+        assert!(cat.load_page_ocr(id, 3, "123:456").unwrap().is_none());
+
+        // Save and read back with the same fingerprint: identical content.
+        cat.save_page_ocr(id, 3, "123:456", &page).unwrap();
+        let loaded = cat.load_page_ocr(id, 3, "123:456").unwrap().unwrap();
+        assert_eq!(loaded, page);
+
+        // A different fingerprint (the file changed) must not match.
+        assert!(cat.load_page_ocr(id, 3, "999:888").unwrap().is_none());
+
+        // Re-saving under a new fingerprint replaces the old row.
+        cat.save_page_ocr(id, 3, "999:888", &page).unwrap();
+        assert!(cat.load_page_ocr(id, 3, "123:456").unwrap().is_none());
+        assert!(cat.load_page_ocr(id, 3, "999:888").unwrap().is_some());
+
+        // Deleting the book clears its cached pages.
+        cat.delete_book(id).unwrap();
+        assert!(cat.load_page_ocr(id, 3, "999:888").unwrap().is_none());
     }
 
     #[test]

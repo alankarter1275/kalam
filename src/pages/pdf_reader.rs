@@ -372,6 +372,11 @@ pub struct PdfReaderModel {
     pub selection_chip: Option<gtk::Popover>,
     pub ocr_tx: Option<async_channel::Sender<crate::ocr::PdfOcrRequest>>,
     pub ocr_in_progress: HashSet<usize>,
+    /// Fingerprint of the book file at the moment an in-flight OCR was
+    /// triggered. A finished result is only persisted to the OCR page cache
+    /// if the file is still unchanged, so a file replaced mid-OCR can never
+    /// be cached under the wrong fingerprint.
+    pub ocr_started_fp: HashMap<usize, String>,
     pub show_zoom_osd: bool,
     pub zoom_osd_seq: u64,
     pub search_active: bool,
@@ -510,6 +515,7 @@ impl PdfReaderModel {
             selection_chip: None,
             ocr_tx: None,
             ocr_in_progress: HashSet::new(),
+            ocr_started_fp: HashMap::new(),
             show_zoom_osd: false,
             zoom_osd_seq: 0,
             search_active: false,
@@ -826,6 +832,7 @@ impl PdfReaderModel {
         self.page_text_cache.clear();
         self.pending_loads.clear();
         self.ocr_in_progress.clear();
+        self.ocr_started_fp.clear();
 
         self.doc = None;
         self.render_tx = None;
@@ -966,6 +973,9 @@ impl PdfReaderModel {
         };
 
         self.ocr_in_progress.insert(page);
+        if let Some(fp) = ocr_file_fingerprint(doc) {
+            self.ocr_started_fp.insert(page, fp);
+        }
         let _ = tx.send_blocking(crate::ocr::PdfOcrRequest {
             generation: self.render_generation,
             page,
@@ -981,7 +991,23 @@ impl PdfReaderModel {
                         self.page_text_cache.insert(page, text);
                     } else {
                         // Digital vector text returned 0 characters (scanned page).
-                        // Automatically trigger background OCR!
+                        // First try the persistent OCR cache: a page that was
+                        // OCR'd on a previous visit loads instantly instead of
+                        // recomputing seconds of neural inference.
+                        let fingerprint = ocr_file_fingerprint(doc);
+                        if let Some(fp) = fingerprint {
+                            if let Ok(Some(cached)) =
+                                self.catalog.load_page_ocr(self.book_id, page, &fp)
+                            {
+                                log::info!(
+                                    "OCR cache hit for page {page}: {} lines",
+                                    cached.lines.len()
+                                );
+                                self.page_text_cache.insert(page, cached);
+                                return self.page_text_cache.get(&page);
+                            }
+                        }
+                        // No usable cache: automatically trigger background OCR.
                         self.trigger_page_ocr(page);
                     }
                 }
@@ -3408,12 +3434,33 @@ impl Component for PdfReaderModel {
                     return;
                 }
                 self.ocr_in_progress.remove(&page);
+                // The finished text belongs to the file as it was when OCR
+                // started; persist it only if the file is still unchanged,
+                // so a replaced mid-OCR file can never poison the cache.
+                let started_fp = self.ocr_started_fp.remove(&page);
                 match *text {
                     Ok(ocr_text) => {
                         log::info!(
                             "OCR completed for page {page}: {} lines recognized",
                             ocr_text.lines.len()
                         );
+                        if let Some(started) = started_fp {
+                            let file_unchanged = self
+                                .doc
+                                .as_ref()
+                                .and_then(ocr_file_fingerprint)
+                                .is_some_and(|current| current == started);
+                            if file_unchanged {
+                                if let Err(err) = self
+                                    .catalog
+                                    .save_page_ocr(self.book_id, page, &started, &ocr_text)
+                                {
+                                    log::warn!(
+                                        "Could not cache OCR result for page {page}: {err}"
+                                    );
+                                }
+                            }
+                        }
                         self.page_text_cache.insert(page, ocr_text);
                         for da in self.page_draw_areas.values() {
                             da.queue_draw();
@@ -4085,6 +4132,24 @@ impl PdfReaderModel {
             list_box.append(&more_lbl);
         }
     }
+}
+
+/// A cheap fingerprint of the book file (size + mtime) used to key the
+/// persistent OCR page cache. A content hash would be stronger but would
+/// mean reading a possibly-large file on the UI thread; size + mtime
+/// catches every real-world change (a remaster rewrites the file, a
+/// re-download changes both) for the cost of a stat call. A false "same"
+/// would require a changed file with identical size and identical mtime.
+fn ocr_file_fingerprint(doc: &PdfDocument) -> Option<String> {
+    use std::time::UNIX_EPOCH;
+    let md = std::fs::metadata(&doc.path).ok()?;
+    let mtime = md
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some(format!("{}:{}", md.len(), mtime))
 }
 
 fn format_pdf_search_snippet(snippet: &str, query: &str) -> String {

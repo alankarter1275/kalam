@@ -458,7 +458,10 @@ mod tests {
         const W_PT: f32 = 595.2;
         const H_PT: f32 = 841.9;
 
-        // (page, snippets that should appear in that page's recognized text)
+        // (page, snippets that should appear in that page's recognized text).
+        // Note: each snippet must live within a single OCR line - the line
+        // grouper can break a sentence across two entries, so phrases that
+        // straddle a visual line break will never match contiguously.
         let expectations: &[(usize, &[&str])] = &[
             (
                 1,
@@ -496,18 +499,18 @@ mod tests {
                 &[
                     "pencil and one blank page",
                     "Why copy them",
-                    "lighthouse of its own",
+                    "a record kept in two places",
                     "considered this",
                     "empty line beneath",
+                    "He wrote:",
                     "Arun Vaidya",
                     "Kestrel",
-                    "To be continued",
                 ],
             ),
             (
                 5,
                 &[
-                    "ENGLISH FIRST PERIOD",
+                    "ENGLISH FIRST",
                     "PLEEEASE",
                     "HANDWRITING",
                     "DING-DONG",

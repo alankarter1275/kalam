@@ -95,12 +95,22 @@ pub fn load_watch_rules(catalog: &Catalog) -> Vec<WatchFolderRule> {
     }
 
     // Backward compatibility with previous single-path preference
-    if let Some(path) = watch_path(catalog) {
-        let enabled = is_watch_enabled(catalog);
+    // Read raw preferences directly to avoid circular recursive calls
+    let legacy_path = catalog
+        .get_pref(PREF_WATCH_PATH)
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from);
+
+    if let Some(path) = legacy_path {
+        let legacy_enabled = catalog
+            .get_pref(PREF_WATCH_ENABLED)
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
+
         let default_rule = WatchFolderRule {
             id: uuid::Uuid::new_v4().to_string(),
             path,
-            enabled,
+            enabled: legacy_enabled,
             import_epub: true,
             epub_shelf_id: None,
             import_pdf: true,
@@ -628,5 +638,25 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_load_watch_rules_no_recursion() {
+        let catalog = Catalog::open_in_memory().unwrap();
+        // 1. Fresh catalog without any preferences set
+        let rules = load_watch_rules(&catalog);
+        assert!(rules.is_empty());
+        assert!(!is_watch_enabled(&catalog));
+        assert_eq!(watch_path(&catalog), None);
+
+        // 2. Legacy preferences set (single path & enabled flag)
+        catalog.set_pref(PREF_WATCH_PATH, "/tmp/legacy_books");
+        catalog.set_pref(PREF_WATCH_ENABLED, "1");
+        let migrated_rules = load_watch_rules(&catalog);
+        assert_eq!(migrated_rules.len(), 1);
+        assert_eq!(migrated_rules[0].path, PathBuf::from("/tmp/legacy_books"));
+        assert!(migrated_rules[0].enabled);
+        assert!(is_watch_enabled(&catalog));
+        assert_eq!(watch_path(&catalog), Some(PathBuf::from("/tmp/legacy_books")));
     }
 }

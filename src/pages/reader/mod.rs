@@ -2893,7 +2893,7 @@ fn format_search_snippet(snippet: &str, query: &str) -> String {
         let matched = &snippet[idx..idx + query.trim().len().min(snippet.len() - idx)];
         let suffix = &snippet[(idx + matched.len()).min(snippet.len())..];
         format!(
-            "{}<span weight=\"bold\" foreground=\"#d97706\" background=\"rgba(244, 211, 94, 0.28)\">{}</span>{}",
+            "{}<span weight=\"bold\" foreground=\"#d97706\" background=\"#f4d35e\" background_alpha=\"30%\">{}</span>{}",
             glib::markup_escape_text(prefix),
             glib::markup_escape_text(matched),
             glib::markup_escape_text(suffix)

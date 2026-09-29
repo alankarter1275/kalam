@@ -1288,16 +1288,16 @@ fn rebuild_content_search_list(
 
         let st = &model.index_status;
         let status_text = if model.indexing {
-            "Indexing your books in the background…".to_string()
+            "Indexing text books in the background…".to_string()
         } else if st.indexed_books < st.total_books {
             let unindexed = st.total_books.saturating_sub(st.indexed_books);
             format!(
-                "⚠️ {} of {} books indexed ({} not yet indexed)",
+                "{} of {} text books indexed ({} not yet indexed)",
                 st.indexed_books, st.total_books, unindexed
             )
         } else {
             format!(
-                "✓ Full-Text Index Ready: {} books indexed ({} words searchable)",
+                "Full-Text Index Ready: {} books indexed ({} words searchable)",
                 st.indexed_books, st.total_words
             )
         };
@@ -1312,7 +1312,7 @@ fn rebuild_content_search_list(
             spinner.start();
             status_box.append(&spinner);
         } else if st.indexed_books < st.total_books {
-            let idx_btn = gtk::Button::with_label("⚡ Index Library Now");
+            let idx_btn = gtk::Button::with_label("Index Library Now");
             idx_btn.add_css_class("kalam-primary-btn");
             let s = sender.clone();
             idx_btn.connect_clicked(move |_| {
@@ -1320,7 +1320,7 @@ fn rebuild_content_search_list(
             });
             status_box.append(&idx_btn);
         } else {
-            let reindex_btn = gtk::Button::with_label("⟳ Reindex");
+            let reindex_btn = gtk::Button::with_label("Reindex");
             reindex_btn.add_css_class("kalam-secondary-btn");
             let s = sender.clone();
             reindex_btn.connect_clicked(move |_| {
@@ -1436,7 +1436,7 @@ fn rebuild_content_search_list(
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         actions.set_valign(gtk::Align::Center);
 
-        let read_btn = gtk::Button::with_label("📖 Read Book");
+        let read_btn = gtk::Button::with_label("Read Book");
         read_btn.add_css_class("kalam-primary-btn");
         let b_id = res.book.id;
         let s = sender.clone();

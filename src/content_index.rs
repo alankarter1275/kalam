@@ -96,7 +96,7 @@ pub fn highlight_match_markers(snippet_with_markers: &str) -> String {
     escaped
         .replace(
             "[[[MATCH]]]",
-            "<span weight=\"bold\" foreground=\"#d97706\" background=\"rgba(244, 211, 94, 0.28)\">",
+            "<span weight=\"bold\" foreground=\"#d97706\" background=\"#f4d35e\" background_alpha=\"30%\">",
         )
         .replace("[[[/MATCH]]]", "</span>")
 }
@@ -165,15 +165,17 @@ pub fn index_book(catalog: &Catalog, book_id: i64) -> Result<()> {
         return Ok(());
     }
 
+    // Only text-based books (EPUB and PDF) contain searchable written text.
+    // Comics (CBZ/CBR) are compressed archives of images without text streams.
+    if !matches!(book.format, BookFormat::Epub | BookFormat::Pdf) {
+        return Ok(());
+    }
+
     let sections = match book.format {
         BookFormat::Epub => extract_epub_content(&book.file_path).unwrap_or_default(),
         BookFormat::Pdf => extract_pdf_content(&book.file_path).unwrap_or_default(),
         _ => Vec::new(),
     };
-
-    if sections.is_empty() {
-        return Ok(());
-    }
 
     let total_chapters = sections.len();
     let mut total_words = 0usize;
@@ -191,7 +193,7 @@ pub fn index_book(catalog: &Catalog, book_id: i64) -> Result<()> {
         params![book_id],
     )?;
 
-    {
+    if !sections.is_empty() {
         let mut stmt = conn.prepare_cached(
             "INSERT INTO book_content_fts (book_id, chapter_index, chapter_title, content)
              VALUES (?1, ?2, ?3, ?4)",
@@ -211,11 +213,11 @@ pub fn index_book(catalog: &Catalog, book_id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Index all books currently in the catalog that are not yet in the index.
+/// Index all text books (EPUB & PDF) currently in the catalog that are not yet in the index.
 pub fn index_all_unindexed(catalog: &Catalog) -> Result<usize> {
     let conn = catalog.conn();
     let mut stmt = conn.prepare(
-        "SELECT id FROM books WHERE id NOT IN (SELECT book_id FROM book_search_index_status) ORDER BY id ASC",
+        "SELECT id FROM books WHERE UPPER(format) IN ('EPUB', 'PDF') AND id NOT IN (SELECT book_id FROM book_search_index_status) ORDER BY id ASC",
     )?;
     let ids: Vec<i64> = stmt
         .query_map([], |r| r.get(0))?
@@ -233,12 +235,12 @@ pub fn index_all_unindexed(catalog: &Catalog) -> Result<usize> {
     Ok(count)
 }
 
-/// Rebuild the full-text search index for all books from scratch.
+/// Rebuild the full-text search index for all text books (EPUB & PDF) from scratch.
 pub fn reindex_all(catalog: &Catalog) -> Result<usize> {
     let conn = catalog.conn();
     conn.execute("DELETE FROM book_content_fts", [])?;
     conn.execute("DELETE FROM book_search_index_status", [])?;
-    let mut stmt = conn.prepare("SELECT id FROM books ORDER BY id ASC")?;
+    let mut stmt = conn.prepare("SELECT id FROM books WHERE UPPER(format) IN ('EPUB', 'PDF') ORDER BY id ASC")?;
     let ids: Vec<i64> = stmt
         .query_map([], |r| r.get(0))?
         .filter_map(|r| r.ok())
@@ -255,17 +257,21 @@ pub fn reindex_all(catalog: &Catalog) -> Result<usize> {
     Ok(count)
 }
 
-/// Get the current status of the content search index.
+/// Get the current status of the content search index for text books (EPUB & PDF).
 pub fn get_index_status(catalog: &Catalog) -> Result<ContentIndexStatus> {
     let conn = catalog.conn();
-    let total_books: i64 = conn.query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))?;
+    let total_books: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM books WHERE UPPER(format) IN ('EPUB', 'PDF')",
+        [],
+        |r| r.get(0),
+    )?;
     let indexed_books: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM book_search_index_status",
+        "SELECT COUNT(*) FROM book_search_index_status WHERE book_id IN (SELECT id FROM books WHERE UPPER(format) IN ('EPUB', 'PDF'))",
         [],
         |r| r.get(0),
     )?;
     let (total_chapters, total_words): (i64, i64) = conn.query_row(
-        "SELECT COALESCE(SUM(total_chapters), 0), COALESCE(SUM(total_words), 0) FROM book_search_index_status",
+        "SELECT COALESCE(SUM(total_chapters), 0), COALESCE(SUM(total_words), 0) FROM book_search_index_status WHERE book_id IN (SELECT id FROM books WHERE UPPER(format) IN ('EPUB', 'PDF'))",
         [],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
@@ -370,7 +376,7 @@ mod tests {
         let out = highlight_match_markers(input);
         assert!(out.contains("&lt;Elizabeth&gt;"));
         assert!(out.contains("&amp; Jane."));
-        assert!(out.contains("<span weight=\"bold\" foreground=\"#d97706\" background=\"rgba(244, 211, 94, 0.28)\">Darcy</span>"));
+        assert!(out.contains("<span weight=\"bold\" foreground=\"#d97706\" background=\"#f4d35e\" background_alpha=\"30%\">Darcy</span>"));
     }
 
     #[test]
@@ -385,6 +391,13 @@ mod tests {
             [],
         ).unwrap();
         let book_id = conn.last_insert_rowid();
+
+        // Insert a comic book into books table to verify it is excluded from text content indexing
+        conn.execute(
+            "INSERT INTO books (uuid, title, sort_title, authors, series, description, format, file_name, file_hash, added_at, progress)
+             VALUES ('u-comic', 'Naruto Ch 1', 'naruto ch 1', 'Kishimoto', NULL, '', 'cbz', 'naruto.cbz', 'h2', '2026-01-01', 0)",
+            [],
+        ).unwrap();
 
         // Insert content into FTS table directly for test
         conn.execute(
@@ -407,6 +420,7 @@ mod tests {
         drop(conn);
 
         let status = get_index_status(&cat).unwrap();
+        // total_books should be 1 (only EPUB/PDF text books, excluding the comic)
         assert_eq!(status.total_books, 1);
         assert_eq!(status.indexed_books, 1);
         assert_eq!(status.total_chapters, 2);

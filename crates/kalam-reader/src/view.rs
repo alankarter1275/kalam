@@ -983,7 +983,9 @@ impl ReaderView {
         let mut chapter_titles: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
         fn collect_toc_titles(entries: &[chapbook_core::TocEntry], map: &mut std::collections::HashMap<usize, String>) {
             for e in entries {
-                map.entry(e.spine_index).or_insert_with(|| e.title.clone());
+                if let Some(idx) = e.spine_index {
+                    map.entry(idx).or_insert_with(|| e.label.clone());
+                }
                 collect_toc_titles(&e.children, map);
             }
         }

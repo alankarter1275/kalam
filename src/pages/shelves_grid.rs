@@ -127,7 +127,10 @@ impl Component for ShelvesGridModel {
                     root,
                     self.service.catalog().clone(),
                     ShelfEditorMode::Create(kind),
-                    move || s.input(ShelvesMsg::Refresh),
+                    move || {
+                        // Non-modal dialog: quiet no-op if this page is gone.
+                        let _ = s.input_sender().send(ShelvesMsg::Refresh);
+                    },
                 );
             }
             ShelvesMsg::Edit(shelf_id) => {
@@ -136,7 +139,10 @@ impl Component for ShelvesGridModel {
                     root,
                     self.service.catalog().clone(),
                     ShelfEditorMode::Edit { shelf_id },
-                    move || s.input(ShelvesMsg::Refresh),
+                    move || {
+                        // Non-modal dialog: quiet no-op if this page is gone.
+                        let _ = s.input_sender().send(ShelvesMsg::Refresh);
+                    },
                 );
             }
             ShelvesMsg::Delete(shelf_id) => {
@@ -161,7 +167,10 @@ impl Component for ShelvesGridModel {
                             &name,
                             "Could not delete the shelf",
                         );
-                        s.input(ShelvesMsg::Refresh);
+                        // The confirm popover can outlive this page; send
+                        // through the raw channel so a closed page is a
+                        // quiet no-op rather than a panic.
+                        let _ = s.input_sender().send(ShelvesMsg::Refresh);
                     }
                 });
             }

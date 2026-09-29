@@ -803,7 +803,10 @@ impl Component for BookFloatModel {
                     let id = book.id;
                     let s = sender.clone();
                     open_metadata_editor(root, self.service.catalog().clone(), id, move || {
-                        s.input(BookFloatMsg::Refresh)
+                        // Non-modal dialog: may outlive this floating window.
+                        // The raw sender drops the message quietly instead of
+                        // panicking on a closed component.
+                        let _ = s.input_sender().send(BookFloatMsg::Refresh);
                     });
                 }
             }
@@ -837,7 +840,12 @@ impl Component for BookFloatModel {
                                 match res {
                                     Ok(()) => {
                                         crate::notify::success("Comic Remastered", &format!("Successfully remastered {}", title));
-                                        s.input(BookFloatMsg::Refresh);
+                                        // A remaster runs for minutes; this
+                                        // floating window may be closed before
+                                        // it finishes. The raw sender drops
+                                        // the message quietly instead of
+                                        // panicking on a closed component.
+                                        let _ = s.input_sender().send(BookFloatMsg::Refresh);
                                     }
                                     Err(err) => {
                                         crate::notify::error("Remaster failed", &err.to_string());

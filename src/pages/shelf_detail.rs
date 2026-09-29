@@ -204,7 +204,11 @@ impl Component for ShelfDetailModel {
                         root,
                         self.service.catalog().clone(),
                         ShelfEditorMode::Edit { shelf_id: shelf.id },
-                        move || s.input(ShelfDetailMsg::Refresh),
+                        move || {
+                            // Non-modal dialog: the page can be closed before
+                            // Save is clicked. Quiet no-op instead of panic.
+                            let _ = s.input_sender().send(ShelfDetailMsg::Refresh);
+                        },
                     );
                 }
             }
@@ -216,7 +220,11 @@ impl Component for ShelfDetailModel {
                             root,
                             self.service.catalog().clone(),
                             shelf.id,
-                            move || s.input(ShelfDetailMsg::Refresh),
+                            move || {
+                                // Non-modal dialog: quiet no-op if the page
+                                // is gone by the time it closes.
+                                let _ = s.input_sender().send(ShelfDetailMsg::Refresh);
+                            },
                         );
                     }
                 }

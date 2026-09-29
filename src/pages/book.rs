@@ -768,7 +768,11 @@ impl Component for BookPageModel {
                     let id = book.id;
                     let s = sender.clone();
                     open_metadata_editor(root, self.service.catalog().clone(), id, move || {
-                        s.input(BookPageMsg::Refresh)
+                        // The editor dialog is non-modal and can outlive this
+                        // page. relm4's `input()` panics if the component
+                        // runtime is gone, so send through the raw channel,
+                        // which quietly drops the message instead.
+                        let _ = s.input_sender().send(BookPageMsg::Refresh);
                     });
                 }
             }
@@ -811,7 +815,11 @@ impl Component for BookPageModel {
                                 match res {
                                     Ok(()) => {
                                         crate::notify::success("Comic Remastered", &format!("Successfully remastered {}", title));
-                                        s.input(BookPageMsg::Refresh);
+                                        // A remaster runs for minutes; the page
+                                        // may be closed before it finishes. The
+                                        // raw sender drops the message quietly
+                                        // instead of panicking on a dead page.
+                                        let _ = s.input_sender().send(BookPageMsg::Refresh);
                                     }
                                     Err(err) => {
                                         crate::notify::error("Remaster failed", &err.to_string());

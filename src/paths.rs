@@ -222,15 +222,6 @@ pub fn note_folder(uuid: &str, folder_name: &str) {
     }
 }
 
-/// Forget every discovered folder name. The next lookup rescans the library
-/// directory. Only needed when a rename happened that [`note_folder`] could
-/// not report — tests use it; production code paths all report.
-pub fn invalidate_folder_cache() {
-    if let Some(lock) = FOLDER_INDEX.get() {
-        *lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-    }
-}
-
 fn resolve_library_folder(uuid: &str) -> Option<String> {
     let lock = FOLDER_INDEX.get_or_init(|| std::sync::Mutex::new(None));
     let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

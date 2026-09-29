@@ -189,12 +189,13 @@ a year. The 2026-09-30 pass corrected a table that had last been verified
 | Comic remaster dialog | shipped | `src/widgets/remaster_dialog.rs`, `comics::remaster_comic_archive`; changelog 2026-09-29 |
 | Bubble-aware comic OCR | **removed 2026-09-30** | Was item 2.14 (+2.15/2.16); removed entirely by item 2.17 at the owner's decision — code, wiring, settings section, CI probe, fixtures and cached rows (schema v17 purge). Recoverable from git history (`git log -- src/bubble_ocr.rs`). Scanned-PDF OCR stays. |
 
-**Test baseline:** **updated after the 2.17 removal run — the 884-count of
-run `36628490914` (2026-09-30) predates it.** The removal deletes the comic
-OCR probe tests, the `bubble_ocr` unit tests and the reader's OCR/selection
-tests, so the count drops; the exact number from the next green run is
-recorded in the changelog row of the same date. (Historical: 884 =
-`36628490914`, 881 = `36613679329`, 750 = `35399375314`.)
+**Test baseline (run `36641336616`, 2026-09-30 — first green run after the
+2.17 comic-OCR removal):** **870 tests passed, 0 failed**, 7 ignored (the
+slow neural-inference probes, run separately; the two comic probes are gone
+with the feature, the scanned-PDF probe remains). The count dropped from
+884 because the removal deleted 14 unit tests along with the code they
+tested. (Historical: 884 = `36628490914`, 881 = `36613679329`, 750 =
+`35399375314`.)
 
 ---
 

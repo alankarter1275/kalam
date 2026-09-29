@@ -18,7 +18,7 @@
 //! (floor 0.003), perimeter darkness 0.83–1.00 (floor 0.55).
 
 use anyhow::Result;
-use ocrs::{ImageSource, OcrEngine};
+use ocrs::{ImageSource, OcrEngine, TextItem};
 use serde::{Deserialize, Serialize};
 
 use crate::pdf::{PdfPageText, PdfTextLine};

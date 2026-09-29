@@ -3649,7 +3649,6 @@ impl Component for ComicsReaderModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pdf::PdfPageText;
     use std::sync::Arc;
 
     struct DummyProvider {

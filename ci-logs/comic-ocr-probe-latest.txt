@@ -1,28 +1,40 @@
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 0.22s
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 0.20s
 [1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-0a34a0afab25c2a2)
 
-running 1 test
-=== comic-page1.png: 3 balloons, 8 lines
-  balloon 0 [125,95 - 616,376]: THE KEEPER'S LIGHT | HAS GONE OUT. | Nobody has seen it burn
+running 2 tests
+=== comic-page1.png: 3 balloons, 11 lines
+  balloon 0 [125,95 - 616,376]: T | THE KEEPER'S LIGHT | HAS GONE OUT. | Nobody has seen it burn | -
   balloon 1 [75,945 - 516,1036]: MEANWHILE, ON THE CLIFFS...
-  balloon 2 [645,1255 - 1126,1556]: T | Then we climb  | tonight. | -
-=== comic-page2.png: 5 balloons, 18 lines
-  balloon 0 [95,145 - 536,426]: - | LEFT FIRST, | read me | before the right one | -
-  balloon 1 [665,175 - 1106,456]: RIGHT SECOND, | even though | I start higher | -
-  balloon 2 [95,625 - 536,896]: N | E | D: new band | starts here
-  balloon 3 [665,825 - 1106,1146]: E: my own band, | lower still
-  balloon 4 [318,1243 - 912,1550]: hmm... maybe | the lamp oil | 1
-=== comic-page3.png: 3 balloons, 9 lines
-  balloon 0 [85,75 - 616,236]: / | Morning already? | The ferry leaves at noon.
+  balloon 2 [645,1255 - 1126,1556]: T | Then we climb  | tonight. | 1 | -
+=== comic-page2.png: 5 balloons, 30 lines
+  balloon 0 [95,145 - 536,426]: - | 1 | LEFT FIRST, | read me | before the right one | T | -
+  balloon 1 [665,175 - 1106,456]: - | RIGHT SECOND, | even though | I start higher | - | -
+  balloon 2 [95,625 - 536,896]: 1 | 1 | E | D: new band | starts here | I | -
+  balloon 3 [665,825 - 1106,1146]: - | E: my own band, | lower still | - | I | I
+  balloon 4 [318,1243 - 912,1550]: hmm... maybe | the lamp oil | - | 1
+=== comic-page1.png: plain 19/19 words, stretched 19/19
+=== comic-page3.png: 3 balloons, 7 lines
+  balloon 0 [85,75 - 616,236]: Morning already? | The ferry leaves at noon.
   balloon 1 [185,295 - 696,466]: She kept the ticket | in her coat pocket.
-  balloon 2 [105,805 - 556,986]: K | We can still | make it. | -
-=== comic-page4.jpg: 4 balloons, 8 lines
-  balloon 0 [108,78 - 602,361]: The lamp is out | and the tide is turning.
+  balloon 2 [105,805 - 556,986]: 1 | We can still | make it.
+=== comic-page4.jpg: 4 balloons, 10 lines
+  balloon 0 [108,78 - 602,361]: The lamp is out | and the tide is turning. | S
   balloon 1 [64,944 - 557,1047]: THAT NIGHT, THE FERRY NEVER CAME.
   balloon 2 [625,1185 - 1096,1424]: We row | instead.
-  balloon 3 [705,1385 - 1156,1656]: Tr | E | Agreed.
+  balloon 3 [705,1385 - 1156,1656]: S | GOr | E | Agreed.
+=== comic-page5.png: 3 balloons, 8 lines
+  balloon 0 [115,95 - 606,356]: 1 | T | The print faded | over the years.
+  balloon 1 [645,135 - 1126,426]: This ink was cheap | and grey from the start.
+  balloon 2 [155,955 - 696,1226]: Barely legible | even to young eyes.
 test bubble_ocr::tests::comic_bubble_probe_fixture_pages ... ok
+=== comic-page2.png: plain 31/31 words, stretched 31/31
+=== comic-page3.png: plain 20/20 words, stretched 20/20
+=== comic-page4.jpg: plain 19/19 words, stretched 19/19
+=== comic-page5.png: plain 21/21 words, stretched 21/21
+=== TOTAL: plain 110/110, stretched 110/110
+VERDICT: no difference on the fixtures — keep plain crops as the default (ROADMAP 2.16).
+test bubble_ocr::tests::comic_bubble_probe_grayscale_contrast ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 488 filtered out; finished in 4.40s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 491 filtered out; finished in 16.30s
 
---- run 36613679329 ---
+--- run 36628490914 ---

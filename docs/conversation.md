@@ -2381,4 +2381,30 @@ every runtime warning the owner reports and every agent mistake is written
 into `docs/pitfalls.md` — every instance, no exceptions — and the pitfalls
 are re-read at the start of each phase. Entry §29 records the Pango case.
 
+
+## 17. Rules Confirmed: No Emoji, the Async Principle, and plan.md (2026-10-01)
+
+The owner confirmed all three proposals from the async talk:
+
+1. **Icons:** symbolic monochrome SVGs agreed, with a boundary —
+   "professional and restrained only, no funky icons like a flame." No
+   emoji anywhere, ever; Nerd Fonts declined (private-use codepoints,
+   extra megabytes, tofu boxes when the font is missing).
+2. **The async principle, verbatim:** "the UI thread never touches disk,
+   database, or parsing." And a widening field report that sets the next
+   audit's direction: **the whole app feels slow except the readers.**
+3. **The plan.md workflow:** planning → implementation plan →
+   implementation; all research and all owner questions during planning;
+   the file is cleared only after the outcome is recorded in ROADMAP and
+   pitfalls; if implementation proves the plan wrong, work stops and
+   returns to planning.
+
+All three are now in the working agreement and GEMINI.md. The first
+`plan.md` was drafted the same day for 2.18 + the PDF half of 2.20 —
+instant open, one shared OCR queue with import-time warming, forward-biased
+pre-warm, bounded text cache, first-click selection, and EPUB-parity
+teardrop handles — with three open questions for the owner: whole-book vs
+first-pages OCR at import, whether a "recognizing…" signal is wanted, and
+which non-reader flows feel slowest.
+
 *Last updated: 2026-10-01.*

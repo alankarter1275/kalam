@@ -72,6 +72,23 @@ touching code:
   into `docs/pitfalls.md` — every instance, no exceptions — and the
   pitfalls file is re-read at the start of each phase.** (Owner directive,
   2026-10-01; see pitfalls §29.)
+- **No emoji, ever — in UI strings, comments, or docs.** Plain text, or
+  symbolic monochrome SVG icons where a glyph is truly needed —
+  **professional and restrained only**, no novelty icons (owner: "no funky
+  icons like a flame — the app should look professional"). Color emoji in
+  GTK labels send Pango to Noto Color Emoji, which cairo cannot scale on
+  the owner's system (pitfalls §29). Nerd Fonts were considered and
+  declined: private-use codepoints, extra megabytes, tofu boxes when the
+  font is missing.
+- **Every piece of work follows plan.md: planning → implementation plan →
+  implementation.** The plan is written and refined at the repo root in
+  `plan.md` before any code: research with file/line evidence, pitfalls
+  consulted, test plan, and every open question asked of the owner DURING
+  planning — never mid-implementation. If implementation proves the plan
+  wrong, stop, update the plan, ask again. When work moves on, the outcome
+  is recorded here (item + changelog) and in pitfalls first — then
+  plan.md's content is deleted and replaced by the next plan. (Owner
+  directive, 2026-10-01.)
 - **Keep the docs current — in the same commit as the code.** A change that
   leaves this file stale is **not done**.
 - **Commit work regularly after major changes or completed batches.** Standing
@@ -1359,15 +1376,21 @@ they need 1.2's asynchronous service layer underneath them.
   are not in Noto Color Emoji and are left alone.
 
 - **2.20 — Instant, never-blocking PDF open; the async-everything audit
-  (owner directive 2026-10-01 — awaiting the talk before building).** The
-  owner's standing principle: the UI is for clicking; every process —
-  document open, OCR, text extraction, anything touching disk or the
-  database — runs in the background. Today the PDF reader still opens the
-  document, walks the outline and renders the first 1–2 pages synchronously
-  inside `PdfReaderModel::new` on the UI thread, and per-click vector text
-  extraction also runs on the UI thread. OCR itself is already a background
-  worker. The owner asked for a talk first; scope is agreed there before
-  any code.
+  (owner directive 2026-10-01; principle confirmed and scope widened the
+  same day).** The owner's standing principle, confirmed verbatim: **"the
+  UI thread never touches disk, database, or parsing."** The UI is for
+  clicking; every process runs in the background. Confirmed design for the
+  PDF half: the reader window appears instantly with a page frame, the
+  document open + outline walk + first render move to the background
+  workers; OCR for scanned pages runs at import time through one shared
+  queue (low priority at import, visible pages jump the queue when the
+  book is opened); page text is pre-warmed for the visible window (forward
+  biased, cancellable on jumps); the text-layer cache gets the same bounded
+  window the image cache already has. **Field report widening the scope:
+  the whole app feels slow except the readers** — the audit therefore
+  starts with measurement (the `src/timing.rs` spans already exist for
+  startup and `grid_build`), ties into 7.1/7.5, and proceeds screen by
+  screen. Planning happens in `plan.md` (see the working agreement).
 
 
 **Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
@@ -1602,7 +1625,10 @@ findings. Nothing here has been started, so numbering the pre-existing items
 breaks no reference.
 
 - **7.1 — Fix the remaining bottlenecks**, notably opening latency on floating
-  book cards and detail views.
+  book cards and detail views. *Owner field report, 2026-10-01: "the whole
+  app kind of feels slow except for the readers."* The audit begins with
+  timing spans on the non-reader flows (Home, Library grid, book page,
+  dialogs) before any fixing — see 2.20.
 - **7.2 — Floating window host.** Book cards, quick notes and dictionary popups
   float above the active view without reloading the page or leaking memory.
 - **7.3 — Extend the perf budgets** to the new subsystems from Phases 3–6.
@@ -2150,6 +2176,7 @@ top-to-bottom like a journal.
 | 2026-09-30 | **Item 2.16 run: the grayscale/contrast experiment, with a dedicated fixture and a both-modes CI probe.** New `comic-page5.png` (generator updated): old tan paper, one control balloon with crisp black text and two faded grey ones — badly-faded text kept just under the detector's DARK_T (128) so balloon detection is unaffected (detector prototype: 3/3 balloons, zero false positives, IoU 0.95; ink margin 16×). New `CropPrep` mode in `src/bubble_ocr.rs`: per-crop BT.601 grayscale plus a 2nd–98th percentile luminance stretch (skipped when the spread is under 48, where it would only amplify noise), wired as `bubble_ocr_page_prep` — the shipped default stays `CropPrep::None`. A second `#[ignore]`d probe, `comic_bubble_probe_grayscale_contrast`, runs every fixture page both ways and publishes scores + a verdict line to `ci-logs/comic-ocr-probe-latest.txt` on every push. Decision rule unchanged from 2026-09-29: the stretch becomes the default only if it finds words the plain pipeline misses without losing any it finds. **Verdict from run `36628490914`: plain crops found 110/110 ground-truth words, stretched crops the same 110/110 — even the deliberately-faded balloons read cleanly without help, because ocrs already normalizes its input internally. No measurable gain, so the stretch does NOT ship as the default.** The mode and the probe stay: the probe re-measures on every push at zero cost, and becomes interesting again whenever ocrs publishes new models (the parked ④ from the same ladder). |
 | 2026-09-30 | **Item 2.17: comic OCR removed entirely (owner decision), and with it 2.14/2.15/2.16 are reversed.**
 | 2026-10-01 | **Stability pass verdict, three numbered items, and a new recording rule.** Owner field report: EPUB reading "it's alright"; PDF double/triple-click selection broken (item **2.18**, which also carries 2.10's close: same selection and handles in both readers); a new standing directive that everything runs asynchronously, UI only for clicks — PDF must open instantly, always (item **2.20**, talk agreed before building). Terminal warnings `Pango-WARNING ... 'Noto Color Emoji 8.8'` traced to five color-emoji strings in GTK labels and fixed the same day (item **2.19**): two on the comics end card and pill counter, one on the streak strip, three on the watch-folder checkboxes — cairo cannot scale the Noto Color Emoji bitmap font on the owner's system. **New rule from the owner, now in the working agreement:** every runtime warning the owner reports and every agent mistake goes into `docs/pitfalls.md` — every instance, no exceptions — and the pitfalls are re-read at the start of each phase so nothing repeats. First entry: §29 (this Pango case). |
+| 2026-10-01 | **Workflow and design decisions confirmed by the owner.** (1) **No emoji ever** — plain text or symbolic monochrome SVG icons, "professional and restrained only, no funky icons" (Nerd Fonts considered and declined: private-use codepoints, extra megabytes, tofu when missing). (2) **2.20's principle confirmed verbatim** — "the UI thread never touches disk, database, or parsing" — with a widening field report: **the whole app feels slow except the readers**, so the audit starts with measurement and ties into 7.1/7.5. (3) **The plan.md workflow is adopted**: planning → implementation plan → implementation; all research and all owner questions happen during planning; plan.md is cleared only after the outcome is recorded here and in pitfalls; if implementation changes the plan, work stops and returns to planning. First plan drafted the same day for 2.18 + 2.20 (PDF half). Rules written into the working agreement and GEMINI.md. |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

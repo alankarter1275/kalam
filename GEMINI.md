@@ -1,5 +1,25 @@
 # Agent Workflow Rules
 
+- **Plan First, Then Build (owner directive 2026-10-01)**: every piece of
+  work — any change, however small — starts as a plan in [`plan.md`](./plan.md)
+  at the repo root. Workflow: **planning → implementation plan →
+  implementation.** During planning, do all the research there (read the
+  code, cite files and lines, consult `docs/pitfalls.md`), keep updating the
+  file as the plan sharpens, and ask the owner every open question THERE —
+  never during implementation. Implementation follows the approved plan
+  exactly; if implementation reveals something that changes the plan, STOP
+  coding, return to `plan.md`, update it, and ask again. When work moves on,
+  the plan's outcome is recorded in ROADMAP.md (item + changelog) and
+  pitfalls first — THEN plan.md's content is deleted and the next plan
+  written. plan.md holds only the current work; history lives in the
+  roadmap and in git.
+
+- **No Emoji, Ever (owner directive 2026-10-01)**: no emoji in any UI
+  string, comment, or document. Use plain text, or symbolic monochrome SVG
+  icons where a glyph is truly needed — professional and restrained only
+  (no novelty icons). Color emoji in GTK labels crash Pango into Noto Color
+  Emoji, which cairo cannot scale on the owner's system (pitfalls §29).
+
 - **The Roadmap Is The Plan**: read [`ROADMAP.md`](./ROADMAP.md) first, every
   session — especially "What is really shipped" and the changelog tail. All
   work follows it: nothing is built, removed or changed outside its items.

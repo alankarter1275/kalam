@@ -404,7 +404,7 @@ impl ComicsReaderModel {
             if let Some(next) = self.next_chapter() {
                 return format!("Completed · Next: {}", next.title);
             } else {
-                return "Series Completed 🎉".to_string();
+                return "Series Completed".to_string();
             }
         }
         if self.total_pages == 0 {
@@ -634,7 +634,7 @@ fn rebuild_viewport_widget(
             }
             card_box.append(&next_btn);
         } else {
-            let done_lbl = gtk::Label::new(Some("🎉 You've reached the end of the series!"));
+            let done_lbl = gtk::Label::new(Some("You've reached the end of the series!"));
             done_lbl.add_css_class("kalam-subtitle-muted");
             card_box.append(&done_lbl);
         }

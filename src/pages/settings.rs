@@ -1705,7 +1705,7 @@ fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::
         row_epub.add_css_class("kalam-watch-format-row");
         row_epub.set_valign(gtk::Align::Center);
 
-        let epub_check = gtk::CheckButton::with_label("📘 Novels & Ebooks (EPUB)");
+        let epub_check = gtk::CheckButton::with_label("Novels & Ebooks (EPUB)");
         epub_check.set_active(rule.import_epub);
         epub_check.add_css_class("kalam-watch-format-label");
         row_epub.append(&epub_check);
@@ -1754,7 +1754,7 @@ fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::
         row_pdf.add_css_class("kalam-watch-format-row");
         row_pdf.set_valign(gtk::Align::Center);
 
-        let pdf_check = gtk::CheckButton::with_label("📄 Documents & Papers (PDF)");
+        let pdf_check = gtk::CheckButton::with_label("Documents & Papers (PDF)");
         pdf_check.set_active(rule.import_pdf);
         pdf_check.add_css_class("kalam-watch-format-label");
         row_pdf.append(&pdf_check);
@@ -1803,7 +1803,7 @@ fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::
         row_comics.add_css_class("kalam-watch-format-row");
         row_comics.set_valign(gtk::Align::Center);
 
-        let comics_check = gtk::CheckButton::with_label("🎨 Comics & Manga (CBZ/CBR)");
+        let comics_check = gtk::CheckButton::with_label("Comics & Manga (CBZ/CBR)");
         comics_check.set_active(rule.import_comics);
         comics_check.add_css_class("kalam-watch-format-label");
         row_comics.append(&comics_check);

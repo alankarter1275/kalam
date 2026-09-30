@@ -2350,4 +2350,35 @@ append-only rule. The lesson the roadmap now records: a feature can be the
 owner's own pick, ship cleanly, pass its probe — and still be the wrong
 thing to keep if the owner's library never touches it.
 
-*Last updated: 2026-09-30.*
+
+## 16. The Stability Verdict: PDF Selection, Async Everything, and the Emoji Warning (2026-10-01)
+
+The owner ran the stability pass. EPUB reading: "it's alright I guess."
+Three things came back, all now numbered in the roadmap:
+
+1. **PDF double/triple-click selection is broken.** Diagnosis: the click
+   handler needs the page's text layer; on a scanned page with no cached
+   OCR it fires background OCR and returns silently — the first click does
+   nothing, with no feedback, and by the time recognition lands the reader
+   has given up. The owner also requires the same selection and handles in
+   the EPUB and PDF readers (the PDF reader draws its own thin-bar handles;
+   the EPUB reader uses the engine's teardrops). Item **2.18**, which also
+   closes 2.10.
+2. **"PDF should open instantly, always. Everything runs asynchronously;
+   the UI is just for clicking."** The owner has said this before and wants
+   it as a standing principle. Today the PDF reader opens the document,
+   walks the outline and renders the first pages synchronously on the UI
+   thread; OCR is already a background worker. Item **2.20**, and the owner
+   asked for a talk before any of it is built.
+3. **Pango warnings** — `failed to create cairo scaled font ... 'Noto
+   Color Emoji 8.8'`. The `8.8` matched the reader pill counter's 0.88rem
+   font size, which pinned it to the comics "Series Completed" label and
+   its party emoji. Five color-emoji strings across three files, all
+   replaced with plain text or a monochrome dot the same day. Item **2.19**.
+
+With the report came a new standing rule, now in the working agreement:
+every runtime warning the owner reports and every agent mistake is written
+into `docs/pitfalls.md` — every instance, no exceptions — and the pitfalls
+are re-read at the start of each phase. Entry §29 records the Pango case.
+
+*Last updated: 2026-10-01.*

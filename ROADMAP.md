@@ -68,6 +68,10 @@ touching code:
   quoted from memory of the *old, archived* plan, and the owner had to
   demand a truth pass (see `docs/pitfalls.md` §27). Quoting this file from
   memory is the same mistake.
+- **Every runtime warning the owner reports and every agent mistake goes
+  into `docs/pitfalls.md` — every instance, no exceptions — and the
+  pitfalls file is re-read at the start of each phase.** (Owner directive,
+  2026-10-01; see pitfalls §29.)
 - **Keep the docs current — in the same commit as the code.** A change that
   leaves this file stale is **not done**.
 - **Commit work regularly after major changes or completed batches.** Standing
@@ -1216,6 +1220,12 @@ they need 1.2's asynchronous service layer underneath them.
   The teardrop handles exist (`crates/kalam-reader/src/handles.rs`). The
   toolbar needs highlight in five colours plus underline, quote, dictionary
   lookup and copy.
+  - **Field verdict, 2026-10-01 (stability pass):** works in the EPUB reader;
+    **broken in the PDF reader** — double/triple-click does nothing on a
+    scanned page the first time, because the text layer does not exist until
+    OCR finishes and the click handler fails silently. The owner also
+    requires the same selection and handles in both readers. Carried by item
+    **2.18**; 2.10 closes when 2.18 lands.
 - ~~**2.11 — Rebuild PDF reader from scratch & UI stabilization.**~~ **Done, 2026-09-25.** With user
   approval, completely tore down the old heuristic `lopdf` viewer in `src/pdf.rs`
   and `src/pages/pdf_reader.rs`. MuPDF (`mupdf` crate v0.8 with `base14-fonts`)
@@ -1320,6 +1330,44 @@ they need 1.2's asynchronous service layer underneath them.
   the same day: keep, cached on disk), and every EPUB/PDF reader feature.
   Code is recoverable from git history. This item reverses 2.14, 2.15 and
   2.16; those rows stay as history.
+
+- **2.18 — PDF selection parity with the EPUB reader (owner report
+  2026-10-01).** Two defects from the stability pass: (1) double-click /
+  triple-click does nothing in PDFs on a scanned page the first time —
+  `ensure_page_text` finds no vector text and no cached OCR, fires
+  background OCR, and the click handler returns silently with no feedback;
+  by the time OCR lands the user has given up. (2) The owner requires the
+  EPUB and PDF readers to have the same selection and handles; today the
+  PDF reader draws its own thin-bar handles while the EPUB reader uses the
+  engine's teardrop handles. Plan: pre-warm page text for visible pages on
+  open/scroll (background, cancellable), a pending-selection intent that
+  auto-executes when the text arrives plus an explicit "recognizing…"
+  signal, and handle rendering unified with the EPUB look. Closes 2.10.
+
+- **2.19 — Color-emoji strings removed (Pango/cairo warning; owner report
+  2026-10-01, fixed the same day).** The owner's terminal showed
+  `Pango-WARNING: failed to create cairo scaled font ... 'Noto Color Emoji
+  8.8' ... out of memory` three times. Diagnosis: color emoji in GTK label
+  strings (the party emoji on the comics end card and pill counter, the fire
+  emoji on the streak strip, and the book/page/palette emoji on the
+  watch-folder checkboxes) send Pango to Noto Color Emoji, and cairo cannot
+  build a scaled font from that bitmap font on the owner's system — the
+  `8.8` is the pill counter's 0.88rem font size, which pinned it to the
+  comics "Series Completed" label. All five strings now use plain text or a
+  monochrome dot; a repo sweep confirmed no color-emoji codepoints remain
+  in `src/`. Monochrome dingbats already in use (check mark, cross, star)
+  are not in Noto Color Emoji and are left alone.
+
+- **2.20 — Instant, never-blocking PDF open; the async-everything audit
+  (owner directive 2026-10-01 — awaiting the talk before building).** The
+  owner's standing principle: the UI is for clicking; every process —
+  document open, OCR, text extraction, anything touching disk or the
+  database — runs in the background. Today the PDF reader still opens the
+  document, walks the outline and renders the first 1–2 pages synchronously
+  inside `PdfReaderModel::new` on the UI thread, and per-click vector text
+  extraction also runs on the UI thread. OCR itself is already a background
+  worker. The owner asked for a talk first; scope is agreed there before
+  any code.
 
 
 **Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
@@ -2101,6 +2149,7 @@ top-to-bottom like a journal.
 | 2026-09-30 | **Item 2.15 shipped: line-box padding for comic OCR.** ocrs crops each recognized line to the tight outline of its detected word boxes (`prepare_text_line` adds no margin), so ascenders, descenders and edge punctuation can be clipped before recognition. Every word box is now grown 2 px per side before `find_text_lines` groups them (`LINE_BOX_PAD` in `src/bubble_ocr.rs`). 2 px is deliberately small: ocrs joins words into one line at 5 px vertical overlap, and a bigger pad could fuse stacked lines of lettering. The fixture probe passes unchanged — synthetic fixtures have clean boxes, so no gain was expected there; hand-lettered real pages are the beneficiary. |
 | 2026-09-30 | **Item 2.16 run: the grayscale/contrast experiment, with a dedicated fixture and a both-modes CI probe.** New `comic-page5.png` (generator updated): old tan paper, one control balloon with crisp black text and two faded grey ones — badly-faded text kept just under the detector's DARK_T (128) so balloon detection is unaffected (detector prototype: 3/3 balloons, zero false positives, IoU 0.95; ink margin 16×). New `CropPrep` mode in `src/bubble_ocr.rs`: per-crop BT.601 grayscale plus a 2nd–98th percentile luminance stretch (skipped when the spread is under 48, where it would only amplify noise), wired as `bubble_ocr_page_prep` — the shipped default stays `CropPrep::None`. A second `#[ignore]`d probe, `comic_bubble_probe_grayscale_contrast`, runs every fixture page both ways and publishes scores + a verdict line to `ci-logs/comic-ocr-probe-latest.txt` on every push. Decision rule unchanged from 2026-09-29: the stretch becomes the default only if it finds words the plain pipeline misses without losing any it finds. **Verdict from run `36628490914`: plain crops found 110/110 ground-truth words, stretched crops the same 110/110 — even the deliberately-faded balloons read cleanly without help, because ocrs already normalizes its input internally. No measurable gain, so the stretch does NOT ship as the default.** The mode and the probe stay: the probe re-measures on every push at zero cost, and becomes interesting again whenever ocrs publishes new models (the parked ④ from the same ladder). |
 | 2026-09-30 | **Item 2.17: comic OCR removed entirely (owner decision), and with it 2.14/2.15/2.16 are reversed.**
+| 2026-10-01 | **Stability pass verdict, three numbered items, and a new recording rule.** Owner field report: EPUB reading "it's alright"; PDF double/triple-click selection broken (item **2.18**, which also carries 2.10's close: same selection and handles in both readers); a new standing directive that everything runs asynchronously, UI only for clicks — PDF must open instantly, always (item **2.20**, talk agreed before building). Terminal warnings `Pango-WARNING ... 'Noto Color Emoji 8.8'` traced to five color-emoji strings in GTK labels and fixed the same day (item **2.19**): two on the comics end card and pill counter, one on the streak strip, three on the watch-folder checkboxes — cairo cannot scale the Noto Color Emoji bitmap font on the owner's system. **New rule from the owner, now in the working agreement:** every runtime warning the owner reports and every agent mistake goes into `docs/pitfalls.md` — every instance, no exceptions — and the pitfalls are re-read at the start of each phase so nothing repeats. First entry: §29 (this Pango case). |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

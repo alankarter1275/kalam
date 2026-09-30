@@ -1178,3 +1178,32 @@ would have broken live code.
   may be shared with a sibling reader.
 - Check CSS classes the same way before deleting them — class names are
   global, and the PDF reader reuses the comics reader's toolbar styling.
+
+## 29. Runtime warnings are findings, not noise — record and chase every one
+
+**The fault (2026-10-01).** The owner's terminal showed three
+`Pango-WARNING: failed to create cairo scaled font ... the offending font
+is 'Noto Color Emoji 8.8' ... scaled_font status is: out of memory` lines
+while using the app. Nothing crashed, so nothing forced a look — but the
+warning carried a complete diagnosis if read: the `8.8` is a font size,
+and the only labels in the app at 0.88rem are the reader pill counter and
+a handful of small-text classes. Cross-checking which of those can contain
+emoji pinned it in minutes: the comics reader's "Series Completed" pill
+label. Five color-emoji strings across three files (comics end card ×2,
+streak strip, watch-folder checkboxes ×3) were sending Pango to Noto Color
+Emoji, whose CBDT bitmap font cairo cannot scale on the owner's system.
+
+### The rule (owner directive, 2026-10-01)
+
+- **Every runtime warning the owner reports, and every mistake the agent
+  makes, gets a pitfalls entry — every instance, no exceptions.** A warning
+  that is "just cosmetic" is still the app telling us where it is fragile.
+- **Diagnose to the exact line before fixing.** A warning text usually
+  contains its own coordinates (here: a font name and size that matched one
+  CSS class). Guessing produces fixes for the wrong string.
+- **Re-read this file at the start of each phase** (and whenever a similar
+  problem appears), so the same fault is never paid for twice.
+- **Color emoji never go in GTK label strings.** Pango's fallback to a
+  color bitmap font + cairo's inability to scale it equals three warnings
+  and a missing glyph on affected systems. Use plain text, a monochrome
+  dingbat (✓ ✕ ★ — not covered by Noto Color Emoji), or a symbolic icon.

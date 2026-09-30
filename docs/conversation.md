@@ -2407,4 +2407,54 @@ teardrop handles — with three open questions for the owner: whole-book vs
 first-pages OCR at import, whether a "recognizing…" signal is wanted, and
 which non-reader flows feel slowest.
 
+
+## 18. Planning Answers, Item 2.21, and the Architecture Question (2026-10-01)
+
+The owner answered the plan's three questions, and the plan for 2.18 +
+2.20 (PDF half) moved to APPROVED:
+
+1. **Whole-book OCR at import** — "whole book obviously" — and the owner's
+   own reasoning confirmed the design: results are stored page by page
+   (each page its own row the moment it finishes), so a book opened right
+   after import already has its first pages selectable. **Priority
+   promotion** made explicit: jump to page 5000 before the scan gets
+   there, and that page moves to the front of the queue.
+2. **The "Recognizing page..." signal: yes** ("yup").
+3. **The slow-app report refined:** the All Books grid is fast (the
+   windowed-grid work did its job) and scrolling is fast everywhere; the
+   pause is when things OPEN — tapping a book, dialogs, most of the UI.
+   That points at synchronous view/dialog construction on the UI thread,
+   and it drives the plan after this one.
+
+**A new idea, recorded as item 2.21 (proposed):** embed the recognized
+text back into the PDF file as an invisible text layer, so other
+applications see selectable text too. The owner framed it exactly right —
+"obviously this will be a conscious decision": an explicit action with a
+warning and an undo story, never automatic. Once embedded, the file
+carries its own text and our OCR cache is never needed for that book
+again. Planned after 2.18/2.20; the how (MuPDF PDF-level editing vs a
+minimal content-stream writer) is researched in its own planning phase.
+
+**The architecture question.** The owner: "we should have a general
+architectural design, like how things should be, not tailor-made for
+everything... currently, we run some tests and if it does show
+improvements over the previous design, we make changes. that can't go on
+right?" The agent's honest answer: agreed — measure-and-patch without a
+target design is whack-a-mole (7.6's unexplained 35x number is the poster
+child). Two warnings given honestly: (a) an architecture doc nobody
+enforces becomes another stale document — the project has been burned by
+exactly that (the README status table, the old P0–P12 plan; ARCH.md still
+says "lopdf" though MuPDF shipped on 2026-09-25); (b) the design should
+not be invented from theory — the readers already embody the right
+architecture (background workers, messages, bounded caches, instant first
+paint), and the owner's own report says the readers are the fast part.
+Proposal: rewrite ARCH.md into a short prescriptive principles document
+(threading model, layering, state flow, budgets, "the UI thread never
+touches disk, database, or parsing"), wire it into the plan workflow
+(every plan states how it complies), and migrate the slow screens to the
+pattern one at a time with timing spans proving each. Sequencing: the
+approved PDF plan ships first as the reference implementation; the
+architecture doc lands alongside it; nothing is rewritten from scratch.
+Decision pending the owner's agreement.
+
 *Last updated: 2026-10-01.*

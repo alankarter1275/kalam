@@ -1391,6 +1391,24 @@ they need 1.2's asynchronous service layer underneath them.
   starts with measurement (the `src/timing.rs` spans already exist for
   startup and `grid_build`), ties into 7.1/7.5, and proceeds screen by
   screen. Planning happens in `plan.md` (see the working agreement).
+  **Plan approved 2026-10-01** (whole-book import OCR stored page-wise;
+  visible-window priority promotion on jumps — including a jump straight
+  to page 5000; a brief "Recognizing page..." signal on not-yet-ready
+  pages). Implementation underway; `plan.md` is the working document.
+
+- **2.21 — Embed recognized text into the PDF file (proposed 2026-10-01;
+  awaiting the owner's go; planned after 2.18/2.20).** The owner asked
+  whether the OCR results could be written back into the PDF as an
+  invisible text layer, so other applications see selectable, searchable
+  text too. Answer: yes — this is the standard "searchable PDF"
+  construction (text rendered invisibly over the scanned image). It
+  modifies the file, so per the owner it must be **a conscious, explicit
+  action** — a button with a clear warning and an undo/backup story, never
+  automatic. A welcome side effect: once the file carries its own text,
+  the vector-text path serves it and our OCR cache is never needed for
+  that book again. Research (how to write the layer without risking file
+  corruption — MuPDF PDF-level editing vs a minimal content-stream writer)
+  happens in its own planning phase per the workflow.
 
 
 **Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
@@ -1625,10 +1643,14 @@ findings. Nothing here has been started, so numbering the pre-existing items
 breaks no reference.
 
 - **7.1 — Fix the remaining bottlenecks**, notably opening latency on floating
-  book cards and detail views. *Owner field report, 2026-10-01: "the whole
-  app kind of feels slow except for the readers."* The audit begins with
-  timing spans on the non-reader flows (Home, Library grid, book page,
-  dialogs) before any fixing — see 2.20.
+  book cards and detail views. *Owner field report, 2026-10-01, refined the
+  same day: "the whole app kind of feels slow except for the readers" —
+  specifically, the All Books grid is fast (the windowed-grid work), and
+  scrolling everywhere is fast; the pause is when things OPEN: tapping a
+  book, opening dialogs, most of the UI.** That points at synchronous view
+  and dialog construction (DB reads and widget-tree building on the UI
+  thread) — the exact violation of 2.20's principle. The audit begins with
+  timing spans on route/dialog construction before any fixing — see 2.20.
 - **7.2 — Floating window host.** Book cards, quick notes and dictionary popups
   float above the active view without reloading the page or leaking memory.
 - **7.3 — Extend the perf budgets** to the new subsystems from Phases 3–6.
@@ -2177,6 +2199,7 @@ top-to-bottom like a journal.
 | 2026-09-30 | **Item 2.17: comic OCR removed entirely (owner decision), and with it 2.14/2.15/2.16 are reversed.**
 | 2026-10-01 | **Stability pass verdict, three numbered items, and a new recording rule.** Owner field report: EPUB reading "it's alright"; PDF double/triple-click selection broken (item **2.18**, which also carries 2.10's close: same selection and handles in both readers); a new standing directive that everything runs asynchronously, UI only for clicks — PDF must open instantly, always (item **2.20**, talk agreed before building). Terminal warnings `Pango-WARNING ... 'Noto Color Emoji 8.8'` traced to five color-emoji strings in GTK labels and fixed the same day (item **2.19**): two on the comics end card and pill counter, one on the streak strip, three on the watch-folder checkboxes — cairo cannot scale the Noto Color Emoji bitmap font on the owner's system. **New rule from the owner, now in the working agreement:** every runtime warning the owner reports and every agent mistake goes into `docs/pitfalls.md` — every instance, no exceptions — and the pitfalls are re-read at the start of each phase so nothing repeats. First entry: §29 (this Pango case). |
 | 2026-10-01 | **Workflow and design decisions confirmed by the owner.** (1) **No emoji ever** — plain text or symbolic monochrome SVG icons, "professional and restrained only, no funky icons" (Nerd Fonts considered and declined: private-use codepoints, extra megabytes, tofu when missing). (2) **2.20's principle confirmed verbatim** — "the UI thread never touches disk, database, or parsing" — with a widening field report: **the whole app feels slow except the readers**, so the audit starts with measurement and ties into 7.1/7.5. (3) **The plan.md workflow is adopted**: planning → implementation plan → implementation; all research and all owner questions happen during planning; plan.md is cleared only after the outcome is recorded here and in pitfalls; if implementation changes the plan, work stops and returns to planning. First plan drafted the same day for 2.18 + 2.20 (PDF half). Rules written into the working agreement and GEMINI.md. |
+| 2026-10-01 | **Planning answers close 2.18/2.20's plan; item 2.21 proposed; the architecture question opened.** The owner answered all three plan questions: (1) **whole-book OCR at import** — "whole book obviously" — with page-wise storage confirmed (each page stored the moment it finishes, so a freshly imported book's early pages are already selectable) and **priority promotion**: landing on any not-yet-recognized page, including a jump straight to page 5000, moves that page to the front of the queue; (2) the "Recognizing page..." signal is wanted ("yup"); (3) the slow-app report refined: All Books grid fast (windowed grid), scrolling fast, the pause is OPENING things — book pages, dialogs, most of the UI — which points at synchronous view/dialog construction on the UI thread (updated 7.1; drives the plan after this one). **New item 2.21 proposed:** embed the recognized text back into the PDF as an invisible text layer so other apps can select it — an explicit, conscious user action with an undo/backup story; awaiting the go, planned after 2.18/2.20. **Architecture discussion opened by the owner:** a general architectural design instead of measure-and-patch; the agent's honest position (agree; codify the pattern the readers already embody; enforce via the plan workflow and budgets, because an unenforced architecture doc becomes another stale doc — ARCH.md still says "lopdf" though MuPDF shipped 2026-09-25) is in conversation.md §18; decision pending. `plan.md` status → APPROVED. |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

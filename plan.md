@@ -1,8 +1,10 @@
 # Plan — 2.18 + 2.20 (PDF half): instant, never-blocking PDF reading
 
-**Status: DRAFT — planning phase. Open questions for the owner at the
-bottom. No implementation starts until they are answered and this plan is
-approved.**
+**Status: APPROVED — the owner answered every open question on
+2026-10-01 (answers recorded in the Open questions section).**
+Implementation may start. The embed-text feature raised during planning is
+deliberately OUT of scope (it is roadmap item 2.21, planned separately
+after this work).
 
 Per the working agreement: research below is done and cited; the pitfalls
 file has been consulted (§23, §27, §28, §29 — see the end); all owner
@@ -69,10 +71,16 @@ plan — it starts with measurement and gets its own plan after this one.
    renders the first visible spread, and publishes results via messages
    the UI applies. Closing the reader cancels it. Nothing in
    `PdfReaderModel::new` touches the file.
-2. **One shared OCR queue.** Import enqueues OCR for image-only PDFs at
-   low priority (visible in the task manager, progress, cancellable). The
-   reader, when open, promotes its visible window to the front of the
-   queue. Deduplicated by (book, page) through the existing
+2. **One shared OCR queue, page-wise.** Import enqueues the WHOLE book
+   (owner decision 2026-10-01), page by page: each page is recognized and
+   stored as its own `page_ocr_cache` row the moment it finishes, so a
+   book opened right after import already has its first pages selectable
+   while later pages keep filling in. Low priority, visible in the task
+   manager, progress, cancellable. **Priority promotion (owner decision
+   2026-10-01): the moment the reader lands on a page whose text is not
+   ready — including a jump straight to page 5000 — that page and its
+   window go to the FRONT of the queue and the background scan continues
+   after them.** Deduplicated by (book, page) through the existing
    `page_ocr_cache`. Only pages whose vector text is empty are enqueued.
 3. **Text pre-warm, forward-biased.** After images are requested for the
    visible window, text for the same window is ensured on a worker
@@ -82,10 +90,12 @@ plan — it starts with measurement and gets its own plan after this one.
    images (text is ~20–60 KB/page, so the window may be wider — e.g.
    2× the image window — but it must have a cap).
 5. **First-click selection.** A click on a page whose text is not ready
-   stores a pending intent (page, point, kind) and signals it; when the
-   text arrives the intent executes automatically. With import-time OCR
-   and pre-warm this path is rare, but it exists so the first click is
-   never a dead click.
+   stores a pending intent (page, point, kind) and shows a brief
+   "Recognizing page..." signal (owner decision 2026-10-01: show it —
+   silence is what made the first click look broken); when the text
+   arrives the intent executes automatically. With import-time OCR and
+   pre-warm this path is rare, but it exists so the first click is never a
+   dead click.
 6. **Handle parity.** The PDF draw function renders the same teardrop
    handles the EPUB engine uses (same shape, size, color), so both readers
    look and feel identical. Plain text only in any new UI string — no
@@ -133,20 +143,19 @@ plan — it starts with measurement and gets its own plan after this one.
 - §27 — this plan's "What is true today" was verified against the code in
   this session, not quoted from memory or old docs.
 
-## Open questions for the owner (planning phase)
+## Open questions for the owner — ANSWERED 2026-10-01
 
-1. **Import-time OCR cost.** A 300-page scanned book takes minutes of
-   background CPU at import (each page ≈ seconds of neural inference).
-   It is background, visible and cancellable in the task manager, and the
-   book opens instantly either way. Option A: OCR the whole book at
-   import. Option B: OCR only the first ~10 pages at import, the rest
-   during first reading. Which do you prefer?
-2. **Feedback on a not-yet-recognized page.** If you click a page whose
-   text is not ready, should the app show a small brief "Recognizing
-   page…" message before the selection lands — or stay silent and simply
-   select the moment it is ready?
-3. **The whole-app slowness (drives the NEXT plan, not this one).** You
-   said everything except the readers feels slow. A rough order helps:
-   which feels slowest — Home, the Library grid, a book's page, author
-   pages, dialogs, or sidebar navigation? And is it opening things, or
-   scrolling, or both?
+1. **Import-time OCR cost:** **whole book** ("whole book obviously"), with
+   page-wise storage and priority promotion confirmed as described above.
+2. **Feedback on a not-yet-recognized page:** **show the signal** ("yup").
+3. **The whole-app slowness (drives the NEXT plan, not this one):** the
+   All Books grid is fast (the windowed-grid work); **the pause is when
+   things OPEN — tapping a book, opening dialogs, most of the UI**;
+   scrolling is fast. So the next plan measures and fixes route/dialog
+   construction (synchronous DB reads and widget-tree building on the UI
+   thread), not scrolling.
+
+Also raised during planning, recorded as roadmap item **2.21** (out of
+scope here): embedding the recognized text back into the PDF file as an
+invisible text layer, so other apps can select it too — an explicit,
+conscious user action, planned after this work.

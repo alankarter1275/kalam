@@ -1207,3 +1207,30 @@ Emoji, whose CBDT bitmap font cairo cannot scale on the owner's system.
   color bitmap font + cairo's inability to scale it equals three warnings
   and a missing glyph on affected systems. Use plain text, a monochrome
   dingbat (✓ ✕ ★ — not covered by Noto Color Emoji), or a symbolic icon.
+
+## 30. Check HEAD before committing — the moved-base fault can strike between edits and commit
+
+**The fault (2026-10-01, 5th occurrence of the moved-base fault).** The
+sandbox HEAD fell back to the old base (`29788b4`) at the start of a turn
+— after the previous turn's edits were already committed and pushed, so
+nothing looked wrong. The turn's own edits were then made and committed
+with `git add -A` **while standing on the stale base**, producing a commit
+whose tree was correct but whose parent was a month old. The push failed,
+and the rebase produced conflicts in every file changed since the old
+base, plus a stale `Cargo.lock` (an older transitive-dependency version)
+riding along in the commit.
+
+### The rule
+
+- **Before every `git add -A && git commit`, run `git log --oneline -1`
+  and confirm it is the expected tip, and check `git status --short` lists
+  only the files this turn intentionally touched.** A commit on the wrong
+  base is not a fast-forward away — it is a rebase conflict festival and a
+  vehicle for stale files.
+- **Recover by re-parenting the tree, never by re-editing files:** if a
+  commit with the correct tree has the wrong parent, `git reset --soft
+  origin/<branch>`, restore `ci-logs/` (and any other CI-owned files) from
+  origin, then commit again. The tree was right; only the parent was wrong.
+- Turn-start hygiene (already the rule, now with a reason): fetch +
+  `reset --mixed origin/<branch>` **before editing anything**, because the
+  fallback can happen between turns, not only between sessions.

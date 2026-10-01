@@ -1540,3 +1540,35 @@ Three are general and cost a full CI round trip each:
 - Renaming an `_`-prefixed parameter (here `_root` → `root`) breaks
   body references that were legal despite the prefix — grep the old
   name before renaming.
+
+## 38. Green in CI is not correct in the field — and "done" waits for the field
+
+**2026-10-02, 2.21's whole life cycle: planned, shipped CI-green, and
+withdrawn the same day.** The embed feature's unit tests included a
+full round trip — write the invisible text layer, save, reopen,
+extract, find the word back. It passed; CI was green; the item was
+reported as done. The owner's field test on a real book found the text
+"not embedded correctly" (his words; no further detail — he chose
+removal over debugging, and the feature is parked until the app is
+complete). Three separate "done?" answers had been given while his
+test was still pending.
+
+### The rules
+
+- A round trip through the same library that wrote the file proves
+  self-consistency, nothing more. "Any application can search this
+  file" is an interop claim; it is only tested by a different
+  implementation — pdftotext, pdfium, a real viewer. If this feature
+  returns, the CI test must run the written file through a second
+  renderer, and the field test comes before the item is called done.
+- When a defect report arrives with no detail and the owner chooses
+  removal, record exactly that — the report, the decision, the missing
+  detail — so the retry starts by reproducing the failure instead of
+  re-deriving a design that already failed once.
+- An item's done state includes the owner's visual QA for anything he
+  can see or run. The honest status before that is "awaiting field
+  test", never "done".
+- Scope honesty cuts both ways: when a proposed item is a nice-to-have
+  rather than core reading flow, say so at planning time. The owner's
+  verdict on 2.21 was "we are straying again" — a scope call he should
+  not have had to make after implementation.

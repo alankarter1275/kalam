@@ -100,10 +100,6 @@ pub enum PdfDocRequest {
     ExtractText { path: PathBuf, page: usize },
     /// Full-document text search.
     Search { path: PathBuf, query: String, toc: Vec<PdfTocEntry> },
-    /// The file was rewritten on disk under the same path (2.21: the
-    /// recognized text was embedded). Drop the cached document so the
-    /// service reopens the new file.
-    Reopen { path: PathBuf },
 }
 
 /// A click that landed on a page whose text layer was not ready yet
@@ -425,14 +421,6 @@ pub enum PdfReaderMsg {
     ClearSelection,
     HideZoomOsd(u64),
     ViewportResized,
-    /// The settings panel's "Embed recognized text" button was clicked
-    /// (2.21): show the confirmation dialog and start the embed task.
-    EmbedTextClicked,
-    /// A text embed finished writing this reader's file (2.21): drop
-    /// every cached text layer and make the doc service reopen the
-    /// rewritten document. Page images are unchanged, so the rendered
-    /// textures stay valid.
-    EmbedApplied { path: PathBuf },
 }
 
 #[derive(Debug)]
@@ -3165,17 +3153,8 @@ impl Component for PdfReaderModel {
                     let path = match &req {
                         PdfDocRequest::Info { path, .. }
                         | PdfDocRequest::ExtractText { path, .. }
-                        | PdfDocRequest::Search { path, .. }
-                        | PdfDocRequest::Reopen { path } => path.clone(),
+                        | PdfDocRequest::Search { path, .. } => path.clone(),
                     };
-                    if matches!(req, PdfDocRequest::Reopen { .. }) {
-                        // The file on disk changed under the same path
-                        // (2.21 text embed). Drop the cached document;
-                        // the changed-path check below then reopens the
-                        // rewritten file for this very request.
-                        cached_path = None;
-                        cached_doc = None;
-                    }
                     if cached_path.as_ref() != Some(&path) {
                         crate::timing::span("pdf_open_doc");
                         cached_path = Some(path.clone());
@@ -3241,11 +3220,6 @@ impl Component for PdfReaderModel {
                             let results = doc.search_document(&query, &toc, 500);
                             let _ = tx_doc_msg.send(PdfReaderMsg::SearchReady { query, results });
                         }
-                        PdfDocRequest::Reopen { .. } => {
-                            // Handled above the match: the document was
-                            // reopened from the rewritten file; there is
-                            // no answer to send for this request.
-                        }
                     }
                 }
             });
@@ -3310,7 +3284,7 @@ impl Component for PdfReaderModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        root: &Self::Root,
+        _root: &Self::Root,
     ) {
         match msg {
             PdfReaderMsg::Close => {
@@ -3356,7 +3330,7 @@ impl Component for PdfReaderModel {
                     if let Some(popover) = &self.search_popover {
                         popover.popdown();
                     }
-                    root.grab_focus();
+                    _root.grab_focus();
                 } else {
                     let entry = widgets.search_entry.clone();
                     glib::idle_add_local_once(move || {
@@ -3433,7 +3407,7 @@ impl Component for PdfReaderModel {
                 if let Some(popover) = &self.search_popover {
                     popover.popdown();
                 }
-                root.grab_focus();
+                _root.grab_focus();
             }
             PdfReaderMsg::NextPage => {
                 if self.current_page < self.total_pages {
@@ -4646,55 +4620,6 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::ViewportResized => {
                 self.update_scroll_policies(&widgets.viewport_scroll);
             }
-            PdfReaderMsg::EmbedTextClicked => {
-                if let Some(path) = self.file_path.clone() {
-                    let catalog = self.catalog.clone();
-                    let book_id = self.book_id;
-                    let tx = sender.input_sender().clone();
-                    // The confirm callback is an Fn closure (GTK's
-                    // handler kind), so it cannot hand its captures to
-                    // the task starter by value. Rc them, and clone out
-                    // per invocation -- the dialog closes on confirm, so
-                    // the job still runs at most once. The dialog's
-                    // display title is a separate String so the call's
-                    // borrow never crosses the closure's move.
-                    let confirm_title = self.title.clone();
-                    let title = std::rc::Rc::new(self.title.clone());
-                    let path = std::rc::Rc::new(path);
-                    crate::pdf_embed::present_confirm(root, &confirm_title, move || {
-                        let tx = tx.clone();
-                        crate::pdf_embed::enqueue(
-                            catalog.clone(),
-                            book_id,
-                            (*title).clone(),
-                            (*path).clone(),
-                            move |applied| {
-                                let _ = tx.send(PdfReaderMsg::EmbedApplied {
-                                    path: applied.to_path_buf(),
-                                });
-                            },
-                        );
-                    });
-                }
-            }
-            PdfReaderMsg::EmbedApplied { path } => {
-                // Only this reader's file matters: a different book was
-                // embedded (the reader moved on or was never this book)
-                // and there is nothing to reload.
-                if self.file_path.as_ref() == Some(&path) {
-                    // The file on disk now carries its text: forget every
-                    // cached text layer, make the doc service reopen the
-                    // rewritten file, and re-warm the visible window.
-                    // Page images are unchanged, so rendered textures
-                    // stay valid without a generation bump.
-                    self.page_text_cache.clear();
-                    self.text_in_progress.clear();
-                    if let Some(ref tx) = self.doc_tx {
-                        let _ = tx.send_blocking(PdfDocRequest::Reopen { path });
-                    }
-                    self.trigger_loads(&sender);
-                }
-            }
         }
 
         if let Some(ref sw) = self.settings_widgets {
@@ -5460,32 +5385,6 @@ fn build_pdf_settings_panel(
     let divider5 = gtk::Separator::new(gtk::Orientation::Horizontal);
     divider5.add_css_class("kalam-section-divider");
     wrap.append(&divider5);
-
-    // ── 5. Text Section (2.21) ────────────────────────────────
-    let text_section = reader_settings_section("Text");
-
-    let embed_text_btn = setting_icon_btn("kalam-embed-text-symbolic", "Embed Recognized Text");
-    let tx = sender.input_sender().clone();
-    embed_text_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::EmbedTextClicked);
-    });
-    text_section.append(&embed_text_btn);
-
-    let embed_hint = gtk::Label::new(Some(
-        "Write the recognized text into the PDF as an invisible layer, so search, \
-         selection and copy work in any reader. Asks first and keeps a .bak \
-         backup. Needs the whole book recognized.",
-    ));
-    embed_hint.add_css_class("kalam-reader-setting-hint");
-    embed_hint.set_wrap(true);
-    embed_hint.set_xalign(0.0);
-    text_section.append(&embed_hint);
-
-    wrap.append(&text_section);
-
-    let divider6 = gtk::Separator::new(gtk::Orientation::Horizontal);
-    divider6.add_css_class("kalam-section-divider");
-    wrap.append(&divider6);
 
     // ── 6. Document Properties Section ────────────────────────
     let info_section = reader_settings_section("Document Properties");

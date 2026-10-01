@@ -1466,11 +1466,18 @@ impl PdfReaderModel {
                 .as_ref()
                 .filter(|sel| sel.slot == slot_copy && !sel.is_block)
                 .is_some_and(|sel| over_selection_handle(sel, x, y));
-            cursor_overlay.set_cursor_from_name(over_handle.then_some("grab"));
+            // Over a grip: the open hand. Anywhere else on the page:
+            // the page's own cursor, the text I-beam `wrap_page` sets --
+            // never the plain arrow, which would override it.
+            cursor_overlay.set_cursor_from_name(if over_handle {
+                Some("grab")
+            } else {
+                Some("text")
+            });
         });
         let leave_overlay = overlay.clone();
         motion.connect_leave(move |_| {
-            leave_overlay.set_cursor_from_name(None);
+            leave_overlay.set_cursor_from_name(Some("text"));
         });
         overlay.add_controller(motion);
 
@@ -4277,12 +4284,9 @@ impl Component for PdfReaderModel {
                 // A press the drag gesture stood down for -- the second or
                 // third press of a multi-click -- stored no drag state; its
                 // release must not clear the selection that click made.
-                let Some((_, _, _, adjusting, _)) = drag else {
+                let Some((_, press_x, press_y, adjusting, _)) = drag else {
                     return;
                 };
-                if let Some(ov) = self.page_overlays.get(&slot) {
-                    ov.set_cursor_from_name(None);
-                }
                 if dx.abs() > 4.0 || dy.abs() > 4.0 {
                     if self.active_selection.borrow().is_some() {
                         self.show_selection_chip(slot, &sender);
@@ -4296,6 +4300,26 @@ impl Component for PdfReaderModel {
                     }
                 } else if self.active_selection.borrow().is_some() {
                     self.clear_selection();
+                }
+                // The pointer rests where the drop left it, and no motion
+                // event will arrive until it moves again. Park the cursor
+                // on exactly what the motion controller would show at
+                // that point -- the open hand when the drop ended on a
+                // grip, the page's text cursor otherwise. Resetting to
+                // the plain default here made the hand vanish after every
+                // drop (owner field re-test 2026-10-01).
+                if let Some(ov) = self.page_overlays.get(&slot) {
+                    let over_handle = self
+                        .active_selection
+                        .borrow()
+                        .as_ref()
+                        .filter(|sel| sel.slot == slot && !sel.is_block)
+                        .is_some_and(|sel| over_selection_handle(sel, press_x + dx, press_y + dy));
+                    ov.set_cursor_from_name(if over_handle {
+                        Some("grab")
+                    } else {
+                        Some("text")
+                    });
                 }
             }
             PdfReaderMsg::SelectionWordAt { slot, x, y } => {

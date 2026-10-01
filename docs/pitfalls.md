@@ -1381,3 +1381,39 @@ hundred lines above, is `if let Some(ov) = self.page_overlays.get(&slot)`.
 - Same class as §31's `255.0/255.0`: a one-token slip that only CI can see,
   because there is no local compiler. Before writing a match pattern on a
   method's return, say the type out loud.
+
+## 34. A cursor lifecycle must be closed: every release needs a resting state
+
+**The bug (owner field re-test 2026-10-01, one day after the hand cursor
+shipped).** After dropping a dragged selection handle in the PDF reader the
+cursor glitched: the closed hand vanished and the plain arrow sat over the
+grip until the pointer moved. Two mistakes in the new cursor code:
+
+1. The drag-end handler reset the cursor to the default (`None`) -- but no
+   motion event arrives after a drop until the pointer moves, so whatever
+   the release sets is what the user stares at. `None` also clobbered the
+   page's own base cursor.
+2. The PDF page overlay already had a resting cursor, the text I-beam,
+   set once in `wrap_page`. The motion and leave handlers wrote `None`
+   anywhere that was not a grip, so the first mouse move silently replaced
+   the I-beam with the plain arrow page-wide.
+
+**The fix.** Every cursor path lands on an explicit named state: I-beam
+over the page, open hand over a grip, closed hand during a grip drag. The
+drag-end parks the cursor on exactly what the motion controller would
+compute at the release point (`press + offset`, same hit function, same
+coordinate space), so resting and moving can never disagree.
+
+### The rule
+
+- A widget whose cursor you touch has a life beyond your gesture. Find its
+  resting cursor (the one set at creation) before writing `None` anywhere;
+  `None` means "the parent's cursor", not "no cursor", and it overrides
+  whatever the widget set for itself.
+- Events stop when the pointer stops. Any state you compute from motion
+  events (hover, cursor) must be recomputed at gesture end from the
+  gesture's own coordinates, or it goes stale in front of the user.
+- Copying a working handler from another widget (`view.set_cursor(None)`
+  in the EPUB reader, whose area has no base cursor) without asking what
+  the target widget's resting cursor is -- the two `None`s meant different
+  things.

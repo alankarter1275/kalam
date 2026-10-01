@@ -381,7 +381,7 @@ pub enum PdfReaderMsg {
     UpdateScrollPage(usize),
     SelectionDragBegin { slot: PageSlot, x: f64, y: f64, is_block: bool },
     SelectionDragUpdate { slot: PageSlot, dx: f64, dy: f64, is_block: bool },
-    SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64 },
+    SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64, press_count: i32 },
     SelectionWordAt { slot: PageSlot, x: f64, y: f64 },
     SelectionLineAt { slot: PageSlot, x: f64, y: f64 },
     PageOcrResult {
@@ -1188,6 +1188,26 @@ impl PdfReaderModel {
         }
     }
 
+    /// Park the page cursor on what the motion controller would show at
+    /// (`x`, `y`): the open hand over a selection grip, the page's text
+    /// cursor anywhere else. Called at drag release -- no motion event
+    /// arrives after it until the pointer moves again, so whatever the
+    /// release sets is what the user sees (pitfalls 34).
+    fn park_cursor_at(&self, slot: PageSlot, x: f64, y: f64) {
+        let Some(ov) = self.page_overlays.get(&slot) else { return };
+        let over_handle = self
+            .active_selection
+            .borrow()
+            .as_ref()
+            .filter(|sel| sel.slot == slot && !sel.is_block)
+            .is_some_and(|sel| over_selection_handle(sel, x, y));
+        ov.set_cursor_from_name(if over_handle {
+            Some("grab")
+        } else {
+            Some("text")
+        });
+    }
+
     /// Store a click that arrived before its page's text layer, and show
     /// the brief "Recognizing page..." signal at the click point (owner
     /// decision 2026-10-01: show it -- silence is what made the first
@@ -1504,12 +1524,25 @@ impl PdfReaderModel {
             let _ = tx_drag_begin.send(PdfReaderMsg::SelectionDragBegin { slot: slot_copy, x, y, is_block });
         });
         let drag_ctrl_up = drag.clone();
+        let mc_for_update = multi_click.clone();
         drag.connect_drag_update(move |_, dx, dy| {
+            // The movement of a multi-click's second or third press is
+            // not a selection drag either -- even if a drag state was
+            // left behind by an earlier press whose own release never
+            // arrived (the EPUB reader gates update the same way).
+            if mc_for_update.get() >= 2 {
+                return;
+            }
             let is_block = drag_ctrl_up.current_event_state().contains(gdk::ModifierType::ALT_MASK);
             let _ = tx_drag_update.send(PdfReaderMsg::SelectionDragUpdate { slot: slot_copy, dx, dy, is_block });
         });
+        let mc_for_end = multi_click.clone();
         drag.connect_drag_end(move |_, dx, dy| {
-            let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy });
+            // The live press count at release time, then reset: a
+            // multi-click's release belongs to the click gesture, never
+            // the drag (the EPUB reader gates its drag the same way).
+            let press_count = mc_for_end.replace(0);
+            let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy, press_count });
         });
         overlay.add_controller(drag);
 
@@ -4233,7 +4266,11 @@ impl Component for PdfReaderModel {
                 };
 
                 if highlight_rects.is_empty() {
+                    // The chip must never outlive its selection (the
+                    // owner's re-test: an action dialog with no
+                    // selection behind it).
                     self.active_selection.replace(None);
+                    self.dismiss_selection_chip();
                 } else {
                     let mut screen_rects = Vec::with_capacity(highlight_rects.len());
                     let mut min_x = f64::MAX;
@@ -4278,12 +4315,26 @@ impl Component for PdfReaderModel {
                     da.queue_draw();
                 }
             }
-            PdfReaderMsg::SelectionDragEnd { slot, dx, dy } => {
+            PdfReaderMsg::SelectionDragEnd { slot, dx, dy, press_count } => {
                 let drag = self.selection_drag_state.take();
                 self.handle_dragging.set(false);
-                // A press the drag gesture stood down for -- the second or
-                // third press of a multi-click -- stored no drag state; its
-                // release must not clear the selection that click made.
+                // The release of a multi-click's second or third press:
+                // the click gesture made the selection, and this release
+                // must not touch it. Gate on the live press count read at
+                // release time, not on whether a drag state exists -- a
+                // press whose own release never arrived can leave one
+                // behind, and consuming it here must still not destroy
+                // what the click selected (the EPUB reader gates its
+                // drag-end the same way). The owner's re-test: the word
+                // a double-click selected vanished while its chip stayed;
+                // the triple-click's line survived only because release
+                // two had already consumed the stale state.
+                if press_count >= 2 {
+                    if let Some((_, press_x, press_y, _, _)) = drag {
+                        self.park_cursor_at(slot, press_x + dx, press_y + dy);
+                    }
+                    return;
+                }
                 let Some((_, press_x, press_y, adjusting, _)) = drag else {
                     return;
                 };
@@ -4304,23 +4355,8 @@ impl Component for PdfReaderModel {
                 // The pointer rests where the drop left it, and no motion
                 // event will arrive until it moves again. Park the cursor
                 // on exactly what the motion controller would show at
-                // that point -- the open hand when the drop ended on a
-                // grip, the page's text cursor otherwise. Resetting to
-                // the plain default here made the hand vanish after every
-                // drop (owner field re-test 2026-10-01).
-                if let Some(ov) = self.page_overlays.get(&slot) {
-                    let over_handle = self
-                        .active_selection
-                        .borrow()
-                        .as_ref()
-                        .filter(|sel| sel.slot == slot && !sel.is_block)
-                        .is_some_and(|sel| over_selection_handle(sel, press_x + dx, press_y + dy));
-                    ov.set_cursor_from_name(if over_handle {
-                        Some("grab")
-                    } else {
-                        Some("text")
-                    });
-                }
+                // that point.
+                self.park_cursor_at(slot, press_x + dx, press_y + dy);
             }
             PdfReaderMsg::SelectionWordAt { slot, x, y } => {
                 let Some(page) = self.page_for_slot(slot) else { return };
@@ -4379,6 +4415,18 @@ impl Component for PdfReaderModel {
                     let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
                     let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
 
+                    // The ends a later handle-drag takes hold of are the
+                    // selection's own ends, never the click point that
+                    // made it: anchor and active are the first and last
+                    // rect's edges, so dragging the end handle extends
+                    // the selection instead of restarting it from the
+                    // click (the owner's re-test: "the end handle became
+                    // the starting handle").
+                    let first_pt = highlight_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let last_pt = highlight_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let anchor_pt = (first_pt.0, (first_pt.1 + first_pt.3) * 0.5);
+                    let active_pt = (last_pt.2, (last_pt.1 + last_pt.3) * 0.5);
+
                     let start_handle = (first.0, first.1, first.3);
                     let end_handle = (last.0 + last.2, last.1, last.3);
                     let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
@@ -4391,8 +4439,8 @@ impl Component for PdfReaderModel {
                         bounds,
                         start_handle,
                         end_handle,
-                        anchor_pt: pt,
-                        active_pt: pt,
+                        anchor_pt,
+                        active_pt,
                         is_block: false,
                     }));
 
@@ -4456,6 +4504,13 @@ impl Component for PdfReaderModel {
                     let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
                     let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
 
+                    // Same as the word selection: the handle-drag anchors
+                    // are the selection's ends, not the click point.
+                    let first_pt = highlight_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let last_pt = highlight_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let anchor_pt = (first_pt.0, (first_pt.1 + first_pt.3) * 0.5);
+                    let active_pt = (last_pt.2, (last_pt.1 + last_pt.3) * 0.5);
+
                     let start_handle = (first.0, first.1, first.3);
                     let end_handle = (last.0 + last.2, last.1, last.3);
                     let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
@@ -4468,8 +4523,8 @@ impl Component for PdfReaderModel {
                         bounds,
                         start_handle,
                         end_handle,
-                        anchor_pt: pt,
-                        active_pt: pt,
+                        anchor_pt,
+                        active_pt,
                         is_block: false,
                     }));
 

@@ -1417,3 +1417,46 @@ coordinate space), so resting and moving can never disagree.
   in the EPUB reader, whose area has no base cursor) without asking what
   the target widget's resting cursor is -- the two `None`s meant different
   things.
+
+## 35. Port the reference gesture pattern completely -- the multi-click gate belongs on begin, update AND end
+
+**The bug (owner field re-test 2, 2026-10-01).** After the gesture fix
+(pitfalls 32) the PDF reader's triple-click selected a line, but a
+double-click showed the action chip with no selection behind it. Root
+cause: the EPUB reader gates its drag gesture on the live `multi_click`
+count in all three callbacks -- begin, update, and end, each reading the
+count fresh at that moment -- while the PDF port gated only the begin
+("begin stood down, so there is no drag state, so the release is safe").
+That inference is not one GTK makes: a press's release can fail to arrive
+at the drag gesture (sequence claiming by the click gesture), leaving a
+stale drag state behind. The next press's movement then ran a selection
+drag from the stale state -- replacing the word the double-click had just
+selected with an empty one -- and the next release consumed the stale
+state as a tap and cleared it. The chip stayed up because only
+`clear_selection` dismisses it, and the update path's empty-rects branch
+did a bare `replace(None)`. The triple-click survived only because
+release two had already consumed the stale state: the line its third
+press selected had nothing left to destroy it.
+
+**The second half of the same report:** word and line selections stored
+the *click point* as `anchor_pt`/`active_pt`. Grabbing the end handle
+then ran `select_between(click_point, cursor)`, restarting the selection
+from the middle instead of extending it -- "the end handle became the
+starting handle". Selections made by dragging were fine (their anchor is
+the drag start), which is why it only *sometimes* failed.
+
+### The rules
+
+- When porting a proven gesture arrangement, port all of it. Every
+  callback that can act on a press (begin, update, end) gates on the
+  live multi-click count read at that moment; "the begin stood down, so
+  nothing else can happen" assumes a signal ordering GTK does not
+  guarantee.
+- A stored gesture state is a liability across presses: any release that
+  fails to arrive leaves it alive. Consumers must be defensive -- gate on
+  what the press *was* (the count), not on what was stored.
+- A selection's drag anchors are the selection's ends, never the click
+  that made it. Anything that can later drag from a handle reads them.
+- The chip must never outlive its selection: every path that removes a
+  selection dismisses it, including the drag-update empty-rects branch
+  that bypasses `clear_selection`.

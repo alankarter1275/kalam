@@ -1363,3 +1363,21 @@ which has worked from day one:
   double-clicks.
 - Copy the working reader's gesture arrangement rather than inventing a
   parallel one; the EPUB reader's `multi_click` gate is the reference.
+
+## 33. `Some(ref x)` on a `HashMap::get` result is a reference to a reference
+
+**The mistake (CI run 36831842897, 2026-10-01).** Two new lines in the PDF
+reader's drag handlers wrote `if let Some(ref ov) = self.page_overlays.get(&slot)`
+— but `get` already returns `Option<&Overlay>`, so `ref ov` binds `&&Overlay`,
+and clippy under `-D warnings` rejects it ("this pattern creates a reference
+to a reference") before the build ever runs. The codebase's own idiom, two
+hundred lines above, is `if let Some(ov) = self.page_overlays.get(&slot)`.
+
+### The rule
+
+- Match what the expression already is, not what it was at its definition:
+  `.get()`, `.iter().next()`, and friends hand you a reference — bind it
+  plainly, never with `ref`.
+- Same class as §31's `255.0/255.0`: a one-token slip that only CI can see,
+  because there is no local compiler. Before writing a match pattern on a
+  method's return, say the type out loud.

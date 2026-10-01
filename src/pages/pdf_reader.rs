@@ -4154,7 +4154,7 @@ impl Component for PdfReaderModel {
 
                 self.handle_dragging.set(adjusting.is_some());
                 if adjusting.is_some() {
-                    if let Some(ref ov) = self.page_overlays.get(&slot) {
+                    if let Some(ov) = self.page_overlays.get(&slot) {
                         ov.set_cursor_from_name(Some("grabbing"));
                     }
                 }
@@ -4280,7 +4280,7 @@ impl Component for PdfReaderModel {
                 let Some((_, _, _, adjusting, _)) = drag else {
                     return;
                 };
-                if let Some(ref ov) = self.page_overlays.get(&slot) {
+                if let Some(ov) = self.page_overlays.get(&slot) {
                     ov.set_cursor_from_name(None);
                 }
                 if dx.abs() > 4.0 || dy.abs() > 4.0 {

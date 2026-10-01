@@ -996,7 +996,7 @@ impl PdfReaderModel {
         // pages, via the OCR cache and worker. Nothing here touches the
         // file on the UI thread.
         if self.text_in_progress.insert(page) {
-            if let (Some(ref path), Some(ref tx)) = (self.file_path.clone(), self.doc_tx) {
+            if let (Some(path), Some(tx)) = (self.file_path.clone(), self.doc_tx.as_ref()) {
                 let _ = tx.send_blocking(PdfDocRequest::ExtractText {
                     path,
                     page,
@@ -2875,7 +2875,7 @@ impl Component for PdfReaderModel {
                             // The fingerprint is computed here, off the UI
                             // thread, so the file is never stat'ed there.
                             let fingerprint = pdf_path_fingerprint(&path);
-                            if text.as_ref().is_some_and(|t| t.total_chars() == 0) {
+                            if matches!(&text, Ok(t) if t.total_chars() == 0) {
                                 // Scanned page: try the persistent OCR cache
                                 // first — a page OCR'd on a previous visit
                                 // loads instantly instead of recomputing
@@ -3028,7 +3028,9 @@ impl Component for PdfReaderModel {
                     self.search_results.clear();
                     self.highlight_current_search_match(widgets);
                     self.update_search_snippets_popover(&sender);
-                } else if let (Some(path), Some(ref tx)) = (self.file_path.clone(), self.doc_tx) {
+                } else if let (Some(path), Some(tx)) =
+                    (self.file_path.clone(), self.doc_tx.as_ref())
+                {
                     // Search runs on the doc service; results arrive in
                     // SearchReady and are applied only if the query is
                     // still current (stale answers are dropped silently).
@@ -3633,9 +3635,10 @@ impl Component for PdfReaderModel {
                 // (the worker re-fingerprinted it after recognition), so a
                 // replaced mid-OCR file can never poison the cache.
                 let started_fp = self.ocr_started_fp.remove(&page);
-                let file_unchanged = started_fp
-                    .zip(fingerprint)
-                    .is_some_and(|(started, current)| started == current);
+                let file_unchanged = match (&started_fp, &fingerprint) {
+                    (Some(started), Some(current)) => started == current,
+                    _ => false,
+                };
                 match *text {
                     Ok(ocr_text) => {
                         log::info!(

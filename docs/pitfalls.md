@@ -474,6 +474,19 @@ Because nothing can be built locally, scripted edits need their own safety net:
   followed by assigning to `self.<field>` is a borrow conflict — finish reads
   into locals first.
 
+- **Four more API traps, all caught by CI (2026-10-01, PDF async step 1),
+  all from writing new code without a compiler:**
+  `Option::is_some_and` has no `Result` twin — for a `Result`, use
+  `matches!(&x, Ok(t) if ...)` (which also keeps `x` assignable inside the
+  block, unlike `if let Ok(ref t) = x`); building a tuple scrutinee like
+  `if let (Some(p), Some(tx)) = (self.a.clone(), self.b)` moves `self.b`
+  out from behind `&mut self` — write `self.b.as_ref()` and bind `tx`
+  without `ref`; `Option::zip` **consumes** both options, so a value needed
+  afterwards must be compared by reference
+  (`match (&started, &current) { (Some(a), Some(b)) => a == b, _ => false }`);
+  and a struct field declared `PathBuf` needs an owned value — `path.clone()`,
+  not the `&PathBuf` a `ref` binding gives you.
+
 ## 13. A route existing in `app.rs` does not mean the user can reach it
 
 `ReadingList`, `Tags` and `Analytics` had complete pages, `PageSlot` variants

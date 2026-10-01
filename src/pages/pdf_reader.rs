@@ -1091,7 +1091,7 @@ impl PdfReaderModel {
     pub fn handle_color(&self) -> (f64, f64, f64) {
         match self.reading_theme {
             ReadingTheme::Light | ReadingTheme::Sepia => (11.0 / 255.0, 11.0 / 255.0, 11.0 / 255.0),
-            ReadingTheme::Dark | ReadingTheme::Ink => (255.0 / 255.0, 209.0 / 255.0, 102.0 / 255.0),
+            ReadingTheme::Dark | ReadingTheme::Ink => (1.0, 209.0 / 255.0, 102.0 / 255.0),
         }
     }
 

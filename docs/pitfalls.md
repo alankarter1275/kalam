@@ -521,6 +521,11 @@ Because nothing can be built locally, scripted edits need their own safety net:
   the queue the way the worker does), or make the production code
   genuinely call the helper.
 
+- **`255.0 / 255.0` is `eq_op` under `-D warnings` (2026-10-01, step 5;
+  one failed CI run).** Writing a colour channel as `v / 255.0` reads
+  nicely, but when the channel is full-scale the two operands are equal
+  and clippy fails the build. Write `1.0`.
+
 ## 13. A route existing in `app.rs` does not mean the user can reach it
 
 `ReadingList`, `Tags` and `Analytics` had complete pages, `PageSlot` variants

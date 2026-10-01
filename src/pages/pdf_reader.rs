@@ -59,6 +59,30 @@ pub struct PdfRenderRequest {
     pub path: PathBuf,
 }
 
+/// Document facts gathered once, off the UI thread, by the background doc
+/// service (2.20: the UI thread never opens, parses or searches the file).
+#[derive(Debug)]
+pub struct PdfDocInfo {
+    pub total_pages: usize,
+    pub toc_entries: Vec<PdfTocEntry>,
+    pub base_page_width: f64,
+    pub base_page_height: f64,
+}
+
+/// A job for the background PDF document service thread. The service keeps
+/// one open `PdfDocument` per path and answers from it; the UI thread only
+/// ever sends requests and applies results that arrive as messages.
+pub enum PdfDocRequest {
+    /// Open the file and report page count, outline and page dimensions
+    /// (measured on `page`, the resumed reading position).
+    Info { path: PathBuf, page: usize },
+    /// Extract the vector text layer of one page, plus the file fingerprint
+    /// (computed here so the UI thread never stats the file).
+    ExtractText { path: PathBuf, page: usize },
+    /// Full-document text search.
+    Search { path: PathBuf, query: String, toc: Vec<PdfTocEntry> },
+}
+
 pub struct PdfReaderInit {
     pub catalog: Arc<Catalog>,
     pub book_id: i64,
@@ -288,7 +312,26 @@ pub enum PdfReaderMsg {
     PageOcrResult {
         generation: u64,
         page: usize,
+        /// Fingerprint the OCR worker computed after recognition; used to
+        /// persist the result only when the file is unchanged.
+        fingerprint: Option<String>,
         text: Box<Result<PdfPageText, String>>,
+    },
+    /// The doc service finished opening the document (or failed).
+    DocumentLoaded {
+        info: Box<Result<PdfDocInfo, String>>,
+    },
+    /// The doc service extracted one page's vector text (empty text means
+    /// a scanned page: the handler falls back to the OCR cache / worker).
+    PageTextReady {
+        page: usize,
+        fingerprint: Option<String>,
+        text: Result<PdfPageText, String>,
+    },
+    /// The doc service finished a full-document search.
+    SearchReady {
+        query: String,
+        results: Vec<PdfSearchResult>,
     },
     CopySelection,
     SaveAnnotation {
@@ -363,7 +406,11 @@ pub struct PdfReaderModel {
     pub active_generation: Option<Arc<AtomicU64>>,
     pub base_page_width: f64,
     pub base_page_height: f64,
-    pub doc: Option<PdfDocument>,
+    pub doc_tx: Option<async_channel::Sender<PdfDocRequest>>,
+    /// True once `DocumentLoaded` applied the doc service's `Info` answer.
+    pub doc_ready: bool,
+    /// Pages whose vector text extraction is in flight (dedup guard).
+    pub text_in_progress: HashSet<usize>,
     pub page_overlays: HashMap<PageSlot, gtk::Overlay>,
     pub page_draw_areas: HashMap<PageSlot, gtk::DrawingArea>,
     pub page_text_cache: HashMap<usize, PdfPageText>,
@@ -506,7 +553,9 @@ impl PdfReaderModel {
             active_generation: None,
             base_page_width: 595.0,
             base_page_height: 842.0,
-            doc: None,
+            doc_tx: None,
+            doc_ready: false,
+            text_in_progress: HashSet::new(),
             page_overlays: HashMap::new(),
             page_draw_areas: HashMap::new(),
             page_text_cache: HashMap::new(),
@@ -529,53 +578,6 @@ impl PdfReaderModel {
         };
 
         model.reload_bookmarks();
-
-        if let Some(ref path) = file_path {
-            if let Ok(doc) = PdfDocument::open(path) {
-                model.total_pages = doc.page_count();
-                if saved_page > model.total_pages {
-                    model.current_page = 1;
-                }
-                if let Ok((pw, ph)) = doc.page_dimensions(model.current_page) {
-                    model.base_page_width = pw as f64;
-                    model.base_page_height = ph as f64;
-                }
-                model.toc_entries = doc.outlines().unwrap_or_default();
-                model.is_loading = false;
-                model.status_text.clear();
-
-                let scale = ((1.5 * model.zoom_level).clamp(0.5, 3.5)) as f32;
-                let (init_left, init_right) = calculate_spread_for_page(model.spread_mode, model.total_pages, model.current_page);
-                for p in std::iter::once(init_left).chain(init_right) {
-                    if let Ok(rendered) = doc.render_page_rgba(p, scale, model.smart_crop) {
-                        let bytes = glib::Bytes::from_owned(rendered.samples);
-                        let texture = gdk::MemoryTexture::new(
-                            rendered.width,
-                            rendered.height,
-                            gdk::MemoryFormat::R8g8b8a8,
-                            &bytes,
-                            rendered.stride,
-                        );
-                        model.textures.insert(
-                            p,
-                            CachedPageTexture {
-                                texture: texture.upcast(),
-                                width: rendered.width,
-                                height: rendered.height,
-                                generation: 1,
-                            },
-                        );
-                    }
-                }
-                model.doc = Some(doc);
-            } else {
-                model.status_text = "Failed to open PDF document".to_string();
-                model.is_loading = false;
-            }
-        } else {
-            model.status_text = "PDF file not found".to_string();
-            model.is_loading = false;
-        }
 
         model
     }
@@ -833,8 +835,10 @@ impl PdfReaderModel {
         self.pending_loads.clear();
         self.ocr_in_progress.clear();
         self.ocr_started_fp.clear();
+        self.text_in_progress.clear();
+        self.doc_ready = false;
 
-        self.doc = None;
+        self.doc_tx = None;
         self.render_tx = None;
         self.ocr_tx = None;
 
@@ -858,7 +862,7 @@ impl PdfReaderModel {
             return;
         };
 
-        if self.total_pages == 0 {
+        if self.total_pages == 0 || !self.doc_ready {
             return;
         }
 
@@ -958,7 +962,7 @@ impl PdfReaderModel {
         }
     }
 
-    pub fn trigger_page_ocr(&mut self, page: usize) {
+    pub fn trigger_page_ocr(&mut self, page: usize, fingerprint: Option<String>) {
         if self.page_text_cache.contains_key(&page) {
             return;
         }
@@ -968,49 +972,37 @@ impl PdfReaderModel {
         let Some(ref tx) = self.ocr_tx else {
             return;
         };
-        let Some(ref doc) = self.doc else {
+        let Some(ref path) = self.file_path else {
             return;
         };
 
         self.ocr_in_progress.insert(page);
-        if let Some(fp) = ocr_file_fingerprint(doc) {
+        if let Some(fp) = fingerprint {
             self.ocr_started_fp.insert(page, fp);
         }
         let _ = tx.send_blocking(crate::ocr::PdfOcrRequest {
             generation: self.render_generation,
             page,
-            path: doc.path.clone(),
+            path: path.clone(),
         });
     }
 
     pub fn ensure_page_text(&mut self, page: usize) -> Option<&PdfPageText> {
-        if !self.page_text_cache.contains_key(&page) {
-            if let Some(ref doc) = self.doc {
-                if let Ok(text) = doc.extract_page_text(page) {
-                    if text.total_chars() > 0 {
-                        self.page_text_cache.insert(page, text);
-                    } else {
-                        // Digital vector text returned 0 characters (scanned page).
-                        // First try the persistent OCR cache: a page that was
-                        // OCR'd on a previous visit loads instantly instead of
-                        // recomputing seconds of neural inference.
-                        let fingerprint = ocr_file_fingerprint(doc);
-                        if let Some(fp) = fingerprint {
-                            if let Ok(Some(cached)) =
-                                self.catalog.load_page_ocr(self.book_id, page, &fp)
-                            {
-                                log::info!(
-                                    "OCR cache hit for page {page}: {} lines",
-                                    cached.lines.len()
-                                );
-                                self.page_text_cache.insert(page, cached);
-                                return self.page_text_cache.get(&page);
-                            }
-                        }
-                        // No usable cache: automatically trigger background OCR.
-                        self.trigger_page_ocr(page);
-                    }
-                }
+        if self.page_text_cache.contains_key(&page) {
+            return self.page_text_cache.get(&page);
+        }
+        // The vector text layer comes from the background doc service; the
+        // answer arrives as `PageTextReady` (vector text) or, for scanned
+        // pages, via the OCR cache and worker. Nothing here touches the
+        // file on the UI thread.
+        if self.text_in_progress.insert(page) {
+            if let (Some(ref path), Some(ref tx)) = (self.file_path.clone(), self.doc_tx) {
+                let _ = tx.send_blocking(PdfDocRequest::ExtractText {
+                    path,
+                    page,
+                });
+            } else {
+                self.text_in_progress.remove(&page);
             }
         }
         self.page_text_cache.get(&page)
@@ -2702,20 +2694,6 @@ impl Component for PdfReaderModel {
         widgets.viewport_scroll.set_child(Some(&child));
         model.update_scroll_policies(&widgets.viewport_scroll);
 
-        // Restore scroll position in continuous mode if resuming past page 1
-        if model.scroll_mode != PdfScrollMode::PageScrolling && model.current_page > 1 && model.total_pages > 1 {
-            let cur = model.current_page;
-            let total = model.total_pages;
-            let vadj = widgets.viewport_scroll.vadjustment();
-            glib::idle_add_local_once(move || {
-                let max = (vadj.upper() - vadj.page_size()).max(0.0);
-                if max > 0.0 {
-                    let ratio = (cur.saturating_sub(1)) as f64 / (total - 1) as f64;
-                    vadj.set_value((ratio * max).clamp(vadj.lower(), max));
-                }
-            });
-        }
-
         // Initially select TOC tab
         toggle_active(&widgets.tab_toc_btn, true);
         toggle_active(&widgets.tab_bookmarks_btn, false);
@@ -2818,6 +2796,7 @@ impl Component for PdfReaderModel {
                                         let _ = tx_ocr_msg.send(PdfReaderMsg::PageOcrResult {
                                             generation: req.generation,
                                             page: req.page,
+                                            fingerprint: pdf_path_fingerprint(&req.path),
                                             text: Box::new(Ok(page_text)),
                                         });
                                     }
@@ -2827,6 +2806,7 @@ impl Component for PdfReaderModel {
                                         let _ = tx_ocr_msg.send(PdfReaderMsg::PageOcrResult {
                                             generation: req.generation,
                                             page: req.page,
+                                            fingerprint: pdf_path_fingerprint(&req.path),
                                             text: Box::new(Err(err.to_string())),
                                         });
                                     }
@@ -2838,12 +2818,119 @@ impl Component for PdfReaderModel {
             });
 
         model.ocr_tx = Some(ocr_tx);
+
+        // Background document service (2.20): opens the file, extracts text
+        // and runs searches off the UI thread. The UI thread never touches
+        // the file; results arrive as messages.
+        let (doc_tx, doc_rx) = async_channel::unbounded::<PdfDocRequest>();
+        let tx_doc_msg = sender.input_sender().clone();
+        let doc_catalog = model.catalog.clone();
+        let doc_book_id = model.book_id;
+        let _ = std::thread::Builder::new()
+            .name("kalam-pdf-doc-service".to_string())
+            .spawn(move || {
+                let mut cached_path: Option<PathBuf> = None;
+                let mut cached_doc: Option<PdfDocument> = None;
+                while let Ok(req) = doc_rx.recv_blocking() {
+                    let path = match &req {
+                        PdfDocRequest::Info { path, .. }
+                        | PdfDocRequest::ExtractText { path, .. }
+                        | PdfDocRequest::Search { path, .. } => path.clone(),
+                    };
+                    if cached_path.as_ref() != Some(&path) {
+                        crate::timing::span("pdf_open_doc");
+                        cached_path = Some(path.clone());
+                        cached_doc = PdfDocument::open(&path).ok();
+                        crate::timing::span_end("pdf_open_doc");
+                    }
+                    let Some(ref doc) = cached_doc else {
+                        let _ = tx_doc_msg.send(PdfReaderMsg::DocumentLoaded {
+                            info: Box::new(Err("Failed to open PDF document".to_string())),
+                        });
+                        continue;
+                    };
+                    match req {
+                        PdfDocRequest::Info { page, .. } => {
+                            let total_pages = doc.page_count();
+                            // Measure the resumed page (clamped) so mixed
+                            // page sizes keep the right aspect on resume,
+                            // exactly as the old synchronous open did.
+                            let measure = page.clamp(1, total_pages.max(1));
+                            let (w, h) = doc
+                                .page_dimensions(measure)
+                                .map(|(w, h)| (w as f64, h as f64))
+                                .unwrap_or((595.0, 842.0));
+                            let info = PdfDocInfo {
+                                total_pages,
+                                toc_entries: doc.outlines().unwrap_or_default(),
+                                base_page_width: w,
+                                base_page_height: h,
+                            };
+                            let _ = tx_doc_msg.send(PdfReaderMsg::DocumentLoaded {
+                                info: Box::new(Ok(info)),
+                            });
+                        }
+                        PdfDocRequest::ExtractText { page, .. } => {
+                            let mut text = doc.extract_page_text(page);
+                            // The fingerprint is computed here, off the UI
+                            // thread, so the file is never stat'ed there.
+                            let fingerprint = pdf_path_fingerprint(&path);
+                            if text.as_ref().is_some_and(|t| t.total_chars() == 0) {
+                                // Scanned page: try the persistent OCR cache
+                                // first — a page OCR'd on a previous visit
+                                // loads instantly instead of recomputing
+                                // seconds of neural inference.
+                                if let Some(ref fp) = fingerprint {
+                                    if let Ok(Some(cached)) =
+                                        doc_catalog.load_page_ocr(doc_book_id, page, fp)
+                                    {
+                                        log::info!(
+                                            "OCR cache hit for page {page}: {} lines",
+                                            cached.lines.len()
+                                        );
+                                        text = Ok(cached);
+                                    }
+                                }
+                            }
+                            let _ = tx_doc_msg.send(PdfReaderMsg::PageTextReady {
+                                page,
+                                fingerprint,
+                                text: text.map_err(|e| e.to_string()),
+                            });
+                        }
+                        PdfDocRequest::Search { query, toc, .. } => {
+                            let results = doc.search_document(&query, &toc, 500);
+                            let _ = tx_doc_msg.send(PdfReaderMsg::SearchReady { query, results });
+                        }
+                    }
+                }
+            });
+        model.doc_tx = Some(doc_tx);
+
+        // Ask for the document facts; the reader paints its skeleton
+        // immediately and fills in when DocumentLoaded arrives.
+        crate::timing::span("pdf_open_total");
+        if let Some(ref path) = model.file_path {
+            if let Some(ref tx) = model.doc_tx {
+                let _ = tx.send_blocking(PdfDocRequest::Info {
+                    path: path.clone(),
+                    page: model.current_page,
+                });
+            }
+        } else {
+            let _ = sender.input_sender().send(PdfReaderMsg::DocumentLoaded {
+                info: Box::new(Err("PDF file not found".to_string())),
+            });
+        }
+
         let cur = model.current_page;
         let _ = model.ensure_page_text(cur);
 
         model.schedule_back_hide(&sender);
         model.schedule_bottom_hide(&sender);
-        model.trigger_loads(&sender);
+        if model.doc_ready {
+            model.trigger_loads(&sender);
+        }
         model.update_bookmark_icon_state(&widgets);
 
         let (search_pop, search_lb, search_badge) = build_pdf_search_snippets_popover();
@@ -2937,13 +3024,28 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::UpdateSearchQuery(query) => {
                 self.search_query = query.clone();
                 self.search_index = 0;
-                if let Some(ref doc) = self.doc {
-                    self.search_results = doc.search_document(&query, &self.toc_entries, 500);
-                } else {
+                if query.trim().is_empty() {
                     self.search_results.clear();
+                    self.highlight_current_search_match(widgets);
+                    self.update_search_snippets_popover(&sender);
+                } else if let (Some(path), Some(ref tx)) = (self.file_path.clone(), self.doc_tx) {
+                    // Search runs on the doc service; results arrive in
+                    // SearchReady and are applied only if the query is
+                    // still current (stale answers are dropped silently).
+                    let _ = tx.send_blocking(PdfDocRequest::Search {
+                        path,
+                        query,
+                        toc: self.toc_entries.clone(),
+                    });
                 }
-                self.highlight_current_search_match(widgets);
-                self.update_search_snippets_popover(&sender);
+            }
+            PdfReaderMsg::SearchReady { query, results } => {
+                if query == self.search_query {
+                    self.search_results = results;
+                    self.search_index = 0;
+                    self.highlight_current_search_match(widgets);
+                    self.update_search_snippets_popover(&sender);
+                }
             }
             PdfReaderMsg::NextSearchResult => {
                 if !self.search_results.is_empty() {
@@ -3425,9 +3527,101 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
+            PdfReaderMsg::DocumentLoaded { info } => {
+                crate::timing::span_end("pdf_open_total");
+                match *info {
+                    Ok(info) => {
+                        self.total_pages = info.total_pages;
+                        self.toc_entries = info.toc_entries;
+                        self.base_page_width = info.base_page_width;
+                        self.base_page_height = info.base_page_height;
+                        if self.current_page > self.total_pages {
+                            self.current_page = 1;
+                        }
+                        self.is_loading = false;
+                        self.status_text.clear();
+                        self.doc_ready = true;
+
+                        if let Some(ref list) = self.toc_list_box {
+                            populate_toc_list(
+                                list,
+                                &self.toc_entries,
+                                self.current_page,
+                                self.total_pages,
+                                &sender,
+                            );
+                        }
+
+                        // Rebuild the viewport now that the real page count
+                        // and dimensions are known (the widget built during
+                        // init is a skeleton of placeholders).
+                        let child = self.build_viewport_widget(&sender);
+                        widgets.viewport_scroll.set_child(Some(&child));
+                        self.update_scroll_policies(&widgets.viewport_scroll);
+                        widgets.viewport_scroll.queue_draw();
+
+                        // Restore the reading position in continuous mode.
+                        // This needs the real total_pages, so it lives here
+                        // instead of init.
+                        if self.scroll_mode != PdfScrollMode::PageScrolling
+                            && self.current_page > 1
+                            && self.total_pages > 1
+                        {
+                            let cur = self.current_page;
+                            let total = self.total_pages;
+                            let vadj = widgets.viewport_scroll.vadjustment();
+                            glib::idle_add_local_once(move || {
+                                let max = (vadj.upper() - vadj.page_size()).max(0.0);
+                                if max > 0.0 {
+                                    let ratio =
+                                        (cur.saturating_sub(1)) as f64 / (total - 1) as f64;
+                                    vadj.set_value((ratio * max).clamp(vadj.lower(), max));
+                                }
+                            });
+                        }
+
+                        let cur = self.current_page;
+                        let _ = self.ensure_page_text(cur);
+                        self.trigger_loads(&sender);
+                    }
+                    Err(err) => {
+                        self.is_loading = false;
+                        self.status_text = err.clone();
+                        log::warn!("PDF open failed: {err}");
+                    }
+                }
+            }
+            PdfReaderMsg::PageTextReady {
+                page,
+                fingerprint,
+                text,
+            } => {
+                self.text_in_progress.remove(&page);
+                match text {
+                    Ok(page_text) => {
+                        if page_text.total_chars() > 0 {
+                            self.page_text_cache.insert(page, page_text.clone());
+                            // The text layer for this page may now hide the
+                            // selection area; repaint without rebuilding.
+                            if let Some(pic) = self.page_pictures.get(&page) {
+                                pic.queue_draw();
+                            }
+                            widgets.viewport_scroll.queue_draw();
+                        } else {
+                            // No embedded text: fall back to OCR via the
+                            // fingerprint the worker computed off-thread.
+                            self.trigger_page_ocr(page, fingerprint);
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!("Text extraction failed for page {page}: {err}");
+                    }
+                }
+            }
             PdfReaderMsg::PageOcrResult {
                 generation,
                 page,
+                fingerprint,
                 text,
             } => {
                 if generation != self.render_generation {
@@ -3435,9 +3629,13 @@ impl Component for PdfReaderModel {
                 }
                 self.ocr_in_progress.remove(&page);
                 // The finished text belongs to the file as it was when OCR
-                // started; persist it only if the file is still unchanged,
-                // so a replaced mid-OCR file can never poison the cache.
+                // started; persist it only if the file is still unchanged
+                // (the worker re-fingerprinted it after recognition), so a
+                // replaced mid-OCR file can never poison the cache.
                 let started_fp = self.ocr_started_fp.remove(&page);
+                let file_unchanged = started_fp
+                    .zip(fingerprint)
+                    .is_some_and(|(started, current)| started == current);
                 match *text {
                     Ok(ocr_text) => {
                         log::info!(
@@ -3445,11 +3643,6 @@ impl Component for PdfReaderModel {
                             ocr_text.lines.len()
                         );
                         if let Some(started) = started_fp {
-                            let file_unchanged = self
-                                .doc
-                                .as_ref()
-                                .and_then(ocr_file_fingerprint)
-                                .is_some_and(|current| current == started);
                             if file_unchanged {
                                 if let Err(err) = self
                                     .catalog
@@ -4012,10 +4205,8 @@ impl PdfReaderModel {
 
         let (page_w_pts, page_h_pts) = if let Some(text) = self.page_text_cache.get(&target_page) {
             (text.width_pts as f64, text.height_pts as f64)
-        } else if let Some(ref doc) = self.doc {
-            doc.page_dimensions(target_page).map(|(w, h)| (w as f64, h as f64)).unwrap_or((612.0, 792.0))
         } else {
-            (612.0, 792.0)
+            (self.base_page_width, self.base_page_height)
         };
 
         let (target_w, target_h) = if let Some(da) = self.page_draw_areas.get(&slot) {
@@ -4140,9 +4331,9 @@ impl PdfReaderModel {
 /// catches every real-world change (a remaster rewrites the file, a
 /// re-download changes both) for the cost of a stat call. A false "same"
 /// would require a changed file with identical size and identical mtime.
-fn ocr_file_fingerprint(doc: &PdfDocument) -> Option<String> {
+fn pdf_path_fingerprint(path: &std::path::Path) -> Option<String> {
     use std::time::UNIX_EPOCH;
-    let md = std::fs::metadata(&doc.path).ok()?;
+    let md = std::fs::metadata(path).ok()?;
     let mtime = md
         .modified()
         .ok()?

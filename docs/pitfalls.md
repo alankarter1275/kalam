@@ -1239,3 +1239,36 @@ riding along in the commit.
   anything was committed. Recovery as described: fetch, `reset --mixed`
   onto the tip, restore `ci-logs/` from origin, commit the two intended
   files. The check works; keep running it.
+
+## 31. An async rewrite must re-home every side effect of the sync path it replaces
+
+**The near-miss (2026-10-01, PDF plan step 1; caught before commit, never
+shipped).** Moving the PDF open off the UI thread meant rewriting
+`ensure_page_text`, whose old body did three things: extract the vector
+text, **look up the persistent OCR cache** on a scanned page
+(`load_page_ocr`), and only then trigger background OCR. The rewrite
+initially sent just "extract text" to the worker and fell back to OCR on
+an empty answer — the cache lookup had silently vanished. It would have
+compiled, passed every test, and regressed exactly one behavior: a page
+OCR'd on a previous visit would re-run seconds of neural inference
+instead of loading instantly. Nobody would notice until an owner field
+report.
+
+### What caught it
+
+Not the compiler, not the tests — a **diff read against HEAD before
+committing** (`git show HEAD:file | grep load_page_ocr` showed a
+production call site that no longer existed anywhere in the tree).
+
+### The rule
+
+- Before replacing a synchronous function, **enumerate every effect it
+  has** (returns, caches read, caches written, triggers fired, state
+  set) and tick each one off in the new design — off-thread is not a
+  reason for any behavior to disappear; the DB read just moves into the
+  worker.
+- End every multi-pass edit with a full `git diff` read plus a grep of
+  the old function's callees in the new tree. Compile-clean proves
+  nothing about dropped logic.
+- State the old path's behaviors in the plan before rewriting, so the
+  diff can be checked against a written list, not memory.

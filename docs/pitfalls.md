@@ -1460,3 +1460,23 @@ the drag start), which is why it only *sometimes* failed.
 - The chip must never outlive its selection: every path that removes a
   selection dismisses it, including the drag-update empty-rects branch
   that bypasses `clear_selection`.
+
+## 36. The moved-base fault recurs — check HEAD before every commit
+
+**Third occurrence, 2026-10-02.** Between turns the sandbox's git state
+fell back to the branch point `29788b4` (fresh clone, upstream unset)
+while the working tree kept the full session state. A commit made
+without looking first captured 173 files / 37,500 insertions — the whole
+session re-committed on the base — and only the unset upstream (push
+refused) kept the mess off the remote. Same fault, same recovery as
+2026-09-19: fetch, `git diff FETCH_HEAD` to isolate the genuinely
+intended changes (here: two files), `git reset --hard FETCH_HEAD`,
+re-apply, commit, push.
+
+### The rule
+
+- At the start of every turn, before any commit: `git log --oneline -1`
+  and `git status`. If HEAD is the branch point instead of the session's
+  last commit, or the upstream is unset, stop and recover — never commit
+  blind, and never trust a silent push: check that the push actually
+  moved the remote and that a CI run started for the new head.

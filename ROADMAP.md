@@ -1243,6 +1243,10 @@ they need 1.2's asynchronous service layer underneath them.
     OCR finishes and the click handler fails silently. The owner also
     requires the same selection and handles in both readers. Carried by item
     **2.18**; 2.10 closes when 2.18 lands.
+  - **Done, 2026-10-01 — closed by 2.18, field-verified.** Both readers now
+    select identically: double-click a word, triple-click a line/paragraph,
+    the same teardrop handles, the same hand cursor, and both handle ends
+    draggable in each.
 - ~~**2.11 — Rebuild PDF reader from scratch & UI stabilization.**~~ **Done, 2026-09-25.** With user
   approval, completely tore down the old heuristic `lopdf` viewer in `src/pdf.rs`
   and `src/pages/pdf_reader.rs`. MuPDF (`mupdf` crate v0.8 with `base14-fonts`)
@@ -1360,6 +1364,15 @@ they need 1.2's asynchronous service layer underneath them.
   open/scroll (background, cancellable), a pending-selection intent that
   auto-executes when the text arrives plus an explicit "recognizing…"
   signal, and handle rendering unified with the EPUB look. Closes 2.10.
+  **Done, 2026-10-01, field-verified after three fix rounds.** The
+  planning diagnosis (dead clicks on unready pages) was real but secondary:
+  the deeper bug was the uncoordinated click/drag gestures (pitfalls 32,
+  35 — the multi-click gate belongs on begin, update and end), plus the
+  cursor lifecycle (pitfalls 34) and the word/line selections' drag
+  anchors, which were the click point instead of the selection's ends.
+  The owner verified: word and line selection, both handle ends extending
+  and retracting, the hand cursor over the grips and the I-beam
+  elsewhere, no glitch on drop.
 
 - **2.19 — Color-emoji strings removed (Pango/cairo warning; owner report
   2026-10-01, fixed the same day).** The owner's terminal showed
@@ -1394,10 +1407,18 @@ they need 1.2's asynchronous service layer underneath them.
   **Plan approved 2026-10-01** (whole-book import OCR stored page-wise;
   visible-window priority promotion on jumps — including a jump straight
   to page 5000; a brief "Recognizing page..." signal on not-yet-ready
-  pages). Implementation underway; `plan.md` is the working document.
+  pages).
+  **PDF half done and field-verified 2026-10-01** — all six steps of
+  `plan.md` shipped: the doc service keeps open/parse/search/render off
+  the UI thread, a large scan opens instantly, the text cache is bounded,
+  pending clicks replay with the recognizing signal, import-time OCR runs
+  through the shared queue with priority promotion, and selection/handles
+  are at parity with the EPUB reader (via 2.18). The app-wide half (the
+  whole-app latency audit, measurement first) is carried by **7.1**.
 
 - **2.21 — Embed recognized text into the PDF file (proposed 2026-10-01;
-  awaiting the owner's go; planned after 2.18/2.20).** The owner asked
+  planned 2026-10-02 — `plan.md` is the working document; implementation
+  awaits the owner's answers to the plan's open questions and his go).** The owner asked
   whether the OCR results could be written back into the PDF as an
   invisible text layer, so other applications see selectable, searchable
   text too. Answer: yes — this is the standard "searchable PDF"
@@ -1651,6 +1672,8 @@ breaks no reference.
   and dialog construction (DB reads and widget-tree building on the UI
   thread) — the exact violation of 2.20's principle. The audit begins with
   timing spans on route/dialog construction before any fixing — see 2.20.
+  Carries the app-wide half of 2.20 (its PDF half is done); follows 2.21
+  in the queue (owner-approved sequence, 2026-10-01).
 - **7.2 — Floating window host.** Book cards, quick notes and dictionary popups
   float above the active view without reloading the page or leaking memory.
 - **7.3 — Extend the perf budgets** to the new subsystems from Phases 3–6.
@@ -2232,6 +2255,8 @@ top-to-bottom like a journal.
 | 2026-10-01 | **2.20 PDF plan, step 6 field test: four of five pass; the fifth found 2.18's real root cause, now fixed.** Owner results: (1) large scanned PDF opens instantly, first page paints without a freeze -- pass. (2) double-click word / triple-click line selection -- **failed**, and the failure exposed the actual bug behind 2.18: the drag gesture's no-movement release path clears the selection, so the word a double-click selected was destroyed by the same press's release before it could be seen. The planning diagnosis (dead clicks on unready pages) was real but secondary -- the gesture wiring had never worked. Fixed by copying the EPUB reader's arrangement: click gesture attached before the drag (controllers run in addition order), a shared `multi_click` cell that makes the drag stand down on the second or third press, and a drag-end that only clears when its own press stored drag state. (3) handles look identical -- pass, plus the requested hand cursor: the open hand over either grip on hover, the closed hand while dragging (matching the EPUB reader), and the previously end-only handle dragging extended to the start handle (both ends now move, end wins on overlap -- the EPUB's rule). (4) import-time OCR works; on the owner's modest hardware it is simply slow, accepted as hardware-bound. (5) the import shows the task with progress -- pass. New: `PdfHandleDrag` enum, `over_selection_handle` hit zones (unit-tested), `handle_dragging` flag shared with the per-page motion controller. Root cause and the gesture-coordination rule recorded in pitfalls §32. |
 | 2026-10-01 | **2.20 step 6 re-test: the drop cursor glitch fixed.** The owner's re-test of the hand cursor found that dropping a dragged handle made the cursor glitch: the closed hand vanished and the plain arrow sat over the grip until the pointer moved. Two defects in the new cursor code: the drag-end reset the cursor to the plain default -- but no motion event comes after a drop, so that is what the user stares at -- and it also clobbered the page's own base cursor, the text I-beam, which the motion and leave handlers were replacing with the plain arrow page-wide on the first mouse move. The cursor lifecycle is now closed: every path lands on an explicit state (I-beam over the page, open hand over a grip, closed hand during a grip drag), and the drop parks the cursor on exactly what the motion controller would show at the release point, computed with the same hit function from the gesture's own coordinates. Recorded in pitfalls §34. |
 | 2026-10-01 | **2.20 step 6 re-test 2: double-click word selection and handle-drag extension fixed.** The owner's re-test found the word a double-click selected vanished while its action chip stayed up (triple-click worked), and that dragging the end handle of a word- or line-made selection restarted the selection instead of extending it. First root cause: the multi-click gate was ported from the EPUB reader only partially -- the EPUB gates begin, update and end on the live press count read fresh at each; the PDF gated only begin, so a stale drag state left by a press whose release never arrived was consumed by the double-click's own release/update and destroyed the selection (the triple-click survived only because release two had already eaten the stale state). The drag now gates all three callbacks on the live count, carried into `SelectionDragEnd` as `press_count`. Second root cause: word and line selections stored the click point as their drag anchors, so an end-handle drag restarted from the click ("the end handle became the starting handle"); they now store the selection's real ends. Also: an empty drag result now dismisses the chip -- it must never outlive its selection. Recorded in pitfalls §35. |
+| 2026-10-02 | **Phase closed: 2.18 done, 2.10 closed by it, 2.20's PDF half done and field-verified; 2.21 planned next.** The owner's final re-test passed every item: word selection, line selection, both handle ends extending and retracting from any kind of selection, the hand cursor and the text I-beam with no glitch on drop. 2.18 closes with three recorded root causes behind what looked like one bug (uncoordinated gestures, an open cursor lifecycle, click-point drag anchors — pitfalls 32, 34, 35). 2.10's parity requirement is met: both readers select and handle identically. 2.20's PDF half is complete (instant open, off-thread doc service, pending clicks, import-time OCR queue, bounded text cache, handle parity). Next, per the owner-approved sequence: **2.21 — embed recognized text into the PDF file as an invisible layer** (planning done in plan.md: the mupdf-rs 0.8 write path verified — `PdfDocument::open`, `Shape::insert_text` with render mode 3 in view coordinates, verify-then-swap save; three owner questions open: backup story, button placement, whether a complete OCR is required first), then **7.1**, which carries 2.20's app-wide latency audit. |
+
 
 
 

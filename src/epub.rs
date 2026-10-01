@@ -843,7 +843,9 @@ pub fn replace_cover_bytes(
     }
     let stored_name = match &comic_series_prefix {
         Some(series) => format!("{series}/covers/{file_part}"),
-        None => file_part,
+        // Cloned, not moved: `file_part` is joined again below, and a value
+        // moved by one arm of a match is moved for the whole match.
+        None => file_part.clone(),
     };
 
     let path = dir.join(&file_part);

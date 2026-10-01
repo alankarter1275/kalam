@@ -328,7 +328,10 @@ impl Catalog {
                         crate::paths::library_dir().join(series).join("covers"),
                         format!("{series}/covers/{file_part}"),
                     ),
-                    None => (book_dir(&book.uuid), file_part),
+                    // Cloned, not moved: `file_part` is joined again below,
+                    // and a value moved by one arm of a match is moved for
+                    // the whole match.
+                    None => (book_dir(&book.uuid), file_part.clone()),
                 };
                 let dest = dest_dir.join(&file_part);
                 if fs::create_dir_all(&dest_dir).is_ok() && fs::copy(&src, &dest).is_ok() {

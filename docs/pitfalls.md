@@ -1594,3 +1594,27 @@ plan.md, a tracked file). Same recovery. The rule, sharpened: the HEAD
 check is not a step to perform before committing — it is a condition
 for committing. Branch point shown means no commit, full stop, recover
 first.
+
+## 39. A value moved by one arm of a match is moved for the whole match
+
+**2026-10-02, item 2.22's first CI round: two E0382s of the same shape.**
+A `match` produced `(dir, file_part)` in one arm and
+`(other_dir, format!("…{file_part}…"))` in the other — the inline
+`format!` captures borrow, so that arm looked like the safe one, but the
+tuple arm *moved* the value. Every use after the match —
+`dir.join(&file_part)` two lines down — failed with "borrow of moved
+value", even though "the arm that moved it is not the one my code took"
+feels like it should not matter. Move semantics are static: if any arm
+can move it, it is moved.
+
+**Do instead:** when a value is needed after a match that must produce
+it in one arm, `clone()` in that arm (and say why in a comment), or
+have every arm borrow and clone once at the end. And when editing
+without a compiler, read each new `match` arm asking one question:
+*does this arm move anything used below?* — the borrow checker reads
+the whole match, not just the diff.
+
+The stale-log trap from §11 recurred in the same round:
+`test-latest.txt` still ended with the *previous* run's footer, and only
+the commit list showed which publish commit carried the real failure.
+Read the `--- run <id> ---` footer before believing a log is current.

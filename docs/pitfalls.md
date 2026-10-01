@@ -499,6 +499,20 @@ Because nothing can be built locally, scripted edits need their own safety net:
   `gh run view <id> --json conclusion` (or the run's own ci-logs commit)
   before calling a run green.
 
+- **Second batch of the same (2026-10-01, step 4 of the PDF plan; one
+  failed CI run):** a `crate::` path written from memory pointed at
+  `crate::pdf_reader::...` — the module lives at
+  `crate::pages::pdf_reader` (and an unresolved path also produces a
+  misleading secondary error about `str` not being `Sized`, which
+  disappears with the path); and in `watch_folder.rs` a `res.title.clone()`
+  was inserted *after* existing code that does `last_title = res.title;`
+  — the move happens on someone else's line, far above the new code.
+  Both are catchable in seconds before pushing: grep every new
+  `crate::foo::` path against `main.rs`'s module tree, and when editing
+  inside an existing function, re-read the whole function for moves of
+  the values the new code touches — the borrow checker sees the whole
+  function, not just the diff.
+
 ## 13. A route existing in `app.rs` does not mean the user can reach it
 
 `ReadingList`, `Tags` and `Analytics` had complete pages, `PageSlot` variants

@@ -298,7 +298,10 @@ pub fn import_watch_files_with_rules(
                             crate::pdf_ocr::enqueue_import_scan(
                                 Arc::clone(catalog),
                                 res.book_id,
-                                res.title.clone(),
+                                // `res.title` was moved into `last_title`
+                                // above; the book row carries the same
+                                // title.
+                                book.title.clone(),
                                 book.file_path.clone(),
                             );
                         }

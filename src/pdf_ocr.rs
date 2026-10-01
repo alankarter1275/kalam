@@ -135,7 +135,7 @@ pub fn enqueue_import_scan(catalog: Arc<Catalog>, book_id: i64, title: String, p
 fn run_scan(catalog: Arc<Catalog>, book_id: i64, path: PathBuf, reporter: crate::tasks::Reporter) -> String {
     // The fingerprint the cache rows are keyed by. Computed here, on the
     // worker -- the UI thread never stats files (2.20).
-    let Some(fingerprint) = crate::pdf_reader::pdf_path_fingerprint(&path) else {
+    let Some(fingerprint) = crate::pages::pdf_reader::pdf_path_fingerprint(&path) else {
         reporter.fail();
         return format!("could not read {}", path.display());
     };

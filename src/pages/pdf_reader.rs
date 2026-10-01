@@ -4655,10 +4655,13 @@ impl Component for PdfReaderModel {
                     // handler kind), so it cannot hand its captures to
                     // the task starter by value. Rc them, and clone out
                     // per invocation -- the dialog closes on confirm, so
-                    // the job still runs at most once.
+                    // the job still runs at most once. The dialog's
+                    // display title is a separate String so the call's
+                    // borrow never crosses the closure's move.
+                    let confirm_title = self.title.clone();
                     let title = std::rc::Rc::new(self.title.clone());
                     let path = std::rc::Rc::new(path);
-                    crate::pdf_embed::present_confirm(root, title.as_str(), move || {
+                    crate::pdf_embed::present_confirm(root, &confirm_title, move || {
                         let tx = tx.clone();
                         crate::pdf_embed::enqueue(
                             catalog.clone(),

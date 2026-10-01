@@ -849,14 +849,17 @@ impl Component for BookPageModel {
                         // handler kind), so it cannot hand its captures to
                         // the task starter by value. Rc them, and clone out
                         // per invocation -- the dialog closes on confirm,
-                        // so the job still runs at most once.
+                        // so the job still runs at most once. The dialog's
+                        // display title is a separate String so the call's
+                        // borrow never crosses the closure's move.
+                        let confirm_title = book.title.clone();
                         let title = std::rc::Rc::new(book.title.clone());
                         let path = std::rc::Rc::new(book.file_path.clone());
                         // The embed rewrites the file in place: refresh
                         // the page when it lands, like the remaster flow.
                         // The raw sender drops the message quietly if the
                         // page was closed before the task finished.
-                        crate::pdf_embed::present_confirm(root, title.as_str(), move || {
+                        crate::pdf_embed::present_confirm(root, &confirm_title, move || {
                             let s = s.clone();
                             crate::pdf_embed::enqueue(
                                 catalog.clone(),

@@ -738,17 +738,24 @@ impl PdfReaderModel {
         (fit.clamp(0.2, 3.5) * 100.0).round() / 100.0
     }
 
-    pub fn prune_textures(&mut self) {
-        if self.total_pages == 0 {
-            return;
-        }
-
-        let effective_spread_mode = match self.scroll_mode {
+    /// The pages a reader "standing" on `current_page` still needs: the
+    /// current spread plus `spreads_to_keep` spreads in each direction.
+    /// Pure math (no state), so the cache windows can be unit-tested.
+    /// Wrapped scrolling reads as single pages, matching `trigger_loads`.
+    pub fn keep_window_pages(
+        spread_mode: PdfSpreadMode,
+        scroll_mode: PdfScrollMode,
+        total_pages: usize,
+        current_page: usize,
+        spreads_to_keep: usize,
+    ) -> std::collections::HashSet<usize> {
+        let effective_spread_mode = match scroll_mode {
             PdfScrollMode::WrappedScrolling => PdfSpreadMode::NoSpreads,
-            _ => self.spread_mode,
+            _ => spread_mode,
         };
 
-        let cur_spread = calculate_spread_for_page(effective_spread_mode, self.total_pages, self.current_page);
+        let cur_spread =
+            calculate_spread_for_page(effective_spread_mode, total_pages, current_page);
         let mut keep_pages = std::collections::HashSet::new();
 
         keep_pages.insert(cur_spread.0);
@@ -756,14 +763,10 @@ impl PdfReaderModel {
             keep_pages.insert(r);
         }
 
-        let spreads_to_keep = match self.scroll_mode {
-            PdfScrollMode::PageScrolling => 1,
-            _ => 3,
-        };
-
         let mut next_cursor = cur_spread;
         for _ in 0..spreads_to_keep {
-            if let Some(ns) = calculate_next_spread(effective_spread_mode, self.total_pages, next_cursor) {
+            if let Some(ns) = calculate_next_spread(effective_spread_mode, total_pages, next_cursor)
+            {
                 keep_pages.insert(ns.0);
                 if let Some(r) = ns.1 {
                     keep_pages.insert(r);
@@ -776,7 +779,8 @@ impl PdfReaderModel {
 
         let mut prev_cursor = cur_spread;
         for _ in 0..spreads_to_keep {
-            if let Some(ps) = calculate_prev_spread(effective_spread_mode, self.total_pages, prev_cursor) {
+            if let Some(ps) = calculate_prev_spread(effective_spread_mode, total_pages, prev_cursor)
+            {
                 keep_pages.insert(ps.0);
                 if let Some(r) = ps.1 {
                     keep_pages.insert(r);
@@ -786,6 +790,26 @@ impl PdfReaderModel {
                 break;
             }
         }
+
+        keep_pages
+    }
+
+    pub fn prune_textures(&mut self) {
+        if self.total_pages == 0 {
+            return;
+        }
+
+        let image_window = match self.scroll_mode {
+            PdfScrollMode::PageScrolling => 1,
+            _ => 3,
+        };
+        let keep_pages = Self::keep_window_pages(
+            self.spread_mode,
+            self.scroll_mode,
+            self.total_pages,
+            self.current_page,
+            image_window,
+        );
 
         let evicted: Vec<usize> = self
             .textures
@@ -804,6 +828,20 @@ impl PdfReaderModel {
         }
 
         self.pending_loads.retain(|p| keep_pages.contains(p));
+
+        // Text is far cheaper per page than a rendered bitmap (tens of KB,
+        // not megabytes), so its keep-window is twice the image window --
+        // but it stays bounded: a 10,000-page document cannot accumulate
+        // 10,000 text layers while the reader is open.
+        let text_keep_pages = Self::keep_window_pages(
+            self.spread_mode,
+            self.scroll_mode,
+            self.total_pages,
+            self.current_page,
+            image_window * 2,
+        );
+        self.page_text_cache
+            .retain(|p, _| text_keep_pages.contains(p));
 
         #[cfg(target_os = "linux")]
         if !evicted.is_empty() {
@@ -858,7 +896,7 @@ impl Drop for PdfReaderModel {
 impl PdfReaderModel {
 
     pub fn trigger_loads(&mut self, _sender: &ComponentSender<Self>) {
-        let Some(ref path) = self.file_path else {
+        let Some(path) = self.file_path.clone() else {
             return;
         };
 
@@ -931,6 +969,12 @@ impl PdfReaderModel {
         let gen = self.render_generation;
 
         for page in load_order {
+            // Text pre-warm (2.20 step 2): every page whose image is being
+            // loaded also gets its text layer requested from the doc
+            // service, so selection works the moment the page appears.
+            // Runs before the texture check -- a cached image can sit on a
+            // page whose text was never extracted.
+            let _ = self.ensure_page_text(page);
             if let Some(cached) = self.textures.get(&page) {
                 if cached.generation == gen {
                     continue;
@@ -4952,6 +4996,96 @@ fn toggle_active(button: &gtk::Button, active: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn window(
+        spread_mode: PdfSpreadMode,
+        scroll_mode: PdfScrollMode,
+        total: usize,
+        page: usize,
+        spreads: usize,
+    ) -> Vec<usize> {
+        let mut pages: Vec<usize> =
+            PdfReaderModel::keep_window_pages(spread_mode, scroll_mode, total, page, spreads)
+                .into_iter()
+                .collect();
+        pages.sort_unstable();
+        pages
+    }
+
+    #[test]
+    fn test_keep_window_pages_paged_mode() {
+        // Paged reading keeps the current spread plus one spread each way.
+        assert_eq!(
+            window(PdfSpreadMode::NoSpreads, PdfScrollMode::PageScrolling, 20, 10, 1),
+            vec![9, 10, 11]
+        );
+        // At the start of the book there is no previous spread.
+        assert_eq!(
+            window(PdfSpreadMode::NoSpreads, PdfScrollMode::PageScrolling, 20, 1, 1),
+            vec![1, 2]
+        );
+        // At the end there is no next spread.
+        assert_eq!(
+            window(PdfSpreadMode::NoSpreads, PdfScrollMode::PageScrolling, 20, 20, 1),
+            vec![19, 20]
+        );
+    }
+
+    #[test]
+    fn test_keep_window_pages_spreads_keep_both_halves() {
+        // Odd spreads on page 4: the spread is (4, 5) and the window must
+        // keep whole spreads, not loose pages.
+        assert_eq!(
+            window(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::VerticalScrolling,
+                20,
+                4,
+                1
+            ),
+            vec![2, 3, 4, 5, 6, 7]
+        );
+    }
+
+    #[test]
+    fn test_keep_window_pages_text_window_is_wider_than_image_window() {
+        // The text cache keeps twice the image window (2.20 design: text is
+        // tens of KB per page, so its window may be wider -- but bounded).
+        let image = window(
+            PdfSpreadMode::NoSpreads,
+            PdfScrollMode::VerticalScrolling,
+            50,
+            25,
+            3,
+        );
+        let text = window(
+            PdfSpreadMode::NoSpreads,
+            PdfScrollMode::VerticalScrolling,
+            50,
+            25,
+            6,
+        );
+        assert_eq!(image, vec![22, 23, 24, 25, 26, 27, 28]);
+        assert_eq!(text, vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
+        for p in &image {
+            assert!(text.contains(p), "text window must cover the image window");
+        }
+    }
+
+    #[test]
+    fn test_keep_window_pages_wrapped_reads_as_single_pages() {
+        // Wrapped scrolling has no spreads; the window must not pair pages.
+        assert_eq!(
+            window(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::WrappedScrolling,
+                20,
+                4,
+                1
+            ),
+            vec![3, 4, 5]
+        );
+    }
 
     #[test]
     fn test_calculate_spread_for_page_odd_spreads() {

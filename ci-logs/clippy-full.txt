@@ -19,4 +19,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 24.46s
+src/pages/pdf_reader.rs:1001:21: [1m[91merror[E0308][0m: mismatched types: expected `PathBuf`, found `&PathBuf`
+src/pages/pdf_reader.rs:2878:46: [1m[91merror[E0599][0m: no method named `is_some_and` found for enum `std::result::Result<T, E>` in the current scope
+src/pages/pdf_reader.rs:3031:85: [1m[91merror[E0507][0m: cannot move out of `self.doc_tx` which is behind a mutable reference: move occurs because `self.doc_tx` has type `std::option::Option<async_channel::Sender<pages::pdf_reader::PdfDocRequest>>`, which does not implement the `Copy` trait
+src/pages/pdf_reader.rs:3645:37: [1m[91merror[E0382][0m: use of moved value: value used here after move
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors

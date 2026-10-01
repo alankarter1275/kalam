@@ -19,6 +19,8 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 
+use anyhow::anyhow;
+
 use crate::db::Catalog;
 use crate::pdf::{PdfPageText, PdfTextLine};
 use crate::tasks::Reporter;
@@ -233,6 +235,10 @@ pub enum EmbedDone {
 /// progress per page. `on_applied` runs on the main loop after a
 /// successful swap, with the file's path — an open reader uses it to
 /// reload the document; other callers may ignore it.
+///
+/// Must be called on the main thread, like every [`crate::tasks::spawn`]
+/// (the task system attaches its receiver to the GLib main context);
+/// both callers are button handlers, which already are.
 pub fn enqueue(
     catalog: Arc<Catalog>,
     book_id: i64,
@@ -240,60 +246,58 @@ pub fn enqueue(
     path: PathBuf,
     on_applied: impl Fn(&Path) + 'static,
 ) {
-    gtk::glib::MainContext::default().invoke(move || {
-        crate::tasks::spawn(
-            format!("Embedding text in {title}"),
-            move |reporter| run_embed(catalog, book_id, path, reporter),
-            |_update| {},
-            move |done: EmbedDone| {
-                match &done {
-                    EmbedDone::Applied {
-                        embedded_pages,
-                        rotated_skipped,
-                        skipped_words,
-                        backup,
-                        path,
-                    } => {
-                        let mut detail = format!(
-                            "{embedded_pages} pages now carry their text. The untouched original is kept as {}.",
-                            backup.display()
-                        );
-                        if *rotated_skipped > 0 {
-                            detail.push_str(&format!(
-                                " {rotated_skipped} rotated page(s) were left untouched."
-                            ));
-                        }
-                        if *skipped_words > 0 {
-                            detail.push_str(&format!(
-                                " {skipped_words} word(s) had characters the PDF text layer cannot store."
-                            ));
-                        }
-                        crate::notify::info("Text embedded", &detail);
-                        on_applied(path);
+    crate::tasks::spawn(
+        format!("Embedding text in {title}"),
+        move |reporter| run_embed(catalog, book_id, path, reporter),
+        |_update| {},
+        move |done: EmbedDone| {
+            match &done {
+                EmbedDone::Applied {
+                    embedded_pages,
+                    rotated_skipped,
+                    skipped_words,
+                    backup,
+                    path,
+                } => {
+                    let mut detail = format!(
+                        "{embedded_pages} pages now carry their text. The untouched original is kept as {}.",
+                        backup.display()
+                    );
+                    if *rotated_skipped > 0 {
+                        detail.push_str(&format!(
+                            " {rotated_skipped} rotated page(s) were left untouched."
+                        ));
                     }
-                    EmbedDone::NotReady { missing } => {
-                        crate::notify::info(
-                            "Not recognized yet",
-                            &format!(
-                                "{missing} page(s) still have no recognized text. \
-                                 Let recognition finish first; nothing was changed."
-                            ),
-                        );
+                    if *skipped_words > 0 {
+                        detail.push_str(&format!(
+                            " {skipped_words} word(s) had characters the PDF text layer cannot store."
+                        ));
                     }
-                    EmbedDone::NothingToEmbed => {
-                        crate::notify::info(
-                            "Nothing to embed",
-                            "Every page already carries text; there is nothing to add.",
-                        );
-                    }
-                    EmbedDone::Cancelled => {}
-                    EmbedDone::Failed(why) => {
-                        crate::notify::error("Embedding failed", why);
-                    }
+                    crate::notify::info("Text embedded", &detail);
+                    on_applied(path);
                 }
-            },
-        );
-    });
+                EmbedDone::NotReady { missing } => {
+                    crate::notify::info(
+                        "Not recognized yet",
+                        &format!(
+                            "{missing} page(s) still have no recognized text. \
+                             Let recognition finish first; nothing was changed."
+                        ),
+                    );
+                }
+                EmbedDone::NothingToEmbed => {
+                    crate::notify::info(
+                        "Nothing to embed",
+                        "Every page already carries text; there is nothing to add.",
+                    );
+                }
+                EmbedDone::Cancelled => {}
+                EmbedDone::Failed(why) => {
+                    crate::notify::error("Embedding failed", why);
+                }
+            }
+        },
+    );
 }
 
 /// The task body, on the worker thread.
@@ -457,7 +461,10 @@ fn apply_rewrite(
         let mut writer = std::io::BufWriter::new(file);
         doc.write_to_with_options(&mut writer, conservative_write_options())
             .map_err(|e| anyhow!("could not write the rewritten file: {e}"))?;
-        writer.flush()?;
+        // Fully qualified: with the GTK prelude in scope a bare
+        // `writer.flush()` also resolves against gdk's DisplayExt::flush
+        // and the ambiguity is reported as a trait error.
+        std::io::Write::flush(&mut writer)?;
     }
     if let Err(why) = verify(tmp) {
         let _ = std::fs::remove_file(tmp);

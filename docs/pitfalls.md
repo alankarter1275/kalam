@@ -1516,3 +1516,27 @@ plan's parenthetical was simply a research miss.
   along the unrotated axis with the line clip measured against the
   unrotated media box, which is why pages rotated 90°/270° must be
   skipped rather than embedded.
+
+**Same feature, first CI round (16 errors, all caught by clippy).**
+Three are general and cost a full CI round trip each:
+
+- With `use gtk::prelude::*` in scope, a bare `writer.flush()` is
+  ambiguous against gdk's `DisplayExt::flush`, and the error is
+  reported as `IsA<gdk::Display>` not implemented for your writer.
+  Use the fully qualified `std::io::Write::flush(&mut w)` in files
+  that import the GTK prelude.
+- `MainContext::default().invoke` requires a `Send` closure, which
+  sinks any non-Send callback parameter the closure carries. When
+  every caller is a main-thread button handler, call
+  `tasks::spawn` directly (it is main-thread-only anyway) instead of
+  wrapping in `invoke`; reserve `invoke` for worker-thread entry
+  points like `pdf_ocr::enqueue_import_scan`.
+- A confirm dialog's callback is an `Fn` closure (GTK's handler
+  kind), so it cannot move its captures into the task starter —
+  exactly what `remaster_dialog.rs` already documents, and what its
+  `Rc` pattern exists for. Rc the moved values and clone them out per
+  invocation. Reading a precedent is not the same as applying it:
+  the handler was written without the Rc and failed with E0507.
+- Renaming an `_`-prefixed parameter (here `_root` → `root`) breaks
+  body references that were legal despite the prefix — grep the old
+  name before renaming.

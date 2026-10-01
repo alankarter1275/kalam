@@ -845,16 +845,28 @@ impl Component for BookPageModel {
                         let catalog = self.service.catalog().clone();
                         let s = sender.clone();
                         let id = book.id;
-                        let title = book.title.clone();
-                        let path = book.file_path.clone();
+                        // The confirm callback is an Fn closure (GTK's
+                        // handler kind), so it cannot hand its captures to
+                        // the task starter by value. Rc them, and clone out
+                        // per invocation -- the dialog closes on confirm,
+                        // so the job still runs at most once.
+                        let title = std::rc::Rc::new(book.title.clone());
+                        let path = std::rc::Rc::new(book.file_path.clone());
                         // The embed rewrites the file in place: refresh
                         // the page when it lands, like the remaster flow.
                         // The raw sender drops the message quietly if the
                         // page was closed before the task finished.
-                        crate::pdf_embed::present_confirm(root, &title, move || {
-                            crate::pdf_embed::enqueue(catalog, id, title, path, move |_| {
-                                let _ = s.input_sender().send(BookPageMsg::Refresh);
-                            });
+                        crate::pdf_embed::present_confirm(root, title.as_str(), move || {
+                            let s = s.clone();
+                            crate::pdf_embed::enqueue(
+                                catalog.clone(),
+                                id,
+                                (*title).clone(),
+                                (*path).clone(),
+                                move |_| {
+                                    let _ = s.input_sender().send(BookPageMsg::Refresh);
+                                },
+                            );
                         });
                     } else {
                         crate::notify::info(

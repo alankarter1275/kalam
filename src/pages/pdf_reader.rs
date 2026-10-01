@@ -3356,7 +3356,7 @@ impl Component for PdfReaderModel {
                     if let Some(popover) = &self.search_popover {
                         popover.popdown();
                     }
-                    _root.grab_focus();
+                    root.grab_focus();
                 } else {
                     let entry = widgets.search_entry.clone();
                     glib::idle_add_local_once(move || {
@@ -3433,7 +3433,7 @@ impl Component for PdfReaderModel {
                 if let Some(popover) = &self.search_popover {
                     popover.popdown();
                 }
-                _root.grab_focus();
+                root.grab_focus();
             }
             PdfReaderMsg::NextPage => {
                 if self.current_page < self.total_pages {
@@ -4650,13 +4650,27 @@ impl Component for PdfReaderModel {
                 if let Some(path) = self.file_path.clone() {
                     let catalog = self.catalog.clone();
                     let book_id = self.book_id;
-                    let title = self.title.clone();
                     let tx = sender.input_sender().clone();
-                    crate::pdf_embed::present_confirm(root, &title, move || {
-                        crate::pdf_embed::enqueue(catalog, book_id, title, path, move |applied| {
-                            let _ = tx
-                                .send(PdfReaderMsg::EmbedApplied { path: applied.to_path_buf() });
-                        });
+                    // The confirm callback is an Fn closure (GTK's
+                    // handler kind), so it cannot hand its captures to
+                    // the task starter by value. Rc them, and clone out
+                    // per invocation -- the dialog closes on confirm, so
+                    // the job still runs at most once.
+                    let title = std::rc::Rc::new(self.title.clone());
+                    let path = std::rc::Rc::new(path);
+                    crate::pdf_embed::present_confirm(root, title.as_str(), move || {
+                        let tx = tx.clone();
+                        crate::pdf_embed::enqueue(
+                            catalog.clone(),
+                            book_id,
+                            (*title).clone(),
+                            (*path).clone(),
+                            move |applied| {
+                                let _ = tx.send(PdfReaderMsg::EmbedApplied {
+                                    path: applied.to_path_buf(),
+                                });
+                            },
+                        );
                     });
                 }
             }

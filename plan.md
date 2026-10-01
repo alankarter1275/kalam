@@ -31,20 +31,46 @@ owner's own words:
 
 Still open before this becomes a plan:
 
-- **Series detection:** ComicInfo.xml inside the CBZ, filename
-  pattern, or both — the owner does not know what his files carry;
-  asked for 3-5 real comic file/folder names from his library and a
-  peek inside one CBZ. The app already parses both
-  (`read_comic_info_from_zip`, `parse_comic_filename_internal`,
-  `sanitize_comic_series` in `src/comics.rs`), so the plan is
-  detection-agnostic; the samples tune the weight and the manual
-  grouping UI.
-- Reading flow assumption (stated, unconfirmed): open series ->
-  chapter list + continue where you left off; finishing a chapter
-  flows into the next.
-- Migration of existing comics: automatic merge into series folders,
-  reading progress preserved (chapter files unchanged, only grouping
-  and paths move; the uuid is the key, so renames are safe).
+- **Series detection: settled.** The owner confirms his CBZ files carry
+  ComicInfo.xml, and the app already parses it (plus filename
+  heuristics) and auto-catalogs every comic into a series at import
+  (`get_or_create_comic_series` + `add_comic_chapter`,
+  `src/epub.rs:273–288`; `backfill_comic_series` for older rows).
+  Screenshots of his current folder names did not reach the agent (no
+  vision; files never landed in the workspace) — 2–3 names pasted as
+  text would still sanity-check how detection grouped his library,
+  but nothing blocks on it.
+- **Reading flow: confirmed** ("yup") — and already shipped: the
+  comics hub's series drawer (resume, read badges), the reader's
+  end-of-chapter card and webtoon auto-flow, the Chapters sidebar
+  (ROADMAP changelog 2026-09-27).
+
+**Scope-collapsing finding (verified 2026-10-02):** the in-app half of
+the owner's ask already exists. The comics hub groups by series
+(`ComicViewMode::Series`, `src/pages/comics.rs`), the main library
+routes comic clicks through the series drawer
+(`src/pages/all_books.rs:1183–1204`), and the DB has the
+`comic_series`/`comic_chapters` hierarchy (db v13). What does NOT
+exist is the on-disk half the owner was actually looking at: every
+chapter still gets its own per-book folder
+(`library/<Author - Title shortid>/book.cbz + cover.*`). So this item
+is the disk layout only:
+
+1. New imports: comics land in `library/<Series-name>/` as
+   number-named chapter files (`0007.cbz`, `0007.5.cbz`; unnumbered
+   fallback and collision rule to be settled in the plan) with
+   `covers/<same-stem>.<ext>` beside them.
+2. One-time migration of existing comics into that shape, grouped by
+   the already-populated `comic_series` rows; reading positions,
+   shelves and history are keyed by book ids and survive untouched
+   (books store only `file_name` relative to their folder — paths are
+   resolved at read time through the uuid→folder registry,
+   `src/db.rs:1457/1496/1742`, `src/paths.rs:217` — so a move is a
+   file move plus a `file_name`/`cover_name` update plus a registry
+   update).
+3. Folder-name sanitization reuses the existing Bengali-safe byte-cap
+   rules (`src/paths.rs:66–110`); a series-name collision falls back
+   to the same short-id/full-uuid suffix rules books use.
 
 Research already done for the discussion (verified 2026-10-02): every
 import copies the file into `library/<Author - Title shortid>/` and

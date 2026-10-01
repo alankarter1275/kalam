@@ -132,6 +132,20 @@ pub fn spawn_import(
                         if r.restored {
                             tally.restored += 1;
                         }
+                        // A freshly imported scanned PDF gets the
+                        // import-time whole-book OCR scan (2.20). Digital
+                        // PDFs end that task immediately with "no scanned
+                        // pages"; EPUBs and comics never start it.
+                        if r.format == crate::models::BookFormat::Pdf {
+                            if let Ok(Some(book)) = catalog.get_book(r.book_id) {
+                                crate::pdf_ocr::enqueue_import_scan(
+                                    catalog.clone(),
+                                    r.book_id,
+                                    r.title.clone(),
+                                    book.file_path.clone(),
+                                );
+                            }
+                        }
                         tally.last_title = r.title.clone();
                     }
                     Err(err) => {

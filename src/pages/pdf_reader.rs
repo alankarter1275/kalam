@@ -3796,8 +3796,33 @@ impl Component for PdfReaderModel {
                             // missing can now run (2.20 step 3).
                             self.try_replay_pending_selection(page, &sender);
                         } else {
-                            // No embedded text: fall back to OCR via the
-                            // fingerprint the worker computed off-thread.
+                            // No embedded text. Landing on a page whose text
+                            // is not ready promotes it and its window to the
+                            // front of the import-time OCR queue (2.20 step
+                            // 4) -- including a jump straight to page 5000;
+                            // the background scan continues after them. The
+                            // page the reader stands on is also served by its
+                            // own OCR worker, because that path drives the
+                            // pending-selection signal; the queue skips it
+                            // later through the page cache.
+                            let image_window = match self.scroll_mode {
+                                PdfScrollMode::PageScrolling => 1,
+                                _ => 3,
+                            };
+                            let mut window: Vec<usize> = Self::keep_window_pages(
+                                self.spread_mode,
+                                self.scroll_mode,
+                                self.total_pages,
+                                self.current_page,
+                                image_window,
+                            )
+                            .into_iter()
+                            .collect();
+                            // Reading order: keep_window_pages returns a
+                            // set, and the queue runs its window in the
+                            // order given.
+                            window.sort_unstable();
+                            crate::pdf_ocr::promote(self.book_id, &window);
                             self.trigger_page_ocr(page, fingerprint);
                         }
                     }
@@ -4564,7 +4589,7 @@ impl PdfReaderModel {
 /// catches every real-world change (a remaster rewrites the file, a
 /// re-download changes both) for the cost of a stat call. A false "same"
 /// would require a changed file with identical size and identical mtime.
-fn pdf_path_fingerprint(path: &std::path::Path) -> Option<String> {
+pub fn pdf_path_fingerprint(path: &std::path::Path) -> Option<String> {
     use std::time::UNIX_EPOCH;
     let md = std::fs::metadata(path).ok()?;
     let mtime = md

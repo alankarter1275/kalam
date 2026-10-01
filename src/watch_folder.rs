@@ -291,6 +291,18 @@ pub fn import_watch_files_with_rules(
                     imported_count += 1;
                     last_title = res.title;
                     log::info!("Watch folder: imported '{}' from {}", last_title, path.display());
+                    // Watch-imported scanned PDFs join the import-time OCR
+                    // scan, same as a manual import (2.20).
+                    if res.format == crate::models::BookFormat::Pdf {
+                        if let Ok(Some(book)) = catalog.get_book(res.book_id) {
+                            crate::pdf_ocr::enqueue_import_scan(
+                                Arc::clone(catalog),
+                                res.book_id,
+                                res.title.clone(),
+                                book.file_path.clone(),
+                            );
+                        }
+                    }
                 } else {
                     log::debug!("Watch folder: duplicate '{}' ({})", res.title, path.display());
                 }

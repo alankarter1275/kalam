@@ -19,6 +19,9 @@ pub struct ImportResult {
     pub book_id: i64,
     pub title: String,
     pub duplicate: bool,
+    /// What was imported. A fresh PDF is followed by the import-time OCR
+    /// scan (2.20); the caller needs to know it was a PDF at all.
+    pub format: BookFormat,
 }
 
 #[derive(Debug, Default)]
@@ -60,6 +63,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
             title,
             duplicate: true,
             restored: false,
+            format: BookFormat::from_str_lossy(&ext),
         });
     }
 
@@ -313,6 +317,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         title,
         duplicate: false,
         restored,
+        format,
     })
 }
 

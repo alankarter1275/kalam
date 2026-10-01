@@ -5,7 +5,12 @@
 //! and scanned PDF pages without requiring external system dependencies or network connectivity.
 
 use anyhow::{anyhow, Result};
-use ocrs::{ImageSource, OcrEngine, OcrEngineParams, TextItem};
+use ocrs::{ImageSource, OcrEngineParams, TextItem};
+
+/// Re-exported so callers outside this module can hold an engine (the
+/// import-time PDF scan passes one through to its per-page helper). The
+/// re-export also binds the name for this module's own signatures.
+pub use ocrs::OcrEngine;
 use rten::Model;
 use std::path::PathBuf;
 

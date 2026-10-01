@@ -12,6 +12,7 @@
 //! - Per-book preferences and global defaults persistence in catalog
 //! - Reading history, session time tracking, and catalog persistence for "Continue Reading" on Home
 
+use gtk::cairo;
 use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
@@ -23,6 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::{Catalog, ReadingBookmark};
+use crate::epub_book::ReadingTheme;
 use crate::pdf::{is_top_level_title, PdfDocument, PdfPageText, PdfSearchResult, PdfTocEntry};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -473,6 +475,10 @@ pub struct PdfReaderModel {
     /// The brief "Recognizing page..." signal shown while a pending
     /// selection waits for its text.
     pub recognizing_popover: Option<gtk::Popover>,
+    /// The reading theme the EPUB reader uses (shared `reader.theme`
+    /// pref). The PDF reader takes its selection-handle colour from it so
+    /// both readers show identical grips (2.20 step 5).
+    pub reading_theme: ReadingTheme,
     pub page_overlays: HashMap<PageSlot, gtk::Overlay>,
     pub page_draw_areas: HashMap<PageSlot, gtk::DrawingArea>,
     pub page_text_cache: HashMap<usize, PdfPageText>,
@@ -510,6 +516,11 @@ impl PdfReaderModel {
             _ => ("PDF Document".to_string(), String::new(), None, None),
         };
 
+        let reading_theme = init
+            .catalog
+            .get_pref("reader.theme")
+            .map(|v| ReadingTheme::from_str_lossy(&v))
+            .unwrap_or(ReadingTheme::Sepia);
         let saved_page = match init.catalog.get_reading_progress(init.book_id) {
             Ok(Some((page, _))) if page >= 1 => page,
             _ => 1,
@@ -620,6 +631,7 @@ impl PdfReaderModel {
             text_in_progress: HashSet::new(),
             pending_selection: None,
             recognizing_popover: None,
+            reading_theme,
             page_overlays: HashMap::new(),
             page_draw_areas: HashMap::new(),
             page_text_cache: HashMap::new(),
@@ -1072,6 +1084,17 @@ impl PdfReaderModel {
         }
     }
 
+    /// The selection-handle grip colour, identical to the EPUB reader's
+    /// (`kalam-reader` prefs): near-black on the light reading themes,
+    /// bright amber on the dark ones, so the grips read against the page
+    /// (2.20 step 5: same shape, size and colour in both readers).
+    pub fn handle_color(&self) -> (f64, f64, f64) {
+        match self.reading_theme {
+            ReadingTheme::Light | ReadingTheme::Sepia => (11.0 / 255.0, 11.0 / 255.0, 11.0 / 255.0),
+            ReadingTheme::Dark | ReadingTheme::Ink => (255.0 / 255.0, 209.0 / 255.0, 102.0 / 255.0),
+        }
+    }
+
     pub fn trigger_page_ocr(&mut self, page: usize, fingerprint: Option<String>) {
         if self.page_text_cache.contains_key(&page) {
             return;
@@ -1318,6 +1341,7 @@ impl PdfReaderModel {
         let active_sel_ref = self.active_selection.clone();
         let search_hl_ref = self.search_highlight.clone();
         let slot_copy = slot;
+        let sel_handle_color = self.handle_color();
         draw_area.set_draw_func(move |_, cr, _w, _h| {
             // 1. Draw search match highlight (soft golden glow)
             if let Some((sel_slot, _page, ref s_rects)) = *search_hl_ref.borrow() {
@@ -1356,18 +1380,24 @@ impl PdfReaderModel {
                         cr.rectangle(sel.bounds.0, sel.bounds.1, sel.bounds.2, sel.bounds.3);
                         let _ = cr.stroke();
                     } else {
-                        // Handles (start and end) for continuous reading selection
-                        cr.set_source_rgba(53.0 / 255.0, 132.0 / 255.0, 228.0 / 255.0, 0.95);
+                        // Handles (start and end) for continuous reading
+                        // selection: the EPUB reader's teardrop grips --
+                        // a 2 px bar the height of the band, and a 9 px
+                        // teardrop whose point touches the bar's outer
+                        // end, hanging away from the text. Same shape,
+                        // size and colour in both readers (2.20 step 5).
+                        let hc = sel_handle_color;
+                        cr.set_source_rgba(hc.0, hc.1, hc.2, 1.0);
                         let (sx, sy, sh) = sel.start_handle;
                         cr.rectangle(sx - 1.0, sy, 2.0, sh);
                         let _ = cr.fill();
-                        cr.arc(sx, (sy - 4.5).max(4.5), 4.5, 0.0, 2.0 * std::f64::consts::PI);
+                        draw_teardrop(cr, sx, sy + 1.0, true);
                         let _ = cr.fill();
 
                         let (ex, ey, eh) = sel.end_handle;
                         cr.rectangle(ex - 1.0, ey, 2.0, eh);
                         let _ = cr.fill();
-                        cr.arc(ex, ey + eh + 4.5, 4.5, 0.0, 2.0 * std::f64::consts::PI);
+                        draw_teardrop(cr, ex, ey + eh - 1.0, false);
                         let _ = cr.fill();
                     }
                 }
@@ -4589,6 +4619,49 @@ impl PdfReaderModel {
 /// catches every real-world change (a remaster rewrites the file, a
 /// re-download changes both) for the cost of a stat call. A false "same"
 /// would require a changed file with identical size and identical mtime.
+/// One selection-handle grip: a 9 px teardrop whose point touches the
+/// bar's outer end at (`tip_x`, `tip_y`), its body hanging away from the
+/// text -- upward for the start handle, downward for the end. The same
+/// shape and size the EPUB reader draws
+/// (`crates/kalam-reader/src/handles.rs`), so the two readers look and
+/// feel identical (2.20 step 5).
+fn draw_teardrop(cr: &cairo::Context, tip_x: f64, tip_y: f64, start: bool) {
+    const GRIP: f64 = 9.0;
+    let r = GRIP / 2.0;
+    let dir = if start { -1.0 } else { 1.0 };
+    // The circle's centre sits r*sqrt(2) from the tip along the bar's
+    // axis, so the tip is a corner of its bounding square and the two
+    // edges from the tip are tangents.
+    let c_y = tip_y + dir * r * std::f64::consts::SQRT_2;
+    let t = r * std::f64::consts::FRAC_1_SQRT_2;
+    cr.move_to(tip_x, tip_y);
+    if start {
+        // Tip to the left tangent point, then the far three quarters of
+        // the circle -- left pole, top, right pole -- to the right
+        // tangent, and close back at the tip.
+        cr.line_to(tip_x - t, c_y + t);
+        cr.arc(
+            tip_x,
+            c_y,
+            r,
+            0.75 * std::f64::consts::PI,
+            2.25 * std::f64::consts::PI,
+        );
+    } else {
+        // Tip to the right tangent point, then the far side -- right
+        // pole, bottom, left pole -- to the left tangent, and close.
+        cr.line_to(tip_x + t, c_y - t);
+        cr.arc(
+            tip_x,
+            c_y,
+            r,
+            -0.25 * std::f64::consts::PI,
+            1.25 * std::f64::consts::PI,
+        );
+    }
+    cr.close_path();
+}
+
 pub fn pdf_path_fingerprint(path: &std::path::Path) -> Option<String> {
     use std::time::UNIX_EPOCH;
     let md = std::fs::metadata(path).ok()?;

@@ -1,7 +1,8 @@
 # Plan — 2.21: embed recognized text into the PDF file (searchable PDF)
 
-**Status: RESEARCH DONE. Awaiting the owner's answers to the three open
-questions below, then his go, before implementation.**
+**Status: APPROVED PLAN — the owner answered all three questions on
+2026-10-02 (decisions in the Decisions section). Awaiting his go before
+implementation begins.**
 
 Per the working agreement: research below is done and cited (code with
 file/line evidence; the mupdf-rs 0.8 write API verified against the
@@ -107,18 +108,23 @@ the book and our OCR cache is never needed for it again.
 3. **A background task, a dialog, and a reload.**
    - The whole embed runs as a task-manager job (progress per page,
      cancellable before the swap), exactly like the import OCR scan.
+   - One shared entry point (`pdf_embed::start(catalog, book_id, title,
+     path)` in the `pdf_ocr` task pattern) is called from both UIs.
    - The confirmation dialog states plainly what happens: the file will
-     be modified, a backup will be kept, other applications will be able
-     to search and copy the text. No emoji, plain text.
-   - On success: the reader invalidates its text cache and bumps the
-     render generation so pages re-extract from the file's new vector
-     text; the orphaned `page_ocr_cache` rows of the old fingerprint
-     are deleted (they can never be read again); a plain notification
-     reports pages embedded and pages skipped (rotated).
-   - The readiness gate: the doc service counts pages with neither
-     vector text nor a cached OCR row; while that count is above zero
-     the action shows "N pages still to recognize" instead of running
-     (see open question 3).
+     be modified, a hidden backup will be kept, other applications will
+     be able to search and copy the text. No emoji, plain text.
+   - On success: if the reader is open on that book it invalidates its
+     text cache and bumps the render generation so pages re-extract
+     from the file's new vector text; the orphaned `page_ocr_cache`
+     rows of the old fingerprint are deleted (they can never be read
+     again); a plain notification reports pages embedded and pages
+     skipped (rotated).
+   - The readiness gate (owner decision: complete recognition
+     required): the doc service counts pages with neither vector text
+     nor a cached OCR row. In the reader the button shows "N pages
+     still to recognize" until the count is zero; from the library menu
+     the click runs the same check on a worker and answers with the
+     count instead of starting.
 4. **Write options: touch as little as possible.** `PdfWriteOptions`
    with full rewrite (not incremental), no garbage collection, no
    clean-up pass, no image or font recompression — the scanned page
@@ -142,30 +148,19 @@ the book and our OCR cache is never needed for it again.
 - The verify-then-swap guard: a corrupted-verification case (write to a
   read-only directory) leaves the original untouched.
 
-## Open questions for the owner (asked now, during planning)
+## Decisions (owner, 2026-10-02)
 
-1. **The backup story.** After embedding, the original file must be
-   recoverable. Options:
-   (a) keep a backup beside it — `Book.pdf` becomes the searchable
-   file, `Book.pdf.bak` (or a hidden name) is the untouched original;
-   undo is renaming back;
-   (b) write a new file beside it — `Book (searchable).pdf`, original
-   untouched, but the library entry still points at the original, so
-   the owner must re-import or swap manually.
-   Recommendation: (a) — the library entry stays valid and undo is one
-   rename; the backup name can be made hidden-dot to avoid clutter.
-2. **Where the button lives.** Options: the PDF reader's sidebar
-   (Settings panel, a "Text" section) — where the need is noticed; the
-   library's book context menu; or both.
-   Recommendation: the reader's sidebar first (one place, conscious
-   action); the context menu can come later if missed.
-3. **Complete recognition first, or partial embed?** Options: allow the
-   action only when every scanned page has recognized text (button
-   shows "N pages still to recognize" until then); or embed whatever
-   exists and leave the rest image-only.
-   Recommendation: require complete — a half-searchable file is
-   confusing in other applications, and the import OCR task already
-   runs to completion on its own.
+1. **Backup: in place, keep a hidden backup.** `Book.pdf` becomes the
+   searchable file; the untouched original is kept beside it as
+   `Book.pdf.bak`. Undo is renaming back; the library entry stays
+   valid.
+2. **Button placement: both.** A "Text" section in the PDF reader's
+   sidebar Settings panel, and an item on the library book context menu
+   for PDFs. Both call the same shared entry point; the warning dialog
+   and the readiness gate behave identically from either.
+3. **Complete recognition required.** The action runs only when every
+   scanned page has recognized text; until then it reports "N pages
+   still to recognize" instead of embedding.
 
 ## Pitfalls consulted
 

@@ -1417,19 +1417,46 @@ they need 1.2's asynchronous service layer underneath them.
   whole-app latency audit, measurement first) is carried by **7.1**.
 
 - **2.21 — Embed recognized text into the PDF file (proposed 2026-10-01;
-  planned 2026-10-02 — `plan.md` is the working document; implementation
-  awaits the owner's answers to the plan's open questions and his go).** The owner asked
+  planned 2026-10-02; implemented 2026-10-02 — code complete, CI gated,
+  awaiting the owner's visual QA).** The owner asked
   whether the OCR results could be written back into the PDF as an
   invisible text layer, so other applications see selectable, searchable
-  text too. Answer: yes — this is the standard "searchable PDF"
-  construction (text rendered invisibly over the scanned image). It
-  modifies the file, so per the owner it must be **a conscious, explicit
-  action** — a button with a clear warning and an undo/backup story, never
-  automatic. A welcome side effect: once the file carries its own text,
-  the vector-text path serves it and our OCR cache is never needed for
-  that book again. Research (how to write the layer without risking file
-  corruption — MuPDF PDF-level editing vs a minimal content-stream writer)
-  happens in its own planning phase per the workflow.
+  text too. Shipped as the standard "searchable PDF" construction in
+  `src/pdf_embed.rs`: each recognized word is written over the scan in
+  PDF text render mode 3 (invisible), placed from its OCR quad
+  (fontsize 0.8 × quad height, baseline lifted 0.2 × height for the
+  descender) so other applications' selection highlights land on the
+  scan's ink; word grouping mirrors the reader's double-click split, so
+  what gets embedded is what the reader would select. **A conscious,
+  explicit action, never automatic** — a confirmation dialog built on
+  the app's in-app dialog system, reached from the PDF reader's
+  Settings panel (new "Text" section) and from the library book page's
+  action row (the app has no context menus; the Remaster Comic button
+  is the established per-format-action precedent there — noted
+  honestly). The task runs wholly on its worker (2.20: the UI thread
+  never touches file, database, or parsing): one read pass computes
+  readiness — a page that already has vector text is never touched, a
+  scanned page without cached OCR counts as missing, and any missing
+  page stops the task with "N page(s) still have no recognized text"
+  instead of embedding (no button pre-compute; the count is always
+  fresh); the write pass edits an in-memory copy; the rewrite is saved
+  to a sibling temp file with conservative options (no garbage
+  collection, no image or font recompression — the images are the
+  book), reopened and verified (page count plus the first, middle and
+  last embedded pages carrying a known word), and only then swapped
+  in: original → `Book.pdf.bak`, temp → original, with rollback if the
+  second rename fails. Every failure path leaves the original
+  untouched. After the swap the book's OCR cache rows are dropped (the
+  fingerprint changed; the vector-text path now serves the book). Pages
+  rotated 90°/270° are skipped and reported — the writing API emits
+  glyphs along the unrotated axis and clips against the unrotated
+  media box. An open PDF reader reloads the rewritten document (a new
+  `PdfDocRequest::Reopen` drops the doc service's cache; text caches
+  clear; page images are unchanged so textures stay valid). Round-trip,
+  rotated-skip, rollback, word grouping and geometry are unit-tested.
+  A welcome side effect: once the file carries its own text, our OCR
+  cache is never needed for that book again. Next: **7.1** (app-wide
+  latency audit), which carries 2.20's app-wide half.
 
 
 **Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
@@ -2256,6 +2283,7 @@ top-to-bottom like a journal.
 | 2026-10-01 | **2.20 step 6 re-test: the drop cursor glitch fixed.** The owner's re-test of the hand cursor found that dropping a dragged handle made the cursor glitch: the closed hand vanished and the plain arrow sat over the grip until the pointer moved. Two defects in the new cursor code: the drag-end reset the cursor to the plain default -- but no motion event comes after a drop, so that is what the user stares at -- and it also clobbered the page's own base cursor, the text I-beam, which the motion and leave handlers were replacing with the plain arrow page-wide on the first mouse move. The cursor lifecycle is now closed: every path lands on an explicit state (I-beam over the page, open hand over a grip, closed hand during a grip drag), and the drop parks the cursor on exactly what the motion controller would show at the release point, computed with the same hit function from the gesture's own coordinates. Recorded in pitfalls §34. |
 | 2026-10-01 | **2.20 step 6 re-test 2: double-click word selection and handle-drag extension fixed.** The owner's re-test found the word a double-click selected vanished while its action chip stayed up (triple-click worked), and that dragging the end handle of a word- or line-made selection restarted the selection instead of extending it. First root cause: the multi-click gate was ported from the EPUB reader only partially -- the EPUB gates begin, update and end on the live press count read fresh at each; the PDF gated only begin, so a stale drag state left by a press whose release never arrived was consumed by the double-click's own release/update and destroyed the selection (the triple-click survived only because release two had already eaten the stale state). The drag now gates all three callbacks on the live count, carried into `SelectionDragEnd` as `press_count`. Second root cause: word and line selections stored the click point as their drag anchors, so an end-handle drag restarted from the click ("the end handle became the starting handle"); they now store the selection's real ends. Also: an empty drag result now dismisses the chip -- it must never outlive its selection. Recorded in pitfalls §35. |
 | 2026-10-02 | **Phase closed: 2.18 done, 2.10 closed by it, 2.20's PDF half done and field-verified; 2.21 planned next.** The owner's final re-test passed every item: word selection, line selection, both handle ends extending and retracting from any kind of selection, the hand cursor and the text I-beam with no glitch on drop. 2.18 closes with three recorded root causes behind what looked like one bug (uncoordinated gestures, an open cursor lifecycle, click-point drag anchors — pitfalls 32, 34, 35). 2.10's parity requirement is met: both readers select and handle identically. 2.20's PDF half is complete (instant open, off-thread doc service, pending clicks, import-time OCR queue, bounded text cache, handle parity). Next, per the owner-approved sequence: **2.21 — embed recognized text into the PDF file as an invisible layer** (planning done in plan.md: the mupdf-rs 0.8 write path verified — `PdfDocument::open`, `Shape::insert_text` with render mode 3 in view coordinates, verify-then-swap save; three owner questions open: backup story, button placement, whether a complete OCR is required first), then **7.1**, which carries 2.20's app-wide latency audit. |
+| 2026-10-02 | **2.21 implemented: recognized text embedded into the PDF as an invisible layer (searchable PDF).** New `src/pdf_embed.rs`: word grouping mirrors the reader's double-click split; per-word placement from the OCR quads (fontsize 0.8 × height, baseline lifted 0.2 × height); PDF render mode 3; `db.load_page_ocr_pages`/`delete_page_ocr` for the whole-fingerprint read and the post-embed cleanup. Entry points: a "Text" section in the PDF reader's Settings panel and a button in the library book page's action row (PDF only — the app has no context menus, so per-format actions live there, as Remaster Comic already does; noted honestly), both opening a confirmation dialog on the app's in-app dialog system. Readiness gate resolved simpler than the plan's open question implied: one worker-side pass — any scanned page without cached OCR stops the task with "N page(s) still have no recognized text", so there is no button pre-compute and the count is always fresh. Safety: edit in memory, save to a sibling temp with conservative write options (no garbage collection, no image or font recompression), reopen and verify (page count; first/middle/last embedded pages carry a known word), then swap original→`.bak` / temp→original with rollback — every failure path leaves the file untouched. Rotated (90°/270°) pages are skipped and reported: the write API emits glyphs along the unrotated axis and clips against the unrotated media box. An open reader reloads via the new `PdfDocRequest::Reopen` (doc-service cache drop; text caches cleared; page images unchanged so textures stay). Round-trip, rotated-skip, rollback, grouping and geometry unit-tested. Research miss recorded in pitfalls §37 (the plan claimed no dialog precedent; `in_app_dialog`/`remaster_dialog` are the precedent, found by a repo-wide grep). Awaiting the owner's visual QA. |
 
 
 

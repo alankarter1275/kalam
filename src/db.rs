@@ -1439,6 +1439,45 @@ impl Catalog {
         }
     }
 
+    /// Load every cached OCR page for one book + fingerprint at once, in
+    /// page order (2.21: the text-embed task reads the whole book's cache
+    /// in one query instead of one query per page).
+    pub fn load_page_ocr_pages(
+        &self,
+        book_id: i64,
+        file_fingerprint: &str,
+    ) -> Result<Vec<(usize, crate::pdf::PdfPageText)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT page_num, payload FROM page_ocr_cache
+             WHERE book_id = ?1 AND file_fingerprint = ?2
+             ORDER BY page_num",
+        )?;
+        let rows = stmt.query_map(params![book_id, file_fingerprint], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut pages = Vec::new();
+        for row in rows {
+            let (page_num, payload) = row?;
+            let page: crate::pdf::PdfPageText = serde_json::from_str(&payload)
+                .map_err(|e| DbError::OcrCache(format!("deserialize page: {e}")))?;
+            pages.push((page_num.max(1) as usize, page));
+        }
+        Ok(pages)
+    }
+
+    /// Delete every cache row of one book + fingerprint (2.21: once the
+    /// recognized text is embedded the file has changed, so its rows can
+    /// never be read again -- the new fingerprint will not match them).
+    pub fn delete_page_ocr(&self, book_id: i64, file_fingerprint: &str) -> Result<usize> {
+        let conn = self.conn();
+        let removed = conn.execute(
+            "DELETE FROM page_ocr_cache WHERE book_id = ?1 AND file_fingerprint = ?2",
+            params![book_id, file_fingerprint],
+        )?;
+        Ok(removed)
+    }
+
     pub fn get_book(&self, id: i64) -> Result<Option<Book>> {
         let conn = self.conn();
         let mut book = conn
@@ -2877,6 +2916,22 @@ mod tests {
         cat.save_page_ocr(id, 3, "999:888", &page).unwrap();
         assert!(cat.load_page_ocr(id, 3, "123:456").unwrap().is_none());
         assert!(cat.load_page_ocr(id, 3, "999:888").unwrap().is_some());
+
+        // Bulk load (2.21): every page of one fingerprint, in page order,
+        // and nothing from other fingerprints.
+        let mut page_two = page.clone();
+        page_two.page_num = 2;
+        cat.save_page_ocr(id, 2, "999:888", &page_two).unwrap();
+        let bulk = cat.load_page_ocr_pages(id, "999:888").unwrap();
+        assert_eq!(bulk.len(), 2);
+        assert_eq!(bulk[0].0, 2);
+        assert_eq!(bulk[1].0, 3);
+        assert!(cat.load_page_ocr_pages(id, "123:456").unwrap().is_empty());
+
+        // Deleting one fingerprint's rows leaves other fingerprints alone.
+        assert_eq!(cat.delete_page_ocr(id, "999:888").unwrap(), 2);
+        assert!(cat.load_page_ocr_pages(id, "999:888").unwrap().is_empty());
+        assert_eq!(cat.delete_page_ocr(id, "999:888").unwrap(), 0);
 
         // Deleting the book clears its cached pages.
         cat.delete_book(id).unwrap();

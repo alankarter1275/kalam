@@ -1480,3 +1480,39 @@ re-apply, commit, push.
   last commit, or the upstream is unset, stop and recover — never commit
   blind, and never trust a silent push: check that the push actually
   moved the remote and that a CI run started for the new head.
+
+## 37. "No precedent" claims need a repo-wide grep, not a page-local one
+
+**2026-10-02, during 2.21.** The 2.21 plan recorded that the confirm
+dialog would need "a gtk::MessageDialog; no existing dialog precedent
+to copy". There was a precedent: `src/widgets/in_app_dialog.rs` is the
+app's modal-dialog system (its module doc explains exactly why a
+`gtk::Window` dialog is wrong on a tiling compositor, and pitfalls §2
+records the teardown rules), and `src/widgets/remaster_dialog.rs` is a
+complete confirm dialog — Cancel/confirm buttons, CSS classes, and the
+Rc-shared callback pattern GTK's `Fn` handlers need. The planning
+research grepped for dialogs only inside the reader page and concluded
+from the absence there. The shipped dialog uses the in-app system; the
+plan's parenthetical was simply a research miss.
+
+### The rules
+
+- Before writing "the codebase has no X", grep the whole tree for X.
+  `grep -rn "dialog" src/` would have found both files in seconds;
+  check `src/widgets/` first — shared UI machinery lives there.
+- The first PDF write path in the app also settled some mupdf-rs 0.8
+  facts worth keeping (docs.rs re-export pages can 404; the raw source
+  at raw.githubusercontent.com/messense/mupdf-rs/v0.8.0/ is the
+  reliable reference): `PdfDocument::open` takes `&P where P:
+  AsRef<FilePath>` — pass a `&str`, the same convention as
+  `Document::open` in `src/pdf.rs`; saves are
+  `save_with_options(filename: &str, options)` and
+  `write_to_with_options(&mut W, options)` with `PdfWriteOptions` at
+  `mupdf::pdf::PdfWriteOptions`; `shape::TextOptions` has a lifetime
+  (the `fontfile` field), so build it with `..Default::default()`;
+  `Shape::insert_text` maps the insertion point through the inverse
+  page CTM, so points are view coordinates (top-left origin, y down) —
+  the same space the OCR quads already use; and glyphs are emitted
+  along the unrotated axis with the line clip measured against the
+  unrotated media box, which is why pages rotated 90°/270° must be
+  skipped rather than embedded.

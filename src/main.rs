@@ -28,6 +28,7 @@ mod ocr;
 mod pages;
 mod paths;
 mod pdf;
+mod pdf_embed;
 mod pdf_ocr;
 mod perf;
 mod preload;

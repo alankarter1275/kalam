@@ -78,6 +78,10 @@ pub enum BookPageMsg {
     ViewHighlights,
     /// Remaster comic archive using Lanczos3 upscaler.
     RemasterComic,
+    /// Embed the recognized text into the PDF as an invisible layer
+    /// (2.21). PDF only; the app has no context menus, so per-format
+    /// actions live in this action row (see RemasterComic).
+    EmbedText,
 }
 
 pub struct BookPageModel {
@@ -288,6 +292,18 @@ impl Component for BookPageModel {
                                         16,
                                     )),
                                     connect_clicked => BookPageMsg::RemasterComic,
+                                },
+
+                                #[name = "embed_text_btn"]
+                                gtk::Button {
+                                    add_css_class: "kalam-icon-btn",
+                                    set_focus_on_click: false,
+                                    set_tooltip_text: Some("Embed recognized text (searchable PDF)"),
+                                    set_child: Some(&crate::icons::symbolic(
+                                        "kalam-embed-text-symbolic",
+                                        16,
+                                    )),
+                                    connect_clicked => BookPageMsg::EmbedText,
                                 },
 
                                 gtk::Button {
@@ -823,6 +839,31 @@ impl Component for BookPageModel {
                     }
                 }
             }
+            BookPageMsg::EmbedText => {
+                if let Some(book) = &self.book {
+                    if matches!(book.format, BookFormat::Pdf) {
+                        let catalog = self.service.catalog().clone();
+                        let s = sender.clone();
+                        let id = book.id;
+                        let title = book.title.clone();
+                        let path = book.file_path.clone();
+                        // The embed rewrites the file in place: refresh
+                        // the page when it lands, like the remaster flow.
+                        // The raw sender drops the message quietly if the
+                        // page was closed before the task finished.
+                        crate::pdf_embed::present_confirm(root, &title, move || {
+                            crate::pdf_embed::enqueue(catalog, id, title, path, move |_| {
+                                let _ = s.input_sender().send(BookPageMsg::Refresh);
+                            });
+                        });
+                    } else {
+                        crate::notify::info(
+                            "Not a PDF",
+                            "Text embedding is only available for PDF books",
+                        );
+                    }
+                }
+            }
         }
         self.rebuild(widgets, &sender);
     }
@@ -910,9 +951,16 @@ impl BookPageModel {
                 book.format,
                 crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
             ));
+            // Text embedding exists only for PDFs (2.21); on any other
+            // format the button would only ever produce a "Not a PDF"
+            // toast, so it is not drawn at all.
+            widgets
+                .embed_text_btn
+                .set_visible(matches!(book.format, crate::models::BookFormat::Pdf));
         } else {
             widgets.title.set_label("Book not found");
             widgets.remaster_btn.set_visible(false);
+            widgets.embed_text_btn.set_visible(false);
             widgets
                 .description
                 .set_label("This book was removed or does not exist.");

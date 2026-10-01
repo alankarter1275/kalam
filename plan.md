@@ -1,84 +1,162 @@
-# Plan — working document
+# Plan — 2.22: comic series folders on disk
 
-**Status: 2.21 withdrawn by the owner on 2026-10-02.** The feature was
-implemented and CI-green, but his field test found the text not
-embedded correctly; the code is removed in the same commit as this
-note. The full record is in the ROADMAP changelog rows for 2026-10-02
-and in pitfalls §38 — read that before the feature is ever attempted
-again. Revisit when the app is complete, per the owner.
+**Status: DRAFT FOR OWNER APPROVAL.** The in-app half of comics already
+exists (series hub, drawer, reader chapter flow, DB hierarchy — see
+"What is true today"); this plan is the disk layout only. One open
+question for the owner (chapter file naming, at the end). No code
+until the plan is approved and the owner says go.
 
-**Next up: comics as series books in the library (owner request,
-2026-10-02, discussion nearly settled).** Decisions so far, from the
-owner's own words:
+Per the working agreement: research below is done and cited (code with
+file/line evidence, read 2026-10-02); pitfalls consulted (§§36–38 and
+the 2026-09-04 "build something that already existed" lesson — this
+plan exists because the research found the series model already
+shipped, collapsing the owner's ask to the folders alone).
 
-1. **A comic series is one book.** One entry in the library, one
-   folder: `library/<Comic-name>/` holding all the chapter/volume
-   files, and `covers/` inside for the chapter covers ("like 700
-   chapters of Naruto"). Not a `library/Comics/` group — the series
-   folder sits beside the regular book folders.
-2. **Covers (decided):** static first-chapter cover in the grid; the
-   book page shows the current chapter's cover beside Continue. All
-   chapter covers are extracted at import (that work already happens
-   today, one cover per chapter-as-book).
-3. **Shelves stay virtual (owner agreeing after the Calibre check,
-   2026-10-02):** Calibre's on-disk layout is one folder per book
-   under author folders, with covers/metadata sidecars inside, and
-   shelves/tags never become folders; multiple libraries are separate
-   roots. Kalam already matches that architecture; the comics change
-   is the only deviation (a series gets the per-book folder, chapters
-   inside).
-4. **EPUBs/PDFs keep today's per-book folders.**
+---
 
-Still open before this becomes a plan:
+## Goal
 
-- **Series detection: settled.** The owner confirms his CBZ files carry
-  ComicInfo.xml, and the app already parses it (plus filename
-  heuristics) and auto-catalogs every comic into a series at import
-  (`get_or_create_comic_series` + `add_comic_chapter`,
-  `src/epub.rs:273–288`; `backfill_comic_series` for older rows).
-  Screenshots of his current folder names did not reach the agent (no
-  vision; files never landed in the workspace) — 2–3 names pasted as
-  text would still sanity-check how detection grouped his library,
-  but nothing blocks on it.
-- **Reading flow: confirmed** ("yup") — and already shipped: the
-  comics hub's series drawer (resume, read badges), the reader's
-  end-of-chapter card and webtoon auto-flow, the Chapters sidebar
-  (ROADMAP changelog 2026-09-27).
+Comic series live on disk the way they already live in the app: one
+folder per series under `library/`, holding the chapter files and
+their covers. New imports land there directly; existing comics migrate
+once, in the background, with reading positions, shelves, history and
+annotations untouched (they are keyed by ids, not paths). Regular
+books (EPUB/PDF) keep today's per-book folders. Shelves stay virtual.
 
-**Scope-collapsing finding (verified 2026-10-02):** the in-app half of
-the owner's ask already exists. The comics hub groups by series
-(`ComicViewMode::Series`, `src/pages/comics.rs`), the main library
-routes comic clicks through the series drawer
-(`src/pages/all_books.rs:1183–1204`), and the DB has the
-`comic_series`/`comic_chapters` hierarchy (db v13). What does NOT
-exist is the on-disk half the owner was actually looking at: every
-chapter still gets its own per-book folder
-(`library/<Author - Title shortid>/book.cbz + cover.*`). So this item
-is the disk layout only:
+Target shape, using the owner's real series:
 
-1. New imports: comics land in `library/<Series-name>/` as
-   number-named chapter files (`0007.cbz`, `0007.5.cbz`; unnumbered
-   fallback and collision rule to be settled in the plan) with
-   `covers/<same-stem>.<ext>` beside them.
-2. One-time migration of existing comics into that shape, grouped by
-   the already-populated `comic_series` rows; reading positions,
-   shelves and history are keyed by book ids and survive untouched
-   (books store only `file_name` relative to their folder — paths are
-   resolved at read time through the uuid→folder registry,
-   `src/db.rs:1457/1496/1742`, `src/paths.rs:217` — so a move is a
-   file move plus a `file_name`/`cover_name` update plus a registry
-   update).
-3. Folder-name sanitization reuses the existing Bengali-safe byte-cap
-   rules (`src/paths.rs:66–110`); a series-name collision falls back
-   to the same short-id/full-uuid suffix rules books use.
+```
+library/
+  Horimiya (Official)/
+    0010.cbz  0011.cbz  0102.cbz
+    covers/ 0010.jpg 0011.jpg 0102.jpg
+  Naruto – Digital Colored Comics/
+    0003.cbz  0004.cbz
+    covers/ 0003.jpg 0004.jpg
+  <existing per-book folders for EPUBs and PDFs, unchanged>
+```
 
-Research already done for the discussion (verified 2026-10-02): every
-import copies the file into `library/<Author - Title shortid>/` and
-renames it `book.<ext>` (`src/epub.rs:120–260`, folder naming at
-`src/paths.rs:66–110`); comic covers are extracted from the archive at
-import (`crate::comics::extract_comic_cover`, written beside the file
-as `cover.<ext>`); the folder name is a label only — the app resolves
-book paths through the uuid (`src/paths.rs:217`, `note_folder` at
-`:232`), which is what makes a layout change safe. Comic series
-metadata sources already parsed: ComicInfo.xml (ComicRack schema),
-filename patterns, parent-folder fallback (`src/comics.rs:326–431`).
+## What is true today (verified, with evidence)
+
+1. **Series detection is solved and already ran on the owner's
+   library.** ComicInfo.xml parser plus filename heuristics
+   (`parse_comic_info`, `src/comics.rs:326–431`); the import
+   auto-catalogs every CBZ/CBR into the `comic_series` /
+   `comic_chapters` hierarchy (`get_or_create_comic_series` +
+   `add_comic_chapter`, `src/epub.rs:273–288`), with title-parsing
+   fallbacks. The owner's pasted folder names prove it grouped
+   correctly: "Hero - Horimiya (Official) - Ch. 10 cdd99250",
+   "Naruto – Digital Colored Comics - Ch. 3 ef64c6c9" — series name
+   and chapter number both detected. His files carry ComicInfo.xml
+   (owner-confirmed).
+2. **The in-app half the owner asked for already shipped
+   (2026-09-27).** Comics hub groups by series with cards, drawer,
+   resume and read badges (`src/pages/comics.rs`); the main library
+   routes comic clicks through the series drawer
+   (`src/pages/all_books.rs:1183–1204`); the reader has the
+   end-of-chapter card, webtoon auto-flow and Chapters sidebar. The
+   reading flow the owner confirmed ("yup") is the shipped one.
+3. **Book paths are computed, not stored.** `books` stores `file_name`
+   and `cover_name` relative to the book's folder
+   (`BOOK_COLUMNS`, `src/db.rs:1691`); `file_path` is joined at read
+   time via `book_dir(&uuid)` (`src/db.rs:1457/1496/1742`, and the
+   series queries at `src/db/series.rs:322–348, 406`).
+4. **The folder resolver is the one thing a series folder cannot
+   use.** `book_dir(uuid)` resolves through an in-memory index built
+   by scanning `library/` for folders whose **last space-separated
+   token** is the book's 8-hex short id or full uuid
+   (`src/paths.rs:217–300`); folders ending in anything else are
+   ignored. A folder named "Naruto – Digital Colored Comics" is
+   invisible to it, and one folder cannot carry 700 chapter ids in its
+   name. Comic chapter paths must therefore resolve through the
+   series, not the scan.
+5. **`comic_series` has no folder column yet** (schema at
+   `src/db.rs:908–926`: id, title UNIQUE COLLATE NOCASE, sort_title,
+   author, description, cover_book_id, status, timestamps).
+6. **Import order allows the decision before the copy.** The metadata
+   tuple (series, number, title) is computed before folder creation
+   and `fs::copy` (`src/epub.rs:85–230`); only the series-row
+   creation happens after the copy (`:273`) and can move up.
+7. **Folder-name sanitization is Bengali-safe and already accepts the
+   owner's names** — "(Official)" and the en dash survive it today
+   (his current folders prove it; the byte-cap logic is
+   `src/paths.rs:87–170`).
+8. **Covers are extracted at import** (`extract_comic_cover`) and
+   written beside the file as `cover.<ext>` — per chapter, today
+   spread across per-chapter folders.
+
+## The design
+
+1. **`comic_series.folder_name`** — new column (next schema version).
+   Computed once when the series row is created:
+   `sanitize_folder_text(series title, 120 bytes)`; if the name is
+   already taken by another series' folder, append the series' own
+   distinguishing suffix (the book-folder pattern: short id, then
+   full). Stored, so it never changes and never has to be re-derived.
+2. **Comic chapter paths resolve through the series.** One shared
+   helper `comic_path(folder_name, file_name)` = 
+   `library_dir().join(folder_name).join(file_name)`; the book-loading
+   queries (`db.rs:1457/1496/1742`, `series.rs:322–348/406`) LEFT JOIN
+   `comic_chapters → comic_series` and use it for comics, `book_dir`
+   for everything else — same query, no extra roundtrip, so the grid
+   stays as fast as today. Regular books are untouched.
+3. **Chapter file naming:** the chapter number, zero-padded to 4
+   digits, with the original extension: `0010.cbz`. Fractional
+   chapters keep the fraction: `0010.5.cbz`. Unnumbered chapters, or
+   two chapters claiming the same number, get the book's short uuid
+   appended before the extension (`0010 8fa1afa3.cbz`) — the same
+   disambiguation style folders already use. `cover_name` becomes
+   `covers/<same stem>.<ext>`.
+4. **Import:** compute the series name with the existing fallback
+   chain *before* the copy; get-or-create the series row (its
+   `folder_name` comes along); copy into
+   `library/<folder_name>/<padded>.<ext>`; write the cover to
+   `covers/`. Everything after the copy is unchanged.
+5. **Migration** — one-time, background (`spawn_internal`), guarded by
+   a settings flag, run at startup before the library grid loads:
+   - per series: create `library/<folder_name>/` and `covers/`;
+   - per chapter, ordered by `chapter_number`: `rename` the file and
+     cover into place (same filesystem, so a rename, not a copy),
+     update `file_name` + `cover_name`;
+   - idempotent: a chapter whose `file_name` already matches the new
+     shape is skipped, so a re-run costs nothing;
+   - a chapter whose file is missing is logged and skipped, and the
+     flag is **not** set — the pass retries on the next start;
+   - old per-book folders are removed once empty;
+   - reading positions, shelves, history, annotations: keyed by ids,
+     untouched by construction.
+6. **What deliberately does not change:** the in-app model (series,
+   chapters, drawer, reader flow, progress), EPUB/PDF folders, the
+   uuid folder scan for regular books, the remaster flow (it consumes
+   the resolved `file_path`), and the owner's decided points —
+   shelves stay virtual, static first-chapter cover in the grid with
+   the current chapter's cover on the book page (the hub's series card
+   already shows `cover_book_id`'s cover; per-chapter covers were only
+   ever the drawer's chapter thumbnails and stay available at
+   `covers/`).
+
+## Steps
+
+1. **db**: the `folder_name` column + schema migration; the
+   `comic_path` helper wired into the five path-resolution sites;
+   tests for resolution (comic vs regular) and folder-name collision.
+2. **import**: series-folder destination, padded chapter file names,
+   `covers/` destination; tests for padding, fractions, collisions,
+   unnumbered fallbacks (reuse the `parse_comic_info` fixtures).
+3. **migration**: the startup task with flag, idempotency and retry;
+   tests against a temp library (build series + chapter files, migrate,
+   assert paths and row updates, re-run = no-op, missing file = flag
+   stays unset).
+4. **verification pass**: hub cover paths, drawer thumbnails, reader
+   open, remaster — all through the resolved `file_path`; fix what the
+   pass finds.
+5. **docs**: ROADMAP 2.22 close + changelog row; pitfalls for anything
+   that bites.
+
+## Open question for the owner (the only one)
+
+**Chapter file naming.** I propose the short padded number —
+`0010.cbz` — because the folder already says the series name; files
+like "Naruto – Digital Colored Comics - 0010.cbz" would repeat it 700
+times. If you prefer the long form, say so; it is a one-line change
+either way.

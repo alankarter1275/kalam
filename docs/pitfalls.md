@@ -1585,3 +1585,12 @@ commit, commit, push. The tell is worth stating plainly: a commit that
 "creates" a file the session already tracks, or a diff whose size
 suddenly equals the whole session, means the base moved — stop, do not
 force anything, recover.
+
+**Fifth occurrence, 2026-10-02, minutes after the fourth.** The §36
+check was run and *ignored*: `git log --oneline -1` printed the branch
+point `29788b4`, and the commit went ahead anyway — the check had
+become a ritual, not a gate. The tell fired again ("create mode" for
+plan.md, a tracked file). Same recovery. The rule, sharpened: the HEAD
+check is not a step to perform before committing — it is a condition
+for committing. Branch point shown means no commit, full stop, recover
+first.

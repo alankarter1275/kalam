@@ -1440,6 +1440,36 @@ they need 1.2's asynchronous service layer underneath them.
   read it, and an item that writes file formats needs the owner's
   field test on the real artifact before it is called done.
 
+- **2.22 — Comic series folders on disk (owner request 2026-10-02;
+  planned same day — `plan.md` is the working document; implementation
+  awaits the owner's answer and go).** Browsing his library's folders,
+  the owner found every comic chapter in its own per-book folder and
+  asked for series the way the app already treats them in-app: one
+  folder per title ("library/<Comic-name> and inside that dir all the
+  series chapter/volume would be there. like 700 chapters of
+  Naruto"). Research collapsed the item: the in-app half already
+  shipped 2026-09-27 (ComicInfo.xml + filename detection,
+  `comic_series`/`comic_chapters` hierarchy, hub series view and
+  drawer, reader chapter flow, main-grid routing through the series) —
+  and the owner's own library confirms detection grouped it correctly
+  ("Hero - Horimiya (Official) - Ch. 10 cdd99250", "Naruto – Digital
+  Colored Comics - Ch. 3 ef64c6c9"). What remains is the disk layout:
+  `library/<Series>/` holding number-named chapter files plus
+  `covers/`, for new imports and as a one-time idempotent background
+  migration of existing comics. One architectural change falls out of
+  the research: the uuid-folder scan (`src/paths.rs:217–300`) can
+  never resolve a shared series folder, so comic chapter paths move to
+  a database resolution through a new `comic_series.folder_name` (a
+  LEFT JOIN on the existing book-loading queries — no extra
+  roundtrip). Reading positions, shelves and history are id-keyed and
+  untouched. Owner decisions recorded: series folder named by its
+  title exactly; static first-chapter cover in the grid, current
+  chapter's cover on the book page; shelves stay virtual (Calibre
+  check: one folder per book, shelves never become folders);
+  EPUBs/PDFs keep their folders. One open question in the plan: short
+  padded chapter file names (`0010.cbz`, recommended) vs long names
+  repeating the series title.
+
 
 **Round 4 (2026-09-22) — settings recategorization and arrow scroll speed.**
 Field report: T1 typeface dropdown and keyboard arrow navigation confirmed
@@ -2267,6 +2297,7 @@ top-to-bottom like a journal.
 | 2026-10-02 | **Phase closed: 2.18 done, 2.10 closed by it, 2.20's PDF half done and field-verified; 2.21 planned next.** The owner's final re-test passed every item: word selection, line selection, both handle ends extending and retracting from any kind of selection, the hand cursor and the text I-beam with no glitch on drop. 2.18 closes with three recorded root causes behind what looked like one bug (uncoordinated gestures, an open cursor lifecycle, click-point drag anchors — pitfalls 32, 34, 35). 2.10's parity requirement is met: both readers select and handle identically. 2.20's PDF half is complete (instant open, off-thread doc service, pending clicks, import-time OCR queue, bounded text cache, handle parity). Next, per the owner-approved sequence: **2.21 — embed recognized text into the PDF file as an invisible layer** (planning done in plan.md: the mupdf-rs 0.8 write path verified — `PdfDocument::open`, `Shape::insert_text` with render mode 3 in view coordinates, verify-then-swap save; three owner questions open: backup story, button placement, whether a complete OCR is required first), then **7.1**, which carries 2.20's app-wide latency audit. |
 | 2026-10-02 | **2.21 implemented: recognized text embedded into the PDF as an invisible layer (searchable PDF).** New `src/pdf_embed.rs`: word grouping mirrors the reader's double-click split; per-word placement from the OCR quads (fontsize 0.8 × height, baseline lifted 0.2 × height); PDF render mode 3; `db.load_page_ocr_pages`/`delete_page_ocr` for the whole-fingerprint read and the post-embed cleanup. Entry points: a "Text" section in the PDF reader's Settings panel and a button in the library book page's action row (PDF only — the app has no context menus, so per-format actions live there, as Remaster Comic already does; noted honestly), both opening a confirmation dialog on the app's in-app dialog system. Readiness gate resolved simpler than the plan's open question implied: one worker-side pass — any scanned page without cached OCR stops the task with "N page(s) still have no recognized text", so there is no button pre-compute and the count is always fresh. Safety: edit in memory, save to a sibling temp with conservative write options (no garbage collection, no image or font recompression), reopen and verify (page count; first/middle/last embedded pages carry a known word), then swap original→`.bak` / temp→original with rollback — every failure path leaves the file untouched. Rotated (90°/270°) pages are skipped and reported: the write API emits glyphs along the unrotated axis and clips against the unrotated media box. An open reader reloads via the new `PdfDocRequest::Reopen` (doc-service cache drop; text caches cleared; page images unchanged so textures stay). Round-trip, rotated-skip, rollback, grouping and geometry unit-tested. Research miss recorded in pitfalls §37 (the plan claimed no dialog precedent; `in_app_dialog`/`remaster_dialog` are the precedent, found by a repo-wide grep). Awaiting the owner's visual QA. |
 | 2026-10-02 | **2.21 withdrawn and removed at the owner's direction, the same day it shipped.** His field test on a real book found the text "not embedded correctly"; he chose removal over debugging — "maybe when the app is complete then I will look into it, but right now, no need. it's unnecessary. we are straying again." All code reverted to the pre-feature state (`src/pdf_embed.rs` deleted; the db helpers, icon, reader and book-page wiring removed); CI gates the reverted tree. The defect detail was not captured (he did not want to chase it), so pitfalls §38 records what a retry must do differently: verify in viewers other than the writing library before calling it done, and do not report an item as finished while the field test is pending — three "done" answers were given before the owner had tested. 2.21 stays parked for after core completeness. Immediately after: the owner raised the library's per-comic folders (wants comics in a single folder under a single title) — discussion opened, next plan. |
+| 2026-10-02 | **Item 2.22 proposed and planned: comic series folders on disk.** The owner's folder complaint, his five pasted folder names (the screenshots did not reach the agent), and his confirmations: ComicInfo.xml present in his CBZs; reading flow as assumed; covers — static grid cover, current chapter's cover on the book page; shelves stay virtual after an honest Calibre check showed Calibre itself never maps shelves to folders. The planning research collapsed the item: the entire in-app half (detection, `comic_series`/`comic_chapters`, hub series view and drawer, reader chapter flow, main-grid series routing) already shipped 2026-09-27, and his own library proves detection grouped it correctly ("Hero - Horimiya (Official) - Ch. 10 cdd99250", "Naruto – Digital Colored Comics - Ch. 3 ef64c6c9"). What remains is the disk layout — `library/<Series>/` with number-named chapter files and `covers/`, new imports plus a one-time idempotent background migration — and the one architectural change it forces: comic chapter paths resolve through the database (`comic_series.folder_name`, a LEFT JOIN on the existing queries) because the uuid-folder scan can never resolve a shared series folder. Full plan with citations in plan.md; one open question (short padded chapter file names, recommended, vs long names); no code until approved. Also: the moved-base fault struck a fourth time (pitfalls §36) — a plan.md commit landed on the branch point and was recovered by the established pattern; the tell ("create mode" for an already-tracked file) is now recorded. |
 
 
 

@@ -16,25 +16,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pdf_embed.rs:331:22: [1m[91merror[0m: cannot find macro `anyhow` in this scope
-src/pdf_embed.rs:376:22: [1m[91merror[0m: cannot find macro `anyhow` in this scope
-src/pdf_embed.rs:459:26: [1m[91merror[0m: cannot find macro `anyhow` in this scope
-src/pdf_embed.rs:507:26: [1m[91merror[0m: cannot find macro `anyhow` in this scope
-src/pdf_embed.rs:202:26: [1m[91merror[0m: cannot find macro `anyhow` in this scope
-src/pdf_embed.rs:170:26: [1m[91merror[0m: cannot find macro `anyhow` in this scope
-src/pdf_embed.rs:158:26: [1m[91merror[0m: cannot find macro `anyhow` in this scope
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/pdf_reader.rs:3359:21: [1m[91merror[E0425][0m: cannot find value `_root` in this scope
-src/pages/pdf_reader.rs:3436:17: [1m[91merror[E0425][0m: cannot find value `_root` in this scope
-src/pdf_embed.rs:243:46: [1m[91merror[E0277][0m: `impl Fn(&Path) + 'static` cannot be sent between threads safely: `impl Fn(&Path) + 'static` cannot be sent between threads safely
-src/pdf_embed.rs:460:16: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::gdk4::Display>` is not implemented for `std::io::BufWriter<std::fs::File>`: requires `std::io::BufWriter<std::fs::File>` to be a GObject that can be statically cast to `gtk4::gdk4::Display`
-src/pages/book.rs:854:73: [1m[91merror[E0505][0m: cannot move out of `title` because it is borrowed: move out of `title` occurs here
-src/pages/book.rs:855:55: [1m[91merror[E0507][0m: cannot move out of `catalog`, a captured variable in an `Fn` closure: `catalog` is moved here
-src/pages/book.rs:855:68: [1m[91merror[E0507][0m: cannot move out of `title`, a captured variable in an `Fn` closure: `title` is moved here
-src/pages/book.rs:855:75: [1m[91merror[E0507][0m: cannot move out of `path`, a captured variable in an `Fn` closure: `path` is moved here
-src/pages/book.rs:855:81: [1m[91merror[E0507][0m: cannot move out of `s`, a captured variable in an `Fn` closure: `s` is moved here
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 16 previous errors
+src/pages/book.rs:859:81: [1m[91merror[E0505][0m: cannot move out of `title` because it is borrowed: move out of `title` occurs here
+src/pages/pdf_reader.rs:4661:77: [1m[91merror[E0505][0m: cannot move out of `title` because it is borrowed: move out of `title` occurs here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 16 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors

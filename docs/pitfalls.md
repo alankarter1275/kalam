@@ -1572,3 +1572,16 @@ test was still pending.
   rather than core reading flow, say so at planning time. The owner's
   verdict on 2.21 was "we are straying again" — a scope call he should
   not have had to make after implementation.
+
+**Fourth occurrence, 2026-10-02, later the same day.** The base fell
+back to `29788b4` again between turns; this time the rule was not
+followed — a plan.md commit was made without a HEAD check and landed
+on the branch point ("create mode 100644 plan.md" was the tell: the
+file already existed on the session's tip). The unset upstream again
+kept it off the remote (push refused, non-fast-forward). Same recovery:
+fetch, `git diff FETCH_HEAD <bad-commit>` to isolate the one intended
+file, `git reset --hard FETCH_HEAD`, restore that file from the bad
+commit, commit, push. The tell is worth stating plainly: a commit that
+"creates" a file the session already tracks, or a diff whose size
+suddenly equals the whole session, means the base moved — stop, do not
+force anything, recover.

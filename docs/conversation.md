@@ -2457,4 +2457,49 @@ approved PDF plan ships first as the reference implementation; the
 architecture doc lands alongside it; nothing is rewritten from scratch.
 Decision pending the owner's agreement.
 
+
+## 19. Should the Architecture Have Tests? (2026-10-01)
+
+The owner approved the architecture proposal ("I am fine with it") and
+asked the right follow-up: should the architecture have tests? Do we have
+them now?
+
+**What exists today, verified:** the repo already has one enforcement
+pattern that works — the query-count budgets in `src/perf.rs` (A0 step 7).
+They are ordinary tests that run on every `cargo test` and gate CI; they
+assert that SQL statement counts do not grow with row count, and they have
+teeth: when they landed, 4 of the 6 budgets failed against the then-current
+code — three N+1 regressions the other 270 tests had happily passed. The
+same file records the lesson that shapes everything else: wall-clock
+budgets in CI were rejected because the runner varies ~60% between runs,
+so any time ceiling loose enough to survive cannot catch a real
+regression. Count-shaped assertions are machine-independent and cannot
+flake.
+
+**What does not exist:** nothing enforces the new principle. A screen can
+regress to synchronous database access on the UI thread and all 870 tests
+still pass.
+
+**The proposal (item 7.7), three layers built as screens migrate:**
+
+1. Count-shaped budgets in the proven pattern — screen-open models
+   construct with a bounded, non-growing statement count; async models
+   construct with zero file I/O. Integer assertions, CI-gating.
+2. A main-thread stall watchdog — logs any UI-loop block over ~100 ms;
+   the scripted CI smoke session asserts zero stalls; on the owner's
+   machine it names the culprit whenever something feels slow. This is
+   the measurement half of 2.20's audit, made permanent.
+3. A static boundary check — a unit test scanning `src/pages/**` for
+   direct fs/catalog/parser calls outside the task and worker layers,
+   with an allowlist of written reasons (the 1.16 shape).
+
+**Stated honestly:** these are tripwires, not proofs. The watchdog sees
+stalls, not causes; the static check can be routed around; the document
+plus plan-compliance remains the primary control. What the tests buy is
+loud regressions instead of silent ones — the difference between the
+downloads hub lying "done" for a year and a red CI line on the day it
+happens. And they are built in migration order: instrument first, budget
+each screen as it moves, static check last — writing all three before the
+migration would just produce a wall of red.
+
 *Last updated: 2026-10-01.*

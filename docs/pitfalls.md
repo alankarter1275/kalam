@@ -1234,3 +1234,8 @@ riding along in the commit.
 - Turn-start hygiene (already the rule, now with a reason): fetch +
   `reset --mixed origin/<branch>` **before editing anything**, because the
   fallback can happen between turns, not only between sessions.
+- *Sixth occurrence, later the same day:* the pre-commit check above
+  caught it — `git log -1` showed the old base after `git add -A`, before
+  anything was committed. Recovery as described: fetch, `reset --mixed`
+  onto the tip, restore `ci-logs/` from origin, commit the two intended
+  files. The check works; keep running it.

@@ -1677,6 +1677,29 @@ breaks no reference.
   is not measuring what the app does, or the app is doing 35× more work per
   card than it should. Worth resolving before trusting either number.
 
+- **7.7 — The architecture document and its enforcement tests (owner
+  approved the document 2026-10-01; the test layers proposed the same day,
+  awaiting the owner's ok).** Rewrite `ARCH.md` into a short prescriptive
+  principles document — the threading model ("the UI thread never touches
+  disk, database, or parsing"), layering, state flow, memory budgets — and
+  wire it into the plan workflow: every `plan.md` states how the change
+  complies. Enforcement in three layers, built in order as screens
+  migrate (see conversation.md §19): (1) **count-shaped budgets** in the
+  proven `src/perf.rs` pattern — screen-open models must construct with a
+  bounded, non-growing number of statements, and async models must
+  construct with zero file I/O; integer assertions gate CI, wall-clock
+  does not (the runner varies ~60%, the reason perf.rs rejected time
+  budgets); (2) **a main-thread stall watchdog** — a monitor that logs any
+  UI-loop block over ~100 ms, and asserts zero stalls during the scripted
+  CI smoke session; on the owner's machine it simply names the culprit
+  whenever something feels slow; (3) **a static boundary check** — a unit
+  test scanning `src/pages/**` for direct `std::fs` / catalog-query /
+  parser calls outside the task and worker layers, with an allowlist of
+  written reasons (the shape the 1.16 dead-code sweep used). Caveat,
+  stated honestly: these are tripwires, not proofs — the document plus
+  plan compliance remains the primary control; the tests make regressions
+  loud instead of silent.
+
 **Done when:** a 2,000-book library opens in under a second, scrolling never
 drops a frame on a mid-range machine, and every subsystem added in Phases 3–6
 has a budget.
@@ -2200,6 +2223,8 @@ top-to-bottom like a journal.
 | 2026-10-01 | **Stability pass verdict, three numbered items, and a new recording rule.** Owner field report: EPUB reading "it's alright"; PDF double/triple-click selection broken (item **2.18**, which also carries 2.10's close: same selection and handles in both readers); a new standing directive that everything runs asynchronously, UI only for clicks — PDF must open instantly, always (item **2.20**, talk agreed before building). Terminal warnings `Pango-WARNING ... 'Noto Color Emoji 8.8'` traced to five color-emoji strings in GTK labels and fixed the same day (item **2.19**): two on the comics end card and pill counter, one on the streak strip, three on the watch-folder checkboxes — cairo cannot scale the Noto Color Emoji bitmap font on the owner's system. **New rule from the owner, now in the working agreement:** every runtime warning the owner reports and every agent mistake goes into `docs/pitfalls.md` — every instance, no exceptions — and the pitfalls are re-read at the start of each phase so nothing repeats. First entry: §29 (this Pango case). |
 | 2026-10-01 | **Workflow and design decisions confirmed by the owner.** (1) **No emoji ever** — plain text or symbolic monochrome SVG icons, "professional and restrained only, no funky icons" (Nerd Fonts considered and declined: private-use codepoints, extra megabytes, tofu when missing). (2) **2.20's principle confirmed verbatim** — "the UI thread never touches disk, database, or parsing" — with a widening field report: **the whole app feels slow except the readers**, so the audit starts with measurement and ties into 7.1/7.5. (3) **The plan.md workflow is adopted**: planning → implementation plan → implementation; all research and all owner questions happen during planning; plan.md is cleared only after the outcome is recorded here and in pitfalls; if implementation changes the plan, work stops and returns to planning. First plan drafted the same day for 2.18 + 2.20 (PDF half). Rules written into the working agreement and GEMINI.md. |
 | 2026-10-01 | **Planning answers close 2.18/2.20's plan; item 2.21 proposed; the architecture question opened.** The owner answered all three plan questions: (1) **whole-book OCR at import** — "whole book obviously" — with page-wise storage confirmed (each page stored the moment it finishes, so a freshly imported book's early pages are already selectable) and **priority promotion**: landing on any not-yet-recognized page, including a jump straight to page 5000, moves that page to the front of the queue; (2) the "Recognizing page..." signal is wanted ("yup"); (3) the slow-app report refined: All Books grid fast (windowed grid), scrolling fast, the pause is OPENING things — book pages, dialogs, most of the UI — which points at synchronous view/dialog construction on the UI thread (updated 7.1; drives the plan after this one). **New item 2.21 proposed:** embed the recognized text back into the PDF as an invisible text layer so other apps can select it — an explicit, conscious user action with an undo/backup story; awaiting the go, planned after 2.18/2.20. **Architecture discussion opened by the owner:** a general architectural design instead of measure-and-patch; the agent's honest position (agree; codify the pattern the readers already embody; enforce via the plan workflow and budgets, because an unenforced architecture doc becomes another stale doc — ARCH.md still says "lopdf" though MuPDF shipped 2026-09-25) is in conversation.md §18; decision pending. `plan.md` status → APPROVED. |
+| 2026-10-01 | **Architecture proposal approved; enforcement tests discussed (item 7.7).** The owner approved the ARCH.md rewrite into a prescriptive principles document wired into the plan workflow ("I am fine with it"), and asked whether the architecture should have tests and what exists today. Answer given (conversation.md §19): partially — the repo already has the pattern that works (query-count budgets in `src/perf.rs`, gating CI, which caught real N+1 regressions) and the lesson that wall-clock budgets flake in CI (~60% runner variance); nothing today enforces the new principle. Three enforcement layers proposed in 7.7, count-shaped first, built as screens migrate. Awaiting the owner's ok on the layers. Meanwhile the 2.18/2.20 plan stays approved and implementation proceeds. |
+
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

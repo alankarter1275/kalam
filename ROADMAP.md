@@ -1441,8 +1441,10 @@ they need 1.2's asynchronous service layer underneath them.
   field test on the real artifact before it is called done.
 
 - **2.22 — Comic series folders on disk (owner request 2026-10-02;
-  planned, approved and implemented the same day — awaiting CI and the
-  owner's field test; `plan.md` holds the implementation notes).** Browsing his library's folders,
+  planned, approved and implemented the same day; CI green on `374e3e6`
+  after one fix round — awaiting the owner's field test on his real
+  library before it is called done; `plan.md` holds the implementation
+  notes).** Browsing his library's folders,
   the owner found every comic chapter in its own per-book folder and
   asked for series the way the app already treats them in-app: one
   folder per title ("library/<Comic-name> and inside that dir all the

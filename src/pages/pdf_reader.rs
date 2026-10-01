@@ -37,6 +37,23 @@ pub enum PageSlot {
 
 pub type PdfSearchHighlight = (PageSlot, usize, Vec<(f64, f64, f64, f64)>);
 
+/// Which end of an existing selection a drag is taking hold of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfHandleDrag {
+    Start,
+    End,
+}
+
+/// Is (`x`, `y`) over one of the selection's handle grips -- the zone a
+/// press there takes hold of? Mirrors the hit zones `SelectionDragBegin`
+/// uses, so the hover cursor never promises a grab that will not happen.
+fn over_selection_handle(sel: &PdfActiveSelection, x: f64, y: f64) -> bool {
+    let (sx, sy, _) = sel.start_handle;
+    let (ex, ey, eh) = sel.end_handle;
+    ((x - ex).abs() < 24.0 && (y - (ey + eh)).abs() < 28.0)
+        || ((x - sx).abs() < 24.0 && (y - sy).abs() < 28.0)
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct PdfActiveSelection {
@@ -479,11 +496,15 @@ pub struct PdfReaderModel {
     /// pref). The PDF reader takes its selection-handle colour from it so
     /// both readers show identical grips (2.20 step 5).
     pub reading_theme: ReadingTheme,
+    /// True while a selection handle is being dragged. Shared with the
+    /// per-page motion controller so the closed hand stays closed for the
+    /// whole drag instead of flickering back to the open hand.
+    pub handle_dragging: std::rc::Rc<std::cell::Cell<bool>>,
     pub page_overlays: HashMap<PageSlot, gtk::Overlay>,
     pub page_draw_areas: HashMap<PageSlot, gtk::DrawingArea>,
     pub page_text_cache: HashMap<usize, PdfPageText>,
     pub active_selection: std::rc::Rc<std::cell::RefCell<Option<PdfActiveSelection>>>,
-    pub selection_drag_state: Option<(PageSlot, f64, f64, bool, bool)>,
+    pub selection_drag_state: Option<(PageSlot, f64, f64, Option<PdfHandleDrag>, bool)>,
     pub selection_chip: Option<gtk::Popover>,
     pub ocr_tx: Option<async_channel::Sender<crate::ocr::PdfOcrRequest>>,
     pub ocr_in_progress: HashSet<usize>,
@@ -632,6 +653,7 @@ impl PdfReaderModel {
             pending_selection: None,
             recognizing_popover: None,
             reading_theme,
+            handle_dragging: std::rc::Rc::new(std::cell::Cell::new(false)),
             page_overlays: HashMap::new(),
             page_draw_areas: HashMap::new(),
             page_text_cache: HashMap::new(),
@@ -1406,6 +1428,52 @@ impl PdfReaderModel {
 
         overlay.add_overlay(&draw_area);
 
+        // Click controller for word (double click) and line (triple
+        // click). Added BEFORE the drag gesture on purpose: controllers
+        // run in addition order, so the click has counted the press by the
+        // time the drag gesture decides whether to stand down for it --
+        // the same arrangement the EPUB reader's view uses.
+        let click = gtk::GestureClick::new();
+        click.set_button(1);
+        let tx_click = sender.input_sender().clone();
+        let multi_click = std::rc::Rc::new(std::cell::Cell::new(0i32));
+        let mc_for_click = multi_click.clone();
+        click.connect_pressed(move |_, n_press, x, y| {
+            mc_for_click.set(n_press);
+            if n_press == 2 {
+                let _ = tx_click.send(PdfReaderMsg::SelectionWordAt { slot: slot_copy, x, y });
+            } else if n_press >= 3 {
+                let _ = tx_click.send(PdfReaderMsg::SelectionLineAt { slot: slot_copy, x, y });
+            }
+        });
+        overlay.add_controller(click);
+
+        // The open hand over the selection's handle grips, like the EPUB
+        // reader; the closed hand while a grip is actually dragged is set
+        // by the SelectionDragBegin / SelectionDragEnd handlers.
+        let motion = gtk::EventControllerMotion::new();
+        let cursor_sel = self.active_selection.clone();
+        let cursor_overlay = overlay.clone();
+        let cursor_dragging = self.handle_dragging.clone();
+        motion.connect_motion(move |_, x, y| {
+            // A grip is being dragged: the closed hand stays until the
+            // release, like the EPUB reader.
+            if cursor_dragging.get() {
+                return;
+            }
+            let over_handle = cursor_sel
+                .borrow()
+                .as_ref()
+                .filter(|sel| sel.slot == slot_copy && !sel.is_block)
+                .is_some_and(|sel| over_selection_handle(sel, x, y));
+            cursor_overlay.set_cursor_from_name(over_handle.then_some("grab"));
+        });
+        let leave_overlay = overlay.clone();
+        motion.connect_leave(move |_| {
+            leave_overlay.set_cursor_from_name(None);
+        });
+        overlay.add_controller(motion);
+
         // Drag controller for range and block selection (Alt+Drag for block marquee)
         let drag = gtk::GestureDrag::new();
         drag.set_button(1);
@@ -1414,7 +1482,17 @@ impl PdfReaderModel {
         let tx_drag_end = sender.input_sender().clone();
 
         let drag_ctrl_begin = drag.clone();
+        let mc_for_drag = multi_click.clone();
         drag.connect_drag_begin(move |_, x, y| {
+            // The second or third press of a multi-click is not a drag:
+            // stand down (no SelectionDragBegin, no drag state) so the
+            // word that click selects survives its own release -- the
+            // drag-end handler would otherwise treat that release as a
+            // tap that clears the selection. The EPUB reader coordinates
+            // its gestures the same way.
+            if mc_for_drag.get() >= 2 {
+                return;
+            }
             let is_block = drag_ctrl_begin.current_event_state().contains(gdk::ModifierType::ALT_MASK);
             let _ = tx_drag_begin.send(PdfReaderMsg::SelectionDragBegin { slot: slot_copy, x, y, is_block });
         });
@@ -1427,19 +1505,6 @@ impl PdfReaderModel {
             let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy });
         });
         overlay.add_controller(drag);
-
-        // Click controller for word (double click) and line (triple click)
-        let click = gtk::GestureClick::new();
-        click.set_button(1);
-        let tx_click = sender.input_sender().clone();
-        click.connect_pressed(move |_, n_press, x, y| {
-            if n_press == 2 {
-                let _ = tx_click.send(PdfReaderMsg::SelectionWordAt { slot: slot_copy, x, y });
-            } else if n_press >= 3 {
-                let _ = tx_click.send(PdfReaderMsg::SelectionLineAt { slot: slot_copy, x, y });
-            }
-        });
-        overlay.add_controller(click);
 
         self.page_overlays.insert(slot, overlay.clone());
         self.page_draw_areas.insert(slot, draw_area);
@@ -4061,21 +4126,42 @@ impl Component for PdfReaderModel {
                     return;
                 }
 
-                let is_adjusting_end = if let Some(ref sel) = *self.active_selection.borrow() {
+                // A press on one of the selection's handle grips takes
+                // hold of that end: the drag moves it and leaves the other
+                // end where it is. The end grip is tested first, so when
+                // both overlap -- a selection one glyph wide -- the end
+                // wins, the one a reader who just dragged rightwards is
+                // reaching for (the EPUB reader's rule).
+                let adjusting = if let Some(ref sel) = *self.active_selection.borrow() {
                     if sel.slot == slot && !is_block {
                         let (ex, ey, eh) = sel.end_handle;
-                        (x - ex).abs() < 24.0 && (y - (ey + eh)).abs() < 28.0
+                        if (x - ex).abs() < 24.0 && (y - (ey + eh)).abs() < 28.0 {
+                            Some(PdfHandleDrag::End)
+                        } else {
+                            let (sx, sy, _) = sel.start_handle;
+                            if (x - sx).abs() < 24.0 && (y - sy).abs() < 28.0 {
+                                Some(PdfHandleDrag::Start)
+                            } else {
+                                None
+                            }
+                        }
                     } else {
-                        false
+                        None
                     }
                 } else {
-                    false
+                    None
                 };
 
-                self.selection_drag_state = Some((slot, x, y, is_adjusting_end, is_block));
+                self.handle_dragging.set(adjusting.is_some());
+                if adjusting.is_some() {
+                    if let Some(ref ov) = self.page_overlays.get(&slot) {
+                        ov.set_cursor_from_name(Some("grabbing"));
+                    }
+                }
+                self.selection_drag_state = Some((slot, x, y, adjusting, is_block));
             }
             PdfReaderMsg::SelectionDragUpdate { slot, dx, dy, is_block } => {
-                let Some((drag_slot, start_x, start_y, is_adjusting_end, _)) = self.selection_drag_state else {
+                let Some((drag_slot, start_x, start_y, adjusting, _)) = self.selection_drag_state else {
                     return;
                 };
                 if drag_slot != slot {
@@ -4108,14 +4194,29 @@ impl Component for PdfReaderModel {
                 let scale_x = target_w / (page_text.width_pts as f64);
                 let scale_y = target_h / (page_text.height_pts as f64);
 
-                let (p0, p1) = if is_adjusting_end && !is_block {
-                    if let Some(ref sel) = *self.active_selection.borrow() {
-                        (sel.anchor_pt, ((curr_x / scale_x) as f32, (curr_y / scale_y) as f32))
-                    } else {
-                        (((start_x / scale_x) as f32, (start_y / scale_y) as f32), ((curr_x / scale_x) as f32, (curr_y / scale_y) as f32))
+                let start_pt = ((start_x / scale_x) as f32, (start_y / scale_y) as f32);
+                let curr_pt = ((curr_x / scale_x) as f32, (curr_y / scale_y) as f32);
+                // A handle drag moves that end and leaves the other where
+                // it is. Alt mid-drag turns the same press into a block
+                // marquee, so the grip is only honoured while it is not a
+                // block selection (the old behaviour, kept).
+                let adjusting = if is_block { None } else { adjusting };
+                let (p0, p1) = match adjusting {
+                    Some(PdfHandleDrag::End) => {
+                        if let Some(ref sel) = *self.active_selection.borrow() {
+                            (sel.anchor_pt, curr_pt)
+                        } else {
+                            (start_pt, curr_pt)
+                        }
                     }
-                } else {
-                    (((start_x / scale_x) as f32, (start_y / scale_y) as f32), ((curr_x / scale_x) as f32, (curr_y / scale_y) as f32))
+                    Some(PdfHandleDrag::Start) => {
+                        if let Some(ref sel) = *self.active_selection.borrow() {
+                            (curr_pt, sel.active_pt)
+                        } else {
+                            (start_pt, curr_pt)
+                        }
+                    }
+                    None => (start_pt, curr_pt),
                 };
 
                 let (selected_text, highlight_rects) = if is_block {
@@ -4171,8 +4272,25 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::SelectionDragEnd { slot, dx, dy } => {
-                self.selection_drag_state = None;
+                let drag = self.selection_drag_state.take();
+                self.handle_dragging.set(false);
+                // A press the drag gesture stood down for -- the second or
+                // third press of a multi-click -- stored no drag state; its
+                // release must not clear the selection that click made.
+                let Some((_, _, _, adjusting, _)) = drag else {
+                    return;
+                };
+                if let Some(ref ov) = self.page_overlays.get(&slot) {
+                    ov.set_cursor_from_name(None);
+                }
                 if dx.abs() > 4.0 || dy.abs() > 4.0 {
+                    if self.active_selection.borrow().is_some() {
+                        self.show_selection_chip(slot, &sender);
+                    }
+                } else if adjusting.is_some() {
+                    // A handle grip taken and released without moving keeps
+                    // the selection (and its toolbar), like the EPUB
+                    // reader.
                     if self.active_selection.borrow().is_some() {
                         self.show_selection_chip(slot, &sender);
                     }
@@ -5438,6 +5556,32 @@ mod tests {
             PdfPendingOutcome::KeepWaiting => {}
             other => panic!("expected KeepWaiting, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_over_selection_handle_zones() {
+        // The hover cursor must appear exactly where a press takes hold of
+        // a grip: the end grip's zone is centred on its bar's bottom end
+        // (the teardrop hangs below it), the start grip's on its top end.
+        let sel = PdfActiveSelection {
+            page: 1,
+            slot: PageSlot::Fixed(1),
+            text: "word".to_string(),
+            screen_rects: Vec::new(),
+            bounds: (0.0, 0.0, 10.0, 10.0),
+            start_handle: (100.0, 200.0, 16.0),
+            end_handle: (300.0, 220.0, 16.0),
+            anchor_pt: (0.0, 0.0),
+            active_pt: (0.0, 0.0),
+            is_block: false,
+        };
+        assert!(over_selection_handle(&sel, 300.0, 236.0), "end grip centre");
+        assert!(over_selection_handle(&sel, 100.0, 200.0), "start grip centre");
+        assert!(
+            !over_selection_handle(&sel, 200.0, 220.0),
+            "the middle of the page is no grip"
+        );
+        assert!(!over_selection_handle(&sel, 30.0, 40.0), "far from both");
     }
 
     #[test]

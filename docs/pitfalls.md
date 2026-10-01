@@ -1324,3 +1324,42 @@ production call site that no longer existed anywhere in the tree).
   nothing about dropped logic.
 - State the old path's behaviors in the plan before rewriting, so the
   diff can be checked against a written list, not memory.
+
+## 32. Two gestures on one widget must coordinate — a drag-end can eat a double-click
+
+**The bug (2.18, found by the owner's field test 2026-10-01 after the plan's
+step 3 shipped).** "PDF double/triple-click selection broken" was diagnosed
+in planning as the dead-click-on-unready-page problem — text not extracted
+yet, so the click had nothing to select. That was real but secondary. The
+actual root cause: the PDF reader attached `GestureDrag` and `GestureClick`
+to the same overlay with no coordination, and `SelectionDragEnd`'s
+no-movement path clears the active selection. On the second press of a
+double-click, the click gesture selects the word — and the drag gesture's
+own release then runs `clear_selection()` on it, instantly. The selection
+was made and destroyed within one press/release pair, so it looked like
+double-click "never worked". It never had, since the gestures were written.
+
+**The fix, copied from the EPUB reader's view** (`kalam-reader/src/view.rs`),
+which has worked from day one:
+
+- Attach the click gesture BEFORE the drag gesture — controllers run in
+  addition order, so the click has counted the press by the time the drag
+  decides what to do with it.
+- Share a `multi_click: Rc<Cell<i32>>` between them; `drag-begin` stands
+  down entirely (no message, no drag state) when `multi_click >= 2`.
+- `drag-end`'s no-movement "clear the selection" path only runs when that
+  press actually stored drag state — a stood-down press's release must do
+  nothing.
+
+### The rule
+
+- When two controllers can both react to the same press, write down the
+  full press/release interleaving for every click pattern (single, double,
+  triple, drag, tap-on-selection) before trusting the wiring — the bug
+  lived in the *sequence*, not in either handler alone.
+- A "tap clears the selection" release handler is incompatible with
+  multi-click selection unless something tells it which press it belongs
+  to. The absence of that coordination is invisible until a human
+  double-clicks.
+- Copy the working reader's gesture arrangement rather than inventing a
+  parallel one; the EPUB reader's `multi_click` gate is the reference.

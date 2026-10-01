@@ -83,6 +83,62 @@ pub enum PdfDocRequest {
     Search { path: PathBuf, query: String, toc: Vec<PdfTocEntry> },
 }
 
+/// A click that landed on a page whose text layer was not ready yet
+/// (2.20 step 3). The intent is stored and replayed when the text arrives,
+/// so the first click on a just-opened page is never a dead click.
+#[derive(Debug)]
+enum PdfPendingSelection {
+    Word { slot: PageSlot, x: f64, y: f64 },
+    Line { slot: PageSlot, x: f64, y: f64 },
+    /// A drag that began before the text was ready. A finished drag cannot
+    /// be replayed, so when the text arrives the word at the drag's start
+    /// point is selected -- the closest honest answer to the click.
+    Drag { slot: PageSlot, x: f64, y: f64 },
+}
+
+/// What should happen to a stored click when some page's text arrives.
+/// Pure decision, unit-tested; the GTK side only executes it.
+#[derive(Debug)]
+enum PdfPendingOutcome {
+    /// Nothing was pending, or the text that arrived belongs to another
+    /// page: keep waiting, keep the signal up.
+    KeepWaiting,
+    /// The intent was consumed: replay this message.
+    Replay(PdfReaderMsg),
+    /// The intent was consumed but its page left the viewport: drop it.
+    Dropped,
+}
+
+impl PdfReaderModel {
+    /// Decide what a pending click does now that `page`'s text has
+    /// arrived. Takes the intent out of `pending` when it is consumed.
+    fn take_pending_replay(
+        pending: &mut Option<(usize, PdfPendingSelection)>,
+        page: usize,
+        page_materialized: bool,
+    ) -> PdfPendingOutcome {
+        let Some((pending_page, intent)) = pending.take() else {
+            return PdfPendingOutcome::KeepWaiting;
+        };
+        if pending_page != page {
+            // A different page's text arrived; keep waiting for ours.
+            *pending = Some((pending_page, intent));
+            return PdfPendingOutcome::KeepWaiting;
+        }
+        if !page_materialized {
+            return PdfPendingOutcome::Dropped;
+        }
+        let msg = match intent {
+            PdfPendingSelection::Word { slot, x, y } => PdfReaderMsg::SelectionWordAt { slot, x, y },
+            PdfPendingSelection::Line { slot, x, y } => PdfReaderMsg::SelectionLineAt { slot, x, y },
+            // A finished drag cannot be replayed; the word at its start
+            // point is the closest honest response.
+            PdfPendingSelection::Drag { slot, x, y } => PdfReaderMsg::SelectionWordAt { slot, x, y },
+        };
+        PdfPendingOutcome::Replay(msg)
+    }
+}
+
 pub struct PdfReaderInit {
     pub catalog: Arc<Catalog>,
     pub book_id: i64,
@@ -411,6 +467,12 @@ pub struct PdfReaderModel {
     pub doc_ready: bool,
     /// Pages whose vector text extraction is in flight (dedup guard).
     pub text_in_progress: HashSet<usize>,
+    /// A click waiting for its page's text layer (2.20 step 3), with the
+    /// page it belongs to. Replayed when that page's text arrives.
+    pub pending_selection: Option<(usize, PdfPendingSelection)>,
+    /// The brief "Recognizing page..." signal shown while a pending
+    /// selection waits for its text.
+    pub recognizing_popover: Option<gtk::Popover>,
     pub page_overlays: HashMap<PageSlot, gtk::Overlay>,
     pub page_draw_areas: HashMap<PageSlot, gtk::DrawingArea>,
     pub page_text_cache: HashMap<usize, PdfPageText>,
@@ -556,6 +618,8 @@ impl PdfReaderModel {
             doc_tx: None,
             doc_ready: false,
             text_in_progress: HashSet::new(),
+            pending_selection: None,
+            recognizing_popover: None,
             page_overlays: HashMap::new(),
             page_draw_areas: HashMap::new(),
             page_text_cache: HashMap::new(),
@@ -874,6 +938,8 @@ impl PdfReaderModel {
         self.ocr_in_progress.clear();
         self.ocr_started_fp.clear();
         self.text_in_progress.clear();
+        self.pending_selection = None;
+        self.dismiss_recognizing_popover();
         self.doc_ready = false;
 
         self.doc_tx = None;
@@ -1055,6 +1121,9 @@ impl PdfReaderModel {
     pub fn clear_selection(&mut self) {
         self.active_selection.replace(None);
         self.dismiss_selection_chip();
+        // A click elsewhere means the pending one is no longer wanted.
+        self.pending_selection = None;
+        self.dismiss_recognizing_popover();
         for da in self.page_draw_areas.values() {
             da.queue_draw();
         }
@@ -1064,6 +1133,73 @@ impl PdfReaderModel {
         if let Some(popover) = self.selection_chip.take() {
             popover.popdown();
             popover.unparent();
+        }
+    }
+
+    pub fn dismiss_recognizing_popover(&mut self) {
+        if let Some(popover) = self.recognizing_popover.take() {
+            popover.popdown();
+            popover.unparent();
+        }
+    }
+
+    /// Store a click that arrived before its page's text layer, and show
+    /// the brief "Recognizing page..." signal at the click point (owner
+    /// decision 2026-10-01: show it -- silence is what made the first
+    /// click look broken).
+    pub fn store_pending_selection(
+        &mut self,
+        page: usize,
+        intent: PdfPendingSelection,
+        slot: PageSlot,
+        x: f64,
+        y: f64,
+    ) {
+        self.pending_selection = Some((page, intent));
+        self.dismiss_recognizing_popover();
+        let Some(overlay) = self.page_overlays.get(&slot) else { return };
+
+        let popover = gtk::Popover::new();
+        popover.set_parent(overlay);
+        popover.set_autohide(false);
+        popover.set_has_arrow(false);
+        popover.set_position(gtk::PositionType::Bottom);
+        let anchor = gdk::Rectangle::new(x as i32, (y - 6.0).max(0.0) as i32, 1, 1);
+        popover.set_pointing_to(Some(&anchor));
+        let label = gtk::Label::new(Some("Recognizing page..."));
+        label.add_css_class("dim-label");
+        popover.set_child(Some(&label));
+        popover.popup();
+
+        // If recognition never produces text (OCR failed, file replaced),
+        // the signal must not linger over the page forever.
+        let timed_out = popover.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_secs(10), move || {
+            if timed_out.parent().is_some() {
+                timed_out.popdown();
+                timed_out.unparent();
+            }
+        });
+
+        self.recognizing_popover = Some(popover);
+    }
+
+    /// Replay a stored click once its page's text has arrived (2.20 step
+    /// 3). Called from every handler that inserts page text.
+    pub fn try_replay_pending_selection(&mut self, page: usize, sender: &ComponentSender<Self>) {
+        // If the user moved on and the page is no longer materialized in
+        // the viewport, the intent is stale: it is dropped instead of
+        // selecting a word on a page nobody is looking at.
+        let materialized = self.page_pictures.contains_key(&page);
+        match Self::take_pending_replay(&mut self.pending_selection, page, materialized) {
+            PdfPendingOutcome::Replay(msg) => {
+                self.dismiss_recognizing_popover();
+                let _ = sender.input_sender().send(msg);
+            }
+            PdfPendingOutcome::Dropped => {
+                self.dismiss_recognizing_popover();
+            }
+            PdfPendingOutcome::KeepWaiting => {}
         }
     }
 
@@ -1283,6 +1419,9 @@ impl PdfReaderModel {
 
     /// Build the viewport container widget for current scroll mode & spread mode.
     pub fn build_viewport_widget(&mut self, sender: &ComponentSender<Self>) -> gtk::Widget {
+        // The recognizing signal is parented to a page overlay that is
+        // about to be dropped with the rest of the viewport.
+        self.dismiss_recognizing_popover();
         self.page_pictures.clear();
         self.page_overlays.clear();
         self.page_draw_areas.clear();
@@ -3653,6 +3792,9 @@ impl Component for PdfReaderModel {
                                 pic.queue_draw();
                             }
                             widgets.viewport_scroll.queue_draw();
+                            // A click stored while this page's text was
+                            // missing can now run (2.20 step 3).
+                            self.try_replay_pending_selection(page, &sender);
                         } else {
                             // No embedded text: fall back to OCR via the
                             // fingerprint the worker computed off-thread.
@@ -3661,6 +3803,10 @@ impl Component for PdfReaderModel {
                     }
                     Err(err) => {
                         log::warn!("Text extraction failed for page {page}: {err}");
+                        // Extraction failed: the pending click waits for
+                        // nothing. End it now.
+                        self.pending_selection = None;
+                        self.dismiss_recognizing_popover();
                     }
                 }
             }
@@ -3702,12 +3848,18 @@ impl Component for PdfReaderModel {
                             }
                         }
                         self.page_text_cache.insert(page, ocr_text);
+                        self.try_replay_pending_selection(page, &sender);
                         for da in self.page_draw_areas.values() {
                             da.queue_draw();
                         }
                     }
                     Err(err) => {
                         log::warn!("OCR failed for page {page}: {err}");
+                        // The text this pending click waits for will never
+                        // arrive; end the signal now rather than through
+                        // its timeout.
+                        self.pending_selection = None;
+                        self.dismiss_recognizing_popover();
                     }
                 }
             }
@@ -3840,6 +3992,19 @@ impl Component for PdfReaderModel {
                 let Some(page) = self.page_for_slot(slot) else { return };
                 self.dismiss_selection_chip();
                 let _ = self.ensure_page_text(page);
+                if !self.page_text_cache.contains_key(&page) {
+                    // Text not ready yet: remember the click instead of
+                    // starting a drag that cannot select anything (2.20
+                    // step 3). The drag itself is not started.
+                    self.store_pending_selection(
+                        page,
+                        PdfPendingSelection::Drag { slot, x, y },
+                        slot,
+                        x,
+                        y,
+                    );
+                    return;
+                }
 
                 let is_adjusting_end = if let Some(ref sel) = *self.active_selection.borrow() {
                     if sel.slot == slot && !is_block {
@@ -3976,8 +4141,20 @@ impl Component for PdfReaderModel {
                     )
                 };
 
-                let Some(page_text) = self.page_text_cache.get(&page) else { return };
-                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+                let Some(page_text) = self.page_text_cache.get(&page) else {
+                    // First click on a page whose text is not ready: store
+                    // the intent and answer with the recognizing signal
+                    // (2.20 step 3).
+                    self.store_pending_selection(
+                        page,
+                        PdfPendingSelection::Word { slot, x, y },
+                        slot,
+                        x,
+                        y,
+                    );
+                    return;
+                };
+                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return }
 
                 let scale_x = target_w / (page_text.width_pts as f64);
                 let scale_y = target_h / (page_text.height_pts as f64);
@@ -4044,8 +4221,17 @@ impl Component for PdfReaderModel {
                     )
                 };
 
-                let Some(page_text) = self.page_text_cache.get(&page) else { return };
-                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return };
+                let Some(page_text) = self.page_text_cache.get(&page) else {
+                    self.store_pending_selection(
+                        page,
+                        PdfPendingSelection::Line { slot, x, y },
+                        slot,
+                        x,
+                        y,
+                    );
+                    return;
+                };
+                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return }
 
                 let scale_x = target_w / (page_text.width_pts as f64);
                 let scale_y = target_h / (page_text.height_pts as f64);
@@ -5085,6 +5271,75 @@ mod tests {
             ),
             vec![3, 4, 5]
         );
+    }
+
+    #[test]
+    fn test_pending_selection_replays_when_text_arrives() {
+        // A word click stored on page 5 replays as SelectionWordAt the
+        // moment page 5's text lands (2.20 step 3: the first click is
+        // never a dead click).
+        let mut pending = Some((5usize, PdfPendingSelection::Word { slot: PageSlot::Fixed(5), x: 120.0, y: 40.0 }));
+        match PdfReaderModel::take_pending_replay(&mut pending, 5, true) {
+            PdfPendingOutcome::Replay(PdfReaderMsg::SelectionWordAt { x, y, .. }) => {
+                assert_eq!((x, y), (120.0, 40.0));
+            }
+            other => panic!("expected a word replay, got {other:?}"),
+        }
+        assert!(pending.is_none(), "the intent must be consumed");
+    }
+
+    #[test]
+    fn test_pending_selection_line_and_drag_replay() {
+        // A line click (triple-click) replays as SelectionLineAt.
+        let mut pending = Some((3usize, PdfPendingSelection::Line { slot: PageSlot::Fixed(3), x: 10.0, y: 20.0 }));
+        match PdfReaderModel::take_pending_replay(&mut pending, 3, true) {
+            PdfPendingOutcome::Replay(PdfReaderMsg::SelectionLineAt { x, y, .. }) => {
+                assert_eq!((x, y), (10.0, 20.0));
+            }
+            other => panic!("expected a line replay, got {other:?}"),
+        }
+
+        // A drag that began on an unready page cannot be replayed as a
+        // drag; the word at its start point is the honest answer.
+        let mut pending = Some((7usize, PdfPendingSelection::Drag { slot: PageSlot::Fixed(7), x: 55.0, y: 66.0 }));
+        match PdfReaderModel::take_pending_replay(&mut pending, 7, true) {
+            PdfPendingOutcome::Replay(PdfReaderMsg::SelectionWordAt { x, y, .. }) => {
+                assert_eq!((x, y), (55.0, 66.0));
+            }
+            other => panic!("expected a word replay for the drag, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_pending_selection_waits_for_its_own_page() {
+        // Text arriving for a different page must not consume the intent.
+        let mut pending = Some((5usize, PdfPendingSelection::Word { slot: PageSlot::Fixed(5), x: 1.0, y: 2.0 }));
+        match PdfReaderModel::take_pending_replay(&mut pending, 9, true) {
+            PdfPendingOutcome::KeepWaiting => {}
+            other => panic!("expected KeepWaiting, got {other:?}"),
+        }
+        assert!(pending.is_some(), "the intent must survive other pages' text");
+    }
+
+    #[test]
+    fn test_pending_selection_dropped_when_page_left_viewport() {
+        // The user scrolled on: the intent is stale and must be dropped,
+        // not replayed onto a page nobody is looking at.
+        let mut pending = Some((5usize, PdfPendingSelection::Word { slot: PageSlot::Fixed(5), x: 1.0, y: 2.0 }));
+        match PdfReaderModel::take_pending_replay(&mut pending, 5, false) {
+            PdfPendingOutcome::Dropped => {}
+            other => panic!("expected Dropped, got {other:?}"),
+        }
+        assert!(pending.is_none());
+    }
+
+    #[test]
+    fn test_pending_selection_nothing_pending() {
+        let mut pending: Option<(usize, PdfPendingSelection)> = None;
+        match PdfReaderModel::take_pending_replay(&mut pending, 5, true) {
+            PdfPendingOutcome::KeepWaiting => {}
+            other => panic!("expected KeepWaiting, got {other:?}"),
+        }
     }
 
     #[test]

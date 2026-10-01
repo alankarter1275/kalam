@@ -125,6 +125,16 @@ pub fn align_book_folders(catalog: &Catalog, reporter: &Reporter) -> usize {
             // so stopping early loses nothing.
             break;
         }
+        // Comics live in series folders (item 2.22), not per-book folders;
+        // the comic pass owns them. Skipping here also keeps the two
+        // background passes from racing over the same files.
+        if matches!(
+            book.format,
+            crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+        ) {
+            reporter.step(i + 1, total, book.uuid.clone());
+            continue;
+        }
         if rename_book_folder_if_needed(&book.uuid, &book.authors, &book.title) {
             renamed += 1;
         }

@@ -98,6 +98,66 @@ pub fn book_folder_name_full(authors: &str, title: &str, uuid: &str) -> String {
     folder_name_with_suffix(authors, title, uuid)
 }
 
+/// The folder name for a comic series: the series title, sanitized, nothing
+/// else. Owner decision, 2026-10-02 (item 2.22): a series is one folder
+/// under the library root, holding every chapter file and a `covers/`
+/// directory. Unlike book folders there is no id suffix in the common case —
+/// the series *is* the name — so a clash between two series whose titles
+/// sanitize to the same text is resolved by the caller
+/// (`Catalog::ensure_series_folder`) with a `#<id>` suffix.
+///
+/// The byte cap leaves room for that suffix while staying far under the
+/// 255-byte file-system limit, whatever the character widths.
+pub fn series_folder_name(title: &str) -> String {
+    let name = sanitize_folder_text(title, 110);
+    if name.is_empty() {
+        "Untitled Series".to_string()
+    } else {
+        name
+    }
+}
+
+/// Where a stored book file or cover actually lives.
+///
+/// Two shapes exist, and the stored name itself says which:
+///
+/// - A bare name (`book.epub`, `cover.jpg`) is resolved against the book's
+///   own folder — the shape every EPUB and PDF uses, and comics too before
+///   item 2.22 moved them into series folders.
+/// - A name containing `/` (`Naruto – Digital Colored Comics/0003.cbz`,
+///   `Horimiya (Official)/covers/0010.jpg`) is relative to the library
+///   root: a comic chapter inside its series folder.
+///
+/// The separator is a reliable marker because a bare name can never contain
+/// one — and it makes the move atomic per chapter: the file lands in the
+/// series folder and the row's stored names change in the same step, with
+/// no separate series-level bookkeeping to keep in step.
+pub fn resolve_library_file(book_uuid: &str, stored_name: &str) -> PathBuf {
+    if stored_name.contains('/') {
+        library_dir().join(stored_name)
+    } else {
+        book_dir(book_uuid).join(stored_name)
+    }
+}
+
+/// The file stem for one comic chapter: the chapter number, zero-padded to
+/// four digits so the files sort in reading order in any file manager
+/// (`0003.cbz`, `0010.cbz`, `0102.cbz`). A fractional chapter keeps its
+/// fraction after the padded integer (`0010.5.cbz`), which still sorts
+/// correctly against the integers around it. Numbers past 9999 simply grow
+/// a fifth digit; the app itself always sorts by the database's numeric
+/// chapter order, the padding is for the person browsing the folder.
+pub fn comic_chapter_stem(number: f32) -> String {
+    // Render the whole number and split it, rather than computing the
+    // fraction arithmetically: `10.1f32 - 10.0f32` is 0.10000038…, while
+    // the shortest rendering of the value is exactly "10.1".
+    let rendered = format!("{number}");
+    match rendered.split_once('.') {
+        Some((int, frac)) => format!("{int:0>4}.{frac}"),
+        None => format!("{rendered:0>4}"),
+    }
+}
+
 fn folder_name_with_suffix(authors: &str, title: &str, suffix: &str) -> String {
     // "Unknown" is what the importer writes for PDFs and comics that carry
     // no author. Treating it as no-author keeps those folders clean
@@ -140,7 +200,7 @@ fn uuid_suffix(uuid: &str) -> &str {
 /// hide the folder in most file managers) and trailing dots and spaces,
 /// and caps the length in bytes. An empty result is returned as-is;
 /// callers decide their own fallback.
-fn sanitize_folder_text(raw: &str, max_bytes: usize) -> String {
+pub fn sanitize_folder_text(raw: &str, max_bytes: usize) -> String {
     let mut out = String::with_capacity(raw.len().min(max_bytes + 4));
     let mut last_was_space = true; // also eats leading spaces
     for ch in raw.chars() {
@@ -767,5 +827,67 @@ mod tests {
         // whole thing is the suffix, and nothing panics.
         assert_eq!(uuid_suffix("abc-123"), "abc-123");
         assert_eq!(uuid_suffix(""), "");
+    }
+
+    #[test]
+    fn chapter_stems_pad_and_keep_fractions() {
+        // The owner's real chapters (2026-10-02): 3, 4, 10, 11, 102.
+        assert_eq!(comic_chapter_stem(3.0), "0003");
+        assert_eq!(comic_chapter_stem(10.0), "0010");
+        assert_eq!(comic_chapter_stem(102.0), "0102");
+        // A fractional chapter keeps its fraction after the padded integer,
+        // so "0010.5" still sorts before "0102" the way 10.5 should.
+        assert_eq!(comic_chapter_stem(10.5), "0010.5");
+        assert_eq!(comic_chapter_stem(0.5), "0000.5");
+        // The fraction comes from the shortest rendering of the whole
+        // number, not from subtraction: 10.1 - 10.0 would be 0.10000038…
+        assert_eq!(comic_chapter_stem(10.1), "0010.1");
+        // Past four digits the number simply grows; the padding is a
+        // courtesy for humans, the app sorts by the database.
+        assert_eq!(comic_chapter_stem(12345.0), "12345");
+    }
+
+    #[test]
+    fn series_folder_names_stay_readable() {
+        // Real series from the owner's library: the parenthetical and the
+        // en dash both survive untouched.
+        assert_eq!(series_folder_name("Horimiya (Official)"), "Horimiya (Official)");
+        assert_eq!(
+            series_folder_name("Naruto – Digital Colored Comics"),
+            "Naruto – Digital Colored Comics"
+        );
+        // The one character Linux forbids becomes a word break, like book
+        // folders; control characters and stray dots go too.
+        let messy = series_folder_name("A/B:\tRe: Zero.  ");
+        assert!(!messy.contains('/'), "slash must go: {messy}");
+        assert!(!messy.contains('\t'), "control characters must go: {messy}");
+        assert!(!messy.starts_with('.'), "a leading dot would hide the folder: {messy}");
+        // A very long Bengali title truncates on a character boundary and
+        // leaves room for a collision suffix.
+        let long = "রবীন্দ্রনাথ ঠাকুর".repeat(30);
+        let name = series_folder_name(&long);
+        assert!(name.len() < 130, "too long at {} bytes", name.len());
+        assert!(!name.ends_with(' ') && !name.ends_with('.'));
+        // Nothing usable in: the fallback, not an empty folder name.
+        assert_eq!(series_folder_name("  /// ."), "Untitled Series");
+    }
+
+    #[test]
+    fn resolve_library_file_follows_the_separator_rule() {
+        // A bare name resolves against the book's own folder; a name with a
+        // separator is library-relative (a comic chapter in its series
+        // folder). The contract is which base the name is joined to.
+        assert_eq!(
+            resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "book.epub"),
+            book_dir("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6").join("book.epub")
+        );
+        assert_eq!(
+            resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "Naruto – Digital Colored Comics/0003.cbz"),
+            library_dir().join("Naruto – Digital Colored Comics/0003.cbz")
+        );
+        assert_eq!(
+            resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "Horimiya (Official)/covers/0010.jpg"),
+            library_dir().join("Horimiya (Official)/covers/0010.jpg")
+        );
     }
 }

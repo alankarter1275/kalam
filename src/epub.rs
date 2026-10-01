@@ -37,6 +37,19 @@ struct OpfMeta {
     manifest: Vec<(String, String, Option<String>)>, // id, href, media-type
 }
 
+/// The series a comic belongs to: ComicInfo's `<Series>` when present, else
+/// whatever the title parsing can recover, else the title itself. The same
+/// chain the cataloging step has always used, extracted so the placement
+/// decision (which runs before the copy) and the chapter entry (which runs
+/// after the insert) cannot disagree.
+fn comic_series_name(series: &Option<String>, title: &str) -> String {
+    series.clone().unwrap_or_else(|| {
+        crate::comics::parse_comic_title(title)
+            .series
+            .unwrap_or_else(|| title.to_string())
+    })
+}
+
 /// Import an EPUB path into the catalog. Copies into library storage.
 pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     ensure_data_dirs()?;
@@ -196,6 +209,35 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         };
 
     let uuid = Uuid::new_v4().to_string();
+
+    // Item 2.22: a comic lands in its series folder — `library/<Series>/`
+    // with the chapter file named for its number and the cover in `covers/`
+    // beside the other chapters' covers. Regular books keep their own
+    // folder. The series row has to exist before the copy (the destination
+    // depends on it), so the cataloging that used to happen after the
+    // insert starts here; the chapter entry itself is still added below,
+    // once the book row exists to point at.
+    let comic_series_id = if format == BookFormat::Cbz || format == BookFormat::Cbr {
+        catalog
+            .get_or_create_comic_series(
+                &comic_series_name(&series, &title),
+                Some(&authors),
+                Some(&description),
+            )
+            .ok()
+    } else {
+        None
+    };
+    let comic_chapter_number = if format == BookFormat::Cbz || format == BookFormat::Cbr {
+        Some(if series_index > 0.0 {
+            series_index
+        } else {
+            crate::comics::parse_comic_title(&title).number.unwrap_or(1.0)
+        })
+    } else {
+        None
+    };
+
     // Owner decision, 2026-09-29: books live in folders a person can read
     // ("Author - Title <short-id>"), not bare uuids. The uuid stays the
     // database key; the name is a label. See src/folders.rs.
@@ -213,11 +255,57 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     if crate::paths::library_dir().join(&folder).exists() {
         folder = uuid.clone();
     }
+
+    // The comic override: the destination becomes the series folder, and
+    // the chapter file is named for its number. When placement fails — the
+    // disk refused the folder — the import continues in the per-book shape
+    // above and the startup migration relocates the chapter on the next
+    // run, so nothing is lost and nothing blocks an import.
+    let mut file_name = file_name;
+    let mut cover_name = cover_name;
+    let placed_in_series = match (comic_series_id, comic_chapter_number) {
+        (Some(s_id), Some(ch_num)) => match catalog.ensure_series_folder(s_id) {
+            Ok(series_folder) => {
+                let stem = crate::paths::comic_chapter_stem(ch_num);
+                let ext = if format == BookFormat::Cbz {
+                    "cbz"
+                } else {
+                    "cbr"
+                };
+                let mut name = format!("{stem}.{ext}");
+                // Two chapters claiming one number, or a leftover file with
+                // the same name: the short id disambiguates, the same style
+                // book folders use. Never overwrite — a file that is already
+                // there belongs to something.
+                if crate::paths::library_dir()
+                    .join(&series_folder)
+                    .join(&name)
+                    .exists()
+                {
+                    name = format!("{stem} {}.{ext}", &uuid[..8]);
+                }
+                file_name = name;
+                cover_name = cover_name.take().map(|(old, bytes)| {
+                    let img_ext = old.rsplit('.').next().unwrap_or("jpg");
+                    (format!("covers/{stem}.{img_ext}"), bytes)
+                });
+                folder = series_folder;
+                true
+            }
+            Err(_) => false,
+        },
+        _ => false,
+    };
+
     let dest_dir = crate::paths::library_dir().join(&folder);
     fs::create_dir_all(&dest_dir)?;
-    // Teach the path resolver the new folder now, so anything that asks
-    // for this book's files during this session finds them.
-    crate::paths::note_folder(&uuid, &folder);
+    if !placed_in_series {
+        // Teach the path resolver the new folder now, so anything that asks
+        // for this book's files during this session finds them. A placed
+        // comic has no folder of its own — its files are found through the
+        // series-relative names stored in its row instead.
+        crate::paths::note_folder(&uuid, &folder);
+    }
 
     let dest_file = dest_dir.join(&file_name);
     fs::copy(source, &dest_file)
@@ -253,6 +341,19 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         );
     }
 
+    // Comic chapters store their names relative to the library root, so the
+    // row carries the series folder as part of the name ("Series/0010.cbz",
+    // "Series/covers/0010.jpg"); every other book stores a bare name that
+    // resolves against its own folder. See paths::resolve_library_file.
+    let (file_name, final_cover_name) = if placed_in_series {
+        (
+            format!("{folder}/{file_name}"),
+            final_cover_name.map(|n| format!("{folder}/{n}")),
+        )
+    } else {
+        (file_name, final_cover_name)
+    };
+
     let id = catalog.insert_book(
         &uuid,
         &title,
@@ -271,17 +372,22 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     }
 
     if format == BookFormat::Cbz || format == BookFormat::Cbr {
-        let series_name = series.clone().unwrap_or_else(|| {
-            crate::comics::parse_comic_title(&title)
-                .series
-                .unwrap_or_else(|| title.clone())
-        });
-        if let Ok(s_id) = catalog.get_or_create_comic_series(&series_name, Some(&authors), Some(&description)) {
-            let ch_num = if series_index > 0.0 {
-                series_index
-            } else {
-                crate::comics::parse_comic_title(&title).number.unwrap_or(1.0)
-            };
+        // The series row was resolved before the copy — placement depends
+        // on it — so only the chapter entry is left. When even that first
+        // resolution failed, try once more: cataloging needs the row, not
+        // the folder.
+        let s_id = match comic_series_id {
+            Some(id) => Some(id),
+            None => catalog
+                .get_or_create_comic_series(
+                    &comic_series_name(&series, &title),
+                    Some(&authors),
+                    Some(&description),
+                )
+                .ok(),
+        };
+        if let Some(s_id) = s_id {
+            let ch_num = comic_chapter_number.unwrap_or(1.0);
             let _ = catalog.add_comic_chapter(s_id, id, ch_num, None, &title);
         }
     }
@@ -712,24 +818,41 @@ pub fn replace_cover_bytes(
     bytes: &[u8],
 ) -> Result<String> {
     let ext = guess_image_ext(bytes);
-    let dir = crate::paths::book_dir(&book.uuid);
+    // Item 2.22: a comic chapter that lives in its series folder keeps its
+    // cover there, in `covers/`, stored library-relative; every other book
+    // keeps the cover beside the file in its own folder. The book's own
+    // file name says which shape it is in.
+    let comic_series_prefix = book
+        .file_name
+        .rsplit_once('/')
+        .map(|(series, _)| series.to_string());
+    let dir = match &comic_series_prefix {
+        Some(series) => crate::paths::library_dir().join(series).join("covers"),
+        None => crate::paths::book_dir(&book.uuid),
+    };
     fs::create_dir_all(&dir)?;
 
-    // Pick a name that is not currently in use.
-    let mut name = format!("cover.{ext}");
+    // Pick a name that is not currently in use. The stored name carries the
+    // series prefix for comics, so compare and collide-test the file part
+    // only.
+    let mut file_part = format!("cover.{ext}");
     let mut n = 1;
-    while dir.join(&name).exists() {
-        name = format!("cover-{n}.{ext}");
+    while dir.join(&file_part).exists() {
+        file_part = format!("cover-{n}.{ext}");
         n += 1;
     }
+    let stored_name = match &comic_series_prefix {
+        Some(series) => format!("{series}/covers/{file_part}"),
+        None => file_part,
+    };
 
-    let path = dir.join(&name);
+    let path = dir.join(&file_part);
     fs::write(&path, bytes).with_context(|| format!("write cover {}", path.display()))?;
 
     // Remove the old file only after the new one is safely on disk.
     if let Some(old) = &book.cover_name {
-        if old != &name {
-            let old_path = dir.join(old);
+        if *old != stored_name {
+            let old_path = crate::paths::resolve_library_file(&book.uuid, old);
             if old_path.exists() {
                 let _ = fs::remove_file(&old_path);
             }
@@ -737,11 +860,11 @@ pub fn replace_cover_bytes(
         }
     }
 
-    catalog.set_cover_name(book.id, Some(&name))?;
+    catalog.set_cover_name(book.id, Some(&stored_name))?;
     // A0 step 3: the cover changed, so regenerate the thumbnail to keep it in
     // sync (the grid prefers the thumbnail when it exists).
     crate::thumbs::generate_thumbnail(&path, &crate::paths::thumbnail_path(&book.uuid));
-    Ok(name)
+    Ok(stored_name)
 }
 
 /// Sniff the format from magic bytes; extension alone is unreliable.
@@ -1079,5 +1202,75 @@ mod tests {
         let err = import_epub(&cat, &unsupported).unwrap_err();
         assert!(err.to_string().contains("unsupported file format"));
         let _ = std::fs::remove_file(&unsupported);
+    }
+
+    #[test]
+    fn importing_a_comic_lands_it_in_its_series_folder() {
+        // Item 2.22: a CBZ carrying ComicInfo.xml imports directly into
+        // library/<Series>/ as a number-named chapter file, with its cover
+        // in covers/ beside the other chapters' covers, and the row storing
+        // library-relative names.
+        use std::io::Write as _;
+        use zip::write::SimpleFileOptions;
+
+        let series = format!("Import Series {}", uuid::Uuid::new_v4());
+        let src_dir = std::env::temp_dir().join(format!(
+            "kalam-import-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let src = src_dir.join("chapter.cbz");
+
+        let file = File::create(&src).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        zip.start_file("ComicInfo.xml", options).unwrap();
+        zip.write_all(
+            format!(
+                "<?xml version=\"1.0\"?><ComicInfo><Series>{series}</Series>\
+                 <Number>10</Number><Writer>Hero</Writer></ComicInfo>"
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        zip.start_file("page-001.png", options).unwrap();
+        let mut page = Vec::new();
+        image::DynamicImage::new_rgb8(4, 6)
+            .write_to(&mut std::io::Cursor::new(&mut page), image::ImageFormat::Png)
+            .unwrap();
+        zip.write_all(&page).unwrap();
+        zip.finish().unwrap();
+
+        let cat = Catalog::open_in_memory().unwrap();
+        let res = import_epub(&cat, &src).unwrap();
+        assert!(!res.duplicate);
+        assert_eq!(res.format, BookFormat::Cbz);
+
+        let book = cat.get_book(res.book_id).unwrap().unwrap();
+        let stem = crate::paths::comic_chapter_stem(10.0);
+        let folder = crate::paths::series_folder_name(&series);
+        assert_eq!(book.file_name, format!("{folder}/{stem}.cbz"));
+        assert_eq!(
+            book.cover_name.as_deref(),
+            Some(format!("{folder}/covers/{stem}.png").as_str())
+        );
+        assert!(book.file_path.is_file(), "chapter file must exist");
+        assert!(book.cover_path.as_ref().is_some_and(|p| p.is_file()));
+
+        // Cataloged with its series and number.
+        let (comic_series, chapter) = cat
+            .get_comic_series_for_book(res.book_id)
+            .unwrap()
+            .expect("chapter must be cataloged");
+        assert_eq!(comic_series.title, series);
+        assert_eq!(chapter.chapter_number, 10.0);
+
+        // The thumbnail was generated from the extracted cover.
+        assert!(crate::paths::thumbnail_path(&book.uuid).is_file());
+
+        // Tidy up: the series folder, the thumbnail, the temp source.
+        let _ = std::fs::remove_dir_all(crate::paths::library_dir().join(&folder));
+        let _ = std::fs::remove_file(crate::paths::thumbnail_path(&book.uuid));
+        let _ = std::fs::remove_dir_all(&src_dir);
     }
 }

@@ -1,10 +1,10 @@
 # Plan — 2.22: comic series folders on disk
 
-**Status: DRAFT FOR OWNER APPROVAL.** The in-app half of comics already
-exists (series hub, drawer, reader chapter flow, DB hierarchy — see
-"What is true today"); this plan is the disk layout only. One open
-question for the owner (chapter file naming, at the end). No code
-until the plan is approved and the owner says go.
+**Status: IMPLEMENTED (this branch), awaiting CI and the owner's field
+test.** Approved 2026-10-02 with the short padded file names
+(`0010.cbz`). The implementation notes at the bottom record one
+mechanism deviation from the draft — same behavior, simpler machinery —
+and where each piece landed.
 
 Per the working agreement: research below is done and cited (code with
 file/line evidence, read 2026-10-02); pitfalls consulted (§§36–38 and
@@ -160,3 +160,73 @@ library/
 like "Naruto – Digital Colored Comics - 0010.cbz" would repeat it 700
 times. If you prefer the long form, say so; it is a one-line change
 either way.
+
+**Answer: approved as proposed, 2026-10-02 ("no. it's alright. go with
+the plan").**
+
+---
+
+## Implementation notes (2026-10-02, same day)
+
+One mechanism deviation from the draft above, discovered while reading
+the resolution sites: **there is no `comic_series.folder_name` column
+and no LEFT JOIN.** A stored name that contains `/`
+(`Naruto – Digital Colored Comics/0003.cbz`) resolves against the
+library root; a bare name (`book.epub`) against the book's own uuid
+folder — one rule, `paths::resolve_library_file`, and the separator is
+a marker no other stored name can carry. This keeps every goal of the
+draft (no extra query per book, id-keyed data untouched) while being
+per-chapter atomic instead of per-series: file moves and the row's
+stored names change in one step, so a half-migrated series is
+impossible rather than merely guarded against. No schema change
+follows; `SCHEMA_VERSION` stays 17.
+
+Where each piece landed:
+
+- `src/paths.rs` — `series_folder_name` (title sanitization, 110-byte
+  cap), `comic_chapter_stem` (zero-padded 4, fraction kept, rendered
+  from the shortest form of the whole number so `10.1` never becomes
+  `10.10000038`), `resolve_library_file` (the separator rule);
+  `sanitize_folder_text` made public.
+- `src/db/series.rs` — `ensure_series_folder` (name + create, used by
+  import) and `series_folder_name_for` (name only, used by the
+  migration so a fileless series never materializes a folder); clash
+  fallback `#<series id>` — `#` chosen because the folder scan parses
+  trailing id tokens and a bare number could be mistaken for one. The
+  series cover paths in `get_comic_series`/`list_comic_series` resolve
+  through the new rule.
+- `src/epub.rs` — the comic branch of `import_epub` resolves its
+  series row before the copy, copies into `library/<Series>/` as
+  `<stem>.<ext>` (short-id suffix on a name clash), writes the cover
+  to `covers/`, and stores library-relative names. `replace_cover_bytes`
+  writes a comic's replacement cover into `covers/` and stores the
+  prefixed name.
+- `src/comic_folders.rs` (new) — the startup pass `migrate_comic_library`
+  plus `place_chapter`: move file, cover and sidecar, repoint the row,
+  remove the emptied per-book folder. Idempotent by the stored name,
+  self-healing (a move whose row update failed is adopted on the next
+  pass), retried per chapter on failure.
+- `src/db.rs` — the three book-loading sites resolve through the new
+  rule; `delete_book` removes a comic chapter's own files and takes
+  the series folder when the last chapter goes; `set_book_file_names`
+  is the row-repoint primitive.
+- `src/sidecar.rs` — a comic chapter's sidecar lives at
+  `library/<Series>/.kalam/<uuid>.json` (hidden, travels with the
+  library); the recovery survey counts books from the catalog instead
+  of library folders, since folders no longer map one-to-one onto
+  books.
+- `src/thumbs.rs`, `src/db/annotations.rs`, `src/db/metadata.rs` —
+  cover resolution through the same rule (thumbnail backfill, quotes
+  list, cover restore on re-import).
+- `src/folders.rs` — the book-folder align pass skips comics (they are
+  the comic pass's to move; also removes the two-pass race).
+- `src/app.rs` — the pass runs at startup after the folder pass, as a
+  `spawn_internal` task; only the timing note reports movement.
+
+Tests: stem padding and fractions (including the owner's real chapter
+numbers 3/4/10/11/102), folder-name sanitization with his exact series
+titles, the separator rule, a full CBZ import landing in its series
+folder (real zip built with ComicInfo.xml, cover extracted, chapter
+cataloged), placement with cover + sidecar + row repoint + old-folder
+cleanup, idempotency, missing files leaving row and library alone, and
+the same-number collision suffix.

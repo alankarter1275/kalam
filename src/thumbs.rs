@@ -100,7 +100,10 @@ pub fn backfill_missing(cat: &crate::db::Catalog, reporter: &crate::tasks::Repor
             // would leave those books without thumbnails for good.
             return generated;
         }
-        let cover = crate::paths::book_dir(uuid).join(cover_name);
+        // Item 2.22: a comic chapter's cover is stored library-relative
+        // ("Series/covers/0010.jpg"); the same stored name that points a
+        // book at its cover points the backfill at it.
+        let cover = crate::paths::resolve_library_file(uuid, cover_name);
         // `backfill_one` returns true when the thumbnail is *present*, which
         // includes "was already there" — so count only the ones that were
         // actually missing beforehand, or the number is just the library size.

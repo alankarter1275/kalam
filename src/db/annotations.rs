@@ -114,7 +114,7 @@ impl Catalog {
             let ref_ = QuoteRef {
                 title: r.get(15)?,
                 author: r.get(16)?,
-                cover_path: cover_name.map(|name| book_dir(&uuid).join(name)),
+                cover_path: cover_name.map(|name| resolve_library_file(&uuid, &name)),
             };
             Ok((row_to_annotation(r)?, ref_))
         })?;

@@ -1906,6 +1906,24 @@ fn start_housekeeping(catalog: &std::sync::Arc<crate::db::Catalog>) {
         },
     );
 
+    // Item 2.22: a comic series is one folder on disk — `library/<Series>/`
+    // holding the number-named chapter files and `covers/`. This pass is
+    // the one-time upgrade for a library whose comics still live one
+    // chapter per folder, and after that a no-op that costs one string
+    // comparison per chapter. It runs after the book-folder pass above,
+    // which skips comics precisely so the two never race.
+    let comic_catalog = catalog.clone();
+    crate::tasks::spawn_internal(
+        "Organizing comic series folders",
+        move |reporter| crate::comic_folders::migrate_comic_library(&comic_catalog, &reporter),
+        |_update| {},
+        |moved: usize| {
+            if moved > 0 {
+                crate::timing::note("comic_chapters_moved", moved);
+            }
+        },
+    );
+
 }
 
 fn update_nav_styles(container: &gtk::Box, active: NavItem) {

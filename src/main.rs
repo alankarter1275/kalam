@@ -6,6 +6,7 @@
 mod app;
 mod author;
 pub mod bubbles;
+mod comic_folders;
 mod comics;
 pub mod content_index;
 mod db;

@@ -268,6 +268,84 @@ impl Catalog {
         Ok(conn.last_insert_rowid())
     }
 
+    /// The on-disk folder name for a comic series, creating the folder if it
+    /// does not exist yet (item 2.22: `library/<Series>/` holds the chapter
+    /// files and `covers/`).
+    ///
+    /// The name is derived from the series title once and then stays stable —
+    /// it is not re-derived on every start, because it is embedded in every
+    /// chapter's stored `file_name`, and renaming would mean touching them
+    /// all. A chapter that has already been placed tells us the name; only
+    /// the first placement computes it.
+    ///
+    /// A clash — another folder already using the sanitized title, whether
+    /// ours or a foreign one — is resolved with a `#<series id>` suffix. The
+    /// suffix deliberately starts with `#`: the library folder scan resolves
+    /// folders by their trailing id token, and a bare number there could be
+    /// mistaken for one, while `#3` never is.
+    pub fn ensure_series_folder(&self, series_id: i64) -> Result<String> {
+        let name = self.series_folder_name_for(series_id)?;
+        std::fs::create_dir_all(
+            crate::paths::library_dir().join(&name).join("covers"),
+        )
+        .map_err(DbError::Io)?;
+        Ok(name)
+    }
+
+    /// The series folder's name, without creating anything. The placement
+    /// pass resolves first and creates only when a file is actually about
+    /// to move, so a series whose files are all missing leaves no empty
+    /// folder behind.
+    pub fn series_folder_name_for(&self, series_id: i64) -> Result<String> {
+        // Already placed? Any migrated chapter's file_name starts with the
+        // folder ("Naruto …/0102.cbz").
+        let placed: Option<String> = {
+            let conn = self.conn();
+            conn.query_row(
+                "SELECT b.file_name FROM comic_chapters c
+                 JOIN books b ON b.id = c.book_id
+                 WHERE c.series_id = ?1 AND b.file_name LIKE '%/%'
+                 ORDER BY c.chapter_number ASC LIMIT 1",
+                params![series_id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .and_then(|name| name.split('/').next().map(|s| s.to_string()))
+        };
+        if let Some(folder) = placed {
+            return Ok(folder);
+        }
+
+        let title: String = {
+            let conn = self.conn();
+            conn.query_row(
+                "SELECT title FROM comic_series WHERE id = ?1",
+                params![series_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or_else(|| "Untitled Series".to_string())
+        };
+
+        let base = crate::paths::series_folder_name(&title);
+        let lib = crate::paths::library_dir();
+        let mut name = base.clone();
+        if lib.join(&name).exists() {
+            name = format!("{base} #{series_id}");
+            let mut n = 1;
+            while lib.join(&name).exists() && n < 100 {
+                n += 1;
+                name = format!("{base} #{series_id}-{n}");
+            }
+            if lib.join(&name).exists() {
+                // Every name we are willing to print is taken. The bare id is
+                // not a title a person would pick for a folder, so it is free.
+                name = format!("series-{series_id}");
+            }
+        }
+        Ok(name)
+    }
+
     /// Add a chapter to a comic series, mapping it to a book row.
     pub fn add_comic_chapter(
         &self,
@@ -344,9 +422,8 @@ impl Catalog {
             .query_row(params![series_id], |r| {
                 let cover_uuid: Option<String> = r.get(6)?;
                 let cover_name: Option<String> = r.get(7)?;
-                let cover_path = cover_uuid.and_then(|u| {
-                    cover_name.map(|n| book_dir(&u).join(n))
-                });
+                let cover_path =
+                    cover_uuid.and_then(|u| cover_name.map(|n| resolve_library_file(&u, &n)));
 
                 Ok(ComicSeries {
                     id: r.get(0)?,
@@ -430,9 +507,8 @@ impl Catalog {
             |r| {
                 let cover_uuid: Option<String> = r.get(6)?;
                 let cover_name: Option<String> = r.get(7)?;
-                let cover_path = cover_uuid.and_then(|u| {
-                    cover_name.map(|n| book_dir(&u).join(n))
-                });
+                let cover_path =
+                    cover_uuid.and_then(|u| cover_name.map(|n| resolve_library_file(&u, &n)));
 
                 Ok(ComicSeries {
                     id: r.get(0)?,

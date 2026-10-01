@@ -116,6 +116,24 @@ pub fn sidecar_path(uuid: &str) -> std::path::PathBuf {
     crate::paths::book_dir(uuid).join("kalam.json")
 }
 
+/// Where one book's sidecar lives.
+///
+/// A regular book keeps `kalam.json` beside its file. A comic chapter
+/// (item 2.22) lives in a shared series folder with hundreds of siblings,
+/// so one `kalam.json` per folder is impossible; its sidecar is named for
+/// its uuid inside a hidden `.kalam/` directory — out of sight when a
+/// person browses the series, still beside the files it describes, so it
+/// travels with the library.
+fn sidecar_file_for(book: &Book) -> std::path::PathBuf {
+    match book.file_name.rsplit_once('/') {
+        Some((series, _)) => crate::paths::library_dir()
+            .join(series)
+            .join(".kalam")
+            .join(format!("{}.json", book.uuid)),
+        None => sidecar_path(&book.uuid),
+    }
+}
+
 /// Write one book's sidecar.
 ///
 /// Best-effort by design: the caller ignores the result. A failure here means
@@ -127,11 +145,20 @@ pub fn sidecar_path(uuid: &str) -> std::path::PathBuf {
 /// sidecar that a future rebuild would read as authoritative-but-wrong.
 pub fn write_sidecar(book: &Book, position: Option<(usize, f64)>, marks: &[Annotation]) {
     let data = Sidecar::from_parts(book, position, marks);
-    let dir = crate::paths::book_dir(&book.uuid);
-    if !dir.is_dir() {
+    let final_path = sidecar_file_for(book);
+    // A comic chapter's sidecar sits in `.kalam/`, which may not exist yet
+    // even though the series folder does — create it. For every other book
+    // the directory is the book's own folder, and a missing one means there
+    // are no files to sit beside, so the write is skipped as before.
+    if book.file_name.contains('/') {
+        if let Some(dir) = final_path.parent() {
+            if std::fs::create_dir_all(dir).is_err() {
+                return;
+            }
+        }
+    } else if !crate::paths::book_dir(&book.uuid).is_dir() {
         return;
     }
-    let final_path = sidecar_path(&book.uuid);
     let tmp = final_path.with_extension("json.tmp");
 
     let json = match serde_json::to_string_pretty(&data) {
@@ -172,16 +199,17 @@ pub fn read_sidecar(path: &Path) -> Option<Sidecar> {
 /// What a rebuild would find if `catalog.db` disappeared right now.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SidecarSurvey {
-    /// Book folders in the library.
+    /// Books in the catalog.
     pub books: usize,
-    /// Folders with a readable `kalam.json`.
+    /// Books with a readable sidecar (`kalam.json`, or `.kalam/<uuid>.json`
+    /// for a comic chapter in a series folder).
     pub recoverable: usize,
-    /// Folders with a `kalam.json` that could not be parsed.
+    /// Books whose sidecar exists but could not be parsed.
     pub damaged: usize,
 }
 
 impl SidecarSurvey {
-    /// Folders with no sidecar at all — imported before this existed, or a
+    /// Books with no sidecar at all — imported before this existed, or a
     /// write that failed.
     pub fn missing(&self) -> usize {
         self.books
@@ -197,17 +225,18 @@ impl SidecarSurvey {
 /// that could silently stop running, and the failure would be invisible until
 /// the day someone actually needed them (pitfalls §19). Settings shows the
 /// number.
-pub fn survey() -> SidecarSurvey {
-    let mut out = SidecarSurvey::default();
-    let Ok(entries) = std::fs::read_dir(crate::paths::library_dir()) else {
-        return out;
+pub fn survey(catalog: &Catalog) -> SidecarSurvey {
+    // Counted from the catalog, not from the directory listing: comic
+    // chapters share one series folder (item 2.22), so folders no longer
+    // map one-to-one onto books. The database knows exactly what a rebuild
+    // would need to find.
+    let Ok(books) = catalog.list_books(crate::db::SortKey::Title, "") else {
+        return SidecarSurvey::default();
     };
-    for entry in entries.flatten() {
-        if !entry.path().is_dir() {
-            continue;
-        }
+    let mut out = SidecarSurvey::default();
+    for book in &books {
         out.books += 1;
-        let side = entry.path().join("kalam.json");
+        let side = sidecar_file_for(book);
         if !side.is_file() {
             continue;
         }
@@ -231,11 +260,11 @@ pub fn backfill_missing(catalog: &Catalog) -> usize {
     };
     let mut written = 0;
     for book in books {
-        if sidecar_path(&book.uuid).is_file() {
+        if sidecar_file_for(&book).is_file() {
             continue;
         }
         refresh_for_book(catalog, book.id);
-        if sidecar_path(&book.uuid).is_file() {
+        if sidecar_file_for(&book).is_file() {
             written += 1;
         }
     }

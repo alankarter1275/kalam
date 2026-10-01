@@ -1249,7 +1249,7 @@ fn build_libraries(host: &gtk::Box) {
 /// could quietly stop running, and nobody would notice until the day they
 /// mattered. So the number is on screen.
 fn build_recovery(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    let survey = crate::sidecar::survey();
+    let survey = crate::sidecar::survey(catalog);
     let body = section_card(
         host,
         "document-save-symbolic",

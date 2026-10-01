@@ -319,10 +319,19 @@ impl Catalog {
                     .and_then(|e| e.to_str())
                     .unwrap_or("jpg")
                     .to_ascii_lowercase();
-                let dest_name = format!("cover-restored.{ext}");
-                let dest = book_dir(&book.uuid).join(&dest_name);
-                if fs::create_dir_all(book_dir(&book.uuid)).is_ok() && fs::copy(&src, &dest).is_ok()
-                {
+                // A comic chapter (item 2.22) keeps its cover in the series
+                // folder's `covers/`, stored library-relative; everything
+                // else restores beside the book file.
+                let file_part = format!("cover-restored.{ext}");
+                let (dest_dir, dest_name) = match book.file_name.rsplit_once('/') {
+                    Some((series, _)) => (
+                        crate::paths::library_dir().join(series).join("covers"),
+                        format!("{series}/covers/{file_part}"),
+                    ),
+                    None => (book_dir(&book.uuid), file_part),
+                };
+                let dest = dest_dir.join(&file_part);
+                if fs::create_dir_all(&dest_dir).is_ok() && fs::copy(&src, &dest).is_ok() {
                     self.set_cover_name_quiet(book_id, Some(&dest_name))?;
                 }
             }

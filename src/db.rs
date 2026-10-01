@@ -1,7 +1,7 @@
 //! SQLite catalog access — P1 books + P2 progress + P3 annotations & dictionary.
 
 use crate::models::{Book, BookFormat, ComicChapter, ComicSeries};
-use crate::paths::{book_dir, catalog_db, ensure_data_dirs};
+use crate::paths::{book_dir, catalog_db, ensure_data_dirs, resolve_library_file};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 use std::fs;
@@ -1453,8 +1453,8 @@ impl Catalog {
             b.cover_path = b
                 .cover_name
                 .as_ref()
-                .map(|name| book_dir(&b.uuid).join(name));
-            b.file_path = book_dir(&b.uuid).join(&b.file_name);
+                .map(|name| resolve_library_file(&b.uuid, name));
+            b.file_path = resolve_library_file(&b.uuid, &b.file_name);
         }
         Ok(book)
     }
@@ -1492,8 +1492,8 @@ impl Catalog {
                 b.cover_path = b
                     .cover_name
                     .as_ref()
-                    .map(|name| book_dir(&b.uuid).join(name));
-                b.file_path = book_dir(&b.uuid).join(&b.file_name);
+                    .map(|name| resolve_library_file(&b.uuid, name));
+                b.file_path = resolve_library_file(&b.uuid, &b.file_name);
                 out.insert(b.id, b);
             }
         }
@@ -1609,7 +1609,40 @@ impl Catalog {
             conn.execute("DELETE FROM books WHERE id = ?1", params![id])?;
         }
         let dir = book_dir(&book.uuid);
-        if dir.exists() {
+        // Item 2.22: a comic chapter lives in its series folder, addressed
+        // library-relative, so it has no per-book folder to remove. Delete
+        // the chapter's own files, and take the series folder with them when
+        // this was its last chapter — a folder holding only covers of
+        // deleted chapters is orphans and nothing else. Chapters are copied
+        // to disk before their row is inserted, so any remaining archive
+        // means a live chapter, not a race.
+        if book.file_name.contains('/') {
+            if book.file_path.is_file() {
+                let _ = fs::remove_file(&book.file_path);
+            }
+            if let Some(cover) = &book.cover_path {
+                if cover.is_file() {
+                    let _ = fs::remove_file(cover);
+                }
+            }
+            if let Some(series_dir) = book.file_path.parent() {
+                let has_archives = fs::read_dir(series_dir)
+                    .map(|entries| {
+                        entries.filter_map(|e| e.ok()).any(|e| {
+                            e.path()
+                                .extension()
+                                .and_then(|x| x.to_str())
+                                .is_some_and(|x| {
+                                    x.eq_ignore_ascii_case("cbz") || x.eq_ignore_ascii_case("cbr")
+                                })
+                        })
+                    })
+                    .unwrap_or(true); // unreadable: assume occupied, leave it be
+                if !has_archives {
+                    let _ = fs::remove_dir_all(series_dir);
+                }
+            }
+        } else if dir.exists() {
             let _ = fs::remove_dir_all(&dir);
         }
         // A0 step 3: drop the cover thumbnail so the cache cannot grow with
@@ -1621,6 +1654,36 @@ impl Catalog {
         // here — the cost of an unnecessary pass is far lower than the cost of
         // a book permanently without a thumbnail.
         crate::thumbs::invalidate_backfill_marker(self);
+        Ok(())
+    }
+
+    /// Point a book row at new stored file/cover names without touching any
+    /// files. Used by the comic-series migration (item 2.22), which moves a
+    /// chapter's file and updates its row in the same step, so path
+    /// resolution never sees a half-moved book. `None` leaves that column
+    /// exactly as it was.
+    pub fn set_book_file_names(
+        &self,
+        book_id: i64,
+        file_name: Option<&str>,
+        cover_name: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn();
+        match (file_name, cover_name) {
+            (Some(f), Some(c)) => conn.execute(
+                "UPDATE books SET file_name = ?1, cover_name = ?2 WHERE id = ?3",
+                params![f, c, book_id],
+            )?,
+            (Some(f), None) => conn.execute(
+                "UPDATE books SET file_name = ?1 WHERE id = ?2",
+                params![f, book_id],
+            )?,
+            (None, Some(c)) => conn.execute(
+                "UPDATE books SET cover_name = ?1 WHERE id = ?2",
+                params![c, book_id],
+            )?,
+            (None, None) => 0,
+        };
         Ok(())
     }
 
@@ -1738,8 +1801,8 @@ fn hydrate_books(conn: &Connection, books: &mut [Book]) -> Result<()> {
         book.cover_path = book
             .cover_name
             .as_ref()
-            .map(|name| book_dir(&book.uuid).join(name));
-        book.file_path = book_dir(&book.uuid).join(&book.file_name);
+            .map(|name| resolve_library_file(&book.uuid, name));
+        book.file_path = resolve_library_file(&book.uuid, &book.file_name);
     }
     Ok(())
 }

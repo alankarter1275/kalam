@@ -487,6 +487,18 @@ Because nothing can be built locally, scripted edits need their own safety net:
   and a struct field declared `PathBuf` needs an owned value — `path.clone()`,
   not the `&PathBuf` a `ref` binding gives you.
 
+- **A private type cannot appear in a `pub` item (2026-10-01, step 3 of
+  the PDF plan; one failed CI run).** A private enum used as a `pub`
+  model field / `pub` method parameter trips the `private_interfaces`
+  lint, which `-D warnings` turns red. The whole file's convention is
+  `pub` types anyway -- match it (or make the field and method private;
+  same-module callers do not need `pub`). And a second lesson from the
+  same run: **do not report a CI result from `gh run watch`'s exit code
+  alone.** The watch exited 0 while the run had failed, and "step 3 is
+  green" was said on that basis. Always confirm with an explicit
+  `gh run view <id> --json conclusion` (or the run's own ci-logs commit)
+  before calling a run green.
+
 ## 13. A route existing in `app.rs` does not mean the user can reach it
 
 `ReadingList`, `Tags` and `Analytics` had complete pages, `PageSlot` variants

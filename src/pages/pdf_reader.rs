@@ -87,7 +87,7 @@ pub enum PdfDocRequest {
 /// (2.20 step 3). The intent is stored and replayed when the text arrives,
 /// so the first click on a just-opened page is never a dead click.
 #[derive(Debug)]
-enum PdfPendingSelection {
+pub enum PdfPendingSelection {
     Word { slot: PageSlot, x: f64, y: f64 },
     Line { slot: PageSlot, x: f64, y: f64 },
     /// A drag that began before the text was ready. A finished drag cannot

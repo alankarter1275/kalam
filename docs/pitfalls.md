@@ -513,6 +513,14 @@ Because nothing can be built locally, scripted edits need their own safety net:
   the values the new code touches — the borrow checker sees the whole
   function, not just the diff.
 
+- **A helper used only by tests is dead code in the bin (2026-10-01,
+  step 4; one failed CI run).** `cargo clippy --all-targets` compiles the
+  test target where the helper is used, but the plain bin target is
+  compiled too and `dead_code` fires there — test-only reachability does
+  not count. Assert through the production API instead (here: draining
+  the queue the way the worker does), or make the production code
+  genuinely call the helper.
+
 ## 13. A route existing in `app.rs` does not mean the user can reach it
 
 `ReadingList`, `Tags` and `Analytics` had complete pages, `PageSlot` variants

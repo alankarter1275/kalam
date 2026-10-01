@@ -49,11 +49,6 @@ impl PdfOcrJobState {
         self.promoted.pop_front().or_else(|| self.pending.pop_front())
     }
 
-    /// Pages left to recognize (for progress reporting).
-    pub fn remaining(&self) -> usize {
-        self.pending.len() + self.promoted.len()
-    }
-
     /// Move `pages` to the front of the queue, in the order given (the
     /// reader passes reading order). Idempotent, and it can only reorder
     /// what is still queued: a page the scan already finished must not be
@@ -295,14 +290,18 @@ mod tests {
         assert_eq!(state.next_page(), None);
     }
 
+    /// Drain the queue the way the worker does; the drained order is the
+    /// recognition order.
+    fn drain(state: &mut PdfOcrJobState) -> Vec<usize> {
+        std::iter::from_fn(|| state.next_page()).collect()
+    }
+
     #[test]
     fn promotion_is_idempotent() {
         let mut state = PdfOcrJobState::new(vec![1, 2, 3]);
         state.promote(&[3, 2]);
-        assert_eq!(state.remaining(), 3, "no page may be queued twice");
-        assert_eq!(state.next_page(), Some(3));
-        assert_eq!(state.next_page(), Some(2));
-        assert_eq!(state.next_page(), Some(1));
+        state.promote(&[3, 2]);
+        assert_eq!(drain(&mut state), vec![3, 2, 1], "no page may be queued twice");
     }
 
     #[test]
@@ -310,12 +309,8 @@ mod tests {
         let mut state = PdfOcrJobState::new(vec![1, 2, 3, 4]);
         state.promote(&[4, 3]);
         state.promote(&[3, 4]);
-        assert_eq!(state.remaining(), 4);
         // The most recent promotion's order is the one that runs.
-        assert_eq!(state.next_page(), Some(3));
-        assert_eq!(state.next_page(), Some(4));
-        assert_eq!(state.next_page(), Some(1));
-        assert_eq!(state.next_page(), Some(2));
+        assert_eq!(drain(&mut state), vec![3, 4, 1, 2]);
     }
 
     #[test]
@@ -324,10 +319,7 @@ mod tests {
         assert_eq!(state.next_page(), Some(1));
         // Page 1 is done; promoting it again must not requeue it.
         state.promote(&[1]);
-        assert_eq!(state.remaining(), 2);
-        assert_eq!(state.next_page(), Some(2));
-        assert_eq!(state.next_page(), Some(3));
-        assert_eq!(state.next_page(), None);
+        assert_eq!(drain(&mut state), vec![2, 3]);
     }
 
     #[test]
@@ -348,7 +340,6 @@ mod tests {
     fn empty_queue_promotes_nothing_and_finishes() {
         let mut state = PdfOcrJobState::new(Vec::new());
         state.promote(&[1, 2]);
-        assert_eq!(state.remaining(), 0, "promotion cannot resurrect a finished scan");
-        assert_eq!(state.next_page(), None);
+        assert!(drain(&mut state).is_empty(), "promotion cannot resurrect a finished scan");
     }
 }

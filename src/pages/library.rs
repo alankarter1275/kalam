@@ -248,7 +248,7 @@ fn apply_snapshot(
         let card = stat_card(label, value, unit, series, spark_class);
         grid.attach(&card, (i % 2) as i32, (i / 2) as i32, 1, 1);
     }
-    grid.attach(&goal_card(snap), 1, 1, 1, 1);
+    grid.attach(&goal_card(&snap), 1, 1, 1, 1);
     top_row.append(&grid);
     body.append(&top_row);
 
@@ -293,7 +293,7 @@ fn apply_snapshot(
     let feed = &snap.feed;
     if !feed.is_empty() {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        for item in &feed {
+        for item in feed {
             list.append(&history_row(item, sender));
         }
         body.append(&section(

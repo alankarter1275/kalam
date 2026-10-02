@@ -2049,3 +2049,25 @@ A paintable swap on a fixed-size picture is a repaint, not a relayout.
   covers on its snapshot worker applies them from the cache before any
   frame is built — the swap path is never even reached. Doing work
   before the widgets exist beats doing it cheaply after.
+
+## 49. Changing a parameter from borrowed to owned? Grep every call site in the file, not just the ones you edited
+
+**Date:** 2026-10-02, 7.1 step 2b, CI round one.
+
+**What happened:** `build_dashboard` took `&DashboardSnapshot`; its
+replacement `apply_snapshot` takes `Box<DashboardSnapshot>` and
+dereferences to owned. Two call sites the migration never touched
+broke: `goal_card(snap)` now passed an owned snapshot to a function
+still expecting a reference (E0308), and `for item in &feed` became a
+double reference when `feed` changed from an owned `Vec` to
+`&Vec` (E0277). Both were in code the edit anchors never overlapped,
+so the §31 read-through — which catches structural damage — could not
+have seen them; only the compiler can. With no local `cargo`, CI was
+the first compiler, and it did its job.
+
+**The rule:** when a variable or parameter changes from a reference to
+owned (or back), grep the whole file for its uses and check each one's
+expectation — a borrow-change ripples into call sites the diff never
+touches, same family as §46's copy-to-owned refactor. And budget for
+CI round one when there is no local compiler: two or three type errors
+on a big signature change is the norm, not a surprise.

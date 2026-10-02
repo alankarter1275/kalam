@@ -252,8 +252,6 @@ pub struct DashboardSnapshot {
     pub quotes: Vec<(Annotation, QuoteRef)>,
     pub words: Vec<SavedWord>,
     pub lookups: Vec<DictLookup>,
-    pub events: Vec<ReadingEvent>,
-    pub sessions: Vec<LibrarySession>,
     pub goal: i64,
     pub finished_this_year: i64,
     pub errors: Errors,
@@ -653,8 +651,6 @@ impl LibraryService {
             quotes,
             words,
             lookups,
-            events,
-            sessions,
             // Infallible by construction (they fall back to a default inside
             // the catalog), so they contribute no error rows.
             goal: cat.reading_goal(),
@@ -1362,7 +1358,9 @@ mod tests {
             snap.errors
         );
         assert_eq!(snap.stats.total_books, 1);
-        assert_eq!(snap.events.len(), 1);
+        // The raw events/sessions left the snapshot when the feed moved
+        // in (2b): the dashboard's contract is the merged feed itself.
+        assert_eq!(snap.feed.len(), 1);
         // The goal counters are infallible, so they always have a value.
         assert!(snap.goal >= 0);
         assert!(snap.finished_this_year >= 0);
@@ -1376,8 +1374,7 @@ mod tests {
         assert!(snap.errors.is_empty(), "{:?}", snap.errors);
         assert_eq!(snap.stats.total_books, 0);
         assert!(snap.recently_opened.is_empty());
-        assert!(snap.events.is_empty());
-        assert!(snap.sessions.is_empty());
+        assert!(snap.feed.is_empty());
     }
 
     #[test]

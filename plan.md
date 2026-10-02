@@ -114,10 +114,22 @@ One rule, copied from the readers, applied everywhere:
   ends with a pointer. Every later step checks against it; every future
   plan.md states compliance.
 - **Step 2a — migrate the book page + book float: DONE** (2026-10-02;
-  see the step log). Owner field-test owed (§38).
+  field-tested same day — see the step log and pitfalls §45. The reads
+  moved; the freeze that remains is a different cost class).
+- **Step 2a.1 — attribute the post-apply blocks, then decide the fix
+  (inserted after the 2a field test, before any further migration).**
+  The apply path has no span, so the watchdog cannot say whether the
+  0.7-1.4 s blocks after `route_open:book` / `dialog_open:book_float`
+  are apply code, GTK realize/style/layout of the filled tree, or the
+  idle work (icons, thumbnail backfill, cover swaps). Guard and span
+  every one of those paths, re-run the same field session, and only
+  then choose the fix — and only then migrate more screens. Details in
+  the step log.
 - **Step 2b — migrate the library dashboard + home.** The two heaviest
-  constructions (897 / 459 ms first open; reads already ≤ 11 ms) and the
-  two landing screens. Same recipe.
+  constructions (897 / 459-858 ms first open; reads already ≤ 11 ms) and
+  the two landing screens. Same recipe — **after 2a.1 says what the
+  recipe must add**. Home also carries the field run's biggest blocks
+  (3.9 s + 2.9 s after its span) and the cover-swap stream question.
 - **Step 2c — migrate settings + author.** 465 / 232 ms of widget
   building with trivial or no reads.
 - **Step 3 — startup (7.5), now with measured targets**: the 2.3 s
@@ -285,6 +297,56 @@ CI green after every step; every commit HEAD-checked (§36).
     after a mutation the flags update without a re-read, so a failed
     write leaves them unchanged (as before — the write reported the
     error either way).
+
+- **Step 2a — field test (owner, 2026-10-02): the reads moved; the
+  freeze that remains is a different cost class.** The owner's report:
+  "seems faster than before, but still not instant — the window and
+  the info appear at once" (no visible skeleton), plus this log:
+  - `route_open:book` **1 ms** (was 96-686 ms) and
+    `dialog_open:book_float` **6 ms** (was 31 ms). The 2a migration
+    did what it claimed: construction is now instant, the reads are
+    off the UI thread.
+  - But then: **1355 ms block** starting ~118 ms after the book span
+    ended; **751 ms block** after the float span; **667 ms block with
+    no span open**; home (unmigrated, 2b scope) **858 ms span + 3958 ms
+    and 2955 ms blocks after it**.
+  - **Why no skeleton was visible:** the worker round-trip is ~100 ms
+    on his machine, the apply (`Loaded` handler) then blocks the loop
+    through the first paint of the filled tree — so the first frame the
+    user ever sees already carries the data. A skeleton that draws for
+    <100 ms is below perception. Skeleton visibility was never the
+    goal; **time to first painted content** is, and it is still
+    ~0.8-1.4 s.
+  - **What the block is not:** apply code. The rebuild builds on the
+    order of a hundred widgets; the benchmark builds 2,000 cards in
+    7.1 ms. Review of the apply paths (book.rs `Loaded`/`rebuild`,
+    book_float.rs `fill`) finds no expensive code — the suspects are
+    GTK realize/style/layout/paint of the freshly filled tree (and for
+    the float, the new window's first map), the same cost class step 0
+    flagged as "post-construction freezes", now the dominant term.
+  - **But that split is unproven, and proving it is cheap:** the apply
+    handlers carry no `activity` guard and no span, so the watchdog
+    attributes their blocks to whatever route span ended last. The
+    idle work is equally blind: `icons::init` runs at the first idle
+    (`src/main.rs:76`, no guard — measured 493-505 ms in an earlier
+    item, matching the 667 ms no-span block), the thumbnail backfill
+    and cover-swap stream arrive from housekeeping with no labels
+    (`src/app.rs:1850` `start_housekeeping`; `warm_books` at
+    `src/pages/home.rs:530`), and home's 3.9 s block could be any of
+    them.
+  - **One principle violation found in review while chasing this:**
+    `cover_widget_deferred` (`src/widgets/book_row.rs`) calls
+    `path.is_file()` — a disk stat on the UI thread — for every
+    deferred cover, and `fill_author_card`'s avatar check does the
+    same. Micro-ops, but they are exactly what ARCH.md forbids; 2a.1
+    decides fix (probe on the worker, or accept and allowlist with a
+    written reason for the 7.7 static check).
+  - **Conclusion (per §38 and the plan's own risk note):** stop before
+    2b. Migrating eight more screens against a recipe that moved the
+    reads but not the freeze would produce eight more "seems faster,
+    still not instant" reports. Step 2a.1: span and guard the apply
+    paths and the idle work, one more field run, then choose the fix
+    from evidence. Recorded as pitfalls §45.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

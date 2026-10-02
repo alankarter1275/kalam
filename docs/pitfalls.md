@@ -1838,3 +1838,48 @@ lines is not enumeration.
 - The same is true for any "no more X in this function" claim made from
   a diff: run the grep against the whole function body, not the changed
   lines.
+
+## 45. The watchdog can only name what has a span — and an async apply path is a new blind spot
+
+**Date:** 2026-10-02, 7.1 step 2a field test (owner's machine).
+
+**What happened:** the 2a migration worked exactly as built —
+`route_open:book` fell from 96-686 ms to **1 ms**, the float's dialog
+span from 31 ms to **6 ms** — and the owner still reported "seems
+faster, but still not instant", with the window and the information
+appearing at once (no visible skeleton) and 751-1355 ms `[stall]`
+blocks landing right after the spans ended.
+
+Two lessons, one entry:
+
+1. **A skeleton that fills before the first frame draws never exists
+   for the user.** The worker round-trip (~100 ms on his machine) plus
+   the apply handler's work block the main loop through the first
+   paint, so the first frame the user sees already carries the data.
+   That is acceptable — skeleton visibility was never the goal — but
+   it means the *metric* is time to first painted content, and that
+   number did not move enough: the remaining 0.7-1.4 s is the apply
+   plus GTK realize/style/layout/paint of the filled tree, not the
+   reads the migration removed.
+2. **The apply path was born unattributed.** The `Loaded` handlers
+   run outside any route or dialog span, so the watchdog attributed
+   their blocks to whatever span ended last — a guess, and it looked
+   like one ("after route_open:book (took 1 ms)"). The same blindness
+   covers the idle work: `icons::init` at the first idle moment, the
+   thumbnail backfill, the warm-cover swap stream — all main-thread
+   costs with no label, which is why "no route or dialog span was
+   open" appears in the log at all.
+
+**The rules:**
+
+- Every async apply path gets an `activity` guard (and a timing span
+  under `KALAM_TIMING`) from the day it is written — an apply handler
+  is a new place the UI thread can block, and the watchdog cannot
+  name a place it cannot see. This is now part of the screen-open
+  recipe.
+- A migration step is not done when the reads move; it is done when
+  the field log shows where the *remaining* block went. "Seems
+  faster" from the owner is a measurement request, not a pass.
+- Before stamping a recipe on more screens, prove it moves the number
+  the user feels (time to first painted content), not the number the
+  spans report (construction time).

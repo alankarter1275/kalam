@@ -140,15 +140,16 @@ One rule, copied from the readers, applied everywhere:
     "similar to search paths", and both mark the theme dirty, so
     `add_resource_path` would keep the ~500 ms rescan that is the
     actual cost; only the 232 ms of SVG-writing code would go. The
-    honest options are back with the owner: (a) render the reader's
-    custom icons directly from resources, bypassing the icon theme
-    entirely (kills both costs; small visual risk — the icons lose
-    theme recoloring; owner is visual QA), (b) move `icons::init` to
-    the first reader open, which already calls it as a fallback
-    (startup never pays; the first reader open pays ~700 ms once),
-    (c) accept it and re-measure after (1)+(2) — the cover storm was
-    interleaving with the rescan in the 3.4 s block, and it may no
-    longer matter.
+    honest options went to the owner with the recommendation, and he
+    chose **accept and re-measure** (2026-10-02): do nothing about
+    icons for now; the field run for (1)+(2) shows whether the rescan
+    still matters inside the post-fix blocks. Direct render (load the
+    11 reader glyphs — only the PDF reader references them — straight
+    from the app, bypassing the icon theme; kills both costs; needs
+    the SVGs' `currentColor` baked to a light gray and one visual
+    check) is the agreed permanent fix if the run still shows the
+    ~730 ms as a standalone bother. Moving the cost into the first
+    reader open was declined — the readers are the owner's fast part.
   - **(4) Re-measure after the owner's next run:** the 3.4 s
     convergence block and the cover-tailed blocks should collapse;
     whatever "after book_page_rebuild" remains on a cold open is the

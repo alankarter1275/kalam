@@ -394,7 +394,23 @@ CI green after every step; every commit HEAD-checked (§36).
   "literal" }` construction (E0308). Both failures were in lines the
   diff never touched — the lesson is in the entry. Fixed with
   `.as_ref()` in the getter and `.to_string()` in the test. ARCH.md
-  gained the rule in the screen-open recipe. **The owner's next field
+  gained the rule in the screen-open recipe.
+  - **CI round two caught something older than the step: the comic
+    series-name heuristic truncated titles containing c/v-words (§47).**
+    `importing_a_comic_lands_it_in_its_series_folder` failed once — its
+    uuid-padded series name "Import Series cd272d85-…" was truncated to
+    "Import Series" because the `" c"` chapter-marker keyword matched
+    the uuid's first character and the old number scanner skipped
+    letters until it found digits ("chapter 272"). A ~6-8 % flake by
+    uuid shape, and a real bug for users ("The Chronicles 1950" →
+    "The", chapter 1950). Fixed in `comics.rs`: a strict `marker_number`
+    (complete word, optional short alphabetic prefix, at most five
+    digits — the app's own chapter-stem ceiling) replaces the lenient
+    scanner at all seven sites in both parsers, and both
+    trailing-digit rules get the same five-digit cap. Two regression
+    tests: the uuid shapes (all four failure forms) and every marker
+    form that must keep parsing. Not this step's code — 2.22-era — but
+    the gate is the gate. **The owner's next field
   run — the same session as today's — is the gate: its log decides
   whether the 0.7-1.4 s blocks are apply code (optimize the fills) or
   realize/paint (a different fix), what the 667 ms block was, and what

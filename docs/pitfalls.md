@@ -1937,3 +1937,47 @@ callers whose text was untouched.
   For signature/type changes, the review surface is every use site,
   and CI compiling `--all-targets` (tests included) is the safety net
   that catches what the read cannot.
+
+## 47. A flaky test is a distribution with a cause — this one was a real bug that truncated series titles
+
+**Date:** 2026-10-02, 7.1 step 2a.1 CI round two.
+
+**What happened:** the branch's tests failed once in a test untouched by
+the change — `importing_a_comic_lands_it_in_its_series_folder`, which
+passes a uuid-padded series name through the comic import. The series
+came out as "Import Series" instead of "Import Series cd272d85-…": the
+chapter-marker heuristic's `" c"` keyword (for `c12`-style notation)
+matched the space before the uuid, and the number scanner skipped *any*
+characters until it found digits — so `d272d85-…` became "chapter 272"
+and everything after "Import Series" was deleted as a "marker".
+
+The activation probability is what made it look like noise: the random
+uuid must begin `c` + digit for the `" c"` path (about one run in
+sixteen), or end in an all-digit tail group for the trailing-digits path
+(about one in two hundred). Roughly a 6-8 % flake — and a **real,
+user-facing bug** the whole time: a series called "The Chronicles 1950"
+would have its title truncated to "The" with a phantom chapter 1950 on
+import.
+
+**The fix:** the marker parser now requires a complete word — an
+optional short alphabetic prefix ("c12", "vol2", "Ch. 5") followed by
+digits, at most five of them (the app's own ceiling: chapter stems are
+four digits, five only past 9999), with nothing alphanumeric after the
+digits — applied at every keyword and delimiter site in both the series
+sanitizer and the filename parser, plus the same five-digit cap on both
+trailing-digit rules. Regression tests pin the exact uuid shapes and
+every marker form that must keep parsing.
+
+**The rules:**
+
+- A test that fails intermittently is not weather. Compute or bound the
+  probability, find the input that varies (here: a random uuid), and
+  read the code path until the failure is *deterministic in your head*.
+  "Rerun until green" hides exactly the bugs users eventually find.
+- Lenient scanners — skip-any-characters-until-digits — turn every
+  nearby word into a potential false match. A marker (chapter number,
+  volume, issue) is a *word*: parse it as one, and bound it by the
+  domain's real range.
+- The published CI logs carry the panic line but not the assertion's
+  left/right values; `ci-logs/test-full.txt` (the unfiltered log, same
+  publish commit) does. Read the full log before diagnosing.

@@ -183,20 +183,62 @@ fn strip_bracket_tags(s: &str) -> String {
     words.join(" ")
 }
 
-fn extract_leading_number(token: &str) -> Option<f32> {
-    let trimmed = token.trim();
-    let cleaned = trimmed
-        .trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.')
-        .trim();
-    let num_str: String = cleaned
+/// A chapter/volume marker: a short numeric token, optionally preceded
+/// by a marker word or prefix ("Ch. 5", "c12", "vol2", "#12").
+///
+/// It must be a **complete word** — digits, at most one '.', one range
+/// dash ("12-13" keeps its first half), at most five of them (the app's
+/// own ceiling: chapter stems are four digits, five only past 9999) —
+/// with nothing alphanumeric after the digits. The old scan skipped
+/// *any* characters until it found digits, so the keyword `" c"`
+/// matched the start of a uuid-padded series name and read
+/// `"d272d85-…"` as chapter 272, truncating the title. CI caught it as
+/// a 1-in-16 flake (the uuid has to start `c` + digit); a user's
+/// "The Chronicles 1950" would have hit the same truncation for real.
+fn marker_number(token: &str) -> Option<f32> {
+    let mut rest = token.trim_start();
+    // An optional marker word ahead of the digits: "Ch. 5", "Vol. 2".
+    if let Some(space) = rest.find(char::is_whitespace) {
+        let head = rest[..space].trim_end_matches(['.', '-', ',']);
+        if !head.is_empty()
+            && head.len() <= 7
+            && head.chars().all(|c| c.is_alphabetic() || c == '#')
+        {
+            rest = rest[space..].trim_start();
+        }
+    }
+    let word = rest.split_whitespace().next()?;
+    // A short alphabetic prefix fused to the number: "c12", "vol2",
+    // "chapter12". Longer than any marker word and it is a title word.
+    let prefix_end = word
+        .char_indices()
+        .find(|(_, c)| !c.is_alphabetic())
+        .map(|(i, _)| i)
+        .unwrap_or(word.len());
+    if prefix_end > 7 {
+        return None;
+    }
+    let body = &word[prefix_end..];
+    let mut digits = 0;
+    for c in body.chars() {
+        if c.is_ascii_digit() {
+            digits += 1;
+        } else if c == '.' || c == '-' {
+            // A number can hold one dot and range dashes.
+        } else {
+            // A letter after the digits: a word that merely contains
+            // digits, not a marker.
+            return None;
+        }
+    }
+    if digits == 0 || digits > 5 {
+        return None;
+    }
+    let lead: String = body
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '.')
         .collect();
-    if num_str.chars().any(|c| c.is_ascii_digit()) {
-        num_str.parse::<f32>().ok()
-    } else {
-        None
-    }
+    lead.parse::<f32>().ok()
 }
 
 /// Clean and sanitize a comic series name by removing extraneous chapter/issue suffixes
@@ -212,7 +254,7 @@ pub fn sanitize_comic_series(raw: &str) -> (String, Option<f32>) {
     // 1. Check for trailing " - Ch. X", " - Chapter X", " - c0X", " - #X", " - Vol. X"
     if let Some(dash_idx) = trimmed.rfind(" - ") {
         let after_dash = trimmed[dash_idx + 3..].trim();
-        if let Some(num) = extract_leading_number(after_dash) {
+        if let Some(num) = marker_number(after_dash) {
             let prefix = trimmed[..dash_idx].trim();
             if !prefix.is_empty() && prefix.chars().any(|c| c.is_alphabetic()) {
                 return (prefix.to_string(), Some(num));
@@ -236,7 +278,7 @@ pub fn sanitize_comic_series(raw: &str) -> (String, Option<f32>) {
     for kw in &keywords {
         if let Some(idx) = lower.rfind(kw) {
             let after = &trimmed[idx + kw.len()..];
-            if let Some(num) = extract_leading_number(after) {
+            if let Some(num) = marker_number(after) {
                 let prefix = trimmed[..idx]
                     .trim_end_matches([' ', '-', '_', '.', ','])
                     .trim();
@@ -269,7 +311,18 @@ pub fn sanitize_comic_series(raw: &str) -> (String, Option<f32>) {
         }
         if start < end {
             let num_str: String = chars[start..end].iter().collect();
-            if let Ok(num) = num_str.parse::<f32>() {
+            // Five digits is the ceiling a chapter number can reach
+            // (stems are four, five only past 9999). A longer digit run
+            // — a date, a serial, a uuid's all-digit tail group — is
+            // not a chapter marker, and treating one as a marker
+            // truncates the series title.
+            let digit_count = num_str.chars().filter(|c| c.is_ascii_digit()).count();
+            let num = if digit_count <= 5 {
+                num_str.parse::<f32>().ok()
+            } else {
+                None
+            };
+            if let Some(num) = num {
                 if start > 0 {
                     let sep = chars[start - 1];
                     if sep == ' ' || sep == '-' || sep == '_' || sep == '.' || sep == ',' {
@@ -374,7 +427,7 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
     }
 
     // 1. Check if stem is purely a chapter/volume number (e.g. "01", "001", "Ch. 5", "c12")
-    if let Some(num) = extract_leading_number(&trimmed) {
+    if let Some(num) = marker_number(&trimmed) {
         let rest: String = trimmed
             .to_lowercase()
             .replace("chapter", "")
@@ -421,7 +474,7 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
     if parts.len() >= 2 {
         let series_cand = parts[0].trim().to_string();
         if !series_cand.is_empty() && series_cand.chars().any(|c| c.is_alphabetic()) {
-            if let Some(num) = extract_leading_number(parts[1]) {
+            if let Some(num) = marker_number(parts[1]) {
                 let title = if parts.len() >= 3 {
                     Some(parts[2..].join(" - "))
                 } else {
@@ -434,7 +487,7 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
                     ..Default::default()
                 };
             } else if parts.len() >= 3 {
-                if let Some(num) = extract_leading_number(parts[2]) {
+                if let Some(num) = marker_number(parts[2]) {
                     return ComicInfo {
                         series: Some(series_cand),
                         number: Some(num),
@@ -485,7 +538,7 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
                 .trim();
             let num_cand = &trimmed[idx + kw.len()..];
             if !series_cand.is_empty() && series_cand.chars().any(|c| c.is_alphabetic()) {
-                if let Some(num) = extract_leading_number(num_cand) {
+                if let Some(num) = marker_number(num_cand) {
                     let mut title = None;
                     if let Some(after_num_idx) = num_cand.find(|c: char| c.is_alphabetic()) {
                         let potential_title = num_cand[after_num_idx..]
@@ -528,7 +581,18 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
         }
         if start < end {
             let num_str: String = chars[start..end].iter().collect();
-            if let Ok(num) = num_str.parse::<f32>() {
+            // Five digits is the ceiling a chapter number can reach
+            // (stems are four, five only past 9999). A longer digit run
+            // — a date, a serial, a uuid's all-digit tail group — is
+            // not a chapter marker, and treating one as a marker
+            // truncates the series title.
+            let digit_count = num_str.chars().filter(|c| c.is_ascii_digit()).count();
+            let num = if digit_count <= 5 {
+                num_str.parse::<f32>().ok()
+            } else {
+                None
+            };
+            if let Some(num) = num {
                 if start > 0 {
                     let sep = chars[start - 1];
                     if sep == ' ' || sep == '-' || sep == '_' || sep == '.' || sep == ',' {
@@ -1184,6 +1248,64 @@ mod tests {
         let t2 = parse_comic_title("Naruto - Ch. 3");
         assert_eq!(t2.series.as_deref(), Some("Naruto"));
         assert_eq!(t2.number, Some(3.0));
+    }
+
+    /// A uuid padded onto a series name — what the import tests do to
+    /// stay unique — must not be read as a chapter marker. The old
+    /// lenient scan matched the keyword " c" against the start of
+    /// "cd272d85-…" and invented chapter 272, truncating the title to
+    /// "Import Series" (the CI flake of 2026-10-02, pitfalls §47: it
+    /// only fired when the random uuid began "c" + digit, about one run
+    /// in sixteen).
+    #[test]
+    fn a_uuid_padded_series_name_is_not_a_chapter_marker() {
+        for series in [
+            // " c" + digits: the exact CI failure shape.
+            "Import Series cd272d85-3d0b-486e-a077-4aba134cf1c4",
+            // " c" + digit + dash: the word check must reject it too.
+            "Import Series c272-3d0b-486e-a077-4aba134cf1c4",
+            // " v" is a keyword as well.
+            "Import Series vd272d85-3d0b-486e-a077-4aba134cf1c4",
+            // An all-digit tail group trips the trailing-digit rule
+            // unless the digit cap stops it (about one run in 200).
+            "Import Series 9d272d85-3d0b-486e-a077-123456789012",
+            // No c/v prefix, letters through the tail: the plain case.
+            "Import Series 9d272d85-3d0b-486e-a077-4aba134cf1c4",
+        ] {
+            let (clean, num) = sanitize_comic_series(series);
+            assert_eq!(clean, series, "the series name must survive intact");
+            assert_eq!(num, None, "no chapter number may be invented from {series}");
+        }
+    }
+
+    /// The marker forms the heuristics exist for keep parsing after the
+    /// strict word check replaced the lenient scan.
+    #[test]
+    fn chapter_marker_forms_still_parse() {
+        let eq = |raw: &str, name: &str, num: f32| {
+            let (clean, parsed) = sanitize_comic_series(raw);
+            assert_eq!(clean, name, "series from {raw:?}");
+            assert_eq!(parsed, Some(num), "number from {raw:?}");
+        };
+        eq("Naruto c12", "Naruto", 12.0);
+        eq("Naruto c12-13", "Naruto", 12.0);
+        eq("Naruto v2", "Naruto", 2.0);
+        eq("Berserk chapter 356", "Berserk", 356.0);
+        eq("Naruto 0102", "Naruto", 102.0);
+        eq(
+            "Naruto – Digital Colored Comics - Ch. 2",
+            "Naruto - Digital Colored Comics",
+            2.0,
+        );
+
+        // Fused prefix forms resolve through the filename parser, where
+        // the parent folder supplies the series name.
+        let info = parse_comic_filename(Path::new("/tmp/Naruto/c12.cbz"));
+        assert_eq!(info.series.as_deref(), Some("Naruto"));
+        assert_eq!(info.number, Some(12.0));
+        let info = parse_comic_filename(Path::new("/tmp/Naruto/vol2.cbz"));
+        assert_eq!(info.series.as_deref(), Some("Naruto"));
+        assert_eq!(info.number, Some(2.0));
     }
 }
 

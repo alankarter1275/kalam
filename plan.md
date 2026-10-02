@@ -386,8 +386,14 @@ CI green after every step; every commit HEAD-checked (§36).
   the split between apply code and GTK realize/paint the field log
   could not make. The watchdog's unnamed fallback line now reads
   "no activity was open" (it is no longer only routes and dialogs).
-  No behavior change; the activity-stack tests still pass unchanged
-  (they bind and compare labels, which owned strings satisfy). ARCH.md
+  No behavior change. **One CI-caught defect, recorded as pitfalls
+  §46:** the Copy-to-owned label refactor broke `last_ended_activity()`
+  (E0507 — the old tuple was `Copy`, so `.map()` had silently copied
+  the `Option` out through the `MutexGuard`'s deref; owned labels made
+  it a move out of a borrow) and one test's `ActivityGuard { label:
+  "literal" }` construction (E0308). Both failures were in lines the
+  diff never touched — the lesson is in the entry. Fixed with
+  `.as_ref()` in the getter and `.to_string()` in the test. ARCH.md
   gained the rule in the screen-open recipe. **The owner's next field
   run — the same session as today's — is the gate: its log decides
   whether the 0.7-1.4 s blocks are apply code (optimize the fills) or

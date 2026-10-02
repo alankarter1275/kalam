@@ -279,7 +279,8 @@ pub fn last_ended_activity() -> Option<(String, Duration, Duration)> {
         .unwrap_or_else(|e| e.into_inner());
     state
         .last_ended
-        .map(|(label, took, ended)| (label.clone(), took, ended.elapsed()))
+        .as_ref()
+        .map(|(label, took, ended)| (label.clone(), *took, ended.elapsed()))
 }
 
 #[cfg(test)]
@@ -316,7 +317,7 @@ mod activity_tests {
         // An orphan guard (its entry already gone) must not remove some
         // other activity's entry.
         let orphan = ActivityGuard {
-            label: "test:never-pushed",
+            label: "test:never-pushed".to_string(),
         };
         drop(orphan);
         let (label, _) = current_activity().expect("real activity must survive");

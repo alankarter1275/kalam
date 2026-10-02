@@ -1903,3 +1903,37 @@ Two lessons, one entry:
 - Before stamping a recipe on more screens, prove it moves the number
   the user feels (time to first painted content), not the number the
   spans report (construction time).
+
+## 46. Copy-ness can be load-bearing — a Copy-to-owned refactor breaks code that looks perfectly general
+
+**Date:** 2026-10-02, 7.1 step 2a.1 (caught by CI, not by review).
+
+**What happened:** widening the activity stack's labels from `&'static
+str` to `String` (so a task's runtime name could ride along) broke
+`last_ended_activity()` with E0507 — *cannot move out of dereference
+of `MutexGuard`*. The getter's shape, `state.last_ended.map(...)`,
+looks perfectly general; it only compiled before because the old tuple
+`(&'static str, Duration, Instant)` was `Copy`, so `.map()` silently
+**copied** the `Option` out through the guard's `Deref`. Make one field
+owned and the copy becomes a move out of a borrow, and the failure
+surfaces in a getter far from the type change. The same refactor broke
+a test that constructed `ActivityGuard { label: "literal" }` — a
+struct-literal site the signature change never touched.
+
+The fixes were mechanical — `.as_ref().map(|(l, took, ended)| (l.clone(),
+*took, ended.elapsed()))` and `.to_string()` on the literal — but both
+were invisible to the diff read, because the broken lines were **not in
+the diff**. Only the field types changed; the compile errors were in
+callers whose text was untouched.
+
+**The rules:**
+
+- When a type change makes a value non-`Copy`, grep for every consumer
+  that binds, moves, or pattern-matches it — especially behind a
+  `Deref` (guards, locks, iterators). "It compiled before" is not
+  evidence it was written to be general; it may have been riding on
+  `Copy`.
+- The diff read is the compile pass only for the lines in the diff.
+  For signature/type changes, the review surface is every use site,
+  and CI compiling `--all-targets` (tests included) is the safety net
+  that catches what the read cannot.

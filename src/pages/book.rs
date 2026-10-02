@@ -14,7 +14,9 @@ use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
 use crate::service::{BookPageSnapshot, LibraryService};
 use crate::widgets::author_links::replace_author_links;
-use crate::widgets::book_row::{cover_widget_deferred, invalidate_cover_cache};
+use crate::widgets::book_row::{
+    cache_decoded_cover, cover_widget_deferred, invalidate_cover_cache,
+};
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -48,11 +50,23 @@ pub enum BookPageOut {
     },
 }
 
+/// What the page's worker delivers: the service snapshot plus the
+/// covers it decoded on the same thread. The apply puts the covers in
+/// the cache *before* any cover frame is built, so every frame takes
+/// its already-cached branch and no swap is ever scheduled for this
+/// page (7.1 step 2a.2) — the cover arrives with the data, never after
+/// it.
+#[derive(Debug)]
+pub struct PageLoad {
+    pub snap: BookPageSnapshot,
+    pub covers: Vec<crate::preload::DecodedCover>,
+}
+
 #[derive(Debug)]
 pub enum BookPageMsg {
     /// The page snapshot finished on its worker (7.1 step 2a) — the page
     /// painted its skeleton in `init` and fills everything from this.
-    Loaded(Box<BookPageSnapshot>),
+    Loaded(Box<PageLoad>),
     /// The chapter-titles parse finished on its worker. Arrives after
     /// `Loaded` (it is only requested once the book's format is known)
     /// and is applied whenever it lands — titles are per book id.
@@ -674,11 +688,19 @@ impl Component for BookPageModel {
         root: &Self::Root,
     ) {
         match msg {
-            BookPageMsg::Loaded(snap) => {
+            BookPageMsg::Loaded(load) => {
                 // The worker's snapshot is the only source of page state.
                 // Every read the old sync path did inline — including the
                 // two `book_detail` calls — is this one arrival.
                 self.loading = false;
+                let PageLoad { snap, covers } = *load;
+                // The covers were decoded on the snapshot's own worker.
+                // Into the cache now, before the rebuild below builds any
+                // cover frame: each then takes its already-cached branch,
+                // and this page never schedules a cover swap (2a.2).
+                for decoded in &covers {
+                    cache_decoded_cover(decoded);
+                }
                 let BookPageSnapshot {
                     detail,
                     progress,
@@ -688,7 +710,7 @@ impl Component for BookPageModel {
                     author_profile,
                     author_other_books,
                     file_size,
-                } = *snap;
+                } = snap;
                 report_errors(&detail.errors);
                 report_errors(&stats.errors);
                 if let Some(err) = annotations_error {
@@ -980,14 +1002,45 @@ impl BookPageModel {
             "Reading book details",
             move |_reporter| {
                 let mut snap = service.book_page(book_id);
+                let mut covers = Vec::new();
                 if let Some(book) = &snap.detail.book {
                     snap.file_size = std::fs::metadata(&book.file_path).ok().map(|m| m.len());
+                    // The page's own covers, decoded here so the apply
+                    // finds them cached: the hero, the four author
+                    // thumbnails, the author avatar (7.1 step 2a.2).
+                    if let Some(cover) = &book.cover_path {
+                        if let Some(d) = crate::preload::decode_for_cache(cover, COVER_W, COVER_H)
+                        {
+                            covers.push(d);
+                        }
+                    }
+                    for other in snap
+                        .author_other_books
+                        .iter()
+                        .filter(|b| b.id != book.id)
+                        .take(4)
+                    {
+                        if let Some(cover) = &other.cover_path {
+                            if let Some(d) = crate::preload::decode_for_cache(cover, 36, 52) {
+                                covers.push(d);
+                            }
+                        }
+                    }
+                    if let Some(photo) = snap
+                        .author_profile
+                        .as_ref()
+                        .and_then(|p| p.photo_path.as_ref())
+                    {
+                        if let Some(d) = crate::preload::decode_for_cache(photo, 40, 40) {
+                            covers.push(d);
+                        }
+                    }
                 }
-                snap
+                PageLoad { snap, covers }
             },
             |_| {},
-            move |snap| {
-                let _ = s.send(BookPageMsg::Loaded(Box::new(snap)));
+            move |load| {
+                let _ = s.send(BookPageMsg::Loaded(Box::new(load)));
             },
         );
     }

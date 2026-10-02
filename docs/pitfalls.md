@@ -1981,3 +1981,35 @@ every marker form that must keep parsing.
 - The published CI logs carry the panic line but not the assertion's
   left/right values; `ci-logs/test-full.txt` (the unfiltered log, same
   publish commit) does. Read the full log before diagnosing.
+
+## 48. A 0 ms callback can still freeze the UI — never swap widgets by container mutation
+
+**Date:** 2026-10-02, 7.1 step 2a.1 field run; fixed in step 2a.2.
+
+**What happened:** after the async migration, every main-thread callback
+measured 0 ms in the timing log — and the owner still saw 250 ms-3.4 s
+freezes, three of six ending exactly on a cover arrival. The deferred
+cover frame filled itself by removing its placeholder child and
+appending a picture (`book_row.rs` `swap_in_cover`): a container
+mutation, which schedules a relayout of the frame's ancestors. One
+arrival is nothing; a home screen streaming two dozen covers is a
+relayout storm — 0 ms of "our" code, seconds of GTK layout, and the
+watchdog could only say "after task_item:Preloading covers".
+
+**The fix:** the deferred frame now has exactly one child, forever — a
+fixed-size picture whose paintable is swapped in place when the cover
+arrives. The placeholder gradient is the frame's own background (no
+class is ever toggled); the paintless picture is transparent over it.
+A paintable swap on a fixed-size picture is a repaint, not a relayout.
+
+**The rules:**
+
+- "My callback is fast" is not the question. The question is what GTK
+  work the callback *schedules*: `remove`/`append` on a realized
+  container relayouts its ancestors, a css-class toggle re-styles the
+  node, and a paintable swap on a fixed-size widget repaints. Pick the
+  cheapest one that can express the change, always.
+- The second half of the fix is ordering: a page that decodes its own
+  covers on its snapshot worker applies them from the cache before any
+  frame is built — the swap path is never even reached. Doing work
+  before the widgets exist beats doing it cheaply after.

@@ -119,24 +119,40 @@ One rule, copied from the readers, applied everywhere:
 - **Step 2a.1 — attribute the post-apply blocks: DONE and CLOSED**
   (owner approved 2026-10-02; field run same day — see the step log:
   our code is innocent everywhere, the freezes are GTK-side).
-- **Step 2a.2 — fix what the log named (proposed, awaiting the
-  owner's go).** (1) Make the deferred-cover swap layout-neutral —
-  `swap_in_cover` mutates the frame's children (`remove` + `append`,
-  `src/widgets/book_row.rs:984-987`), so every cover arrival re-layouts
-  its ancestors; a fixed-size picture whose paintable is swapped costs
-  a repaint instead of a relayout. (2) Decode the book page's and the
-  float's own covers (hero + author thumbnails, ≤ 5) on the page's
-  snapshot worker, before `Loaded` applies — `cover_widget_deferred`
-  then hits its "already decoded" branch and these screens never swap
-  at all. (3) Attempt the icon-theme rescan fix with a GResource
-  (`IconTheme::add_resource_path` does not rescan the filesystem
-  themes; verify in implementation) — if GTK still rescans, the
-  fallback question (move `icons::init` to the first reader open,
-  which already calls it) comes back to the owner. (4) Re-measure:
-  the 3.4 s startup convergence block should collapse into its parts,
-  and whatever "after book_page_rebuild" block remains on a cold open
-  is the page's own GTK layout cost — a separate, later question,
-  attacked only if it still matters after (1) and (2). The apply path has no span, so the
+- **Step 2a.2 — fix what the log named: (1) and (2) implemented
+  2026-10-02 (owner's go); (3)'s premise failed verification and the
+  decision returns to the owner; field run owed.**
+  - **(1) Layout-neutral cover swap — done.** The deferred cover frame
+    now has exactly one child forever: a fixed-size picture whose
+    paintable is swapped in place. The placeholder gradient is the
+    frame's own background (no css class is ever toggled); the old
+    `remove`-and-`append` (`swap_in_cover`) is gone. A paintable swap
+    on a fixed-size picture is a repaint, not a relayout (§48).
+  - **(2) Page/float covers decoded on their own worker — done.** The
+    book page's snapshot worker decodes the hero, the four author
+    thumbnails and the author avatar; the float's decodes its hero;
+    the `Loaded` handlers put them in the cache *before* any cover
+    frame is built, so these screens take the already-cached branch
+    and never schedule a swap at all. The `warm_covers` calls stay
+    (they skip the cached), covering `Refresh` and worker misses.
+  - **(3) The GResource premise failed verification — not built.** The
+    GTK docs describe `IconTheme`'s resource path as behaving
+    "similar to search paths", and both mark the theme dirty, so
+    `add_resource_path` would keep the ~500 ms rescan that is the
+    actual cost; only the 232 ms of SVG-writing code would go. The
+    honest options are back with the owner: (a) render the reader's
+    custom icons directly from resources, bypassing the icon theme
+    entirely (kills both costs; small visual risk — the icons lose
+    theme recoloring; owner is visual QA), (b) move `icons::init` to
+    the first reader open, which already calls it as a fallback
+    (startup never pays; the first reader open pays ~700 ms once),
+    (c) accept it and re-measure after (1)+(2) — the cover storm was
+    interleaving with the rescan in the 3.4 s block, and it may no
+    longer matter.
+  - **(4) Re-measure after the owner's next run:** the 3.4 s
+    convergence block and the cover-tailed blocks should collapse;
+    whatever "after book_page_rebuild" remains on a cold open is the
+    page's own GTK layout cost — attacked only if it still matters. The apply path has no span, so the
   watchdog cannot say whether the 0.7-1.4 s blocks after
   `route_open:book` / `dialog_open:book_float` are apply code, GTK
   realize/style/layout of the filled tree, or the idle work. The

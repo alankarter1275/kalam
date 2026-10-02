@@ -70,6 +70,7 @@ pub const PRELOAD_AHEAD: usize = 24;
 /// A decoded cover on its way back to the main thread.
 ///
 /// Deliberately plain data: `Vec<u8>` crosses threads, `gdk::Texture` does not.
+#[derive(Debug)]
 pub struct DecodedCover {
     /// The *original* cover path — the cache is keyed on it, so that
     /// invalidation on a cover change keeps working.
@@ -102,6 +103,20 @@ pub fn decode_rgba(path: &Path, w: i32, h: i32) -> Option<DecodedCover> {
         height: h,
         rgba: resized.to_rgba8().into_raw(),
     })
+}
+
+/// Decode one cover for the cache on a caller's worker thread, exactly
+/// as [`warm_covers`] would: the thumbnail when one exists, keyed on
+/// the original cover path so the lookup the UI performs later is a
+/// real hit. The page and float snapshot workers use this so their
+/// covers are already cached when the snapshot applies — the deferred
+/// frame then takes its "already decoded" branch and no swap happens
+/// at all (7.1 step 2a.2).
+pub fn decode_for_cache(cover: &Path, w: i32, h: i32) -> Option<DecodedCover> {
+    let src = source_for(cover, w, h);
+    let mut decoded = decode_rgba(&src, w, h)?;
+    decoded.cover = cover.to_path_buf();
+    Some(decoded)
 }
 
 /// Which file to decode for a cover slot: the thumbnail when it exists and is

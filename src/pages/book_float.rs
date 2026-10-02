@@ -41,8 +41,13 @@ use crate::service::{BookDetailSnapshot, LibraryService};
 pub struct FloatSnapshot {
     detail: BookDetailSnapshot,
     progress: Option<(usize, f64)>,
+    /// The hero cover, decoded on the snapshot's worker so the fill
+    /// finds it cached and no swap is ever scheduled (7.1 step 2a.2).
+    covers: Vec<crate::preload::DecodedCover>,
 }
-use crate::widgets::book_row::{cover_widget_deferred, invalidate_cover_cache};
+use crate::widgets::book_row::{
+    cache_decoded_cover, cover_widget_deferred, invalidate_cover_cache,
+};
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -731,8 +736,17 @@ impl Component for BookFloatModel {
     ) {
         match msg {
             BookFloatMsg::Loaded(snap) => {
-                let FloatSnapshot { detail, progress } = *snap;
+                let FloatSnapshot {
+                    detail,
+                    progress,
+                    covers,
+                } = *snap;
                 self.loading = false;
+                // Decoded on the snapshot's own worker; into the cache
+                // before the fill below builds the cover frame (2a.2).
+                for decoded in &covers {
+                    cache_decoded_cover(decoded);
+                }
                 report_errors(&detail.errors);
                 self.book = detail.book;
                 self.in_reading_list = detail.in_reading_list;
@@ -933,13 +947,24 @@ impl BookFloatModel {
         let book_id = self.book_id;
         crate::tasks::spawn_internal(
             "Reading book details",
-            move |_reporter| FloatSnapshot {
-                detail: service.book_detail(book_id),
-                progress: service
+            move |_reporter| {
+                let detail = service.book_detail(book_id);
+                let progress = service
                     .catalog()
                     .get_reading_progress(book_id)
                     .ok()
-                    .flatten(),
+                    .flatten();
+                let mut covers = Vec::new();
+                if let Some(cover) = detail.book.as_ref().and_then(|b| b.cover_path.as_ref()) {
+                    if let Some(d) = crate::preload::decode_for_cache(cover, COVER_W, COVER_H) {
+                        covers.push(d);
+                    }
+                }
+                FloatSnapshot {
+                    detail,
+                    progress,
+                    covers,
+                }
             },
             |_| {},
             move |snap| {

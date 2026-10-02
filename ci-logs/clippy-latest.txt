@@ -1,7 +1,5 @@
-src/pages/library.rs:251:28: [1m[91merror[E0308][0m: mismatched types: expected `&DashboardSnapshot`, found `DashboardSnapshot`
-src/pages/library.rs:296:21: [1m[91merror[E0277][0m: `&&std::vec::Vec<service::DashboardFeedRow>` is not an iterator: `&&std::vec::Vec<service::DashboardFeedRow>` is not an iterator
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+src/service.rs:255:9: [1m[91merror[0m: fields `events` and `sessions` are never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -22,12 +20,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/library.rs:251:28: [1m[91merror[E0308][0m: mismatched types: expected `&DashboardSnapshot`, found `DashboardSnapshot`
-src/pages/library.rs:296:21: [1m[91merror[E0277][0m: `&&std::vec::Vec<service::DashboardFeedRow>` is not an iterator: `&&std::vec::Vec<service::DashboardFeedRow>` is not an iterator
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/service.rs:255:9: [1m[91merror[0m: fields `events` and `sessions` are never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
---- run 37007170355 ---
+--- run 37007531044 ---

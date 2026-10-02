@@ -16,42 +16,42 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m parking_lot_core v0.9.12
 [1m[92m    Checking[0m memmap2 v0.9.11
 [1m[92m    Checking[0m num_cpus v1.17.0
-[1m[92m    Checking[0m fontdb v0.23.0
 [1m[92m    Checking[0m getrandom v0.4.3
-[1m[92m    Checking[0m glib-sys v0.22.9
+[1m[92m    Checking[0m fontdb v0.23.0
 [1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m    Checking[0m glib-sys v0.22.9
 [1m[92m    Checking[0m tempfile v3.27.0
 [1m[92m    Checking[0m string_cache v0.9.0
 [1m[92m    Checking[0m cosmic-text v0.19.0
+[1m[92m    Checking[0m console v0.16.6
 [1m[92m    Checking[0m to_shmem v0.5.0
 [1m[92m    Checking[0m web_atoms v0.2.6
-[1m[92m    Checking[0m stylo_atoms v0.20.0
 [1m[92m    Checking[0m selectors v0.40.0
+[1m[92m    Checking[0m stylo_atoms v0.20.0
 [1m[92m    Checking[0m gobject-sys v0.22.9
 [1m[92m    Checking[0m gio-sys v0.22.9
 [1m[92m    Checking[0m markup5ever v0.39.0
 [1m[92m    Checking[0m xml5ever v0.39.0
 [1m[92m    Checking[0m stylo_malloc_size_of v0.20.0
 [1m[92m    Checking[0m stylo_dom v0.20.0
-[1m[92m    Checking[0m stylo_traits v0.20.0
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
+[1m[92m    Checking[0m stylo_traits v0.20.0
 [1m[92m    Checking[0m html5ever v0.39.0
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
-[1m[92m    Checking[0m console v0.16.6
-[1m[92m    Checking[0m stylo v0.20.0
-[1m[92m    Checking[0m glib v0.22.10
 [1m[92m    Checking[0m insta v1.48.0
 [1m[92m    Checking[0m gdk-pixbuf-sys v0.22.9
+[1m[92m    Checking[0m stylo v0.20.0
+[1m[92m    Checking[0m glib v0.22.10
 [1m[92m    Checking[0m pango-sys v0.22.9
 [1m[92m    Checking[0m cairo-sys-rs v0.22.9
-[1m[92m    Checking[0m gdk4-sys v0.11.5
 [1m[92m    Checking[0m graphene-sys v0.22.9
+[1m[92m    Checking[0m gdk4-sys v0.11.5
 [1m[92m    Checking[0m getrandom v0.3.4
-[1m[92m    Checking[0m gsk4-sys v0.11.5
 [1m[92m    Checking[0m rand_core v0.9.5
-[1m[92m    Checking[0m gtk4-sys v0.11.5
 [1m[92m    Checking[0m wait-timeout v0.2.1
+[1m[92m    Checking[0m gsk4-sys v0.11.5
 [1m[92m    Checking[0m rusty-fork v0.3.1
+[1m[92m    Checking[0m gtk4-sys v0.11.5
 [1m[92m    Checking[0m rand v0.9.5
 [1m[92m    Checking[0m rand_xorshift v0.4.0
 [1m[92m    Checking[0m rand_chacha v0.9.0
@@ -80,8 +80,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m epub-builder v0.8.3
 [1m[92m    Checking[0m ureq v2.12.1
 [1m[92m    Checking[0m gtk4 v0.11.5
-[1m[92m   Compiling[0m mupdf-sys v0.8.0
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
+[1m[92m   Compiling[0m mupdf-sys v0.8.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
@@ -91,4 +91,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m relm4 v0.11.0
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 44s
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 52s

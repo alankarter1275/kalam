@@ -217,6 +217,36 @@ One rule, copied from the readers, applied everywhere:
      (owner-excluded); the icon rescan (accepted, revisit only if it
      still bothers after 2b); GTK's realize/layout cost of the
      migrated screens (a later question, only if it still matters).
+- **Step 2b.1 — kill the ~3 s startup convergence block (owner's pick,
+  2026-10-02): idle-priority, yielding task drains + pacing the first
+  cover batch.** The theory survived the code reading: both task
+  drains run as one `spawn_future_local` async task looping
+  `while let Ok(item) = rx.recv().await` (`tasks.rs:402`,
+  `tasks.rs:489`) — a buffered burst is processed entirely inside ONE
+  main-loop dispatch (nothing else, not input nor the watchdog's
+  heartbeat timeout, can interrupt a running dispatch), and the source
+  sits at default priority where a continuous stream ties with the
+  heartbeat (`stall.rs:85`) and GDK input. The cover preloader makes
+  it concrete: the first `PRELOAD_AHEAD` (24) covers decode with no
+  pacing at all (`preload.rs:166`) — a burst the comment itself admits
+  stutters. Fix, all surgical:
+  1. `tasks.rs`: both drains move to
+     `MainContext::spawn_local_with_priority(PRIORITY_DEFAULT_IDLE, …)`
+     — strictly below input (0), the heartbeat (0) and GTK resize
+     (110), so housekeeping streams can never win a scheduling race —
+     and yield to the loop after **every** item (a hand-rolled
+     `poll_fn` wake-and-pend: no new dependency, `futures-util` here
+     is default-features-off).
+  2. `preload.rs`: pace every cover (4 ms before each decode after the
+     first). The unpaced 24-batch was the startup burst; `PRELOAD_AHEAD`
+     loses its code role and is removed, comments updated.
+  3. Not touched: the accepted icon rescan (~500 ms, one dispatch);
+     the thumbnail backfill (steps only on missing thumbnails, and its
+     drain now yields); GTK's first layout passes (step 3's question).
+  Acceptance: one more field run — the ~3 s block should break into
+  its parts (rescan ~0.5 s + first layout passes) or vanish between
+  them; if it survives unchanged, the mechanism is elsewhere and the
+  investigation reopens with a span on the backfill.
 - **Step 2c — migrate settings + author.** 465 / 232 ms of widget
   building with trivial or no reads.
 - **Step 3 — startup (7.5), now with measured targets**: the 2.3 s
@@ -605,6 +635,23 @@ CI green after every step; every commit HEAD-checked (§36).
     `warm_covers` pacing (investigation, then likely a small fix:
     pace the first batch too, and/or drain at idle priority so input
     and timeouts always win).
+
+- **Step 2b.1 — implemented 2026-10-02 (the owner picked it over 2c):
+  the task drains yield and run at idle priority; the first cover
+  batch is paced.** `tasks.rs`: both drains (spawn's progress+result,
+  stream's items) moved from `spawn_future_local` to
+  `MainContext::spawn_local_with_priority(PRIORITY_DEFAULT_IDLE, …)`
+  and now await a hand-rolled `yield_to_the_loop()` after every item —
+  one item per dispatch, below input/heartbeat/resize priorities
+  (pitfalls §50 records both halves: a buffered burst inside one
+  dispatch, and a default-priority stream tying with input).
+  `preload.rs`: every cover sleeps 4 ms (the first batch included);
+  `PRELOAD_AHEAD` lost its code role and is removed; the backfill was
+  re-checked and left alone (it steps only on missing thumbnails, and
+  its drain now yields). Field run owed — acceptance: the ~3 s block
+  breaks into its parts or vanishes; if it survives unchanged, the
+  mechanism is elsewhere and the investigation reopens with a span on
+  the backfill.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

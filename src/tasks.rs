@@ -45,6 +45,23 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
+/// Give the main loop one turn: after every delivered item, the drain
+/// futures below await this so input events, the stall watchdog's
+/// heartbeat timeout and GTK's layout passes all get their dispatch
+/// before the next item — even when the channel holds a burst.
+///
+/// Hand-rolled because the crate's `futures-util` is default-features
+/// off; this is `yield_now`, and it changes no semantics: the waker
+/// re-readies the task immediately, only *after* the loop has had a
+/// chance to run higher-priority sources (7.1 step 2b.1, pitfalls §50).
+async fn yield_to_the_loop() {
+    std::future::poll_fn(|cx| {
+        cx.waker().wake_by_ref();
+        std::task::Poll::Pending
+    })
+    .await
+}
+
 /// One running task, as the task manager sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskInfo {
@@ -399,17 +416,28 @@ where
         finish(id);
     });
 
-    gtk::glib::spawn_future_local(async move {
-        while let Ok(update) = progress_rx.recv().await {
-            let _a = crate::timing::activity(format!("task_progress:{label}"));
-            set_progress(id, &update);
-            on_progress(update);
-        }
-        if let Ok(value) = result_rx.recv().await {
-            let _a = crate::timing::activity(format!("task_done:{label}"));
-            on_done(value);
-        }
-    });
+    // DEFAULT_IDLE, deliberately below input events, the watchdog's
+    // heartbeat and GTK's resize cycle: a task reporting a flood of
+    // updates must never win a scheduling race against the user (7.1
+    // step 2b.1 — the ~3 s startup block of the third field run).
+    gtk::glib::MainContext::default().spawn_local_with_priority(
+        gtk::glib::Priority::DEFAULT_IDLE,
+        async move {
+            while let Ok(update) = progress_rx.recv().await {
+                let _a = crate::timing::activity(format!("task_progress:{label}"));
+                set_progress(id, &update);
+                on_progress(update);
+                // One item per dispatch: without this, a buffered burst
+                // is processed entirely inside a single main-loop
+                // dispatch that nothing can interrupt.
+                yield_to_the_loop().await;
+            }
+            if let Ok(value) = result_rx.recv().await {
+                let _a = crate::timing::activity(format!("task_done:{label}"));
+                on_done(value);
+            }
+        },
+    );
 }
 
 /// Run `work` on a worker thread, delivering each item it produces to the main
@@ -486,13 +514,20 @@ where
         finish(id);
     });
 
-    gtk::glib::spawn_future_local(async move {
-        // Ends when the worker drops its `Emit`, which closes the channel.
-        while let Ok(item) = item_rx.recv().await {
-            let _a = crate::timing::activity(format!("task_item:{label}"));
-            on_item(item);
-        }
-    });
+    // Same rule as `spawn_with`: idle priority, and one item per main
+    // loop dispatch (the cover preloader's bursts are exactly the flood
+    // this shape exists to survive).
+    gtk::glib::MainContext::default().spawn_local_with_priority(
+        gtk::glib::Priority::DEFAULT_IDLE,
+        async move {
+            // Ends when the worker drops its `Emit`, which closes the channel.
+            while let Ok(item) = item_rx.recv().await {
+                let _a = crate::timing::activity(format!("task_item:{label}"));
+                on_item(item);
+                yield_to_the_loop().await;
+            }
+        },
+    );
 }
 
 /// The worker half of [`spawn_stream_internal`]: hands finished items back one at a

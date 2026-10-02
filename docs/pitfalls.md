@@ -2071,3 +2071,48 @@ expectation — a borrow-change ripples into call sites the diff never
 touches, same family as §46's copy-to-owned refactor. And budget for
 CI round one when there is no local compiler: two or three type errors
 on a big signature change is the norm, not a surprise.
+
+## 50. A channel-drain future swallows a burst whole — and a running dispatch cannot be interrupted
+
+**Date:** 2026-10-02, 7.1 step 2b.1; the ~3 s startup block of three
+consecutive field runs.
+
+**What happened:** every background task delivers through one
+`spawn_future_local` async task looping
+`while let Ok(item) = rx.recv().await { on_item(item) }`. Two
+properties of that shape, neither visible in a profile of "our" code
+(every callback measured 0 ms):
+
+1. **A buffered burst is processed inside a single main-loop
+   dispatch.** When the channel holds N items, one poll of the drain
+   task runs `on_item` N times before returning Pending — and GLib
+   cannot interrupt a running dispatch. Input, the stall watchdog's
+   heartbeat timeout, GTK layout: all wait until the burst is done.
+2. **Default priority ties with input and the heartbeat.** A source
+   at PRIORITY_DEFAULT keeps company with GDK events and timeouts, so
+   a *continuous* stream (one item per dispatch, arriving back to
+   back) can keep the loop busy for seconds without ever letting a
+   50 ms timeout win its turn — the watchdog reported a "block" that
+   no single line of code caused.
+
+The cover preloader supplied the flood: its first 24 covers decoded
+with no pacing (the pacing only started *after* the first batch), so
+startup interleaved a burst of cover swaps with the icon-theme rescan
+and GTK's first layout passes — three seconds of continuously busy
+loop, every individual piece innocent.
+
+**The fix (both halves required):** the drains run at
+`PRIORITY_DEFAULT_IDLE` — strictly below input (0), the heartbeat (0)
+and GTK's resize (110), so a stream can never win a scheduling race —
+and they `yield` to the loop after **every** item, so a burst becomes
+N dispatches with everything else interleaved between them. Plus:
+pace the producer (every cover sleeps 4 ms, first batch included).
+
+**The rules:**
+
+- "Every callback is fast" says nothing: ask what a *burst* does, and
+  at what *priority* the drain runs. Drain loops need an explicit
+  yield per item and a priority below anything user-facing.
+- A producer and its consumer must be paced as a pair; pacing only
+  the steady state leaves the burst at the exact moment the app is
+  busiest.

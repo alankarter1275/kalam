@@ -58,14 +58,6 @@ fn preload_enabled_for(value: Option<&std::ffi::OsStr>) -> bool {
     }
 }
 
-/// How many covers to decode in the first batch — roughly the first four rows
-/// of a six-column grid, i.e. what the user can actually see.
-///
-/// This is a *batch* size, not a budget. [`warm_covers`] keeps going after the
-/// first batch until the list is exhausted; the split exists so the visible
-/// rows are decoded and swapped in first, rather than the user watching a
-/// whole library decode in book order before the top of the screen fills.
-pub const PRELOAD_AHEAD: usize = 24;
 
 /// A decoded cover on its way back to the main thread.
 ///
@@ -158,12 +150,15 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
                 if reporter.cancelled() {
                     return;
                 }
-                // After the visible batch, yield briefly between covers. The
-                // decode itself is off the UI thread, but each finished cover
-                // swaps a widget *on* it, and a few hundred of those back to
-                // back is its own stutter. Off-screen covers have no deadline,
-                // so spending a little longer on them costs nothing visible.
-                if i >= PRELOAD_AHEAD {
+                // Pace every cover, the first batch included (7.1 step
+                // 2b.1). The old unpaced first 24 was a burst of swaps the
+                // main loop had to absorb while it was already doing GTK's
+                // first layout passes - the ~3 s startup block of three
+                // field runs. The decode itself is off the UI thread, but
+                // each finished cover swaps a widget *on* it. Off-screen
+                // covers have no deadline, so spreading them costs nothing
+                // visible.
+                if i > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(4));
                 }
                 let src = source_for(&cover, w, h);
@@ -214,8 +209,8 @@ pub fn ahead_of(
     let start = visible_from.min(books.len());
     // Nearest-first, but *all* of them: every card on the page is showing a
     // placeholder, so anything left out of this list would keep showing one
-    // for ever. `warm_covers` decodes the first `PRELOAD_AHEAD` as one batch
-    // and the remainder after, so the visible rows still come first.
+    // for ever. `warm_covers` paces every cover equally, so the visible
+    // rows still come first by order alone.
     //
     // Deduplicated because a page can show the same book twice -- Home lists
     // one in both "continue reading" and "recently added" -- and decoding a

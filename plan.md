@@ -186,8 +186,10 @@ One rule, copied from the readers, applied everywhere:
     fix (or the decision that the remainder is GTK-internal) follows
     from that evidence.
 - **Step 2b — Home and the library dashboard off the UI thread: DONE
-  (2026-10-02, owner's go same day; field run owed). See the step log
-  below.**
+  and CLOSED by the field run (2026-10-02, third run). Home's share of
+  the startup blocks is gone and the Home-scroll freeze the owner
+  reported is gone with it. One stubborn block remains — see the step
+  log.**
   1. **Home first** — it is inside the startup convergence block the
      owner measured (2956 + 1552 ms). Today `init` calls `rebuild()`
      inline (`home.rs:184`), which runs `service.home()` (`home.rs:318`)
@@ -567,6 +569,42 @@ CI green after every step; every commit HEAD-checked (§36).
   - Acceptance holds by construction: neither `init` contains a service
     call (both grep-clean), and the page switch from `SimpleComponent`
     to `Component` matches home/book.
+
+- **Step 2b — field run (owner, 2026-10-02, third run): Home's share
+  is gone, the scroll freeze is gone, the book page's covers now
+  arrive with the data — and one ~3 s startup block survives all three
+  runs unchanged.** Three-run comparison:
+  - Follow-on startup block (home's old build + cover stream):
+    1453 → 1552 → **751 ms** — halved. `home_fill` never even appears
+    in the log's attributions (0-4 ms), and the owner scrolled Home
+    this time: **no stall line at all** — the unnamed 4363 ms scroll
+    freeze from run two is gone.
+  - Book page: fills 4/6 ms; blocks 655/451 ms — and for the first
+    time the blocks end on `book_page_rebuild` itself, not on cover
+    arrivals: the covers decoded on the page's own worker (2a.2 part
+    2) are arriving with the snapshot exactly as designed. What
+    remains is the known "later question": GTK realize/style/layout of
+    the freshly filled page.
+  - Float: 250 ms, fill 4 ms — GTK window map, unchanged class.
+  - First frame: 384 ms (icons_init's own code measured 74 ms this
+    run).
+  - **The survivor: the ~3 s startup convergence block (3456 → 2956 →
+    3055 ms).** It starts ~100-250 ms after `icons_init` ends and ends
+    near the organizer's 0-ms done-callback (coincidental marker, per
+    app.rs:1943). With home's fill now 0-4 ms, this block is no longer
+    any page's code: it is the startup *stream convergence* — the
+    icon-theme rescan (accepted, ~500 ms), the cover preload's first
+    24-cover burst (PRELOAD_AHEAD decodes with no pacing before it),
+    the thumbnail backfill's progress events, and GTK's first
+    layout/paint cycles of the filled home tree, all interleaved
+    continuously enough that the 50 ms heartbeat never wins. The
+    likely mechanism is priority: if the task/cover channel drains at
+    default priority, a back-to-back event stream starves both the
+    heartbeat timeout AND user input — the freeze is real, not a
+    watchdog artifact. Next: read `tasks.rs` channel priorities and
+    `warm_covers` pacing (investigation, then likely a small fix:
+    pace the first batch too, and/or drain at idle priority so input
+    and timeouts always win).
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

@@ -12,7 +12,7 @@ use crate::db::{Catalog, ShelfKind};
 use crate::models::{Book, BookFormat};
 use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
-use crate::service::LibraryService;
+use crate::service::{BookPageSnapshot, LibraryService};
 use crate::widgets::author_links::replace_author_links;
 use crate::widgets::book_row::{cover_widget_deferred, invalidate_cover_cache};
 use crate::widgets::charts::star_picker;
@@ -50,6 +50,13 @@ pub enum BookPageOut {
 
 #[derive(Debug)]
 pub enum BookPageMsg {
+    /// The page snapshot finished on its worker (7.1 step 2a) — the page
+    /// painted its skeleton in `init` and fills everything from this.
+    Loaded(Box<BookPageSnapshot>),
+    /// The chapter-titles parse finished on its worker. Arrives after
+    /// `Loaded` (it is only requested once the book's format is known)
+    /// and is applied whenever it lands — titles are per book id.
+    ChaptersLoaded(Vec<String>),
     Delete,
     /// The single-book delete finished on its worker.
     DeleteDone {
@@ -82,6 +89,9 @@ pub enum BookPageMsg {
 
 pub struct BookPageModel {
     service: LibraryService,
+    /// The page's book id, known from `init` — the route is per book, so a
+    /// Refresh racing the first snapshot still has the id to ask for.
+    book_id: i64,
     book: Option<Book>,
     in_reading_list: bool,
     finished: bool,
@@ -90,6 +100,24 @@ pub struct BookPageModel {
     /// cheap once extracted, but there is no reason to repeat it.
     chapter_titles: Vec<String>,
     chapter_titles_for: i64,
+    /// True from `init` until the first `Loaded` arrives: the skeleton
+    /// phase. The not-found wording must not flash during it.
+    loading: bool,
+    /// A chapter-titles parse is in flight; the journey card says
+    /// "Loading chapter list…" rather than "unavailable" while it is.
+    chapters_loading: bool,
+    /// The file-open button is wired once, when data first arrives — the
+    /// path is fixed for the page's lifetime, and a re-load (metadata
+    /// saved, remaster done) must not stack another handler.
+    file_btn_wired: bool,
+    // The snapshot state below replaced live reads in the fill functions
+    // (7.1 step 2a): rebuild is now pure view-from-model.
+    progress: Option<(usize, f64)>,
+    stats: crate::service::BookStatsSnapshot,
+    annotations: Vec<crate::db::Annotation>,
+    author_profile: Option<crate::db::AuthorProfile>,
+    author_other_books: Vec<Book>,
+    file_size: Option<u64>,
 }
 
 #[relm4::component(pub)]
@@ -608,30 +636,32 @@ impl Component for BookPageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let service = LibraryService::new(catalog);
-        let snap = service.book_detail(book_id);
-        report_errors(&snap.errors);
+        // Roadmap 7.1 step 2a: the page paints its skeleton immediately and
+        // every read — database, the EPUB parse for chapter titles, even the
+        // file-size stat — happens on a worker. `route_open:book` used to
+        // measure 96-686 ms on the owner's machine; the skeleton is the
+        // ~15 ms that remains.
         let mut model = BookPageModel {
-            in_reading_list: snap.in_reading_list,
-            finished: snap.finished,
+            book_id,
+            in_reading_list: false,
+            finished: false,
             journey_expanded: false,
             chapter_titles: Vec::new(),
             chapter_titles_for: 0,
+            loading: true,
+            chapters_loading: false,
+            file_btn_wired: false,
+            progress: None,
+            stats: Default::default(),
+            annotations: Vec::new(),
+            author_profile: None,
+            author_other_books: Vec::new(),
+            file_size: None,
             service,
-            book: snap.book,
+            book: None,
         };
         let widgets = view_output!();
-
-        // Wired once, not in rebuild (which runs on every message): the file
-        // path is fixed for the page's lifetime, so stacking handlers would
-        // open N file managers after N messages.
-        if let Some(book) = &model.book {
-            let path = book.file_path.clone();
-            widgets.file_open_btn.connect_clicked(move |_| {
-                open_in_file_manager(&path);
-            });
-        }
-
-        model.reload_state(book_id);
+        model.request_snapshot(book_id, &sender);
         model.rebuild(&widgets, &sender);
         ComponentParts { model, widgets }
     }
@@ -644,6 +674,83 @@ impl Component for BookPageModel {
         root: &Self::Root,
     ) {
         match msg {
+            BookPageMsg::Loaded(snap) => {
+                // The worker's snapshot is the only source of page state.
+                // Every read the old sync path did inline — including the
+                // two `book_detail` calls — is this one arrival.
+                self.loading = false;
+                let BookPageSnapshot {
+                    detail,
+                    progress,
+                    stats,
+                    annotations,
+                    annotations_error,
+                    author_profile,
+                    author_other_books,
+                    file_size,
+                } = *snap;
+                report_errors(&detail.errors);
+                report_errors(&stats.errors);
+                if let Some(err) = annotations_error {
+                    crate::notify::error("Could not read your highlights", &err);
+                }
+                self.book = detail.book;
+                self.in_reading_list = detail.in_reading_list;
+                self.finished = detail.finished;
+                self.progress = progress;
+                self.stats = stats;
+                self.annotations = annotations;
+                self.author_profile = author_profile;
+                self.author_other_books = author_other_books;
+                self.file_size = file_size;
+
+                // Wired once, not in rebuild (which runs on every message):
+                // the file path is fixed for the page's lifetime, so
+                // stacking handlers would open N file managers after N
+                // loads. A `Refresh` re-load must not rewire it.
+                if !self.file_btn_wired {
+                    if let Some(book) = &self.book {
+                        self.file_btn_wired = true;
+                        let path = book.file_path.clone();
+                        widgets.file_open_btn.connect_clicked(move |_| {
+                            open_in_file_manager(&path);
+                        });
+                    }
+                }
+
+                // Chapter titles are the expensive half (an EPUB open and
+                // spine walk): parsed on their own worker and filled in
+                // whenever they arrive. Only EPUBs have a spine to read.
+                if let Some(book) = &self.book {
+                    if book.format == BookFormat::Epub && self.chapter_titles_for != book.id {
+                        self.chapters_loading = true;
+                        let path = book.file_path.clone();
+                        let cache = crate::paths::reader_cache_dir(&book.uuid);
+                        let s = sender.input_sender().clone();
+                        crate::tasks::spawn_internal(
+                            "Reading chapter list",
+                            move |_reporter| {
+                                crate::epub_book::OpenBook::open(&path, &cache)
+                                    .map(|ob| {
+                                        ob.spine.iter().map(|c| c.title.clone()).collect()
+                                    })
+                                    .unwrap_or_default()
+                            },
+                            |_| {},
+                            move |titles| {
+                                let _ = s.send(BookPageMsg::ChaptersLoaded(titles));
+                            },
+                        );
+                    }
+                }
+            }
+            BookPageMsg::ChaptersLoaded(titles) => {
+                self.chapters_loading = false;
+                if let Some(book) = &self.book {
+                    self.chapter_titles = titles;
+                    self.chapter_titles_for = book.id;
+                }
+            }
             BookPageMsg::Delete => {
                 if let Some(book) = &self.book {
                     let id = book.id;
@@ -673,6 +780,15 @@ impl Component for BookPageModel {
                 Ok(()) => {
                     crate::notify::success("Book removed", &title);
                     self.book = None;
+                    // Drop the snapshot state too: the cards read it, and
+                    // a deleted book's numbers under "Book not found"
+                    // would be a lie.
+                    self.progress = None;
+                    self.stats = Default::default();
+                    self.annotations = Vec::new();
+                    self.author_profile = None;
+                    self.author_other_books = Vec::new();
+                    self.file_size = None;
                     sender.output(BookPageOut::Deleted { book_id: id }).ok();
                 }
                 // Silently doing nothing was the worst outcome here: the book
@@ -688,15 +804,19 @@ impl Component for BookPageModel {
                             self.service.catalog().remove_from_reading_list(id),
                             "Could not update the reading list",
                         ) {
+                            self.in_reading_list = false;
                             crate::notify::info("Removed from reading list", &title);
                         }
                     } else if crate::notify::report(
                         self.service.catalog().add_to_reading_list(id),
                         "Could not update the reading list",
                     ) {
+                        self.in_reading_list = true;
                         crate::notify::success("Added to reading list", &title);
                     }
-                    self.reload_state(id);
+                    // No re-read: the flag above is the write's outcome. The
+                    // old `reload_state` paid three queries on the UI thread
+                    // to learn what this branch already knows (7.1 step 2a).
                 }
             }
             BookPageMsg::SetRating(half_stars) => {
@@ -708,13 +828,20 @@ impl Component for BookPageModel {
                     } else {
                         format!("{stars} of 5 \u{2605}")
                     };
-                    crate::notify::outcome(
+                    let saved = crate::notify::outcome(
                         self.service.catalog().set_book_rating(id, half_stars),
                         "Rating saved",
                         &detail,
                         "Could not save the rating",
                     );
-                    self.reload_state(id);
+                    if saved {
+                        if let Some(book) = self.book.as_mut() {
+                            // Half-stars, the same unit the picker shows.
+                            book.rating = half_stars;
+                        }
+                    }
+                    // The star picker redraws from `book.rating` on the
+                    // rebuild below — no re-read needed.
                 }
             }
             BookPageMsg::OpenAuthor(name) => {
@@ -754,13 +881,13 @@ impl Component for BookPageModel {
                         self.service.catalog().set_book_finished(id, becoming),
                         "Could not update the book",
                     ) {
+                        self.finished = becoming;
                         if becoming {
                             crate::notify::success("Marked as finished", &title);
                         } else {
                             crate::notify::info("Marked as unread", &title);
                         }
                     }
-                    self.reload_state(id);
                 }
             }
             BookPageMsg::EditMetadata => {
@@ -789,9 +916,10 @@ impl Component for BookPageModel {
                 sender.output(BookPageOut::ViewHighlights).ok();
             }
             BookPageMsg::Refresh => {
-                if let Some(id) = self.book.as_ref().map(|b| b.id) {
-                    self.reload_state(id);
-                }
+                // After a metadata save or a remaster the page needs fresh
+                // rows — same worker path as the initial load. Chapter
+                // titles are cached per book id and are not re-parsed.
+                self.request_snapshot(self.book_id, &sender);
             }
             BookPageMsg::RemasterComic => {
                 if let Some(book) = &self.book {
@@ -837,38 +965,31 @@ fn report_errors(errors: &[String]) {
 }
 
 impl BookPageModel {
-    /// Re-read the book row and the mutable state the widgets must reflect.
+    /// Ask a worker for the page snapshot — the initial load and every
+    /// `Refresh` use the same path.
     ///
-    /// This used to be three separate swallowed reads spread over four call
-    /// sites, two of which re-read the book row themselves first.
-    fn reload_state(&mut self, book_id: i64) {
-        let snap = self.service.book_detail(book_id);
-        report_errors(&snap.errors);
-        self.book = snap.book;
-        self.in_reading_list = snap.in_reading_list;
-        self.finished = snap.finished;
-    }
-
-    /// Spine titles for the journey + progress location. Cached per book;
-    /// returned owned so callers can keep using `self` afterwards (a
-    /// `&mut self`-rooted reference would pin the page's whole borrow).
-    fn chapter_titles(&mut self) -> Vec<String> {
-        if let Some(book) = &self.book {
-            if self.chapter_titles_for != book.id || self.chapter_titles.is_empty() {
-                self.chapter_titles = if book.format == BookFormat::Epub {
-                    crate::epub_book::OpenBook::open(
-                        &book.file_path,
-                        &crate::paths::reader_cache_dir(&book.uuid),
-                    )
-                    .map(|ob| ob.spine.iter().map(|s| s.title.clone()).collect())
-                    .unwrap_or_default()
-                } else {
-                    Vec::new()
-                };
-                self.chapter_titles_for = book.id;
-            }
-        }
-        self.chapter_titles.clone()
+    /// The whole read (book row, flags, progress, stats, highlights, author
+    /// profile) happens off the UI thread; the page applies it when
+    /// `Loaded` arrives. The file-size stat rides along in the worker: it
+    /// is a filesystem question, not a catalog one, so it does not belong
+    /// in `LibraryService`.
+    fn request_snapshot(&self, book_id: i64, sender: &ComponentSender<Self>) {
+        let service = LibraryService::new(self.service.catalog().clone());
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Reading book details",
+            move |_reporter| {
+                let mut snap = service.book_page(book_id);
+                if let Some(book) = &snap.detail.book {
+                    snap.file_size = std::fs::metadata(&book.file_path).ok().map(|m| m.len());
+                }
+                snap
+            },
+            |_| {},
+            move |snap| {
+                let _ = s.send(BookPageMsg::Loaded(Box::new(snap)));
+            },
+        );
     }
 
     /// Refill every host from model state. Called from init and after every
@@ -876,19 +997,37 @@ impl BookPageModel {
     /// per-widget invalidation, and it can't drift out of sync.
     fn rebuild(&mut self, widgets: &BookPageModelWidgets, sender: &ComponentSender<Self>) {
         // Hero.
-        let chapters = self.chapter_titles();
+        let chapters = self.chapter_titles.clone();
         fill_cover(&widgets.cover_host, self.book.as_ref());
         fill_meta(&widgets.meta_host, self.book.as_ref(), sender);
         fill_progress(
             &widgets.prog_pct,
             &widgets.prog_loc,
             &widgets.prog_fill,
-            self.service.catalog(),
+            self.progress,
             self.book.as_ref(),
             &chapters,
         );
 
-        if let Some(book) = &self.book {
+        if self.loading && self.book.is_none() {
+            // Skeleton phase (7.1 step 2a): the snapshot is still on its
+            // worker. Say so, rather than flashing "was removed" for a book
+            // that is merely still loading.
+            widgets.title.set_label("Loading…");
+            widgets.remaster_btn.set_visible(false);
+            widgets
+                .description
+                .set_label("Reading this book's details…");
+            while let Some(c) = widgets.author_host.first_child() {
+                widgets.author_host.remove(&c);
+            }
+            while let Some(c) = widgets.rating_host.first_child() {
+                widgets.rating_host.remove(&c);
+            }
+            while let Some(c) = widgets.tags_flow.first_child() {
+                widgets.tags_flow.remove(&c);
+            }
+        } else if let Some(book) = &self.book {
             widgets.title.set_label(&book.title);
             let tx = sender.input_sender().clone();
             replace_author_links(
@@ -942,12 +1081,19 @@ impl BookPageModel {
                 "Add to reading list"
             }));
 
-        // Cards.
+        // Cards — every fill is pure view-from-model state; the snapshot
+        // worker is the only thing that sets that state.
         fill_stats_card(widgets, self, &chapters);
         fill_highlights_card(&widgets.highlights_host, self, &chapters);
-        fill_author_card(widgets, self.book.as_ref(), self.service.catalog(), sender);
+        fill_author_card(
+            widgets,
+            self.book.as_ref(),
+            self.author_profile.as_ref(),
+            &self.author_other_books,
+            sender,
+        );
         fill_journey_card(widgets, self, &chapters);
-        fill_file_card(widgets, self.book.as_ref());
+        fill_file_card(widgets, self.book.as_ref(), self.file_size);
     }
 }
 
@@ -1051,7 +1197,7 @@ fn fill_progress(
     pct: &gtk::Label,
     loc: &gtk::Label,
     fill: &gtk::Box,
-    catalog: &Catalog,
+    progress: Option<(usize, f64)>,
     book: Option<&Book>,
     chapters: &[String],
 ) {
@@ -1065,10 +1211,7 @@ fn fill_progress(
     if chapters.is_empty() {
         loc.set_label("complete");
     } else {
-        let chapter = catalog
-            .get_reading_progress(book.id)
-            .ok()
-            .flatten()
+        let chapter = progress
             .map(|(ci, _)| ci)
             .unwrap_or(0)
             .min(chapters.len() - 1);
@@ -1177,15 +1320,10 @@ fn fill_stats_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chapte
         host.remove(&child);
     }
 
-    // One read for the whole panel. These six queries used to be scattered
-    // through the function and every one of them was swallowed, so a broken
-    // database drew a page saying you had never read this book.
-    let stats = model
-        .book
-        .as_ref()
-        .map(|b| model.service.book_stats(b.id, 7, 3))
-        .unwrap_or_default();
-    report_errors(&stats.errors);
+    // The stats arrive in the page snapshot (7.1 step 2a): nothing is read
+    // here, and the read errors were reported when `Loaded` was applied —
+    // the same six queries, one worker, no UI-thread cost.
+    let stats = &model.stats;
 
     let (total_secs, sessions, est, pace) = if let Some(book) = &model.book {
         let total = stats.total_seconds;
@@ -1391,16 +1529,12 @@ fn fill_highlights_card(host: &gtk::Box, model: &BookPageModel, chapters: &[Stri
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let Some(book) = &model.book else {
+    let Some(_book) = &model.book else {
         return;
     };
-    let annos = match model.service.catalog().get_annotations_for_book(book.id) {
-        Ok(rows) => rows,
-        Err(err) => {
-            crate::notify::error("Could not read your highlights", &err.to_string());
-            Vec::new()
-        }
-    };
+    // The annotations arrive in the page snapshot; the read error (if any)
+    // was reported when `Loaded` was applied.
+    let annos = &model.annotations;
     if annos.is_empty() {
         let none = gtk::Label::new(Some("No highlights yet — select some text in the reader."));
         none.add_css_class("kalam-muted");
@@ -1439,17 +1573,14 @@ fn fill_highlights_card(host: &gtk::Box, model: &BookPageModel, chapters: &[Stri
 fn fill_author_card(
     widgets: &BookPageModelWidgets,
     book: Option<&Book>,
-    catalog: &Catalog,
+    profile: Option<&crate::db::AuthorProfile>,
+    others: &[Book],
     sender: &ComponentSender<BookPageModel>,
 ) {
     let Some(book) = book else {
         return;
     };
     let first_author = book.authors.split(',').next().unwrap_or("").trim();
-    let profile = catalog
-        .get_author_profile_by_name(first_author)
-        .ok()
-        .flatten();
 
     // Avatar: photo if cached, else initials.
     let avatar = &widgets.author_avatar_host;
@@ -1502,11 +1633,7 @@ fn fill_author_card(
     while let Some(child) = books_host.first_child() {
         books_host.remove(&child);
     }
-    let others = crate::author::owned_books_for_author(catalog, first_author)
-        .into_iter()
-        .filter(|b| b.id != book.id)
-        .take(4)
-        .collect::<Vec<_>>();
+    let others: Vec<&Book> = others.iter().filter(|b| b.id != book.id).take(4).collect();
     if others.is_empty() {
         let none = gtk::Label::new(Some("Just this one for now."));
         none.add_css_class("kalam-muted");
@@ -1577,20 +1704,21 @@ fn fill_journey_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chap
         return;
     };
     if chapters.is_empty() {
-        // No TOC (or not an EPUB) — hide the whole card's content gracefully.
-        let none = gtk::Label::new(Some("Chapter list unavailable for this format."));
+        // Distinguish "still parsing the EPUB" from "no TOC exists": the
+        // parse is on a worker and can land a beat after the snapshot.
+        let text = if model.chapters_loading {
+            "Loading chapter list…"
+        } else {
+            // No TOC (or not an EPUB) — hide the whole card's content gracefully.
+            "Chapter list unavailable for this format."
+        };
+        let none = gtk::Label::new(Some(text));
         none.add_css_class("kalam-muted");
         host.append(&none);
         return;
     }
 
-    let (chapter_index, _frac) = model
-        .service
-        .catalog()
-        .get_reading_progress(book.id)
-        .ok()
-        .flatten()
-        .unwrap_or((0, 0.0));
+    let (chapter_index, _frac) = model.progress.unwrap_or((0, 0.0));
     let current = chapter_index.min(chapters.len() - 1);
     let visible = if model.journey_expanded {
         chapters.len()
@@ -1662,7 +1790,7 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-fn fill_file_card(widgets: &BookPageModelWidgets, book: Option<&Book>) {
+fn fill_file_card(widgets: &BookPageModelWidgets, book: Option<&Book>, file_size: Option<u64>) {
     let Some(book) = book else {
         return;
     };
@@ -1672,9 +1800,12 @@ fn fill_file_card(widgets: &BookPageModelWidgets, book: Option<&Book>) {
     while let Some(child) = rows.first_child() {
         rows.remove(&child);
     }
-    let size = std::fs::metadata(&book.file_path)
-        .map(|m| human_size(m.len()))
-        .unwrap_or_else(|_| "—".into());
+    let size = match file_size {
+        Some(bytes) => human_size(bytes),
+        // None means the stat failed on the worker — the old inline
+        // behaviour for a missing file, minus the UI-thread stat.
+        None => "—".into(),
+    };
     let size_label = gtk::Label::new(Some(&size));
     size_label.add_css_class("kalam-meta-val");
     size_label.set_halign(gtk::Align::Start);

@@ -51,8 +51,9 @@
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
 use crate::db::{
-    Annotation, Catalog, DictLookup, EventKind, LibrarySession, LibraryStats, QuoteRef,
-    ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
+    Annotation, AuthorProfile, Catalog, DictLookup, EventKind, LibrarySession, LibraryStats,
+    QuoteRef, ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf,
+    SortKey,
 };
 use crate::models::Book;
 use std::sync::Arc;
@@ -147,6 +148,36 @@ pub struct BookDetailSnapshot {
     pub in_reading_list: bool,
     pub finished: bool,
     pub errors: Errors,
+}
+
+/// Everything the book page draws, in one call (roadmap 7.1 step 2a).
+///
+/// The page builds its skeleton on the UI thread and a worker fills it
+/// when this snapshot arrives, so opening a book never touches the
+/// database, the filesystem or the EPUB parser on the UI thread. It
+/// composes the two existing per-card snapshots and adds the three reads
+/// the fill functions used to do inline: reading position (one read
+/// shared by the hero bar and the journey card), the highlights list,
+/// and the author profile. The file-size stat stays with the page's
+/// worker — it is a filesystem question, not a catalog one.
+#[derive(Debug, Default)]
+pub struct BookPageSnapshot {
+    pub detail: BookDetailSnapshot,
+    /// Current chapter + scroll fraction; `None` until the book is opened.
+    pub progress: Option<(usize, f64)>,
+    pub stats: BookStatsSnapshot,
+    pub annotations: Vec<Annotation>,
+    /// Why the highlights list is empty when that read failed — reported
+    /// with the highlights wording, not a generic database error.
+    pub annotations_error: Option<String>,
+    pub author_profile: Option<AuthorProfile>,
+    /// Other books by the same (first) author, for the author card's
+    /// thumbnails. Read once here instead of in the fill function.
+    pub author_other_books: Vec<Book>,
+    /// Not read by the service (it is DB-pure): the page's worker fills
+    /// this with the file's `fs::metadata` size on its way back, so the
+    /// stat also stays off the UI thread.
+    pub file_size: Option<u64>,
 }
 
 /// The vocabulary page: the visible word list plus its header counts.
@@ -427,6 +458,55 @@ impl LibraryService {
         }
     }
 
+    /// The whole book page in one call. See `BookPageSnapshot`.
+    ///
+    /// Every sub-read degrades exactly as it did when the page did it
+    /// inline: a failed read yields the empty value plus an error row
+    /// (or `annotations_error` with the highlights wording), never a
+    /// panic and never a silent wrong screen.
+    pub fn book_page(&self, book_id: i64) -> BookPageSnapshot {
+        let _t = crate::timing::measure("service_book_page");
+        let detail = self.book_detail(book_id);
+        // One read for both consumers of the reading position: the hero
+        // progress bar and the journey card queried it separately.
+        let progress = self.catalog.get_reading_progress(book_id).ok().flatten();
+        let stats = self.book_stats(book_id, 7, 3);
+        let (annotations, annotations_error) =
+            match self.catalog.get_annotations_for_book(book_id) {
+                Ok(rows) => (rows, None),
+                Err(err) => (Vec::new(), Some(err.to_string())),
+            };
+        let first_author = detail
+            .book
+            .as_ref()
+            .map(|b| b.authors.split(',').next().unwrap_or("").trim().to_string())
+            .unwrap_or_default();
+        let author_profile = if first_author.is_empty() {
+            None
+        } else {
+            self.catalog
+                .get_author_profile_by_name(&first_author)
+                .ok()
+                .flatten()
+        };
+        let author_other_books = if first_author.is_empty() {
+            Vec::new()
+        } else {
+            crate::author::owned_books_for_author(&self.catalog, &first_author)
+        };
+        BookPageSnapshot {
+            detail,
+            progress,
+            stats,
+            annotations,
+            annotations_error,
+            author_profile,
+            author_other_books,
+            // The service is DB-pure; the page's worker fills this.
+            file_size: None,
+        }
+    }
+
     /// Vocabulary matching `query` and `known`, plus the header counts.
     ///
     /// The counts deliberately cover the whole table, not just the page's
@@ -703,6 +783,8 @@ mod tests {
         assert_send::<BookDetailSnapshot>();
         assert_send::<ShelfDetailSnapshot>();
         assert_send::<BookStatsSnapshot>();
+        // The book page snapshot crosses a worker boundary (7.1 step 2a).
+        assert_send::<BookPageSnapshot>();
         assert_send::<ReaderSnapshot>();
         // Added when `all_books` became the 1.2b pilot: it now crosses a
         // thread boundary, so the property has to be compile-checked rather
@@ -719,6 +801,62 @@ mod tests {
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
+    }
+
+    /// Roadmap 7.1 step 2a: the book page snapshot is one fixed set of
+    /// statements. A book with progress, highlights and same-author
+    /// siblings must cost exactly the same as a bare one — the
+    /// count-shaped budget in the proven `perf.rs` pattern (an integer,
+    /// identical on every machine, cannot flake).
+    #[test]
+    fn book_page_statement_count_is_fixed() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let bare = seed(svc.catalog(), "Bare", &[]);
+        let busy = seed(svc.catalog(), "Busy", &[]);
+        // Same author as `bare` (seed always uses "An Author"), plus
+        // progress and highlights: everything the snapshot reads, present
+        // for one book and absent for the other.
+        svc.catalog()
+            .set_reading_progress(busy, 3, 0.5, 10)
+            .expect("seed progress");
+        for i in 0..5 {
+            svc.catalog()
+                .insert_annotation(
+                    busy,
+                    "highlight",
+                    i,
+                    "p",
+                    0,
+                    "p",
+                    9,
+                    "amber",
+                    "solid",
+                    &format!("excerpt {i}"),
+                    "",
+                )
+                .expect("seed annotation");
+        }
+
+        let n_bare = svc.catalog().count_queries(|| svc.book_page(bare));
+        let n_busy = svc.catalog().count_queries(|| svc.book_page(busy));
+        assert_eq!(
+            n_bare, n_busy,
+            "book_page must be a fixed set of statements: {n_bare} for a bare book vs {n_busy} for one with progress and highlights"
+        );
+
+        // And the snapshot carries the seeded state.
+        let snap = svc.book_page(busy);
+        assert_eq!(
+            snap.detail.book.as_ref().map(|b| b.title.as_str()),
+            Some("Busy")
+        );
+        assert_eq!(snap.progress.map(|(c, _)| c), Some(3));
+        assert_eq!(snap.annotations.len(), 5);
+        // Both books share an author, so the list has both — the author
+        // card filters out the book itself when it draws.
+        assert_eq!(snap.author_other_books.len(), 2);
+        assert!(snap.author_other_books.iter().any(|b| b.title == "Bare"));
     }
 
     fn seed(cat: &Catalog, title: &str, tags: &[&str]) -> i64 {

@@ -1784,3 +1784,57 @@ applying to a dead page). Not reproducible from the log alone.
   this critical to its actual call site before calling that work done.
   Two mitigated paths and a third appearance means the pattern, not the
   two sites, is the problem.
+
+## 43. Know the edition before you reach for new syntax — let-chains are not in this repo
+
+**Date:** 2026-10-02, 7.1 step 2a (book page + book float migration).
+
+**What happened:** while converting `SetRating` in `src/pages/book.rs`, the
+first draft used a let-chain:
+
+```rust
+if saved && let Some(book) = self.book.as_mut() { ... }  // does not compile here
+```
+
+The workspace is **edition 2021**; let-chains in `if` conditions stabilized
+in edition 2024. The code would not have compiled — and because this
+sandbox has no Rust toolchain, nothing local would have said so. The
+mistake was caught reading the diff, rewritten as a nested `if` inside
+`if saved { ... }`.
+
+**The rules:**
+
+- Check `Cargo.toml`'s `edition` before using any syntax newer than the
+  repo's baseline. Anything stabilized after edition 2021 is suspect
+  here: let-chains, `gen` blocks, `unsafe extern`, if-let temporaries in
+  match guards.
+- With no local compiler, the diff read is the compile pass. Read new
+  code as the compiler would — borrow by borrow, move by move — before
+  pushing, because CI is a round-trip away.
+
+## 44. §31's enumeration must run to the closing brace — a read can hide below the line you are editing
+
+**Date:** 2026-10-02, 7.1 step 2a.
+
+**What happened:** the §31 pass ("an async rewrite must re-home every side
+effect of the sync path") enumerated the book page's reads and believed
+`fill_author_card` performed two: the author profile and the avatar
+photo. After the conversion, a re-read of the function found a third,
+sitting ~70 lines below the signature: the other-books thumbnails row
+called `crate::author::owned_books_for_author(catalog, first_author)` —
+a full books-for-author query inside a fill function, invisible to the
+line-level scan that found the first two.
+
+It was folded into `BookPageSnapshot.author_other_books` (the service
+reads it once; the page filters out the book itself when drawing), but
+the miss proves the process hole: enumeration that stops at the "interesting"
+lines is not enumeration.
+
+**The rules:**
+
+- Enumerate a function's reads **to its closing brace**, sequentially,
+  before declaring it converted. The expensive call is wherever the
+  author last needed data, not near the top.
+- The same is true for any "no more X in this function" claim made from
+  a diff: run the grep against the whole function body, not the changed
+  lines.

@@ -106,18 +106,15 @@ One rule, copied from the readers, applied everywhere:
 - **Step 0 — measure: DONE** (see the step log). Spans + watchdog +
   smoke-report section shipped CI-green; the owner's field run produced
   the ranked list above.
-- **Step 1 — ARCH.md.** The prescriptive principles document (owner
-  approved 2026-10-01): threading model, layering, state flow, budgets —
-  short, copied from what the readers already do. Lands with the first
-  migration. Every later step checks against it; every future plan.md
-  states compliance.
-- **Step 2a — migrate the book page + book float.** The most-touched
-  surfaces; carries the EPUB-parse violation (686 ms on one book) and the
-  1.15 s first-dialog freeze. Skeleton first; one worker snapshot
-  (book_detail once, annotations, stats, author rows); chapter-titles
-  parse off the open path entirely and filled in on arrival; covers
-  through the existing deferred path. Budget test as it lands. Owner
-  field-test after this step (§38).
+- **Step 1 — ARCH.md: DONE** (landed with step 2a, 2026-10-02). The
+  prescriptive principles document (owner approved 2026-10-01): the one
+  rule, threading model, layering, the screen-open recipe, memory
+  budgets, enforcement order. The old living doc (navigation notes,
+  the stale `lopdf` mention) stays in git history; the new document
+  ends with a pointer. Every later step checks against it; every future
+  plan.md states compliance.
+- **Step 2a — migrate the book page + book float: DONE** (2026-10-02;
+  see the step log). Owner field-test owed (§38).
 - **Step 2b — migrate the library dashboard + home.** The two heaviest
   constructions (897 / 459 ms first open; reads already ≤ 11 ms) and the
   two landing screens. Same recipe.
@@ -227,6 +224,68 @@ CI green after every step; every commit HEAD-checked (§36).
   - **The ranked list arrived (owner's machine, 2026-10-02)** — see the
     next section. It orders steps 2–3 below.
 
+- **Step 2a — book page + book float migrated: implemented 2026-10-02.**
+  - **`service.rs`**: new `BookPageSnapshot` — `detail`, `progress`
+    (`Option<(usize, f64)>`, `get_reading_progress`'s actual return; the
+    plan's `(i64, f32)` guess was corrected against the code), `stats`,
+    `annotations` + `annotations_error` (the highlights toast keeps its
+    own wording), `author_profile`, `author_other_books`
+    (`owned_books_for_author`, the read §44 found hiding deep in
+    `fill_author_card`), and `file_size: Option<u64>` — which the
+    service deliberately leaves `None`; the page's worker fills it with
+    the `fs::metadata` stat, keeping the service DB-pure and the stat
+    off the UI thread. `book_page()` composes the existing
+    `book_detail`/`book_stats` plus the three reads the fill functions
+    used to do inline; `Send` asserted with the others.
+  - **`book.rs`**: `init` builds the skeleton (`loading: true`, empty
+    model) and `request_snapshot` sends `book_page` + the file-size stat
+    to a `spawn_internal` worker; `Loaded` applies the snapshot, wires
+    `file_open_btn` once (`file_btn_wired`), and — for EPUBs only —
+    starts the chapter-titles parse on its own worker (the 686 ms
+    violation; now off the open path entirely, cached per book id as
+    before). `ChaptersLoaded` applies it whenever it lands; the journey
+    card says "Loading chapter list…" until then (distinguished from
+    "unavailable for this format"). `Refresh` re-requests through the
+    same worker path using `book_id` (known from `init`, so a Refresh
+    racing the first snapshot still works). The three flag mutations
+    (reading list, finished, rating) flip local state instead of
+    re-reading — the flag is the write's outcome. `DeleteDone` clears
+    the snapshot state with the book. All six fill functions are now
+    pure view-from-model. The `rebuild` skeleton branch (loading, no
+    book) says "Loading…" instead of flashing "was removed".
+  - **`book_float.rs`**: same recipe — skeleton, `FloatSnapshot`
+    (detail + progress) on a worker, `Loaded` applies it, `Refresh`
+    re-requests. The float's `Remove` was the last synchronous delete
+    (a directory removal on the UI thread); it is now a `tasks::spawn`
+    task reporting `RemoveDone`, with the same toast wording. The
+    progress-location line reads `model.progress`, not the catalog.
+  - **Deliberate leftovers, recorded for later steps:** the four
+    single-row flag writes (both files) stay synchronous in 2a — they
+    are single-statement writes whose result the branch already knows,
+    and the 7.7 static boundary check arbitrates the end state, not
+    this step; the avatar's `photo.is_file()` stat (pre-existing,
+    micro-op) stays for the same reason and joins the 7.7 allowlist
+    question; `open_metadata_editor` is 2c/3 scope.
+  - **Tests:** `book_page_statement_count_is_fixed` — a book with
+    progress, five highlights and a same-author sibling issues exactly
+    the same number of statements as a bare book (the `perf.rs`
+    count-shaped pattern), and the snapshot carries the seeded state.
+    Missing-book behaviour was already covered by the `book_detail`
+    tests (`book None`, no errors) and the page's three-way rebuild
+    branch was diff-read against it.
+  - **Two mistakes on the way, both in pitfalls:** §43 (let-chains in
+    an edition-2021 repo — caught on read, no local compiler) and §44
+    (the enumeration that stopped above `owned_books_for_author`). One
+    near-miss: `FloatSnapshot` was module-private inside a `pub enum`
+    (E0446) — caught on read, made `pub`.
+  - **Behaviour notes for the field test:** the page and float now
+    appear instantly and fill in (the approved skeleton behavior);
+    read-error toasts fire once per load instead of once per rebuild
+    (the old path re-reported the same stats errors on every message);
+    after a mutation the flags update without a re-read, so a failed
+    write leaves them unchanged (as before — the write reported the
+    error either way).
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:
@@ -281,5 +340,3 @@ Findings around the list:
   document open off-thread (507 ms total, UI never blocked during it).
 - The small list pages are already fine: shelves 2 ms, review 2 ms,
   reading list 2 ms, analytics 16 ms, tags 14 ms, all-books 8 ms.
-
-## Steps (order revised by the measurement, 2026-10-02)

@@ -32,7 +32,16 @@
 use crate::db::Catalog;
 use crate::models::Book;
 use crate::pages::metadata_editor::open_metadata_editor;
-use crate::service::LibraryService;
+use crate::service::{BookDetailSnapshot, LibraryService};
+
+/// What the float's worker reads: the detail snapshot plus the reading
+/// position its progress line shows. Kept lean on purpose — the float
+/// draws none of the page's cards, so it asks for none of their data.
+#[derive(Debug, Default)]
+pub struct FloatSnapshot {
+    detail: BookDetailSnapshot,
+    progress: Option<(usize, f64)>,
+}
 use crate::widgets::book_row::{cover_widget_deferred, invalidate_cover_cache};
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
@@ -96,6 +105,17 @@ pub enum BookFloatOut {
 
 #[derive(Debug)]
 pub enum BookFloatMsg {
+    /// The float's snapshot finished on its worker (7.1 step 2a) — the
+    /// panel paints its skeleton immediately and fills from this.
+    Loaded(Box<FloatSnapshot>),
+    /// The remove finished on its worker. The float used to delete the
+    /// book synchronously on the UI thread — a directory removal, which
+    /// is exactly what 2.20's principle forbids.
+    RemoveDone {
+        id: i64,
+        title: String,
+        res: Result<(), String>,
+    },
     Close,
     OpenFull,
     Read,
@@ -113,9 +133,15 @@ pub enum BookFloatMsg {
 
 pub struct BookFloatModel {
     service: LibraryService,
+    /// Known from `init`, before any data arrives, so a Refresh racing the
+    /// first snapshot still has an id to ask for.
+    book_id: i64,
     book: Option<Book>,
     in_reading_list: bool,
     finished: bool,
+    /// Skeleton phase: true from `init` until the first `Loaded`.
+    loading: bool,
+    progress: Option<(usize, f64)>,
 }
 
 #[relm4::component(pub)]
@@ -649,15 +675,21 @@ impl Component for BookFloatModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let service = LibraryService::new(catalog);
-        let snap = service.book_detail(book_id);
-        report_errors(&snap.errors);
+        // Roadmap 7.1 step 2a: the panel paints immediately and its reads
+        // (book row, flags, reading position) happen on a worker. This is
+        // the dialog the field report named first — "the pause is when
+        // things OPEN: tapping a book, opening dialogs".
         let model = BookFloatModel {
             service,
-            book: snap.book,
-            in_reading_list: snap.in_reading_list,
-            finished: snap.finished,
+            book_id,
+            book: None,
+            in_reading_list: false,
+            finished: false,
+            loading: true,
+            progress: None,
         };
         let widgets = view_output!();
+        model.request_snapshot(&sender);
         root.set_size_request(720, 420);
         widgets.cover_col.set_size_request(150, -1);
         widgets.progress_wrap.set_size_request(108, -1);
@@ -698,6 +730,23 @@ impl Component for BookFloatModel {
         root: &Self::Root,
     ) {
         match msg {
+            BookFloatMsg::Loaded(snap) => {
+                let FloatSnapshot { detail, progress } = *snap;
+                self.loading = false;
+                report_errors(&detail.errors);
+                self.book = detail.book;
+                self.in_reading_list = detail.in_reading_list;
+                self.finished = detail.finished;
+                self.progress = progress;
+            }
+            BookFloatMsg::RemoveDone { id, title, res } => match res {
+                Ok(()) => {
+                    crate::notify::success("Book removed", &title);
+                    self.book = None;
+                    sender.output(BookFloatOut::Deleted { book_id: id }).ok();
+                }
+                Err(err) => crate::notify::error("Could not remove the book", &err),
+            },
             BookFloatMsg::Close => {
                 sender.output(BookFloatOut::Close).ok();
             }
@@ -727,20 +776,27 @@ impl Component for BookFloatModel {
             }
             BookFloatMsg::Remove => {
                 if let Some(book) = &self.book {
+                    // Drop the cached texture on the main thread (it is a
+                    // GTK texture cache) before the worker removes the book
+                    // — same rule as the page's Delete.
                     if let Some(path) = &book.cover_path {
                         invalidate_cover_cache(path);
                     }
                     let id = book.id;
                     let title = book.title.clone();
-                    if crate::notify::outcome(
-                        self.service.catalog().delete_book(id),
-                        "Book removed",
-                        &title,
-                        "Could not remove the book",
-                    ) {
-                        self.book = None;
-                        sender.output(BookFloatOut::Deleted { book_id: id }).ok();
-                    }
+                    let catalog = self.service.catalog().clone();
+                    let s = sender.input_sender().clone();
+                    // A delete removes a directory; it is a task like any
+                    // other, and the panel must not block on it (2.20).
+                    crate::tasks::spawn(
+                        format!("Deleting {title}"),
+                        move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
+                        |_| {},
+                        move |res| {
+                            let _ = s
+                                .send(BookFloatMsg::RemoveDone { id, title, res });
+                        },
+                    );
                 }
             }
             BookFloatMsg::ToggleReadingList => {
@@ -752,15 +808,17 @@ impl Component for BookFloatModel {
                             self.service.catalog().remove_from_reading_list(id),
                             "Could not update the reading list",
                         ) {
+                            self.in_reading_list = false;
                             crate::notify::info("Removed from reading list", &title);
                         }
                     } else if crate::notify::report(
                         self.service.catalog().add_to_reading_list(id),
                         "Could not update the reading list",
                     ) {
+                        self.in_reading_list = true;
                         crate::notify::success("Added to reading list", &title);
                     }
-                    self.reload_state(id);
+                    // The flag is the write's outcome; no re-read.
                 }
             }
             BookFloatMsg::ToggleFinished => {
@@ -772,13 +830,13 @@ impl Component for BookFloatModel {
                         self.service.catalog().set_book_finished(id, becoming),
                         "Could not update the book",
                     ) {
+                        self.finished = becoming;
                         if becoming {
                             crate::notify::success("Marked as finished", &title);
                         } else {
                             crate::notify::info("Marked as unread", &title);
                         }
                     }
-                    self.reload_state(id);
                 }
             }
             BookFloatMsg::SetRating(half_stars) => {
@@ -789,13 +847,18 @@ impl Component for BookFloatModel {
                     } else {
                         format!("{:.1} / 5", half_stars as f32 / 2.0)
                     };
-                    crate::notify::outcome(
+                    let saved = crate::notify::outcome(
                         self.service.catalog().set_book_rating(id, half_stars),
                         "Rating saved",
                         &detail,
                         "Could not save the rating",
                     );
-                    self.reload_state(id);
+                    if saved {
+                        if let Some(book) = self.book.as_mut() {
+                            // Half-stars, the picker's unit.
+                            book.rating = half_stars;
+                        }
+                    }
                 }
             }
             BookFloatMsg::EditMetadata => {
@@ -814,9 +877,9 @@ impl Component for BookFloatModel {
                 sender.output(BookFloatOut::ShowShelves).ok();
             }
             BookFloatMsg::Refresh => {
-                if let Some(book) = &self.book {
-                    self.reload_state(book.id);
-                }
+                // After a metadata save or a remaster: same worker path as
+                // the initial load.
+                self.request_snapshot(&sender);
             }
             BookFloatMsg::RemasterComic => {
                 if let Some(book) = &self.book {
@@ -862,12 +925,27 @@ fn report_errors(errors: &[String]) {
 }
 
 impl BookFloatModel {
-    fn reload_state(&mut self, book_id: i64) {
-        let snap = self.service.book_detail(book_id);
-        report_errors(&snap.errors);
-        self.book = snap.book;
-        self.in_reading_list = snap.in_reading_list;
-        self.finished = snap.finished;
+    /// Ask a worker for the float's snapshot — initial load and `Refresh`
+    /// use the same path.
+    fn request_snapshot(&self, sender: &ComponentSender<Self>) {
+        let service = LibraryService::new(self.service.catalog().clone());
+        let s = sender.input_sender().clone();
+        let book_id = self.book_id;
+        crate::tasks::spawn_internal(
+            "Reading book details",
+            move |_reporter| FloatSnapshot {
+                detail: service.book_detail(book_id),
+                progress: service
+                    .catalog()
+                    .get_reading_progress(book_id)
+                    .ok()
+                    .flatten(),
+            },
+            |_| {},
+            move |snap| {
+                let _ = s.send(BookFloatMsg::Loaded(Box::new(snap)));
+            },
+        );
     }
 }
 
@@ -900,10 +978,17 @@ fn fill(
     widgets.tags_scroll.set_visible(true);
 
     let Some(book) = model.book.as_ref() else {
-        widgets.header_title.set_label("Book not found");
+        // Skeleton phase: say so, rather than flashing "was removed" for
+        // a book whose snapshot is still on its worker (7.1 step 2a).
+        if model.loading {
+            widgets.header_title.set_label("Loading…");
+            widgets.description.set_label("Reading this book's details…");
+        } else {
+            widgets.header_title.set_label("Book not found");
+            widgets.description.set_label("This book was removed.");
+        }
         widgets.remaster_btn.set_visible(false);
         widgets.series_val.set_visible(false);
-        widgets.description.set_label("This book was removed.");
         widgets.progress_pct.set_label("");
         widgets.progress_loc.set_label("");
         widgets.progress_bar.set_fraction(0.0);
@@ -964,7 +1049,7 @@ fn fill(
         .set_label(&format!("{}%", book.progress.min(100)));
     widgets
         .progress_loc
-        .set_label(&progress_location_text(model.service.catalog(), book));
+        .set_label(&progress_location_text(model.progress, book));
 
     widgets.format_val.set_label(book.format.as_str());
     widgets.publisher_val.set_label(blank_dash(&book.publisher));
@@ -1084,11 +1169,11 @@ fn sync_action_buttons(widgets: &BookFloatModelWidgets, model: &BookFloatModel) 
     }
 }
 
-fn progress_location_text(catalog: &Catalog, book: &Book) -> String {
+fn progress_location_text(progress: Option<(usize, f64)>, book: &Book) -> String {
     if book.progress >= 100 {
         return "Finished".into();
     }
-    if let Ok(Some((chapter, _fraction))) = catalog.get_reading_progress(book.id) {
+    if let Some((chapter, _fraction)) = progress {
         return format!("Ch. {}", chapter + 1);
     }
     if book.progress > 0 {

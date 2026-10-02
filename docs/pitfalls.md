@@ -1666,3 +1666,11 @@ number.
   just a corrected forward path: the adoption pass repairs libraries
   already in the broken state, on the next launch, with no user
   action.
+
+**Sixth occurrence, 2026-10-02, later still.** The base fell back to
+`29788b4` once more between turns — and this time the rule worked as
+intended: the HEAD check ran before any edit, saw the branch point, and
+no commit was made on the wrong base. Recovery was the plain three
+steps (fetch, `reset --hard FETCH_HEAD`, redo the intended change). No
+new lesson; the record stays complete because the fault itself keeps
+recurring even when it is caught.

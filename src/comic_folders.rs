@@ -554,8 +554,16 @@ mod tests {
         let (id, s_id) = seed_legacy_chapter(&cat, &series, &uuid, 10.0);
         assert!(place_chapter(&cat, s_id, 10.0, &cat.get_book(id).unwrap().unwrap()));
 
-        // Recreate the stranded state: cover back in a legacy folder, row
-        // back to the bare name.
+        // Recreate the stranded state faithfully: the series' covers/
+        // holds nothing (the cover never made it there in the field), the
+        // cover is back in a legacy folder, and the row names it the
+        // legacy way.
+        let folder = cat.series_folder_name_for(s_id).unwrap();
+        let cover = crate::paths::library_dir()
+            .join(&folder)
+            .join("covers")
+            .join("0010.jpg");
+        std::fs::remove_file(&cover).unwrap();
         let legacy = crate::paths::book_dir(&uuid);
         std::fs::create_dir_all(&legacy).unwrap();
         std::fs::write(legacy.join("cover.jpg"), b"stranded cover").unwrap();
@@ -564,11 +572,6 @@ mod tests {
         let placed = cat.get_book(id).unwrap().unwrap();
         assert!(adopt_leftovers(&cat, 10.0, &placed), "adoption must run");
 
-        let folder = cat.series_folder_name_for(s_id).unwrap();
-        let cover = crate::paths::library_dir()
-            .join(&folder)
-            .join("covers")
-            .join("0010.jpg");
         assert_eq!(
             std::fs::read(&cover).unwrap(),
             b"stranded cover",

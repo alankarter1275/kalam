@@ -1489,6 +1489,21 @@ two real files, push. Nothing lost; the misplaced commit became
 dangling. The rule below caught it one step later than it should have:
 the status check happens before the commit, and it did not run first.
 
+**Fifth occurrence, 2026-10-02 (evening), same day again.** The same
+rewind to the branch point, and this time the status check was skipped
+entirely — `git add -A && git commit` ran straight after a docs edit,
+sweeping 178 files / 41,211 insertions into one commit. The first
+symptom was the rebase onto the remote tip failing with conflicts in
+files the change never touched. Recovery this time: `git rebase
+--abort`, `git tag` the bad commit as a backup, `git reset --hard` to
+the remote tip (safe here because the intended edits were already
+*inside* the bad commit, recoverable from the tag), `git checkout
+<tag> -- <the two intended files>`, verify `git diff --cached` shows
+exactly the intended edit, commit, push, then check `gh run list`
+to confirm no failed run hides under the CI publish commits'
+names ("publish test failures" is the log-publish job's name even
+when green).
+
 ### The rule
 
 - At the start of every turn, before any commit: `git log --oneline -1`

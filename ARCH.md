@@ -89,7 +89,11 @@ this sentence.
 **Timing spans** (`route_open:<name>`, `dialog_open:<name>`) bracket every
 construction, and `service_*` spans every snapshot read, under
 `KALAM_TIMING=1`. A screen's construction cost is a measured number, not
-an opinion.
+an opinion. The apply path carries an activity guard and a span from the
+day it is written (pitfalls §45): the watchdog can only name what has a
+label, and an async apply handler is a new place the UI thread can
+block. The same goes for main-thread task callbacks and idle jobs —
+label them, or their blocks report as nameless.
 
 ## Memory
 

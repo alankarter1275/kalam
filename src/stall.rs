@@ -16,12 +16,14 @@
 //! 1. **How long** — reported honestly as a *lower bound* ("at least N
 //!    ms"), because the block began somewhere within the last healthy
 //!    heartbeat window.
-//! 2. **Doing what** — `timing::current_activity()` names the route or
-//!    dialog being constructed while the block is still in progress (the
-//!    activity lock is only held for microseconds around push/pop, so it
-//!    is readable mid-block). If no span is open, the last one that ended
-//!    is named — a block just after construction is usually realization
-//!    of the widgets that construction built.
+//! 2. **Doing what** — `timing::current_activity()` names the activity
+//!    open while the block is still in progress (the activity lock is
+//!    only held for microseconds around push/pop, so it is readable
+//!    mid-block): a route or dialog being constructed, a page's apply
+//!    rebuild, a task's main-thread callback, a named idle job. If no
+//!    span is open, the last one that ended is named — a block just
+//!    after construction is usually realization of the widgets that
+//!    construction built.
 //!
 //! Two lines per stall: one when the silent window first proves a block of
 //! ≥ 100 ms (so a *permanent* freeze still gets its line), one when the
@@ -159,5 +161,8 @@ fn attribution() -> String {
             millis(ago)
         );
     }
-    " — no route or dialog span was open".to_string()
+    // Not just routes and dialogs any more: task callbacks, the apply
+    // paths and the idle work all carry activity labels now (2a.1), so
+    // an unnamed block is genuinely unknown — the log says so plainly.
+    " — no activity was open".to_string()
 }

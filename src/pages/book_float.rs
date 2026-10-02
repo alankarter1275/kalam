@@ -954,6 +954,10 @@ fn fill(
     model: &BookFloatModel,
     sender: &ComponentSender<BookFloatModel>,
 ) {
+    // Guarded and spanned (7.1 step 2a.1): the float's apply path, named
+    // for the stall watchdog the same way the page's rebuild is.
+    let _t = crate::timing::measure("book_float_fill");
+    let _a = crate::timing::activity("book_float_fill");
     clear_box(&widgets.cover_host);
     clear_box(&widgets.author_val);
     clear_box(&widgets.tags);

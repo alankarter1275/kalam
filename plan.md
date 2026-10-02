@@ -116,15 +116,39 @@ One rule, copied from the readers, applied everywhere:
 - **Step 2a — migrate the book page + book float: DONE** (2026-10-02;
   field-tested same day — see the step log and pitfalls §45. The reads
   moved; the freeze that remains is a different cost class).
-- **Step 2a.1 — attribute the post-apply blocks, then decide the fix
-  (inserted after the 2a field test, before any further migration).**
-  The apply path has no span, so the watchdog cannot say whether the
-  0.7-1.4 s blocks after `route_open:book` / `dialog_open:book_float`
-  are apply code, GTK realize/style/layout of the filled tree, or the
-  idle work (icons, thumbnail backfill, cover swaps). Guard and span
-  every one of those paths, re-run the same field session, and only
-  then choose the fix — and only then migrate more screens. Details in
-  the step log.
+- **Step 2a.1 — attribute the post-apply blocks: DONE** (owner approved
+  2026-10-02, implemented same day; see the step log). One more field
+  run owed, then the fix decision. The apply path has no span, so the
+  watchdog cannot say whether the 0.7-1.4 s blocks after
+  `route_open:book` / `dialog_open:book_float` are apply code, GTK
+  realize/style/layout of the filled tree, or the idle work. The
+  design, from the code:
+  - **Apply paths get a guard inside the function that does the work:**
+    `book.rs::rebuild()` (runs after every message — the `Loaded` arm
+    itself only assigns fields, the rebuild is the cost) and
+    `book_float.rs::fill()`. Activity guard + timing span, so the log
+    splits "while <name> (open X ms)" (the code) from "after <name>
+    (took X ms)" (GTK realize/paint of what it built).
+  - **The icons idle gets named:** `main.rs:76`
+    `idle_add_local_once(icons::init)` — unguarded today; the field
+    run's 667 ms no-span block matches its measured 493-505 ms shape.
+  - **Every task callback gets named by its task:** the two main-loop
+    dispatch sites in `tasks.rs` (`spawn_with`'s progress + done loop,
+    `spawn_stream_with`'s item loop) wrap their callbacks with an
+    activity labelled `task_progress:<name>` / `task_done:<name>` /
+    `task_item:<name>` — one wrapping point each attributes the
+    thumbnail backfill, the cover preloader, the dictionary import and
+    every user task's main-thread work.
+  - **`timing.rs` activity labels widen from `&'static str` to owned
+    strings** so a task's name can ride along; every existing call
+    site passes a literal, and the watchdog only formats, so nothing
+    else changes shape.
+  - No behavior change anywhere; no new test surface beyond the
+    existing activity-stack tests (the change is labelling, not
+    logic). The owner repeats today's session once; the log then names
+    the book/float split, the 667 ms block, and home's 3.9 s — and the
+    fix (or the decision that the remainder is GTK-internal) follows
+    from that evidence.
 - **Step 2b — migrate the library dashboard + home.** The two heaviest
   constructions (897 / 459-858 ms first open; reads already ≤ 11 ms) and
   the two landing screens. Same recipe — **after 2a.1 says what the
@@ -347,6 +371,28 @@ CI green after every step; every commit HEAD-checked (§36).
     still not instant" reports. Step 2a.1: span and guard the apply
     paths and the idle work, one more field run, then choose the fix
     from evidence. Recorded as pitfalls §45.
+
+- **Step 2a.1 — the apply paths and idle work got names: implemented
+  2026-10-02.** Exactly the design above: `timing.rs` activity labels
+  are owned strings (a task's runtime name rides along; every existing
+  literal call site compiles unchanged); `tasks.rs` labels its two
+  main-thread dispatch points `task_progress:<name>` /
+  `task_done:<name>` / `task_item:<name>` — one wrapping point each
+  covers the thumbnail backfill, the cover preloader, the dictionary
+  import and every user task; `icons::init`'s idle callback is
+  `icons_init`; the book page's `rebuild` and the float's `fill` carry
+  `book_page_rebuild` / `book_float_fill` (guard + span), so a stall
+  inside the apply code says "while", and one after it says "after" —
+  the split between apply code and GTK realize/paint the field log
+  could not make. The watchdog's unnamed fallback line now reads
+  "no activity was open" (it is no longer only routes and dialogs).
+  No behavior change; the activity-stack tests still pass unchanged
+  (they bind and compare labels, which owned strings satisfy). ARCH.md
+  gained the rule in the screen-open recipe. **The owner's next field
+  run — the same session as today's — is the gate: its log decides
+  whether the 0.7-1.4 s blocks are apply code (optimize the fills) or
+  realize/paint (a different fix), what the 667 ms block was, and what
+  home's 3.9 s is made of.**
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

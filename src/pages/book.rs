@@ -995,7 +995,14 @@ impl BookPageModel {
     /// Refill every host from model state. Called from init and after every
     /// message — the page is small enough that this is cheaper than wiring
     /// per-widget invalidation, and it can't drift out of sync.
+    ///
+    /// Guarded and spanned (7.1 step 2a.1): this is the apply path's real
+    /// cost, and the watchdog must be able to split "while
+    /// book_page_rebuild" (this code) from "after book_page_rebuild"
+    /// (GTK realize/paint of what it built).
     fn rebuild(&mut self, widgets: &BookPageModelWidgets, sender: &ComponentSender<Self>) {
+        let _t = crate::timing::measure("book_page_rebuild");
+        let _a = crate::timing::activity("book_page_rebuild");
         // Hero.
         let chapters = self.chapter_titles.clone();
         fill_cover(&widgets.cover_host, self.book.as_ref());

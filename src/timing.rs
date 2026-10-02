@@ -200,10 +200,13 @@ struct ActivityState {
     /// Currently-open activities, outermost first. In practice this is
     /// zero or one entry deep; it is a stack so a dialog opened from a
     /// route's message handler cannot corrupt its parent's label.
-    stack: Vec<(&'static str, Instant)>,
+    /// Labels are owned (not `&'static str`) so a task's runtime name —
+    /// `task_item:Preloading covers` — can ride along; static literals
+    /// allocate nothing extra worth caring about at this call rate.
+    stack: Vec<(String, Instant)>,
     /// The most recent activity to finish, so a block that happens just
     /// *after* construction (widget realize, say) can still be blamed.
-    last_ended: Option<(&'static str, Duration, Instant)>,
+    last_ended: Option<(String, Duration, Instant)>,
 }
 
 static ACTIVITY: OnceLock<Mutex<ActivityState>> = OnceLock::new();
@@ -217,7 +220,7 @@ fn activity_state() -> &'static Mutex<ActivityState> {
 /// `let _a = timing::activity("route_open:book");`.
 #[must_use = "dropping this immediately pops the activity it pushed"]
 pub struct ActivityGuard {
-    label: &'static str,
+    label: String,
 }
 
 impl Drop for ActivityGuard {
@@ -232,10 +235,10 @@ impl Drop for ActivityGuard {
         // Remove the most recent entry with this label rather than a blind
         // pop: a mis-nested pair of guards must not delete some other
         // activity's label and mis-attribute a stall.
-        if let Some(idx) = state.stack.iter().rposition(|(l, _)| *l == self.label) {
+        if let Some(idx) = state.stack.iter().rposition(|(l, _)| *l == self.label.as_str()) {
             let started = state.stack.remove(idx).1;
             let ended = Instant::now();
-            state.last_ended = Some((self.label, started.elapsed(), ended));
+            state.last_ended = Some((self.label.clone(), started.elapsed(), ended));
         }
     }
 }
@@ -243,39 +246,40 @@ impl Drop for ActivityGuard {
 /// Begin a named UI-thread activity. See [`ActivityGuard`]. Always on —
 /// not gated by `KALAM_TIMING`, because the watchdog needs it precisely on
 /// ordinary launches.
-pub fn activity(label: &'static str) -> ActivityGuard {
+pub fn activity(label: impl Into<String>) -> ActivityGuard {
     // Same poisoned-lock reasoning as `Drop`: push what we can, never
     // panic on the diagnostics path.
+    let label = label.into();
     activity_state()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .stack
-        .push((label, Instant::now()));
+        .push((label.clone(), Instant::now()));
     ActivityGuard { label }
 }
 
 /// What the UI thread is doing right now, and for how long. Read by the
 /// stall watchdog thread while the UI thread is blocked inside that work.
-pub fn current_activity() -> Option<(&'static str, Duration)> {
+pub fn current_activity() -> Option<(String, Duration)> {
     let state = activity_state()
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     state
         .stack
         .last()
-        .map(|(label, started)| (*label, started.elapsed()))
+        .map(|(label, started)| (label.clone(), started.elapsed()))
 }
 
 /// The most recent activity to finish: its label, how long it took, and how
 /// long ago it ended. A poisoned lock would mean the process is already
 /// unwinding; the watchdog should still be able to read, hence `into_inner`.
-pub fn last_ended_activity() -> Option<(&'static str, Duration, Duration)> {
+pub fn last_ended_activity() -> Option<(String, Duration, Duration)> {
     let state = activity_state()
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     state
         .last_ended
-        .map(|(label, took, ended)| (label, took, ended.elapsed()))
+        .map(|(label, took, ended)| (label.clone(), took, ended.elapsed()))
 }
 
 #[cfg(test)]

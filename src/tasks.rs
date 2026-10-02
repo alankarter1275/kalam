@@ -356,11 +356,15 @@ where
         failed: Arc::new(AtomicBool::new(false)),
         hidden,
     };
+    // Kept for the dispatch future below: a main-thread callback that
+    // blocks the loop is blamed on its task by name, not on
+    // "no span was open" (7.1 step 2a.1, pitfalls §45).
+    let label: String = label.into();
     locked(|running| {
         running.push((
             TaskInfo {
                 id,
-                label: label.into(),
+                label: label.clone(),
                 done: 0,
                 total: 0,
                 detail: String::new(),
@@ -397,10 +401,12 @@ where
 
     gtk::glib::spawn_future_local(async move {
         while let Ok(update) = progress_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_progress:{label}"));
             set_progress(id, &update);
             on_progress(update);
         }
         if let Ok(value) = result_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_done:{label}"));
             on_done(value);
         }
     });
@@ -446,11 +452,14 @@ where
         failed: Arc::new(AtomicBool::new(false)),
         hidden,
     };
+    // Same reasoning as `spawn_with`: the item callback is main-thread
+    // work and belongs in the watchdog's vocabulary by name.
+    let label: String = label.into();
     locked(|running| {
         running.push((
             TaskInfo {
                 id,
-                label: label.into(),
+                label: label.clone(),
                 done: 0,
                 total: 0,
                 detail: String::new(),
@@ -480,6 +489,7 @@ where
     gtk::glib::spawn_future_local(async move {
         // Ends when the worker drops its `Emit`, which closes the channel.
         while let Ok(item) = item_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_item:{label}"));
             on_item(item);
         }
     });

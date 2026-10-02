@@ -19,4 +19,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 12.30s
+src/timing.rs:319:20: [1m[91merror[E0308][0m: mismatched types: expected `String`, found `&str`
+src/timing.rs:280:5: [1m[91merror[E0507][0m: cannot move out of dereference of `std::sync::MutexGuard<'_, timing::ActivityState>`: move occurs because value has type `std::option::Option<(std::string::String, std::time::Duration, std::time::Instant)>`, which does not implement the `Copy` trait
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors

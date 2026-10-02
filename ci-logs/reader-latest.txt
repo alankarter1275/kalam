@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4000.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.3889.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,36 +32,34 @@ navigation: 'read-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'read-1'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init      101.7 ms
-  [timing] startup_style          56.4 ms
-  [timing] icons_write             0.3 ms
+  [timing] startup_gtk_init       99.9 ms
+  [timing] startup_style          59.1 ms
+  [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] startup_libraries       0.4 ms
-  [timing] startup_db_open         9.1 ms
-  [timing] startup_theme          15.7 ms
-  [timing] pre_run               308.3 ms
-  [timing] service_home            1.6 ms
+  [timing] startup_db_open         9.0 ms
+  [timing] startup_theme          15.5 ms
+  [timing] pre_run               308.8 ms
+  [timing] service_home            1.4 ms
   [timing] covers_queued            11
-  [timing] route_open:home         3.4 ms
-  [timing] startup_first_page      3.4 ms
+  [timing] route_open:home         3.2 ms
+  [timing] startup_first_page      3.2 ms
   [timing] init_done             314.3 ms
-  [timing] window_shown          320.4 ms
+  [timing] window_shown          318.6 ms
   [timing] page_cache_miss           1
   [timing] service_reader          0.2 ms
-  [timing] book_open               4.4 ms
-  [timing] route_open:reader      16.8 ms
+  [timing] book_open               4.3 ms
+  [timing] route_open:reader      20.4 ms
   [timing] folders_renamed         139
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        1895.8 ms
+  [timing] startup_dicts        1873.4 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:reader (took 16 ms, ended 360 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 450 ms — after route_open:reader (took 16 ms, ended 660 ms ago)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:reader (took 16 ms, ended 961 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 450 ms — after route_open:reader (took 16 ms, ended 1261 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:reader (took 20 ms, ended 458 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 450 ms — after route_open:reader (took 20 ms, ended 758 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === did the covers actually load? ===
@@ -79,30 +77,28 @@ navigation: OK -- the images below are 'read-1'
 
 === app stderr (non-timing lines) ===
   
-  (process:4037): Gtk-WARNING **: 03:44:45.486: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:3926): Gtk-WARNING **: 04:19:04.146: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=read-1 — navigating
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:reader (took 16 ms, ended 360 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 450 ms — after route_open:reader (took 16 ms, ended 660 ms ago)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:reader (took 16 ms, ended 961 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 450 ms — after route_open:reader (took 16 ms, ended 1261 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:reader (took 20 ms, ended 458 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 450 ms — after route_open:reader (took 20 ms, ended 758 ms ago)
 
 === peak memory ===
-books=139 peak_rss_kb=286000 peak_rss_mb=279
+books=139 peak_rss_kb=266364 peak_rss_mb=260
 
 === shutting down ===
 
 === artifacts ===
-  total 1260
-  drwxr-xr-x  2 runner runner   4096 Oct  2 03:45 .
-  drwxr-xr-x 20 runner runner   4096 Oct  2 03:44 ..
-  -rw-r--r--  1 runner runner 396429 Oct  2 03:45 01-read-1.png
-  -rw-r--r--  1 runner runner 396429 Oct  2 03:45 02-read-1-settling.png
-  -rw-r--r--  1 runner runner 396429 Oct  2 03:45 03-read-1-settled.png
-  -rw-r--r--  1 runner runner  60325 Oct  2 03:45 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner      0 Oct  2 03:45 grim.log
-  -rw-r--r--  1 runner runner   1247 Oct  2 03:45 kalam-home.log
-  -rw-r--r--  1 runner runner   1780 Oct  2 03:44 kalam.log
-  -rw-r--r--  1 runner runner   4440 Oct  2 03:45 report.txt
-  -rw-r--r--  1 runner runner     88 Oct  2 03:44 sway.log
-  -rw-r--r--  1 runner runner   7184 Oct  2 03:45 tree.json
---- run 36960984780 ---
+  total 1256
+  drwxr-xr-x  2 runner runner   4096 Oct  2 04:20 .
+  drwxr-xr-x 20 runner runner   4096 Oct  2 04:18 ..
+  -rw-r--r--  1 runner runner 396429 Oct  2 04:19 01-read-1.png
+  -rw-r--r--  1 runner runner 396429 Oct  2 04:19 02-read-1-settling.png
+  -rw-r--r--  1 runner runner 396429 Oct  2 04:19 03-read-1-settled.png
+  -rw-r--r--  1 runner runner  60325 Oct  2 04:20 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner      0 Oct  2 04:19 grim.log
+  -rw-r--r--  1 runner runner   1247 Oct  2 04:19 kalam-home.log
+  -rw-r--r--  1 runner runner   1535 Oct  2 04:19 kalam.log
+  -rw-r--r--  1 runner runner   3942 Oct  2 04:20 report.txt
+  -rw-r--r--  1 runner runner     88 Oct  2 04:19 sway.log
+  -rw-r--r--  1 runner runner   7184 Oct  2 04:19 tree.json
+--- run 36963522691 ---

@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-reader settle=25
-binary: 66174552 bytes
+binary: 66181784 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.3877.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.3755.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -21,10 +21,10 @@ WAYLAND_DISPLAY=wayland-1
 requested route: read-1
 windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
 toplevel windows seen: 1
-  shot: 01-read-1 (50880 bytes)
+  shot: 01-read-1 (50190 bytes)
 focused: 1
-  shot: 02-read-1-settling (50880 bytes)
-  shot: 03-read-1-settled (50880 bytes)
+  shot: 02-read-1-settling (50190 bytes)
+  shot: 03-read-1-settled (50190 bytes)
 navigation: app accepted route 'read-1'
 navigation: 'read-1' is not a grid page; no grid_build expected
   shot: 04-home-for-comparison (66450 bytes)
@@ -32,32 +32,32 @@ navigation: 'read-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'read-1'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init      106.5 ms
-  [timing] startup_style          56.8 ms
-  [timing] icons_write             0.3 ms
+  [timing] startup_gtk_init       78.7 ms
+  [timing] startup_style          44.1 ms
+  [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
-  [timing] icons_init              0.4 ms
+  [timing] icons_init              0.3 ms
   [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open         8.8 ms
-  [timing] startup_theme          15.3 ms
-  [timing] pre_run               310.4 ms
+  [timing] startup_db_open         6.5 ms
+  [timing] startup_theme          12.7 ms
+  [timing] pre_run               266.0 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            1.7 ms
-  [timing] init_done             315.1 ms
-  [timing] window_shown          317.1 ms
+  [timing] service_home            1.3 ms
+  [timing] init_done             269.4 ms
+  [timing] window_shown          270.9 ms
   [timing] covers_queued            11
-  [timing] home_fill               2.4 ms
+  [timing] home_fill               1.9 ms
   [timing] page_cache_miss           1
   [timing] service_reader          0.2 ms
-  [timing] book_open               0.6 ms
-  [timing] route_open:reader      14.4 ms
+  [timing] book_open               0.5 ms
+  [timing] route_open:reader      10.0 ms
   [timing] folders_renamed         139
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        2039.7 ms
+  [timing] startup_dicts        1396.0 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
   (none -- no UI-loop block over ~100 ms was detected)
@@ -70,34 +70,34 @@ navigation: OK -- the images below are 'read-1'
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  4123a8190adb4e94589345df6fbbf380  ci-shots-reader/01-read-1.png
-  4123a8190adb4e94589345df6fbbf380  ci-shots-reader/02-read-1-settling.png
-  4123a8190adb4e94589345df6fbbf380  ci-shots-reader/03-read-1-settled.png
+  4da6cc68075291c1407aa65762930fd4  ci-shots-reader/01-read-1.png
+  4da6cc68075291c1407aa65762930fd4  ci-shots-reader/02-read-1-settling.png
+  4da6cc68075291c1407aa65762930fd4  ci-shots-reader/03-read-1-settled.png
   edc0eaafa2ad4d529dea08ae680a9dea  ci-shots-reader/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:3914): Gtk-WARNING **: 12:45:40.777: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:3792): Gtk-WARNING **: 22:31:23.461: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=read-1 — navigating
-  kalam: open epub failed: failed to open book /tmp/kalam-ci-data/kalam/library/0e018f07-2929-4f19-b089-388e1bd38b18/book.epub: [UnreadableArchive - `Some("/tmp/kalam-ci-data/kalam/library/0e018f07-2929-4f19-b089-388e1bd38b18/book.epub")`]: No such file or directory (os error 2)
+  kalam: open epub failed: failed to open book /tmp/kalam-ci-data/kalam/library/ffb708a7-8de3-4b79-969f-13f05f6a1f2c/book.epub: [UnreadableArchive - `Some("/tmp/kalam-ci-data/kalam/library/ffb708a7-8de3-4b79-969f-13f05f6a1f2c/book.epub")`]: No such file or directory (os error 2)
 
 === peak memory ===
-books=139 peak_rss_kb=227196 peak_rss_mb=221
+books=139 peak_rss_kb=227428 peak_rss_mb=222
 
 === shutting down ===
 
 === artifacts ===
   total 256
-  drwxr-xr-x  2 runner runner  4096 Oct  2 12:46 .
-  drwxr-xr-x 20 runner runner  4096 Oct  2 12:45 ..
-  -rw-r--r--  1 runner runner 50880 Oct  2 12:46 01-read-1.png
-  -rw-r--r--  1 runner runner 50880 Oct  2 12:46 02-read-1-settling.png
-  -rw-r--r--  1 runner runner 50880 Oct  2 12:46 03-read-1-settled.png
-  -rw-r--r--  1 runner runner 66450 Oct  2 12:46 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Oct  2 12:46 grim.log
-  -rw-r--r--  1 runner runner  1330 Oct  2 12:46 kalam-home.log
-  -rw-r--r--  1 runner runner  1649 Oct  2 12:45 kalam.log
-  -rw-r--r--  1 runner runner  3800 Oct  2 12:46 report.txt
-  -rw-r--r--  1 runner runner    88 Oct  2 12:45 sway.log
-  -rw-r--r--  1 runner runner  7184 Oct  2 12:46 tree.json
---- run 37007898318 ---
+  drwxr-xr-x  2 runner runner  4096 Oct  2 22:32 .
+  drwxr-xr-x 20 runner runner  4096 Oct  2 22:31 ..
+  -rw-r--r--  1 runner runner 50190 Oct  2 22:31 01-read-1.png
+  -rw-r--r--  1 runner runner 50190 Oct  2 22:31 02-read-1-settling.png
+  -rw-r--r--  1 runner runner 50190 Oct  2 22:32 03-read-1-settled.png
+  -rw-r--r--  1 runner runner 66450 Oct  2 22:32 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Oct  2 22:31 grim.log
+  -rw-r--r--  1 runner runner  1330 Oct  2 22:32 kalam-home.log
+  -rw-r--r--  1 runner runner  1649 Oct  2 22:31 kalam.log
+  -rw-r--r--  1 runner runner  3800 Oct  2 22:32 report.txt
+  -rw-r--r--  1 runner runner    88 Oct  2 22:31 sway.log
+  -rw-r--r--  1 runner runner  7184 Oct  2 22:31 tree.json
+--- run 37071716752 ---

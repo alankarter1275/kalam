@@ -1705,3 +1705,40 @@ no commit was made on the wrong base. Recovery was the plain three
 steps (fetch, `reset --hard FETCH_HEAD`, redo the intended change). No
 new lesson; the record stays complete because the fault itself keeps
 recurring even when it is caught.
+
+---
+
+## 41. The guardrail ratchets count your new code — check them before you push
+
+**2026-10-02, 7.1 step 0.** The step added two `.expect("activity lock")`
+calls to `src/timing.rs` — natural-looking, matching the file's existing
+span-lock style. CI failed on `tests/guardrails.rs:
+production_code_panics_do_not_grow`: the repo ratchets production
+`.unwrap()`/`.expect(` at 12 (WORKING.md §1 says zero; the ratchet holds
+the real number and may only go down), and the two pushes had grown it to
+14.
+
+The first wrong response would have been raising `MAX_PROD_PANICS` — that
+is the ratchet running backwards. The second wrong response would have
+been restructuring the code to dodge the string match. The right response
+was asking what the check proves: an unhandled panic on a *diagnostics*
+path (the stall watchdog's activity stack) is strictly worse than a
+poisoned lock carried through — a poisoned lock means another thread
+already panicked, and the diagnostic must not answer with a second panic
+on the UI thread. Both sites now use `.unwrap_or_else(|e| e.into_inner())`
+— the same pattern the watchdog's read paths already used — and the count
+is back to 12 with the documented per-file distribution.
+
+### The rules
+
+- `tests/guardrails.rs` is part of the repo's contract, not CI trivia.
+  Before pushing anything that adds `.unwrap()`/`.expect(` to `src/`,
+  `Arc<Catalog>` to `src/pages/`, or literal hex colours to
+  `resources/style.css`, count first — the ratchets are the same three
+  shapes and they never go up.
+- When a ratchet catches your change, the fix is almost never the
+  constant. Ask what the check proves; on a diagnostics path the answer
+  is usually "carry on with `unwrap_or_else(into_inner)`", because
+  instrumentation that can crash the app is worse than no instrumentation.
+- Re-run the count locally (it is a 20-line string match, reproducible in
+  one python snippet) rather than spending a CI cycle on the discovery.

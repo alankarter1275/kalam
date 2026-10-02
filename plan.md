@@ -209,6 +209,16 @@ CI green after every step; every commit HEAD-checked (§36).
     dirty tree and wiped the tracked-file edits (untracked files survive
     `git reset --hard`; tracked edits do not). Everything was redone and
     this commit carries the complete step.
+  - **Two CI-caught defects, both recorded in pitfalls**: (1) §36 eighth
+    occurrence — the step's first push carried only `src/stall.rs`
+    because a moved-base reset ran over a dirty tree and wiped the
+    tracked-file edits; the complete step is the follow-up commit.
+    (2) §41 — the new activity stack used `.expect()` on its lock and
+    tripped the `production_code_panics_do_not_grow` ratchet (12 → 14);
+    fixed with `unwrap_or_else(into_inner)` on both write sites, matching
+    the read paths — diagnostics must not be able to panic the UI
+    thread. Count verified back at 12 with the documented per-file
+    distribution.
   - **The ranked list comes next**: `KALAM_TIMING=1 kalam` on the owner's
     machine, click through the library, read the `route_open:` /
     `dialog_open:` lines (and the `[stall]` lines the watchdog prints

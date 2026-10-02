@@ -222,7 +222,13 @@ pub struct ActivityGuard {
 
 impl Drop for ActivityGuard {
     fn drop(&mut self) {
-        let mut state = activity_state().lock().expect("activity lock");
+        // `into_inner`, not `expect`: a poisoned lock means some thread
+        // panicked while holding it, and this stack is diagnostic
+        // bookkeeping — it must not answer that panic with a second one on
+        // the UI thread (guardrails: production panics do not grow).
+        let mut state = activity_state()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // Remove the most recent entry with this label rather than a blind
         // pop: a mis-nested pair of guards must not delete some other
         // activity's label and mis-attribute a stall.
@@ -238,9 +244,11 @@ impl Drop for ActivityGuard {
 /// not gated by `KALAM_TIMING`, because the watchdog needs it precisely on
 /// ordinary launches.
 pub fn activity(label: &'static str) -> ActivityGuard {
+    // Same poisoned-lock reasoning as `Drop`: push what we can, never
+    // panic on the diagnostics path.
     activity_state()
         .lock()
-        .expect("activity lock")
+        .unwrap_or_else(|e| e.into_inner())
         .stack
         .push((label, Instant::now()));
     ActivityGuard { label }

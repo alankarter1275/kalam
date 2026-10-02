@@ -116,9 +116,27 @@ One rule, copied from the readers, applied everywhere:
 - **Step 2a — migrate the book page + book float: DONE** (2026-10-02;
   field-tested same day — see the step log and pitfalls §45. The reads
   moved; the freeze that remains is a different cost class).
-- **Step 2a.1 — attribute the post-apply blocks: DONE** (owner approved
-  2026-10-02, implemented same day; see the step log). One more field
-  run owed, then the fix decision. The apply path has no span, so the
+- **Step 2a.1 — attribute the post-apply blocks: DONE and CLOSED**
+  (owner approved 2026-10-02; field run same day — see the step log:
+  our code is innocent everywhere, the freezes are GTK-side).
+- **Step 2a.2 — fix what the log named (proposed, awaiting the
+  owner's go).** (1) Make the deferred-cover swap layout-neutral —
+  `swap_in_cover` mutates the frame's children (`remove` + `append`,
+  `src/widgets/book_row.rs:984-987`), so every cover arrival re-layouts
+  its ancestors; a fixed-size picture whose paintable is swapped costs
+  a repaint instead of a relayout. (2) Decode the book page's and the
+  float's own covers (hero + author thumbnails, ≤ 5) on the page's
+  snapshot worker, before `Loaded` applies — `cover_widget_deferred`
+  then hits its "already decoded" branch and these screens never swap
+  at all. (3) Attempt the icon-theme rescan fix with a GResource
+  (`IconTheme::add_resource_path` does not rescan the filesystem
+  themes; verify in implementation) — if GTK still rescans, the
+  fallback question (move `icons::init` to the first reader open,
+  which already calls it) comes back to the owner. (4) Re-measure:
+  the 3.4 s startup convergence block should collapse into its parts,
+  and whatever "after book_page_rebuild" block remains on a cold open
+  is the page's own GTK layout cost — a separate, later question,
+  attacked only if it still matters after (1) and (2). The apply path has no span, so the
   watchdog cannot say whether the 0.7-1.4 s blocks after
   `route_open:book` / `dialog_open:book_float` are apply code, GTK
   realize/style/layout of the filled tree, or the idle work. The
@@ -415,6 +433,43 @@ CI green after every step; every commit HEAD-checked (§36).
   whether the 0.7-1.4 s blocks are apply code (optimize the fills) or
   realize/paint (a different fix), what the 667 ms block was, and what
   home's 3.9 s is made of.**
+
+- **Step 2a.1 — field run (owner, 2026-10-02): the log names it. Our
+  code is innocent everywhere; the freezes are GTK-side, and the cover
+  swap is a relayout storm.** The owner's log, with the new labels:
+  - **The apply code is fast.** `book_page_rebuild` 16 / 5 / 6 ms,
+    `book_float_fill` 1 ms, `task_done:Organizing comic series
+    folders` 0 ms, every `task_item:Preloading covers` 0 ms,
+    `icons_init`'s own code 232 ms. The migration recipe is vindicated
+    — the 2a shape (skeleton + worker + apply) is not where the
+    remaining time goes.
+  - **The cover swap is a relayout storm.** `swap_in_cover`
+    (`src/widgets/book_row.rs:984-987`) removes the placeholder and
+    appends a picture — a container mutation, so every cover arrival
+    re-layouts its ancestors. Each callback is 0 ms and invisible in
+    the log; the relayouts it schedules are the block. Three of the
+    six blocks end right after a cover arrival, and the 1.45 s and
+    3.4 s startup blocks sit on the home-screen cover stream landing
+    while GTK is already busy with the icon rescan and the first
+    layout passes.
+  - **The 940 ms startup block is mostly the first frame.** At first
+    proof no activity was open; the block ended 41 ms *into*
+    `icons_init` — so ~900 ms of it is the app's first draw, before
+    icons even started. `icons_init`'s own code is 232 ms; its theme
+    rescan (previously measured 493-505 ms standalone) lands in the
+    next block.
+  - **The 3.4 s block is the startup convergence:** icon-theme rescan
+    + home's cover stream + the comic-series organizer + thumbnail
+    backfill, all landing while the loop is busy — each of our
+    callbacks 0 ms, the cost between them.
+  - **The book page's remaining 650 ms (cold) / 250 ms blocks are
+    GTK realize/style/layout of the filled tree** — after our 16 ms
+    fill returns. The float is the same shape at 250 ms. Same class
+    as step 0's "post-construction freezes".
+  - Conclusion: 2a.1 did its job — the split it was built to make is
+    made. The fix list is now concrete and evidence-backed (step
+    2a.2), and the biggest single lever is the layout-neutral cover
+    swap, which touches every screen that shows covers.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

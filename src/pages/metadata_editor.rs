@@ -63,6 +63,12 @@ fn open_editor_inner(
     book_id: i64,
     on_saved: Rc<dyn Fn()>,
 ) {
+    // Roadmap 7.1 step 0: measured and named for the stall watchdog — the
+    // editor's open path reads the book inline, and dialog opens are one of
+    // the field-reported pauses. (Line 947 re-enters here to edit the next
+    // book in the series; both passes are attributed.)
+    let _span = crate::timing::measure("dialog_open:metadata_editor");
+    let _activity = crate::timing::activity("dialog_open:metadata_editor");
     // Silently returning here meant the editor just never appeared: no
     // dialog, no message, nothing to click. Say which of the two it was.
     let book = match catalog.get_book(book_id) {

@@ -145,7 +145,11 @@ pub fn init() {
 ///
 /// `None` means "give up and log to the terminal" — for example a read-only
 /// home directory, or `XDG_DATA_HOME` pointing somewhere unwritable.
-fn open_log_file(path: &Path) -> Option<std::fs::File> {
+///
+/// `pub(crate)` so the stall watchdog (`src/stall.rs`) can append its
+/// `[stall]` lines to the same file on an ordinary launch, where no logger
+/// is installed (the watchdog must not depend on `RUST_LOG` being set).
+pub(crate) fn open_log_file(path: &Path) -> Option<std::fs::File> {
     // A parent that cannot be created — a file standing where the folder
     // belongs, a read-only home — ends here rather than in a panic.
     std::fs::create_dir_all(path.parent()?).ok()?;

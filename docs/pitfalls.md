@@ -1481,6 +1481,37 @@ re-apply, commit, push.
   blind, and never trust a silent push: check that the push actually
   moved the remote and that a CI run started for the new head.
 
+### Eighth occurrence, 2026-10-02 — the reset itself destroyed work
+
+Occurrences four through seven were all caught harmlessly by the HEAD
+check. The eighth introduced a new failure mode: the check ran at
+**commit time, over a dirty tree**, and the remote had moved *during* the
+turn (CI's smoke-report publish job pushed `ca582cd` while the edits were
+being made). The recovery reflex — `git reset --hard FETCH_HEAD` — ran
+over a working tree full of uncommitted edits and **wiped them all**.
+Only the new, untracked `src/stall.rs` survived (reset does not touch
+untracked files), so the commit that followed contained one file out of
+nine and pushed a half-step: an unreferenced `.rs` file that cargo never
+compiles, on a green CI run. The missing eight files were rebuilt from
+the session record and pushed as the follow-up commit.
+
+**The added rule:**
+
+- **Never run `git reset --hard` over a dirty tree.** If a moved base is
+  discovered with uncommitted work, first `git stash` (or commit locally,
+  then rebase), *then* reset/rebase, then restore. The reset-recovery
+  steps in this entry were written for a clean tree; with edits in
+  flight they are a shredder.
+- The HEAD check protects a **commit**; it cannot protect **edits**. On
+  any multi-edit turn, expect the remote to have moved underneath you
+  (the CI publish job commits on its own schedule) — fetch before the
+  final commit, and if it moved, stash-rebase-restore rather than
+  reset-and-lose.
+- A green CI run proves nothing about *completeness*: a half-landed
+  step whose missing files are all unreferenced compiles clean. Read the
+  committed diff stat against the intended file list before calling a
+  push done.
+
 ## 37. "No precedent" claims need a repo-wide grep, not a page-local one
 
 **2026-10-02, during 2.21.** The 2.21 plan recorded that the confirm

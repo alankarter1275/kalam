@@ -1,7 +1,9 @@
 # Plan — the app-wide async migration (7.1 + 7.7; the app-wide half of 2.20)
 
-**Status: DRAFT — awaiting the owner's answers to the two questions at the
-end, and his go. No implementation before that.**
+**Status: APPROVED and in flight. The owner answered both questions on
+2026-10-02 — skeletons everywhere ("yup"), watchdog log-only — and had
+already confirmed the campaign and delegated the migration order. Step 0
+(measurement) is implemented; see the step log at the end.**
 
 ---
 
@@ -154,13 +156,60 @@ CI green after every step; every commit HEAD-checked (§36).
   readers already behave this way and the owner calls them the fast
   part — but it is question 1 below, not an assumption.
 
-## Questions for the owner
+## Questions for the owner — both answered (2026-10-02)
 
-1. **Skeletons.** After migration, tapping a book shows the page instantly
-   with its structure, and the data fills in a moment later — exactly how
-   the PDF reader already opens. Confirm that is the wanted behavior
-   app-wide.
-2. **Watchdog output.** When the watchdog catches a freeze it logs the
-   duration and the culprit to `kalam.log`. Log-only, or do you also want
-   a brief on-screen notice during your own use? (Recommendation:
-   log-only for now.)
+1. **Skeletons.** Confirmed ("yup"): after migration a screen appears
+   instantly with its structure and the data fills in, exactly as the PDF
+   reader already opens. The behavior everywhere.
+2. **Watchdog output.** **Log-only** — the owner's explicit choice. No
+   on-screen notice; `[stall]` lines go to stderr and
+   `~/.local/share/kalam/kalam.log`.
+
+## Step log
+
+- **Step 0 — measure: implemented 2026-10-02.**
+  - `src/timing.rs` gained an always-on **activity stack** (not gated by
+    `KALAM_TIMING`, because the watchdog must attribute stalls on ordinary
+    launches): `activity(label)` → `ActivityGuard` (RAII, pop-by-label so a
+    mis-nested pair cannot mis-attribute), `current_activity()` and
+    `last_ended_activity()` for the watchdog's reads. Unit-tested (one test
+    function, deliberately — parallel tests would race on the shared
+    static, the db.rs thread-local lesson).
+  - `src/stall.rs` — the **watchdog**: a GLib heartbeat source bumps an
+    atomic counter every 50 ms; a watcher thread polls it every 100 ms and
+    reports any provable block (≥ 100 ms after one heartbeat period of
+    grace, so it cannot cry wolf on normal main-loop batching) twice —
+    once when first proven (a permanent freeze still gets its line), once
+    at resume with the final lower bound. Attribution: the route or dialog
+    being constructed while blocked, else the last one that ended. Output
+    log-only: stderr plus `kalam.log` (file created by this event only —
+    the `logging.rs` no-file-on-ordinary-launch contract is preserved;
+    `open_log_file` became `pub(crate)` for this). Installed in `main()`
+    right after `RelmApp::new`, before the first page; it does not judge
+    until the first heartbeat, so startup-before-loop is not a false
+    stall.
+  - **Route spans**: `route_label` maps every `Route` variant (exhaustive —
+    a new variant without a label is a compile error) to
+    `route_open:<name>`; `build_page` wraps all three call sites (init,
+    take_or_build miss, refresh_if_stale) with a `measure` span plus an
+    activity guard. The page cache's hit path never enters `build_page`,
+    so the numbers are construction cost only.
+  - **Dialog spans**: all six app-level float openers
+    (`book/series/tasks/annotations/shelves/tags_float`) and the metadata
+    editor's funnel `open_editor_inner` (covers both entry and the
+    edit-next-book re-entry) carry `dialog_open:<name>` guards.
+  - **CI**: the smoke session's report gains a "main-thread stalls"
+    section (`[stall]` lines from its captured kalam.log); the
+    `route_open:`/`dialog_open:` spans appear in the existing timing
+    section because the harness already sets `KALAM_TIMING=1`.
+  - Tests added: the activity-stack behaviour; every advertised route name
+    (plus both id forms) maps to a distinct label.
+  - **Process note, recorded in pitfalls §36**: the first push of this
+    step landed only `src/stall.rs` — a moved-base reset was run over a
+    dirty tree and wiped the tracked-file edits (untracked files survive
+    `git reset --hard`; tracked edits do not). Everything was redone and
+    this commit carries the complete step.
+  - **The ranked list comes next**: `KALAM_TIMING=1 kalam` on the owner's
+    machine, click through the library, read the `route_open:` /
+    `dialog_open:` lines (and the `[stall]` lines the watchdog prints
+    without any env var). That list orders step 2/3.

@@ -296,6 +296,8 @@ impl AppModel {
     /// "recently finished" list, no status line. It answers "what is happening
     /// and can I stop it", and the sidebar button is how you get to the rest.
     fn open_tasks_floating(&mut self, sender: &ComponentSender<Self>) {
+        let _span = crate::timing::measure("dialog_open:tasks_float");
+        let _activity = crate::timing::activity("dialog_open:tasks_float");
         self.close_floating();
 
         let s = sender.input_sender().clone();
@@ -322,6 +324,12 @@ impl AppModel {
     }
 
     fn open_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        // The book dialog is one of the field-reported slow paths ("the
+        // pause is when things OPEN: tapping a book, opening dialogs") —
+        // its `init` reads `book_detail` inline. Measured and attributed
+        // until the migration moves that read off the UI thread.
+        let _span = crate::timing::measure("dialog_open:book_float");
+        let _activity = crate::timing::activity("dialog_open:book_float");
         self.close_floating();
 
         let ctrl = BookFloatModel::builder()
@@ -367,6 +375,8 @@ impl AppModel {
         first_author: String,
         sender: &ComponentSender<Self>,
     ) {
+        let _span = crate::timing::measure("dialog_open:series_float");
+        let _activity = crate::timing::activity("dialog_open:series_float");
         self.close_floating();
 
         let ctrl = SeriesFloatModel::builder()
@@ -393,6 +403,8 @@ impl AppModel {
     /// other floats it lives in the in-app float layer — never a separate
     /// window — so the compositor can't move it to another workspace.
     fn open_annotations_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        let _span = crate::timing::measure("dialog_open:annotations_float");
+        let _activity = crate::timing::activity("dialog_open:annotations_float");
         self.close_floating();
 
         let s = sender.clone();
@@ -419,6 +431,8 @@ impl AppModel {
         from_book_float: bool,
         sender: &ComponentSender<Self>,
     ) {
+        let _span = crate::timing::measure("dialog_open:shelves_float");
+        let _activity = crate::timing::activity("dialog_open:shelves_float");
         self.close_floating();
 
         let s = sender.clone();
@@ -442,6 +456,8 @@ impl AppModel {
     }
 
     fn open_tags_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        let _span = crate::timing::measure("dialog_open:tags_float");
+        let _activity = crate::timing::activity("dialog_open:tags_float");
         self.close_floating();
 
         let s = sender.clone();
@@ -468,6 +484,16 @@ impl AppModel {
         route: &Route,
         sender: &ComponentSender<Self>,
     ) -> PageSlot {
+        // Roadmap 7.1 step 0: every route construction is measured (the
+        // `route_open:` span, printed under KALAM_TIMING=1) and announced to
+        // the always-on activity stack, so a UI-thread block while a page is
+        // built is attributed to the page by name in the stall watchdog's
+        // log. Both guards live for the whole match below. The page cache's
+        // hit path never enters this function — a cached page is reparented,
+        // not rebuilt — so these numbers are construction cost, nothing else.
+        let label = route_label(route);
+        let _span = crate::timing::measure(label);
+        let _activity = crate::timing::activity(label);
         match route {
             Route::Module(NavItem::Home) => {
                 let ctrl = HomePageModel::builder().launch(catalog.clone()).forward(
@@ -2016,6 +2042,49 @@ fn known_route_names() -> Vec<&'static str> {
 /// `known_route_names` because that list is asserted to resolve as it stands.
 const ROUTE_ID_FORMS: [&str; 2] = ["book-<id>", "read-<id>"];
 
+/// A short static label per route, for the `route_open:` timing span and the
+/// stall watchdog's activity stack (`timing::activity`). Every route gets
+/// one because every construction is measured — including the readers,
+/// which are the fast part; the watchdog observing them is a feature, not
+/// noise (a freeze there is a finding too).
+///
+/// Exhaustive on purpose: a new route variant without a label is a compile
+/// error, not a silently unattributed stall.
+fn route_label(route: &Route) -> &'static str {
+    match route {
+        Route::Module(NavItem::Home) => "route_open:home",
+        Route::Module(NavItem::Library) => "route_open:library",
+        Route::Module(NavItem::Shelves) => "route_open:shelves",
+        Route::Module(NavItem::Downloads) => "route_open:downloads",
+        Route::Module(NavItem::Comics) => "route_open:comics",
+        Route::Module(NavItem::RemoteBrowse) => "route_open:remote_browse",
+        Route::Module(NavItem::Fanfiction) => "route_open:fanfiction",
+        Route::Module(NavItem::Settings) => "route_open:settings",
+        Route::LibrarySection(LibrarySection::AllBooks) => "route_open:all_books",
+        Route::LibrarySection(LibrarySection::ReadingList) => "route_open:reading_list",
+        Route::LibrarySection(LibrarySection::History) => "route_open:history",
+        Route::LibrarySection(LibrarySection::SavedQuotes) => "route_open:saved_quotes",
+        Route::LibrarySection(LibrarySection::SavedWords) => "route_open:saved_words",
+        Route::LibrarySection(LibrarySection::LookupHistory) => "route_open:lookup_history",
+        Route::LibrarySection(LibrarySection::Tags) => "route_open:tags",
+        Route::LibrarySection(LibrarySection::Analytics) => "route_open:analytics",
+        Route::LibrarySection(LibrarySection::TaskManager) => "route_open:task_manager",
+        Route::LibrarySection(LibrarySection::Review) => "route_open:review",
+        Route::ShelvesGrid => "route_open:shelves_grid",
+        Route::ShelfDetail { .. } => "route_open:shelf_detail",
+        Route::TagBooks { .. } => "route_open:tag_books",
+        Route::AuthorPage { .. } => "route_open:author",
+        Route::BookPage { .. } => "route_open:book",
+        Route::RemoteDetail { .. } => "route_open:remote_detail",
+        Route::RemoteReader { .. } => "route_open:remote_reader",
+        Route::Reader { .. } => "route_open:reader",
+        Route::ComicsReader { .. } => "route_open:comics_reader",
+        Route::PdfReader { .. } => "route_open:pdf_reader",
+        Route::RemoteSearch { .. } => "route_open:remote_search",
+        Route::ComicSeries { .. } => "route_open:comic_series",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2030,6 +2099,27 @@ mod tests {
                 "{name} is advertised but does not resolve"
             );
         }
+    }
+
+    #[test]
+    fn every_route_has_a_distinct_label() {
+        // The stall watchdog blames construction blocks by these labels; two
+        // routes sharing one would mis-attribute a stall to the wrong screen,
+        // and the id forms are included because they are real routes too.
+        let mut labels: Vec<&'static str> = known_route_names()
+            .into_iter()
+            .filter_map(|name| route_by_name(name).as_ref().map(route_label))
+            .collect();
+        for name in ["book-1", "read-1"] {
+            labels.push(route_label(&route_by_name(name).expect("id form resolves")));
+        }
+        let unique: std::collections::HashSet<&'static str> =
+            labels.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            labels.len(),
+            "route labels must be distinct, got {labels:?}"
+        );
     }
 
     #[test]

@@ -37,6 +37,7 @@ mod shelf_rules;
 mod sidecar;
 mod sources;
 mod splash;
+mod stall;
 mod style;
 mod tasks;
 mod theme;
@@ -57,6 +58,13 @@ fn main() {
     timing::span("startup_gtk_init");
     let app = RelmApp::new("app.kalam.Kalam");
     timing::span_end("startup_gtk_init");
+
+    // Roadmap 7.1 step 0: the main-thread stall watchdog. From here on, any
+    // block of the UI loop over ~100 ms is logged with the route or dialog
+    // being constructed at the time. Installed before the first page so it
+    // watches `AppModel::init` too (it only starts judging once the main
+    // loop itself is up — see src/stall.rs).
+    stall::install();
 
     // Roadmap 1.13: this used to cost 493–505 ms *before the first paint* —
     // GTK rescanning every icon theme on the system to pick up two SVGs, while

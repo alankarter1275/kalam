@@ -433,6 +433,20 @@ grep -E "^\[timing\]" "$OUT/kalam.log" | sed 's/^/  /' | tee -a "$REPORT" \
   || say "  (none -- KALAM_TIMING produced no output)"
 
 say ""
+say "=== main-thread stalls (roadmap 7.1 watchdog) ==="
+# Every [stall] line the watchdog printed during this session. None is the
+# pass condition: the UI loop never blocked past ~100 ms while the session
+# ran. (A teardown line at the very end of a run can be ignored -- the loop
+# stopping as the process exits looks, briefly, like a block.)
+STALL_LINES="$(grep -E '^\[stall\]' "$OUT/kalam.log" 2>/dev/null || true)"
+if [ -n "$STALL_LINES" ]; then
+  printf '%s\n' "$STALL_LINES" | sed 's/^/  /' | tee -a "$REPORT"
+  say "  stalls seen -- name the screen and fix it before it spreads"
+else
+  say "  (none -- no UI-loop block over ~100 ms was detected)"
+fi
+
+say ""
 say "=== did the covers actually load? ==="
 # The seeded covers are deliberately colourful; the placeholder is grey. So
 # "how many strongly-coloured pixels are there" is a machine-checkable proxy

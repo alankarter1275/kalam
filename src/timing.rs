@@ -58,7 +58,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
 static START: OnceLock<Instant> = OnceLock::new();
@@ -178,4 +178,138 @@ pub fn span_end(label: &'static str) {
     };
     let el = start.elapsed().as_secs_f64() * 1000.0;
     println!("[timing] {label:<18} {el:>8.1} ms");
+}
+
+// ---------------------------------------------------------------------------
+// UI-thread activity tracking (roadmap 7.1 step 0, 7.7 layer 2)
+// ---------------------------------------------------------------------------
+//
+// The stall watchdog (`src/stall.rs`) has to answer "what was the UI thread
+// doing when it blocked?" — and it must be able to answer on an ordinary
+// launch, where `KALAM_TIMING` is unset and everything above is a no-op.
+// So this half is deliberately NOT gated: route and dialog construction
+// push a label onto a small stack, and the watchdog thread reads the top
+// of it while the UI thread is blocked inside that work. The lock is held
+// only for the microseconds of a push or pop, so it is free mid-block.
+//
+// The cost on a normal run is one `Instant::now()` and a `Vec` push per
+// screen open — nothing per frame, nothing per query.
+
+#[derive(Default)]
+struct ActivityState {
+    /// Currently-open activities, outermost first. In practice this is
+    /// zero or one entry deep; it is a stack so a dialog opened from a
+    /// route's message handler cannot corrupt its parent's label.
+    stack: Vec<(&'static str, Instant)>,
+    /// The most recent activity to finish, so a block that happens just
+    /// *after* construction (widget realize, say) can still be blamed.
+    last_ended: Option<(&'static str, Duration, Instant)>,
+}
+
+static ACTIVITY: OnceLock<Mutex<ActivityState>> = OnceLock::new();
+
+fn activity_state() -> &'static Mutex<ActivityState> {
+    ACTIVITY.get_or_init(|| Mutex::new(ActivityState::default()))
+}
+
+/// Marks the start of a named UI-thread activity — building a route or a
+/// dialog. Dropping the guard ends it. Like [`measure`], bind it to a name:
+/// `let _a = timing::activity("route_open:book");`.
+#[must_use = "dropping this immediately pops the activity it pushed"]
+pub struct ActivityGuard {
+    label: &'static str,
+}
+
+impl Drop for ActivityGuard {
+    fn drop(&mut self) {
+        let mut state = activity_state().lock().expect("activity lock");
+        // Remove the most recent entry with this label rather than a blind
+        // pop: a mis-nested pair of guards must not delete some other
+        // activity's label and mis-attribute a stall.
+        if let Some(idx) = state.stack.iter().rposition(|(l, _)| *l == self.label) {
+            let started = state.stack.remove(idx).1;
+            let ended = Instant::now();
+            state.last_ended = Some((self.label, started.elapsed(), ended));
+        }
+    }
+}
+
+/// Begin a named UI-thread activity. See [`ActivityGuard`]. Always on —
+/// not gated by `KALAM_TIMING`, because the watchdog needs it precisely on
+/// ordinary launches.
+pub fn activity(label: &'static str) -> ActivityGuard {
+    activity_state()
+        .lock()
+        .expect("activity lock")
+        .stack
+        .push((label, Instant::now()));
+    ActivityGuard { label }
+}
+
+/// What the UI thread is doing right now, and for how long. Read by the
+/// stall watchdog thread while the UI thread is blocked inside that work.
+pub fn current_activity() -> Option<(&'static str, Duration)> {
+    let state = activity_state()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    state
+        .stack
+        .last()
+        .map(|(label, started)| (*label, started.elapsed()))
+}
+
+/// The most recent activity to finish: its label, how long it took, and how
+/// long ago it ended. A poisoned lock would mean the process is already
+/// unwinding; the watchdog should still be able to read, hence `into_inner`.
+pub fn last_ended_activity() -> Option<(&'static str, Duration, Duration)> {
+    let state = activity_state()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    state
+        .last_ended
+        .map(|(label, took, ended)| (label, took, ended.elapsed()))
+}
+
+#[cfg(test)]
+mod activity_tests {
+    use super::{activity, current_activity, last_ended_activity, ActivityGuard};
+
+    /// One test, not three: the activity state is a process-wide static and
+    /// `cargo test` runs tests in parallel, so separate tests would race on
+    /// "which activity is current" and flake (the same lesson as the
+    /// query-count counter's thread-local in `db.rs`).
+    #[test]
+    fn open_nested_and_orphaned_activities_behave() {
+        // Open → current; dropped → last-ended.
+        let guard = activity("test:open");
+        let (label, _) = current_activity().expect("activity should be current");
+        assert_eq!(label, "test:open");
+        drop(guard);
+        assert!(current_activity().is_none());
+        let (label, _, _) = last_ended_activity().expect("activity should be last-ended");
+        assert_eq!(label, "test:open");
+
+        // Nested: the inner is current, and ends without eating the outer's
+        // label.
+        let outer = activity("test:outer");
+        let inner = activity("test:inner");
+        let (label, _) = current_activity().expect("inner should be current");
+        assert_eq!(label, "test:inner");
+        drop(inner);
+        let (label, _) = current_activity().expect("outer should be current again");
+        assert_eq!(label, "test:outer");
+        let (label, _, _) = last_ended_activity().expect("inner should be last-ended");
+        assert_eq!(label, "test:inner");
+
+        // An orphan guard (its entry already gone) must not remove some
+        // other activity's entry.
+        let orphan = ActivityGuard {
+            label: "test:never-pushed",
+        };
+        drop(orphan);
+        let (label, _) = current_activity().expect("real activity must survive");
+        assert_eq!(label, "test:outer");
+        drop(outer);
+        assert!(current_activity().is_none());
+    }
 }

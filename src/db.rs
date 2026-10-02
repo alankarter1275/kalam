@@ -1594,6 +1594,97 @@ impl Catalog {
     }
 
     pub fn delete_book(&self, id: i64) -> Result<()> {
+        // Owner field report, 2026-10-02: every surface shows a comic as
+        // its series — the collapsed card, the drawer, the page — so
+        // "delete this" at one chapter's book row removed one chapter of
+        // seventy and left the rest. A comic chapter is therefore deleted
+        // at its series' scope, everywhere, as one semantic.
+        if let Some(series_id) = self.comic_series_id_for_book(id)? {
+            return self.delete_comic_series(series_id);
+        }
+        self.delete_book_single(id)
+    }
+
+    /// The series a comic chapter belongs to, if the book is one.
+    fn comic_series_id_for_book(&self, book_id: i64) -> Result<Option<i64>> {
+        let conn = self.conn();
+        Ok(conn
+            .query_row(
+                "SELECT series_id FROM comic_chapters WHERE book_id = ?1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Delete a comic series: every chapter through the same single-book
+    /// path (so overrides, thumbnails, files and folders are handled
+    /// identically), then the series row itself. The series folder goes
+    /// with the last chapter's cleanup.
+    pub fn delete_comic_series(&self, series_id: i64) -> Result<()> {
+        let book_ids: Vec<i64> = {
+            let conn = self.conn();
+            let mut stmt = conn.prepare_cached(
+                "SELECT book_id FROM comic_chapters WHERE series_id = ?1
+                 ORDER BY chapter_number ASC",
+            )?;
+            let rows = stmt.query_map(params![series_id], |r| r.get::<_, i64>(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        for id in book_ids {
+            self.delete_book_single(id)?;
+        }
+        let conn = self.conn();
+        conn.execute("DELETE FROM comic_series WHERE id = ?1", params![series_id])?;
+        Ok(())
+    }
+
+    /// How many book rows deleting these ids would remove. Comic
+    /// selections take their whole series with them, so the confirmation
+    /// dialog counts every chapter, not the one card that was clicked.
+    pub fn delete_scope_count(&self, ids: &[i64]) -> usize {
+        let mut unique: Vec<i64> = ids.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        if unique.is_empty() {
+            return 0;
+        }
+        let conn = self.conn();
+        let mut total = 0usize;
+        for chunk in unique.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            // Regular books in the selection…
+            let regular: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM books
+                         WHERE id IN ({holders})
+                           AND id NOT IN (SELECT book_id FROM comic_chapters)"
+                    ),
+                    rusqlite::params_from_iter(chunk.iter()),
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            // …plus every chapter of every series the selection touches.
+            let comic: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM comic_chapters
+                         WHERE series_id IN (
+                             SELECT DISTINCT series_id FROM comic_chapters
+                             WHERE book_id IN ({holders})
+                         )"
+                    ),
+                    rusqlite::params_from_iter(chunk.iter()),
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            total += (regular + comic) as usize;
+        }
+        total
+    }
+
+    fn delete_book_single(&self, id: i64) -> Result<()> {
         let book = match self.get_book(id)? {
             Some(b) => b,
             None => return Ok(()),
@@ -1626,6 +1717,13 @@ impl Catalog {
                 }
             }
             if let Some(series_dir) = book.file_path.parent() {
+                // A placed chapter may still own a legacy per-book folder —
+                // the field state of 2026-10-02 had covers stranded there.
+                // That folder is entirely this book's, exactly like any
+                // other book folder, so it goes with the book.
+                if dir.exists() && dir != series_dir {
+                    let _ = fs::remove_dir_all(&dir);
+                }
                 let has_archives = fs::read_dir(series_dir)
                     .map(|entries| {
                         entries.filter_map(|e| e.ok()).any(|e| {

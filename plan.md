@@ -1,10 +1,12 @@
 # Plan — 2.22: comic series folders on disk
 
-**Status: IMPLEMENTED (this branch), awaiting CI and the owner's field
-test.** Approved 2026-10-02 with the short padded file names
-(`0010.cbz`). The implementation notes at the bottom record one
-mechanism deviation from the draft — same behavior, simpler machinery —
-and where each piece landed.
+**Status: field-test fix round complete, awaiting the owner's re-test.**
+Approved 2026-10-02 with the short padded file names (`0010.cbz`).
+CI green; the owner's first field test found two defects (pitfalls
+§40) — covers stranded in the old folders, and a comic delete
+removing one chapter — both fixed below. The implementation notes
+record the one mechanism deviation from the draft and where each
+piece landed.
 
 Per the working agreement: research below is done and cited (code with
 file/line evidence, read 2026-10-02); pitfalls consulted (§§36–38 and
@@ -230,3 +232,34 @@ folder (real zip built with ComicInfo.xml, cover extracted, chapter
 cataloged), placement with cover + sidecar + row repoint + old-folder
 cleanup, idempotency, missing files leaving row and library alone, and
 the same-number collision suffix.
+
+## Field-test fix round (2026-10-02, later the same day)
+
+The owner's first run on his real library found two defects
+(pitfalls §40); both fixed and re-tested in CI:
+
+1. **Covers stayed in the old folders.** Every chapter file moved;
+   every cover did not. The placement had moved covers by the row's
+   stored name; where the row and the disk disagreed, the move was
+   skipped or failed silently (`let _ =`). The cover move is now a
+   **disk-driven sweep** (`sweep_old_folder`): list the old per-book
+   folder, move every cover image and the sidecar that are actually
+   there (the row's name only decides which image takes the chapter's
+   stem name), never overwrite, log every move, remove the folder when
+   nothing of anyone's is left. An **adoption pass**
+   (`adopt_leftovers`) heals the already-broken state — placed
+   chapters whose covers are still stranded — on the next launch,
+   with no user action.
+2. **Deleting a comic removed one chapter.** The All Books card is a
+   collapsed series backed by one representative row; the delete
+   deleted that row. `delete_book` is now series-scoped for comics
+   everywhere: every chapter (through the identical single-book
+   path), the series row, the series folder, and each chapter's
+   legacy folder. The confirmation counts the real number
+   (`delete_scope_count`) and no longer claims the files will stay —
+   they never did.
+
+New tests reproduce both field states exactly: a cover on disk the
+row knows nothing about, a placed chapter with a stranded cover, and
+a delete that must take the whole series while leaving other series
+untouched.

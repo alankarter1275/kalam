@@ -874,8 +874,13 @@ impl Component for AllBooksModel {
                 if count == 0 {
                     return;
                 }
+                // A comic selection deletes its whole series (`delete_book`
+                // is series-scoped for comics), so the number the dialog
+                // shows must count the chapters, not the cards.
+                let ids: Vec<i64> = self.selected_books.iter().copied().collect();
+                let real_count = self.service.catalog().delete_scope_count(&ids).max(count);
                 let s = sender.input_sender().clone();
-                confirm_bulk_delete(&anchor, count, move || {
+                confirm_bulk_delete(&anchor, real_count, move || {
                     s.send(AllBooksMsg::DeleteSelected).ok();
                 });
             }
@@ -887,6 +892,9 @@ impl Component for AllBooksModel {
                 // Owned Arc so the worker can outlive this borrow.
                 let catalog = self.service.catalog().clone();
                 let count = ids.len();
+                // What the toast reports: a comic selection removes every
+                // chapter of its series, not just the card.
+                let real_count = catalog.delete_scope_count(&ids).max(count);
                 let s = sender.input_sender().clone();
                 crate::tasks::spawn(
                     format!("Deleting {} book{}", count, if count == 1 { "" } else { "s" }),
@@ -910,7 +918,7 @@ impl Component for AllBooksModel {
                             }
                             reporter.step(i + 1, count, format!("{}/{count}", i + 1));
                         }
-                        (count, failed)
+                        (real_count, failed)
                     },
                     |_| {},
                     move |(done, failed)| {
@@ -1211,7 +1219,7 @@ fn confirm_bulk_delete(anchor: &gtk::Widget, count: usize, on_confirm: impl Fn()
     body.set_size_request(360, -1);
 
     let text = gtk::Label::new(Some(&format!(
-        "Delete {count} book{}?\n\nThe files stay where they are — they are          removed from your library and their reading history goes with them.          This cannot be undone.",
+        "Delete {count} book{}?\n\nThis removes the files and their reading history from your library. This cannot be undone.",
         if count == 1 { "" } else { "s" }
     )));
     text.set_wrap(true);

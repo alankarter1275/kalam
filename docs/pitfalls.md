@@ -1618,3 +1618,51 @@ The stale-log trap from §11 recurred in the same round:
 `test-latest.txt` still ended with the *previous* run's footer, and only
 the commit list showed which publish commit carried the real failure.
 Read the `--- run <id> ---` footer before believing a log is current.
+
+## 40. The disk is the truth — and a collapsed card deletes at its entity's scope
+
+**2026-10-02, item 2.22's first field test on the owner's real library
+found two defects the CI-green suite could not:**
+
+**Defect one: every comic cover stayed behind in the old per-book
+folders while the chapter files moved.** The placement pass moved the
+cover by the row's `cover_name` — resolve the row's name, rename that
+file — and when the row and the disk disagreed (a name that resolved
+nowhere, or a move that failed), the error went through `let _ =` and
+the chapter simply lost its cover, its old folder staying behind with
+the orphan. The exact divergence on the owner's machine was never
+confirmed — no access to his database — which is itself the lesson:
+the fix could not be "correct the row"; it had to stop trusting the
+row. The sweep now lists the old folder and moves what is *there*
+(cover images, `kalam.json`), letting the row catch up; a repair pass
+adopts the same leftovers for chapters already placed; and every file
+operation in the pass logs instead of being discarded.
+
+**Defect two: deleting a comic from All Books removed exactly one
+chapter.** The grid collapses a series to one card backed by one
+representative book row, and the delete flow deleted *that row*. An
+action on a collapsed entity must operate at the entity's scope:
+`delete_book` is now series-scoped for comics, the confirmation counts
+the chapters (`delete_scope_count`), and the toast reports the real
+number.
+
+### The rules
+
+- A migration that moves files must be driven by the directory
+  listing, never by metadata that claims to describe it. The disk is
+  the truth; rows catch up.
+- Never `let _ =` a file operation in a migration. A swallowed error
+  is a stranded file that nobody will see until the owner browses the
+  folder.
+- Unit tests seeded from the same assumptions as the code cannot catch
+  row/disk divergence — the tests built rows whose names matched the
+  files, so the move always worked. A migration test needs at least
+  one case where the row lies (a cover with no name, a name with no
+  cover).
+- When the UI presents a collapsed entity (a series card, a drawer
+  entry), every destructive action on it goes through the entity, not
+  the representative row behind it.
+- A feature that already ran in the field needs a healing path, not
+  just a corrected forward path: the adoption pass repairs libraries
+  already in the broken state, on the next launch, with no user
+  action.

@@ -1742,3 +1742,45 @@ is back to 12 with the documented per-file distribution.
   instrumentation that can crash the app is worse than no instrumentation.
 - Re-run the count locally (it is a 20-line string match, reproducible in
   one python snippet) rather than spending a CI cycle on the discovery.
+
+---
+
+## 42. A recurring GTK critical means the mitigations cover only some paths
+
+**2026-10-02, the owner's 7.1 timing run.** Mid-session, during navigation
+away from the EPUB reader:
+
+```text
+(kalam:272759): Gtk-CRITICAL **: gtk_widget_is_ancestor:
+assertion 'GTK_IS_WIDGET (widget)' failed
+```
+
+This is the **third appearance** of this critical, and the first two were
+fixed with in-code mitigations that are still there, each with a comment
+naming this exact message:
+
+- `AppModel::detach_current` (`src/app.rs`): unparent the page *before*
+  dropping the controller — dropping first makes GTK probe a disposed
+  widget.
+- The float-close path (`src/app.rs`, `CloseBookDialog` handler): the
+  rebuild of the page underneath a closing dialog is deferred to an idle
+  callback — rebuilding while GTK unwinds the close signal is what
+  produced the criticals there.
+
+**This instance:** it fired inside a ~250 ms UI block about 8 s after
+`route_open:reader`, at the moment the session navigated reader → home.
+The reader page is not a cacheable route, so Back drops it through the
+mitigated detach path — meaning something *else* still held or touched a
+finalized reader widget (a gesture, an engine view callback, a task
+applying to a dead page). Not reproducible from the log alone.
+
+### The rules
+
+- Every appearance of a runtime warning gets recorded, even when a fix
+  for a previous appearance is already in the tree — the count is the
+  signal that the mitigations do not cover every path.
+- The chase is now owed: whoever next touches reader teardown, float
+  close, or page-cache dropping runs the session again and attributes
+  this critical to its actual call site before calling that work done.
+  Two mitigated paths and a third appearance means the pattern, not the
+  two sites, is the problem.

@@ -103,38 +103,43 @@ One rule, copied from the readers, applied everywhere:
 
 ## Steps
 
-- **Step 0 — measure** (7.1's mandated first move; also 7.7 layer 2).
-  Timing spans bracket every route and dialog construction
-  (`route_open:<name>`, `dialog_open:<name>`) in `build_page` and the
-  float openers. The **stall watchdog**: a repeating main-loop tick that
-  logs any block over ~100 ms together with the span currently open —
-  names culprits in `kalam.log` and in the CI smoke session. Output: the
-  ranked list of screens by measured open cost; the migration order is
-  that list minus the two exclusions. This step also re-measures
-  `grid_build`, which either confirms or retires 7.6's 35× discrepancy.
+- **Step 0 — measure: DONE** (see the step log). Spans + watchdog +
+  smoke-report section shipped CI-green; the owner's field run produced
+  the ranked list above.
 - **Step 1 — ARCH.md.** The prescriptive principles document (owner
   approved 2026-10-01): threading model, layering, state flow, budgets —
-  short, copied from what the readers already do. Every later step checks
-  against it; every future plan.md states compliance.
-- **Step 2 — migrate the book page + book float** (the worst confirmed
-  offenders and the field-reported ones). Skeleton first; one worker
-  snapshot (book_detail once, annotations, stats, author rows); the EPUB
-  chapter-titles parse moved off the open path entirely and filled in
-  when it arrives; covers through the existing deferred path. Budget test
-  added as it lands. Owner field-test after this step (§38).
-- **Step 3 — migrate the remaining screens in measured order**, batched
-  (dashboards: home, library; list pages: history, quotes, words, reading
-  list, lookup history, tags, shelves, shelf detail, author page,
-  analytics, comics pages, settings reads). Same recipe per screen:
-  skeleton → snapshot in worker → fill on arrival → budget test.
-  **Startup rides here** (7.5): spans first inside `AppModel::init`, then
-  its blocks move off the open path as the measurements dictate.
+  short, copied from what the readers already do. Lands with the first
+  migration. Every later step checks against it; every future plan.md
+  states compliance.
+- **Step 2a — migrate the book page + book float.** The most-touched
+  surfaces; carries the EPUB-parse violation (686 ms on one book) and the
+  1.15 s first-dialog freeze. Skeleton first; one worker snapshot
+  (book_detail once, annotations, stats, author rows); chapter-titles
+  parse off the open path entirely and filled in on arrival; covers
+  through the existing deferred path. Budget test as it lands. Owner
+  field-test after this step (§38).
+- **Step 2b — migrate the library dashboard + home.** The two heaviest
+  constructions (897 / 459 ms first open; reads already ≤ 11 ms) and the
+  two landing screens. Same recipe.
+- **Step 2c — migrate settings + author.** 465 / 232 ms of widget
+  building with trivial or no reads.
+- **Step 3 — startup (7.5), now with measured targets**: the 2.3 s
+  catalog open (before the loop, splash up — decide what can move or
+  overlap), the 1.2 s `AppModel::init` (spans first inside it, per 7.5),
+  and the 3.9 s + 1.8 s post-paint idle blocks (spans on the idle work:
+  icons, dicts check, thumbs backfill). The remaining small list pages
+  (history, quotes, words, lookup history, shelf detail, comics) ride
+  here in the same recipe — most are already ≤ 16 ms and will mostly need
+  only their budget tests.
 - **Step 4 — enforcement completes** (7.7). Count-shaped budgets per
   migrated screen: construction issues zero queries; snapshot statement
   counts bounded and non-growing via `count_queries`. The static boundary
   check comes **last** — scan `src/pages/**` for direct fs/catalog/parser
   calls outside the task layers, with an allowlist of written reasons —
-  once the allowlist is small. Owner field-test after this step.
+  once the allowlist is small. Also here: the page-cache eviction
+  question (progress writes currently evict everything — the owner's log
+  shows near-100 % misses; decide fix or delete). Owner field-test after
+  this step.
 
 CI green after every step; every commit HEAD-checked (§36).
 
@@ -219,7 +224,62 @@ CI green after every step; every commit HEAD-checked (§36).
     the read paths — diagnostics must not be able to panic the UI
     thread. Count verified back at 12 with the documented per-file
     distribution.
-  - **The ranked list comes next**: `KALAM_TIMING=1 kalam` on the owner's
-    machine, click through the library, read the `route_open:` /
-    `dialog_open:` lines (and the `[stall]` lines the watchdog prints
-    without any env var). That list orders step 2/3.
+  - **The ranked list arrived (owner's machine, 2026-10-02)** — see the
+    next section. It orders steps 2–3 below.
+
+## The measured ranked list (owner field run, 2026-10-02)
+
+`KALAM_TIMING=1`, one session through the real library. The headline:
+**the service reads are innocent** — every `service_*` span is
+0.2–11 ms. The costs are widget-tree construction, one EPUB parse, and
+startup. That confirms the migration shape (skeleton + async read is
+right, but the reads are not the weight — the widget building is) and
+adds a target the plan had not sized: what happens *after* construction.
+
+First-open costs, his machine, excluding the two out-of-scope screens:
+
+| Rank | Screen | First open | Warm | Notes |
+|---|---|---|---|---|
+| 1 | `route_open:library` | **897 ms** | — | dashboard read: 11 ms; the rest is widget building + per-row lookups |
+| 2 | `route_open:book` | 96 ms / **686 ms** | 16 ms | the 686 is the EPUB chapter-titles parse on the UI thread — the "parsing" violation; varies by book |
+| 3 | `route_open:settings` | **465 ms** | — | no service read at all; pure widget construction |
+| 4 | `route_open:home` | **459 ms** | 5–17 ms | first build; `service_home` 344 ms cold then 5.5 ms warm |
+| 5 | `route_open:author` | **232 ms** | — | |
+| 6 | `dialog_open:book_float` | 31 ms | 3–10 ms | plus a **1.15 s freeze immediately after the first open** — the most-touched dialog |
+
+Findings around the list:
+
+- **Post-construction freezes.** The watchdog caught 250 ms–1.4 s blocks
+  *after* routes completed (`after route_open:book …`, `after
+  dialog_open:book_float …`): GTK realizing/styling the freshly built
+  tree. Construction spans end; the cost lands right after. Skeletons
+  shrink it (smaller trees at once); each migration re-measures.
+- **Startup is ~10 s cold on his machine**: catalog open **2.3 s**
+  (before the loop, splash up), `AppModel::init` **1.2 s** (cold; 7.5's
+  425 ms was warm) including the 459 ms home build, then **3.9 s and
+  1.8 s UI blocks after the window appeared** — post-paint idle work
+  (icons, dicts check, thumbs backfill landing together). The watchdog
+  cannot see before the main loop runs, so startup-block boundaries are
+  fuzzy — the 7.5 spans-first step must add spans to the idle work.
+- **The page cache is mostly dead**: nearly every navigation logged
+  `page_cache_miss` — reading-progress writes bump the change token and
+  evict everything, exactly as the code comment predicted. Every
+  navigation pays full construction, which raises the migration's value.
+  Cheap cache fix (progress writes should not evict) is noted for step 4.
+- **One late 250 ms block** attributed `after route_open:reading_list
+  (ended 5430 ms ago)` — a stale attribution; that block is background
+  work no span covers yet. A finding, not a defect in the watchdog.
+- **A `Gtk-CRITICAL` (`gtk_widget_is_ancestor`) during reader → home
+  navigation** — third appearance of a known family (two mitigations
+  already in `app.rs`, each commented with this exact message). Recorded
+  as pitfalls §42; the chase is owed on the next reader-teardown touch.
+- **Out of scope, flagged honestly:** the EPUB reader's first open was
+  **895 ms (576 ms engine open)** on his machine — the bubbles-era
+  measurements said 32–78 ms. Warm re-open 138 ms. The owner excluded
+  readers from this campaign; the numbers say a look is warranted
+  someday. The **PDF reader is the model citizen**: 60 ms construction,
+  document open off-thread (507 ms total, UI never blocked during it).
+- The small list pages are already fine: shelves 2 ms, review 2 ms,
+  reading list 2 ms, analytics 16 ms, tags 14 ms, all-books 8 ms.
+
+## Steps (order revised by the measurement, 2026-10-02)

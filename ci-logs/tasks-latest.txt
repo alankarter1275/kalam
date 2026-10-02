@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-tasks settle=20
-binary: 65870712 bytes
+binary: 65950840 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4209.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4166.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,19 +32,19 @@ navigation: 'tasks' differs from Home -- the page really did change
 navigation: OK -- the images below are 'tasks'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init       56.1 ms
-  [timing] startup_style          40.1 ms
+  [timing] startup_gtk_init       49.2 ms
+  [timing] startup_style          33.6 ms
   [timing] icons_write             0.0 ms
   [timing] icons_theme             0.1 ms
   [timing] startup_libraries       0.1 ms
   [timing] startup_db_open         5.3 ms
-  [timing] startup_theme          10.7 ms
-  [timing] pre_run               234.5 ms
-  [timing] service_home            1.3 ms
+  [timing] startup_theme           9.3 ms
+  [timing] pre_run               222.6 ms
+  [timing] service_home            1.4 ms
   [timing] covers_queued            11
   [timing] startup_first_page      2.6 ms
-  [timing] init_done             239.2 ms
-  [timing] window_shown          242.7 ms
+  [timing] init_done             226.9 ms
+  [timing] window_shown          229.4 ms
   [timing] startup_dicts           0.1 ms
   [timing] page_cache_miss           1
   [timing] folders_renamed         139
@@ -68,26 +68,26 @@ navigation: OK -- the images below are 'tasks'
 
 === app stderr (non-timing lines) ===
   
-  (process:4247): Gtk-WARNING **: 23:47:51.377: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:4203): Gtk-WARNING **: 00:24:31.340: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=tasks — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=88724 peak_rss_mb=86
+books=139 peak_rss_kb=89176 peak_rss_mb=87
 
 === shutting down ===
 
 === artifacts ===
   total 196
-  drwxr-xr-x  2 runner runner  4096 Oct  1 23:48 .
-  drwxr-xr-x 21 runner runner  4096 Oct  1 23:47 ..
-  -rw-r--r--  1 runner runner 30451 Oct  1 23:48 01-tasks.png
-  -rw-r--r--  1 runner runner 30451 Oct  1 23:48 02-tasks-settling.png
-  -rw-r--r--  1 runner runner 30451 Oct  1 23:48 03-tasks-settled.png
-  -rw-r--r--  1 runner runner 66389 Oct  1 23:48 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Oct  1 23:48 grim.log
-  -rw-r--r--  1 runner runner  1130 Oct  1 23:48 kalam-home.log
-  -rw-r--r--  1 runner runner  1130 Oct  1 23:47 kalam.log
-  -rw-r--r--  1 runner runner  3140 Oct  1 23:48 report.txt
-  -rw-r--r--  1 runner runner    88 Oct  1 23:47 sway.log
-  -rw-r--r--  1 runner runner  7184 Oct  1 23:48 tree.json
---- run 36942052939 ---
+  drwxr-xr-x  2 runner runner  4096 Oct  2 00:25 .
+  drwxr-xr-x 21 runner runner  4096 Oct  2 00:24 ..
+  -rw-r--r--  1 runner runner 30451 Oct  2 00:24 01-tasks.png
+  -rw-r--r--  1 runner runner 30451 Oct  2 00:24 02-tasks-settling.png
+  -rw-r--r--  1 runner runner 30451 Oct  2 00:25 03-tasks-settled.png
+  -rw-r--r--  1 runner runner 66389 Oct  2 00:25 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Oct  2 00:24 grim.log
+  -rw-r--r--  1 runner runner  1130 Oct  2 00:25 kalam-home.log
+  -rw-r--r--  1 runner runner  1130 Oct  2 00:24 kalam.log
+  -rw-r--r--  1 runner runner  3140 Oct  2 00:25 report.txt
+  -rw-r--r--  1 runner runner    88 Oct  2 00:24 sway.log
+  -rw-r--r--  1 runner runner  7184 Oct  2 00:24 tree.json
+--- run 36945198547 ---

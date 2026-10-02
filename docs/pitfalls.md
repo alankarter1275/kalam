@@ -1515,6 +1515,17 @@ to confirm no failed run hides under the CI publish commits'
 names ("publish test failures" is the log-publish job's name even
 when green).
 
+**Eighth occurrence, 2026-10-02 (late), one turn after the rule was
+sharpened.** The HEAD check ran — printed the branch point — and the
+commit ran anyway, because the check and the commit were chained with
+`&&` *again*, in the very next turn after the sixth occurrence wrote
+"the HEAD check and the commit are separate commands, never chained."
+Knowing the rule does not enforce it; only the command boundary does.
+The recovery cost an extra reset (the empty re-trigger commit landed
+on the wrong base; nothing shipped, nothing lost). A cancelled CI run
+cannot be `gh run rerun`-ed ("workflow file may be broken"); the
+re-trigger is an empty commit on the correct base.
+
 **Sixth occurrence, 2026-10-02 (night), one hour after the fifth.** The
 status check ran — printed the branch point `29788b4` and a 170-file
 status — *and the commit ran anyway*, because the check, the add, the

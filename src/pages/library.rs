@@ -11,11 +11,11 @@
 //! have no section here (or whose section is empty) are reached from the
 //! quick-links row under the title instead.
 
-use crate::db::{Catalog, EventKind};
-use crate::models::{Book, BookFormat, LibrarySection};
+use crate::db::Catalog;
+use crate::models::{Book, LibrarySection};
 use crate::pages::history::pretty_day;
-use crate::service::{DashboardSnapshot, LibraryService};
-use crate::widgets::book_row::cover_widget;
+use crate::service::{DashboardFeedRow, DashboardSnapshot, LibraryService, NowReading};
+use crate::widgets::book_row::cover_widget_deferred;
 use crate::widgets::charts::{monthly_series, sparkline};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -38,15 +38,25 @@ pub enum LibraryOut {
     },
 }
 
+/// The dashboard snapshot finished on its worker (7.1 step 2b) — the
+/// page painted a loading skeleton in `init` and builds everything from
+/// this. No library read, EPUB open or progress lookup happens on the
+/// UI thread.
+#[derive(Debug)]
+pub enum LibraryMsg {
+    Loaded(Box<DashboardSnapshot>),
+}
+
 pub struct LibraryPageModel {
     service: LibraryService,
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for LibraryPageModel {
+impl Component for LibraryPageModel {
     type Init = Arc<Catalog>;
-    type Input = ();
+    type Input = LibraryMsg;
     type Output = LibraryOut;
+    type CommandOutput = ();
 
     view! {
         #[root]
@@ -73,11 +83,48 @@ impl SimpleComponent for LibraryPageModel {
             service: LibraryService::new(catalog),
         };
         let widgets = view_output!();
-        let snap = model.service.dashboard(FEED_LIMIT);
-        report_errors(&snap.errors);
-        build_dashboard(&widgets.body, &snap, &model.service, &sender);
+
+        // Skeleton only (7.1 step 2b): a loading row in the body, and
+        // every read — including the EPUB spine the "Now reading" card
+        // used to open inline — happens on the worker.
+        let loading = gtk::Label::new(Some("Loading your library…"));
+        loading.add_css_class("kalam-muted");
+        loading.set_halign(gtk::Align::Start);
+        widgets.body.append(&loading);
+
+        request_snapshot(&model.service, &sender);
+
         ComponentParts { model, widgets }
     }
+
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        message: Self::Input,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match message {
+            LibraryMsg::Loaded(snap) => {
+                apply_snapshot(&widgets.body, snap, &sender);
+            }
+        }
+        self.update_view(widgets, sender);
+    }
+}
+
+/// Ask the worker for a fresh dashboard snapshot (7.1 step 2b).
+fn request_snapshot(service: &LibraryService, sender: &ComponentSender<LibraryPageModel>) {
+    let service = LibraryService::new(service.catalog().clone());
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Reading library dashboard",
+        move |_reporter| service.dashboard(FEED_LIMIT),
+        |_| {},
+        move |snap| {
+            let _ = s.send(LibraryMsg::Loaded(Box::new(snap)));
+        },
+    );
 }
 
 /// How many feed rows the dashboard shows.
@@ -91,16 +138,27 @@ fn report_errors(errors: &[String]) {
     }
 }
 
-/// `snap` carries everything the page reads in one go; `service` is still
-/// needed for the per-row lookups the feed does (progress, book format) and
-/// for the cover/chapter work the cards do.
-fn build_dashboard(
+/// Build the dashboard from an owned snapshot the worker already read —
+/// the apply half of the skeleton/worker/apply recipe (7.1 step 2b).
+/// Every value the cards show, down to the feed row subtitles, arrived
+/// resolved: no catalog access, no EPUB open, no progress read below.
+fn apply_snapshot(
     body: &gtk::Box,
-    snap: &DashboardSnapshot,
-    service: &LibraryService,
+    snap: Box<DashboardSnapshot>,
     sender: &ComponentSender<LibraryPageModel>,
 ) {
-    let catalog = service.catalog();
+    let snap = *snap;
+    // Attribution pair (2a.1): the span for KALAM_TIMING=1, the activity
+    // label so a stall during this build says "while library_fill".
+    let _t = crate::timing::measure("library_fill");
+    let _a = crate::timing::activity("library_fill");
+    report_errors(&snap.errors);
+
+    // The skeleton's loading row (and any previous dashboard).
+    while let Some(child) = body.first_child() {
+        body.remove(&child);
+    }
+
     let stats = &snap.stats;
 
     // ── header ──────────────────────────────────────────────────────────
@@ -143,10 +201,9 @@ fn build_dashboard(
     let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
     top_row.set_hexpand(true);
 
-    // Now reading: the most recently opened book that isn't finished yet.
-    let now = snap.recently_opened.iter().find(|b| b.progress < 100);
-    if let Some(book) = now {
-        top_row.append(&now_reading_card(book, catalog, sender));
+    // Now reading, resolved on the worker (book + spine + chapter index).
+    if let Some(nr) = &snap.now_reading {
+        top_row.append(&now_reading_card(nr, sender));
     }
 
     let grid = gtk::Grid::new();
@@ -232,8 +289,8 @@ fn build_dashboard(
         ));
     }
 
-    // ── history (events + sessions, merged) ─────────────────────────────
-    let feed = history_feed(snap, catalog);
+    // ── history (events + sessions, merged on the worker) ─────────────
+    let feed = &snap.feed;
     if !feed.is_empty() {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
         for item in &feed {
@@ -343,10 +400,10 @@ fn build_dashboard(
 /// button, the progress bar with chapter location, and a four-row chapter
 /// timeline centered on the current chapter.
 fn now_reading_card(
-    book: &Book,
-    catalog: &Arc<Catalog>,
+    nr: &NowReading,
     sender: &ComponentSender<LibraryPageModel>,
 ) -> gtk::Box {
+    let book = &nr.book;
     let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
     card.add_css_class("kalam-now-reading");
     card.set_size_request(260, -1);
@@ -359,7 +416,7 @@ fn now_reading_card(
     // Cover + meta (title, author, Read button pinned to the bottom).
     let top = gtk::Box::new(gtk::Orientation::Horizontal, 14);
 
-    let cover = cover_widget(book.cover_path.as_deref(), 72, 104);
+    let cover = cover_widget_deferred(book.cover_path.as_deref(), 72, 104);
     cover.add_css_class("kalam-nr-cover");
     let cover_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     cover_box.append(&cover);
@@ -405,23 +462,11 @@ fn now_reading_card(
     top.append(&meta);
     card.append(&top);
 
-    // Spine + current chapter (EPUBs only — the mockup's timeline needs it).
-    let chapters = if book.format == BookFormat::Epub {
-        crate::epub_book::OpenBook::open(
-            &book.file_path,
-            &crate::paths::reader_cache_dir(&book.uuid),
-        )
-        .map(|ob| ob.spine.iter().map(|s| s.title.clone()).collect::<Vec<_>>())
-        .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    let (chapter_index, _frac) = catalog
-        .get_reading_progress(book.id)
-        .ok()
-        .flatten()
-        .unwrap_or((0, 0.0));
-    let current = chapter_index.min(chapters.len().saturating_sub(1));
+    // Spine + current chapter arrived resolved on the worker (7.1 step
+    // 2b): the EPUB open and the progress read used to happen right
+    // here, on the UI thread, in the middle of building the card.
+    let chapters = &nr.spine_titles;
+    let current = nr.chapter_index.min(chapters.len().saturating_sub(1));
 
     let bar = gtk::ProgressBar::new();
     bar.add_css_class("kalam-nr-prog");
@@ -620,7 +665,7 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
 
     let overlay = gtk::Overlay::new();
     overlay.set_size_request(120, 170);
-    let cover = cover_widget(book.cover_path.as_deref(), 120, 170);
+    let cover = cover_widget_deferred(book.cover_path.as_deref(), 120, 170);
     // Card-click gesture lives on the cover itself: the play button sits
     // above the cover in the overlay, so its clicks never reach it.
     let id = book.id;
@@ -688,7 +733,7 @@ fn quote_card(anno: &crate::db::Annotation, qref: &crate::db::QuoteRef) -> gtk::
     let card = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     card.add_css_class("kalam-q-card");
 
-    let cover = cover_widget(qref.cover_path.as_deref(), 48, 68);
+    let cover = cover_widget_deferred(qref.cover_path.as_deref(), 48, 68);
     cover.add_css_class("kalam-q-cover");
     card.append(&cover);
 
@@ -749,107 +794,7 @@ fn relative_days(day: &str) -> String {
     pretty_day(day).to_string()
 }
 
-// ---------------------------------------------------------------------------
-// History feed (events + sessions)
-// ---------------------------------------------------------------------------
-
-struct FeedItem {
-    at: String,
-    title: String,
-    sub: String,
-    icon: &'static str,
-    /// Badge background tint class.
-    tint: &'static str,
-    /// Icon colour class (the pre-existing `kalam-event-*` set).
-    icon_tint: &'static str,
-    book_id: i64,
-}
-
-/// Newest-first mix of the event log and reading sessions, capped at
-/// [`FEED_LIMIT`]. Both inputs come from the snapshot; `catalog` remains only
-/// for the per-event detail lookups (progress, format).
-fn history_feed(snap: &DashboardSnapshot, catalog: &Arc<Catalog>) -> Vec<FeedItem> {
-    let mut items: Vec<FeedItem> = Vec::new();
-
-    for e in &snap.events {
-        let sub = match e.kind {
-            // Opened events carry no detail — show where the book
-            // currently sits instead.
-            EventKind::Opened => catalog
-                .get_reading_progress(e.book_id)
-                .ok()
-                .flatten()
-                .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
-                .unwrap_or_default(),
-            EventKind::Finished => {
-                if e.detail == "auto" {
-                    format!("{} · auto-finished", e.book_authors)
-                } else {
-                    e.book_authors.clone()
-                }
-            }
-            EventKind::Unfinished => e.book_authors.clone(),
-            EventKind::Imported => {
-                let format_label = catalog
-                    .get_book(e.book_id)
-                    .ok()
-                    .flatten()
-                    .map(|b| b.format.as_str().to_string())
-                    .unwrap_or_default();
-                if format_label.is_empty() {
-                    e.book_authors.clone()
-                } else {
-                    format!("{} · {}", e.book_authors, format_label)
-                }
-            }
-        };
-        items.push(FeedItem {
-            at: e.at.clone(),
-            title: format!("{} {}", e.kind.label(), e.book_title),
-            sub,
-            icon: e.kind.icon(),
-            tint: match e.kind {
-                EventKind::Finished => "kalam-hist-tint-success",
-                EventKind::Imported => "kalam-hist-tint-warning",
-                _ => "kalam-hist-tint-accent",
-            },
-            icon_tint: match e.kind {
-                EventKind::Finished => "kalam-event-finished",
-                EventKind::Imported => "kalam-event-imported",
-                _ => "kalam-event-opened",
-            },
-            book_id: e.book_id,
-        });
-    }
-
-    for s in &snap.sessions {
-        if s.seconds < 30 {
-            continue; // ignore flip-in-and-out sessions
-        }
-        let mins = (s.seconds / 60).max(1);
-        let sub = if (1..100).contains(&s.end_pct) {
-            format!("{mins} min session · reached {}%", s.end_pct)
-        } else {
-            format!("{mins} min session")
-        };
-        items.push(FeedItem {
-            at: s.started_at.clone(),
-            title: format!("Read {}", s.book_title),
-            sub,
-            icon: "media-playback-start-symbolic",
-            tint: "kalam-hist-tint-accent",
-            icon_tint: "kalam-event-opened",
-            book_id: s.book_id,
-        });
-    }
-
-    // ISO-8601 UTC strings compare chronologically.
-    items.sort_by(|a, b| b.at.cmp(&a.at));
-    items.truncate(FEED_LIMIT);
-    items
-}
-
-fn history_row(item: &FeedItem, sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
+fn history_row(item: &DashboardFeedRow, sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     row.add_css_class("kalam-hist-row");
 

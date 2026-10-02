@@ -204,6 +204,34 @@ pub struct QuotesSnapshot {
     pub errors: Errors,
 }
 
+/// Everything the dashboard's "Now reading" card needs, resolved off the
+/// UI thread (7.1 step 2b): the EPUB spine is a file open + parse — a
+/// 2.20 violation the old inline card carried — and the chapter index is
+/// a database read.
+#[derive(Debug)]
+pub struct NowReading {
+    pub book: Book,
+    /// Spine entry titles, in order. Empty for non-EPUB books (and for
+    /// EPUBs that fail to open — the card falls back to a bare percent).
+    pub spine_titles: Vec<String>,
+    /// 0-based index of the current chapter, already read on the worker.
+    pub chapter_index: usize,
+}
+
+/// One merged history-feed row, fully resolved: the per-event progress and
+/// format lookups the page used to do **while building its widgets** are
+/// baked into `sub` here (7.1 step 2b).
+#[derive(Debug, Default)]
+pub struct DashboardFeedRow {
+    pub at: String,
+    pub title: String,
+    pub sub: String,
+    pub icon: &'static str,
+    pub tint: &'static str,
+    pub icon_tint: &'static str,
+    pub book_id: i64,
+}
+
 /// The My Library dashboard. One read of everything the page shows, so a
 /// broken database cannot render as a cheerful empty dashboard.
 ///
@@ -214,6 +242,11 @@ pub struct DashboardSnapshot {
     pub stats: LibraryStats,
     /// Most recently opened books; the page picks "now reading" from these.
     pub recently_opened: Vec<Book>,
+    /// The resolved "Now reading" card data (None when nothing qualifies).
+    pub now_reading: Option<NowReading>,
+    /// The merged, lookups-already-done history feed, truncated to the
+    /// caller's limit.
+    pub feed: Vec<DashboardFeedRow>,
     /// Fallback for the continue strip when nothing has been opened yet.
     pub recent: Vec<Book>,
     pub quotes: Vec<(Annotation, QuoteRef)>,
@@ -565,23 +598,63 @@ impl LibraryService {
         let _t = crate::timing::measure("service_dashboard");
         let mut errors = Errors::new();
         let cat = &self.catalog;
+        let stats = take(cat.library_stats(), "library stats", &mut errors);
+        let recently_opened = take(cat.recently_opened(6), "recently opened", &mut errors);
+        // "Now reading": the most recently opened book that isn't finished.
+        // Resolved here — on the worker — so the page never opens an EPUB
+        // or reads progress while building widgets (7.1 step 2b).
+        let now_reading = recently_opened
+            .iter()
+            .find(|b| b.progress < 100)
+            .map(|book| {
+                let spine_titles = if book.format == crate::models::BookFormat::Epub {
+                    crate::epub_book::OpenBook::open(
+                        &book.file_path,
+                        &crate::paths::reader_cache_dir(&book.uuid),
+                    )
+                    .map(|ob| ob.spine.iter().map(|sp| sp.title.clone()).collect())
+                    .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                let chapter_index = cat
+                    .get_reading_progress(book.id)
+                    .ok()
+                    .flatten()
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0);
+                NowReading {
+                    book: book.clone(),
+                    spine_titles,
+                    chapter_index,
+                }
+            });
+        let recent = take(cat.recent_books(60), "recent books", &mut errors);
+        let quotes = take(cat.recent_quotes(2), "recent quotes", &mut errors);
+        let words = take(cat.list_saved_words("", None), "saved words", &mut errors);
+        let lookups = take(cat.list_dict_lookups("", 3), "recent lookups", &mut errors);
+        let events = take(
+            cat.list_events(None, "", feed_limit * 2),
+            "reading history",
+            &mut errors,
+        );
+        let sessions = take(
+            cat.recent_sessions(feed_limit * 2),
+            "reading sessions",
+            &mut errors,
+        );
+        let feed = dashboard_feed(cat, &events, &sessions, feed_limit);
         DashboardSnapshot {
-            stats: take(cat.library_stats(), "library stats", &mut errors),
-            recently_opened: take(cat.recently_opened(6), "recently opened", &mut errors),
-            recent: take(cat.recent_books(60), "recent books", &mut errors),
-            quotes: take(cat.recent_quotes(2), "recent quotes", &mut errors),
-            words: take(cat.list_saved_words("", None), "saved words", &mut errors),
-            lookups: take(cat.list_dict_lookups("", 3), "recent lookups", &mut errors),
-            events: take(
-                cat.list_events(None, "", feed_limit * 2),
-                "reading history",
-                &mut errors,
-            ),
-            sessions: take(
-                cat.recent_sessions(feed_limit * 2),
-                "reading sessions",
-                &mut errors,
-            ),
+            stats,
+            recently_opened,
+            now_reading,
+            feed,
+            recent,
+            quotes,
+            words,
+            lookups,
+            events,
+            sessions,
             // Infallible by construction (they fall back to a default inside
             // the catalog), so they contribute no error rows.
             goal: cat.reading_goal(),
@@ -758,6 +831,95 @@ fn continue_row(recently_opened: Vec<Book>, recent: &[Book]) -> Vec<Book> {
         return in_progress;
     }
     recent.first().cloned().into_iter().collect()
+}
+
+/// The merged history feed (events + reading sessions), fully resolved on
+/// the worker: the per-event progress and format lookups the page used to
+/// do while building are baked into `sub` here (7.1 step 2b).
+fn dashboard_feed(
+    cat: &Catalog,
+    events: &[ReadingEvent],
+    sessions: &[LibrarySession],
+    feed_limit: usize,
+) -> Vec<DashboardFeedRow> {
+    let mut items: Vec<DashboardFeedRow> = Vec::new();
+
+    for e in events {
+        let sub = match e.kind {
+            // Opened events carry no detail -- show where the book
+            // currently sits instead.
+            EventKind::Opened => cat
+                .get_reading_progress(e.book_id)
+                .ok()
+                .flatten()
+                .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
+                .unwrap_or_default(),
+            EventKind::Finished => {
+                if e.detail == "auto" {
+                    format!("{} · auto-finished", e.book_authors)
+                } else {
+                    e.book_authors.clone()
+                }
+            }
+            EventKind::Unfinished => e.book_authors.clone(),
+            EventKind::Imported => {
+                let format_label = cat
+                    .get_book(e.book_id)
+                    .ok()
+                    .flatten()
+                    .map(|b| b.format.as_str().to_string())
+                    .unwrap_or_default();
+                if format_label.is_empty() {
+                    e.book_authors.clone()
+                } else {
+                    format!("{} · {}", e.book_authors, format_label)
+                }
+            }
+        };
+        items.push(DashboardFeedRow {
+            at: e.at.clone(),
+            title: format!("{} {}", e.kind.label(), e.book_title),
+            sub,
+            icon: e.kind.icon(),
+            tint: match e.kind {
+                EventKind::Finished => "kalam-hist-tint-success",
+                EventKind::Imported => "kalam-hist-tint-warning",
+                _ => "kalam-hist-tint-accent",
+            },
+            icon_tint: match e.kind {
+                EventKind::Finished => "kalam-event-finished",
+                EventKind::Imported => "kalam-event-imported",
+                _ => "kalam-event-opened",
+            },
+            book_id: e.book_id,
+        });
+    }
+
+    for s in sessions {
+        if s.seconds < 30 {
+            continue; // ignore flip-in-and-out sessions
+        }
+        let mins = (s.seconds / 60).max(1);
+        let sub = if (1..100).contains(&s.end_pct) {
+            format!("{mins} min session · reached {}%", s.end_pct)
+        } else {
+            format!("{mins} min session")
+        };
+        items.push(DashboardFeedRow {
+            at: s.started_at.clone(),
+            title: format!("Read {}", s.book_title),
+            sub,
+            icon: "media-playback-start-symbolic",
+            tint: "kalam-hist-tint-accent",
+            icon_tint: "kalam-event-opened",
+            book_id: s.book_id,
+        });
+    }
+
+    // ISO-8601 UTC strings compare chronologically.
+    items.sort_by(|a, b| b.at.cmp(&a.at));
+    items.truncate(feed_limit);
+    items
 }
 
 #[cfg(test)]

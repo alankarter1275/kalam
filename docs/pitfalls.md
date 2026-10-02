@@ -1294,6 +1294,17 @@ riding along in the commit.
 
 ## 31. An async rewrite must re-home every side effect of the sync path it replaces
 
+**Second near-miss of the same family (2026-10-02, 2b, caught before
+commit, never shipped).** Restructuring `dashboard()` to bind snapshot
+fields as locals inserted the new field list into the struct literal
+but left the old `field: take(...)` initializers in place below it —
+duplicate fields, an instant compile error in CI had it shipped. The
+§31 read-through of the whole function after a structural edit is what
+caught it. The rule generalizes: after any edit that restructures a
+literal or a function body, re-read the *entire* construct, not just
+the edited lines — replacement anchors end where the old text ended,
+and everything after it is still the old code.
+
 **The near-miss (2026-10-01, PDF plan step 1; caught before commit, never
 shipped).** Moving the PDF open off the UI thread meant rewriting
 `ensure_page_text`, whose old body did three things: extract the vector
@@ -1504,11 +1515,21 @@ to confirm no failed run hides under the CI publish commits'
 names ("publish test failures" is the log-publish job's name even
 when green).
 
+**Sixth occurrence, 2026-10-02 (night), one hour after the fifth.** The
+status check ran — printed the branch point `29788b4` and a 170-file
+status — *and the commit ran anyway*, because the check, the add, the
+commit and the push were chained with `&&` in a single command. A check
+whose output nobody acts on between seeing it and committing is not a
+check. Same recovery as the fifth (tag, reset to remote tip, checkout
+the six intended files, verify the staged diff, commit).
+
 ### The rule
 
-- At the start of every turn, before any commit: `git log --oneline -1`
-  and `git status`. If HEAD is the branch point instead of the session's
-  last commit, or the upstream is unset, stop and recover — never commit
+- **The HEAD check and the commit are separate commands, never chained.**
+  Run `git log --oneline -1` and `git status` first, READ them, and only
+  then — in a fresh command — add, commit and push. If HEAD is the
+  branch point instead of the session's last commit, or hundreds of
+  files show modified with no reason, stop and recover — never commit
   blind, and never trust a silent push: check that the push actually
   moved the remote and that a CI run started for the new head.
 - Two more tells of a fallen base: a commit output line saying

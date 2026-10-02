@@ -185,9 +185,9 @@ One rule, copied from the readers, applied everywhere:
     the book/float split, the 667 ms block, and home's 3.9 s — and the
     fix (or the decision that the remainder is GTK-internal) follows
     from that evidence.
-- **Step 2b — Home and the library dashboard off the UI thread (the
-  proven 2a recipe). Planned 2026-10-02 from the field evidence;
-  awaiting the owner's go.**
+- **Step 2b — Home and the library dashboard off the UI thread: DONE
+  (2026-10-02, owner's go same day; field run owed). See the step log
+  below.**
   1. **Home first** — it is inside the startup convergence block the
      owner measured (2956 + 1552 ms). Today `init` calls `rebuild()`
      inline (`home.rs:184`), which runs `service.home()` (`home.rs:318`)
@@ -543,6 +543,30 @@ CI green after every step; every commit HEAD-checked (§36).
     screens is 1-3 ms and their blocks are GTK's realize/layout, not
     ours. The log points at step 2b: Home and the library dashboard,
     the two unmigrated screens, built with the proven recipe.
+
+- **Step 2b — implemented 2026-10-02 (both pages, the proven recipe;
+  the owner's go included the confirmation that the unnamed 4363 ms
+  freeze was scrolling Home — more evidence for this step).**
+  - **Home**: skeleton in `view!` (one loading row inside the continue
+    host, cleared by the first apply), `HomeMsg::Loaded` from a
+    `spawn_internal("Reading home")` worker, `apply_snapshot` = the old
+    `rebuild` body minus the service call. `ImportFinished` re-requests
+    the snapshot. Cover warming unchanged. Apply labelled `home_fill`
+    (measure + activity) so the next field run attributes.
+  - **Library dashboard**: same shape (`Reading library dashboard`,
+    `library_fill`), plus the per-row lookups folded into the service:
+    `DashboardSnapshot.now_reading` (the "Now reading" book *plus* its
+    EPUB spine and chapter index — the spine is a file open + parse the
+    page used to do on the UI thread mid-build, a 2.20 violation) and
+    `DashboardSnapshot.feed` (the merged events + sessions feed with
+    every per-event progress/format lookup already baked into the row
+    subtitles; `FeedItem` + `history_feed` moved from the page into
+    `service.rs` as `DashboardFeedRow` + `dashboard_feed`). The three
+    remaining sync `cover_widget` calls (now-reading 72×104, continue
+    120×170, quote 48×68) became `cover_widget_deferred`.
+  - Acceptance holds by construction: neither `init` contains a service
+    call (both grep-clean), and the page switch from `SimpleComponent`
+    to `Component` matches home/book.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

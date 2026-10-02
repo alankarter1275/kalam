@@ -119,9 +119,10 @@ One rule, copied from the readers, applied everywhere:
 - **Step 2a.1 — attribute the post-apply blocks: DONE and CLOSED**
   (owner approved 2026-10-02; field run same day — see the step log:
   our code is innocent everywhere, the freezes are GTK-side).
-- **Step 2a.2 — fix what the log named: (1) and (2) implemented
-  2026-10-02 (owner's go); (3)'s premise failed verification and the
-  decision returns to the owner; field run owed.**
+- **Step 2a.2 — DONE and CLOSED by the field run (2026-10-02, second
+  run). (1) and (2) implemented; (3) accepted-and-remeasured per the
+  owner. The fixes landed where they aimed; what remains names the
+  next screen.**
   - **(1) Layout-neutral cover swap — done.** The deferred cover frame
     now has exactly one child forever: a fixed-size picture whose
     paintable is swapped in place. The placeholder gradient is the
@@ -184,11 +185,36 @@ One rule, copied from the readers, applied everywhere:
     the book/float split, the 667 ms block, and home's 3.9 s — and the
     fix (or the decision that the remainder is GTK-internal) follows
     from that evidence.
-- **Step 2b — migrate the library dashboard + home.** The two heaviest
-  constructions (897 / 459-858 ms first open; reads already ≤ 11 ms) and
-  the two landing screens. Same recipe — **after 2a.1 says what the
-  recipe must add**. Home also carries the field run's biggest blocks
-  (3.9 s + 2.9 s after its span) and the cover-swap stream question.
+- **Step 2b — Home and the library dashboard off the UI thread (the
+  proven 2a recipe). Planned 2026-10-02 from the field evidence;
+  awaiting the owner's go.**
+  1. **Home first** — it is inside the startup convergence block the
+     owner measured (2956 + 1552 ms). Today `init` calls `rebuild()`
+     inline (`home.rs:184`), which runs `service.home()` (`home.rs:318`)
+     and builds stat tiles + continue/tbr/recent cards on the UI
+     thread, then warms covers. The service seam already exists (A0
+     step 2). New shape: skeleton in `view!` (page structure + hosts +
+     a light loading row), `HomeMsg::Loaded(Box<HomeSnapshot>)` from a
+     `spawn_internal("Reading home")` worker, apply = the existing
+     `rebuild` body minus the service call. `ImportFinished` re-requests
+     the snapshot instead of rebuilding inline. Cover warming unchanged
+     (deferred frames + layout-neutral swaps already shipped).
+  2. **Library dashboard second** — `init` runs
+     `service.dashboard(FEED_LIMIT)` inline (`library.rs:76`) and
+     `build_dashboard` (`library.rs:100`) does per-row catalog lookups
+     (progress, format) during building. Same skeleton/worker/apply
+     shape, plus: fold the per-row lookups into `DashboardSnapshot`
+     (the A0-step-2 move Home already received) so the apply is pure
+     widget building. The lookups are enumerated from the code at
+     implementation start, not from memory.
+  3. **Acceptance:** neither `init` contains a service call
+     (grep-checkable, stated in the step log); one field run after —
+     the 2956/1552 ms startup blocks should lose Home's share, leaving
+     the accepted icon cost and stream pacing.
+  4. **Not in scope:** the all-books windowed grid and the readers
+     (owner-excluded); the icon rescan (accepted, revisit only if it
+     still bothers after 2b); GTK's realize/layout cost of the
+     migrated screens (a later question, only if it still matters).
 - **Step 2c — migrate settings + author.** 465 / 232 ms of widget
   building with trivial or no reads.
 - **Step 3 — startup (7.5), now with measured targets**: the 2.3 s
@@ -487,6 +513,36 @@ CI green after every step; every commit HEAD-checked (§36).
     made. The fix list is now concrete and evidence-backed (step
     2a.2), and the biggest single lever is the layout-neutral cover
     swap, which touches every screen that shows covers.
+
+- **Step 2a.2 — field run (owner, 2026-10-02, after the fixes): the
+  migrated screens improved everywhere; the two big startup blocks
+  barely moved because they were never the migrated screens' code —
+  they are Home.** Previous run → this run:
+  - First frame: 940 ms → 444 ms (no activity open → into
+    icons_init, which itself measured 219 ms code).
+  - Book page fill: 16 ms → 3 ms; its post-fill block 650 ms → 250 ms
+    warm (851 ms for the first open of the session, which includes
+    the route + skeleton realize).
+  - Float fill: 1 → 3 ms; its block 250 → 350 ms (GTK window map +
+    tree realize — same class, unchanged, as expected).
+  - Startup convergence: 3456 ms → 2956 ms, and the follow-on block
+    1453 → 1552 ms — **unchanged in substance**. These blocks sit on
+    Home's synchronous build (`home.rs:184` `rebuild()` inline in
+    `init` — `service.home()` + stat tiles + continue/tbr/recent
+    cards, all on the UI thread inside the window's first layout
+    window), plus the accepted icon rescan, plus the cover/thumbnail
+    streams arriving while Home builds. The organizer's done-callback
+    is 0 ms and triggers nothing UI-side (`app.rs:1943` — completion
+    only writes a timing note); it is a coincidental attribution
+    marker, not a cause.
+  - One open signal: the log's last line is a block still in progress
+    with no activity for 4363 ms — unattributed. Asked the owner what
+    he was doing at that moment (scrolling the grid? opening a
+    reader?) before drawing conclusions.
+  - Conclusion: 2a.2's work is done — apply code on the migrated
+    screens is 1-3 ms and their blocks are GTK's realize/layout, not
+    ours. The log points at step 2b: Home and the library dashboard,
+    the two unmigrated screens, built with the proven recipe.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

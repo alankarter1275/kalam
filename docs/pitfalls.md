@@ -1473,6 +1473,22 @@ refused) kept the mess off the remote. Same fault, same recovery as
 intended changes (here: two files), `git reset --hard FETCH_HEAD`,
 re-apply, commit, push.
 
+**Fourth occurrence, 2026-10-02 (afternoon), same day as the third.**
+Again the sandbox's git metadata fell back to the branch point between
+turns — this time without the unset-upstream tell: the push target
+still resolved, so the first symptom was the push being *refused*
+(non-fast-forward: the remote held the session's pushed commits plus
+CI publish commits). The commit had already been made blind on the
+wrong base; the tell was in `git commit`'s own output — `create mode
+100644 plan.md` for a file known to be tracked, and an insertions
+count far too large. Recovery: `git fetch origin`, then
+`git reset --mixed <remote tip>` — mixed, not `--hard`, because the
+working tree held the only copy of the uncommitted changes — then
+`git checkout -- ci-logs/` for the stale generated logs, re-commit the
+two real files, push. Nothing lost; the misplaced commit became
+dangling. The rule below caught it one step later than it should have:
+the status check happens before the commit, and it did not run first.
+
 ### The rule
 
 - At the start of every turn, before any commit: `git log --oneline -1`
@@ -1480,6 +1496,10 @@ re-apply, commit, push.
   last commit, or the upstream is unset, stop and recover — never commit
   blind, and never trust a silent push: check that the push actually
   moved the remote and that a CI run started for the new head.
+- Two more tells of a fallen base: a commit output line saying
+  `create mode` for a file you know is tracked, and a file-count/
+  insertions count that dwarfs the edit you just made. If either
+  appears, stop before pushing — the commit is on the wrong base.
 
 ### Eighth occurrence, 2026-10-02 — the reset itself destroyed work
 

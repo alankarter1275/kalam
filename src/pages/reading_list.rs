@@ -414,22 +414,19 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
                 return;
             }
             for book in books {
-                let check = gtk::CheckButton::with_label(&format!(
+                // Own label, not the button's internal one — see the shelf
+                // picker (picker_width 1906 on a 1350 window, 2026-10-03).
+                let check = gtk::CheckButton::new();
+                let label = gtk::Label::new(Some(&format!(
                     "{} — {}",
                     book.title,
                     book.authors_display()
-                ));
-                // Ellipsize AND cap the natural width — a centred panel
-                // sizes to the content's natural width, and ellipsize alone
-                // only caps the minimum (the edge-to-edge bug).
-                if let Some(label) = check
-                    .first_child()
-                    .and_then(|l| l.downcast::<gtk::Label>().ok())
-                {
-                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                    label.set_max_width_chars(44);
-                    label.set_xalign(0.0);
-                }
+                )));
+                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                label.set_max_width_chars(44);
+                label.set_xalign(0.0);
+                label.set_hexpand(true);
+                check.set_child(Some(&label));
                 check.set_hexpand(true);
                 check.set_halign(gtk::Align::Fill);
                 check.add_css_class("kalam-picker-row");
@@ -505,6 +502,8 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
     {
         let r = root.clone();
         gtk::glib::idle_add_local_once(move || {
+            let (_, nat) = r.measure(gtk::Orientation::Horizontal, -1);
+            crate::timing::note("picker_natural", nat as usize);
             crate::timing::note("picker_width", r.width() as usize);
         });
     }

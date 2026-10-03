@@ -2304,3 +2304,30 @@ which of the two widths the container uses — a FILL child cares
 about minimum, a CENTER child sizes to natural. And: a layout fix
 verified only by reasoning is not verified; the green CI run said
 nothing about pixels on his screen, which is where the bug lived.
+## 56. Own the widget you must constrain — and make the thing measure itself
+
+The edge-to-edge picker took three fixes. The second one (§55's
+`max_width_chars`) was set on `CheckButton::with_label`'s internal
+label, found by walking `first_child()` and downcasting. It compiled,
+CI went green — and the owner's log later measured the picker at
+**1906 px on a 1350 px window**: the cap had never taken effect.
+Whether the downcast missed, the internal label is not the widget the
+size machinery asks, or the cap does not bind on that label — it does
+not matter, and that is the lesson: **a property set on a widget you
+reached into is a property you cannot rely on.** Build the child
+yourself (`CheckButton::new()` + `set_child`) and constrain a widget
+you made.
+
+Two companions:
+
+- **Cap at the level that owns the failure.** Rows can lie; the panel
+  is what shows the borders. CSS `max-width: 640px` on the in-app
+  dialog class caps the panel's natural width no matter what any row
+  reports — a backstop that survives future row builders. (GTK ≥ 4.6
+  for max-width; this app's builds require newer anyway.)
+- **When a bug survives a fix, stop reasoning and instrument the
+  bug.** The two log notes that finally convicted the row fix —
+  `picker_window` and `picker_width` — were worth more than any
+  further theory: they turned "still cut off" into a number that
+  named the layer. `picker_natural` now sits beside them so the next
+  failure, if there is one, is diagnosed in one log line.

@@ -701,10 +701,15 @@ button.kalam-author-photo-refresh:hover {
  * than the fixed 700x368 a book float needs. The compound selector is
  * deliberate: a plain .kalam-in-app-dialog rule loses to .kalam-float's
  * min-width by source order (that silently forced every in-app dialog to
- * at least 700px wide from day one — owner report, 2026-10-03). */
+ * at least 700px wide from day one — owner report, 2026-10-03). The
+ * max-width is the hard backstop for the same family: whatever a row's
+ * natural width is, the panel itself can never exceed 640px, so its
+ * borders are always inside the window (max-width needs GTK >= 4.6; this
+ * app's builds require newer). */
 .kalam-float.kalam-in-app-dialog {
     min-width: 0px;
     min-height: 0px;
+    max-width: 640px;
 }
 
 .kalam-in-app-dialog-head {

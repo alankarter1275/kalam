@@ -576,24 +576,22 @@ fn open_book_picker(
             }
 
             for book in books {
-                let check = gtk::CheckButton::with_label(&format!(
+                // The label is ours, not the button's internal one. Reaching
+                // into `with_label`'s child to cap it silently did nothing —
+                // the owner's log measured the picker at 1906 px on a 1350 px
+                // window (2026-10-03). A widget we built ourselves is one we
+                // can constrain.
+                let check = gtk::CheckButton::new();
+                let label = gtk::Label::new(Some(&format!(
                     "{} — {}",
                     book.title,
                     book.authors_display()
-                ));
-                // The label must ellipsize AND cap its natural width: a
-                // centred dialog panel sizes itself to the content's
-                // *natural* width, and ellipsize alone only caps the
-                // minimum — one long title still stretched the panel past
-                // the window and its borders vanished at both sides.
-                if let Some(label) = check
-                    .first_child()
-                    .and_then(|l| l.downcast::<gtk::Label>().ok())
-                {
-                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                    label.set_max_width_chars(44);
-                    label.set_xalign(0.0);
-                }
+                )));
+                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                label.set_max_width_chars(44);
+                label.set_xalign(0.0);
+                label.set_hexpand(true);
+                check.set_child(Some(&label));
                 check.set_hexpand(true);
                 check.set_halign(gtk::Align::Fill);
                 check.add_css_class("kalam-picker-row");
@@ -667,10 +665,15 @@ fn open_book_picker(
     done.connect_clicked(move |_| dialog.close());
 
     // Allocated only after the first layout pass; idle (priority 200) runs
-    // after resize (110), so the width is real by the time this fires.
+    // after resize (110), so the width is real by the time this fires. The
+    // natural width is measured too — if a cap ever fails again, the log
+    // will say which one (natural still huge = the rows; natural small but
+    // width huge = the allocation).
     {
         let r = root.clone();
         gtk::glib::idle_add_local_once(move || {
+            let (_, nat) = r.measure(gtk::Orientation::Horizontal, -1);
+            crate::timing::note("picker_natural", nat as usize);
             crate::timing::note("picker_width", r.width() as usize);
         });
     }

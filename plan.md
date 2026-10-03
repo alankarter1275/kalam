@@ -1274,6 +1274,26 @@ CI green after every step; every commit HEAD-checked (§36).
     library covers warmed again (1 + 6). The one-bit question —
     borders visible or still edge to edge — put to the owner in
     words, with the log notes as the standing answer.
+  - **Fourth session — the data arrives and convicts the row fix:
+    `picker_window 1350`, `picker_width 1906`.** The dialog is
+    556 px wider than the window — wider than his entire screen —
+    matching "still the same as before" exactly. (The first open
+    logged `picker_width 0`: the idle fired before the first
+    allocation; the second open measured for real.) So the
+    `max_width_chars` cap set through `with_label`'s internal
+    child never took effect — reaching into a widget's internals
+    to constrain it was the weak link, unprovable until the picker
+    could measure itself.
+  - **Third fix, layered so it cannot silently fail again:**
+    (1) the rows now carry an explicit label we built ourselves
+    (`CheckButton::new()` + `set_child`), ellipsized and capped;
+    (2) CSS `max-width: 640px` on `.kalam-float.kalam-in-app-dialog`
+    caps the *panel's* natural width whatever any row does — the
+    hard backstop for this whole failure family (GTK ≥ 4.6; the
+    app's builds require newer); (3) `picker_natural` joins the
+    log notes, so the next run names the failing layer if one
+    ever does: natural still huge = the rows; natural small but
+    width huge = the allocation. Pitfalls §56.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

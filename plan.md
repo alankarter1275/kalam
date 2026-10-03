@@ -1359,6 +1359,29 @@ CI green after every step; every commit HEAD-checked (§36).
     `picker_rows` (count) — if any stall remains, the log names the
     side: read vs widget-build. No new pitfall — recipe application,
     not a new mistake.
+  - **Owner-verified (2026-10-04, his log): the fix works, and the
+    log separated what remains.** `picker_read` 0.8–2.5 ms (worker,
+    even on a cold launch), `picker_rows` 13, `picker_fill`
+    0.9–1.1 ms, `picker_natural`/`picker_width` 520 on 1350 —
+    second and third opens completely clean. The first open still
+    blocked the thread ≥ 351 ms, but the numbers acquit the picker:
+    the read and the build together are ~2 ms. It is the
+    once-per-session first-realize family (GTK's first styling of a
+    widget type) — the same log shows it on the first book float
+    (250 ms) and the first book page (753 ms). Known family; no new
+    scope.
+  - **New finding, the last inline page confirmed: the reading list
+    PAGE builds its rows on the UI thread.** `route_open:reading_list`
+    **322.1 ms** with `service_reading_list` **0.7 ms** — the read is
+    innocent; `reload()` reads inline (fast) and `rebuild()`
+    constructs every row inline (the ~321 ms). This was the "likely"
+    entry never confirmed; now confirmed heavy. Same recipe applies
+    (skeleton + worker read + apply). Queued for the owner's word —
+    fix it, or straight to step 4.
+  - Run context: this was a cold launch (`startup_db_open` 470.3 ms
+    vs the usual 6.5–25.7; `pre_run` 1823.5 vs ~1200 steady) — the
+    picker verdict is unaffected (sub-3 ms reads even cold), but
+    step-4 measurements use the second launch as usual.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

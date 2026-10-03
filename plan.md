@@ -1002,6 +1002,50 @@ CI green after every step; every commit HEAD-checked (§36).
     has a measured route_open; the pages over the watchdog bar are
     migrated or explicitly accepted by the owner.
 
+- **Step 3.0 — the account closes (owner field run, 2026-10-03;
+  first-launch-after-rebuild, cold page cache).** The spans sum to
+  `pre_run` exactly: gtk_init 526.2 + style 51.8 + **splash_show
+  3694.8** + splash_pump 534.3 (icons 59.7 inside) + libraries 121.0
+  + db_open 383.2 + theme 60.5 = 5371.8 vs `pre_run` 5372.3. **Zero
+  unaccounted.**
+  - **`splash_show` is the biggest item in a launch — and it is not
+    our bug.** What it measures is GTK's *lazy* one-time work,
+    front-loaded by creating the first window: the base theme's CSS
+    parse and first style machinery, the windowing backend, first
+    font resolution — costs that would otherwise land in the first
+    real frame after `app.run`. The `startup_style` span (51.8) only
+    covers `set_color_scheme`; the actual theme load happens at
+    first window. Without the splash the same costs would be paid
+    into a blank screen; the splash exists to own exactly this dead
+    time. Warm, `splash_show` derives to **~580 ms** (980 gap minus
+    pump's ~400) — direct warm measurement owed from one more run.
+  - **`splash_pump` 534.3 cold**: icons (59.7, once per boot) plus
+    the splash's first-paint dispatch (the block reports show
+    430 ms inside it — first frame draw + GL one-time setup, the
+    1.14 cost class).
+  - **The verdict on warm startup, reframed by the account:** of the
+    ~1190 ms warm launch, our code is **~45 ms** (libraries 0.2 +
+    db_open 3.9 + theme apply 28.8 + first page 0.8 + init ~10).
+    The rest is GTK's one-time costs (gtk_init 99 + style 52 +
+    splash_show ~580 + first paint ~400), paid once per process no
+    matter what draws first. There is no startup *defect* left to
+    fix — only the accepted once-per-process GTK bill, now fully
+    attributed.
+  - **Small pages, first five measured — all fine, no migration
+    needed:** history 31.5, saved_words 5.0, tags 4.6, analytics
+    15.6, reading_list 1.9, comic_series 3.0-8.3 (ms, route_open;
+    every service read 0.1-0.8 on its worker). The inline-read pages
+    (words, analytics, reading_list) are so cheap the recipe would
+    be ceremony — recorded as accepted-synchronous.
+  - **Still unmeasured (not visited this run): the Comics hub — the
+    one with the migration call + whole-library read + per-series
+    N+1 — plus saved_quotes, lookup_history, shelf_detail.** Owed
+    from a supplemental warm run.
+  - Cold-run remainder, consistent with every cold run before: home
+    first fill 282.8 contended with a 1653 block (cold cover
+    arrival stream), preload tail 1351 — the threshold-dependent
+    starvation, gone warm; the warm service covers it at boot.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

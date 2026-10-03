@@ -844,6 +844,42 @@ CI green after every step; every commit HEAD-checked (§36).
     is a `&self` method whose missing-snapshot case is a documented
     early return, so the count stays 12).
 
+- **Step 2c — first field run (owner, 2026-10-03): the migration
+  targets are confirmed; the run itself was a cold launch without the
+  warm-up, which answered the owner's "book details took too long"
+  question on its own.**
+  - **Settings: complete success.** `route_open:settings` **5.4 ms**
+    (was 465-522), `service_settings` 1.2 ms on the worker,
+    `settings_fill:appearance` **22.5 ms** — and reopening later was a
+    page-cache hit with zero work. The old number is gone.
+  - **Author: opens instantly, but its fill is now the heaviest named
+    piece of our code.** `route_open:author` **0.5 ms**,
+    `service_author` 0.9 ms, `author_fill` **362 ms** (one watchdog
+    line at 450 ms around it — preload tail + GTK realize of the
+    built tree). Pre-migration the same work sat inside the old
+    232 ms `route_open:author`; not a regression, but the biggest
+    remaining named fill — a split fill (hero first, cards streamed)
+    is the candidate fix if the owner feels it.
+  - **The whole launch was cold without warming**: `startup_gtk_init`
+    1764 ms (vs ~100 warm), `startup_db_open` 2248 ms (vs 133),
+    `pre_run` 9284 ms, `window_shown` 10403 ms (vs 2266 in the
+    warmed reboot test). Even the worker reads were cold
+    (`service_home` 328 ms vs 4 warm). The settings survey rode it
+    out off-thread ("Checking storage" finished ~12 s in).
+  - **The owner's felt delay was real**: first book float blocked
+    ~1.1 s and the first book page ~2 s *after* our code returned
+    (route 2.6 ms, rebuild 5.6 ms) — cold-disk cover decodes
+    saturating the loop, the same threshold-dependent starvation as
+    the old startup block, now landing on first opens. Later book
+    pages: 250 ms block, then none — the machine warmed under him.
+  - Open questions put to the owner: was this first-launch-after-boot,
+    is the updated `--covers` service installed/enabled (the cold
+    db_open says the warm-up did not run), and which author the
+    362 ms fill was. Two targeted runs requested, not 3-4 blind ones:
+    one reboot with the service installed (expect window ~2 s, no
+    multi-second first-open delays), one warm launch right after
+    (expect the clean steady state).
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

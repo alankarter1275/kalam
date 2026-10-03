@@ -447,7 +447,8 @@ impl Catalog {
                 stmt.execute(params![shelf_id, id, base + i as i64, chrono_like_now()])?;
             }
         }
-        tx.commit()
+        tx.commit()?;
+        Ok(())
     }
 
     /// Add every chapter of a comic series to the reading list in one
@@ -472,7 +473,8 @@ impl Catalog {
                 stmt.execute(params![id, base + i as i64, chrono_like_now()])?;
             }
         }
-        tx.commit()
+        tx.commit()?;
+        Ok(())
     }
 
     /// Is any of these books in the reading list? One query for the whole

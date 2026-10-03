@@ -1156,7 +1156,10 @@ CI green after every step; every commit HEAD-checked (§36).
     bug stands regardless — it reproduces warm.
 
 - **Step 3.3 — the "+ Add books" picker (owner report, 2026-10-03,
-  third session): implemented, CI owed.** "When I clicked on the add
+  third session): implemented, CI green (run 37151158507 — after one
+  red build CI caught: `tx.commit()`'s `rusqlite::Error` tail versus
+  the file's `DbError` alias, fixed in `a2ae134`; 511 tests, 0
+  failed, the picker test among them).** "When I clicked on the add
   books options on the shelf… it's cut off from the sides! …in that
   list, the comics books are listed by chapter… again." The picker
   was the one list surface the 3.1 audit missed — a dialog, not a

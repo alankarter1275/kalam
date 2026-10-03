@@ -653,6 +653,41 @@ CI green after every step; every commit HEAD-checked (§36).
   mechanism is elsewhere and the investigation reopens with a span on
   the backfill.
 
+- **Step 2b.1 — field run (owner, 2026-10-02, fourth run): the pacing
+  did not kill the big block — it grew, 3055 → 4259 ms — and the log
+  finally shows the mechanism directly: the main loop is saturated by
+  the arrival drip, and everything else queues behind it.**
+  - The big block now ends **while `home_fill` is open, 78 ms in**.
+    Home's snapshot read finished long before (its worker starts at
+    app init), but the `Loaded` apply could not get a dispatch slot
+    until the flood subsided — **the page's own fill was queued ~4 s
+    behind cover arrivals and GTK work**. That is queue starvation
+    caught in the act, and it also explains why `home_fill` measured
+    78 ms (contended) instead of run three's ≤ 4 ms.
+  - Everything downstream also grew: the follow-on block 751 → 1352
+    ms, the book page 655 → 951 ms, the float 250 → 450 ms. The
+    direction is consistent across every pair: **spreading the
+    arrivals over a longer window made the busy period longer, not
+    shorter** — each arrival's GTK aftermath (repaint/resize cycles)
+    bridges the gap to the next arrival, so the loop never gets the
+    ~50 ms of quiet the heartbeat (and input) needs.
+  - New, separate signal: `route_open:settings` measures **429 ms** —
+    the settings page is still synchronous (2c's confirmed target,
+    with a number now). A late unnamed 350 ms block ~3 s after
+    settings opened (nothing recent) — unexplained, noted for 2c/3.
+  - Conclusion: producer-side pacing is insufficient and slightly
+    harmful (revert to the run-three shape, which measured best). The
+    fix must reduce the flood's *main-thread widget work*, not its
+    timing: the designed next step is a swap coalescer — the drain
+    inserts into the texture cache only (no widgets), and all pending
+    swaps apply in one batch from a standard
+    `idle_add_local_once(DEFAULT_IDLE)` — a classic GLib pattern (the
+    same family as the icons deferral), no future-source scheduling
+    semantics, nothing like the two changes that hung CI. If the
+    owner prefers, the startup block parks until a reproduction
+    environment exists and 2c (settings 429 ms, author page) proceeds
+    first.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

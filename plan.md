@@ -939,6 +939,69 @@ CI green after every step; every commit HEAD-checked (§36).
     first-frame draw. Small list pages ride along (most already
     ≤ 16 ms).
 
+- **Step 3 — startup + small pages: planned 2026-10-03 (owner said
+  go). Research first; it reshaped 7.5's original question.**
+  - **7.5's target dissolved.** "Break down `AppModel::init` (424.9
+    ms)" was written before the migration; the latest warm run shows
+    `pre_run` 1173.1 → `init_done` 1183.4 — **init is ~10 ms warm**
+    (262 ms cold), because the first page is now a skeleton. Nothing
+    inside it needs spans beyond the existing `startup_first_page`.
+  - **The unaccounted ~980 ms lives in `main()`, between the spans.**
+    Warm run arithmetic: named spans (gtk_init 98.6 + style 51.7 +
+    icons 4.5 + libraries 0.2 + db_open 3.9 + theme 28.8) sum to
+    ~192, yet `pre_run` marks 1173 elapsed. The unspanned region is
+    exactly: `stall::install` (trivial), the icons idle registration
+    (trivial), **`splash::show()`** (window + CSS + maximize +
+    present), **`splash::pump()`** (a fixed 120 ms of
+    drain-and-sleep, inside which the icons callback fires and — the
+    prime suspect, per the watchdog's own "blocked 350 ms after
+    icons_init" line — the splash's **first paint dispatch**: one
+    `ctx.iteration` containing the first frame draw and the GL
+    one-time setup 1.14 recorded at 2.6-3.3 s cold / ~350-450 warm),
+    and `logging::init` (trivial). Cold run: same gap ~1290 ms.
+    Hypothesis, to be measured not assumed: show + pump's first-paint
+    dispatch ≈ 900+ of the 980.
+  - **Phase 3.0 (this slice): spans only, no behavior change.**
+    `measure` + `activity` around `splash::show` and `splash::pump`
+    (the icons_init idiom), so the next field run splits show / pump
+    / first-paint and the watchdog names blocks inside the pump
+    "while splash_pump" instead of "no activity was open".
+  - **Phase 3.1: the account, from one field run** (warm; cold
+    optional). Then phase 3.2 decisions WITH the owner, because every
+    lever is a visible tradeoff: the pump's fixed 120 ms sleep (drop
+    to fewer frames?), the splash's shape (maximized full-screen
+    paint vs a small centered card — cheaper first frame), the
+    cold-only db_open overlap (open on a worker while pumping —
+    rejected ideas on record: theme must apply before first window or
+    the default palette flashes), the once-per-boot icons write
+    (81.8 ms — owner already accepted), and the organizer-post-done
+    450 ms block (present every run; the done-callback is 0 ms, so it
+    is attribution context — the real content is the cover-preload
+    tail + first realize; activity labels on preload items, labels
+    only, no drain-side scheduling — §50's rule).
+  - **Small pages survey (the code, ahead of the field data):**
+    - Already async (Loaded from workers): history, saved_quotes,
+      tags.
+    - Snapshot-shaped but read inline on the UI thread:
+      saved_words (`service.words` in `reload`), shelf_detail
+      (`service.shelf_detail` in `reload`), and likely
+      lookup_history, reading_list, analytics (same `reload` shape —
+      to confirm against their route_open numbers before touching
+      any).
+    - **Comics is the exception: fully synchronous and heavy** —
+      `reload` calls `migrate_comic_series_and_chapters()` (a
+      migration, on the UI thread), `list_books` (the whole
+      library), `list_remote_books`, `list_comic_series`, then
+      **`chapters_for_series` per series (an N+1)**. It gets the
+      full skeleton/worker/apply recipe when its turn comes.
+    - Field run must visit each small page once so every route_open
+      is measured; migrations then go in descending-cost order, each
+      with its statement-count budget test per the recipe.
+  - Acceptance: the startup account fully attributes `pre_run` warm
+    and cold (no unaccounted residue over ~50 ms); every small page
+    has a measured route_open; the pages over the watchdog bar are
+    migrated or explicitly accepted by the owner.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

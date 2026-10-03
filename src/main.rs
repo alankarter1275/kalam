@@ -91,8 +91,25 @@ fn main() {
     // A branded splash before the remaining blocking startup work (catalogue
     // open, first page), so the user is never left with a blank screen; pump
     // it so GTK actually paints it before we block.
-    crate::splash::show();
-    crate::splash::pump();
+    //
+    // 7.1 step 3.0: both halves are now measured and announced (the
+    // icons_init idiom). The warm field runs left ~980 ms of `pre_run`
+    // unaccounted between the named spans, and this region — window
+    // construction, and the pump's first-paint dispatch (one iteration that
+    // can hold the whole first frame draw plus GL's one-time setup) — is
+    // the only unspanned code there. The activity label also lets the stall
+    // watchdog name a block inside the pump "while splash_pump" instead of
+    // "no activity was open".
+    {
+        let _t = crate::timing::measure("startup_splash_show");
+        let _a = crate::timing::activity("startup_splash_show");
+        crate::splash::show();
+    }
+    {
+        let _t = crate::timing::measure("startup_splash_pump");
+        let _a = crate::timing::activity("startup_splash_pump");
+        crate::splash::pump();
+    }
 
     // P6.5: put the pre-existing library into the library list, if it is not
     // there already. Must run before anything calls `paths::data_dir()`, which

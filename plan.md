@@ -688,6 +688,39 @@ CI green after every step; every commit HEAD-checked (§36).
     environment exists and 2c (settings 429 ms, author page) proceeds
     first.
 
+- **Step 2b.1 — the owner's repeated-launch experiment (2026-10-02,
+  same release, four consecutive launches): conclusive. Cold start was
+  the amplifier; warm, the multi-second startup block does not exist.**
+  | launch | biggest block | notes |
+  |---|---|---|
+  | 1st (cold) | 4259 ms | `home_fill` queued behind the flood, 78 ms |
+  | 2nd | 2783 ms | `home_fill` 4 ms again, ran at the block's end |
+  | 3rd | **450 ms** | nothing above 450 anywhere in the log |
+  | 4th | **450 ms** | same, reproducible |
+  - **Warm steady state achieved.** Two consecutive warm launches show
+    no block above 450 ms: first frame 350-363 ms, two icons-window
+    blocks (250 + 450), one post-organizing 350, book page 250-351,
+    float 250. Every fill measures 1-11 ms in every run
+    (`home_fill` 4, `book_page_rebuild` 3-11, `book_float_fill` 1-2,
+    every task callback 0).
+  - **The icon rescan is now isolated cleanly:** in the warm runs
+    `icons_init`'s own code is 4 ms (SVGs cached on disk) and a
+    ~450 ms block follows it — the theme rescan, matching its old
+    standalone 493-505 ms measurement. The accepted cost, now visible
+    as its own line item.
+  - **The queue-starvation mechanism is threshold-dependent:** cold,
+    slow decodes stretch the arrival stream past saturation (the 2.8
+    -4.3 s block, home's apply queued seconds behind it); warm, the
+    stream is short enough that the loop gets its gaps. The pacing's
+    warm A/B was never measured and is moot — warm behavior is good
+    either way; it stays.
+  - **What remains:** (1) the cold-start block, once per boot — the
+    only multi-second freeze left, and the coalescer's exact target if
+    ever taken; (2) warm hiccups of 250-450 ms (first frame, icon
+    rescan, book page realize, float map, settings 429 ms — 2c's
+    confirmed target); (3) one unnamed late 350 ms block after
+    settings (unexplained, small).
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

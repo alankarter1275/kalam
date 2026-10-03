@@ -903,6 +903,42 @@ CI green after every step; every commit HEAD-checked (§36).
     the machine mid-session is a build (or a memory-hungry app
     evicting it, the standing 1.15 caveat).
 
+- **Step 2c — CLOSED (2026-10-03, the paired reboot/warm runs): the
+  service is proven, the first-open delays are gone, and every 2c
+  target holds in both states.** The step-2 migration family
+  (2a.2, 2b, 2b.1, 2c) is validated end to end.
+  - **Run 1 (reboot, service installed, first launch):** gtk_init
+    99.6 ms, db_open 168.4, window_shown **2246.9 ms** — matching the
+    earlier warmed test (2266) almost exactly, against 10403 for the
+    unwarmed rebuild run. Biggest stall **751 ms**, nothing
+    multi-second. The felt first-open delays are gone: the first
+    book float fills 0.3-6.6 ms with **no stall line at all** —
+    pre-warmed covers mean fast decodes mean no queue starvation.
+    Settings 5.1 ms + fill 17.9; author_fill 254.8 (first launch);
+    first PDF open 637.8 total. The service did its job.
+  - **Run 2 (warm, second launch):** window_shown **1188.9 ms** — the
+    best full-launch number ever recorded. Biggest stall **450 ms**
+    (the organizer's post-done block, present in every run — a
+    step-3 span target), then 350/250s. Every fill 1-7 ms: settings
+    5.1 + 17.1, home 4.9, book page 3.9, floats 1.3-4.3.
+  - **The author question is answered: Blake Crouch, warm, fills in
+    80.5 ms.** The 362 ms was mid-recovery contention, the 254.8 the
+    first-launch cost — no fix needed; the split-fill idea is parked
+    unless a warm fill ever exceeds the watchdog bar.
+  - 2c final ledger: settings open 465-522 ms → **5 ms** (fill 17-23);
+    author open 232 ms → **0.5 ms** (fill 80 warm). Warm steady
+    state: window 1.19 s, stalls ≤ 450 ms, our code 1-7 ms
+    everywhere. Cold boot with the service: window 2.25 s, stalls
+    ≤ 751 ms, first opens clean.
+  - **Step 3 targets, now measured:** `pre_run` 1173-1977 ms (its
+    biggest named parts: libraries 0.2-169, db_open 3.9-168, theme
+    29-105, style 51, gtk_init 99 — the majority is still
+    unaccounted inside it, so 7.5's spans-inside-init come first);
+    the once-per-boot icons write 81.8 ms + its 450-527 ms
+    neighborhood; the organizer's post-done 450 ms; the ~350-650 ms
+    first-frame draw. Small list pages ride along (most already
+    ≤ 16 ms).
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

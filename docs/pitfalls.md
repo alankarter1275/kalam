@@ -2206,3 +2206,20 @@ is structurally one statement cheaper. Compare like shapes — one book
 vs three — and let the empty case be cheaper on its own; "less work
 when there is less data" is the property working, not a budget break.
 
+## 52. An insertion edit needs an exact anchor and a diff read — a "small" edit mangled the line it touched
+
+During the shelf-bug fix (2026-10-03), inserting a helper above
+`collapse_comic_chapters` was attempted with an `old_text`/`new_text`
+pair that differed only by a trailing newline. The fuzzy matcher
+applied it as a line join, producing
+`pub fn collapse_comic_chapters(...) {        if books.is_empty() {`
+on one line — valid-looking, wrong, and it would have sailed into a
+commit unread. Caught by reading `git diff` of the file immediately
+after the edit; the fix took seconds.
+
+**Rule:** when the purpose of an edit is to *insert*, make the anchor
+the exact text around the insertion point and put the insertion
+explicitly in `new_text` — never let the pair differ only in
+whitespace. And read the file's diff after every edit, not just before
+committing; the edit tool's fuzzy matching is a convenience, not a
+contract.

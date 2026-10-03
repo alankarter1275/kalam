@@ -36,6 +36,12 @@ pub enum LibraryOut {
     Read {
         book_id: i64,
     },
+    /// A comic series card — chapters are only ever seen on the series page.
+    /// The play button stays chapter-precise: it resumes exactly where the
+    /// reader left that series.
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 /// The dashboard snapshot finished on its worker (7.1 step 2b) — the
@@ -421,10 +427,27 @@ fn now_reading_card(
     let cover_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     cover_box.append(&cover);
     let id = book.id;
+    // A comic opens the series page, not the chapter's book dialog — the
+    // same rule every list obeys. The Read button stays chapter-precise.
+    let comic_series = if matches!(
+        book.format,
+        crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+    ) {
+        book.series.clone()
+    } else {
+        None
+    };
     let s_cover = sender.clone();
     let click_cover = gtk::GestureClick::new();
     click_cover.set_button(1);
     click_cover.connect_released(move |_, _, _, _| {
+        if let Some(ser) = comic_series.as_ref() {
+            s_cover.output(LibraryOut::ComicSeries {
+                series_name: ser.clone(),
+            })
+            .ok();
+            return;
+        }
         s_cover.output(LibraryOut::BookDialog { book_id: id }).ok();
     });
     cover_box.add_controller(click_cover);
@@ -669,10 +692,26 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     // Card-click gesture lives on the cover itself: the play button sits
     // above the cover in the overlay, so its clicks never reach it.
     let id = book.id;
+    // A comic card opens the series page — the same rule every list obeys.
+    let comic_series = if matches!(
+        book.format,
+        crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+    ) {
+        book.series.clone()
+    } else {
+        None
+    };
     let s = sender.clone();
     let click = gtk::GestureClick::new();
     click.set_button(1);
     click.connect_released(move |_, _, _, _| {
+        if let Some(ser) = comic_series.as_ref() {
+            s.output(LibraryOut::ComicSeries {
+                series_name: ser.clone(),
+            })
+            .ok();
+            return;
+        }
         s.output(LibraryOut::BookDialog { book_id: id }).ok();
     });
     cover.add_controller(click);

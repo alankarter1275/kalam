@@ -438,6 +438,8 @@ fn rebuild(cloud: &gtk::FlowBox, tags: &[(String, i64)], sender: &ComponentSende
 pub enum TagBooksOut {
     OpenBook { book_id: i64 },
     OpenBookDialog { book_id: i64 },
+    /// A comic series card — chapters are only ever seen on the series page.
+    ComicSeries { series_name: String },
 }
 
 #[derive(Debug)]
@@ -654,9 +656,29 @@ fn rebuild_books(list: &gtk::Box, books: &[Book], sender: &ComponentSender<TagBo
 
     let s1 = sender.clone();
     let s2 = sender.clone();
+    // Comic cards open the series page, not the chapter's book page —
+    // the all_books pattern.
+    let comics_map: std::collections::HashMap<i64, Option<String>> = books
+        .iter()
+        .filter(|b| {
+            matches!(
+                b.format,
+                crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+            )
+        })
+        .map(|b| (b.id, b.series.clone()))
+        .collect();
+    let cm = std::rc::Rc::new(comics_map);
     let grid = build_book_grid(
         books,
         move |id| {
+            if let Some(Some(ser)) = cm.get(&id) {
+                s1.output(TagBooksOut::ComicSeries {
+                    series_name: ser.clone(),
+                })
+                .ok();
+                return;
+            }
             s1.output(TagBooksOut::OpenBook { book_id: id }).ok();
         },
         move |id| {

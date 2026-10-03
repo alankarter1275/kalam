@@ -5,6 +5,27 @@
 
 use super::*;
 
+/// The display key for one book row in a collapsed count: registered comics
+/// key by their series id, unregistered comics by the heuristic series key,
+/// every other book by its own id. This mirrors `collapse_comic_chapters`
+/// exactly, so a count computed here can never disagree with the cards the
+/// collapsed grids show.
+fn collapse_count_key(
+    id: i64,
+    format: &str,
+    series: Option<&str>,
+    title: &str,
+    series_id: Option<i64>,
+) -> String {
+    if let Some(sid) = series_id {
+        return format!("s{sid}");
+    }
+    if format == "CBZ" || format == "CBR" {
+        return format!("h{}", heuristic_series_key(title, series));
+    }
+    format!("b{id}")
+}
+
 impl Catalog {
     // -----------------------------------------------------------------------
     // P4: Shelves
@@ -24,15 +45,41 @@ impl Catalog {
         };
 
         // Manual counts come back in a single grouped query; only smart
-        // shelves need their rules compiled and counted individually.
+        // shelves need their rules compiled and counted individually. Counts
+        // are collapsed — one card per comic series, the same key the shelf
+        // page displays — so a 700-chapter series never reads "701 books".
         let manual_counts: std::collections::HashMap<i64, usize> = {
             let conn = self.conn();
-            let mut stmt = conn
-                .prepare_cached("SELECT shelf_id, COUNT(*) FROM shelf_books GROUP BY shelf_id")?;
-            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
-            rows.filter_map(|r| r.ok())
-                .map(|(id, n)| (id, n as usize))
-                .collect()
+            let mut stmt = conn.prepare_cached(
+                "SELECT sb.shelf_id, books.id, books.format, books.series, books.title,
+                        cc.series_id
+                 FROM shelf_books sb
+                 JOIN books ON books.id = sb.book_id
+                 LEFT JOIN comic_chapters cc ON cc.book_id = sb.book_id",
+            )?;
+            let rows = stmt.query_map(
+                [],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, Option<String>>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, Option<i64>>(5)?,
+                    ))
+                },
+            )?;
+            let mut per_shelf: std::collections::HashMap<i64, std::collections::HashSet<String>> =
+                std::collections::HashMap::new();
+            for row in rows {
+                let (shelf_id, id, format, series, title, series_id) = row?;
+                per_shelf
+                    .entry(shelf_id)
+                    .or_default()
+                    .insert(collapse_count_key(id, &format, series.as_deref(), &title, series_id));
+            }
+            per_shelf.into_iter().map(|(k, v)| (k, v.len())).collect()
         };
 
         for shelf in &mut shelves {
@@ -198,39 +245,71 @@ impl Catalog {
         Ok(books)
     }
 
+    /// The shelf badge count: what the collapsed shelf page displays, not the
+    /// raw membership row count (a comic series is one card, not one per
+    /// chapter).
     fn shelf_book_count(&self, shelf: &Shelf) -> Result<usize> {
-        let conn = self.conn();
-        let n: i64 = match shelf.kind {
-            ShelfKind::Manual => conn.query_row(
-                "SELECT COUNT(*) FROM shelf_books WHERE shelf_id = ?1",
-                params![shelf.id],
-                |r| r.get(0),
-            )?,
+        match shelf.kind {
+            ShelfKind::Manual => {
+                let sid = shelf.id;
+                self.collapsed_count_where(
+                    "books.id IN (SELECT book_id FROM shelf_books WHERE shelf_id = ?1)",
+                    &[&sid as &dyn rusqlite::ToSql],
+                )
+            }
             ShelfKind::Smart => {
                 let (where_sql, rule_params) = shelf.rule_set().to_sql();
-                // Rule-derived SQL differs per shelf, so it is not cached.
-                let sql = format!("SELECT COUNT(*) FROM books WHERE {where_sql}");
                 let bound: Vec<&dyn rusqlite::ToSql> = rule_params
                     .iter()
                     .map(|p| p as &dyn rusqlite::ToSql)
                     .collect();
-                conn.query_row(&sql, bound.as_slice(), |r| r.get(0))?
+                self.collapsed_count_where(&where_sql, bound.as_slice())
             }
-        };
-        Ok(n as usize)
+        }
     }
 
-    /// Count matches for an unsaved rule set — powers the live count in the editor.
+    /// Count the cards a collapsed list would show for the books matching
+    /// `where_sql` — one per book, one per comic series. Rule-derived SQL
+    /// differs per call, so the statement is not cached.
+    fn collapsed_count_where(
+        &self,
+        where_sql: &str,
+        params: &[&dyn rusqlite::ToSql],
+    ) -> Result<usize> {
+        let conn = self.conn();
+        let sql = format!(
+            "SELECT books.id, books.format, books.series, books.title, cc.series_id
+             FROM books
+             LEFT JOIN comic_chapters cc ON cc.book_id = books.id
+             WHERE {where_sql}"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params, |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<i64>>(4)?,
+            ))
+        })?;
+        let mut seen = std::collections::HashSet::new();
+        for row in rows {
+            let (id, format, series, title, series_id) = row?;
+            seen.insert(collapse_count_key(id, &format, series.as_deref(), &title, series_id));
+        }
+        Ok(seen.len())
+    }
+
+    /// Count matches for an unsaved rule set — powers the live count in the
+    /// editor. Collapsed, like every book count the UI shows.
     pub fn count_matching_rules(&self, rules: &crate::shelf_rules::RuleSet) -> Result<usize> {
         let (where_sql, rule_params) = rules.to_sql();
-        let conn = self.conn();
-        let sql = format!("SELECT COUNT(*) FROM books WHERE {where_sql}");
         let bound: Vec<&dyn rusqlite::ToSql> = rule_params
             .iter()
             .map(|p| p as &dyn rusqlite::ToSql)
             .collect();
-        let n: i64 = conn.query_row(&sql, bound.as_slice(), |r| r.get(0))?;
-        Ok(n as usize)
+        self.collapsed_count_where(&where_sql, bound.as_slice())
     }
 
     pub fn add_book_to_shelf(&self, shelf_id: i64, book_id: i64) -> Result<()> {
@@ -256,6 +335,93 @@ impl Catalog {
             "DELETE FROM shelf_books WHERE shelf_id = ?1 AND book_id = ?2",
             params![shelf_id, book_id],
         )?;
+        Ok(())
+    }
+
+    /// Every comic chapter that belongs to the same series as `book_id`
+    /// (including it). A non-comic is its own peer. The collapsed grids show
+    /// one card per series, so removal from a shelf or the reading list must
+    /// clear every chapter at once — removing only the representative would
+    /// leave the card standing on its remaining chapters.
+    pub fn comic_series_peers(&self, book_id: i64) -> Result<Vec<i64>> {
+        let conn = self.conn();
+
+        // Registered series: peers are the chapters sharing this book's
+        // comic_chapters row. Mixed registration (some chapters registered,
+        // some not) does not occur — import registers every cbz/cbr it files.
+        let registered: Vec<i64> = {
+            let mut stmt = conn.prepare_cached(
+                "SELECT cc2.book_id
+                 FROM comic_chapters cc2
+                 WHERE cc2.series_id =
+                       (SELECT series_id FROM comic_chapters WHERE book_id = ?1)",
+            )?;
+            let rows = stmt.query_map(params![book_id], |r| r.get(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        if !registered.is_empty() {
+            return Ok(registered);
+        }
+
+        // Unregistered comics: key them exactly the way
+        // `collapse_comic_chapters` does — the series column, else the series
+        // parsed out of the title, else the title itself.
+        let (format, title, series): (String, String, Option<String>) = conn.query_row(
+            "SELECT format, title, series FROM books WHERE id = ?1",
+            params![book_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        if format != "CBZ" && format != "CBR" {
+            return Ok(vec![book_id]);
+        }
+        let key = crate::db::heuristic_series_key(&title, series.as_deref());
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, title, series FROM books
+             WHERE format IN ('CBZ','CBR')
+               AND id NOT IN (SELECT book_id FROM comic_chapters)",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?))
+        })?;
+        let mut peers = Vec::new();
+        for row in rows {
+            let (id, t, s) = row?;
+            if crate::db::heuristic_series_key(&t, s.as_deref()) == key {
+                peers.push(id);
+            }
+        }
+        if peers.is_empty() {
+            peers.push(book_id);
+        }
+        Ok(peers)
+    }
+
+    /// Remove a comic series (every chapter) from a manual shelf. Callers pass
+    /// the representative the collapsed list shows.
+    pub fn remove_series_from_shelf(&self, shelf_id: i64, book_id: i64) -> Result<()> {
+        let peers = self.comic_series_peers(book_id)?;
+        let conn = self.conn();
+        let holders = vec!["?"; peers.len()].join(",");
+        let sql = format!(
+            "DELETE FROM shelf_books
+             WHERE shelf_id = ?1 AND book_id IN ({holders})"
+        );
+        let mut bound: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(peers.len() + 1);
+        bound.push(&shelf_id);
+        for p in &peers {
+            bound.push(p);
+        }
+        conn.execute(&sql, bound.as_slice())?;
+        Ok(())
+    }
+
+    /// Remove a comic series (every chapter) from the reading list.
+    pub fn remove_series_from_reading_list(&self, book_id: i64) -> Result<()> {
+        let peers = self.comic_series_peers(book_id)?;
+        let conn = self.conn();
+        let holders = vec!["?"; peers.len()].join(",");
+        let sql = format!("DELETE FROM reading_list WHERE book_id IN ({holders})");
+        conn.execute(&sql, rusqlite::params_from_iter(peers.iter()))?;
         Ok(())
     }
 

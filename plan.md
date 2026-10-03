@@ -1046,6 +1046,69 @@ CI green after every step; every commit HEAD-checked (§36).
     arrival stream), preload tail 1351 — the threshold-dependent
     starvation, gone warm; the warm service covers it at boot.
 
+- **Step 3.1 — comics as series on every surface (owner bug report,
+  2026-10-03): implemented, CI owed.** The owner, at his shelf, furious:
+  comics show as *individual chapters* on the shelf — "I told you I never
+  want individual chapters!!! I have repeatedly told you this." His
+  screenshot could not be viewed (no vision this session — told him
+  plainly); his words plus the code are the spec, and the code
+  confirms it exactly.
+  - **Evidence.** `All Books` collapses (`collapse_comic_chapters`,
+    service.rs `all_books`; db/series.rs:819) and routes comic cards
+    to the series page (`AllBooksOut::ComicSeries`,
+    pages/all_books.rs:1188-1207). Home's strips are series-deduped
+    in SQL (`recent_books`/`recently_opened`, db.rs:1225,
+    db/history.rs:233 — the 100-chapter-import lesson) and route to
+    `ComicSeries`. But the shelf leaks end to end: `shelf_detail`
+    (service.rs:495) never collapses, the page grid
+    (pages/shelf_detail.rs:326) has no comic routing, the manual
+    remove strip removes ONE chapter, and the shelves-grid badge
+    counts chapters raw (`SELECT shelf_id, COUNT(*) … GROUP BY`,
+    db/shelves.rs:31 — one 700-chapter series shows as "701 books").
+    Same class, same fix: reading list (service.rs:856,
+    db/shelves.rs:308 — raw chapters, no routing), tag books
+    (service.rs:879, db/stats.rs:28), author page owned books
+    (service.rs:619 → author.rs:187), and the dashboard's continue and
+    now-reading cards (pages/library.rs — series-deduped lists but
+    clicks open the *chapter's* book dialog). Watch folders assign per chapter
+    (docs/conversation.md:2080) — that stays; membership stays
+    id-keyed (the 2.22 design); only display, counts, removal and
+    routing collapse.
+  - **Design.** (1) Service: `shelf_detail`, `reading_list`,
+    `tag_books`, `author_page` collapse their book lists via the
+    existing, tested `collapse_comic_chapters` (reading list keeps
+    the surviving entries' position/note by collapsing the books and
+    retaining matching entries). (2) Pages: `ComicSeries {
+    series_name }` output + comics_map routing copied from all_books
+    into shelf_detail, tags, reading_list, author, and the dashboard
+    continue card; app.rs wires each to `Route::ComicSeries`. (3)
+    Removal is series-scoped: new `comic_series_peers(book_id)` db
+    helper (registered peers via comic_chapters.series_id; heuristic
+    peers by the same series-key rule collapse uses, title-parse
+    included, resolved in Rust not SQL) → `remove_series_from_shelf`
+    and `remove_series_from_reading_list` delete every chapter;
+    non-comics keep the single-book remove. (4) Counts match what
+    the cards show: manual grouped count, `shelf_book_count`, and
+    `count_matching_rules` dedupe with the same key rule
+    (series_id, else series-or-parsed-title) so a badge never says
+    701 again. The smart-shelf editor count inherits the fix.
+    (5) Resume/play buttons and the reader stay chapter-precise —
+    "continue reading" must open the exact chapter he left.
+  - **Tests.** db: peers helper (registered + heuristic), both
+    series-scoped removes, collapsed counts for manual and rules;
+    service: shelf_detail collapses to one card per series (mirrors
+    the existing db-level collapse test at db/series.rs:1229).
+  - **Verification.** CI green (clippy -D warnings), then the owner:
+    a shelf holding a comic series shows one card, one count, click
+    opens the series page, remove clears the series.
+  - **Implemented as designed, plus:** the dashboard's now-reading
+    cover got the same comic routing (same page, same class); the
+    heuristic series rule moved into one shared `heuristic_series_key`
+    (db/series.rs) so collapse, peers and counts cannot drift; the
+    grouped manual count became a per-shelf key-dedup in Rust.
+    Pitfalls §52 records the edit-anchor slip caught during the work.
+    Owner field verification owed — the checklist above.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

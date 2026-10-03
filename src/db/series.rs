@@ -75,6 +75,19 @@ fn strip_leading_article(series: &str) -> &str {
     }
 }
 
+/// The dedup key for a comic that has no relational `comic_chapters` row:
+/// the series column, else the series parsed out of the title, else the title
+/// — lowercased. This is the exact rule `collapse_comic_chapters` applies, so
+/// removal and counting helpers must use it too or they would disagree with
+/// what the grids display.
+pub(crate) fn heuristic_series_key(title: &str, series: Option<&str>) -> String {
+    let name = series
+        .map(str::to_string)
+        .or_else(|| crate::comics::parse_comic_title(title).series)
+        .unwrap_or_else(|| title.to_string());
+    name.to_lowercase()
+}
+
 impl Catalog {
     // -----------------------------------------------------------------------
     // P5.5: series cache (v10)
@@ -887,18 +900,17 @@ impl Catalog {
                 i += 1;
             } else {
                 // Heuristic fallback for comics not yet in relational comic_chapters
-                let series_name = b
-                    .series
-                    .clone()
-                    .or_else(|| crate::comics::parse_comic_title(&b.title).series)
-                    .unwrap_or_else(|| b.title.clone());
-
-                let key = series_name.to_lowercase();
+                let key = heuristic_series_key(&b.title, b.series.as_deref());
                 if seen_heuristic_series.contains(&key) {
                     books.remove(i);
                     continue;
                 }
                 seen_heuristic_series.insert(key);
+                let series_name = b
+                    .series
+                    .clone()
+                    .or_else(|| crate::comics::parse_comic_title(&b.title).series)
+                    .unwrap_or_else(|| b.title.clone());
                 b.title = series_name.clone();
                 b.series = Some(series_name);
                 i += 1;
@@ -1234,5 +1246,137 @@ mod tests {
         let series_b = all_books.iter().find(|b| b.title == "Horimiya");
         assert!(series_b.is_some());
         assert_eq!(series_b.unwrap().authors, "HERO, Daisuke Hagiwara");
+    }
+
+    #[test]
+    fn shelves_and_reading_list_show_comics_as_series() {
+        // The owner's rule, stated as a test: no list surface ever shows a
+        // comic's individual chapters. Counts, removal and peers must all
+        // agree with the collapsed cards.
+        let cat = Catalog::open_in_memory().unwrap();
+
+        let reg = cat
+            .insert_book(
+                "reg-1",
+                "Dune",
+                "Frank Herbert",
+                None,
+                "",
+                BookFormat::Epub,
+                "dune.epub",
+                "h-dune",
+                None,
+                &[],
+            )
+            .unwrap();
+        let c1 = cat
+            .insert_book(
+                "c-1",
+                "Horimiya - c001",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_01.cbz",
+                "h-c1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let c2 = cat
+            .insert_book(
+                "c-2",
+                "Horimiya - c002",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_02.cbz",
+                "h-c2",
+                None,
+                &[],
+            )
+            .unwrap();
+        let s_id = cat
+            .get_or_create_comic_series("Horimiya", Some("HERO"), None)
+            .unwrap();
+        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
+        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+
+        // A manual shelf holding the epub and both chapters.
+        let shelf_id = cat
+            .create_shelf("Mixed", ShelfKind::Manual, "", "")
+            .unwrap();
+        cat.add_book_to_shelf(shelf_id, reg).unwrap();
+        cat.add_book_to_shelf(shelf_id, c1).unwrap();
+        cat.add_book_to_shelf(shelf_id, c2).unwrap();
+
+        // The badge counts cards, not membership rows: 1 epub + 1 series = 2.
+        let shelves = cat.list_shelves().unwrap();
+        assert_eq!(shelves[0].book_count, 2, "collapsed badge count");
+
+        // The shelf's book list collapses to one series card.
+        let shelf = cat.get_shelf(shelf_id).unwrap().unwrap();
+        let mut books = cat.shelf_books(&shelf, crate::db::SortKey::Added, "").unwrap();
+        cat.collapse_comic_chapters(&mut books);
+        assert_eq!(books.len(), 2);
+        let comic = books
+            .iter()
+            .find(|b| b.series.as_deref() == Some("Horimiya"))
+            .expect("series card present");
+        assert_eq!(comic.title, "Horimiya");
+
+        // Peers: the representative resolves to every chapter of its series.
+        let peers = cat.comic_series_peers(comic.id).unwrap();
+        assert!(peers.contains(&c1) && peers.contains(&c2) && peers.len() == 2);
+        // A non-comic is its own peer.
+        assert_eq!(cat.comic_series_peers(reg).unwrap(), vec![reg]);
+
+        // Series-scoped remove clears the whole series from the shelf.
+        cat.remove_series_from_shelf(shelf_id, comic.id).unwrap();
+        let shelves = cat.list_shelves().unwrap();
+        assert_eq!(shelves[0].book_count, 1, "only the epub remains");
+
+        // Heuristic peers: unregistered comics keyed by their series column.
+        let h1 = cat
+            .insert_book(
+                "h-1",
+                "Naruto - c001",
+                "Kishimoto",
+                Some("Naruto"),
+                "",
+                BookFormat::Cbz,
+                "naruto_01.cbz",
+                "h-n1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let h2 = cat
+            .insert_book(
+                "h-2",
+                "Naruto - c002",
+                "Kishimoto",
+                Some("Naruto"),
+                "",
+                BookFormat::Cbz,
+                "naruto_02.cbz",
+                "h-n2",
+                None,
+                &[],
+            )
+            .unwrap();
+        let peers = cat.comic_series_peers(h1).unwrap();
+        assert!(peers.contains(&h1) && peers.contains(&h2) && peers.len() == 2);
+
+        // The reading list: both chapters queued, the series remove clears
+        // them together and leaves the epub.
+        cat.add_to_reading_list(reg).unwrap();
+        cat.add_to_reading_list(c1).unwrap();
+        cat.add_to_reading_list(c2).unwrap();
+        cat.remove_series_from_reading_list(c1).unwrap();
+        let entries = cat.list_reading_list().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].book.id, reg);
     }
 }

@@ -496,7 +496,7 @@ impl LibraryService {
         let _t = crate::timing::measure("service_shelf_detail");
         let mut errors = Errors::new();
         let shelf: Option<Shelf> = take(self.catalog.get_shelf(shelf_id), "shelf", &mut errors);
-        let books = match &shelf {
+        let mut books = match &shelf {
             Some(s) => take(
                 self.catalog.shelf_books(s, sort, query),
                 "books on this shelf",
@@ -504,6 +504,8 @@ impl LibraryService {
             ),
             None => Vec::new(),
         };
+        // A shelf shows one card per comic series — never individual chapters.
+        self.catalog.collapse_comic_chapters(&mut books);
         ShelfDetailSnapshot {
             shelf,
             books,
@@ -618,7 +620,10 @@ impl LibraryService {
     /// the profile if cached, the owned books, and their series grouping.
     pub fn author_page(&self, author_name: &str) -> AuthorPageSnapshot {
         let _t = crate::timing::measure("service_author");
-        let owned_books = crate::author::owned_books_for_author(&self.catalog, author_name);
+        let mut owned_books = crate::author::owned_books_for_author(&self.catalog, author_name);
+        // One card per comic series, never per chapter — the author's shelf
+        // obeys the same rule as every other list.
+        self.catalog.collapse_comic_chapters(&mut owned_books);
         let profile = self
             .catalog
             .get_author_profile_by_name(author_name)
@@ -856,12 +861,30 @@ impl LibraryService {
     pub fn reading_list(&self) -> ReadingListSnapshot {
         let _t = crate::timing::measure("service_reading_list");
         let mut errors = Errors::new();
+        let mut entries = take(
+            self.catalog.list_reading_list(),
+            "reading list",
+            &mut errors,
+        );
+        // One row per comic series, never per chapter: collapse the books,
+        // then keep exactly the entries whose book survived. The surviving
+        // entry keeps its own position and note; its book is the retitled
+        // representative.
+        {
+            let mut books: Vec<Book> = entries.iter().map(|e| e.book.clone()).collect();
+            self.catalog.collapse_comic_chapters(&mut books);
+            let mut survived: std::collections::HashMap<i64, Book> =
+                books.into_iter().map(|b| (b.id, b)).collect();
+            entries.retain_mut(|e| match survived.remove(&e.book.id) {
+                Some(b) => {
+                    e.book = b;
+                    true
+                }
+                None => false,
+            });
+        }
         ReadingListSnapshot {
-            entries: take(
-                self.catalog.list_reading_list(),
-                "reading list",
-                &mut errors,
-            ),
+            entries,
             errors,
         }
     }
@@ -879,12 +902,15 @@ impl LibraryService {
     pub fn tag_books(&self, tag: &str, sort: SortKey) -> TagBooksSnapshot {
         let _t = crate::timing::measure("service_tag_books");
         let mut errors = Errors::new();
+        let mut books = take(
+            self.catalog.books_with_tag(tag, sort),
+            "books for tag",
+            &mut errors,
+        );
+        // One card per comic series, never per chapter.
+        self.catalog.collapse_comic_chapters(&mut books);
         TagBooksSnapshot {
-            books: take(
-                self.catalog.books_with_tag(tag, sort),
-                "books for tag",
-                &mut errors,
-            ),
+            books,
             errors,
         }
     }
@@ -1674,6 +1700,61 @@ mod tests {
         assert_eq!(snap.shelves.len(), 1);
         assert_eq!(snap.shelves[0].name, "To read");
         assert!(snap.errors.is_empty());
+    }
+
+    #[test]
+    fn shelf_detail_shows_a_comic_series_as_one_card() {
+        // The owner's shelf report (2026-10-03): shelves show comics as
+        // series, never individual chapters. The snapshot is what the page
+        // renders, so the collapse is asserted here.
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+
+        let reg = svc
+            .catalog()
+            .insert_book(
+                "reg-1", "Dune", "Frank Herbert", None, "", BookFormat::Epub,
+                "dune.epub", "h-dune", None, &[],
+            )
+            .unwrap();
+        let c1 = svc
+            .catalog()
+            .insert_book(
+                "c-1", "Horimiya - c001", "HERO", None, "", BookFormat::Cbz,
+                "horimiya_01.cbz", "h-c1", None, &[],
+            )
+            .unwrap();
+        let c2 = svc
+            .catalog()
+            .insert_book(
+                "c-2", "Horimiya - c002", "HERO", None, "", BookFormat::Cbz,
+                "horimiya_02.cbz", "h-c2", None, &[],
+            )
+            .unwrap();
+        let s_id = svc
+            .catalog()
+            .get_or_create_comic_series("Horimiya", Some("HERO"), None)
+            .unwrap();
+        svc.catalog().add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
+        svc.catalog().add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+
+        let shelf_id = svc
+            .catalog()
+            .create_shelf("Comics", ShelfKind::Manual, "", "")
+            .unwrap();
+        svc.catalog().add_book_to_shelf(shelf_id, reg).unwrap();
+        svc.catalog().add_book_to_shelf(shelf_id, c1).unwrap();
+        svc.catalog().add_book_to_shelf(shelf_id, c2).unwrap();
+
+        let snap = svc.shelf_detail(shelf_id, SortKey::Added, "");
+        assert!(snap.errors.is_empty());
+        assert_eq!(snap.books.len(), 2, "one epub card + one series card");
+        let comic = snap
+            .books
+            .iter()
+            .find(|b| b.series.as_deref() == Some("Horimiya"))
+            .expect("the series card is present");
+        assert_eq!(comic.title, "Horimiya");
     }
 
     #[test]

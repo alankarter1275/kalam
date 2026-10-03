@@ -18,6 +18,8 @@ use std::sync::Arc;
 pub enum AuthorPageOut {
     OpenBook { book_id: i64 },
     OpenBookDialog { book_id: i64 },
+    /// A comic series card — chapters are only ever seen on the series page.
+    ComicSeries { series_name: String },
 }
 
 #[derive(Debug)]
@@ -434,11 +436,28 @@ fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender
 
     for book in &books {
         let book_id = book.id;
+        // Comic cards open the series page — the same rule every list obeys.
+        let comic_series = if matches!(
+            book.format,
+            crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+        ) {
+            book.series.clone()
+        } else {
+            None
+        };
         let full_sender = sender.clone();
         let float_sender = sender.clone();
         row.append(&build_book_card(
             book,
             move || {
+                if let Some(ser) = comic_series.as_ref() {
+                    full_sender
+                        .output(AuthorPageOut::ComicSeries {
+                            series_name: ser.clone(),
+                        })
+                        .ok();
+                    return;
+                }
                 full_sender.output(AuthorPageOut::OpenBook { book_id }).ok();
             },
             move || {

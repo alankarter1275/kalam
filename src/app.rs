@@ -519,6 +519,9 @@ impl AppModel {
                         LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
                         LibraryOut::Read { book_id } => AppMsg::OpenReader { book_id },
+                        LibraryOut::ComicSeries { series_name } => {
+                            AppMsg::Push(Route::ComicSeries { series_name })
+                        }
                     },
                 );
                 PageSlot::Library(ctrl)
@@ -595,6 +598,9 @@ impl AppModel {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
                         ReadingListOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
+                        ReadingListOut::ComicSeries { series_name } => {
+                            AppMsg::Push(Route::ComicSeries { series_name })
+                        }
                     },
                 );
                 PageSlot::ReadingList(ctrl)
@@ -650,6 +656,9 @@ impl AppModel {
                         ShelfDetailOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
                         }
+                        ShelfDetailOut::ComicSeries { series_name } => {
+                            AppMsg::Push(Route::ComicSeries { series_name })
+                        }
                     });
                 PageSlot::ShelfDetail(ctrl)
             }
@@ -663,6 +672,9 @@ impl AppModel {
                         TagBooksOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
                         }
+                        TagBooksOut::ComicSeries { series_name } => {
+                            AppMsg::Push(Route::ComicSeries { series_name })
+                        }
                     });
                 PageSlot::TagBooks(ctrl)
             }
@@ -675,6 +687,9 @@ impl AppModel {
                         }
                         AuthorPageOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
+                        }
+                        AuthorPageOut::ComicSeries { series_name } => {
+                            AppMsg::Push(Route::ComicSeries { series_name })
                         }
                     });
                 PageSlot::Author(ctrl)

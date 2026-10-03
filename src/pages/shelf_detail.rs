@@ -15,6 +15,8 @@ use std::sync::Arc;
 pub enum ShelfDetailOut {
     OpenBook { book_id: i64 },
     OpenBookDialog { book_id: i64 },
+    /// A comic series card — chapters are only ever seen on the series page.
+    ComicSeries { series_name: String },
 }
 
 #[derive(Debug)]
@@ -323,9 +325,30 @@ impl ShelfDetailModel {
 
         let s1 = sender.clone();
         let s2 = sender.clone();
+        // Comic cards open the series page, not the chapter's book page —
+        // the all_books pattern.
+        let comics_map: std::collections::HashMap<i64, Option<String>> = self
+            .books
+            .iter()
+            .filter(|b| {
+                matches!(
+                    b.format,
+                    crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                )
+            })
+            .map(|b| (b.id, b.series.clone()))
+            .collect();
+        let cm = std::rc::Rc::new(comics_map);
         let grid = build_book_grid(
             &self.books,
             move |id| {
+                if let Some(Some(ser)) = cm.get(&id) {
+                    s1.output(ShelfDetailOut::ComicSeries {
+                        series_name: ser.clone(),
+                    })
+                    .ok();
+                    return;
+                }
                 s1.output(ShelfDetailOut::OpenBook { book_id: id }).ok();
             },
             move |id| {
@@ -417,13 +440,25 @@ impl ShelfDetailModel {
         let remove = gtk::Button::with_label("Remove");
         remove.add_css_class("kalam-mini-btn");
         remove.add_css_class("kalam-mini-btn-danger");
+        // A comic row is the whole series (the list is collapsed), so Remove
+        // clears every chapter of it from the shelf — not just the
+        // representative chapter the row happens to carry.
+        let is_comic = matches!(
+            book.format,
+            crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+        );
         {
             let catalog = self.service.catalog().clone();
             let s = sender.clone();
             let book_title = book.title.clone();
             remove.connect_clicked(move |_| {
+                let result = if is_comic {
+                    catalog.remove_series_from_shelf(shelf_id, book_id)
+                } else {
+                    catalog.remove_book_from_shelf(shelf_id, book_id)
+                };
                 crate::notify::outcome_info(
-                    catalog.remove_book_from_shelf(shelf_id, book_id),
+                    result,
                     "Removed from shelf",
                     &book_title,
                     "Could not remove from the shelf",

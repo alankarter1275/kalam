@@ -13,6 +13,10 @@ use std::sync::Arc;
 pub enum ReadingListOut {
     OpenBook { book_id: i64 },
     OpenReader { book_id: i64 },
+    /// A comic series row — chapters are only ever seen on the series page.
+    /// (The Read button stays chapter-precise: it resumes exactly where the
+    /// reader left that series.)
+    ComicSeries { series_name: String },
 }
 
 #[derive(Debug)]
@@ -121,14 +125,28 @@ impl Component for ReadingListModel {
                 self.reload();
             }
             ReadingListMsg::Remove(book_id) => {
-                let title = self
-                    .entries
-                    .iter()
-                    .find(|e| e.book.id == book_id)
-                    .map(|e| e.book.title.clone())
-                    .unwrap_or_default();
+                let entry = self.entries.iter().find(|e| e.book.id == book_id);
+                let title = entry.map(|e| e.book.title.clone()).unwrap_or_default();
+                // The list is collapsed, so a comic row is the whole series —
+                // Remove clears every chapter of it, not just the
+                // representative.
+                let is_comic = entry
+                    .map(|e| {
+                        matches!(
+                            e.book.format,
+                            crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                        )
+                    })
+                    .unwrap_or(false);
+                let result = if is_comic {
+                    self.service
+                        .catalog()
+                        .remove_series_from_reading_list(book_id)
+                } else {
+                    self.service.catalog().remove_from_reading_list(book_id)
+                };
                 crate::notify::outcome_info(
-                    self.service.catalog().remove_from_reading_list(book_id),
+                    result,
                     "Removed from reading list",
                     &title,
                     "Could not update the reading list",
@@ -305,12 +323,28 @@ fn build_row(
     }
     row.append(&remove);
 
-    // Clicking the row opens the book page.
+    // Clicking the row opens the book page — or the series page for a comic,
+    // the same rule every list obeys.
     let click = gtk::GestureClick::new();
     click.set_button(1);
+    let comic_series = if matches!(
+        book.format,
+        crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+    ) {
+        book.series.clone()
+    } else {
+        None
+    };
     {
         let s = sender.clone();
         click.connect_released(move |_, _, _, _| {
+            if let Some(ser) = comic_series.as_ref() {
+                s.output(ReadingListOut::ComicSeries {
+                    series_name: ser.clone(),
+                })
+                .ok();
+                return;
+            }
             s.output(ReadingListOut::OpenBook { book_id }).ok();
         });
     }

@@ -1215,7 +1215,9 @@ CI green after every step; every commit HEAD-checked (§36).
     call.
 
 - **Step 3.4 — the picker width, second attempt (owner report,
-  2026-10-03, fourth session): implemented, CI owed.** The series
+  2026-10-03, fourth session): implemented, CI green (run 37154255853
+  — after one red build CI caught, an ambiguous `as_ref()` on
+  `&gtk::Box`; 511 tests, 0 failed).** The series
   collapse held ("the comics appear in just one entry" — his
   words), but the dialog still ran edge to edge: "the width, I
   cannot see the left and right side of the dialog box." The

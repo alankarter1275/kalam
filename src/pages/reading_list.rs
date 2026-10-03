@@ -374,6 +374,10 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
         520
     };
     root.set_size_request(want, 520);
+    // Same data-not-screenshots verification as the shelf picker.
+    if win_w > 0 {
+        crate::timing::note("picker_window", win_w as usize);
+    }
 
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Search library…"));
@@ -497,4 +501,11 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
         return;
     };
     done.connect_clicked(move |_| dialog.close());
+
+    {
+        let r = root.clone();
+        gtk::glib::idle_add_local_once(move || {
+            crate::timing::note("picker_width", r.width() as usize);
+        });
+    }
 }

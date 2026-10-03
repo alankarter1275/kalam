@@ -1258,6 +1258,22 @@ CI green after every step; every commit HEAD-checked (§36).
     else above the bar. `shelf_detail` 1 card, 1 total — the
     collapse steady. `covers_queued 0` on re-open — the dashboard
     covers came from cache.
+  - **Third run (same build, later session): the photo channel is
+    broken on the platform side.** The owner attached the picker
+    screenshot again; the platform reports it saved to the
+    workspace, but the file never arrives — a full filesystem
+    search finds no image. Told him plainly (third time). The
+    replacement measurement, in this project's own idiom: the
+    pickers now log `picker_window` (the window's width at open)
+    and `picker_width` (the picker's final allocated width, noted
+    from an idle dispatch after the first layout pass) — the next
+    log answers the fit question with numbers, no photo required.
+    The run itself: `window_shown` 1199.8 (steady ~1.2 s), shelf
+    pages clean (1 card, four visits, no stall), settings 4.8 +
+    18.8 first-tab fill with the known 550 ms realize block,
+    library covers warmed again (1 + 6). The one-bit question —
+    borders visible or still edge to edge — put to the owner in
+    words, with the log notes as the standing answer.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

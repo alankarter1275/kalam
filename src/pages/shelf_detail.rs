@@ -514,6 +514,13 @@ fn open_book_picker(
         520
     };
     root.set_size_request(want, 520);
+    // The width is verified by data, not screenshots: the photo uploads do
+    // not reach the agent's workspace, but the timing log does. The window's
+    // width goes in now; the picker's final allocated width lands after the
+    // first layout pass, one idle dispatch later.
+    if win_w > 0 {
+        crate::timing::note("picker_window", win_w as usize);
+    }
 
     let hint = gtk::Label::new(Some("Tick the books that belong on this shelf."));
     hint.add_css_class("kalam-muted");
@@ -658,4 +665,13 @@ fn open_book_picker(
         return;
     };
     done.connect_clicked(move |_| dialog.close());
+
+    // Allocated only after the first layout pass; idle (priority 200) runs
+    // after resize (110), so the width is real by the time this fires.
+    {
+        let r = root.clone();
+        gtk::glib::idle_add_local_once(move || {
+            crate::timing::note("picker_width", r.width() as usize);
+        });
+    }
 }

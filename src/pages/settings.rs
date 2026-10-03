@@ -418,7 +418,8 @@ impl Component for SettingsPageModel {
                 if tab == SettingsTab::Notifications {
                     build_notifications(&widgets.notify_list, &sender);
                 } else if !self.built_tabs.contains(&tab) && self.snapshot.is_some() {
-                    build_tab(tab, widgets, self, &sender);
+                    self.build_tab(tab, widgets, &sender);
+                    self.mark_built(tab);
                 }
                 widgets.scroller.vadjustment().set_value(0.0);
             }
@@ -445,7 +446,8 @@ impl Component for SettingsPageModel {
                 // later ones (after a dict import / delete / move) refresh
                 // whatever is on screen. The dict tab also refreshes when
                 // built but hidden, matching the old Refresh behavior.
-                build_tab(self.active_tab, widgets, self, &sender);
+                self.build_tab(self.active_tab, widgets, &sender);
+                self.mark_built(self.active_tab);
                 if self.active_tab != SettingsTab::Dictionaries
                     && self.built_tabs.contains(&SettingsTab::Dictionaries)
                 {
@@ -460,10 +462,10 @@ impl Component for SettingsPageModel {
                 // build with real data when they are first opened.
                 self.fs = Some(*fs);
                 if self.built_tabs.contains(&SettingsTab::Storage) {
-                    build_tab(SettingsTab::Storage, widgets, self, &sender);
+                    self.build_tab(SettingsTab::Storage, widgets, &sender);
                 }
                 if self.built_tabs.contains(&SettingsTab::BookFiles) {
-                    build_tab(SettingsTab::BookFiles, widgets, self, &sender);
+                    self.build_tab(SettingsTab::BookFiles, widgets, &sender);
                 }
             }
             SettingsMsg::ImportDict => {
@@ -663,57 +665,72 @@ fn settings_fill_label(tab: SettingsTab) -> &'static str {
     }
 }
 
-/// Build (or rebuild) one tab's widgets from the snapshot already in the
-/// model — no reads happen here. Every call is measured and announced under
-/// its own `settings_fill:<tab>` name so a field run shows the per-tab
-/// split the old single `route_open:settings` number hid.
-fn build_tab(
-    tab: SettingsTab,
-    widgets: &mut SettingsPageModelWidgets,
-    model: &mut SettingsPageModel,
-    sender: &ComponentSender<SettingsPageModel>,
-) {
-    let label = settings_fill_label(tab);
-    let _t = crate::timing::measure(label);
-    let _a = crate::timing::activity(label);
-    let snap = model
-        .snapshot
-        .as_ref()
-        .expect("build_tab is only called with a snapshot in hand");
-    match tab {
-        SettingsTab::Appearance => {
-            build_theme_picker(&widgets.theme_grid, &model.catalog, &snap.theme_id);
-        }
-        SettingsTab::Storage => {
-            build_paths(
-                &widgets.paths_host,
-                &model.catalog,
-                model.fs.as_ref().map(|fs| &fs.registry),
-                model.fs.as_ref().map(|fs| &fs.survey),
-            );
-            build_backup(&widgets.backup_row, &model.catalog);
-            build_export(&widgets.export_row, &model.catalog);
-        }
-        SettingsTab::Dictionaries => {
-            rebuild_dicts(&widgets.dict_list, &snap.dicts, sender);
-        }
-        SettingsTab::BookFiles => {
-            build_file_write(
-                &widgets.file_write_row,
-                &model.catalog,
-                snap,
-                model.fs.as_ref().map(|fs| fs.epub_backups.as_slice()),
-            );
-        }
-        SettingsTab::Metadata => {
-            build_sources(&widgets.source_list, &model.catalog, snap);
-        }
-        SettingsTab::Notifications => {
-            build_notifications(&widgets.notify_list, sender);
+impl SettingsPageModel {
+    /// Build (or rebuild) one tab's widgets from the snapshot already in
+    /// the model — no reads happen here. Every call is measured and
+    /// announced under its own `settings_fill:<tab>` name so a field run
+    /// shows the per-tab split the old single `route_open:settings` number
+    /// hid.
+    ///
+    /// Every caller guarantees a snapshot is in hand: `SelectTab` checks,
+    /// `Loaded` just set one, and `FsLoaded` only rebuilds tabs that are
+    /// already built — which took a snapshot to build. A missing snapshot
+    /// would be a broken invariant; the panic ratchet forbids adding an
+    /// `expect` for it, so the tab stays on its loading row instead — a
+    /// state impossible to miss in QA, and one that cannot corrupt
+    /// anything on the way.
+    fn build_tab(
+        &self,
+        tab: SettingsTab,
+        widgets: &mut SettingsPageModelWidgets,
+        sender: &ComponentSender<SettingsPageModel>,
+    ) {
+        let Some(snap) = self.snapshot.as_ref() else {
+            return;
+        };
+        let label = settings_fill_label(tab);
+        let _t = crate::timing::measure(label);
+        let _a = crate::timing::activity(label);
+        match tab {
+            SettingsTab::Appearance => {
+                build_theme_picker(&widgets.theme_grid, &self.catalog, &snap.theme_id);
+            }
+            SettingsTab::Storage => {
+                build_paths(
+                    &widgets.paths_host,
+                    &self.catalog,
+                    self.fs.as_ref().map(|fs| &fs.registry),
+                    self.fs.as_ref().map(|fs| &fs.survey),
+                );
+                build_backup(&widgets.backup_row, &self.catalog);
+                build_export(&widgets.export_row, &self.catalog);
+            }
+            SettingsTab::Dictionaries => {
+                rebuild_dicts(&widgets.dict_list, &snap.dicts, sender);
+            }
+            SettingsTab::BookFiles => {
+                build_file_write(
+                    &widgets.file_write_row,
+                    &self.catalog,
+                    snap,
+                    self.fs.as_ref().map(|fs| fs.epub_backups.as_slice()),
+                );
+            }
+            SettingsTab::Metadata => {
+                build_sources(&widgets.source_list, &self.catalog, snap);
+            }
+            SettingsTab::Notifications => {
+                build_notifications(&widgets.notify_list, sender);
+            }
         }
     }
-    if !model.built_tabs.contains(&tab) {
-        model.built_tabs.push(tab);
+
+    /// Record that `tab`'s widgets exist, so the next visit is instant.
+    /// Kept out of `build_tab` so that method never needs `&mut self`.
+    fn mark_built(&mut self, tab: SettingsTab) {
+        if !self.built_tabs.contains(&tab) {
+            self.built_tabs.push(tab);
+        }
     }
 }
 

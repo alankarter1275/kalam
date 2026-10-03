@@ -835,6 +835,14 @@ CI green after every step; every commit HEAD-checked (§36).
     activity), the author fill as `author_fill`, the worker reads as
     `service_settings` / `service_author` — the field run gets the
     per-tab split for free.
+  - Two CI catches on this step, both recorded: the author budget's
+    first draft compared an empty author against a busy one and
+    failed on the statement count (§51's second face — `hydrate_books`
+    skips its batched tag query for an empty list); and the step's
+    first push carried an invariant `.expect` in `build_tab` that
+    tripped the panic ratchet (§41's recurrence — the shipped shape
+    is a `&self` method whose missing-snapshot case is a documented
+    early return, so the count stays 12).
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

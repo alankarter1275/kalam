@@ -1796,6 +1796,20 @@ on the UI thread. Both sites now use `.unwrap_or_else(|e| e.into_inner())`
 — the same pattern the watchdog's read paths already used — and the count
 is back to 12 with the documented per-file distribution.
 
+### Recurrence, 2026-10-03 (7.1 step 2c)
+
+The step shipped with an `.expect("build_tab is only called with a
+snapshot in hand")` — an invariant assertion on a path every caller
+guarantees, the most innocent-looking kind. The ratchet counted it
+(13 > 12) and CI failed on the guardrail, not the build. The fix was
+the same shape as the first time: `build_tab` became a `&self` method
+whose missing-snapshot case is a documented `let ... else { return; }`
+— the tab stays on its loading row, a state QA cannot miss, and no new
+panic exists. The lesson did not need relearning so much as *applying
+before pushing*: grep your diff for `.expect(`/`.unwrap(` before the
+push, every time, because "this one is obviously safe" is exactly what
+the 13th call site said too.
+
 ### The rules
 
 - `tests/guardrails.rs` is part of the repo's contract, not CI trivia.

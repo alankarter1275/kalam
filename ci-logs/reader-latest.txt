@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-reader settle=25
-binary: 66361080 bytes
+binary: 66357368 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.3675.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.3686.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -21,85 +21,94 @@ WAYLAND_DISPLAY=wayland-1
 requested route: read-1
 windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
 toplevel windows seen: 1
-  shot: 01-read-1 (47902 bytes)
+  shot: 01-read-1 (396429 bytes)
 focused: 1
-  shot: 02-read-1-settling (47902 bytes)
-  shot: 03-read-1-settled (47902 bytes)
+  shot: 02-read-1-settling (396429 bytes)
+  shot: 03-read-1-settled (396429 bytes)
 navigation: app accepted route 'read-1'
 navigation: 'read-1' is not a grid page; no grid_build expected
-  shot: 04-home-for-comparison (66450 bytes)
+  shot: 04-home-for-comparison (60451 bytes)
 navigation: 'read-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'read-1'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init       85.6 ms
-  [timing] startup_style          49.0 ms
-  [timing] startup_splash_show      1.6 ms
-  [timing] icons_write             0.1 ms
+  [timing] startup_gtk_init       78.7 ms
+  [timing] startup_style          44.4 ms
+  [timing] startup_splash_show      1.5 ms
+  [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    124.0 ms
-  [timing] startup_libraries       0.2 ms
+  [timing] startup_splash_pump    122.4 ms
+  [timing] startup_libraries       0.3 ms
   [timing] startup_db_open         6.4 ms
-  [timing] startup_theme          12.5 ms
-  [timing] pre_run               279.5 ms
-  [timing] route_open:home         0.4 ms
-  [timing] startup_first_page      0.4 ms
+  [timing] startup_theme          12.6 ms
+  [timing] pre_run               266.5 ms
+  [timing] route_open:home         0.3 ms
+  [timing] startup_first_page      0.3 ms
   [timing] service_home            1.3 ms
-  [timing] init_done             284.3 ms
-  [timing] window_shown          286.0 ms
+  [timing] init_done             269.9 ms
+  [timing] window_shown          271.4 ms
   [timing] covers_queued            11
-  [timing] home_fill               2.0 ms
+  [timing] home_fill               1.9 ms
   [timing] page_cache_miss           1
   [timing] service_reader          0.2 ms
-  [timing] book_open               1.8 ms
-  [timing] route_open:reader      12.3 ms
+  [timing] book_open               2.8 ms
+  [timing] route_open:reader      14.3 ms
   [timing] folders_renamed         139
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        1396.5 ms
+  [timing] startup_dicts        1516.2 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  (none -- no UI-loop block over ~100 ms was detected)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 289 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 250 ms — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 16 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 247 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 78 ms ago)
+  stalls seen -- name the screen and fix it before it spreads
 
 === did the covers actually load? ===
   01-read-1.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
   02-read-1-settling.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
   03-read-1-settled.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
-  04-home-for-comparison.png: 1600x1000  coloured=17.3%  lit=100.0%
+  04-home-for-comparison.png: 1600x1000  coloured=10.8%  lit=100.0%
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  06a41ed5d587e67e560a6d747ad20925  ci-shots-reader/01-read-1.png
-  06a41ed5d587e67e560a6d747ad20925  ci-shots-reader/02-read-1-settling.png
-  06a41ed5d587e67e560a6d747ad20925  ci-shots-reader/03-read-1-settled.png
-  edc0eaafa2ad4d529dea08ae680a9dea  ci-shots-reader/04-home-for-comparison.png
+  04a6977c21977b723bcdae1b1b74e646  ci-shots-reader/01-read-1.png
+  04a6977c21977b723bcdae1b1b74e646  ci-shots-reader/02-read-1-settling.png
+  04a6977c21977b723bcdae1b1b74e646  ci-shots-reader/03-read-1-settled.png
+  db34f76832296ad6a054e387a4ef6d4a  ci-shots-reader/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:3712): Gtk-WARNING **: 21:44:24.049: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:3723): Gtk-WARNING **: 22:21:57.079: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  
+  (process:3723): Gtk-WARNING **: 22:21:57.210: Theme parser error: <data>:725:5-14: No property named "max-width"
   kalam: KALAM_ROUTE=read-1 — navigating
-  kalam: open epub failed: failed to open book /tmp/kalam-ci-data/kalam/library/9e70c4b4-b9e5-40b1-9476-af4e3d0d0ccf/book.epub: [UnreadableArchive - `Some("/tmp/kalam-ci-data/kalam/library/9e70c4b4-b9e5-40b1-9476-af4e3d0d0ccf/book.epub")`]: No such file or directory (os error 2)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 289 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 250 ms — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 16 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 247 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 78 ms ago)
 
 === peak memory ===
-books=139 peak_rss_kb=226752 peak_rss_mb=221
+books=139 peak_rss_kb=261764 peak_rss_mb=255
 
 === shutting down ===
 
 === artifacts ===
-  total 244
-  drwxr-xr-x  2 runner runner  4096 Oct  3 21:45 .
-  drwxr-xr-x 20 runner runner  4096 Oct  3 21:44 ..
-  -rw-r--r--  1 runner runner 47902 Oct  3 21:44 01-read-1.png
-  -rw-r--r--  1 runner runner 47902 Oct  3 21:44 02-read-1-settling.png
-  -rw-r--r--  1 runner runner 47902 Oct  3 21:45 03-read-1-settled.png
-  -rw-r--r--  1 runner runner 66450 Oct  3 21:45 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Oct  3 21:44 grim.log
-  -rw-r--r--  1 runner runner  1412 Oct  3 21:45 kalam-home.log
-  -rw-r--r--  1 runner runner  1731 Oct  3 21:44 kalam.log
-  -rw-r--r--  1 runner runner  3886 Oct  3 21:45 report.txt
-  -rw-r--r--  1 runner runner    88 Oct  3 21:44 sway.log
-  -rw-r--r--  1 runner runner  7184 Oct  3 21:44 tree.json
---- run 37155700184 ---
+  total 1260
+  drwxr-xr-x  2 runner runner   4096 Oct  3 22:22 .
+  drwxr-xr-x 20 runner runner   4096 Oct  3 22:21 ..
+  -rw-r--r--  1 runner runner 396429 Oct  3 22:22 01-read-1.png
+  -rw-r--r--  1 runner runner 396429 Oct  3 22:22 02-read-1-settling.png
+  -rw-r--r--  1 runner runner 396429 Oct  3 22:22 03-read-1-settled.png
+  -rw-r--r--  1 runner runner  60451 Oct  3 22:22 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner      0 Oct  3 22:22 grim.log
+  -rw-r--r--  1 runner runner   1563 Oct  3 22:22 kalam-home.log
+  -rw-r--r--  1 runner runner   2141 Oct  3 22:21 kalam.log
+  -rw-r--r--  1 runner runner   4898 Oct  3 22:22 report.txt
+  -rw-r--r--  1 runner runner     88 Oct  3 22:21 sway.log
+  -rw-r--r--  1 runner runner   7184 Oct  3 22:22 tree.json
+--- run 37157839269 ---

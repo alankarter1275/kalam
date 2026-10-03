@@ -2117,21 +2117,35 @@ after **every** item, so a burst becomes N dispatches with everything
 else interleaved between them; and pace the producer (every cover
 sleeps 4 ms, first batch included).
 
-**Revision, same day, after CI hung twice.** The original fix also
-moved the drains to `PRIORITY_DEFAULT_IDLE`. Both CI runs then hung in
-`tasks::tests` — every main-loop source stopped dispatching, including
-the tests' own timeouts — and the hung test's worker steps no
-progress, so not a single yield had executed in it: the priority move
-itself was the killer, through a GLib mechanism that could not be
-reproduced locally (no toolchain in the sandbox, and a 40-minute CI
-round is a terrible debugger). Reverted to the proven
-`spawn_future_local` delivery; the yield and the producer pacing stay.
-**The lesson stacks on §50: a scheduling change you cannot run
-locally is a guess with a slow feedback loop — ship the half you can
-explain end to end, and bring the other half back only with a local
-reproduction.** If the next field run shows the yield alone is not
-enough fairness, the priority question reopens WITH a repro
-requirement.
+**Revision, same day, after CI hung three times.** The original fix
+had two halves beyond the producer pacing: moving the drains to
+`PRIORITY_DEFAULT_IDLE`, and a per-item cooperative yield.
+
+- Runs one and two hung with the priority move in: every main-loop
+  source stopped dispatching under the tests' `block_on`, including
+  their timeouts. The first diagnosis pinned it on the priority move —
+  reasoning that the hung test's worker stepped no progress, so the
+  yield had never run — and the priority half was reverted.
+- Run three hung with the priority gone and only the yield left, on a
+  test whose worker steps exactly one progress item: **the yield hung
+  it too.** The first diagnosis had cleared the wrong test — the
+  lock-holding pipeline test was a different one, and it executes a
+  yield. A hand-rolled wake-and-pend `poll_fn` yield, textbook-shaped
+  as it looks, wedges the GLib future source under `block_on` in a way
+  that could not be reproduced locally (no toolchain in the sandbox;
+  each CI round cost 30-50 minutes).
+- Final state: the task drains are byte-for-byte the delivery that ran
+  green for weeks. Fairness is bought on the producer side only (every
+  cover decode sleeps 4 ms, first batch included), which is a worker
+  thread sleeping and physically cannot affect the main loop.
+
+**The lesson, stacked twice in one day:** a scheduling change you
+cannot run locally is a guess with a slow feedback loop, and a
+diagnosis built on "which code did not run" is only as good as the
+test you think was hung — verify WHICH test holds the lock before
+clearing either half. Any future drain-side change reopens only with
+a local reproduction, and the first thing that reproduction must
+show is the tests' `block_on` loop dispatching with the change in.
 
 **The rules:**
 

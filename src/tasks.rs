@@ -45,25 +45,6 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-/// Give the main loop one turn: after every delivered item, the drain
-/// futures below await this so input events, the stall watchdog's
-/// heartbeat timeout and GTK's layout passes all get their dispatch
-/// before the next item — even when the channel holds a burst.
-///
-/// Hand-rolled because the crate's `futures-util` is default-features
-/// off; this is `yield_now`, and it changes no semantics: the waker
-/// re-readies the task immediately, but only after the main loop has
-/// gone around once, so every other ready source — input events, the
-/// stall watchdog's heartbeat, GTK's layout passes — gets its dispatch
-/// between items (7.1 step 2b.1, pitfalls §50).
-async fn yield_to_the_loop() {
-    std::future::poll_fn(|cx| {
-        cx.waker().wake_by_ref();
-        std::task::Poll::Pending
-    })
-    .await
-}
-
 /// One running task, as the task manager sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskInfo {
@@ -418,21 +399,19 @@ where
         finish(id);
     });
 
-    // Back on plain `spawn_future_local` (7.1 step 2b.1, revised): the
-    // first attempt moved this drain to PRIORITY_DEFAULT_IDLE and CI
-    // hung — every main-loop source stopped dispatching under the
-    // tests' `block_on`, including their timeouts, with zero of this
-    // code's yields ever having run (the hung test's worker steps no
-    // progress), so the priority move itself was the killer and is
-    // reverted. What stays is the yield below: one item per dispatch,
-    // so a burst cannot be swallowed inside a single uninterruptible
-    // dispatch.
+    // Delivery is deliberately the plain, proven shape (7.1 step 2b.1,
+    // final revision — pitfalls §50): both attempts to make this drain
+    // interleave better (an idle priority, then a per-item yield) hung
+    // CI under the tests' `block_on` through GLib scheduling behavior
+    // that cannot be reproduced in this sandbox. Fairness between a
+    // flood of items and everything else is now bought on the producer
+    // side (see preload.rs's per-cover pacing), and any drain-side
+    // change reopens only with a local reproduction.
     gtk::glib::spawn_future_local(async move {
         while let Ok(update) = progress_rx.recv().await {
             let _a = crate::timing::activity(format!("task_progress:{label}"));
             set_progress(id, &update);
             on_progress(update);
-            yield_to_the_loop().await;
         }
         if let Ok(value) = result_rx.recv().await {
             let _a = crate::timing::activity(format!("task_done:{label}"));
@@ -515,15 +494,13 @@ where
         finish(id);
     });
 
-    // Same rule as `spawn_with`: default priority (the proven delivery;
-    // see the note there for why the idle-priority attempt was
-    // reverted), one item per dispatch via the yield.
+    // Same as `spawn_with`: the plain, proven delivery (see the note
+    // there; pitfalls §50).
     gtk::glib::spawn_future_local(async move {
         // Ends when the worker drops its `Emit`, which closes the channel.
         while let Ok(item) = item_rx.recv().await {
             let _a = crate::timing::activity(format!("task_item:{label}"));
             on_item(item);
-            yield_to_the_loop().await;
         }
     });
 }

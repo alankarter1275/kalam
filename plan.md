@@ -230,15 +230,13 @@ One rule, copied from the readers, applied everywhere:
   it concrete: the first `PRELOAD_AHEAD` (24) covers decode with no
   pacing at all (`preload.rs:166`) — a burst the comment itself admits
   stutters. Fix, all surgical:
-  1. `tasks.rs`: both drains yield to the loop after **every** item
-     (a hand-rolled `poll_fn` wake-and-pend: no new dependency,
-     `futures-util` here is default-features-off), so a buffered burst
-     becomes N dispatches with everything else interleaved between
-     them. *(Revised after CI hung twice: the original also moved the
-     drains to `PRIORITY_DEFAULT_IDLE`, which stopped all dispatching
-     under the tests' `block_on` — a GLib mechanism unreproducible in
-     the sandbox. The priority half is reverted; the yield and the
-     pacing stay. See pitfalls §50's revision.)*
+  1. ~~`tasks.rs`: drain-side fairness~~ — **withdrawn after three CI
+     hangs** (pitfalls §50's revision): the idle-priority move hung
+     runs one and two; the per-item yield alone hung run three (the
+     hung test executes exactly one yield — the first diagnosis had
+     cleared the wrong test). The drains are byte-for-byte the proven
+     delivery. Fairness is producer-side only, and any drain-side
+     change reopens with a local reproduction.
   2. `preload.rs`: pace every cover (4 ms before each decode after the
      first). The unpaced 24-batch was the startup burst; `PRELOAD_AHEAD`
      loses its code role and is removed, comments updated.

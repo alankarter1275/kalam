@@ -3,7 +3,7 @@ use crate::author::{
 };
 use crate::db::{AuthorProfile, AuthorWork, Catalog};
 use crate::models::Book;
-use crate::service::LibraryService;
+use crate::service::{AuthorPageSnapshot, LibraryService};
 use crate::widgets::{
     book_row::{build_book_card, cover_widget},
     charts::stars_label,
@@ -26,11 +26,14 @@ pub enum AuthorPageMsg {
     // Boxed: AuthorProfile is ~376 bytes, so an unboxed variant made every
     // AuthorPageMsg that large -- including the far more frequent Refresh.
     Fetched(Box<Result<AuthorProfile, String>>),
+    /// The page's data arrived from the worker (7.1 step 2c): profile,
+    /// owned books and the series grouping. Boxed with `Fetched` for the
+    /// same size reason.
+    Loaded(Box<AuthorPageSnapshot>),
 }
 
 pub struct AuthorPageModel {
     catalog: Arc<Catalog>,
-    #[allow(dead_code)] // queried once the author saved-quotes section lands
     service: LibraryService,
     requested_name: String,
     profile: Option<AuthorProfile>,
@@ -38,6 +41,10 @@ pub struct AuthorPageModel {
     series: Vec<SeriesProgress>,
     loading: bool,
     error: Option<String>,
+    /// Whether the first snapshot has landed (7.1 step 2c). The old init
+    /// knew synchronously whether a cached profile existed and only then
+    /// started the network fetch; the recipe learns it here, once.
+    snapshot_seen: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +103,14 @@ impl Component for AuthorPageModel {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
                     set_hexpand: true,
+
+                    // The skeleton's only moving part (7.1 step 2c):
+                    // cleared by the first fill, like Home's sections.
+                    gtk::Label {
+                        set_label: "Loading author…",
+                        add_css_class: "kalam-muted",
+                        set_halign: gtk::Align::Start,
+                    },
                 },
 
                 #[name = "hero_side"]
@@ -118,6 +133,11 @@ impl Component for AuthorPageModel {
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
+                gtk::Label {
+                    set_label: "Loading…",
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
             },
 
             gtk::Label {
@@ -130,6 +150,11 @@ impl Component for AuthorPageModel {
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
+                gtk::Label {
+                    set_label: "Loading your books…",
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
             },
 
             gtk::Label {
@@ -143,6 +168,11 @@ impl Component for AuthorPageModel {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
                 set_margin_bottom: 12,
+                gtk::Label {
+                    set_label: "Loading…",
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
             },
         }
     }
@@ -152,35 +182,24 @@ impl Component for AuthorPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let owned_books = author::owned_books_for_author(&catalog, &author_name);
-        let profile = catalog
-            .get_author_profile_by_name(&author_name)
-            .ok()
-            .flatten();
-        let series = author::series_progress(&owned_books);
-        let loading = profile.is_none();
-
+        // Skeleton only (7.1 step 2c): the hosts paint their loading rows
+        // and both reads — the profile/books/series snapshot and, when the
+        // profile turns out to be uncached, the network fetch — run on
+        // workers.
         let service = LibraryService::new(catalog.clone());
         let model = AuthorPageModel {
             catalog,
             service,
             requested_name: author_name,
-            profile,
-            owned_books,
-            series,
-            loading,
+            profile: None,
+            owned_books: Vec::new(),
+            series: Vec::new(),
+            loading: true,
             error: None,
+            snapshot_seen: false,
         };
-        let mut widgets = view_output!();
-        fill_author_page(&mut widgets, &model, &sender);
-        if model.profile.is_none() {
-            spawn_author_fetch(
-                model.catalog.clone(),
-                model.requested_name.clone(),
-                model.owned_books.clone(),
-                &sender,
-            );
-        }
+        let widgets = view_output!();
+        request_snapshot(&model.service, &model.requested_name, &sender);
         ComponentParts { model, widgets }
     }
 
@@ -213,15 +232,61 @@ impl Component for AuthorPageModel {
                         self.error = Some(err);
                     }
                 }
-                self.owned_books =
-                    author::owned_books_for_author(&self.catalog, &self.requested_name);
-                self.series = author::series_progress(&self.owned_books);
+                // The old path re-read the owned books inline here; the
+                // re-read now rides the worker and the fill happens when
+                // it lands (7.1 step 2c).
+                request_snapshot(&self.service, &self.requested_name, &sender);
+            }
+            AuthorPageMsg::Loaded(snap) => {
+                let snap = *snap;
+                self.profile = snap.profile;
+                self.owned_books = snap.owned_books;
+                self.series = snap.series;
+                if !self.snapshot_seen {
+                    self.snapshot_seen = true;
+                    if self.profile.is_none() && self.error.is_none() {
+                        // No cached profile: fetch one from the network.
+                        // The old init answered this question inline; the
+                        // recipe learns it here, once.
+                        self.loading = true;
+                        spawn_author_fetch(
+                            self.catalog.clone(),
+                            self.requested_name.clone(),
+                            self.owned_books.clone(),
+                            &sender,
+                        );
+                    } else {
+                        self.loading = false;
+                    }
+                }
             }
         }
 
         fill_author_page(widgets, self, &sender);
         self.update_view(widgets, sender);
     }
+}
+
+/// Ask the worker for the page's data (7.1 step 2c): profile, owned books
+/// and the series grouping, in one snapshot. Called at init, and again
+/// after a network fetch lands, so the fill always rebuilds from fresh
+/// owned data the way the old inline re-read did.
+fn request_snapshot(
+    service: &LibraryService,
+    author_name: &str,
+    sender: &ComponentSender<AuthorPageModel>,
+) {
+    let service = LibraryService::new(service.catalog().clone());
+    let name = author_name.to_string();
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Reading author",
+        move |_reporter| service.author_page(&name),
+        |_| {},
+        move |snap| {
+            let _ = s.send(AuthorPageMsg::Loaded(Box::new(snap)));
+        },
+    );
 }
 
 fn spawn_author_fetch(
@@ -251,6 +316,11 @@ fn fill_author_page(
     model: &AuthorPageModel,
     sender: &ComponentSender<AuthorPageModel>,
 ) {
+    // The same attribution pair the other migrated pages use: a timing
+    // span for KALAM_TIMING=1 and an activity label so a stall during
+    // this build says "while author_fill" (7.1 step 2c).
+    let _t = crate::timing::measure("author_fill");
+    let _a = crate::timing::activity("author_fill");
     rebuild_hero(&widgets.hero_main, &widgets.hero_side, model, sender);
     rebuild_series(&widgets.series_host, model);
     rebuild_owned_books(&widgets.owned_host, &model.owned_books, sender);

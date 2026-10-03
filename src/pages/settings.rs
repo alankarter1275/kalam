@@ -1,7 +1,7 @@
 use crate::db::Catalog;
 use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
-use crate::service::LibraryService;
+use crate::service::{LibraryService, SettingsSnapshot};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -136,13 +136,40 @@ pub enum SettingsMsg {
     /// Reorder the merged-store priority (Phase 9): id, delta (−1 up / +1 down).
     MoveDict(i64, i64),
     Refresh,
+    /// The DB snapshot arrived from the worker (7.1 step 2c). Boxed because
+    /// it carries the dictionary list; it is sent once at open and again
+    /// after a dict import / delete / move.
+    Loaded(Box<SettingsSnapshot>),
+    /// The disk-flavored reads (sidecar survey, libraries registry, EPUB
+    /// backup listing) arrived from the page's own slower worker.
+    FsLoaded(Box<SettingsFs>),
+}
+
+/// The settings page's disk-flavored reads (7.1 step 2c), gathered by the
+/// page's own worker task because they are slow and only three rows want
+/// them: the per-book sidecar survey, the libraries registry file, and the
+/// EPUB backup listing. The same split `BookPageSnapshot::file_size` made —
+/// `LibraryService` stays DB-pure, the FS question rides with the page.
+#[derive(Debug)]
+pub struct SettingsFs {
+    pub survey: crate::sidecar::SidecarSurvey,
+    pub registry: crate::libraries::LibraryRegistry,
+    pub epub_backups: Vec<(std::path::PathBuf, u64)>,
 }
 
 pub struct SettingsPageModel {
     catalog: Arc<Catalog>,
-    #[allow(dead_code)] // settings uses the service for library-management actions
     service: LibraryService,
-    dicts: Vec<crate::db::Dictionary>,
+    /// The DB snapshot (2c): None until the worker's first answer, which is
+    /// also the signal that tabs may build.
+    snapshot: Option<SettingsSnapshot>,
+    /// The slower disk reads, in their own task. Rows that want them show
+    /// "Checking…" until this lands.
+    fs: Option<SettingsFs>,
+    /// Tabs whose widgets are already built. Only the active tab builds at
+    /// `Loaded`; the rest build on first visit from the snapshot in hand —
+    /// the old `init` built all six at open, which is what the ~500 ms was.
+    built_tabs: Vec<SettingsTab>,
     active_tab: SettingsTab,
 }
 
@@ -319,21 +346,19 @@ impl Component for SettingsPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        // A failed read here rendered as "no dictionaries installed", which
-        // is exactly what a user would see after a successful uninstall.
-        let dicts = match catalog.list_dictionaries() {
-            Ok(rows) => rows,
-            Err(err) => {
-                crate::notify::error("Could not list your dictionaries", &err.to_string());
-                Vec::new()
-            }
-        };
+        // Skeleton only (7.1 step 2c). The old init read ten prefs and
+        // tables and built all six tabs' widgets before the page could
+        // appear — the measured 465-522 ms. Now every host paints a
+        // loading row, the reads run on workers, and only the active tab
+        // builds when the snapshot lands.
         let active_tab = SettingsTab::Appearance;
         let service = LibraryService::new(catalog.clone());
         let model = SettingsPageModel {
             catalog,
             service,
-            dicts,
+            snapshot: None,
+            fs: None,
+            built_tabs: Vec::new(),
             active_tab,
         };
         let widgets = view_output!();
@@ -356,14 +381,21 @@ impl Component for SettingsPageModel {
             }
         }
 
-        rebuild_dicts(&widgets.dict_list, &model.dicts, &sender);
-        build_sources(&widgets.source_list, &model.catalog);
-        build_file_write(&widgets.file_write_row, &model.catalog);
-        build_paths(&widgets.paths_host, &model.catalog);
-        build_backup(&widgets.backup_row, &model.catalog);
-        build_export(&widgets.export_row, &model.catalog);
-        build_notifications(&widgets.notify_list, &sender);
-        build_theme_picker(&widgets.theme_grid, &model.catalog);
+        // The skeleton's moving parts: one loading row per host, cleared by
+        // whichever build runs into it first (2b learned this on Home —
+        // without them, unfilled sections paint as if empty).
+        widgets.theme_grid.attach(&loading_label(), 0, 0, 1, 1);
+        widgets.paths_host.append(&loading_label());
+        widgets.dict_list.append(&loading_label());
+        widgets.file_write_row.append(&loading_label());
+        widgets.source_list.append(&loading_label());
+        widgets.notify_list.append(&loading_label());
+
+        // Two workers: the fast DB snapshot fills the page, the
+        // disk-flavored extras follow in their own task so they never delay
+        // the fill.
+        request_snapshot(&model.service, &sender);
+        request_fs(&model.catalog, &sender);
         ComponentParts { model, widgets }
     }
 
@@ -380,8 +412,13 @@ impl Component for SettingsPageModel {
                 widgets.tab_title.set_label(tab.label());
                 widgets.tab_subtitle.set_label(tab.subtitle());
                 update_tab_styles(&widgets.nav_list, tab);
+                // The notifications log is in-memory session state, so it
+                // rebuilds on every visit (its old behavior); every other
+                // tab builds once from the snapshot already in the model.
                 if tab == SettingsTab::Notifications {
                     build_notifications(&widgets.notify_list, &sender);
+                } else if !self.built_tabs.contains(&tab) && self.snapshot.is_some() {
+                    build_tab(tab, widgets, self, &sender);
                 }
                 widgets.scroller.vadjustment().set_value(0.0);
             }
@@ -390,9 +427,44 @@ impl Component for SettingsPageModel {
                 build_notifications(&widgets.notify_list, &sender);
             }
             SettingsMsg::Refresh => {
-                self.refresh();
-                rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+                // A dictionary import finished: re-read on the worker (the
+                // old path re-read `list_dictionaries` inline) and refresh
+                // the activity log while we are here, exactly as before.
+                request_snapshot(&self.service, &sender);
                 build_notifications(&widgets.notify_list, &sender);
+            }
+            SettingsMsg::Loaded(snap) => {
+                let snap = *snap;
+                // A failed read used to render as "no dictionaries
+                // installed" — surfaced here now that the read is off-thread.
+                if let Some(err) = &snap.dicts_error {
+                    crate::notify::error("Could not list your dictionaries", err);
+                }
+                self.snapshot = Some(snap);
+                // (Re)build the active tab: the first arrival fills it,
+                // later ones (after a dict import / delete / move) refresh
+                // whatever is on screen. The dict tab also refreshes when
+                // built but hidden, matching the old Refresh behavior.
+                build_tab(self.active_tab, widgets, self, &sender);
+                if self.active_tab != SettingsTab::Dictionaries
+                    && self.built_tabs.contains(&SettingsTab::Dictionaries)
+                {
+                    if let Some(snap) = &self.snapshot {
+                        rebuild_dicts(&widgets.dict_list, &snap.dicts, &sender);
+                    }
+                }
+            }
+            SettingsMsg::FsLoaded(fs) => {
+                // The slow disk reads landed. Tabs already built get their
+                // rows refreshed in place; tabs not yet visited will simply
+                // build with real data when they are first opened.
+                self.fs = Some(*fs);
+                if self.built_tabs.contains(&SettingsTab::Storage) {
+                    build_tab(SettingsTab::Storage, widgets, self, &sender);
+                }
+                if self.built_tabs.contains(&SettingsTab::BookFiles) {
+                    build_tab(SettingsTab::BookFiles, widgets, self, &sender);
+                }
             }
             SettingsMsg::ImportDict => {
                 let dialog = gtk::FileDialog::builder()
@@ -485,9 +557,9 @@ impl Component for SettingsPageModel {
             }
             SettingsMsg::DeleteDict(id) => {
                 let name = self
-                    .dicts
-                    .iter()
-                    .find(|d| d.id == id)
+                    .snapshot
+                    .as_ref()
+                    .and_then(|s| s.dicts.iter().find(|d| d.id == id))
                     .map(|d| d.name.clone())
                     .unwrap_or_default();
                 crate::notify::outcome_info(
@@ -496,28 +568,16 @@ impl Component for SettingsPageModel {
                     &name,
                     "Could not remove the dictionary",
                 );
-                self.refresh();
-                rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+                request_snapshot(&self.service, &sender);
             }
             SettingsMsg::MoveDict(id, delta) => {
                 if let Err(err) = self.catalog.move_dictionary_priority(id, delta) {
                     crate::notify::error("Could not reorder dictionaries", &err.to_string());
                 }
-                self.refresh();
-                rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+                request_snapshot(&self.service, &sender);
             }
         }
         self.update_view(widgets, sender);
-    }
-}
-
-impl SettingsPageModel {
-    fn refresh(&mut self) {
-        match self.catalog.list_dictionaries() {
-            Ok(rows) => self.dicts = rows,
-            // Keep the current list rather than blanking it.
-            Err(err) => crate::notify::error("Could not list your dictionaries", &err.to_string()),
-        }
     }
 }
 
@@ -540,6 +600,121 @@ fn make_tab_button(tab: SettingsTab, active: bool) -> gtk::Button {
     }
     btn.set_focus_on_click(false);
     btn
+}
+
+/// The skeleton's placeholder row, one per host (7.1 step 2c). Whichever
+/// build runs into the host first clears it, so an unfilled section never
+/// paints as if it were an empty library.
+fn loading_label() -> gtk::Label {
+    let label = gtk::Label::new(Some("Loading…"));
+    label.add_css_class("kalam-muted");
+    label.set_halign(gtk::Align::Start);
+    label
+}
+
+/// Ask the worker for the DB snapshot. Called at init and after a dict
+/// import / delete / move — the UI thread never reads the library
+/// (7.1 step 2c).
+fn request_snapshot(service: &LibraryService, sender: &ComponentSender<SettingsPageModel>) {
+    let service = LibraryService::new(service.catalog().clone());
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Reading settings",
+        move |_reporter| service.settings(),
+        |_| {},
+        move |snap| {
+            let _ = s.send(SettingsMsg::Loaded(Box::new(snap)));
+        },
+    );
+}
+
+/// Ask the worker for the disk-flavored reads — the per-book sidecar survey
+/// (one file read per book), the libraries registry file, and the EPUB
+/// backup listing. Slow, only three rows want them, and they must never
+/// delay the page fill, so they ride their own task (the same split the
+/// book page made for the file-size stat).
+fn request_fs(catalog: &Arc<Catalog>, sender: &ComponentSender<SettingsPageModel>) {
+    let catalog = catalog.clone();
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Checking storage",
+        move |_reporter| SettingsFs {
+            survey: crate::sidecar::survey(&catalog),
+            registry: crate::libraries::load_registry(),
+            epub_backups: crate::epub_metadata::list_backups(),
+        },
+        |_| {},
+        move |fs| {
+            let _ = s.send(SettingsMsg::FsLoaded(Box::new(fs)));
+        },
+    );
+}
+
+/// The span/watchdog name for one tab's build. Static per tab because
+/// `timing::measure` takes `&'static str`.
+fn settings_fill_label(tab: SettingsTab) -> &'static str {
+    match tab {
+        SettingsTab::Appearance => "settings_fill:appearance",
+        SettingsTab::Storage => "settings_fill:storage",
+        SettingsTab::Dictionaries => "settings_fill:dictionaries",
+        SettingsTab::BookFiles => "settings_fill:book_files",
+        SettingsTab::Metadata => "settings_fill:metadata",
+        SettingsTab::Notifications => "settings_fill:notifications",
+    }
+}
+
+/// Build (or rebuild) one tab's widgets from the snapshot already in the
+/// model — no reads happen here. Every call is measured and announced under
+/// its own `settings_fill:<tab>` name so a field run shows the per-tab
+/// split the old single `route_open:settings` number hid.
+fn build_tab(
+    tab: SettingsTab,
+    widgets: &mut SettingsPageModelWidgets,
+    model: &mut SettingsPageModel,
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    let label = settings_fill_label(tab);
+    let _t = crate::timing::measure(label);
+    let _a = crate::timing::activity(label);
+    let snap = model
+        .snapshot
+        .as_ref()
+        .expect("build_tab is only called with a snapshot in hand");
+    match tab {
+        SettingsTab::Appearance => {
+            build_theme_picker(&widgets.theme_grid, &model.catalog, &snap.theme_id);
+        }
+        SettingsTab::Storage => {
+            build_paths(
+                &widgets.paths_host,
+                &model.catalog,
+                model.fs.as_ref().map(|fs| &fs.registry),
+                model.fs.as_ref().map(|fs| &fs.survey),
+            );
+            build_backup(&widgets.backup_row, &model.catalog);
+            build_export(&widgets.export_row, &model.catalog);
+        }
+        SettingsTab::Dictionaries => {
+            rebuild_dicts(&widgets.dict_list, &snap.dicts, sender);
+        }
+        SettingsTab::BookFiles => {
+            build_file_write(
+                &widgets.file_write_row,
+                &model.catalog,
+                snap,
+                model.fs.as_ref().map(|fs| fs.epub_backups.as_slice()),
+            );
+        }
+        SettingsTab::Metadata => {
+            build_sources(&widgets.source_list, &model.catalog, snap);
+        }
+        SettingsTab::Notifications => {
+            build_notifications(&widgets.notify_list, sender);
+        }
+    }
+    if !model.built_tabs.contains(&tab) {
+        model.built_tabs.push(tab);
+    }
 }
 
 fn update_tab_styles(container: &gtk::Box, active: SettingsTab) {
@@ -664,11 +839,12 @@ fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
 
 /// Theme families in a 2-column grid; each family is a raised block holding
 /// one card per variant.
-fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>) {
+fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>, active: &str) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let active = crate::theme::current(catalog).id;
+    // `active` arrives from the snapshot (7.1 step 2c); the catalog stays
+    // for the save-and-apply callbacks, which are click-time writes.
     let mut slot = 0;
     for (family_key, name, desc, prefix) in THEME_FAMILIES.iter() {
         let family = themes_for_family(family_key);
@@ -996,12 +1172,17 @@ fn theme_variant_button(
 }
 
 /// Data locations: four label/desc rows with mono path boxes.
-fn build_paths(host: &gtk::Box, catalog: &Arc<Catalog>) {
+fn build_paths(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    registry: Option<&crate::libraries::LibraryRegistry>,
+    survey: Option<&crate::sidecar::SidecarSurvey>,
+) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    build_libraries(host);
-    build_recovery(host, catalog);
+    build_libraries(host, registry);
+    build_recovery(host, catalog, survey);
 
     let body = section_card(
         host,
@@ -1042,8 +1223,19 @@ fn build_paths(host: &gtk::Box, catalog: &Arc<Catalog>) {
 /// re-launches rather than swapping underneath a running UI: pages hold open
 /// database handles and half-drawn covers, so repointing mid-session would
 /// leave them reading one library and writing to another.
-fn build_libraries(host: &gtk::Box) {
-    let reg = crate::libraries::load_registry();
+fn build_libraries(host: &gtk::Box, reg: Option<&crate::libraries::LibraryRegistry>) {
+    // The registry file is read by the page's slow worker (2c); until it
+    // lands this card says so rather than guessing "no libraries".
+    let Some(reg) = reg else {
+        let body = section_card(
+            host,
+            "library-symbolic",
+            "Libraries",
+            Some("A library is a folder holding its own books, covers and database."),
+        );
+        setting_row(&body, "Libraries", "Reading the library list…", &loading_label());
+        return;
+    };
     let body = section_card(
         host,
         "library-symbolic",
@@ -1248,8 +1440,33 @@ fn build_libraries(host: &gtk::Box) {
 /// something if it is checkable — the backups are written on code paths that
 /// could quietly stop running, and nobody would notice until the day they
 /// mattered. So the number is on screen.
-fn build_recovery(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    let survey = crate::sidecar::survey(catalog);
+fn build_recovery(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    survey: Option<&crate::sidecar::SidecarSurvey>,
+) {
+    // The survey reads one sidecar file per book — the heaviest read on the
+    // whole page, which is exactly why it runs on the page's slow worker
+    // (2c). Until it lands the row says so instead of claiming "No books".
+    let Some(survey) = survey else {
+        let body = section_card(
+            host,
+            "document-save-symbolic",
+            "Recovery",
+            Some(concat!(
+                "Each book folder keeps a kalam.json copy of its details, tags, ",
+                "highlights and reading position. If the catalog database is ever ",
+                "lost, this is what a rebuild would use."
+            )),
+        );
+        setting_row(
+            &body,
+            "Books with a backup copy",
+            "Checking your books' backup coverage…",
+            &loading_label(),
+        );
+        return;
+    };
     let body = section_card(
         host,
         "document-save-symbolic",
@@ -1617,16 +1834,30 @@ fn build_shelf_dropdown(
     drop
 }
 
+/// Re-render from live data — the click paths (add / remove a watch folder)
+/// still read inline, as they always did; this wrapper keeps them working.
 fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::Catalog>) {
+    let rules = crate::watch_folder::load_watch_rules(catalog);
+    let shelves = catalog.list_shelves().unwrap_or_default();
+    render_watch_cards_with(container, catalog, &rules, &shelves);
+}
+
+/// Build the watch-folder cards from data the caller already holds: the
+/// page's snapshot on first build (7.1 step 2c — no read happens on the UI
+/// thread there), or a fresh click-time read through the wrapper above.
+fn render_watch_cards_with(
+    container: &gtk::Box,
+    catalog: &std::sync::Arc<crate::db::Catalog>,
+    rules: &[crate::watch_folder::WatchFolderRule],
+    shelves: &[crate::db::Shelf],
+) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
 
-    let rules = crate::watch_folder::load_watch_rules(catalog);
-    let shelves = catalog.list_shelves().unwrap_or_default();
     let mut shelf_choices: Vec<(Option<i64>, String)> =
         vec![(None, "Library Default (No shelf)".to_string())];
-    for s in &shelves {
+    for s in shelves {
         shelf_choices.push((Some(s.id), s.name.clone()));
     }
 
@@ -1891,14 +2122,21 @@ fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::
 }
 
 /// Toggle for writing metadata back into the EPUB itself, and deleting backups.
-fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    use crate::epub_metadata::{set_write_enabled, write_enabled};
+fn build_file_write(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    snap: &SettingsSnapshot,
+    epub_backups: Option<&[(std::path::PathBuf, u64)]>,
+) {
+    use crate::epub_metadata::set_write_enabled;
 
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
 
-    // 1. EPUB Sanitizer / Polish Engine
+    // 1. EPUB Sanitizer / Polish Engine. Every initial state below comes
+    // from the snapshot (7.1 step 2c); the catalog stays for the
+    // click-time writes.
     let polish_body = section_card(
         host,
         "edit-clear-symbolic",
@@ -1907,12 +2145,9 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
     );
     {
         let catalog = catalog.clone();
-        let sw = toggle_switch(
-            crate::epub_sanitizer::clean_on_import_enabled(&catalog),
-            move |on| {
-                crate::epub_sanitizer::set_clean_on_import(&catalog, on);
-            },
-        );
+        let sw = toggle_switch(snap.clean_on_import, move |on| {
+            crate::epub_sanitizer::set_clean_on_import(&catalog, on);
+        });
         setting_row(
             &polish_body,
             "Sanitize and polish EPUBs on import",
@@ -1967,7 +2202,12 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
         watch_body.append(&top_row);
 
-        render_watch_cards(&cards_container, catalog);
+        render_watch_cards_with(
+            &cards_container,
+            catalog,
+            &snap.watch_rules,
+            &snap.shelves,
+        );
         watch_body.append(&cards_container);
     }
 
@@ -1976,7 +2216,7 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     {
         let catalog = catalog.clone();
-        let sw = toggle_switch(write_enabled(&catalog), move |on| {
+        let sw = toggle_switch(snap.writeback_enabled, move |on| {
             set_write_enabled(&catalog, on);
         });
         setting_row(
@@ -1989,23 +2229,29 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     right.set_valign(gtk::Align::Center);
-    let backups = crate::epub_metadata::list_backups();
-    let total: u64 = backups.iter().map(|(_, size)| size).sum();
-    let summary_text = if backups.is_empty() {
-        "No originals kept".to_string()
-    } else {
-        format!(
-            "{} original{} · {}",
-            backups.len(),
-            if backups.len() == 1 { "" } else { "s" },
-            crate::epub_metadata::human_size(total)
-        )
+    // The backup listing is a directory walk, so it rides the page's slow
+    // worker (2c); until it lands the chip says so and delete stays off.
+    let summary_text = match epub_backups {
+        None => "Checking…".to_string(),
+        Some(backups) => {
+            let total: u64 = backups.iter().map(|(_, size)| size).sum();
+            if backups.is_empty() {
+                "No originals kept".to_string()
+            } else {
+                format!(
+                    "{} original{} · {}",
+                    backups.len(),
+                    if backups.len() == 1 { "" } else { "s" },
+                    crate::epub_metadata::human_size(total)
+                )
+            }
+        }
     };
     let summary = chip_label(&summary_text, "kalam-chip-neutral");
     right.append(&summary);
     let clean = gtk::Button::with_label("Delete backups");
     clean.add_css_class("kalam-btn-danger");
-    clean.set_sensitive(!backups.is_empty());
+    clean.set_sensitive(epub_backups.is_some_and(|b| !b.is_empty()));
     {
         let summary = summary.clone();
         clean.connect_clicked(move |btn| {
@@ -2056,8 +2302,8 @@ fn country_hint_label() -> gtk::Label {
 
 /// One section card per metadata provider, each with a real switch and its
 /// own extra rows.
-fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    use crate::metadata::{set_source_enabled, source_enabled, SourceId};
+fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapshot) {
+    use crate::metadata::{set_source_enabled, SourceId};
 
     while let Some(child) = host.first_child() {
         host.remove(&child);
@@ -2071,7 +2317,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
     );
     {
         let catalog = catalog.clone();
-        let sw = toggle_switch(source_enabled(&catalog, SourceId::OpenLibrary), move |on| {
+        let sw = toggle_switch(snap.source_open_library, move |on| {
             set_source_enabled(&catalog, SourceId::OpenLibrary, on);
         });
         setting_row(
@@ -2092,7 +2338,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
     );
     {
         let catalog = catalog.clone();
-        let sw = toggle_switch(source_enabled(&catalog, SourceId::GoogleBooks), move |on| {
+        let sw = toggle_switch(snap.source_google_books, move |on| {
             set_source_enabled(&catalog, SourceId::GoogleBooks, on);
         });
         setting_row(
@@ -2109,7 +2355,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
         right.set_valign(gtk::Align::Center);
         let entry = gtk::Entry::new();
         entry.set_placeholder_text(Some("Optional API key — lifts the shared rate limit"));
-        entry.set_text(&catalog.get_pref("meta.googlebooks.key").unwrap_or_default());
+        entry.set_text(&snap.google_books_key);
         entry.set_hexpand(true);
         entry.add_css_class("kalam-setting-entry");
         right.append(&entry);
@@ -2146,11 +2392,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
         country.set_max_length(2);
         country.set_width_chars(4);
         country.set_placeholder_text(Some("IN"));
-        country.set_text(
-            &catalog
-                .get_pref("meta.googlebooks.country")
-                .unwrap_or_else(crate::metadata::google_books::detect_country),
-        );
+        country.set_text(&snap.google_books_country);
         country.add_css_class("kalam-setting-entry");
         right.append(&country);
         let save = gtk::Button::with_label("Save");

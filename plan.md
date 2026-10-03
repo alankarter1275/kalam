@@ -736,6 +736,101 @@ CI green after every step; every commit HEAD-checked (§36).
   family) is DONE: warm steady state ≤ 450 ms stalls, cold boot ≤
   ~1 s with the service installed, every fill 1-11 ms.
 
+- **Step 2c — planned and implemented 2026-10-03 (owner said go):
+  settings + author to the skeleton/worker/apply recipe.** Research
+  first, and it corrected the step-0 note that settings "has no reads
+  at all": the page reads plenty, just invisibly — direct `catalog`
+  and helper calls, not `service_*` spans, so the step-0 log showed
+  none of them. Full enumeration (every read the old `init` did on
+  the UI thread):
+  - DB: `list_dictionaries`; `theme::current` (1 pref);
+    `sidecar::survey`'s `list_books`; `list_shelves`;
+    `load_watch_rules`; `source_enabled` x2; prefs
+    `meta.googlebooks.key`, `meta.googlebooks.country`;
+    `clean_on_import_enabled`; `write_enabled`.
+  - FS: `sidecar::survey`'s per-book sidecar reads (one file read
+    per book — the heaviest single item, likely the bulk of the
+    465-522 ms); `libraries::load_registry` (file);
+    `epub_metadata::list_backups` (a directory walk).
+  - In-memory only: `notify::history` (stays on the UI thread).
+  Design, matching the book-page precedent for splitting a heavy
+  secondary read (its chapter-titles worker):
+  - **`SettingsSnapshot` (DB-pure, `LibraryService::settings()`,
+    span `service_settings`):** dicts + dicts_error, theme_id,
+    watch_rules, shelves, the two source flags, the google key and
+    country prefs, clean_on_import, writeback. Fast — ~10 quick
+    statements — so the page fills almost immediately.
+  - **`SettingsFs` (the page's own worker, `spawn_internal`
+    "Checking storage", like `BookPageSnapshot::file_size` the
+    service stays DB-pure):** the sidecar survey, the libraries
+    registry, the epub backup listing — the slow disk-flavored
+    reads, in their own task so they never delay the page fill.
+    Rows that depend on it show "Checking…" until it lands; tabs
+    built before it arrives are rebuilt when it does.
+  - **Lazy tabs:** the old `init` built all six tabs' widgets; now
+    only the active tab builds at `Loaded`, the rest build on first
+    visit from the snapshot already in the model (no reads), each
+    with its own `settings_fill:<tab>` span + activity so the field
+    run measures the per-tab split for free. Tab switches after
+    first visit are instant (already built).
+  - **Dict refresh paths** (`Refresh` after import, `DeleteDict`,
+    `MoveDict`): the inline `list_dictionaries` re-read becomes a
+    light worker read (`DictsLoaded`) that rebuilds the dict tab if
+    built. The single-row writes themselves stay synchronous this
+    step (7.7 arbitrates the end state, same decision as 2a's flag
+    writes).
+  - **Author page — `AuthorPageSnapshot` (`LibraryService::author_page`
+    , span `service_author`):** profile, owned_books, series (the
+    grouping computed worker-side). init paints the skeleton with
+    `loading = true`; the network photo fetch now starts only when
+    the snapshot arrives and the profile is absent (init can no
+    longer know that); `Fetched` stores the profile then re-requests
+    the snapshot instead of re-reading `owned_books` inline; every
+    fill goes through `Loaded` (span `author_fill`).
+  - Budget tests, mirroring `book_page_statement_count_is_fixed`:
+    `settings_statement_count_is_fixed` (empty vs seeded dicts +
+    shelves + prefs — same count) and
+    `author_page_statement_count_is_fixed` (0-book vs 3-book author
+    — same count). `assert_send` for both snapshots.
+  - Click-path reads that pre-date 2c and stay (noted, not touched):
+    `render_watch_cards`' re-read after add/remove watch folder, the
+    toggle handlers' small pref writes. Step 4's static check
+    arbitrates them.
+  Acceptance (owner field run): `route_open:settings` drops from
+  ~522 ms to skeleton-only (tens of ms); `settings_fill:*` lines
+  appear and each stays well under the 150 ms watchdog line;
+  `route_open:author` likewise with an `author_fill` line; no new
+  stall anywhere; behavior identical apart from appear-then-fill.
+
+- **Step 2c — implementation notes (2026-10-03), written as the code
+  landed.**
+  - Two corrections from the deep read of `get_pref` (pitfalls §51 in
+    the making): several of the settings reads are *global* prefs
+    served from `prefs.json` before the database (theme, the metadata
+    sources, the Google key/country), so the service function is
+    "DB-pure" in the sense of no library-shaped reads — the global
+    file lookups ride along inside `get_pref`, still off the UI
+    thread. And the first settings budget test draft seeded prefs,
+    which flips `load_watch_rules`' legacy fallback and changes which
+    statements fire; the shipped test seeds table rows only
+    (dictionary + shelf) and asserts the pref defaults by value.
+    §51 records the rule.
+  - The dict refresh paths (`Refresh`/`DeleteDict`/`MoveDict`) all
+    re-request the whole snapshot rather than a dicts-only read: ten
+    quick statements, one code path, and `Loaded` already knows how
+    to rebuild the visible tab plus a built-but-hidden dict tab.
+  - The author page's network fetch decision moved from `init` to the
+    first `Loaded` (init can no longer know whether a profile is
+    cached); `snapshot_seen` gates it so a later `Loaded` (the
+    post-fetch re-read) never re-fires the fetch. After `Fetched`,
+    the page briefly shows the new profile beside the previous
+    owned-books list until the re-read lands — imperceptible, noted
+    here so a future diff of the behavior is not a surprise.
+  - Every tab build is announced as `settings_fill:<tab>` (span +
+    activity), the author fill as `author_fill`, the worker reads as
+    `service_settings` / `service_author` — the field run gets the
+    per-tab split for free.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

@@ -2155,3 +2155,31 @@ show is the tests' `block_on` loop dispatching with the change in.
 - A producer and its consumer must be paced as a pair; pacing only
   the steady state leaves the burst at the exact moment the app is
   busiest.
+
+## 51. A statement-count equality budget must seed rows, not prefs
+
+**Date:** 2026-10-03, 7.1 step 2c; the settings snapshot's budget test.
+
+**What happened:** `book_page_statement_count_is_fixed` (step 2a)
+compares a busy book against a bare one and asserts equal statement
+counts. The natural copy for the settings snapshot — "fresh catalog vs
+one with everything set" — is not the same test. Seeding *prefs* changes
+which statements fire, not how many rows come back:
+
+- `watch_folder::load_watch_rules` takes a second look at a legacy
+  pref when no rules are saved, so the fresh catalog runs one statement
+  more than the seeded one.
+- Global prefs (theme, metadata sources, the Google key) are served
+  from `prefs.json` before the database (§19 makes the file inert under
+  tests, but the code path still differs from a DB hit in principle).
+
+Seeding **table rows** (a dictionary, a shelf) is what actually tests
+the property: neither `list_dictionaries` nor `list_shelves` grows with
+the library. The pref-shaped reads are asserted by their defaults
+instead.
+
+**Rule:** an equality budget seeds the things whose *size* varies
+(rows), never the things whose *control flow* varies (prefs, flags,
+feature gates). If a read has a legacy fallback path, seed it the same
+way on both sides or not at all.
+

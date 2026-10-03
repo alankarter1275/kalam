@@ -51,10 +51,11 @@
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
 use crate::db::{
-    Annotation, AuthorProfile, Catalog, DictLookup, EventKind, LibrarySession, LibraryStats,
-    QuoteRef, ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf,
-    SortKey,
+    Annotation, AuthorProfile, Catalog, Dictionary, DictLookup, EventKind, LibrarySession,
+    LibraryStats, QuoteRef, ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord,
+    SessionRow, Shelf, SortKey,
 };
+use crate::watch_folder::WatchFolderRule;
 use crate::models::Book;
 use std::sync::Arc;
 
@@ -178,6 +179,48 @@ pub struct BookPageSnapshot {
     /// this with the file's `fs::metadata` size on its way back, so the
     /// stat also stays off the UI thread.
     pub file_size: Option<u64>,
+}
+
+/// The settings page, first half (7.1 step 2c): every pref- and table-shaped
+/// read its six tabs need, in one DB-pure pass. Fast by design — a handful of
+/// single-row reads — so the page can fill almost immediately.
+///
+/// The disk-flavored reads (the per-book sidecar survey, the libraries
+/// registry file, the EPUB backup listing) are deliberately NOT here: they
+/// are slow, only three rows want them, and the page reads them in its own
+/// worker task (`SettingsFs`) so they never delay the fill — the same split
+/// `BookPageSnapshot::file_size` made.
+#[derive(Debug, Default)]
+pub struct SettingsSnapshot {
+    /// Installed dictionary packs, for the Dictionaries tab.
+    pub dicts: Vec<Dictionary>,
+    /// Why `dicts` is empty when its read failed — the old page notified
+    /// with this wording inline; the apply now does, off the read.
+    pub dicts_error: Option<String>,
+    /// The active theme's id, for the Appearance picker's badges.
+    pub theme_id: String,
+    /// Watch-folder rules and the shelf list they route into (Book Files).
+    pub watch_rules: Vec<WatchFolderRule>,
+    pub shelves: Vec<Shelf>,
+    /// Metadata source toggles and the Google Books key/country prefs
+    /// (Metadata Sources).
+    pub source_open_library: bool,
+    pub source_google_books: bool,
+    pub google_books_key: String,
+    pub google_books_country: String,
+    /// EPUB polish-on-import and metadata writeback toggles (Book Files).
+    pub clean_on_import: bool,
+    pub writeback_enabled: bool,
+}
+
+/// The author page: profile, the owned-books list, and the series grouping
+/// computed from it (7.1 step 2c). The grouping used to run on the UI thread
+/// in `init`; it is pure work over the books, so the worker runs it here.
+#[derive(Debug, Default)]
+pub struct AuthorPageSnapshot {
+    pub profile: Option<AuthorProfile>,
+    pub owned_books: Vec<Book>,
+    pub series: Vec<crate::author::SeriesProgress>,
 }
 
 /// The vocabulary page: the visible word list plus its header counts.
@@ -535,6 +578,57 @@ impl LibraryService {
             author_other_books,
             // The service is DB-pure; the page's worker fills this.
             file_size: None,
+        }
+    }
+
+    /// The settings page's DB-pure reads, one pass (7.1 step 2c). See
+    /// `SettingsSnapshot` for why the disk-flavored reads are the page's.
+    pub fn settings(&self) -> SettingsSnapshot {
+        let _t = crate::timing::measure("service_settings");
+        let (dicts, dicts_error) = match self.catalog.list_dictionaries() {
+            Ok(rows) => (rows, None),
+            Err(err) => (Vec::new(), Some(err.to_string())),
+        };
+        let (source_open_library, source_google_books) = (
+            crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::OpenLibrary),
+            crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::GoogleBooks),
+        );
+        SettingsSnapshot {
+            dicts,
+            dicts_error,
+            theme_id: crate::theme::current(&self.catalog).id.to_string(),
+            watch_rules: crate::watch_folder::load_watch_rules(&self.catalog),
+            shelves: self.catalog.list_shelves().unwrap_or_default(),
+            source_open_library,
+            source_google_books,
+            google_books_key: self
+                .catalog
+                .get_pref("meta.googlebooks.key")
+                .unwrap_or_default(),
+            google_books_country: self
+                .catalog
+                .get_pref("meta.googlebooks.country")
+                .unwrap_or_else(crate::metadata::google_books::detect_country),
+            clean_on_import: crate::epub_sanitizer::clean_on_import_enabled(&self.catalog),
+            writeback_enabled: crate::epub_metadata::write_enabled(&self.catalog),
+        }
+    }
+
+    /// The author page's whole data question in one call (7.1 step 2c):
+    /// the profile if cached, the owned books, and their series grouping.
+    pub fn author_page(&self, author_name: &str) -> AuthorPageSnapshot {
+        let _t = crate::timing::measure("service_author");
+        let owned_books = crate::author::owned_books_for_author(&self.catalog, author_name);
+        let profile = self
+            .catalog
+            .get_author_profile_by_name(author_name)
+            .ok()
+            .flatten();
+        let series = crate::author::series_progress(&owned_books);
+        AuthorPageSnapshot {
+            profile,
+            owned_books,
+            series,
         }
     }
 
@@ -943,6 +1037,9 @@ mod tests {
         assert_send::<BookStatsSnapshot>();
         // The book page snapshot crosses a worker boundary (7.1 step 2a).
         assert_send::<BookPageSnapshot>();
+        // Settings and the author page join it in 7.1 step 2c.
+        assert_send::<SettingsSnapshot>();
+        assert_send::<AuthorPageSnapshot>();
         assert_send::<ReaderSnapshot>();
         // Added when `all_books` became the 1.2b pilot: it now crosses a
         // thread boundary, so the property has to be compile-checked rather
@@ -1015,6 +1112,79 @@ mod tests {
         // card filters out the book itself when it draws.
         assert_eq!(snap.author_other_books.len(), 2);
         assert!(snap.author_other_books.iter().any(|b| b.title == "Bare"));
+    }
+
+    /// 7.1 step 2c: the settings snapshot is one fixed set of statements.
+    /// A settings page with dictionaries and shelves installed must cost
+    /// exactly what a factory-fresh one does — same count-shaped budget as
+    /// `book_page_statement_count_is_fixed`, and the reason is the same: the
+    /// number is identical on every machine and cannot flake.
+    ///
+    /// Only the table-shaped reads are seeded. The pref-shaped ones are
+    /// deliberately left at their defaults: setting them changes *which*
+    /// statements fire, not how many rows they return — the watch-rules
+    /// reader takes a second legacy-pref look when no rules are saved, and
+    /// global prefs (theme, sources, the Google key) fall through the
+    /// prefs.json file first. Seeding rows is what tests the property:
+    /// neither list grows with the library.
+    #[test]
+    fn settings_statement_count_is_fixed() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let n_fresh = svc.catalog().count_queries(|| svc.settings());
+        assert!(n_fresh > 0);
+
+        let cat = svc.catalog();
+        cat.insert_dictionary("Test Dict", Some("en"), 100)
+            .expect("seed dictionary");
+        cat.create_shelf("A shelf", ShelfKind::Manual, "", "")
+            .expect("seed shelf");
+
+        let n_full = svc.catalog().count_queries(|| svc.settings());
+        assert_eq!(
+            n_fresh, n_full,
+            "settings must be a fixed set of statements: {n_fresh} fresh vs {n_full} with a dictionary and a shelf installed"
+        );
+
+        // And the snapshot carries the seeded rows plus the pref defaults.
+        let snap = svc.settings();
+        assert_eq!(snap.dicts.len(), 1);
+        assert_eq!(snap.dicts[0].name, "Test Dict");
+        assert_eq!(snap.shelves.len(), 1);
+        assert_eq!(snap.shelves[0].name, "A shelf");
+        assert_eq!(snap.theme_id, crate::theme::DEFAULT.id);
+        assert!(snap.source_open_library);
+        assert!(snap.source_google_books);
+        assert!(snap.clean_on_import);
+        assert!(snap.writeback_enabled);
+        assert_eq!(snap.google_books_key, "");
+        assert!(snap.watch_rules.is_empty());
+    }
+
+    /// 7.1 step 2c: the author page snapshot is a fixed set of statements —
+    /// an author with three books costs exactly what an unknown one does.
+    #[test]
+    fn author_page_statement_count_is_fixed() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let n_unknown = svc.catalog().count_queries(|| svc.author_page("Nobody"));
+
+        seed(svc.catalog(), "First", &[]);
+        seed(svc.catalog(), "Second", &[]);
+        seed(svc.catalog(), "Third", &[]);
+
+        let n_busy = svc.catalog().count_queries(|| svc.author_page("An Author"));
+        assert_eq!(
+            n_unknown, n_busy,
+            "author_page must be a fixed set of statements: {n_unknown} for an unknown author vs {n_busy} for one with three books"
+        );
+
+        // And the snapshot carries the books.
+        let snap = svc.author_page("An Author");
+        assert_eq!(snap.owned_books.len(), 3);
+        // AuthorProfile is not PartialEq, so the emptiness is asked, not
+        // compared.
+        assert!(snap.profile.is_none());
     }
 
     fn seed(cat: &Catalog, title: &str, tags: &[&str]) -> i64 {

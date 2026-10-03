@@ -879,6 +879,29 @@ CI green after every step; every commit HEAD-checked (§36).
     one reboot with the service installed (expect window ~2 s, no
     multi-second first-open delays), one warm launch right after
     (expect the clean steady state).
+  - **Correction (owner, same day): there was no boot.** The run came
+    from the same session as the 2026-10-02 measurements — he
+    `git pull`ed, ran `cargo build --release`, and launched the fresh
+    binary. That explains every cold number by itself: **a release
+    build evicts the page cache on a 4 GB machine** — the linker
+    writes a fresh ~100 MB binary and the whole toolchain's memory
+    pressure pushes GTK's libraries, catalog.db and the covers back
+    out of RAM. First-launch-after-rebuild is cold *by construction*;
+    his own log shows the machine warming under him (first book page
+    ~2 s blocked → later 250 ms → none). The "service did not run"
+    inference was wrong; the service question that still stands is
+    only whether the **updated** `--covers` unit is installed (the
+    2026-09-20 install predates the flag).
+  - **Protocol rule for field measurements (owner-adopted):** after a
+    rebuild, discard the first launch — or run
+    `./scripts/warm-cache.sh <bin> --covers` once — and measure on
+    the second. Never draw a cold/warm conclusion from a
+    first-launch-after-build. The owner asked whether the warm script
+    must be run manually every time: **no** — once the updated unit
+    is installed it runs itself at login, and every launch after the
+    first keeps things warm naturally; the only event that re-colds
+    the machine mid-session is a build (or a memory-hungry app
+    evicting it, the standing 1.15 caveat).
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

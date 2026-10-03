@@ -1317,6 +1317,48 @@ CI green after every step; every commit HEAD-checked (§36).
   (stall lines right after `picker_window`) — the series row list is
   built on open, on the UI thread; the async-build pattern other
   surfaces already use would apply if he queues it.
+- **Step 3.5 — the picker open stall (owner-ordered, 2026-10-04,
+  sixth session): implemented; plus the supplemental small-page run
+  that closes the step-3 survey.** The owner's word was "fix", so the
+  picker stall goes ahead of step 4.
+  - **The supplemental run (his machine, warm):** comics hub
+    `route_open:comics` **8.3 ms**, saved quotes **6.1 ms** first /
+    **2.4 ms** warm, lookup history **12.4 ms**. The step-3 small-page
+    survey closes with **no performance migration owed**: every small
+    page measured ≤ 12.4 ms. The comics hub's scary code shape
+    (migration call + whole-library read + per-series N+1, all inline)
+    is measured harmless warm on his library — the shape is still a
+    7.7 violation and is handled by step 4's enforcement, not by a
+    speed migration. Also in that run: `service_dashboard` 315.3 ms
+    (worker-side; warm variance on an earlier 163.6), the known
+    cover-preload stall family recurring (250–550 ms blocks across
+    pages, already documented), and the first `page_cache_hit` lines
+    ever logged — 3 hits against ~15 misses, so the cache is still
+    mostly dead and step 4 still decides fix-or-delete.
+  - **The fix, both pickers (shelf + reading list), the history-page
+    recipe applied to a dialog:** the panel presents immediately with
+    a "Loading…" skeleton row — the open now does zero reads and
+    builds zero rows; `fill` spawns `tasks::spawn("Loading books", …)`
+    whose work closure (worker thread) does everything the old
+    UI-thread fill did — `list_books`, `collapse_comic_chapters`,
+    membership (shelf set / `any_in_reading_list`), per-comic peers —
+    and returns ready-made `PickerRow`s (id, title, toast line, tick);
+    `on_done` (main loop) clears the skeleton and builds the
+    CheckButtons. A generation counter drops superseded answers
+    (keystrokes re-fill; the list keeps what it shows and swaps on
+    arrival — it never blanks mid-read). Search semantics are
+    unchanged: every fill still goes through `list_books`' real query
+    engine — the search grammar (`parse_search_query` /
+    `build_search_sql`) is a query engine, not a substring filter,
+    so in-memory filtering would have silently changed what matches.
+    Toggle writes stay as they were (single small writes, owner-
+    accepted). The width diagnostics moved: `picker_natural` /
+    `picker_width` now fire once after the first rows arrive — the
+    skeleton's width says nothing about cut-off rows. New notes for
+    the next log: `picker_read` (worker ms), `picker_fill` (UI ms),
+    `picker_rows` (count) — if any stall remains, the log names the
+    side: read vs widget-build. No new pitfall — recipe application,
+    not a new mistake.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

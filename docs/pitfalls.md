@@ -2223,3 +2223,32 @@ explicitly in `new_text` — never let the pair differ only in
 whitespace. And read the file's diff after every edit, not just before
 committing; the edit tool's fuzzy matching is a convenience, not a
 contract.
+## 53. Converting a cover call to deferred is half a contract — the page must also warm its size
+
+Step 2b (2026-10-02) migrated the My Library dashboard off the UI
+thread and, in passing, converted its three synchronous
+`cover_widget` calls to `cover_widget_deferred`. The next day the
+owner reported the page's covers gone — on every launch, cold or
+warm.
+
+The mechanism: a deferred cover parks a placeholder and registers a
+pending frame keyed on the **exact** `(path, w, h)` it was built at.
+It fills only when a decoded texture with that key lands in the
+cache — and the only producer of those textures is
+`warm_books`/`warm_covers` at that same size. The dashboard asked
+for 72×104, 120×170 and 48×68; home and the grids warm 128×204, the
+comics hub 150×210, the book page its own sizes. Nobody ever decoded
+the dashboard's keys, so its placeholders stayed for the life of the
+page — the exact failure mode written in `warm_books`' own doc
+("Home originally built deferred cards and never warmed them"). The
+conversion step read as pure mechanics ("the same widget, deferred")
+and hid the second half of the contract.
+
+**Rule:** `cover_widget_deferred` and `warm_books`/`warm_covers` are
+one call split in two. A page that builds deferred cards warms them
+itself, at the exact size it asked for — never assume another
+surface decoded the same book at "basically that" size; the cache
+key makes 128×204 and 120×170 strangers. Enforced since the fix:
+`deferred_covers_are_warmed_by_the_page_that_builds_them` in
+`tests/guardrails.rs` fails on any file that builds deferred covers
+without a warm call.

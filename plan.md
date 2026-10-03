@@ -1111,6 +1111,49 @@ CI green after every step; every commit HEAD-checked (§36).
     Pitfalls §52 records the edit-anchor slip caught during the work.
     Owner field verification owed — the checklist above.
 
+- **Step 3.2 — My Library covers (owner report, 2026-10-03, same
+  session's log): implemented, CI owed.** "In My Library the covers
+  are not shown" — found and confirmed in the code: a **step-2b
+  regression, not a cold-cache artifact.** Step 2b (db94bbd) converted
+  the dashboard's three synchronous `cover_widget` calls to
+  `cover_widget_deferred` without adding the warm calls. A deferred
+  cover fills only when a texture with its exact `(path, w, h)` key
+  is decoded, and the only producer is `warm_books`/`warm_covers` at
+  that size. The dashboard asks for 72×104, 120×170 and 48×68; home
+  and the grids warm 128×204, the comics hub 150×210, the book page
+  its own sizes — nobody ever decodes the dashboard's keys, so its
+  placeholders stayed for the life of the page on **every** launch,
+  cold or warm (the in-process cache starts empty per process). The
+  same audit says every other surface pairs its deferred calls with a
+  warm of the exact size — the dashboard was the only miss, exactly
+  the failure mode documented in `warm_books`' doc ("Home originally
+  built deferred cards and never warmed them").
+  - **Fix:** the dashboard fill now warms its three sizes — the
+    now-reading card (72×104), the continue strip (120×170), the
+    quote cards (48×68, paths deduped). Sizes unchanged; each surface
+    warms its own.
+  - **Tripwire:** `deferred_covers_are_warmed_by_the_page_that_builds_
+    them` in tests/guardrails.rs — any file calling
+    `cover_widget_deferred(` without a `warm_books(`/`warm_covers(`
+    fails CI. Zero offenders after the fix; the 2b bug itself would
+    have been this test's first red.
+  - **Pitfalls §53** records the half-contract lesson.
+  - **Same log, the shelf fix confirmed in the data:** shelf_detail
+    visits show `grid_cards 2, grid_cards_total 2` then `1/1` — the
+    collapsed grid no longer grows as chapter windows arrive (the
+    pre-fix log grew 1→4); `service_shelf_detail` 0.4-1.6 ms,
+    `service_shelves` 0.7 ms and `route_open:shelves_grid` 3.8 ms —
+    the collapsed count query costs nothing measurable. The owner
+    walked shelves → shelf detail ×3 → home → library → comic series
+    → task manager and raised no shelf complaint.
+  - **The launch itself was cold** (splash_show 4458.2, pre_run
+    6427.8, window_shown 7379.7, home_fill 1254.3 with a 1452 ms
+    block, the cover stream still landing 9 s in): the
+    rebuild-evicts-the-page-cache protocol from 2c says the first
+    launch after a rebuild is cold by construction and is discarded.
+    Asked the owner whether this was that first launch; the covers
+    bug stands regardless — it reproduces warm.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

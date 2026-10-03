@@ -210,6 +210,10 @@ fn apply_snapshot(
     // Now reading, resolved on the worker (book + spine + chapter index).
     if let Some(nr) = &snap.now_reading {
         top_row.append(&now_reading_card(nr, sender));
+        // Deferred covers need their own decode: no other surface asks for
+        // this card's 72×104, so without this the cover stays a placeholder
+        // for the life of the page (the step-2b miss, pitfalls §53).
+        crate::preload::warm_books(std::slice::from_ref(&nr.book), 0, 72, 104);
     }
 
     let grid = gtk::Grid::new();
@@ -277,6 +281,9 @@ fn apply_snapshot(
             sender,
             continue_strip(&continuing, sender).upcast::<gtk::Widget>(),
         ));
+        // The strip's cards are 120×170 — home and the grids warm 128×204,
+        // which is a different cache key. Each surface warms its own size.
+        crate::preload::warm_books(&continuing, 0, 120, 170);
     }
 
     // ── saved quotes ────────────────────────────────────────────────────
@@ -293,6 +300,14 @@ fn apply_snapshot(
             sender,
             row.upcast::<gtk::Widget>(),
         ));
+        // Same contract, third size: the quote cards ask for 48×68.
+        let mut seen = std::collections::HashSet::new();
+        let quote_covers: Vec<std::path::PathBuf> = quotes
+            .iter()
+            .filter_map(|(_, q)| q.cover_path.clone())
+            .filter(|p| seen.insert(p.clone()))
+            .collect();
+        crate::preload::warm_covers(quote_covers, 48, 68);
     }
 
     // ── history (events + sessions, merged on the worker) ─────────────

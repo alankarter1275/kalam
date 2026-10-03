@@ -164,6 +164,50 @@ fn stylesheet_does_not_gain_hex_colours() {
     );
 }
 
+/// Deferred covers without their warming call — the My Library bug of
+/// 2026-10-03, as a rule.
+///
+/// `cover_widget_deferred` parks a placeholder and fills it only when a
+/// texture for its exact (path, w, h) key lands in the cache — and the only
+/// thing that produces those textures is a `warm_books`/`warm_covers` call at
+/// that same size. Step 2b converted the dashboard's three covers to deferred
+/// without the warm calls, and the page showed placeholders for the life of
+/// the page on every launch, cold or warm. The rule: a file that builds
+/// deferred covers warms them itself, at the size it asked for. Zero
+/// offenders today; the bug itself would have been this test's first failure.
+#[test]
+fn deferred_covers_are_warmed_by_the_page_that_builds_them() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (path, text) in sources_under(&root) {
+        // Call sites only — the paren keeps `use` imports out of the match.
+        if text.contains("cover_widget_deferred(")
+            && !text.contains("warm_books(")
+            && !text.contains("warm_covers(")
+        {
+            offenders.push(path.display().to_string());
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "\n\
+         These files build deferred covers but never warm them:\n{}\
+         \n\
+         `cover_widget_deferred` fills only when a texture for its exact\n\
+         (path, w, h) key is decoded — and nothing decodes it unless the page\n\
+         that built the cards calls warm_books/warm_covers at that size.\n\
+         My Library shipped blank covers for a day because step 2b skipped\n\
+         this half of the contract (pitfalls §53).\n\
+         ",
+        offenders
+            .iter()
+            .map(|f| format!("    {f}\n"))
+            .collect::<String>()
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Scanners
 // ---------------------------------------------------------------------------

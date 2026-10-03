@@ -721,6 +721,21 @@ CI green after every step; every commit HEAD-checked (§36).
     confirmed target); (3) one unnamed late 350 ms block after
     settings (unexplained, small).
 
+- **Step 2b.1 — CLOSED (2026-10-02, late): the cold-start block is
+  handled by roadmap 1.15's infrastructure plus one flag.** The owner
+  remembered `warm-cache.sh`/`kalam-warm.service` (1.15, built for the
+  cold *window open*); the service never passed `--covers`, so covers
+  stayed cold and became the post-window block. His test on a genuine
+  reboot: biggest stall **1051 ms** (vs 4259 unwarmed), window_shown
+  2266 ms, `icons_theme` down to 11.5 ms. The service in-repo now
+  passes `--covers`; the owner reinstalls the unit. What remains of a
+  cold boot is step-3 startup work (`pre_run` 1980 ms: libraries 157,
+  db_open 133, theme 126) plus the 250-650 ms blocks also present
+  warm; settings 522 ms is 2c's target. The coalescer is shelved
+  unless the block returns unexplained. Startup campaign (7.1 step 2
+  family) is DONE: warm steady state ≤ 450 ms stalls, cold boot ≤
+  ~1 s with the service installed, every fill 1-11 ms.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

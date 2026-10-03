@@ -1112,9 +1112,10 @@ CI green after every step; every commit HEAD-checked (§36).
     Owner field verification owed — the checklist above.
 
 - **Step 3.2 — My Library covers (owner report, 2026-10-03, same
-  session's log): implemented, CI owed.** "In My Library the covers
-  are not shown" — found and confirmed in the code: a **step-2b
-  regression, not a cold-cache artifact.** Step 2b (db94bbd) converted
+  session's log): implemented, CI green (run 37148814722 — the new
+  guardrail ran and passed; 548 tests, 0 failed).** "In My Library
+  the covers are not shown" — found and confirmed in the code: a
+  **step-2b regression, not a cold-cache artifact.** Step 2b (db94bbd) converted
   the dashboard's three synchronous `cover_widget` calls to
   `cover_widget_deferred` without adding the warm calls. A deferred
   cover fills only when a texture with its exact `(path, w, h)` key

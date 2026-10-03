@@ -365,7 +365,6 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
     // Fit the window, whatever its width (same rule as the shelf picker).
     let win_w = anchor
-        .as_ref()
         .root()
         .map(|r| r.upcast_ref::<gtk::Widget>().width())
         .unwrap_or(0);

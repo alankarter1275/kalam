@@ -505,7 +505,6 @@ fn open_book_picker(
     // a narrower window gets 120 px less than itself (host margins + body
     // padding + border), floored so it never collapses.
     let win_w = anchor
-        .as_ref()
         .root()
         .map(|r| r.upcast_ref::<gtk::Widget>().width())
         .unwrap_or(0);

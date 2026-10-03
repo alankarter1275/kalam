@@ -1047,7 +1047,9 @@ CI green after every step; every commit HEAD-checked (§36).
     starvation, gone warm; the warm service covers it at boot.
 
 - **Step 3.1 — comics as series on every surface (owner bug report,
-  2026-10-03): implemented, CI owed.** The owner, at his shelf, furious:
+  2026-10-03): implemented, CI green (run 37126083231 — 510 tests,
+  0 failed, both new tests in the log; clippy -D warnings clean;
+  headless smoke session clean).** The owner, at his shelf, furious:
   comics show as *individual chapters* on the shelf — "I told you I never
   want individual chapters!!! I have repeatedly told you this." His
   screenshot could not be viewed (no vision this session — told him

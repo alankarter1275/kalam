@@ -2342,3 +2342,40 @@ toolchain). When a gtk-rs method's shape is unverified and there is
 no codebase precedent, expect the first CI run to be the type
 checker — and destructure with `..` or all four fields rather than
 guessing arity: `let (_, nat, _, _) = r.measure(...)`.
+
+## 58. GTK CSS is not web CSS — and a rejected property fails nothing
+
+§56 was wrong about one layer, and the owner's log caught it:
+
+    (process): Gtk-WARNING **: Theme parser error: <data>:725:5-14:
+    No property named "max-width"
+
+GTK CSS has **no `max-width` property** — not in GTK 4.6, not in any
+GTK4 release up to the 4.22 CI runs against. `min-width`/`min-height`
+exist; `max-width`/`max-height` do not. The "GTK >= 4.6" claim in §56
+was recalled from web CSS and never checked against GTK's own
+property list. The picker got fixed anyway — by the *other* layer,
+the rows' owned labels — and the field log proved which layer worked:
+`picker_natural 520` means the rows themselves now ask for a sane
+width; the CSS "backstop" had been a no-op the whole time.
+
+Three lessons, one per line of that warning:
+
+- **Check property names against docs.gtk.org, not against web-CSS
+  memory.** The two dialects share a syntax and only part of a
+  vocabulary.
+- **A rejected declaration does not fail anything.** The parser
+  drops the one property, keeps the rest of the rule (the load-bearing
+  `min-width: 0px` in that same block still applies), prints one
+  warning at startup, and the app runs fine. Compilation, tests, the
+  smoke test — all green.
+- **Green is not the same as warning-free.** The same theme parser
+  warning was sitting unread in CI's *own* smoke logs of the green
+  run (`ci-logs/tasks-latest.txt:82`, `ci-logs/reader-latest.txt:88`)
+  before the owner ever saw it. After shipping CSS, grep the smoke
+  logs' stderr — CI already collects the evidence; the failure is not
+  looking at it.
+
+The width cap now lives exactly where it can be measured — the rows'
+own labels — and `picker_natural` in the timing log is the tripwire
+if a future row builder regresses.

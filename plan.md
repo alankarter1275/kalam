@@ -1294,6 +1294,29 @@ CI green after every step; every commit HEAD-checked (§36).
     log notes, so the next run names the failing layer if one
     ever does: natural still huge = the rows; natural small but
     width huge = the allocation. Pitfalls §56.
+- **Step 3.4 — closed (owner field verification, 2026-10-04, fifth
+  session): fixed, and his log convicted a second mistake.** His log:
+  `picker_window 1350`, `picker_natural 520`, `picker_width 520` — on
+  both opens, 830 px to spare. The owner confirmed it fixed. But the
+  same log carried `Theme parser error: <data>:725:5-14: No property
+  named "max-width"`: GTK CSS has no max-width property — the CSS
+  "backstop" of the third fix never existed, and §56's "GTK >= 4.6"
+  claim was recalled from web CSS, not checked against GTK's property
+  list. The layer that fixed the picker was the rows' owned labels —
+  `picker_natural 520` is the rows themselves asking small. Correction
+  shipped: the invalid property removed (the same rule's
+  `min-width: 0px` stays — load-bearing against `.kalam-float`'s
+  700px floor), the CSS comment now names where the cap lives, and
+  the width tripwire is `picker_natural` in the log. The same warning
+  was sitting unread in CI's green-run smoke logs
+  (`tasks-latest.txt:82`, `reader-latest.txt:88`) — green is not
+  warning-free. One intermediate red run (37157210097, E0308): gtk-rs
+  `measure()` returns a four-tuple, not a pair — fixed, Pitfalls §57.
+  The CSS lesson is Pitfalls §58. **New observation, owner's call:**
+  opening the picker blocked the UI thread ≥ 250 ms twice in his log
+  (stall lines right after `picker_window`) — the series row list is
+  built on open, on the UI thread; the async-build pattern other
+  surfaces already use would apply if he queues it.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

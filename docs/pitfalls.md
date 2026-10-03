@@ -2112,12 +2112,26 @@ startup interleaved a burst of cover swaps with the icon-theme rescan
 and GTK's first layout passes — three seconds of continuously busy
 loop, every individual piece innocent.
 
-**The fix (both halves required):** the drains run at
-`PRIORITY_DEFAULT_IDLE` — strictly below input (0), the heartbeat (0)
-and GTK's resize (110), so a stream can never win a scheduling race —
-and they `yield` to the loop after **every** item, so a burst becomes
-N dispatches with everything else interleaved between them. Plus:
-pace the producer (every cover sleeps 4 ms, first batch included).
+**The fix (both halves required):** the drains `yield` to the loop
+after **every** item, so a burst becomes N dispatches with everything
+else interleaved between them; and pace the producer (every cover
+sleeps 4 ms, first batch included).
+
+**Revision, same day, after CI hung twice.** The original fix also
+moved the drains to `PRIORITY_DEFAULT_IDLE`. Both CI runs then hung in
+`tasks::tests` — every main-loop source stopped dispatching, including
+the tests' own timeouts — and the hung test's worker steps no
+progress, so not a single yield had executed in it: the priority move
+itself was the killer, through a GLib mechanism that could not be
+reproduced locally (no toolchain in the sandbox, and a 40-minute CI
+round is a terrible debugger). Reverted to the proven
+`spawn_future_local` delivery; the yield and the producer pacing stay.
+**The lesson stacks on §50: a scheduling change you cannot run
+locally is a guess with a slow feedback loop — ship the half you can
+explain end to end, and bring the other half back only with a local
+reproduction.** If the next field run shows the yield alone is not
+enough fairness, the priority question reopens WITH a repro
+requirement.
 
 **The rules:**
 

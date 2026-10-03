@@ -52,8 +52,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 ///
 /// Hand-rolled because the crate's `futures-util` is default-features
 /// off; this is `yield_now`, and it changes no semantics: the waker
-/// re-readies the task immediately, only *after* the loop has had a
-/// chance to run higher-priority sources (7.1 step 2b.1, pitfalls §50).
+/// re-readies the task immediately, but only after the main loop has
+/// gone around once, so every other ready source — input events, the
+/// stall watchdog's heartbeat, GTK's layout passes — gets its dispatch
+/// between items (7.1 step 2b.1, pitfalls §50).
 async fn yield_to_the_loop() {
     std::future::poll_fn(|cx| {
         cx.waker().wake_by_ref();
@@ -416,28 +418,27 @@ where
         finish(id);
     });
 
-    // DEFAULT_IDLE, deliberately below input events, the watchdog's
-    // heartbeat and GTK's resize cycle: a task reporting a flood of
-    // updates must never win a scheduling race against the user (7.1
-    // step 2b.1 — the ~3 s startup block of the third field run).
-    gtk::glib::MainContext::default().spawn_local_with_priority(
-        gtk::glib::Priority::DEFAULT_IDLE,
-        async move {
-            while let Ok(update) = progress_rx.recv().await {
-                let _a = crate::timing::activity(format!("task_progress:{label}"));
-                set_progress(id, &update);
-                on_progress(update);
-                // One item per dispatch: without this, a buffered burst
-                // is processed entirely inside a single main-loop
-                // dispatch that nothing can interrupt.
-                yield_to_the_loop().await;
-            }
-            if let Ok(value) = result_rx.recv().await {
-                let _a = crate::timing::activity(format!("task_done:{label}"));
-                on_done(value);
-            }
-        },
-    );
+    // Back on plain `spawn_future_local` (7.1 step 2b.1, revised): the
+    // first attempt moved this drain to PRIORITY_DEFAULT_IDLE and CI
+    // hung — every main-loop source stopped dispatching under the
+    // tests' `block_on`, including their timeouts, with zero of this
+    // code's yields ever having run (the hung test's worker steps no
+    // progress), so the priority move itself was the killer and is
+    // reverted. What stays is the yield below: one item per dispatch,
+    // so a burst cannot be swallowed inside a single uninterruptible
+    // dispatch.
+    gtk::glib::spawn_future_local(async move {
+        while let Ok(update) = progress_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_progress:{label}"));
+            set_progress(id, &update);
+            on_progress(update);
+            yield_to_the_loop().await;
+        }
+        if let Ok(value) = result_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_done:{label}"));
+            on_done(value);
+        }
+    });
 }
 
 /// Run `work` on a worker thread, delivering each item it produces to the main
@@ -514,20 +515,17 @@ where
         finish(id);
     });
 
-    // Same rule as `spawn_with`: idle priority, and one item per main
-    // loop dispatch (the cover preloader's bursts are exactly the flood
-    // this shape exists to survive).
-    gtk::glib::MainContext::default().spawn_local_with_priority(
-        gtk::glib::Priority::DEFAULT_IDLE,
-        async move {
-            // Ends when the worker drops its `Emit`, which closes the channel.
-            while let Ok(item) = item_rx.recv().await {
-                let _a = crate::timing::activity(format!("task_item:{label}"));
-                on_item(item);
-                yield_to_the_loop().await;
-            }
-        },
-    );
+    // Same rule as `spawn_with`: default priority (the proven delivery;
+    // see the note there for why the idle-priority attempt was
+    // reverted), one item per dispatch via the yield.
+    gtk::glib::spawn_future_local(async move {
+        // Ends when the worker drops its `Emit`, which closes the channel.
+        while let Ok(item) = item_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_item:{label}"));
+            on_item(item);
+            yield_to_the_loop().await;
+        }
+    });
 }
 
 /// The worker half of [`spawn_stream_internal`]: hands finished items back one at a

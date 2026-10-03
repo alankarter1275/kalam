@@ -425,6 +425,75 @@ impl Catalog {
         Ok(())
     }
 
+    /// Add every chapter of a comic series to a manual shelf in one
+    /// transaction — hundreds of chapters, one commit, positions continuing
+    /// the shelf's order. For a non-comic this is exactly
+    /// `add_book_to_shelf`.
+    pub fn add_series_to_shelf(&self, shelf_id: i64, book_id: i64) -> Result<()> {
+        let peers = self.comic_series_peers(book_id)?;
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let base: i64 = tx.query_row(
+            "SELECT IFNULL(MAX(position), -1) + 1 FROM shelf_books WHERE shelf_id = ?1",
+            params![shelf_id],
+            |r| r.get(0),
+        )?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR IGNORE INTO shelf_books (shelf_id, book_id, position, added_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for (i, id) in peers.iter().enumerate() {
+                stmt.execute(params![shelf_id, id, base + i as i64, chrono_like_now()])?;
+            }
+        }
+        tx.commit()
+    }
+
+    /// Add every chapter of a comic series to the reading list in one
+    /// transaction. For a non-comic this is exactly `add_to_reading_list`.
+    pub fn add_series_to_reading_list(&self, book_id: i64) -> Result<()> {
+        let peers = self.comic_series_peers(book_id)?;
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let base: i64 = tx
+            .query_row(
+                "SELECT IFNULL(MAX(position), -1) + 1 FROM reading_list",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR IGNORE INTO reading_list (book_id, position, note, added_at)
+                 VALUES (?1, ?2, '', ?3)",
+            )?;
+            for (i, id) in peers.iter().enumerate() {
+                stmt.execute(params![id, base + i as i64, chrono_like_now()])?;
+            }
+        }
+        tx.commit()
+    }
+
+    /// Is any of these books in the reading list? One query for the whole
+    /// set — the collapsed picker asks once per series, and a series can be
+    /// hundreds of chapters.
+    pub fn any_in_reading_list(&self, book_ids: &[i64]) -> Result<bool> {
+        if book_ids.is_empty() {
+            return Ok(false);
+        }
+        let conn = self.conn();
+        let holders = vec!["?"; book_ids.len()].join(",");
+        let sql =
+            format!("SELECT EXISTS(SELECT 1 FROM reading_list WHERE book_id IN ({holders}))");
+        let found: i64 = conn.query_row(
+            &sql,
+            rusqlite::params_from_iter(book_ids.iter()),
+            |r| r.get(0),
+        )?;
+        Ok(found != 0)
+    }
+
     /// Manual shelves this book belongs to (id, name) — for the book page chips.
     pub fn shelves_for_book(&self, book_id: i64) -> Result<Vec<(i64, String)>> {
         let conn = self.conn();

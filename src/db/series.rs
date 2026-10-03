@@ -1379,4 +1379,93 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].book.id, reg);
     }
+
+    #[test]
+    fn pickers_add_and_remove_a_series_as_one() {
+        // The "+ Add books" pickers show one row per series; ticking it must
+        // put every chapter on the shelf / reading list, unticking must take
+        // them all off — and a regular book still behaves as a single row.
+        let cat = Catalog::open_in_memory().unwrap();
+
+        let reg = cat
+            .insert_book(
+                "reg-1",
+                "Dune",
+                "Frank Herbert",
+                None,
+                "",
+                BookFormat::Epub,
+                "dune.epub",
+                "h-dune",
+                None,
+                &[],
+            )
+            .unwrap();
+        let c1 = cat
+            .insert_book(
+                "c-1",
+                "Horimiya - c001",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_01.cbz",
+                "h-c1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let c2 = cat
+            .insert_book(
+                "c-2",
+                "Horimiya - c002",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_02.cbz",
+                "h-c2",
+                None,
+                &[],
+            )
+            .unwrap();
+        let s_id = cat
+            .get_or_create_comic_series("Horimiya", Some("HERO"), None)
+            .unwrap();
+        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
+        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+
+        // Shelf: tick the series row → both chapters are members, the badge
+        // still counts one card, positions run on from the shelf's order.
+        let shelf_id = cat
+            .create_shelf("Mixed", ShelfKind::Manual, "", "")
+            .unwrap();
+        cat.add_series_to_shelf(shelf_id, reg).unwrap();
+        cat.add_series_to_shelf(shelf_id, c1).unwrap();
+        let shelf = cat.get_shelf(shelf_id).unwrap().unwrap();
+        let members = cat.shelf_books(&shelf, crate::db::SortKey::Title, "").unwrap();
+        assert_eq!(members.len(), 3, "epub + both chapters");
+        assert_eq!(cat.list_shelves().unwrap()[0].book_count, 2, "two cards");
+
+        // Untick the series row → every chapter leaves, the epub stays.
+        cat.remove_series_from_shelf(shelf_id, c1).unwrap();
+        let shelf = cat.get_shelf(shelf_id).unwrap().unwrap();
+        let members = cat.shelf_books(&shelf, crate::db::SortKey::Title, "").unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].id, reg);
+
+        // Reading list: any_in_reading_list sees a series through any one of
+        // its chapters; the series add queues them all in order.
+        assert!(!cat.any_in_reading_list(&[c1, c2]).unwrap());
+        cat.add_series_to_reading_list(c1).unwrap();
+        assert!(cat.any_in_reading_list(&[c1, c2]).unwrap());
+        let entries = cat.list_reading_list().unwrap();
+        assert_eq!(entries.len(), 2, "both chapters queued");
+        let ids: Vec<i64> = entries.iter().map(|e| e.book.id).collect();
+        assert!(ids.contains(&c1) && ids.contains(&c2));
+        // And the series remove clears them both (asserted in the test
+        // above; here just the count).
+        cat.remove_series_from_reading_list(c2).unwrap();
+        assert!(cat.list_reading_list().unwrap().is_empty());
+    }
 }

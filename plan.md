@@ -1155,6 +1155,62 @@ CI green after every step; every commit HEAD-checked (§36).
     Asked the owner whether this was that first launch; the covers
     bug stands regardless — it reproduces warm.
 
+- **Step 3.3 — the "+ Add books" picker (owner report, 2026-10-03,
+  third session): implemented, CI owed.** "When I clicked on the add
+  books options on the shelf… it's cut off from the sides! …in that
+  list, the comics books are listed by chapter… again." The picker
+  was the one list surface the 3.1 audit missed — a dialog, not a
+  page, so it never appeared in the page-by-page sweep. Two defects,
+  one screen:
+  - **Chapters, again.** The picker filled from raw `list_books`:
+    a 700-chapter import = 700 rows. Fixed in both pickers (shelf
+    and reading list — the same dialog shape): the list collapses
+    via `collapse_comic_chapters`; a comic row is the series, ticked
+    when **any** chapter is already a member, tick/untick
+    add/remove **every** chapter (`add_series_to_shelf` /
+    `add_series_to_reading_list`, new single-transaction bulk adds —
+    hundreds of chapters, one commit, positions continuing the
+    order; for a non-comic they are exactly the old single-row
+    calls). Regular books skip the peers lookup so the per-keystroke
+    fill costs what it did before. `any_in_reading_list` answers the
+    tick state for a whole peer set in one query.
+  - **Cut off from the sides.** Two causes, both real: (1) the
+    picker rows were un-ellipsized `CheckButton`s in a
+    never-scrolls-horizontally window — one long comic chapter title
+    set the list's minimum width past the panel and GTK clipped both
+    sides; rows now ellipsize and fill. (2) A dead CSS rule:
+    `.kalam-in-app-dialog { min-width: 0 }` was written to free
+    in-app dialogs from the book float's fixed 700×368, but
+    `.kalam-float { min-width: 700px }` appears later in the file
+    and equal specificity loses to source order — every in-app
+    dialog has been forced to ≥700 px wide since the rule was
+    written. Fixed with a compound selector
+    (`.kalam-float.kalam-in-app-dialog`), which beats source order.
+    Pitfalls §54 records both lessons.
+  - **Tests:** `pickers_add_and_remove_a_series_as_one` (db level —
+    series tick adds both chapters with one card on the badge,
+    untick clears them, the epub stays; `any_in_reading_list` sees a
+    series through any chapter).
+  - **Same log closes two 3.0/3.2 accounts.** The covers fix is
+    confirmed live: `covers_queued 1` + `covers_queued 6` at
+    library_fill — the dashboard's three sizes are being warmed, and
+    the owner raised no covers complaint. And the **direct warm
+    splash readings owed since 3.0**: `splash_show` **139.8 ms**,
+    `splash_pump` **900.0 ms** (holding the 350+450 ms first-paint
+    and GL one-time blocks — the once-per-process bill, now measured
+    directly), `pre_run` 1396.8, `window_shown` **1416.7 — his best
+    launch ever recorded.** The 3.0 warm derivation (~580 show /
+    ~400 pump) had the total about right but the split wrong: warm,
+    GTK's lazy init inside `splash_show` is cheap; the first-paint
+    cost sits inside `pump`. The owner says he ran the warm script;
+    whether this was the first or second launch after it, the
+    earlier 4458 ms splash reading (also stated to be launch 1 with
+    the script run) does not fit this one — noted honestly, not
+    chased; the discard-first-launch protocol stands. Warm blocks
+    this run: 250-651 ms (cover arrivals + realize of freshly built
+    trees, the known class), `service_dashboard` 131.5 on first
+    call.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

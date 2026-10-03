@@ -2252,3 +2252,29 @@ key makes 128×204 and 120×170 strangers. Enforced since the fix:
 `deferred_covers_are_warmed_by_the_page_that_builds_them` in
 `tests/guardrails.rs` fails on any file that builds deferred covers
 without a warm call.
+## 54. Dialogs are list surfaces too — and a CSS rule that loses by source order was never doing anything
+
+Two lessons from the "+ Add books" picker (owner report, 2026-10-03,
+the third bug of its family in two days):
+
+**First: the no-chapters audit stopped at pages.** The 3.1 sweep went
+page by page — grids, strips, feeds — and never asked what the
+*dialogs* list. The shelf picker filled from raw `list_books`, so a
+700-chapter import meant 700 tick boxes. Any surface that lists
+books is a list surface, whatever widget hosts it: pickers, floats,
+editors' browsers. The audit rule is now: grep for `list_books`,
+not for pages. (The legitimate chapter-level callers are the comics
+hub, the metadata editor and ownership matching — each displays or
+edits a *file*, not a *library row*.)
+
+**Second: `.kalam-in-app-dialog { min-width: 0px }` was dead from
+the day it was written.** Its purpose was to free in-app dialogs
+from the book float's fixed 700×368 shell; but `.kalam-float {
+min-width: 700px }` sits *later* in style.css, and between rules of
+equal specificity the later one wins. Every in-app dialog has been
+forced to at least 700 px wide ever since — invisible on a big
+window, a clip on a small one. The fix is the compound selector
+`.kalam-float.kalam-in-app-dialog`, whose specificity beats source
+order. **Rule: an override that must win needs to be *stronger*, not
+merely *nearer* — and a CSS override nobody ever verified visually
+is a rule that may never have worked.**

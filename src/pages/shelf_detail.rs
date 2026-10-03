@@ -529,10 +529,15 @@ fn open_book_picker(
             while let Some(child) = list.first_child() {
                 list.remove(&child);
             }
-            let books = catalog
+            let mut books = catalog
                 .list_books(SortKey::Title, query)
                 .unwrap_or_default();
-            let on_shelf: Vec<i64> = catalog
+            // The owner's rule holds in pickers too: one row per comic
+            // series, never one per chapter. A 700-chapter import used to
+            // flood this list and its wide chapter titles forced the panel
+            // past the dialog's sides.
+            catalog.collapse_comic_chapters(&mut books);
+            let on_shelf: std::collections::HashSet<i64> = catalog
                 .get_shelf(shelf_id)
                 .ok()
                 .flatten()
@@ -556,8 +561,36 @@ fn open_book_picker(
                     book.title,
                     book.authors_display()
                 ));
+                // The label must ellipsize: an un-ellipsized label makes the
+                // row as wide as its whole text, the list sits in a
+                // never-scrolls-horizontally window, and one long title used
+                // to push the panel past the dialog and clip both sides.
+                if let Some(label) = check
+                    .first_child()
+                    .and_then(|l| l.downcast::<gtk::Label>().ok())
+                {
+                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    label.set_xalign(0.0);
+                }
+                check.set_hexpand(true);
+                check.set_halign(gtk::Align::Fill);
                 check.add_css_class("kalam-picker-row");
-                check.set_active(on_shelf.contains(&book.id));
+
+                // A collapsed comic row is the whole series: ticked when any
+                // chapter is on the shelf, tick/untick add/remove every
+                // chapter. Regular books skip the lookup — the fill runs on
+                // every keystroke.
+                let peers = if matches!(
+                    book.format,
+                    crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                ) {
+                    catalog
+                        .comic_series_peers(book.id)
+                        .unwrap_or_else(|_| vec![book.id])
+                } else {
+                    vec![book.id]
+                };
+                check.set_active(peers.iter().any(|p| on_shelf.contains(p)));
 
                 let catalog = catalog.clone();
                 let on_changed = on_changed.clone();
@@ -566,14 +599,14 @@ fn open_book_picker(
                 check.connect_toggled(move |c| {
                     if c.is_active() {
                         crate::notify::outcome(
-                            catalog.add_book_to_shelf(shelf_id, book_id),
+                            catalog.add_series_to_shelf(shelf_id, book_id),
                             "Added to shelf",
                             &book_title,
                             "Could not add to the shelf",
                         );
                     } else {
                         crate::notify::outcome_info(
-                            catalog.remove_book_from_shelf(shelf_id, book_id),
+                            catalog.remove_series_from_shelf(shelf_id, book_id),
                             "Removed from shelf",
                             &book_title,
                             "Could not remove from the shelf",

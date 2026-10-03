@@ -698,8 +698,11 @@ button.kalam-author-photo-refresh:hover {
 }
 
 /* In-app dialogs (A1): same shell as a float, but sized by content rather
- * than the fixed 700x368 a book float needs. */
-.kalam-in-app-dialog {
+ * than the fixed 700x368 a book float needs. The compound selector is
+ * deliberate: a plain .kalam-in-app-dialog rule loses to .kalam-float's
+ * min-width by source order (that silently forced every in-app dialog to
+ * at least 700px wide from day one — owner report, 2026-10-03). */
+.kalam-float.kalam-in-app-dialog {
     min-width: 0px;
     min-height: 0px;
 }

@@ -386,9 +386,12 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
             while let Some(child) = list.first_child() {
                 list.remove(&child);
             }
-            let books = catalog
+            let mut books = catalog
                 .list_books(SortKey::Title, query)
                 .unwrap_or_default();
+            // One row per comic series, never per chapter — the owner's rule
+            // holds in pickers too.
+            catalog.collapse_comic_chapters(&mut books);
             if books.is_empty() {
                 let empty = gtk::Label::new(Some("No books match."));
                 empty.add_css_class("kalam-muted");
@@ -402,8 +405,34 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
                     book.title,
                     book.authors_display()
                 ));
+                // Ellipsize or one long title stretches the row past the
+                // dialog's sides — the list never scrolls horizontally.
+                if let Some(label) = check
+                    .first_child()
+                    .and_then(|l| l.downcast::<gtk::Label>().ok())
+                {
+                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    label.set_xalign(0.0);
+                }
+                check.set_hexpand(true);
+                check.set_halign(gtk::Align::Fill);
                 check.add_css_class("kalam-picker-row");
-                check.set_active(catalog.is_in_reading_list(book.id).unwrap_or(false));
+
+                // A collapsed comic row is the whole series: ticked when any
+                // chapter is queued, tick/untick add/remove every chapter.
+                // Regular books skip the peers lookup — the fill runs on
+                // every keystroke.
+                let peers = if matches!(
+                    book.format,
+                    crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                ) {
+                    catalog
+                        .comic_series_peers(book.id)
+                        .unwrap_or_else(|_| vec![book.id])
+                } else {
+                    vec![book.id]
+                };
+                check.set_active(catalog.any_in_reading_list(&peers).unwrap_or(false));
 
                 let catalog = catalog.clone();
                 let on_changed = on_changed.clone();
@@ -412,14 +441,14 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
                 check.connect_toggled(move |c| {
                     if c.is_active() {
                         crate::notify::outcome(
-                            catalog.add_to_reading_list(book_id),
+                            catalog.add_series_to_reading_list(book_id),
                             "Added to reading list",
                             &book_title,
                             "Could not update the reading list",
                         );
                     } else {
                         crate::notify::outcome_info(
-                            catalog.remove_from_reading_list(book_id),
+                            catalog.remove_series_from_reading_list(book_id),
                             "Removed from reading list",
                             &book_title,
                             "Could not update the reading list",

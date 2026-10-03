@@ -1161,22 +1161,29 @@ mod tests {
         assert!(snap.watch_rules.is_empty());
     }
 
-    /// 7.1 step 2c: the author page snapshot is a fixed set of statements —
-    /// an author with three books costs exactly what an unknown one does.
+    /// 7.1 step 2c: the author page snapshot's cost does not grow with the
+    /// library — one book by an author costs exactly what three do.
+    ///
+    /// Deliberately not empty-vs-busy (pitfalls §51's second face): an
+    /// author with no books skips `hydrate_books`' batched tag query
+    /// entirely, so the empty case is *structurally* cheaper — one batched
+    /// statement fewer, the good direction. The property worth pinning is
+    /// that the count is flat in the number of books.
     #[test]
     fn author_page_statement_count_is_fixed() {
         let cat = Catalog::open_in_memory().unwrap();
         let svc = LibraryService::new(Arc::new(cat));
-        let n_unknown = svc.catalog().count_queries(|| svc.author_page("Nobody"));
 
         seed(svc.catalog(), "First", &[]);
+        let n_one = svc.catalog().count_queries(|| svc.author_page("An Author"));
+
         seed(svc.catalog(), "Second", &[]);
         seed(svc.catalog(), "Third", &[]);
+        let n_three = svc.catalog().count_queries(|| svc.author_page("An Author"));
 
-        let n_busy = svc.catalog().count_queries(|| svc.author_page("An Author"));
         assert_eq!(
-            n_unknown, n_busy,
-            "author_page must be a fixed set of statements: {n_unknown} for an unknown author vs {n_busy} for one with three books"
+            n_one, n_three,
+            "author_page must not grow with the book count: {n_one} statements for one book vs {n_three} for three"
         );
 
         // And the snapshot carries the books.

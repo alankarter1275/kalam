@@ -814,7 +814,12 @@ CI green after every step; every commit HEAD-checked (§36).
     which flips `load_watch_rules`' legacy fallback and changes which
     statements fire; the shipped test seeds table rows only
     (dictionary + shelf) and asserts the pref defaults by value.
-    §51 records the rule.
+    §51 records the rule — twice: CI then caught its second face in
+    the author test, where empty-vs-busy is also a control-flow
+    difference (`hydrate_books` skips its batched tag query for an
+    empty list, so an unknown author is one statement cheaper than
+    one with books). The shipped author test compares one book vs
+    three — flat in book count, the property that matters.
   - The dict refresh paths (`Refresh`/`DeleteDict`/`MoveDict`) all
     re-request the whole snapshot rather than a dicts-only read: ten
     quick statements, one code path, and `Loaded` already knows how

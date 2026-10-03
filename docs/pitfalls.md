@@ -2183,3 +2183,12 @@ instead.
 feature gates). If a read has a legacy fallback path, seed it the same
 way on both sides or not at all.
 
+**Same lesson, second face (caught by CI the same day):** empty-vs-
+busy is also a control-flow difference, not a size difference. The
+author page's first budget draft compared an unknown author against
+one with three books and failed on CI: `hydrate_books` skips its
+batched tag query entirely when the list is empty, so the empty case
+is structurally one statement cheaper. Compare like shapes — one book
+vs three — and let the empty case be cheaper on its own; "less work
+when there is less data" is the property working, not a budget break.
+

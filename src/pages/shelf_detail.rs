@@ -500,7 +500,21 @@ fn open_book_picker(
     on_changed: impl Fn() + 'static,
 ) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    root.set_size_request(520, 520);
+    // Fit the window, whatever its width: the panel sits inside the app with
+    // its borders visible, or it means nothing. 520 is the comfortable size;
+    // a narrower window gets 120 px less than itself (host margins + body
+    // padding + border), floored so it never collapses.
+    let win_w = anchor
+        .as_ref()
+        .root()
+        .map(|r| r.upcast_ref::<gtk::Widget>().width())
+        .unwrap_or(0);
+    let want = if win_w > 0 {
+        520.min((win_w - 120).max(320))
+    } else {
+        520
+    };
+    root.set_size_request(want, 520);
 
     let hint = gtk::Label::new(Some("Tick the books that belong on this shelf."));
     hint.add_css_class("kalam-muted");
@@ -561,15 +575,17 @@ fn open_book_picker(
                     book.title,
                     book.authors_display()
                 ));
-                // The label must ellipsize: an un-ellipsized label makes the
-                // row as wide as its whole text, the list sits in a
-                // never-scrolls-horizontally window, and one long title used
-                // to push the panel past the dialog and clip both sides.
+                // The label must ellipsize AND cap its natural width: a
+                // centred dialog panel sizes itself to the content's
+                // *natural* width, and ellipsize alone only caps the
+                // minimum — one long title still stretched the panel past
+                // the window and its borders vanished at both sides.
                 if let Some(label) = check
                     .first_child()
                     .and_then(|l| l.downcast::<gtk::Label>().ok())
                 {
                     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    label.set_max_width_chars(44);
                     label.set_xalign(0.0);
                 }
                 check.set_hexpand(true);

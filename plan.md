@@ -1214,6 +1214,49 @@ CI green after every step; every commit HEAD-checked (§36).
     trees, the known class), `service_dashboard` 131.5 on first
     call.
 
+- **Step 3.4 — the picker width, second attempt (owner report,
+  2026-10-03, fourth session): implemented, CI owed.** The series
+  collapse held ("the comics appear in just one entry" — his
+  words), but the dialog still ran edge to edge: "the width, I
+  cannot see the left and right side of the dialog box." The
+  picker's attachment did not reach this session's workspace, so
+  the Pillow measurement he suggested (good idea — installed and
+  ready) had nothing to measure; his description was the spec, and
+  it named the mechanism precisely: **the panel spans the window.**
+  - **The real cause, found by reasoning from his words:** a
+    centred dialog panel sizes itself to its content's **natural**
+    width — and `set_ellipsize` caps a label's **minimum** width
+    only, never its natural width. The first fix was therefore the
+    wrong half of the same contract as pitfalls §53: it stopped the
+    rows from *forcing* the width, but one long text still *sized*
+    it. Before the collapse fix the wide row was a scanlation
+    chapter name; after it, some long title/author string was still
+    doing the same job. `set_max_width_chars(44)` caps the natural
+    width — the row now truly cannot size the panel past ~520 px.
+  - **Belt and braces:** the picker's width request is now
+    window-aware — `min(520, window_width - 120)`, floored at 320 —
+    so a narrow or tiled window gets a dialog that fits it with
+    borders visible. Both pickers (shelf and reading list).
+  - **Pitfalls §55** records the minimum-vs-natural lesson: the
+    3.3 "fix" was verified by reasoning, not by measurement — and
+    reasoning about which of the two widths a mechanism uses is
+    exactly where it went wrong.
+  - **His launch answer settles the warm-script question:** the
+    1416.7 ms log was **the very first launch after running the
+    script after compilation** — the warm script makes launch one
+    of a fresh binary warm. The earlier 4458 ms splash (also
+    claimed as launch 1 with the script) most plausibly had the
+    script run against the pre-build binary or before the compile
+    finished; recorded as the likely story, unproven.
+  - **Second-run log, same build:** `pre_run` 1190.2,
+    `window_shown` **1206.2 — new best**, `db_open` 6.4,
+    `splash_show` 110.8 / `splash_pump` 889.5 (the same two
+    once-per-process first-paint/GL blocks inside), one 450 ms
+    block after `route_open:home` (first home realize), nothing
+    else above the bar. `shelf_detail` 1 card, 1 total — the
+    collapse steady. `covers_queued 0` on re-open — the dashboard
+    covers came from cache.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

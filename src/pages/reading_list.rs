@@ -363,7 +363,18 @@ fn build_row(
 /// looking". Backdrop-click and Esc mean the same thing here.
 fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() + 'static) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    root.set_size_request(520, 520);
+    // Fit the window, whatever its width (same rule as the shelf picker).
+    let win_w = anchor
+        .as_ref()
+        .root()
+        .map(|r| r.upcast_ref::<gtk::Widget>().width())
+        .unwrap_or(0);
+    let want = if win_w > 0 {
+        520.min((win_w - 120).max(320))
+    } else {
+        520
+    };
+    root.set_size_request(want, 520);
 
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Search library…"));
@@ -405,13 +416,15 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
                     book.title,
                     book.authors_display()
                 ));
-                // Ellipsize or one long title stretches the row past the
-                // dialog's sides — the list never scrolls horizontally.
+                // Ellipsize AND cap the natural width — a centred panel
+                // sizes to the content's natural width, and ellipsize alone
+                // only caps the minimum (the edge-to-edge bug).
                 if let Some(label) = check
                     .first_child()
                     .and_then(|l| l.downcast::<gtk::Label>().ok())
                 {
                     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    label.set_max_width_chars(44);
                     label.set_xalign(0.0);
                 }
                 check.set_hexpand(true);

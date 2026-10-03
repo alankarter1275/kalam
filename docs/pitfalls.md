@@ -2278,3 +2278,29 @@ window, a clip on a small one. The fix is the compound selector
 order. **Rule: an override that must win needs to be *stronger*, not
 merely *nearer* — and a CSS override nobody ever verified visually
 is a rule that may never have worked.**
+## 55. Ellipsize caps a label's minimum width, not its natural width — and a centred panel sizes itself to the natural one
+
+The picker dialog ran edge to edge across the app window with its
+borders invisible (owner report, 2026-10-03, twice). The first fix
+ellipsized the row labels and went to CI green — and changed
+nothing on his machine, because it fixed the wrong width:
+
+- `set_ellipsize(End)` caps a GtkLabel's **minimum** width. The
+  label stops *forcing* containers to be at least as wide as its
+  text.
+- A label's **natural** width remains its full text, no matter the
+  ellipsize. And `in_app_dialog`'s panel is centre-aligned inside
+  the window overlay — GTK gives a centred child its **natural**
+  size. One long title (a scanlation chapter name before the
+  collapse fix; some long title/author string after it) sized the
+  whole panel past the window, and the borders clipped off both
+  sides.
+
+`set_max_width_chars(N)` is the missing half: it caps the natural
+width, so the row can neither force nor size the panel wide.
+
+**Rule:** when a widget must not drive a container's size, ask
+which of the two widths the container uses — a FILL child cares
+about minimum, a CENTER child sizes to natural. And: a layout fix
+verified only by reasoning is not verified; the green CI run said
+nothing about pixels on his screen, which is where the bug lived.

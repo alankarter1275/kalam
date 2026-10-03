@@ -2331,3 +2331,14 @@ Two companions:
   further theory: they turned "still cut off" into a number that
   named the layer. `picker_natural` now sits beside them so the next
   failure, if there is one, is diagnosed in one log line.
+
+## 57. gtk-rs `measure()` returns a four-tuple
+
+`widget.measure(orientation, for_size)` does not return
+`(minimum, natural)` — it returns `(minimum, natural,
+minimum_baseline, natural_baseline)`. Destructuring two elements is
+an E0308 that only CI could catch here (the sandbox has no
+toolchain). When a gtk-rs method's shape is unverified and there is
+no codebase precedent, expect the first CI run to be the type
+checker — and destructure with `..` or all four fields rather than
+guessing arity: `let (_, nat, _, _) = r.measure(...)`.

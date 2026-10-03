@@ -502,7 +502,7 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
     {
         let r = root.clone();
         gtk::glib::idle_add_local_once(move || {
-            let (_, nat) = r.measure(gtk::Orientation::Horizontal, -1);
+            let (_, nat, _, _) = r.measure(gtk::Orientation::Horizontal, -1);
             crate::timing::note("picker_natural", nat as usize);
             crate::timing::note("picker_width", r.width() as usize);
         });

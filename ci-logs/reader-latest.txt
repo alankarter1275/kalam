@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.3879.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.3676.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -21,10 +21,10 @@ WAYLAND_DISPLAY=wayland-1
 requested route: read-1
 windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
 toplevel windows seen: 1
-  shot: 01-read-1 (49858 bytes)
+  shot: 01-read-1 (51452 bytes)
 focused: 1
-  shot: 02-read-1-settling (49858 bytes)
-  shot: 03-read-1-settled (49858 bytes)
+  shot: 02-read-1-settling (51452 bytes)
+  shot: 03-read-1-settled (51452 bytes)
 navigation: app accepted route 'read-1'
 navigation: 'read-1' is not a grid page; no grid_build expected
   shot: 04-home-for-comparison (66450 bytes)
@@ -32,37 +32,39 @@ navigation: 'read-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'read-1'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init      105.1 ms
-  [timing] startup_style          57.7 ms
-  [timing] startup_splash_show      2.0 ms
-  [timing] icons_write             0.3 ms
+  [timing] startup_gtk_init      145.5 ms
+  [timing] startup_style          35.2 ms
+  [timing] startup_splash_show      1.2 ms
+  [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
-  [timing] icons_init              0.4 ms
-  [timing] startup_splash_pump    120.9 ms
-  [timing] startup_libraries       0.4 ms
-  [timing] startup_db_open         9.2 ms
-  [timing] startup_theme          15.6 ms
-  [timing] pre_run               311.3 ms
-  [timing] route_open:home         0.4 ms
-  [timing] startup_first_page      0.4 ms
-  [timing] service_home            1.8 ms
-  [timing] init_done             316.1 ms
-  [timing] window_shown          318.5 ms
+  [timing] icons_init              0.2 ms
+  [timing] startup_splash_pump    134.0 ms
+  [timing] startup_libraries       0.2 ms
+  [timing] startup_db_open         5.1 ms
+  [timing] startup_theme           9.6 ms
+  [timing] pre_run               331.0 ms
+  [timing] route_open:home         0.3 ms
+  [timing] startup_first_page      0.3 ms
+  [timing] service_home            1.1 ms
+  [timing] init_done             334.0 ms
+  [timing] window_shown          335.2 ms
   [timing] covers_queued            11
-  [timing] home_fill               2.4 ms
+  [timing] home_fill               1.9 ms
   [timing] page_cache_miss           1
   [timing] service_reader          0.2 ms
-  [timing] book_open               0.6 ms
-  [timing] route_open:reader      12.5 ms
+  [timing] book_open               0.4 ms
+  [timing] route_open:reader       7.6 ms
   [timing] folders_renamed         139
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        1865.3 ms
+  [timing] startup_dicts        1088.3 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  (none -- no UI-loop block over ~100 ms was detected)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_done:Organizing comic series folders (took 0 ms, ended 200 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 1 ms ago)
+  stalls seen -- name the screen and fix it before it spreads
 
 === did the covers actually load? ===
   01-read-1.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
@@ -72,34 +74,36 @@ navigation: OK -- the images below are 'read-1'
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  b0b1657d610b25ed7d4272d77c38552a  ci-shots-reader/01-read-1.png
-  b0b1657d610b25ed7d4272d77c38552a  ci-shots-reader/02-read-1-settling.png
-  b0b1657d610b25ed7d4272d77c38552a  ci-shots-reader/03-read-1-settled.png
+  550daf03dfd0c8f78061dff5f45da318  ci-shots-reader/01-read-1.png
+  550daf03dfd0c8f78061dff5f45da318  ci-shots-reader/02-read-1-settling.png
+  550daf03dfd0c8f78061dff5f45da318  ci-shots-reader/03-read-1-settled.png
   edc0eaafa2ad4d529dea08ae680a9dea  ci-shots-reader/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:3916): Gtk-WARNING **: 23:35:40.872: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:3713): Gtk-WARNING **: 00:02:28.655: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=read-1 — navigating
-  kalam: open epub failed: failed to open book /tmp/kalam-ci-data/kalam/library/6deefa64-b64b-4b03-bcf6-a8122c10573b/book.epub: [UnreadableArchive - `Some("/tmp/kalam-ci-data/kalam/library/6deefa64-b64b-4b03-bcf6-a8122c10573b/book.epub")`]: No such file or directory (os error 2)
+  kalam: open epub failed: failed to open book /tmp/kalam-ci-data/kalam/library/93db60c9-3d10-4abd-82c5-5c836dc0a754/book.epub: [UnreadableArchive - `Some("/tmp/kalam-ci-data/kalam/library/93db60c9-3d10-4abd-82c5-5c836dc0a754/book.epub")`]: No such file or directory (os error 2)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_done:Organizing comic series folders (took 0 ms, ended 200 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 1 ms ago)
 
 === peak memory ===
-books=139 peak_rss_kb=246916 peak_rss_mb=241
+books=139 peak_rss_kb=227236 peak_rss_mb=221
 
 === shutting down ===
 
 === artifacts ===
-  total 256
-  drwxr-xr-x  2 runner runner  4096 Oct  3 23:36 .
-  drwxr-xr-x 20 runner runner  4096 Oct  3 23:35 ..
-  -rw-r--r--  1 runner runner 49858 Oct  3 23:36 01-read-1.png
-  -rw-r--r--  1 runner runner 49858 Oct  3 23:36 02-read-1-settling.png
-  -rw-r--r--  1 runner runner 49858 Oct  3 23:36 03-read-1-settled.png
-  -rw-r--r--  1 runner runner 66450 Oct  3 23:36 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Oct  3 23:36 grim.log
-  -rw-r--r--  1 runner runner  1412 Oct  3 23:36 kalam-home.log
-  -rw-r--r--  1 runner runner  1731 Oct  3 23:35 kalam.log
-  -rw-r--r--  1 runner runner  3886 Oct  3 23:36 report.txt
-  -rw-r--r--  1 runner runner    88 Oct  3 23:35 sway.log
-  -rw-r--r--  1 runner runner  7184 Oct  3 23:36 tree.json
---- run 37161850310 ---
+  total 260
+  drwxr-xr-x  2 runner runner  4096 Oct  4 00:03 .
+  drwxr-xr-x 20 runner runner  4096 Oct  4 00:02 ..
+  -rw-r--r--  1 runner runner 51452 Oct  4 00:02 01-read-1.png
+  -rw-r--r--  1 runner runner 51452 Oct  4 00:03 02-read-1-settling.png
+  -rw-r--r--  1 runner runner 51452 Oct  4 00:03 03-read-1-settled.png
+  -rw-r--r--  1 runner runner 66450 Oct  4 00:03 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Oct  4 00:02 grim.log
+  -rw-r--r--  1 runner runner  1412 Oct  4 00:03 kalam-home.log
+  -rw-r--r--  1 runner runner  2019 Oct  4 00:02 kalam.log
+  -rw-r--r--  1 runner runner  4477 Oct  4 00:03 report.txt
+  -rw-r--r--  1 runner runner    88 Oct  4 00:02 sway.log
+  -rw-r--r--  1 runner runner  7184 Oct  4 00:02 tree.json
+--- run 37163247025 ---

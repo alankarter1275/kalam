@@ -220,7 +220,7 @@ impl Component for ShelfDetailModel {
                         let s = sender.clone();
                         open_book_picker(
                             root,
-                            self.service.catalog().clone(),
+                            self.service.clone(),
                             shelf.id,
                             move || {
                                 // Non-modal dialog: quiet no-op if the page

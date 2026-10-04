@@ -906,7 +906,7 @@ fn seed_comic_axis(cat: &Catalog, series_count: usize) -> Vec<i64> {
                     &[],
                 )
                 .expect("seed comic chapter");
-            cat.add_comic_chapter(sid, id, ch as f64, None, &format!("Page {ch}"))
+            cat.add_comic_chapter(sid, id, ch as f32, None, &format!("Page {ch}"))
                 .expect("seed chapter row");
             if c == 0 {
                 first_chapters.push(id);

@@ -2512,3 +2512,20 @@ pinned, not incidental.
 General shape, worth naming: **any region-based suppression over
 nestable regions must be a stack.** A single level silently works until
 someone nests in an order you did not anticipate.
+
+## 63. A scripted replace that does not assert it fired is a silent no-op
+
+The comic-axis increment's first CI run failed on one line the rewrite
+should have changed: the shelf picker's call site still passed
+`Arc<Catalog>` to a function now taking `LibraryService`. The rewrite
+script used `str.replace()` on four patterns, asserted three of them —
+and the fourth, a multi-line call site whose indentation differed by a
+few spaces from the pattern, matched nothing and said nothing. The
+diff was then reviewed and looked complete, because the unchanged call
+site is invisible in a diff that has no hunk for it.
+
+The rule, sharpening §60's "read the region back": **every** scripted
+replacement asserts it fired — `assert!(old in s)` before, or count the
+replacements and assert the count. A no-op replace is worse than a
+failed one: it fails later, in CI, with a message (a type mismatch
+three files away) that points nowhere near the cause.

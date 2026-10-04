@@ -1554,7 +1554,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut asked = |map: &std::collections::HashMap<i64, Vec<i64>>, id: i64| {
+        let asked = |map: &std::collections::HashMap<i64, Vec<i64>>, id: i64| {
             let mut got = map.get(&id).cloned().unwrap_or_default();
             got.sort_unstable();
             got

@@ -2410,3 +2410,50 @@ choice happens before any contract exists. Two consequences:
   named the layer in one line — the same shape as picker_natural.
   When a span pair disagrees by two orders of magnitude, believe the
   gap, not the story about the code.
+
+## 60. After a turn gap, read the log BEFORE the diff — the workspace can be re-cloned under you
+
+Between two turns of this session the workspace was **re-cloned from
+scratch**: reflog shows `clone` → `checkout` of the branch — recreated at
+the fork point, not at the branch tip — with the true latest files then
+restored into the working tree. Git looked normal, the files looked
+right, and the branch's whole real history existed only on the remote.
+
+The first commit of the turn then staged everything: `git diff --stat`
+showed **145 files, ~30,000 insertions** — every change since the fork
+point, squashed into one commit parented on the fork. Two signals said
+stop before that commit, and both were ignored:
+
+1. **The standing rule from the error playbook: `git log --oneline -1`
+   after any turn gap.** Not run that turn. HEAD was sitting at the fork
+   point, five commits and one branch-history behind, and one command
+   would have shown it.
+2. **A diff that lists files you did not touch is not noise; it is the
+   finding.** `git diff --stat` said 145 files. The intended change was
+   three. Committing anyway was the mistake — the diff was read as
+   scenery, not as evidence.
+
+What saved the history: **the non-fast-forward rejection.** A squashed
+commit cannot fast-forward over the real branch, so the push failed and
+nothing left the machine. Never force-push past that rejection — it is
+the safety net doing its job.
+
+The recovery recipe that worked, for next time:
+
+1. `git fetch origin` — confirm the real tip (`git log
+   origin/<branch> --oneline -5`); the remote is the source of truth
+   after a re-clone.
+2. `git reset --soft origin/<branch>` — move HEAD to the real tip,
+   keep the working tree. The staged diff becomes exactly
+   (real tip → working tree): your actual changes, plus any files only
+   the remote moved (here: `ci-logs/`), which `git checkout HEAD --
+   ci-logs/` takes from the tip.
+3. Verify the staged diff is only the intended changes, commit, push —
+   fast-forward, no force.
+4. Prove the recovery: `git diff <squash-commit> HEAD -- . ':!ci-logs'`
+   must be empty — the abandoned tree and the recovered tree identical
+   in every source file.
+
+The rule, sharpened: **after any turn gap, the first git command is
+`git log --oneline -3`, and it must name the commit you expect — before
+any `add`, any `commit`, and any diff you are about to trust.**

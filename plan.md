@@ -1465,6 +1465,12 @@ CI green after every step; every commit HEAD-checked (§36).
     sabotage-verified harness but have not themselves been
     sabotage-verified — one deliberate break-and-revert cycle is owed
     before step 4 closes, same discipline as the original six.
+  - *Session note:* the workspace was re-cloned between turns and this
+    increment's first commit accidentally squashed the whole branch
+    history; the push was rejected (the safety net), the changes were
+    re-parented on the real history with byte-identical trees, and the
+    incident + recovery recipe are pitfalls §60. No remote history was
+    ever at risk.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

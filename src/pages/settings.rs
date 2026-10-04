@@ -1635,16 +1635,30 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
     {
         let catalog = catalog.clone();
         export_all_btn.connect_clicked(move |_| {
-            let out_path = crate::paths::home_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("Kalam-Export.md");
-            match catalog.export_reading_data_markdown(&out_path) {
-                Ok(count) => crate::notify::success(
-                    &format!("{count} item{} exported", if count == 1 { "" } else { "s" }),
-                    &out_path.display().to_string(),
-                ),
-                Err(err) => crate::notify::error("Could not export reading data", &err.to_string()),
-            }
+            // Same rule as the quotes export above.
+            crate::tasks::spawn(
+                "Exporting reading data",
+                {
+                    let catalog = catalog.clone();
+                    move |_| {
+                        let out_path = crate::paths::home_dir()
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                            .join("Kalam-Export.md");
+                        catalog
+                            .export_reading_data_markdown(&out_path)
+                            .map(|count| (count, out_path))
+                            .map_err(|e| e.to_string())
+                    }
+                },
+                |_| {},
+                |res| match res {
+                    Ok((count, path)) => crate::notify::success(
+                        &format!("{count} item{} exported", if count == 1 { "" } else { "s" }),
+                        &path.display().to_string(),
+                    ),
+                    Err(err) => crate::notify::error("Could not export reading data", &err),
+                },
+            );
         });
     }
     setting_row(
@@ -1660,16 +1674,27 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
     {
         let catalog = catalog.clone();
         export_btn.connect_clicked(move |_| {
-            match crate::pages::saved_quotes::export_all_quotes_markdown(&catalog) {
-                Ok((count, path)) => crate::notify::success(
-                    &format!(
-                        "{count} quote{} exported",
-                        if count == 1 { "" } else { "s" }
+            // The export reads the catalog and writes a file: on a task,
+            // per ARCH.md. `catalog` is cloned per click because the
+            // handler can fire more than once.
+            crate::tasks::spawn(
+                "Exporting quotes",
+                {
+                    let catalog = catalog.clone();
+                    move |_| crate::pages::saved_quotes::export_all_quotes_markdown(&catalog)
+                },
+                |_| {},
+                |res| match res {
+                    Ok((count, path)) => crate::notify::success(
+                        &format!(
+                            "{count} quote{} exported",
+                            if count == 1 { "" } else { "s" }
+                        ),
+                        &path.display().to_string(),
                     ),
-                    &path.display().to_string(),
-                ),
-                Err(err) => crate::notify::error("Could not export quotes", &err),
-            }
+                    Err(err) => crate::notify::error("Could not export quotes", &err),
+                },
+            );
         });
     }
     setting_row(

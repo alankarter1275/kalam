@@ -28,6 +28,10 @@ pub enum SavedQuotesMsg {
     /// A background quotes query finished. Carries the generation it was
     /// started with so a superseded reply cannot overwrite a newer one.
     Loaded { gen: u64, snap: QuotesSnapshot },
+    /// An export task finished; `status` is the line for the status label.
+    /// The write itself runs on a task (ARCH.md: the UI thread never
+    /// touches the disk), so the label updates when the file is real.
+    ExportDone(String),
 }
 
 pub struct SavedQuotesModel {
@@ -170,49 +174,85 @@ impl Component for SavedQuotesModel {
                 self.reload(&sender);
             }
             SavedQuotesMsg::Export => {
+                // The export writes a file, so the write runs on a task;
+                // the status line comes back as a message when it is real.
                 let exported = export_quotes_markdown(&self.quotes);
                 let out_path = crate::paths::home_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("Quotes.md");
+                let out_path_done = out_path.clone();
                 let count = self.quotes.len();
-                match std::fs::write(&out_path, exported) {
-                    Ok(()) => {
-                        self.status = format!("Exported to {}", out_path.display());
-                        crate::notify::success(
-                            &format!(
-                                "{count} quote{} exported",
-                                if count == 1 { "" } else { "s" }
-                            ),
-                            &out_path.display().to_string(),
-                        );
-                    }
-                    Err(err) => {
-                        self.status = format!("Export failed: {err}");
-                        crate::notify::error("Could not export quotes", &err.to_string());
-                    }
-                }
-                widgets.status_label.set_label(&self.status);
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    "Exporting quotes",
+                    move |_| std::fs::write(&out_path, exported).map_err(|e| e.to_string()),
+                    |_| {},
+                    move |res| {
+                        match res {
+                            Ok(()) => {
+                                crate::notify::success(
+                                    &format!(
+                                        "{count} quote{} exported",
+                                        if count == 1 { "" } else { "s" }
+                                    ),
+                                    &out_path_done.display().to_string(),
+                                );
+                                let _ = s.send(SavedQuotesMsg::ExportDone(format!(
+                                    "Exported to {}",
+                                    out_path_done.display()
+                                )));
+                            }
+                            Err(err) => {
+                                crate::notify::error("Could not export quotes", &err);
+                                let status = format!("Export failed: {err}");
+                                let _ = s.send(SavedQuotesMsg::ExportDone(status));
+                            }
+                        }
+                    },
+                );
             }
             SavedQuotesMsg::ExportAllData => {
+                // Same rule as Export: the file write and the catalog read
+                // both run on a task.
+                let catalog = self.service.catalog().clone();
                 let out_path = crate::paths::home_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("Kalam-Export.md");
-                match self.service.catalog().export_reading_data_markdown(&out_path) {
-                    Ok(count) => {
-                        self.status = format!("Exported all data to {}", out_path.display());
-                        crate::notify::success(
-                            &format!(
-                                "{count} item{} exported",
-                                if count == 1 { "" } else { "s" }
-                            ),
-                            &out_path.display().to_string(),
-                        );
-                    }
-                    Err(err) => {
-                        self.status = format!("Export failed: {err}");
-                        crate::notify::error("Could not export reading data", &err.to_string());
-                    }
-                }
+                let out_path_done = out_path.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    "Exporting reading data",
+                    move |_| catalog.export_reading_data_markdown(&out_path),
+                    |_| {},
+                    move |res| {
+                        match res {
+                            Ok(count) => {
+                                crate::notify::success(
+                                    &format!(
+                                        "{count} item{} exported",
+                                        if count == 1 { "" } else { "s" }
+                                    ),
+                                    &out_path_done.display().to_string(),
+                                );
+                                let _ = s.send(SavedQuotesMsg::ExportDone(format!(
+                                    "Exported all data to {}",
+                                    out_path_done.display()
+                                )));
+                            }
+                            Err(err) => {
+                                crate::notify::error(
+                                    "Could not export reading data",
+                                    &err.to_string(),
+                                );
+                                let status = format!("Export failed: {err}");
+                                let _ = s.send(SavedQuotesMsg::ExportDone(status));
+                            }
+                        }
+                    },
+                );
+            }
+            SavedQuotesMsg::ExportDone(status) => {
+                self.status = status;
                 widgets.status_label.set_label(&self.status);
             }
             SavedQuotesMsg::SaveNote { id, note } => {

@@ -304,40 +304,64 @@ impl Component for SavedWordsModel {
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
             }
-            SavedWordsMsg::ExportCsv => match export_saved_words_csv(self.service.catalog()) {
-                Ok((n, path)) => {
-                    crate::notify::compact(
-                        &format!("{n} word{} exported", if n == 1 { "" } else { "s" }),
-                        &path.display().to_string(),
-                    );
-                }
-                Err(e) => crate::notify::error("Could not export words", &e),
-            },
-            SavedWordsMsg::ExportAnki => match export_saved_words_anki(self.service.catalog()) {
-                Ok((n, path)) => {
-                    crate::notify::compact(
-                        &format!(
-                            "{n} word{} exported for Anki",
-                            if n == 1 { "" } else { "s" }
+            // All three exports read the catalog and write a file, so they
+            // run on tasks (ARCH.md); the toasts fire from the arrival
+            // callback on the main thread.
+            SavedWordsMsg::ExportCsv => {
+                let catalog = self.service.catalog().clone();
+                crate::tasks::spawn(
+                    "Exporting words",
+                    move |_| export_saved_words_csv(&catalog),
+                    |_| {},
+                    |res| match res {
+                        Ok((n, path)) => crate::notify::compact(
+                            &format!("{n} word{} exported", if n == 1 { "" } else { "s" }),
+                            &path.display().to_string(),
                         ),
-                        &path.display().to_string(),
-                    );
-                }
-                Err(e) => crate::notify::error("Could not export words", &e),
-            },
+                        Err(e) => crate::notify::error("Could not export words", &e),
+                    },
+                );
+            }
+            SavedWordsMsg::ExportAnki => {
+                let catalog = self.service.catalog().clone();
+                crate::tasks::spawn(
+                    "Exporting words",
+                    move |_| export_saved_words_anki(&catalog),
+                    |_| {},
+                    |res| match res {
+                        Ok((n, path)) => crate::notify::compact(
+                            &format!(
+                                "{n} word{} exported for Anki",
+                                if n == 1 { "" } else { "s" }
+                            ),
+                            &path.display().to_string(),
+                        ),
+                        Err(e) => crate::notify::error("Could not export words", &e),
+                    },
+                );
+            }
             SavedWordsMsg::ExportMarkdown => {
-                let out_path = crate::paths::home_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    .join("Kalam-Export.md");
-                match self.service.catalog().export_reading_data_markdown(&out_path) {
-                    Ok(n) => {
-                        crate::notify::success(
+                let catalog = self.service.catalog().clone();
+                crate::tasks::spawn(
+                    "Exporting reading data",
+                    move |_| {
+                        let out_path = crate::paths::home_dir()
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                            .join("Kalam-Export.md");
+                        catalog
+                            .export_reading_data_markdown(&out_path)
+                            .map(|n| (n, out_path))
+                            .map_err(|e| e.to_string())
+                    },
+                    |_| {},
+                    |res| match res {
+                        Ok((n, path)) => crate::notify::success(
                             &format!("{n} item{} exported", if n == 1 { "" } else { "s" }),
-                            &out_path.display().to_string(),
-                        );
-                    }
-                    Err(e) => crate::notify::error("Could not export reading data", &e.to_string()),
-                }
+                            &path.display().to_string(),
+                        ),
+                        Err(e) => crate::notify::error("Could not export reading data", &e),
+                    },
+                );
             }
             SavedWordsMsg::Refresh => {
                 self.reload();

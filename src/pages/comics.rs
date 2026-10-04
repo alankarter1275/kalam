@@ -1064,21 +1064,32 @@ impl Component for ComicsModel {
                 );
             }
             ComicsMsg::FilesChosen(paths) => {
-                let expanded = expand_comic_paths(paths);
-                let total = expanded.len();
-                if total == 0 {
-                    return;
-                }
+                // Expanding dropped folders reads the disk — a big drop
+                // would stall the UI thread — so it runs as its own task
+                // and the import starts from the arrival callback (which
+                // is on the main thread, where spawn must be called).
+                let catalog = self.service.catalog().clone();
                 let s_progress = sender.input_sender().clone();
                 let s_done = sender.input_sender().clone();
-                spawn_import(
-                    self.service.catalog().clone(),
-                    expanded,
-                    move |done, total, title| {
-                        let _ = s_progress.send(ComicsMsg::ImportStep { done, total, title });
-                    },
-                    move |tally| {
-                        let _ = s_done.send(ComicsMsg::ImportFinished(tally));
+                crate::tasks::spawn(
+                    "Scanning folders",
+                    move |_| expand_comic_paths(paths),
+                    |_| {},
+                    move |expanded| {
+                        if expanded.is_empty() {
+                            return;
+                        }
+                        spawn_import(
+                            catalog,
+                            expanded,
+                            move |done, total, title| {
+                                let _ = s_progress
+                                    .send(ComicsMsg::ImportStep { done, total, title });
+                            },
+                            move |tally| {
+                                let _ = s_done.send(ComicsMsg::ImportFinished(tally));
+                            },
+                        );
                     },
                 );
             }

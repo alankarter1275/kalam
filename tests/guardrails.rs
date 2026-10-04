@@ -390,3 +390,285 @@ fn hex_scanner_counts_colours_and_ignores_longer_runs() {
     assert_eq!(count_hex_literals("#0123456789"), 0, "ten digits is not a colour");
     assert_eq!(count_hex_literals("#01234567"), 1, "eight is the longest colour");
 }
+
+// ---------------------------------------------------------------------------
+// 7.7 — the static boundary check: the UI thread never touches disk,
+// database or parsing (ARCH.md). The database leg of that rule is enforced
+// by `pages_do_not_gain_catalog_handles` above and the per-screen statement
+// budgets in `src/perf.rs`; this check owns the disk and document legs.
+// ---------------------------------------------------------------------------
+
+/// Files wholly excluded: the readers. The owner excluded the readers from
+/// the async campaign (2026-10-02) — they own their documents and run their
+/// engines on service threads (ARCH.md's threading model). Everything else
+/// under `src/pages/` is in scope.
+const READER_PATH_PREFIXES: &[&str] = &[
+    "src/pages/reader/",
+    "src/pages/pdf_reader.rs",
+    "src/pages/comics_reader/",
+];
+
+/// Surviving UI-thread sites, each with its written reason — the 7.7
+/// arbitration. A site is `(file, needle)`: the entry covers every line in
+/// that file containing the needle. A new entry needs a reason a reviewer
+/// can check; the default answer is to move the work into a
+/// `crate::tasks::spawn` worker, not to grow this list.
+const ALLOWED_UI_THREAD_SITES: &[(&str, &str, &str)] = &[
+    (
+        "src/pages/all_books.rs",
+        "if cover_path.exists() {",
+        "micro-op stat: does this row's cover file exist before the widget shows it",
+    ),
+    (
+        "src/pages/author.rs",
+        "if path.is_file() {",
+        "micro-op stat: the author avatar photo (the 7.1 step-2a allowlist question)",
+    ),
+    (
+        "src/pages/author.rs",
+        "path.is_file().then_some(path)",
+        "micro-op stat: an author-work cover before the widget shows it",
+    ),
+    (
+        "src/pages/book.rs",
+        "photo.filter(|p| p.is_file())",
+        "micro-op stat: the author avatar photo on the book page",
+    ),
+    (
+        "src/pages/comics.rs",
+        "fn expand_comic_paths(paths",
+        "expansion helper definition; it runs only from the scanning task",
+    ),
+    (
+        "src/pages/comics.rs",
+        "std::fs::read_dir(&p)",
+        "the expansion helper's body — see above; a synchronous call site is still caught",
+    ),
+    (
+        "src/pages/metadata_editor.rs",
+        "match std::fs::read(&path) {",
+        "file-dialog callback reads the chosen cover; recorded follow-up — the editor's save flow is its own migration",
+    ),
+    (
+        "src/pages/metadata_editor.rs",
+        "crate::epub::replace_cover_bytes(&catalog, &fresh, &bytes)",
+        "save handler writes the cover into the EPUB; same recorded follow-up",
+    ),
+    (
+        "src/pages/remote_detail.rs",
+        "Pixbuf::from_stream_at_scale",
+        "apply-on-arrival decode of a bounded 160x230 thumbnail",
+    ),
+    (
+        "src/pages/remote_detail.rs",
+        "OpenBook::open(&b.file_path, &cache_dir)",
+        "ReadChapter checks its EPUB cache synchronously in the handler; recorded follow-up with the metadata editor",
+    ),
+    (
+        "src/pages/remote_detail.rs",
+        "std::fs::remove_dir_all(&cache_dir)",
+        "same ReadChapter flow: stale cache removal; same follow-up",
+    ),
+    (
+        "src/pages/saved_quotes.rs",
+        "pub fn export_all_quotes_markdown(",
+        "export helper definition; it runs only from task workers now",
+    ),
+    (
+        "src/pages/saved_quotes.rs",
+        "std::fs::write(&out_path, markdown)",
+        "the export helper's body — see above; a synchronous call is still caught",
+    ),
+    (
+        "src/pages/saved_words.rs",
+        "pub fn export_saved_words_csv(",
+        "export helper definition; it runs only from task workers now",
+    ),
+    (
+        "src/pages/saved_words.rs",
+        "pub fn export_saved_words_anki(",
+        "export helper definition; it runs only from task workers now",
+    ),
+    (
+        "src/pages/saved_words.rs",
+        "std::fs::write(&out_path, csv)",
+        "the export helper's body — see above; a synchronous call is still caught",
+    ),
+    (
+        "src/pages/saved_words.rs",
+        "std::fs::write(&out_path, tsv)",
+        "the export helper's body — see above; a synchronous call is still caught",
+    ),
+];
+
+/// Lines that touch the disk or open/parse a document while NOT inside a
+/// `crate::tasks::spawn` **worker** closure — i.e. on the UI thread.
+///
+/// Semantics, deliberately narrow: a line containing `tasks::spawn` arms a
+/// pending flag, and the **first** `{` after it opens the suppression (the
+/// worker closure — the second argument is always a label string in this
+/// codebase). The progress and done callbacks after it run on the main
+/// thread and stay scanned: disk work in them is a real violation. Comment
+/// stripping is a crude `split("//")` — good enough for this codebase's
+/// tidy lines. A tripwire, not a proof (roadmap 7.7): what it catches is
+/// the honest mistake, a disk or document call typed straight into a
+/// handler.
+fn ui_thread_disk_or_parser_touches(text: &str) -> Vec<(usize, &'static str)> {
+    const PATTERNS: &[&str] = &[
+        "std::fs::",
+        "fs::read",
+        "fs::write",
+        "fs::remove",
+        "fs::create",
+        "fs::rename",
+        "fs::metadata",
+        "fs::read_dir",
+        "File::open",
+        "File::create",
+        ".exists()",
+        ".is_file()",
+        "read_to_string",
+        "write_all",
+        "import_epub(",
+        "EpubBook::open",
+        "OpenBook::open",
+        "PdfDocument::open",
+        "replace_cover_bytes(",
+        "Pixbuf::from_file",
+        "Pixbuf::from_stream",
+        "Pixbuf::from_bytes",
+        "expand_comic_paths(",
+        "export_reading_data_markdown(",
+        "export_saved_words_csv(",
+        "export_saved_words_anki(",
+        "export_all_quotes_markdown(",
+    ];
+    let mut hits = Vec::new();
+    let mut depth: i32 = 0;
+    let mut suppress: Vec<i32> = Vec::new();
+    let mut pending = false;
+    for (idx, raw) in text.lines().enumerate() {
+        let line = raw.split("//").next().unwrap_or("");
+        if line.contains("tasks::spawn") {
+            pending = true;
+        }
+        for ch in line.chars() {
+            match ch {
+                '{' => {
+                    depth += 1;
+                    if pending {
+                        suppress.push(depth);
+                        pending = false;
+                    }
+                }
+                '}' => {
+                    while let Some(&top) = suppress.last() {
+                        if depth <= top {
+                            suppress.pop();
+                        } else {
+                            break;
+                        }
+                    }
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+        if suppress.is_empty() && !pending {
+            if let Some(pat) = PATTERNS.iter().find(|p| line.contains(*p)) {
+                hits.push((idx + 1, *pat));
+            }
+        }
+    }
+    hits
+}
+
+#[test]
+fn pages_touch_disk_or_documents_only_inside_tasks() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/pages");
+    let mut violations = Vec::new();
+    let mut allowed_seen = vec![false; ALLOWED_UI_THREAD_SITES.len()];
+
+    for (path, text) in sources_under(&root) {
+        let rel = format!(
+            "src/pages/{}",
+            path.strip_prefix(&root).unwrap_or(&path).display()
+        );
+        if READER_PATH_PREFIXES.iter().any(|p| rel.starts_with(p)) {
+            continue;
+        }
+        for (lineno, pat) in ui_thread_disk_or_parser_touches(&text) {
+            let line = text.lines().nth(lineno - 1).unwrap_or("");
+            match ALLOWED_UI_THREAD_SITES
+                .iter()
+                .position(|(f, needle, _)| rel == *f && line.contains(needle))
+            {
+                Some(i) => allowed_seen[i] = true,
+                None => violations.push(format!("{rel}:{lineno}  [{pat}]  {}", line.trim())),
+            }
+        }
+    }
+
+    // An allowlist entry that matched nothing is dead text — the line moved
+    // or was renamed, and the entry must go with it, or the list silently
+    // rots into decoration.
+    let stale: Vec<&str> = ALLOWED_UI_THREAD_SITES
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !allowed_seen[*i])
+        .map(|(_, (f, _, _))| *f)
+        .collect();
+
+    assert!(
+        violations.is_empty() && stale.is_empty(),
+        "\n\
+         The UI thread never touches disk, database or parsing (ARCH.md).\n\
+         \n\
+         New violations — move the work into a crate::tasks::spawn worker:\n\
+         {}\n\
+         {}\
+         Stale allowlist entries (matched nothing — delete them):\n\
+         {}",
+        if violations.is_empty() {
+            "    (none)\n".to_string()
+        } else {
+            violations
+                .iter()
+                .map(|v| format!("    {v}\n"))
+                .collect::<String>()
+        },
+        if stale.is_empty() { "" } else { "\n" },
+        if stale.is_empty() {
+            "    (none)".to_string()
+        } else {
+            stale
+                .iter()
+                .map(|f| format!("    {f}\n"))
+                .collect::<String>()
+        },
+    );
+}
+
+#[test]
+fn boundary_scanner_suppresses_workers_not_done_callbacks() {
+    // The worker closure is the task layer; the progress and done
+    // callbacks run on the main thread and must stay scanned.
+    let code = concat!(
+        "fn a() { std::fs::write(&p, x); }\n",
+        "crate::tasks::spawn(\"t\", move |_| {\n",
+        "    std::fs::write(&q, y);\n",
+        "    if p.exists() {}\n",
+        "}, |_| {}, move |r| {\n",
+        "    crate::epub::import_epub(&c, &z);\n",
+        "});\n",
+        "fn c() { crate::epub_book::OpenBook::open(&f, &d); }\n",
+    );
+    let hits = ui_thread_disk_or_parser_touches(code);
+    let lines: Vec<usize> = hits.iter().map(|(l, _)| *l).collect();
+    assert_eq!(
+        lines,
+        vec![1, 6, 8],
+        "line 1 = plain fn, line 6 = done callback (main thread), \
+         line 8 = plain fn; the worker body (3-4) is suppressed: {hits:?}"
+    );
+}

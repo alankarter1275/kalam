@@ -396,6 +396,129 @@ impl Catalog {
         Ok(peers)
     }
 
+    /// `comic_series_peers` for many books at once — the pickers called the
+    /// single-book form once per collapsed row, which is exactly the N+1 the
+    /// step-4 budgets exist to catch. Returns the peers of every requested
+    /// id that belongs to a series (registered or heuristic); ids missing
+    /// from the map are their own peer — callers fall back to `vec![id]`,
+    /// matching the single-book form's "a non-comic is its own peer".
+    ///
+    /// Same shape as `books_by_ids`/`reading_progress_by_ids`: dedupe, chunk
+    /// at 500, empty input issues nothing. Registered chapters resolve in one
+    /// chunked query; the unregistered heuristic path runs at most twice more
+    /// for the whole batch (the requested rows, then the one scan of all
+    /// unregistered comics the single-book form did per book).
+    pub fn comic_series_peers_by_ids(
+        &self,
+        book_ids: &[i64],
+    ) -> Result<HashMap<i64, Vec<i64>>> {
+        let mut out: HashMap<i64, Vec<i64>> = HashMap::new();
+        if book_ids.is_empty() {
+            return Ok(out);
+        }
+        let mut unique: Vec<i64> = book_ids.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+
+        let conn = self.conn();
+
+        // Registered: one chunked self-join — every requested chapter maps to
+        // every chapter sharing its series (including itself).
+        let mut unregistered: Vec<i64> = Vec::new();
+        for chunk in unique.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT cc1.book_id, cc2.book_id
+                 FROM comic_chapters cc1
+                 JOIN comic_chapters cc2 ON cc2.series_id = cc1.series_id
+                 WHERE cc1.book_id IN ({holders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params = rusqlite::params_from_iter(chunk.iter());
+            let rows = stmt.query_map(params, |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })?;
+            for row in rows {
+                let (asked, peer) = row?;
+                out.entry(asked).or_default().push(peer);
+            }
+        }
+        for id in &unique {
+            if !out.contains_key(id) {
+                unregistered.push(*id);
+            }
+        }
+        if unregistered.is_empty() {
+            return Ok(out);
+        }
+
+        // Unregistered comics (and any non-comic that reached the batch):
+        // key them exactly the way `comic_series_peers` does. Their own rows
+        // first, so a non-comic can be answered without the scan.
+        let holders = vec!["?"; unregistered.len()].join(",");
+        let sql = format!(
+            "SELECT id, format, title, series FROM books WHERE id IN ({holders})"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let params = rusqlite::params_from_iter(unregistered.iter());
+        let rows = stmt.query_map(params, |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        let mut comic_keys: HashMap<i64, String> = HashMap::new();
+        for row in rows {
+            let (id, format, title, series) = row?;
+            if format != "CBZ" && format != "CBR" {
+                // A non-comic is its own peer; the single-book form returns
+                // it directly, so record it and skip the heuristic scan.
+                out.insert(id, vec![id]);
+            } else {
+                comic_keys.insert(
+                    id,
+                    crate::db::heuristic_series_key(&title, series.as_deref()),
+                );
+            }
+        }
+        if comic_keys.is_empty() {
+            return Ok(out);
+        }
+
+        // One scan of all unregistered comics, grouped by heuristic key —
+        // the same scan the single-book form ran once per book.
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, title, series FROM books
+             WHERE format IN ('CBZ','CBR')
+               AND id NOT IN (SELECT book_id FROM comic_chapters)",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        let mut groups: HashMap<String, Vec<i64>> = HashMap::new();
+        for row in rows {
+            let (id, title, series) = row?;
+            groups
+                .entry(crate::db::heuristic_series_key(&title, series.as_deref()))
+                .or_default()
+                .push(id);
+        }
+        for (id, key) in comic_keys {
+            // The requested book is itself in the scan's result set, so its
+            // group always contains at least itself.
+            if let Some(peers) = groups.remove(&key) {
+                out.insert(id, peers);
+            }
+        }
+        Ok(out)
+    }
+
     /// Remove a comic series (every chapter) from a manual shelf. Callers pass
     /// the representative the collapsed list shows.
     pub fn remove_series_from_shelf(&self, shelf_id: i64, book_id: i64) -> Result<()> {
@@ -494,6 +617,28 @@ impl Catalog {
             |r| r.get(0),
         )?;
         Ok(found != 0)
+    }
+
+    /// Every book id on the reading list — the membership half of the
+    /// reading-list picker's read, in one query instead of one
+    /// `any_in_reading_list` per row.
+    pub fn reading_list_book_ids(&self) -> Result<Vec<i64>> {
+        let conn = self.conn();
+        let mut stmt =
+            conn.prepare_cached("SELECT book_id FROM reading_list")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Every book id on one shelf — the membership half of the shelf
+    /// picker's read, in one query (no book hydration, no join: the picker
+    /// only needs the set).
+    pub fn shelf_book_ids(&self, shelf_id: i64) -> Result<Vec<i64>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare_cached("SELECT book_id FROM shelf_books WHERE shelf_id = ?1")?;
+        let rows = stmt.query_map(params![shelf_id], |r| r.get(0))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     /// Manual shelves this book belongs to (id, name) — for the book page chips.

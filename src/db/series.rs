@@ -1468,4 +1468,124 @@ mod tests {
         cat.remove_series_from_reading_list(c2).unwrap();
         assert!(cat.list_reading_list().unwrap().is_empty());
     }
+
+    #[test]
+    fn comic_series_peers_by_ids_matches_the_single_book_form() {
+        // The batched form the pickers use must answer exactly what
+        // `comic_series_peers` answers, for every kind of book at once:
+        // registered chapters, unregistered heuristic pairs, and non-comics
+        // (their own peer). Unknown ids stay out of the map — callers fall
+        // back to `vec![id]`.
+        let cat = Catalog::open_in_memory().unwrap();
+
+        let reg = cat
+            .insert_book(
+                "reg-1",
+                "Dune",
+                "Frank Herbert",
+                None,
+                "",
+                BookFormat::Epub,
+                "dune.epub",
+                "h-dune",
+                None,
+                &[],
+            )
+            .unwrap();
+        let c1 = cat
+            .insert_book(
+                "c-1",
+                "Horimiya - c001",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_01.cbz",
+                "h-c1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let c2 = cat
+            .insert_book(
+                "c-2",
+                "Horimiya - c002",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_02.cbz",
+                "h-c2",
+                None,
+                &[],
+            )
+            .unwrap();
+        let s_id = cat
+            .get_or_create_comic_series("Horimiya", Some("HERO"), None)
+            .unwrap();
+        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
+        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+        let h1 = cat
+            .insert_book(
+                "h-1",
+                "Naruto - c001",
+                "Kishimoto",
+                Some("Naruto"),
+                "",
+                BookFormat::Cbz,
+                "naruto_01.cbz",
+                "h-n1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let h2 = cat
+            .insert_book(
+                "h-2",
+                "Naruto - c002",
+                "Kishimoto",
+                Some("Naruto"),
+                "",
+                BookFormat::Cbz,
+                "naruto_02.cbz",
+                "h-n2",
+                None,
+                &[],
+            )
+            .unwrap();
+
+        let mut asked = |map: &std::collections::HashMap<i64, Vec<i64>>, id: i64| {
+            let mut got = map.get(&id).cloned().unwrap_or_default();
+            got.sort_unstable();
+            got
+        };
+
+        let map = cat
+            .comic_series_peers_by_ids(&[c2, c1, reg, h1, h2, 999_999])
+            .unwrap();
+        // Registered: every chapter sees every chapter of its series.
+        assert_eq!(asked(&map, c1), vec![c1, c2]);
+        assert_eq!(asked(&map, c2), vec![c1, c2]);
+        // A non-comic is its own peer.
+        assert_eq!(asked(&map, reg), vec![reg]);
+        // Unregistered heuristic pair, both directions.
+        assert_eq!(asked(&map, h1), vec![h1, h2]);
+        assert_eq!(asked(&map, h2), vec![h1, h2]);
+        // An unknown id is simply absent — the caller's fallback owns it.
+        assert!(!map.contains_key(&999_999));
+
+        // Each answer is the single-book form's answer, verbatim.
+        for id in [c1, c2, reg, h1, h2] {
+            let mut single = cat.comic_series_peers(id).unwrap();
+            single.sort_unstable();
+            assert_eq!(asked(&map, id), single, "id {id}");
+        }
+
+        // Empty input is not an error and issues nothing — the shared
+        // contract of the batched readers (`books_by_ids` and friends).
+        let empty: Vec<i64> = Vec::new();
+        let stmts = cat.count_queries(|| cat.comic_series_peers_by_ids(&empty).unwrap());
+        assert_eq!(stmts, 0, "empty batch must not query");
+        assert!(cat.comic_series_peers_by_ids(&empty).unwrap().is_empty());
+    }
 }

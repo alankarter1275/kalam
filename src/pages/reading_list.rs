@@ -1,6 +1,6 @@
 //! P4 — Reading list: an ordered to-be-read queue.
 
-use crate::db::{Catalog, ReadingListEntry, SortKey};
+use crate::db::{Catalog, ReadingListEntry};
 use crate::service::LibraryService;
 use crate::widgets::book_row::cover_widget_deferred;
 use crate::widgets::in_app_dialog;
@@ -155,7 +155,7 @@ impl Component for ReadingListModel {
             }
             ReadingListMsg::AddBooks => {
                 let s = sender.clone();
-                open_picker(root, self.service.catalog().clone(), move || {
+                open_picker(root, self.service.clone(), move || {
                     s.input(ReadingListMsg::Refresh)
                 });
             }
@@ -375,7 +375,7 @@ fn build_row(
 /// [`in_app_dialog::DialogExit::OwnButtons`]: ticking a box writes straight to
 /// the DB, so there is nothing unsaved and "Done" is just "I am finished
 /// looking". Backdrop-click and Esc mean the same thing here.
-fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() + 'static) {
+fn open_picker(anchor: &gtk::Box, service: LibraryService, on_changed: impl Fn() + 'static) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
     // Fit the window, whatever its width (same rule as the shelf picker).
     let win_w = anchor
@@ -407,15 +407,6 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
 
     let on_changed = Rc::new(on_changed);
 
-    // One picker row, assembled off the UI thread: everything a row's
-    // CheckButton needs, so the only work left on arrival is widgets.
-    struct PickerRow {
-        id: i64,
-        title: String,
-        line: String,
-        ticked: bool,
-    }
-
     // Skeleton first. The owner's log measured the open blocking the UI
     // thread for 351 ms (2026-10-04): the whole-library read, the
     // reading-list membership, the per-comic peers lookup and every row's
@@ -436,7 +427,7 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
     let measured = Rc::new(std::cell::Cell::new(false));
 
     let fill = {
-        let catalog = catalog.clone();
+        let service = service.clone();
         let list = list.clone();
         let on_changed = on_changed.clone();
         let root = root.clone();
@@ -445,8 +436,8 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
         Rc::new(move |query: &str| {
             gen.set(gen.get() + 1);
             let my_gen = gen.get();
-            let read_catalog = catalog.clone();
-            let done_catalog = catalog.clone();
+            let read_service = service.clone();
+            let done_catalog = service.catalog().clone();
             let done_list = list.clone();
             let done_on_changed = on_changed.clone();
             let done_root = root.clone();
@@ -456,41 +447,11 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
             crate::tasks::spawn(
                 "Loading books",
                 move |_reporter| {
-                    let _read = crate::timing::measure("picker_read");
-                    let mut books = read_catalog
-                        .list_books(SortKey::Title, &query)
-                        .unwrap_or_default();
-                    // One row per comic series, never per chapter — the
-                    // owner's rule holds in pickers too.
-                    read_catalog.collapse_comic_chapters(&mut books);
-                    books
-                        .into_iter()
-                        .map(|book| {
-                            // A collapsed comic row is the whole series:
-                            // ticked when any chapter is queued; tick/untick
-                            // add/remove every chapter. Regular books check
-                            // themselves. The lookup is off the UI thread
-                            // now, so it costs the dialog nothing.
-                            let peers = if matches!(
-                                book.format,
-                                crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
-                            ) {
-                                read_catalog
-                                    .comic_series_peers(book.id)
-                                    .unwrap_or_else(|_| vec![book.id])
-                            } else {
-                                vec![book.id]
-                            };
-                            PickerRow {
-                                id: book.id,
-                                title: book.title.clone(),
-                                line: format!("{} — {}", book.title, book.authors_display()),
-                                ticked: read_catalog
-                                    .any_in_reading_list(&peers)
-                                    .unwrap_or(false),
-                            }
-                        })
-                        .collect::<Vec<_>>()
+                    // The whole read — list, collapse, peers, membership —
+                    // is one service call now, with a step-4 budget on it
+                    // (`picker_read` measures inside the service, so field
+                    // logs stay comparable).
+                    read_service.reading_list_picker(&query)
                 },
                 |_| {},
                 move |rows| {

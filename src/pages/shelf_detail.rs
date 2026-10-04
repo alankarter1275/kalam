@@ -495,7 +495,7 @@ fn group_toggles(box_: &gtk::Box) {
 /// the DB, so "Done", Esc and a backdrop click all mean the same thing.
 fn open_book_picker(
     anchor: &gtk::Box,
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     shelf_id: i64,
     on_changed: impl Fn() + 'static,
 ) {
@@ -541,15 +541,6 @@ fn open_book_picker(
 
     let on_changed = Rc::new(on_changed);
 
-    // One picker row, assembled off the UI thread: everything a row's
-    // CheckButton needs, so the only work left on arrival is widgets.
-    struct PickerRow {
-        id: i64,
-        title: String,
-        line: String,
-        ticked: bool,
-    }
-
     // Skeleton first. The owner's log measured the open blocking the UI
     // thread for 351 ms (2026-10-04): the whole-library read, the shelf
     // membership, the per-comic peers lookup and every row's widget were
@@ -570,7 +561,7 @@ fn open_book_picker(
     let measured = Rc::new(std::cell::Cell::new(false));
 
     let fill = {
-        let catalog = catalog.clone();
+        let service = service.clone();
         let list = list.clone();
         let on_changed = on_changed.clone();
         let root = root.clone();
@@ -579,8 +570,8 @@ fn open_book_picker(
         Rc::new(move |query: &str| {
             gen.set(gen.get() + 1);
             let my_gen = gen.get();
-            let read_catalog = catalog.clone();
-            let done_catalog = catalog.clone();
+            let read_service = service.clone();
+            let done_catalog = service.catalog().clone();
             let done_list = list.clone();
             let done_on_changed = on_changed.clone();
             let done_root = root.clone();
@@ -590,50 +581,11 @@ fn open_book_picker(
             crate::tasks::spawn(
                 "Loading books",
                 move |_reporter| {
-                    let _read = crate::timing::measure("picker_read");
-                    let mut books = read_catalog
-                        .list_books(SortKey::Title, &query)
-                        .unwrap_or_default();
-                    // The owner's rule holds in pickers too: one row per
-                    // comic series, never one per chapter. A 700-chapter
-                    // import used to flood this list and its wide chapter
-                    // titles forced the panel past the dialog's sides.
-                    read_catalog.collapse_comic_chapters(&mut books);
-                    let on_shelf: std::collections::HashSet<i64> = read_catalog
-                        .get_shelf(shelf_id)
-                        .ok()
-                        .flatten()
-                        .and_then(|s| read_catalog.shelf_books(&s, SortKey::Title, "").ok())
-                        .unwrap_or_default()
-                        .iter()
-                        .map(|b| b.id)
-                        .collect();
-                    books
-                        .into_iter()
-                        .map(|book| {
-                            // A collapsed comic row is the whole series:
-                            // ticked when any chapter is on the shelf;
-                            // tick/untick add/remove every chapter. Regular
-                            // books check themselves. The lookup is off the
-                            // UI thread now, so it costs the dialog nothing.
-                            let peers = if matches!(
-                                book.format,
-                                crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
-                            ) {
-                                read_catalog
-                                    .comic_series_peers(book.id)
-                                    .unwrap_or_else(|_| vec![book.id])
-                            } else {
-                                vec![book.id]
-                            };
-                            PickerRow {
-                                id: book.id,
-                                title: book.title.clone(),
-                                line: format!("{} — {}", book.title, book.authors_display()),
-                                ticked: peers.iter().any(|p| on_shelf.contains(p)),
-                            }
-                        })
-                        .collect::<Vec<_>>()
+                    // The whole read — list, collapse, peers, shelf
+                    // membership — is one service call now, with a step-4
+                    // budget on it (`picker_read` measures inside the
+                    // service, so field logs stay comparable).
+                    read_service.shelf_picker(shelf_id, &query)
                 },
                 |_| {},
                 move |rows| {

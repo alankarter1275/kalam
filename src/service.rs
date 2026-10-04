@@ -335,6 +335,17 @@ pub struct ReadingListSnapshot {
     pub errors: Errors,
 }
 
+/// One row of a book picker (reading list, shelf): everything the row's
+/// CheckButton needs, assembled in one service read. Plain data so it can
+/// cross the worker boundary like any snapshot.
+#[derive(Debug, Default)]
+pub struct PickerRow {
+    pub id: i64,
+    pub title: String,
+    pub line: String,
+    pub ticked: bool,
+}
+
 /// The tag cloud: every tag with how many books carry it.
 #[derive(Debug, Default)]
 pub struct TagsSnapshot {
@@ -889,6 +900,84 @@ impl LibraryService {
         }
     }
 
+    /// The "Add to reading list" picker's rows: every book in the library
+    /// (matching `query`), comics collapsed to one row per series — the
+    /// owner's rule holds in pickers too — each pre-checked when any of its
+    /// chapters is already queued. Formerly assembled inline by the page,
+    /// one peers lookup and one membership query per row; now it is a
+    /// service read with a step-4 budget on it.
+    pub fn reading_list_picker(&self, query: &str) -> Vec<PickerRow> {
+        let _t = crate::timing::measure("picker_read");
+        let membership: std::collections::HashSet<i64> = self
+            .catalog
+            .reading_list_book_ids()
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        self.picker_rows(query, membership)
+    }
+
+    /// The shelf's "Add books" picker: the same rows, ticked when any of
+    /// the book's (or series') chapters is already on the shelf.
+    pub fn shelf_picker(&self, shelf_id: i64, query: &str) -> Vec<PickerRow> {
+        let _t = crate::timing::measure("picker_read");
+        let membership: std::collections::HashSet<i64> = self
+            .catalog
+            .shelf_book_ids(shelf_id)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        self.picker_rows(query, membership)
+    }
+
+    /// The shared half of both pickers: list, collapse comics to one row
+    /// per series, then resolve ticked state from one batched peers map and
+    /// the membership set — nothing per row. A row whose peers cannot be
+    /// resolved (an unknown book) degrades to itself, exactly what the
+    /// pages' `unwrap_or_else(|_| vec![book.id])` did.
+    fn picker_rows(
+        &self,
+        query: &str,
+        membership: std::collections::HashSet<i64>,
+    ) -> Vec<PickerRow> {
+        let mut books = self
+            .catalog
+            .list_books(SortKey::Title, query)
+            .unwrap_or_default();
+        // One row per comic series, never per chapter.
+        self.catalog.collapse_comic_chapters(&mut books);
+        let comic_ids: Vec<i64> = books
+            .iter()
+            .filter(|b| {
+                matches!(
+                    b.format,
+                    crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                )
+            })
+            .map(|b| b.id)
+            .collect();
+        let peers = self
+            .catalog
+            .comic_series_peers_by_ids(&comic_ids)
+            .unwrap_or_default();
+        books
+            .into_iter()
+            .map(|book| {
+                let own = std::iter::once(book.id);
+                let row_peers: &[i64] = peers.get(&book.id).map_or(&[], Vec::as_slice);
+                let ticked = own
+                    .chain(row_peers.iter().copied())
+                    .any(|id| membership.contains(&id));
+                PickerRow {
+                    id: book.id,
+                    title: book.title.clone(),
+                    line: format!("{} — {}", book.title, book.authors_display()),
+                    ticked,
+                }
+            })
+            .collect()
+    }
+
     pub fn tags(&self) -> TagsSnapshot {
         let _t = crate::timing::measure("service_tags");
         let mut errors = Errors::new();
@@ -1099,6 +1188,9 @@ mod tests {
         // never crosses a thread proves nothing and reads as coverage it
         // isn't.
         assert_send::<HistorySnapshot>();
+        // Picker rows cross the worker boundary with the picker's read
+        // (step 4, the comic-axis increment).
+        assert_send::<PickerRow>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
@@ -1255,6 +1347,76 @@ mod tests {
             &tags,
         )
         .expect("seed book")
+    }
+
+    /// The pickers' one rule, pinned in the service layer: comics appear as
+    /// one row per series — never one per chapter — and a series row is
+    /// ticked when any of its chapters is on the list/shelf. Covers both
+    /// registration kinds (relational chapters and the heuristic fallback).
+    #[test]
+    fn pickers_collapse_comics_and_tick_through_any_chapter() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let epub = seed(&cat, "Plain", &[]);
+        // Registered series: two chapters filed under one comic_series.
+        let c1 = seed(&cat, "Horimiya - c001", &[]);
+        let c2 = seed(&cat, "Horimiya - c002", &[]);
+        // Mark them as comics in place (the seed helper files epubs).
+        set_comic_format(&cat, c1, Some("Horimiya"));
+        set_comic_format(&cat, c2, Some("Horimiya"));
+        let series_id = cat
+            .get_or_create_comic_series("Horimiya", Some("HERO"), None)
+            .unwrap();
+        cat.add_comic_chapter(series_id, c1, 1.0, None, "Page 1").unwrap();
+        cat.add_comic_chapter(series_id, c2, 2.0, None, "Page 2").unwrap();
+        // Unregistered pair: heuristic peers via the series column.
+        let h1 = seed(&cat, "Naruto - c001", &[]);
+        let h2 = seed(&cat, "Naruto - c002", &[]);
+        set_comic_format(&cat, h1, Some("Naruto"));
+        set_comic_format(&cat, h2, Some("Naruto"));
+
+        let svc = LibraryService::new(Arc::new(cat));
+
+        // One chapter queued is enough to tick the whole series row.
+        svc.catalog().add_to_reading_list(c2).unwrap();
+        let rows = svc.reading_list_picker("");
+        assert_eq!(
+            rows.len(),
+            3,
+            "epub + one row per comic series, never per chapter: {rows:?}"
+        );
+        let horimiya = rows.iter().find(|r| r.title == "Horimiya").unwrap();
+        assert!(horimiya.ticked, "a queued chapter ticks the series row");
+        assert!(
+            !rows.iter().any(|r| r.title.contains("c00")),
+            "no chapter titles may appear as rows"
+        );
+        assert!(!rows.iter().find(|r| r.id == epub).unwrap().ticked);
+
+        // The same rule on shelves, through the other picker.
+        let shelf_id = cat_shelf(&svc);
+        svc.catalog().add_book_to_shelf(shelf_id, c1).unwrap();
+        let rows = svc.shelf_picker(shelf_id, "");
+        assert_eq!(rows.len(), 3);
+        assert!(
+            rows.iter().find(|r| r.title == "Horimiya").unwrap().ticked,
+            "a chapter on the shelf ticks the series row"
+        );
+    }
+
+    /// `seed` files epubs; a comic needs the format and series columns set.
+    fn set_comic_format(cat: &Catalog, id: i64, series: Option<&str>) {
+        let conn = cat.conn();
+        conn.execute(
+            "UPDATE books SET format = 'CBZ', series = ?2 WHERE id = ?1",
+            rusqlite::params![id, series],
+        )
+        .expect("set comic format");
+    }
+
+    fn cat_shelf(svc: &LibraryService) -> i64 {
+        svc.catalog()
+            .create_shelf("Picker", ShelfKind::Manual, "", "")
+            .expect("create shelf")
     }
 
     /// A `Book` with only the fields the continue-row rule reads. Building one

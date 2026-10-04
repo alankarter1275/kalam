@@ -666,12 +666,11 @@ fn lookup_history_snapshot_does_not_scale_with_lookups() {
 // front (reading_progress_by_ids + books_by_ids, next commit), and this
 // budget keeps it that way.
 //
-// Remaining, in order: the comic axis (collapse_comic_chapters and the
-// per-series peers lookup — all seeds so far are EPUBs, so those paths
-// are unexercised; they get budgeted together with the picker read's move
-// into the service layer), the page-cache decision, the static boundary
-// check last. all_books() itself is skipped on purpose: its core read is
-// list_books, already budgeted at the catalog level above. Known axis
+// Remaining, in order: the page-cache decision, the static boundary check
+// last. The comic axis got its own section below (increment 3: the picker
+// reads moved into the service and budgeted, with comic-format seeds).
+// all_books() itself is skipped on purpose: its core read is list_books,
+// already budgeted at the catalog level above. Known axis
 // deliberately not seeded here: SMART shelves are counted individually in
 // list_shelves (rules compiled per shelf) — a settings budget over smart
 // shelves would fail today; recorded as a later-increment decision, not
@@ -861,4 +860,130 @@ fn author_page_snapshot_does_not_scale_with_owned_books() {
         a,
         b,
     );
+}
+
+// --- step 4, increment 3: the comic axis — the pickers, test-budgeted -----
+//
+// The pickers' read lived inline in the pages until now, so no budget could
+// reach it — and it was the worst N+1 of the set: after collapsing comics to
+// one row per series, the reading-list picker ran `any_in_reading_list` once
+// per row and `comic_series_peers` (one to three queries) once per comic row;
+// the shelf picker ran the peers lookup once per comic row. The read moved
+// into `service.reading_list_picker` / `service.shelf_picker`, batched
+// (`comic_series_peers_by_ids` + one membership query), and these budgets
+// keep it that way. The axis is comic SERIES — every seed above is EPUB
+// except these, so `collapse_comic_chapters` and both peers paths (registered
+// and heuristic) are exercised here for the first time.
+
+/// Seed `series_count` registered comic series (two chapters each) plus one
+/// unregistered heuristic pair, and hand back each series' first chapter —
+/// the callers queue/shelve those so the ticked path is exercised on both
+/// sides of the comparison too.
+// Item-level on purpose: the panic-count scanner in tests/guardrails.rs
+// reads item attributes and cannot see this file's `#![cfg(test)]` — an
+// unannotated helper's `.unwrap()`s count as production panics.
+#[cfg(test)]
+fn seed_comic_axis(cat: &Catalog, series_count: usize) -> Vec<i64> {
+    let mut first_chapters = Vec::new();
+    for s in 0..series_count {
+        let title = format!("Picker Series {s:02}");
+        let sid = cat
+            .get_or_create_comic_series(&title, Some("Picker Author"), None)
+            .expect("seed comic series");
+        for c in 0..2 {
+            let ch = c + 1;
+            let id = cat
+                .insert_book(
+                    &format!("picker-uuid-{s:02}-{c}"),
+                    &format!("{title} - c{ch:03}"),
+                    "Picker Author",
+                    Some(title.as_str()),
+                    "",
+                    BookFormat::Cbz,
+                    &format!("picker_{s:02}_{c}.cbz"),
+                    &format!("picker-hash-{s:02}-{c}"),
+                    None,
+                    &[],
+                )
+                .expect("seed comic chapter");
+            cat.add_comic_chapter(sid, id, ch as f64, None, &format!("Page {ch}"))
+                .expect("seed chapter row");
+            if c == 0 {
+                first_chapters.push(id);
+            }
+        }
+    }
+    // One unregistered heuristic pair per side, constant: the fallback path
+    // stays exercised without making the measured axis heuristic.
+    for c in 0..2 {
+        cat.insert_book(
+            &format!("picker-heur-uuid-{c}"),
+            &format!("Heuristic Pair - c00{}", c + 1),
+            "Heur Author",
+            Some("Heuristic Pair"),
+            "",
+            BookFormat::Cbz,
+            &format!("heur_{c}.cbz"),
+            &format!("picker-heur-hash-{c}"),
+            None,
+            &[],
+        )
+        .expect("seed heuristic comic");
+    }
+    first_chapters
+}
+
+#[test]
+fn reading_list_picker_does_not_scale_with_series() {
+    let (few, many, (), ()) = few_and_many_page(|cat, ids| {
+        let chapters = seed_comic_axis(cat, ids.len());
+        // Membership grows with the axis too: one chapter of every series
+        // is already queued, so the ticked half of the read is exercised
+        // on both sides.
+        for id in chapters {
+            cat.add_to_reading_list(id).expect("seed reading list");
+        }
+    });
+    let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
+        svc.catalog()
+            .count_queries(|| out.set(svc.reading_list_picker("").len()))
+    };
+    let (ra, rb) = (
+        std::cell::Cell::new(0usize),
+        std::cell::Cell::new(0usize),
+    );
+    let a = rows(&few, &ra);
+    let b = rows(&many, &rb);
+    assert_constant_in_page_rows(
+        "service.reading_list_picker()",
+        ra.get(),
+        rb.get(),
+        a,
+        b,
+    );
+}
+
+#[test]
+fn shelf_picker_does_not_scale_with_series() {
+    let (few, many, shelf_a, shelf_b) = few_and_many_page(|cat, ids| {
+        let chapters = seed_comic_axis(cat, ids.len());
+        let shelf_id = cat
+            .create_shelf("Picker Budget", crate::db::ShelfKind::Manual, "", "")
+            .expect("seed shelf");
+        for id in chapters {
+            cat.add_book_to_shelf(shelf_id, id).expect("seed shelf book");
+        }
+        shelf_id
+    });
+    let rows = |svc: &LibraryService, shelf: i64, out: &std::cell::Cell<usize>| {
+        svc.catalog()
+            .count_queries(|| out.set(svc.shelf_picker(shelf, "").len()))
+    };
+    let (ra, rb) = (
+        std::cell::Cell::new(0usize),
+        std::cell::Cell::new(0usize),
+    );
+    let a = rows(&few, shelf_a, &ra);
+    let b = rows(&many, shelf_b, &rb);
+    assert_constant_in_page_rows("service.shelf_picker()", ra.get(), rb.get(), a, b);
 }

@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4401.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4241.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,27 +32,27 @@ navigation: 'tasks' differs from Home -- the page really did change
 navigation: OK -- the images below are 'tasks'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init       76.7 ms
-  [timing] startup_style          55.8 ms
-  [timing] startup_splash_show      1.8 ms
+  [timing] startup_gtk_init       61.1 ms
+  [timing] startup_style          44.1 ms
+  [timing] startup_splash_show      1.6 ms
   [timing] icons_write             0.1 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.2 ms
-  [timing] startup_splash_pump    122.1 ms
+  [timing] startup_splash_pump    123.1 ms
   [timing] startup_libraries       0.1 ms
-  [timing] startup_db_open         9.2 ms
-  [timing] startup_theme          15.5 ms
-  [timing] pre_run               281.3 ms
+  [timing] startup_db_open         6.5 ms
+  [timing] startup_theme          12.5 ms
+  [timing] pre_run               249.3 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            2.1 ms
-  [timing] init_done             285.9 ms
-  [timing] window_shown          287.8 ms
+  [timing] service_home            1.7 ms
+  [timing] init_done             253.0 ms
+  [timing] window_shown          254.4 ms
   [timing] startup_dicts           0.1 ms
   [timing] covers_queued            11
-  [timing] home_fill               1.9 ms
+  [timing] home_fill               1.2 ms
   [timing] page_cache_miss           1
-  [timing] route_open:task_manager      0.5 ms
+  [timing] route_open:task_manager      0.3 ms
   [timing] folders_renamed         139
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
@@ -77,26 +77,26 @@ navigation: OK -- the images below are 'tasks'
 
 === app stderr (non-timing lines) ===
   
-  (process:4438): Gtk-WARNING **: 00:59:36.415: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:4278): Gtk-WARNING **: 02:06:01.374: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=tasks — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=85180 peak_rss_mb=83
+books=139 peak_rss_kb=85056 peak_rss_mb=83
 
 === shutting down ===
 
 === artifacts ===
   total 196
-  drwxr-xr-x  2 runner runner  4096 Oct  4 01:00 .
-  drwxr-xr-x 21 runner runner  4096 Oct  4 00:59 ..
-  -rw-r--r--  1 runner runner 30451 Oct  4 00:59 01-tasks.png
-  -rw-r--r--  1 runner runner 30451 Oct  4 01:00 02-tasks-settling.png
-  -rw-r--r--  1 runner runner 30451 Oct  4 01:00 03-tasks-settled.png
-  -rw-r--r--  1 runner runner 66450 Oct  4 01:00 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Oct  4 00:59 grim.log
-  -rw-r--r--  1 runner runner  1412 Oct  4 01:00 kalam-home.log
-  -rw-r--r--  1 runner runner  1377 Oct  4 00:59 kalam.log
-  -rw-r--r--  1 runner runner  3505 Oct  4 01:00 report.txt
-  -rw-r--r--  1 runner runner    88 Oct  4 00:59 sway.log
-  -rw-r--r--  1 runner runner  7184 Oct  4 00:59 tree.json
---- run 37166180677 ---
+  drwxr-xr-x  2 runner runner  4096 Oct  4 02:06 .
+  drwxr-xr-x 21 runner runner  4096 Oct  4 02:05 ..
+  -rw-r--r--  1 runner runner 30451 Oct  4 02:06 01-tasks.png
+  -rw-r--r--  1 runner runner 30451 Oct  4 02:06 02-tasks-settling.png
+  -rw-r--r--  1 runner runner 30451 Oct  4 02:06 03-tasks-settled.png
+  -rw-r--r--  1 runner runner 66450 Oct  4 02:06 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Oct  4 02:06 grim.log
+  -rw-r--r--  1 runner runner  1412 Oct  4 02:06 kalam-home.log
+  -rw-r--r--  1 runner runner  1377 Oct  4 02:06 kalam.log
+  -rw-r--r--  1 runner runner  3505 Oct  4 02:06 report.txt
+  -rw-r--r--  1 runner runner    88 Oct  4 02:06 sway.log
+  -rw-r--r--  1 runner runner  7184 Oct  4 02:06 tree.json
+--- run 37169610077 ---

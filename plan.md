@@ -1583,6 +1583,45 @@ CI green after every step; every commit HEAD-checked (§36).
   soft reset the *index* still held the base tree, so `git diff
   --cached` showed the session in reverse (180 files, 46k deletions) —
   a mixed reset is the step that shows the true diff.
+- **Step 4, increment 5 — the static boundary check (7.7, step 4's
+  last item): shipped, green (run 37208539920, 928 tests, first
+  try).**
+  - The disk and document legs of ARCH.md's one rule are now enforced
+  by a guardrails scanner: `pages_touch_disk_or_documents_only_inside_
+  tasks` walks `src/pages/**` line by line, suppressing exactly the
+  first closure after a `tasks::spawn` trigger (the worker — the task
+  layer); the progress and done callbacks run on the main thread and
+  stay scanned. Reader files are excluded file-level (the owner
+  excluded them from the campaign). The database leg stays with the
+  existing enforcement: the `Arc<Catalog>` ratchet and the per-screen
+  statement budgets. Every allowlist entry carries its written reason
+  in the table, and a stale entry (matches nothing) fails the test —
+  the list cannot rot into decoration. A self-test pins the
+  suppression semantics.
+  - **The check arbitrated as planned — its first pass found real
+  violations, and they are fixed:** six export paths wrote files on
+  the UI thread (quotes page Export + ExportAllData, words page
+  CSV/Anki/Markdown, settings' two export buttons) and the comics
+  page expanded dropped folders with `read_dir` on the UI thread. All
+  now run as tasks, the established recipe; the quotes page's status
+  line returns as a new `ExportDone` message so the label updates
+  when the file is real.
+  - **Allowlisted with written reasons:** four micro-op stats
+  (cover/avatar `is_file`/`exists` checks — the 7.1 step-2a
+  allowlist question), the export/expansion helper bodies (they write
+  files by design; they run only from task workers now, and a
+  synchronous call site is still caught by the call-name patterns),
+  remote-detail's bounded 160×230 thumbnail decode in its
+  apply-on-arrival step, and two recorded follow-ups: the metadata
+  editor's save flow (cover read in the file-dialog callback, cover
+  written into the EPUB in the save handler) and remote-detail's
+  ReadChapter cache flow (`OpenBook::open` ×2, `remove_dir_all`).
+  Each is its own migration, not forgotten.
+  - Step 4 is now **complete**: per-screen budgets (small pages + big
+  pages + the comic axis), the page-cache fix, and the static
+  boundary check — with the smart-shelf counting axis recorded for a
+  later increment and the two follow-ups above. The owner's
+  field-test build is next.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

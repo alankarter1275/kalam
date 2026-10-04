@@ -1471,6 +1471,44 @@ CI green after every step; every commit HEAD-checked (§36).
     re-parented on the real history with byte-identical trees, and the
     incident + recovery recipe are pitfalls §60. No remote history was
     ever at risk.
+- **Step 4, increment 2 — the big pages, test-first, and the first live
+  catch (2026-10-04, eighth session): shipped, green (run 37172160623,
+  921 tests).**
+  - Six more budgets in `perf.rs`: `home`, `dashboard`, `book_stats`,
+    `book_page`, `settings`, `author_page` — same invariant, growth axis
+    = the page's own rows (reading-list entries, events, sessions,
+    annotations, shelves, author's books).
+  - **Test-first on purpose, and it caught a real one.** The tests landed
+    before the fix (commit `9a61ba9`); red run `37170951890` failed
+    exactly one test — `dashboard_snapshot_does_not_scale_with_events`,
+    **38 statements for 5 events vs 48 for 15**: `dashboard_feed` called
+    `get_reading_progress` once per Opened event (and `get_book` per
+    Imported). Bounded by the feed limit, but the one-query-per-row shape
+    exactly. 522 other tests passed — the intended blast radius. The fix
+    (next commit): a batched `Catalog::reading_progress_by_ids` (same
+    shape as `books_by_ids`: dedupe, chunk at 500, empty input issues
+    nothing; unit-tested) and `dashboard_feed` reading both lookups from
+    batched maps. This observed red also settles the §19 debt for the
+    shared harness of increments 1–2 — `assert_constant_in_page_rows`
+    has now failed on a real regression in CI, which is stronger than a
+    staged sabotage; each test's seed axis stays guarded by its
+    row-count assert.
+  - **The fix run then failed the panic ratchet and exposed a latent
+    scanner bug (pitfalls §62):** `src/db.rs` "grew" one production
+    panic — a helper's `.expect` *inside* `#[cfg(test)] mod tests`. The
+    scanner's suppression was a single level: an inner `#[test]` fn
+    overwrote the mod's level and, on closing, cleared it entirely, so
+    an unannotated helper after the first inner test leaked into the
+    count. It had never fired because every file's helpers happened to
+    sit before its first test. Fixed with a proper stack (push on a test
+    item, pop when depth falls below the top, outer levels resume) plus
+    the nested regression case in the scanner's self-test.
+  - **Known axis recorded, not silently avoided:** smart shelves are
+    counted individually in `list_shelves` (rules compiled per shelf) —
+    a settings budget over smart shelves would fail today. Later
+    increment's decision: batch it or allowlist it in writing.
+    `all_books` is skipped on purpose (its core read, `list_books`, is
+    already budgeted at the catalog level).
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

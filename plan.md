@@ -1548,6 +1548,41 @@ CI green after every step; every commit HEAD-checked (§36).
   rewrite replace() that did not assert it fired silently missed the
   shelf picker's call site (a type mismatch three files from the cause);
   `add_comic_chapter` takes f32, not f64.
+- **Step 4, increment 4 — the page-cache fix: reading activity no
+  longer evicts (2026-10-04, ninth session): shipped, green (run
+  37205713716, 926 tests, first try).**
+  - The field run had measured the cache mostly dead: every write —
+  including the progress save on each 1% of scroll — bumps
+  `total_changes()`, which the cache invalidated on, so reading a book
+  wiped every cached page. Fix: `Catalog::page_cache_token()` =
+  `change_token()` minus the rows written by reading activity. Exactly
+  five methods count as activity, all pure reading telemetry:
+  `set_reading_progress`, `mark_book_opened`,
+  `start/checkpoint/end_reading_session`. The set stays that small and
+  named because a wrongly-counted content write is the one unsafe
+  direction (a stale page); forgetting to count a new activity write
+  only costs one spurious rebuild. `auto_finish_if_complete`
+  deliberately stays content (it mutates the reading list and the
+  finished flag). The stats memo keeps the raw token — progress and
+  sessions feed its aggregates.
+  - **Leaving a reader forces one fresh build of the landing page**
+  (new `page_cache_forced_miss` counter): without it, the home you
+  return to would come from the cache showing the reading position from
+  before you read — the continue card is too prominent for that. Every
+  other cached page now survives a reading session; the landing page
+  costs exactly one rebuild, which is what today's behavior costs every
+  page.
+  - Known trade, offered to the owner as a veto: cached pages that show
+  activity data (the dashboard feed, history) can lag by the reading
+  they missed until the next content write. The field test's hit/miss
+  counters (`page_cache_hit` / `_miss` / `_forced_miss`) will judge
+  whether the trade reads right in practice.
+  - **Pitfalls §60 recurred mid-chunk** — second re-clone of the day:
+  HEAD at the fork point again, work intact in the working tree. The
+  recorded recipe worked, plus a refinement now in the entry: after the
+  soft reset the *index* still held the base tree, so `git diff
+  --cached` showed the session in reverse (180 files, 46k deletions) —
+  a mixed reset is the step that shows the true diff.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

@@ -511,9 +511,12 @@ impl Catalog {
         }
         for (id, key) in comic_keys {
             // The requested book is itself in the scan's result set, so its
-            // group always contains at least itself.
-            if let Some(peers) = groups.remove(&key) {
-                out.insert(id, peers);
+            // group always contains at least itself. `get`, not `remove`:
+            // two requested books can share one heuristic series, and the
+            // first `remove` would starve the second (the unit test asks
+            // for both chapters of the pair and catches exactly that).
+            if let Some(peers) = groups.get(&key) {
+                out.insert(id, peers.clone());
             }
         }
         Ok(out)

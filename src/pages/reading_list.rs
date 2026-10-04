@@ -2,7 +2,7 @@
 
 use crate::db::{Catalog, ReadingListEntry, SortKey};
 use crate::service::LibraryService;
-use crate::widgets::book_row::cover_widget;
+use crate::widgets::book_row::cover_widget_deferred;
 use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -212,9 +212,19 @@ fn rebuild(
     }
 
     let last = entries.len().saturating_sub(1);
+    crate::timing::span("reading_list_build");
     for (i, entry) in entries.iter().enumerate() {
         list.append(&build_row(i, last, entry, sender));
     }
+    crate::timing::span_end("reading_list_build");
+    crate::timing::note("reading_list_rows", entries.len());
+
+    // The warming half of the deferred-cover contract: placeholders fill
+    // only if this page queues the decode at the exact (path, 44, 70) key.
+    // After the first warm the cache serves every rebuild instantly, so the
+    // reorder/remove paths stay cheap too.
+    let books: Vec<crate::models::Book> = entries.iter().map(|e| e.book.clone()).collect();
+    crate::preload::warm_books(&books, 0, 44, 70);
 }
 
 fn build_row(
@@ -233,7 +243,11 @@ fn build_row(
     ordinal.set_width_chars(2);
     row.append(&ordinal);
 
-    let cover = cover_widget(book.cover_path.as_deref(), 44, 70);
+    // Deferred, not decode-on-the-spot: this is a list surface, and the
+    // owner's log measured the page opening in 322 ms with a 0.7 ms read —
+    // the covers were the cost. Rows get placeholders instantly; the decode
+    // is queued by `rebuild` (the other half of the contract, pitfalls §53).
+    let cover = cover_widget_deferred(book.cover_path.as_deref(), 44, 70);
     cover.set_valign(gtk::Align::Center);
     row.append(&cover);
 

@@ -1412,6 +1412,26 @@ CI green after every step; every commit HEAD-checked (§36).
     vs the usual 6.5–25.7; `pre_run` 1823.5 vs ~1200 steady) — the
     picker verdict is unaffected (sub-3 ms reads even cold), but
     step-4 measurements use the second launch as usual.
+- **Step 3.6 — the reading list page (owner's go, 2026-10-04, sixth
+  session): implemented.** His word was "yup" to fixing it, then step 4.
+  The 322 ms was never the read (`service_reading_list` 0.7 ms) — it was
+  `cover_widget`, the decode-on-the-spot cover variant, called per row:
+  every cover on the page was decoded on the UI thread at open, and again
+  on every rebuild (Move/Remove/Refresh). The fix is the deferred-cover
+  contract, both halves: `cover_widget_deferred` in `build_row`
+  (placeholders instantly) and `warm_books(&books, 0, 44, 70)` after
+  `rebuild` queues the decodes at the exact key — after the first warm the
+  cache serves every rebuild instantly, so reordering stays cheap too. New
+  notes: `reading_list_build` (span) and `reading_list_rows`, so the next
+  log reads the build cost directly. The read stays inline — 0.7 ms,
+  bounded, the accepted snapshot shape; step 4's budgets arbitrate the
+  final state. Pitfalls §59 records the guardrail gap (the warming test
+  cannot catch a page that should have used deferred and didn't) and the
+  same-family suspects for the next field log: author page group covers
+  (232 ms first open, 2026-10-02, cause never verified) and comics hub
+  group covers (8.3 ms — fine at the owner's scale). Neither is owed
+  without data. After this fix ships and CI is green: **step 4 begins**
+  (owner's instruction, 2026-10-04).
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

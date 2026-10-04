@@ -2379,3 +2379,34 @@ Three lessons, one per line of that warning:
 The width cap now lives exactly where it can be measured — the rows'
 own labels — and `picker_natural` in the timing log is the tripwire
 if a future row builder regresses.
+
+## 59. The tripwire guards the contract you signed, not the one you should have
+
+The reading list page opened in 322 ms with a 0.7 ms service read. The
+cost was never the query — it was `cover_widget`, the
+decode-on-the-spot cover variant, called per row on a list surface.
+The deferred variant (`cover_widget_deferred` + `warm_books`) has
+existed since A0; its doc comment even says "grids want
+`cover_widget_deferred` instead". The page predates the pattern or
+simply never met it.
+
+The lesson is about the guardrail, not the page: the test
+`deferred_covers_are_warmed_by_the_page_that_builds_them` catches a
+file that uses the deferred variant **without** warming it — it
+cannot catch a file that should have used the deferred variant and
+didn't. A tripwire enforces the contract you signed; the variant
+choice happens before any contract exists. Two consequences:
+
+- **Audit for the wrong half too.** After this, the remaining
+  synchronous per-row users are `author.rs` (group covers, 136×204 —
+  the author page measured 232 ms first open on 2026-10-02, cause
+  never verified) and `comics.rs` (group covers, 120×180 — the comics
+  hub measured 8.3 ms, fine at the owner's scale). Both are
+  same-family suspects for the next field log, not fixes owed today;
+  the 1–2-cover detail dialogs and floats are the variant's
+  legitimate use.
+- **Measurement is the only tripwire for the unwritten contract.**
+  `service_reading_list 0.7 ms` vs `route_open:reading_list 322 ms`
+  named the layer in one line — the same shape as picker_natural.
+  When a span pair disagrees by two orders of magnitude, believe the
+  gap, not the story about the code.

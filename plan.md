@@ -1509,6 +1509,45 @@ CI green after every step; every commit HEAD-checked (§36).
     increment's decision: batch it or allowlist it in writing.
     `all_books` is skipped on purpose (its core read, `list_books`, is
     already budgeted at the catalog level).
+- **Step 4, increment 3 — the comic axis: the pickers move into the
+  service, batched, and budgeted (2026-10-04, eighth session): shipped,
+  green (run 37175756396, 925 tests).**
+  - The pickers' read lived inline in the pages, out of the budgets'
+  reach — and it was the worst N+1 of the set: after collapsing comics
+  to one row per series, the reading-list picker ran
+  `any_in_reading_list` once per row and `comic_series_peers` (one to
+  three queries) once per comic row; the shelf picker ran the peers
+  lookup once per comic row. On a comic-heavy library the dialog's read
+  scaled with every row it showed.
+  - New `service.reading_list_picker` / `service.shelf_picker`: the
+  whole read (list, collapse, peers, membership) as one call — one
+  batched `Catalog::comic_series_peers_by_ids` (books_by_ids shape:
+  dedupe, chunk 500, empty issues nothing; registered chapters in one
+  self-join, the heuristic fallback once per batch) plus one membership
+  query (`reading_list_book_ids` / `shelf_book_ids`). The pages keep
+  their skeleton/worker/generation shape; `picker_read` measures inside
+  the service so field logs stay comparable.
+  - Two budgets in `perf.rs`, the **first comic-format seeds in the
+  file** — the axis is comic series (registered, two chapters each, one
+  chapter pre-queued/pre-shelved so the ticked half is exercised) plus a
+  constant heuristic pair, so `collapse_comic_chapters` and both peers
+  paths are finally exercised by the budgets.
+  - The owner's rule now pinned in the **service layer** too:
+  `pickers_collapse_comics_and_tick_through_any_chapter` asserts one row
+  per series (never a chapter title), and that one queued/shelved
+  chapter ticks the series row — registered and heuristic both.
+  - **The new unit test caught a real bug before it shipped:** asking
+  the batched peers lookup for BOTH chapters of a heuristic pair
+  returned nothing for the second — the grouping consumed its group
+  with `remove`, so the first book of a series starved any later book
+  sharing the key. The pickers only ever ask representatives, so
+  production would not have hit it — but the API's contract is "any
+  ids", and the test pins the contract, not the caller. Fixed with
+  `get` + clone (commit `9bdb444`).
+  - Two CI cycles burned on the way in (pitfalls §63): a scripted
+  rewrite replace() that did not assert it fired silently missed the
+  shelf picker's call site (a type mismatch three files from the cause);
+  `add_comic_chapter` takes f32, not f64.
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

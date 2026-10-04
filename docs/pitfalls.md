@@ -2484,3 +2484,31 @@ production count. Two lessons:
   attributes, not file-level ones. Test-only helpers in an
   `#![cfg(test)]` module still get the item annotation, or they grow a
   ratchet they never belonged to.
+
+## 62. Suppression that clears instead of restoring — nested regions need a stack
+
+The step-4 dashboard fix failed CI on the panic ratchet: `src/db.rs`
+grew from 0 to 1 "production" panic. The panic was `.expect("insert")`
+inside `fn seed` — a helper *inside* `#[cfg(test)] mod tests`. The
+scanner's suppression was a single level: when `mod tests {` opened,
+`suppress_below = 1`; when the first `#[test]` fn inside opened, the
+slot was **overwritten** with 2; when that fn closed, the check
+`depth < d` **cleared the slot entirely** instead of restoring the
+mod's level — and the unannotated helper sitting after the inner test
+leaked into the production count.
+
+The remarkable part: this bug existed from the scanner's first day and
+never fired, because in every file the helpers happened to sit *before*
+the first inner `#[test]`. The arrangement, not the algorithm, was
+holding it together — until a new test was inserted above one.
+
+The fix: a **stack** of suppression depths. A test item pushes
+`depth + 1`; when `depth` falls below the top, pop — and if an outer
+level remains, it resumes protecting exactly where it left off. The
+scanner's self-test now carries the nested case (helper after an inner
+test, inside a test mod, production code after the mod) so the shape is
+pinned, not incidental.
+
+General shape, worth naming: **any region-based suppression over
+nestable regions must be a stack.** A single level silently works until
+someone nests in an order you did not anticipate.

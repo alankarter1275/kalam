@@ -248,8 +248,16 @@ fn sources_under(dir: &Path) -> Vec<(PathBuf, String)> {
 /// function.
 fn count_prod_panics(text: &str) -> usize {
     let mut depth: i32 = 0;
-    // While `Some(d)`, lines at depth `>= d` are inside a test item.
-    let mut suppress_below: Option<i32> = None;
+    // A STACK of depths at which a test item (mod or fn) opened. While the
+    // stack is non-empty and `depth >= top`, we are inside test code. It
+    // must be a stack, not a single level: a `#[test]` fn inside a
+    // `#[cfg(test)]` mod replaces the mod's level while it is open, and
+    // when the fn closes the mod's level must be RESTORED — a single slot
+    // cleared instead, so an unannotated helper after the first inner test
+    // leaked into the count. It only ever worked because helpers happened
+    // to sit before the first test in every file (found 2026-10-04, when
+    // a new test was inserted above one; pitfalls §62).
+    let mut suppress: Vec<i32> = Vec::new();
     // A test attribute was seen; the next opening brace starts the item it
     // annotates.
     let mut pending = false;
@@ -275,21 +283,21 @@ fn count_prod_panics(text: &str) -> usize {
         // counted it. The test below caught that on its first run in CI.
         let starts_test_item = pending && opens > 0;
         if starts_test_item {
-            suppress_below = Some(depth + 1);
+            suppress.push(depth + 1);
             pending = false;
         }
 
         // `depth` is still the pre-line depth here, which is why a line that
         // starts the item needs the explicit `|| starts_test_item`.
-        let in_test = suppress_below.is_some_and(|d| depth >= d) || starts_test_item;
+        let in_test = suppress.last().is_some_and(|d| depth >= *d) || starts_test_item;
         if !in_test && !trimmed.starts_with("//") {
             n += line.matches(".unwrap()").count();
             n += line.matches(".expect(").count();
         }
 
         depth += opens - closes;
-        if suppress_below.is_some_and(|d| depth < d) {
-            suppress_below = None;
+        while suppress.last().is_some_and(|top| depth < *top) {
+            suppress.pop();
         }
     }
 
@@ -349,6 +357,28 @@ fn panic_scanner_skips_annotated_items_whether_mod_or_fn() {
 
     let attr_fn = "#[test]\nfn t() { y.unwrap(); }\n";
     assert_eq!(count_prod_panics(attr_fn), 0);
+
+    // The regression that made suppression a stack (pitfalls §62): an
+    // unannotated helper AFTER an inner test, inside a test mod. The single-
+    // level version cleared suppression when the inner test closed, so the
+    // helper's panics leaked into the count. It surfaced when a new test
+    // was inserted above a helper that had always sat before the first one.
+    let nested = concat!(
+        "#[cfg(test)]\n",
+        "mod tests {\n",
+        "    #[test]\n",
+        "    fn t() { y.unwrap(); }\n",
+        "    fn helper() { z.unwrap(); w.expect(\"why\"); }\n",
+        "    #[test]\n",
+        "    fn u() { v.unwrap(); }\n",
+        "}\n",
+        "fn b() { q.unwrap(); }\n",
+    );
+    assert_eq!(
+        count_prod_panics(nested),
+        1,
+        "everything inside the test mod is skipped, production after it counts"
+    );
 }
 
 #[test]

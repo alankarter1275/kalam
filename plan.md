@@ -1433,6 +1433,39 @@ CI green after every step; every commit HEAD-checked (§36).
   without data. After this fix ships and CI is green: **step 4 begins**
   (owner's instruction, 2026-10-04).
 
+  (owner's instruction, 2026-10-04).
+  - **Step 3.6 owner-verified (2026-10-04, his log): closed.** First
+    open `route_open:reading_list` **2.5 ms** (was 322.1) with
+    `reading_list_build` 1.1 ms and `reading_list_rows` 3; his
+    reorder/remove rebuilds ran 3.5–5.3 ms with `covers_queued` 0 —
+    every cover from cache after the first warm, exactly the
+    contract's second half. One `page_cache_hit` also appeared on the
+    revisit — the first repeat-visit hit on this page in any field
+    log. The same-family suspects from §59 stay suspects (author page
+    group covers, comics hub group covers) until a log measures them.
+- **Step 4 — enforcement: BEGUN (2026-10-04, seventh session; the
+  owner's instruction: "when that happens, start step 4").**
+  - **Increment 1 — per-screen snapshot budgets, shipped:** six budget
+    tests in `src/perf.rs` (the proven pattern, extended): the
+    statement count of each step-3 survey page's service read must not
+    depend on how many rows the page shows — `reading_list`,
+    `shelf_detail`, `quotes`, `words`, `history`, `lookup_history`,
+    each seeded FEW (5) vs MANY (15) page rows over the same 20-book
+    library. The row counts are asserted to differ before the
+    statement counts compare, so a silently-broken seed cannot pass
+    vacuously.
+  - **Deliberately not covered yet, in order:** the step-2 migrated
+    pages' reads (home, dashboard, book page/detail, settings, author,
+    all books) and the picker read (its worker does
+    `comic_series_peers` per comic series — an N+1 shape that a budget
+    would catch; the read needs to move into a service method first to
+    be budgetable); then the page-cache eviction decision; the static
+    boundary check comes last.
+  - **Debt on record (§19):** the new tests reuse the
+    sabotage-verified harness but have not themselves been
+    sabotage-verified — one deliberate break-and-revert cycle is owed
+    before step 4 closes, same discipline as the original six.
+
 ## The measured ranked list (owner field run, 2026-10-02)
 
 `KALAM_TIMING=1`, one session through the real library. The headline:

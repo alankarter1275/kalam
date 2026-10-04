@@ -32,6 +32,7 @@
 
 use crate::db::{Catalog, SortKey};
 use crate::models::BookFormat;
+use crate::service::LibraryService;
 use std::time::Instant;
 
 const N: usize = 2000;
@@ -390,5 +391,249 @@ fn library_stats_is_memoised_and_invalidates_on_write() {
         "after a write, library_stats() ran {after_write} statements but a cold \
          call costs {cold} -- the memo did not invalidate, so the numbers on \
          screen are now stale"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Step 4 (7.7) — per-screen snapshot budgets
+//
+// The step-3 survey pages open by reading one LibraryService snapshot. The
+// enforcement shape for them: the statement count of a screen's read must
+// not depend on how many rows the screen shows — the same
+// integer-not-milliseconds reasoning as the catalog budgets above, with the
+// growth axis moved from library size to the page's own row count. A
+// reading list with 5 entries and one with 15 must cost the same number of
+// statements.
+//
+// Deliberately not covered yet (later step-4 increments, in order): the
+// step-2 migrated pages (home, dashboard, book page/detail, settings,
+// author, all books) and the picker read; the zero-queries-at-construction
+// half needs the static boundary check, which comes last. These tests reuse
+// the sabotage-verified harness but have not themselves been
+// sabotage-verified — owed before step 4 closes (§19: a check that has
+// never failed is not known to work). The row-count assert below guards the
+// cheaper failure: a seed that silently produced no rows.
+// ---------------------------------------------------------------------------
+
+/// Page-data sizes: enough rows that a per-row query is unmissable, small
+/// enough to stay instant.
+const FEW: usize = 5;
+const MANY: usize = 15;
+
+/// Two services over the same SMALL library — one with FEW page rows
+/// seeded, one with MANY. The seed closure returns a value per side (the
+/// shelf test uses it to hand back the shelf id); most tests return ().
+///
+/// Book ids are read back from the catalog rather than assumed, so a broken
+/// seed fails loudly here instead of passing vacuously.
+fn few_and_many_page<T>(
+    seed_page_rows: impl Fn(&Catalog, &[i64]) -> T,
+) -> (LibraryService, LibraryService, T, T) {
+    let build = |rows: usize| -> (LibraryService, T) {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed(&cat, SMALL);
+        let ids: Vec<i64> = cat
+            .list_books(SortKey::Title, "")
+            .unwrap()
+            .into_iter()
+            .map(|b| b.id)
+            .collect();
+        assert!(
+            ids.len() >= rows,
+            "seeding {rows} page rows but the library only has {} books",
+            ids.len()
+        );
+        let extra = seed_page_rows(&cat, &ids[..rows]);
+        (LibraryService::new(std::sync::Arc::new(cat)), extra)
+    };
+    let (few, a) = build(FEW);
+    let (many, b) = build(MANY);
+    (few, many, a, b)
+}
+
+/// The screen-budget invariant, with the vacuous-pass guard built in: the
+/// row counts must actually differ before the statement counts compare.
+fn assert_constant_in_page_rows(
+    label: &str,
+    few_rows: usize,
+    many_rows: usize,
+    few_stmts: usize,
+    many_stmts: usize,
+) {
+    assert!(
+        few_rows > 0 && many_rows > few_rows,
+        "{label}: seeded {few_rows} vs {many_rows} rows — the seed is broken, \
+         so this test cannot fail and is not a test (§19)"
+    );
+    println!(
+        "{label:<44} {few_stmts} statements @{few_rows} rows, {many_stmts} @{many_rows}"
+    );
+    assert_eq!(
+        few_stmts, many_stmts,
+        "{label}: {few_stmts} SQL statements for {few_rows} rows but {many_stmts} for \
+         {many_rows}. The read scales with the number of rows it returns — the N+1 \
+         pattern behind pitfalls §16 and §18. Look for a query inside a loop over rows."
+    );
+    assert!(
+        few_stmts > 0,
+        "{label} recorded 0 statements — the counter is not wired up, so this \
+         test cannot fail and is not a test"
+    );
+}
+
+#[test]
+fn reading_list_snapshot_does_not_scale_with_entries() {
+    let (few, many, (), ()) = few_and_many_page(|cat, ids| {
+        for id in ids {
+            cat.add_to_reading_list(*id).expect("seed reading list");
+        }
+    });
+    let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
+        svc.catalog()
+            .count_queries(|| out.set(svc.reading_list().entries.len()))
+    };
+    let (ra, rb) = (
+        std::cell::Cell::new(0usize),
+        std::cell::Cell::new(0usize),
+    );
+    let a = rows(&few, &ra);
+    let b = rows(&many, &rb);
+    assert_constant_in_page_rows("service.reading_list()", ra.get(), rb.get(), a, b);
+}
+
+#[test]
+fn shelf_detail_snapshot_does_not_scale_with_shelf_books() {
+    let (few, many, sa, sb) = few_and_many_page(|cat, ids| {
+        let shelf = cat
+            .create_shelf("Budget", crate::db::ShelfKind::Manual, "", "")
+            .expect("create shelf");
+        for id in ids {
+            cat.add_series_to_shelf(shelf, *id)
+                .expect("seed shelf book");
+        }
+        shelf
+    });
+    let rows =
+        |svc: &LibraryService, shelf: i64, out: &std::cell::Cell<usize>| {
+            svc.catalog().count_queries(|| {
+                out.set(svc.shelf_detail(shelf, SortKey::Title, "").books.len())
+            })
+        };
+    let (ra, rb) = (
+        std::cell::Cell::new(0usize),
+        std::cell::Cell::new(0usize),
+    );
+    let a = rows(&few, sa, &ra);
+    let b = rows(&many, sb, &rb);
+    assert_constant_in_page_rows(
+        "service.shelf_detail()",
+        ra.get(),
+        rb.get(),
+        a,
+        b,
+    );
+}
+
+#[test]
+fn quotes_snapshot_does_not_scale_with_saved_quotes() {
+    let (few, many, (), ()) = few_and_many_page(|cat, ids| {
+        for (i, id) in ids.iter().enumerate() {
+            cat.insert_annotation(
+                *id,
+                "quote",
+                0,
+                "",
+                0,
+                "",
+                0,
+                "",
+                "",
+                &format!("Budget excerpt {i:02}"),
+                "",
+            )
+            .expect("seed quote");
+        }
+    });
+    let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
+        svc.catalog()
+            .count_queries(|| out.set(svc.quotes("").quotes.len()))
+    };
+    let (ra, rb) = (
+        std::cell::Cell::new(0usize),
+        std::cell::Cell::new(0usize),
+    );
+    let a = rows(&few, &ra);
+    let b = rows(&many, &rb);
+    assert_constant_in_page_rows("service.quotes()", ra.get(), rb.get(), a, b);
+}
+
+#[test]
+fn words_snapshot_does_not_scale_with_saved_words() {
+    let (few, many, (), ()) = few_and_many_page(|cat, ids| {
+        for (i, _id) in ids.iter().enumerate() {
+            cat.insert_saved_word(&format!("budget{i:02}"), "a definition", None, None, None, None)
+                .expect("seed word");
+        }
+    });
+    let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
+        svc.catalog()
+            .count_queries(|| out.set(svc.words("", None).words.len()))
+    };
+    let (ra, rb) = (
+        std::cell::Cell::new(0usize),
+        std::cell::Cell::new(0usize),
+    );
+    let a = rows(&few, &ra);
+    let b = rows(&many, &rb);
+    assert_constant_in_page_rows("service.words()", ra.get(), rb.get(), a, b);
+}
+
+#[test]
+fn history_snapshot_does_not_scale_with_events() {
+    let (few, many, (), ()) = few_and_many_page(|cat, ids| {
+        for id in ids {
+            cat.log_event(*id, crate::db::EventKind::Opened, "budget seed")
+                .expect("seed event");
+        }
+    });
+    let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
+        svc.catalog()
+            .count_queries(|| out.set(svc.history(None, "", 100).events.len()))
+    };
+    let (ra, rb) = (
+        std::cell::Cell::new(0usize),
+        std::cell::Cell::new(0usize),
+    );
+    let a = rows(&few, &ra);
+    let b = rows(&many, &rb);
+    assert_constant_in_page_rows("service.history()", ra.get(), rb.get(), a, b);
+}
+
+#[test]
+fn lookup_history_snapshot_does_not_scale_with_lookups() {
+    let (few, many, (), ()) = few_and_many_page(|cat, ids| {
+        for (i, _id) in ids.iter().enumerate() {
+            // Distinct words: log_dict_lookup collapses repeats within an
+            // hour, and identical seeds would collapse to one row.
+            cat.log_dict_lookup(&format!("budget-word-{i:02}"), None, None, None, true)
+                .expect("seed lookup");
+        }
+    });
+    let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
+        svc.catalog()
+            .count_queries(|| out.set(svc.lookup_history("", 100).lookups.len()))
+    };
+    let (ra, rb) = (
+        std::cell::Cell::new(0usize),
+        std::cell::Cell::new(0usize),
+    );
+    let a = rows(&few, &ra);
+    let b = rows(&many, &rb);
+    assert_constant_in_page_rows(
+        "service.lookup_history()",
+        ra.get(),
+        rb.get(),
+        a,
+        b,
     );
 }

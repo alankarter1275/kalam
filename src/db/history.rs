@@ -55,7 +55,7 @@ impl Catalog {
     pub fn mark_book_opened(&self, book_id: i64) -> Result<()> {
         let conn = self.conn();
         let now = chrono_like_now();
-        conn.execute(
+        let mut activity = conn.execute(
             "UPDATE books SET last_opened_at = ?2 WHERE id = ?1",
             params![book_id, now],
         )?;
@@ -77,11 +77,16 @@ impl Catalog {
             .unwrap_or(false);
 
         if !same_hour {
-            conn.execute(
+            activity += conn.execute(
                 "INSERT INTO reading_events (book_id, kind, at, detail) VALUES (?1, 'opened', ?2, '')",
                 params![book_id, now],
             )?;
         }
+        // Opening a book is reading activity: neither the stamp nor the
+        // hourly event changes what any page shows beyond activity feeds,
+        // and counting it is what lets the page cache survive a reading
+        // round trip.
+        self.note_activity_rows(activity);
         Ok(())
     }
 
@@ -310,11 +315,12 @@ impl Catalog {
     /// Open a session row when the reader mounts; returns its id.
     pub fn start_reading_session(&self, book_id: i64, start_pct: i64) -> Result<i64> {
         let conn = self.conn();
-        conn.execute(
+        let rows = conn.execute(
             "INSERT INTO reading_sessions (book_id, started_at, ended_at, seconds, start_pct, end_pct)
              VALUES (?1, ?2, NULL, 0, ?3, ?3)",
             params![book_id, chrono_like_now(), start_pct],
         )?;
+        self.note_activity_rows(rows);
         Ok(conn.last_insert_rowid())
     }
 
@@ -366,10 +372,11 @@ impl Catalog {
     ) -> Result<()> {
         let conn = self.conn();
         let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
-        conn.execute(
+        let rows = conn.execute(
             "UPDATE reading_sessions SET seconds = ?2, end_pct = ?3 WHERE id = ?1",
             params![session_id, clamped, pct],
         )?;
+        self.note_activity_rows(rows);
         Ok(())
     }
 
@@ -385,10 +392,11 @@ impl Catalog {
     pub fn end_reading_session(&self, session_id: i64, seconds: i64, end_pct: i64) -> Result<()> {
         let conn = self.conn();
         let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
-        conn.execute(
+        let rows = conn.execute(
             "UPDATE reading_sessions SET ended_at = ?2, seconds = ?3, end_pct = ?4 WHERE id = ?1",
             params![session_id, chrono_like_now(), clamped, end_pct],
         )?;
+        self.note_activity_rows(rows);
         Ok(())
     }
 

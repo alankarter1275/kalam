@@ -233,11 +233,18 @@ pub struct AppModel {
     /// depends on keeps its handle.
     _tasks_tick: gtk::glib::SourceId,
     cache: Vec<(String, PageSlot)>,
-    /// Catalog write counter at the time each cached page was built. A cached
-    /// page is only reused while this matches, so an import, delete or edit
-    /// anywhere automatically forces a rebuild — no write path has to
-    /// remember to invalidate.
+    /// Catalog write counter at the time each cached page was built — the
+    /// *page-cache* token, which ignores reading activity (see
+    /// [`Catalog::page_cache_token`]). A cached page is only reused while
+    /// this matches, so an import, delete or edit anywhere automatically
+    /// forces a rebuild — no write path has to remember to invalidate.
     cache_token: i64,
+    /// Set when navigating away from a reader. Reading no longer evicts the
+    /// cache, so the page you return to would otherwise come back from the
+    /// cache showing the reading position it had before you read — the
+    /// continue card is too prominent for that. One forced rebuild of the
+    /// landing page, and every *other* cached page survives the session.
+    force_rebuild_next: bool,
     pub bubbles: crate::bubbles::BubbleManager,
     pub watch_folder: Option<crate::watch_folder::WatchFolderService>,
 }
@@ -968,6 +975,12 @@ impl AppModel {
             _ => None,
         };
 
+        // Leaving a reader: the landing page is rebuilt fresh (its reading
+        // position is stale by definition), everything else stays cached.
+        self.force_rebuild_next = matches!(
+            self.route,
+            Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. }
+        );
         self.detach_current(content_host);
 
         self.route = route;
@@ -1002,7 +1015,7 @@ impl AppModel {
     /// kept its stale widgets until the next navigation, so a removed book
     /// lingered on Home until you switched tabs.
     fn refresh_if_stale(&mut self, content_host: &gtk::Box, sender: &ComponentSender<Self>) {
-        let token = self.catalog.change_token();
+        let token = self.catalog.page_cache_token();
         if token == self.cache_token {
             return;
         }
@@ -1025,29 +1038,42 @@ impl AppModel {
 
     /// Reuse a cached page for the current route, or build a fresh one.
     fn take_or_build(&mut self, sender: &ComponentSender<Self>) -> PageSlot {
-        // Any catalog write invalidates every cached page: a stale Home would
-        // happily show a book you just deleted.
-        let token = self.catalog.change_token();
+        // Any content write invalidates every cached page: a stale Home would
+        // happily show a book you just deleted. Reading activity (progress
+        // saves, session telemetry, mark-opened) deliberately does NOT — the
+        // owner's field run measured this cache mostly dead because every
+        // scroll evicted it; see `Catalog::page_cache_token`.
+        let token = self.catalog.page_cache_token();
         if token != self.cache_token {
             self.cache.clear();
             self.cache_token = token;
         }
 
-        if let Some(key) = cache_key(&self.route) {
-            if let Some(idx) = self.cache.iter().position(|(k, _)| *k == key) {
-                let (_, page) = self.cache.remove(idx);
-                crate::timing::note("page_cache_hit", 1);
-                return page;
+        // Leaving a reader forces one fresh build of the landing page (the
+        // continue card must not show the position from before you read),
+        // without touching the other cached pages.
+        let forced = std::mem::take(&mut self.force_rebuild_next);
+
+        if !forced {
+            if let Some(key) = cache_key(&self.route) {
+                if let Some(idx) = self.cache.iter().position(|(k, _)| *k == key) {
+                    let (_, page) = self.cache.remove(idx);
+                    crate::timing::note("page_cache_hit", 1);
+                    return page;
+                }
             }
         }
-        // Instrumented because the hit rate is in doubt and should be
-        // measured before this cache is either tuned or deleted. The token is
-        // `total_changes()`, which *every* write bumps — including the
-        // reading-progress save on each 1% of scroll — so ten minutes in the
-        // reader is expected to evict everything on the way back out. Under
-        // `KALAM_TIMING=1` these two counters say whether the cache is
-        // earning its keep or is dead weight.
-        crate::timing::note("page_cache_miss", 1);
+        // Instrumented because the hit rate decides whether this cache is
+        // tuned further or deleted. Reading a book no longer evicts (the
+        // token ignores activity writes) but still costs the landing page one
+        // forced miss; under `KALAM_TIMING=1` these counters say whether the
+        // cache is earning its keep. A forced miss is counted separately so
+        // the two numbers stay honest.
+        if forced {
+            crate::timing::note("page_cache_forced_miss", 1);
+        } else {
+            crate::timing::note("page_cache_miss", 1);
+        }
         Self::build_page(&self.catalog, &self.source_manager, &self.route, sender)
     }
 }
@@ -1321,7 +1347,7 @@ impl Component for AppModel {
         float_host.set_can_target(true);
         float_host.set_visible(false);
 
-        let cache_token = catalog.change_token();
+        let cache_token = catalog.page_cache_token();
         // Built before the model because the model owns both. Appended to the
         // rail further down, once `widgets` exists.
         let tasks_btn = gtk::Button::new();
@@ -1363,6 +1389,7 @@ impl Component for AppModel {
             _tasks_tick: tasks_tick,
             cache: Vec::new(),
             cache_token,
+            force_rebuild_next: false,
             bubbles,
             watch_folder,
         };

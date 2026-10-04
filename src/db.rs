@@ -86,6 +86,12 @@ pub struct Catalog {
     /// has its freshly-imported cover, so the stash was being overwritten with
     /// the EPUB default before the real cover could be copied back.
     restoring: std::sync::atomic::AtomicBool,
+    /// Rows written by **reading activity** (progress saves, session
+    /// telemetry, mark-book-opened) — the writes that happen because you read
+    /// a book, none of which add, remove or retitle anything. Subtracted from
+    /// `total_changes()` by [`Catalog::page_cache_token`] so a reading session
+    /// does not evict the app's page cache. See that method for the contract.
+    activity_rows: std::sync::atomic::AtomicI64,
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +601,7 @@ impl Catalog {
             conn: Mutex::new(conn),
             stats_cache: Mutex::new(None),
             restoring: std::sync::atomic::AtomicBool::new(false),
+            activity_rows: std::sync::atomic::AtomicI64::new(0),
         };
         cat.migrate()?;
         Ok(cat)
@@ -609,9 +616,20 @@ impl Catalog {
             conn: Mutex::new(conn),
             stats_cache: Mutex::new(None),
             restoring: std::sync::atomic::AtomicBool::new(false),
+            activity_rows: std::sync::atomic::AtomicI64::new(0),
         };
         cat.migrate()?;
         Ok(cat)
+    }
+
+    /// Count `rows` rows as reading activity, not content change. Called by
+    /// exactly the writes named on `activity_rows`; anything else must stay
+    /// un-counted, because a wrongly-counted content write is a stale page.
+    pub(crate) fn note_activity_rows(&self, rows: usize) {
+        if rows > 0 {
+            self.activity_rows
+                .fetch_add(rows as i64, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     fn migrate(&self) -> Result<()> {
@@ -1850,7 +1868,7 @@ impl Catalog {
         let conn = self.conn();
         let frac = fraction.clamp(0.0, 1.0);
         let now = chrono_like_now();
-        conn.execute(
+        let saved = conn.execute(
             "INSERT INTO reading_progress (book_id, chapter_index, fraction, updated_at)
              VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(book_id) DO UPDATE SET
@@ -1866,11 +1884,17 @@ impl Catalog {
             ((chapter_index as f64) + frac) / (chapter_count as f64) * 100.0
         };
         let pct = overall.round().clamp(0.0, 100.0) as i64;
-        conn.execute(
-            "UPDATE books SET progress = ?1 WHERE id = ?2",
-            params![pct, book_id],
-        )?;
+        let saved = saved
+            + conn.execute(
+                "UPDATE books SET progress = ?1 WHERE id = ?2",
+                params![pct, book_id],
+            )?;
         drop(conn);
+        // Reading activity, not content: this runs on every page turn, and it
+        // is the write that used to evict the whole page cache mid-session
+        // (the field run measured the cache mostly dead for exactly this
+        // reason).
+        self.note_activity_rows(saved);
 
         // Deliberately NOT refreshing the sidecar here.
         //
@@ -2878,6 +2902,64 @@ mod tests {
 
         cat.forget_overrides(&hash).unwrap();
         assert!(!cat.restore_overrides(id, &hash).unwrap());
+    }
+
+    #[test]
+    fn page_cache_token_ignores_reading_activity_but_not_content() {
+        // The owner's field run measured the page cache mostly dead: every
+        // progress save bumped the write counter and evicted every cached
+        // page. The page-cache token must ignore a whole reading round trip
+        // (mark-opened, session start/checkpoint/end, progress saves) while
+        // still seeing every content write — and finishing a book counts as
+        // content even when the reader does it itself, because it mutates
+        // the reading list and the finished flag.
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Dune", "Herbert", &[]);
+
+        let page_before = cat.page_cache_token();
+        let stats_before = cat.change_token();
+
+        cat.mark_book_opened(id).unwrap();
+        let sid = cat.start_reading_session(id, 0).unwrap();
+        cat.checkpoint_reading_session(sid, 60, 5).unwrap();
+        cat.set_reading_progress(id, 3, 0.5, 10).unwrap();
+        cat.end_reading_session(sid, 120, 6).unwrap();
+        // A second mark within the hour writes no event row; the stamp
+        // itself is still activity.
+        cat.mark_book_opened(id).unwrap();
+
+        assert_eq!(
+            cat.page_cache_token(),
+            page_before,
+            "a whole reading round trip must not evict the page cache"
+        );
+        assert_ne!(
+            cat.change_token(),
+            stats_before,
+            "but the stats token must see all of it (stats refresh)"
+        );
+
+        // Content writes move it: add to reading list, edit, another book.
+        cat.add_to_reading_list(id).unwrap();
+        assert_ne!(cat.page_cache_token(), page_before);
+        let page_after_list = cat.page_cache_token();
+
+        // Auto-finish at 100% is content, even from inside the reader.
+        cat.set_reading_progress(id, 10, 1.0, 10).unwrap();
+        assert_eq!(
+            cat.page_cache_token(),
+            page_after_list,
+            "the progress save itself is still activity"
+        );
+        assert!(
+            cat.auto_finish_if_complete(id, 100).unwrap(),
+            "seeded progress should cross the finish line"
+        );
+        assert_ne!(
+            cat.page_cache_token(),
+            page_after_list,
+            "finishing mutates the reading list and the finished flag"
+        );
     }
 
     #[test]

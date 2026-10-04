@@ -2458,6 +2458,17 @@ The rule, sharpened: **after any turn gap, the first git command is
 `git log --oneline -3`, and it must name the commit you expect — before
 any `add`, any `commit`, and any diff you are about to trust.**
 
+*Recurred the same day.* The recipe worked again with one refinement:
+after `git reset --soft origin/<branch>`, the **index** still held the
+re-clone's base tree, so `git diff --cached` showed a 180-file,
+46,000-deletion monster — the session's whole work in reverse, because
+the cached diff compared tip-to-base, not tip-to-working-tree. The
+soft reset moves HEAD only; it does not touch the index. Follow it
+with a plain `git reset origin/<branch>` (mixed) so the index matches
+the tip, and only then read the diff: it must list exactly the files
+you actually changed, plus `ci-logs/` (taken from the tip with
+`git checkout HEAD -- ci-logs/`).
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

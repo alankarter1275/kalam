@@ -89,6 +89,33 @@ impl Catalog {
             .unwrap_or(0)
     }
 
+    /// The token the app's page cache invalidates on: `change_token` minus
+    /// the rows written by **reading activity** (progress saves, session
+    /// telemetry, mark-book-opened — the writes that happen because you read
+    /// a book, none of which add, remove or retitle anything).
+    ///
+    /// The owner's field run measured the cache mostly dead: every progress
+    /// save bumped `total_changes()` and evicted every cached page, so every
+    /// navigation paid full construction. Reading a book is the most common
+    /// thing this app does; it must not count as a content change.
+    ///
+    /// Same contract as `change_token`: **opaque, compared for equality
+    /// only.** The subtraction is wrap-safe in the safe direction — if
+    /// `total_changes()` ever wraps, the difference jumps once, which costs
+    /// one spurious rebuild, never a stale page. The one unsafe direction is
+    /// a *content* write being wrongly counted as activity: `note_activity_rows`
+    /// is therefore called from exactly five methods, all reading telemetry.
+    /// `auto_finish_if_complete` deliberately stays un-counted — it mutates
+    /// the reading list and the finished flag, which cached pages show.
+    pub fn page_cache_token(&self) -> i64 {
+        let total = self
+            .conn
+            .lock()
+            .map(|c| c.total_changes() as i64)
+            .unwrap_or(0);
+        total - self.activity_rows.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn library_stats(&self) -> Result<LibraryStats> {
         // Cheap: total_changes() is an in-memory counter, not a query.
         let version = {

@@ -34,7 +34,11 @@ use std::path::{Path, PathBuf};
 /// (a headless measurement harness with no production callers), `db/
 /// dictionaries.rs` 3, `timing.rs` 2, `pages/browse.rs` 1,
 /// `pages/shelf_editor.rs` 1, `service.rs` 1.
-const MAX_PROD_PANICS: usize = 12;
+const MAX_PROD_PANICS: usize = 8;
+// Was 12 until 2026-10-04: four of those were perf.rs test helpers
+// miscounted as production (the scanner cannot see the file's
+// `#![cfg(test)]`); they now carry item-level `#[cfg(test)]`, and the
+// ratchet drops to the true production count.
 
 /// Occurrences of `Arc<Catalog>` in `src/pages/`.
 ///

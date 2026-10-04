@@ -2457,3 +2457,30 @@ The recovery recipe that worked, for next time:
 The rule, sharpened: **after any turn gap, the first git command is
 `git log --oneline -3`, and it must name the commit you expect — before
 any `add`, any `commit`, and any diff you are about to trust.**
+
+## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
+
+The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`
+grew from 12 to 14. The two new "production panics" were `.unwrap()`s in a
+`perf.rs` **test helper** — test-only code, inside a file whose entire module
+is `#![cfg(test)]`. But the scanner in `tests/guardrails.rs` recognises only
+**item-level** annotations (`#[cfg(test)]`, `#[test]`, `#[tokio::test]`);
+an inner attribute at the top of the file is invisible to it. Four
+pre-existing helpers (`seed`, `seed_more`, `small_and_larger` ×2 unwraps)
+had been quietly miscounted as production panics the whole time, buying
+the ratchet four units of slack nobody knew about.
+
+Fix in the ratchet's own spirit: the helpers now carry explicit
+`#[cfg(test)]` (semantically redundant, scanner-legible — a comment at
+each site says why), and **MAX_PROD_PANICS dropped 12 → 8**, the true
+production count. Two lessons:
+
+- **A ratchet's number is only meaningful if every unit is accounted
+  for.** Four of the twelve were test code miscounted — slack that a
+  future real regression could have hidden inside. When a tripwire
+  misfires, don't just un-trip it: audit what the number was actually
+  made of.
+- **Checkers that parse source read what they can see.** Item
+  attributes, not file-level ones. Test-only helpers in an
+  `#![cfg(test)]` module still get the item annotation, or they grow a
+  ratchet they never belonged to.

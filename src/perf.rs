@@ -39,6 +39,10 @@ const N: usize = 2000;
 
 /// Seed `n` varied books (unique uuid/hash; author, series and tags rotate so
 /// every sort order is deterministic-but-non-trivial).
+// Item-level on purpose: the panic-count scanner in tests/guardrails.rs
+// reads item attributes and cannot see this file's `#![cfg(test)]` — an
+// unannotated helper's `.unwrap()`s count as production panics.
+#[cfg(test)]
 fn seed(cat: &Catalog, n: usize) {
     for i in 0..n {
         let title = format!("Book {i:04} — The Something of the Elsewhere");
@@ -223,6 +227,10 @@ const LARGER: usize = 60;
 /// The `seed` used by the probes above numbers uuids from 0, so calling it
 /// twice on one catalog violates the unique constraint. Tests that need to
 /// add a book *after* measuring take this instead.
+// Item-level on purpose: the panic-count scanner in tests/guardrails.rs
+// reads item attributes and cannot see this file's `#![cfg(test)]` — an
+// unannotated helper's `.unwrap()`s count as production panics.
+#[cfg(test)]
 fn seed_more(cat: &Catalog, tag: &str, n: usize) {
     for i in 0..n {
         cat.insert_book(
@@ -271,6 +279,10 @@ fn assert_constant_in_library_size(label: &str, small: usize, larger: usize) {
 }
 
 /// Two catalogs of different sizes, for the comparison above.
+// Item-level on purpose: the panic-count scanner in tests/guardrails.rs
+// reads item attributes and cannot see this file's `#![cfg(test)]` — an
+// unannotated helper's `.unwrap()`s count as production panics.
+#[cfg(test)]
 fn small_and_larger() -> (Catalog, Catalog) {
     let small = Catalog::open_in_memory().unwrap();
     seed(&small, SMALL);
@@ -426,6 +438,10 @@ const MANY: usize = 15;
 ///
 /// Book ids are read back from the catalog rather than assumed, so a broken
 /// seed fails loudly here instead of passing vacuously.
+// Item-level on purpose: the panic-count scanner in tests/guardrails.rs
+// reads item attributes and cannot see this file's `#![cfg(test)]` — an
+// unannotated helper's `.unwrap()`s count as production panics.
+#[cfg(test)]
 fn few_and_many_page<T>(
     seed_page_rows: impl Fn(&Catalog, &[i64]) -> T,
 ) -> (LibraryService, LibraryService, T, T) {

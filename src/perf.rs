@@ -654,14 +654,17 @@ fn lookup_history_snapshot_does_not_scale_with_lookups() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 increment 2 — the big pages' reads, test-first
+// Step 4 increment 2 — the big pages' reads, and the first live catch
 //
-// These six budgets go in BEFORE the fix they demand: the dashboard feed
-// calls get_reading_progress once per Opened event and get_book once per
-// Imported event — bounded by the feed limit, but exactly the "one query
-// per row" shape these budgets exist to catch. The red run is the §19
-// proof that the harness can fail; the fix (batching both lookups) follows
-// in the next commit.
+// Test-first (§19: a check that has never failed is not known to work):
+// these six budgets landed BEFORE the fix they demanded, and the red run
+// (37170951890, 2026-10-04) failed exactly one test — this one — with
+// 38 SQL statements for 5 events vs 48 for 15: the dashboard feed called
+// get_reading_progress once per Opened event (and get_book once per
+// Imported). Bounded by the feed limit, but precisely the one-query-per-
+// row shape these budgets exist to catch. The fix batches both lookups up
+// front (reading_progress_by_ids + books_by_ids, next commit), and this
+// budget keeps it that way.
 //
 // Remaining, in order: the comic axis (collapse_comic_chapters and the
 // per-series peers lookup — all seeds so far are EPUBs, so those paths

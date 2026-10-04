@@ -958,16 +958,38 @@ fn dashboard_feed(
     sessions: &[LibrarySession],
     feed_limit: usize,
 ) -> Vec<DashboardFeedRow> {
+    // Batched up front. The feed used to call `get_reading_progress` once
+    // per Opened event and `get_book` once per Imported event — bounded by
+    // the feed limit, but "small × one-query-per-row" is exactly the shape
+    // the step-4 perf budgets exist to catch, and the dashboard budget
+    // caught this on its first run (2026-10-04).
+    let progress_by_id: std::collections::HashMap<i64, (usize, f64)> = cat
+        .reading_progress_by_ids(
+            &events
+                .iter()
+                .filter(|e| e.kind == EventKind::Opened)
+                .map(|e| e.book_id)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+    let books_by_id = cat
+        .books_by_ids(
+            &events
+                .iter()
+                .filter(|e| e.kind == EventKind::Imported)
+                .map(|e| e.book_id)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+
     let mut items: Vec<DashboardFeedRow> = Vec::new();
 
     for e in events {
         let sub = match e.kind {
             // Opened events carry no detail -- show where the book
             // currently sits instead.
-            EventKind::Opened => cat
-                .get_reading_progress(e.book_id)
-                .ok()
-                .flatten()
+            EventKind::Opened => progress_by_id
+                .get(&e.book_id)
                 .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
                 .unwrap_or_default(),
             EventKind::Finished => {
@@ -979,10 +1001,8 @@ fn dashboard_feed(
             }
             EventKind::Unfinished => e.book_authors.clone(),
             EventKind::Imported => {
-                let format_label = cat
-                    .get_book(e.book_id)
-                    .ok()
-                    .flatten()
+                let format_label = books_by_id
+                    .get(&e.book_id)
                     .map(|b| b.format.as_str().to_string())
                     .unwrap_or_default();
                 if format_label.is_empty() {

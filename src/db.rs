@@ -1799,6 +1799,46 @@ impl Catalog {
         Ok(row)
     }
 
+    /// Reading positions for many books at once — `get_reading_progress`
+    /// batched. The dashboard feed used to call the single-book form once per
+    /// Opened event; the step-4 `service.dashboard()` budget exists to keep
+    /// it batched. Same shape as `books_by_ids`: dedupe, chunk at 500,
+    /// empty input is not an error and issues nothing.
+    pub fn reading_progress_by_ids(
+        &self,
+        ids: &[i64],
+    ) -> Result<HashMap<i64, (usize, f64)>> {
+        let mut out: HashMap<i64, (usize, f64)> = HashMap::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let mut unique: Vec<i64> = ids.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+
+        let conn = self.conn();
+        for chunk in unique.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT book_id, chapter_index, fraction FROM reading_progress \
+                 WHERE book_id IN ({holders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params = rusqlite::params_from_iter(chunk.iter());
+            let rows = stmt.query_map(params, |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    (r.get::<_, i64>(1)? as usize, r.get::<_, f64>(2)?),
+                ))
+            })?;
+            for row in rows {
+                let (id, progress) = row?;
+                out.insert(id, progress);
+            }
+        }
+        Ok(out)
+    }
+
     /// Save position and update the books.progress percent (0–100).
     pub fn set_reading_progress(
         &self,
@@ -2290,6 +2330,27 @@ pub fn hash_file(path: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use crate::shelf_rules::{MatchMode, Rule, RuleField, RuleOp, RuleSet};
+
+    #[test]
+    fn reading_progress_by_ids_batches_and_skips_missing() {
+        let cat = Catalog::open_in_memory().unwrap();
+        // Three books; progress on two of them, repeated ids in the input
+        // like a feed that mentions the same book twice.
+        let a = seed(&cat, "Alpha", "A", &[]);
+        let b = seed(&cat, "Beta", "B", &[]);
+        let c = seed(&cat, "Gamma", "C", &[]);
+        cat.set_reading_progress(a, 2, 0.25, 10).unwrap();
+        cat.set_reading_progress(b, 4, 0.5, 8).unwrap();
+
+        // No ids: not an error, no statements.
+        assert!(cat.reading_progress_by_ids(&[]).unwrap().is_empty());
+
+        let out = cat.reading_progress_by_ids(&[a, b, a, c]).unwrap();
+        assert_eq!(out.len(), 2, "repeats collapse, missing ids are absent");
+        assert_eq!(out[&a], (2usize, 0.25));
+        assert_eq!(out[&b], (4usize, 0.5));
+        assert!(!out.contains_key(&c));
+    }
 
     fn seed(cat: &Catalog, title: &str, authors: &str, tags: &[&str]) -> i64 {
         let uuid = format!("uuid-{title}");

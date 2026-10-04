@@ -266,6 +266,36 @@ One rule, copied from the readers, applied everywhere:
   question (progress writes currently evict everything — the owner's log
   shows near-100 % misses; decide fix or delete). Owner field-test after
   this step.
+- **Step 5 — proactive warm-up (the owner's idea, discussed and adopted
+  for planning 2026-10-04; not started — begins after step 4 and its
+  field test, and after the owner's go).** The owner asked: instead of
+  reacting to clicks, presume what the user will open and have it ready,
+  loading in the background, fully async. The discussion's conclusion,
+  and his logs are the evidence:
+  - **Data is already cheap — warm widgets, not data.** Every service
+    read measures 0.2–12 ms; prefetching data saves nothing. What makes
+    first opens heavy is widget construction and GTK's
+    once-per-session first styling of a widget type. So the warm-up
+    pass builds screens, not snapshots.
+  - **The pass, idle-paced, after home paints:** build once, off-screen,
+    the screens his logs measured expensive on first open — book page
+    (753 ms first realize), settings (550), picker (351), reading list
+    page (322), book float (250). The user's real first click then
+    finds the cost already paid.
+  - **The one genuinely slow read:** the library dashboard (~300 ms
+    worker-side on first visit) — prefetch it at boot.
+  - **Rides on step 4's cache decision.** The owner's instinct landed
+    independently on "keep visited pages alive" — a vote for **fix**
+    over delete, now the leading option for that decision; a fixed
+    cache can also keep warmed pages alive instead of discarding them.
+  - **Risks, on record:** background work starts only after first paint
+    and is paced (the splash-pump convergence lesson — bg work landing
+    together froze the UI after startup); warmed-and-kept pages cost
+    RAM, warmed-and-discarded costs CPU; wrong predictions are free
+    (wasted background work, no jank in front of the user).
+  - **Acceptance:** the owner's log shows the warm-up itself causing
+    zero stalls, and the warmed screens' first opens measuring clean.
+    No performance conclusion from a single field run.
 
 CI green after every step; every commit HEAD-checked (§36).
 

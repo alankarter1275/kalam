@@ -1745,13 +1745,16 @@ CI green after every step; every commit HEAD-checked (§36).
     harness red of increment 2 settled increments 1–2; increment 3's
     unit test caught the peers bug; increment 5's scanner caught six
     export paths — increment 4's test was the one check with no
-    observed red). One deliberate break-and-revert cycle runs this
-    session on it: `page_cache_token` sabotaged back to the raw
-    `total_changes()` (the exact pre-fix bug — every progress save
-    evicts), a red run must fail the test on exactly its "a whole
-    reading round trip must not evict the page cache" assert, then a
-    revert re-verifies green. The run IDs land in this entry when the
-    cycle completes.
+    observed red). The break-and-revert cycle ran across three runs:
+    the fixes run green (`37330958345`), the sabotage (`page_cache_token`
+    back to raw `total_changes()`, the exact pre-fix bug — every
+    progress save evicts) went red in `37332625604` failing **exactly
+    one of 529 tests** (528 passed) on its intended assert — "a whole
+    reading round trip must not evict the page cache", token 5 vs 13,
+    the eight activity rows that used to evict the whole cache eight
+    times over — and the revert (`06861ea`) came back green in
+    `37334144108`. The debt is settled: every step-4 check has now
+    failed for real or by staged sabotage; none is decoration.
 
 
 ## The measured ranked list (owner field run, 2026-10-02)

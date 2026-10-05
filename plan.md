@@ -1755,6 +1755,44 @@ CI green after every step; every commit HEAD-checked (§36).
     times over — and the revert (`06861ea`) came back green in
     `37334144108`. The debt is settled: every step-4 check has now
     failed for real or by staged sabotage; none is decoration.
+- **Step 4 field run #3 (2026-10-05, owner's machine, the
+  reader-fixes build) — the close-path cache fix is confirmed by the
+  log; the covers family now owns every stall that has a fresh
+  anchor.**
+  - **The Back-path fix is field-confirmed:** `page_cache_forced_miss`
+    appears TWICE — once after the EPUB reader close, once after the
+    PDF reader close (run #2 had zero). Both landings are instant
+    (route open 0.6/0.8 ms, home_fill 4.2/4.7 ms). The pdf-blank and
+    epub-band fixes are visual — he used both readers in this run;
+    his eyes are the verdict there.
+  - **Everything the campaign touched stays fast:** home 4.2–4.8 ms
+    on every visit; book float 2.2 ms + 1.1–3.4 ms fills; pdf open
+    124.9/161.0/350.1 ms (first open better than run #2's 672);
+    `covers_queued 12` at startup, `0` on the revisit; window_shown
+    1276.4 ms (same family as runs #1–2).
+  - **The covers storm is now the whole fresh-anchor story:** from
+    startup through the EPUB open, blocks of 250–951 ms whose
+    anchors are 16–223 ms fresh (covers landing, one per block). The
+    951 ms block — the biggest attributed to covers yet — sat INSIDE
+    `route_open:reader` (979.9 ms total; `book_open` 513.7 vs run
+    #2's 80.4). How much of that open was the book and how much the
+    storm cannot be separated without spans; reader opens stay out
+    of scope either way, but the storm does not.
+  - **A second, unattributed family appeared:** during PDF reading
+    and after the last home_fill, 350–450 ms blocks whose anchors
+    are 1.4–8.9 s stale — no task_item logged nearby (the watchdog's
+    known limitation: it names the last thing it saw). Could be
+    covers aftermath, could be something else. No claim until spans
+    cover those paths.
+  - Splash pump 948.5 ms with ~350 + ~250 ms blocks inside
+    (pre-window, unchanged family); the comics-organize ~550 ms
+    post-window block (unchanged from run #2).
+  - **§60 recurred a fifth time**, new variant: a single-commit
+    clone at the fork point (only `29788b4` in the local history,
+    the whole branch state as working-tree changes). Caught by the
+    log-first rule before any staging; the recorded recipe worked
+    unchanged (fetch → mixed reset → checkout ci-logs + Cargo.lock →
+    clean status). Pitfalls entry updated.
 
 
 ## The measured ranked list (owner field run, 2026-10-02)

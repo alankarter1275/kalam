@@ -2469,6 +2469,18 @@ the tip, and only then read the diff: it must list exactly the files
 you actually changed, plus `ci-logs/` (taken from the tip with
 `git checkout HEAD -- ci-logs/`).
 
+*Fifth occurrence, 2026-10-05, new variant:* the re-clone came back as
+a **single-commit history** — `git log --oneline -12` printed one line,
+the fork point `29788b4` — with the branch's whole state in the working
+tree as uncommitted changes (so `plan.md`, `tests/`, `src/stall.rs` and
+friends read as untracked). The log-first rule caught it before any
+staging. The recipe worked unchanged, with the fourth occurrence's
+`Cargo.lock` step included: fetch → mixed reset to
+`origin/<branch>` → `git checkout HEAD -- ci-logs/ Cargo.lock` →
+status completely clean. The lesson holds: the first git command after
+a turn gap is the log, and a file list you do not recognize is the
+finding, not the scenery.
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

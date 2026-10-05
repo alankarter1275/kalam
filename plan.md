@@ -1622,6 +1622,44 @@ CI green after every step; every commit HEAD-checked (§36).
   boundary check — with the smart-shelf counting axis recorded for a
   later increment and the two follow-ups above. The owner's
   field-test build is next.
+- **Step 4 field run #1 (2026-10-05, owner's machine, KALAM_TIMING=1)
+  — big wins across the board, but the build predates today's two
+  increments; a second run on the latest tip is owed.**
+  - **Build identification:** the reader → home transition logged a
+  plain `page_cache_miss`, not `page_cache_forced_miss` — the forced
+  landing-page rebuild only exists since increment 4 (today). So the
+  run tested roughly the increment-3 tip: the page-cache fix and the
+  boundary-check increment's export/comics fixes are NOT in it. In
+  this build, reading a book still evicts the cache (visible in the
+  log at the reader exit).
+  - **Wins vs the 2026-10-02 run:** post-window startup blocks 3.9 s +
+  1.8 s → worst ~0.55 s (window shown at 1.26 s); home build 459 ms →
+  `home_fill` 3.5–4.6 ms over a 3.3 ms snapshot read; the book float
+  250 ms → `dialog_open` 2–4 ms; the book page 753 ms → 6.7 ms
+  rebuild over an 80.8 ms worker-side snapshot; reading list stays
+  1–4 ms (owner-verified earlier); dashboard read 269.3 ms → 114.6 ms
+  worker-side (`route_open:library` 0.2 ms — the UI never waits);
+  every small page 1–12 ms; numerous `page_cache_hit`s on revisits
+  even pre-fix (they die only when a write intervenes — e.g. the
+  startup "Organizing comic series folders" task evicted home once).
+  - **Remaining, ranked from this log:** (1) the recurring 250–550 ms
+  stalls tagged `task_item:Preloading covers` — the successor to the
+  "recurring 650 ms after library_fill" family: cover decodes run on
+  a worker, but each finished cover lands on the main thread
+  (`cache_decoded_cover` → texture per cover) and the watchdog names
+  the last item; the real blocker (texture uploads bunching, or GTK
+  layout triggered by the swaps) needs spans on that path before
+  anyone chases it. (2) Reader first open 587 ms with a ≥550 ms stall
+  inside `route_open:reader` — readers are excluded from the campaign
+  by the owner's scope, noted only. (3) ~350 ms blocks during the
+  941 ms startup splash pump — pre-window, watchdog attribution fuzzy
+  there. (4) `service_dashboard` 114.6 ms is the heaviest read left
+  (worker-side; the UI never blocks on it). (5) One stall attributed
+  "after task_done:Checking storage (ended 18 s ago)" — a known
+  watchdog attribution limitation, not a finding.
+  - **Action:** the owner rebuilds from the latest tip and runs once
+  more; that run judges the page-cache fix (hits should survive
+  reading; the reader exit should log `page_cache_forced_miss` once).
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

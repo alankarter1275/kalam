@@ -421,6 +421,7 @@ pub enum PdfReaderMsg {
     ClearSelection,
     HideZoomOsd(u64),
     ViewportResized,
+    LayoutSettled,
 }
 
 #[derive(Debug)]
@@ -484,6 +485,11 @@ pub struct PdfReaderModel {
     pub doc_tx: Option<async_channel::Sender<PdfDocRequest>>,
     /// True once `DocumentLoaded` applied the doc service's `Info` answer.
     pub doc_ready: bool,
+    /// A settings-driven viewport rebuild (scroll mode, spreads, gap) has
+    /// installed a fresh child and is waiting for GTK to allocate it; the
+    /// deferred "scroll back to the current page" runs on `LayoutSettled`
+    /// once the new extent is real. See `PdfReaderMsg::LayoutSettled`.
+    pub viewport_rebuild_pending: bool,
     /// Pages whose vector text extraction is in flight (dedup guard).
     pub text_in_progress: HashSet<usize>,
     /// A click waiting for its page's text layer (2.20 step 3), with the
@@ -604,6 +610,7 @@ impl PdfReaderModel {
             file_path: file_path.clone(),
             current_page: saved_page,
             total_pages: 1,
+            viewport_rebuild_pending: false,
             zoom_level,
             scroll_mode,
             spread_mode,
@@ -2986,6 +2993,20 @@ impl Component for PdfReaderModel {
             let _ = tx_resize.send(PdfReaderMsg::ViewportResized);
         });
 
+        // A settings-driven viewport rebuild (scroll mode, spreads, gap)
+        // swaps the scrolled window's child, but the adjustments only
+        // describe the new layout once GTK has allocated it. The upper
+        // notify is that "geometry is real" moment; `LayoutSettled` uses
+        // it to run the deferred scroll back to the current page.
+        let tx_upper_v = tx.clone();
+        vadj.connect_upper_notify(move |_| {
+            let _ = tx_upper_v.send(PdfReaderMsg::LayoutSettled);
+        });
+        let tx_upper_h = tx.clone();
+        hadj.connect_upper_notify(move |_| {
+            let _ = tx_upper_h.send(PdfReaderMsg::LayoutSettled);
+        });
+
         // 10. Pinch zoom gesture for touchpads and touchscreens
         let zoom_gesture = gtk::GestureZoom::new();
         let tx_zg = tx.clone();
@@ -3568,9 +3589,17 @@ impl Component for PdfReaderModel {
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.prune_textures();
                     self.trigger_loads(&sender);
-                    if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
-                        self.scroll_to_current_page(&widgets.viewport_scroll);
-                    }
+                    // The scroll back to the current page is deferred: right
+                    // after set_child the adjustment still describes the OLD
+                    // layout, so the position lands wrong, the value-changed
+                    // handler then recomputes current_page against the new
+                    // geometry far from where the reader actually stands, and
+                    // the pages on screen stay placeholders until the user
+                    // scrolls ("blank until I scroll a bit", 2026-10-05
+                    // field run #2). LayoutSettled scrolls once the new
+                    // extent has been allocated.
+                    self.viewport_rebuild_pending =
+                        self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1;
                 }
             }
             PdfReaderMsg::SetSpreadMode(mode) => {
@@ -3589,9 +3618,9 @@ impl Component for PdfReaderModel {
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.prune_textures();
                     self.trigger_loads(&sender);
-                    if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
-                        self.scroll_to_current_page(&widgets.viewport_scroll);
-                    }
+                    // Deferred scroll, same reason as SetScrollMode above.
+                    self.viewport_rebuild_pending =
+                        self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1;
                 }
             }
             PdfReaderMsg::SetSpreadGap(gap) => {
@@ -3605,9 +3634,10 @@ impl Component for PdfReaderModel {
                         widgets.viewport_scroll.set_child(Some(&child));
                         self.prune_textures();
                         self.trigger_loads(&sender);
-                        if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
-                            self.scroll_to_current_page(&widgets.viewport_scroll);
-                        }
+                        // Deferred scroll, same reason as SetScrollMode above.
+                        self.viewport_rebuild_pending = self.scroll_mode
+                            != PdfScrollMode::PageScrolling
+                            && self.current_page > 1;
                     }
                 }
             }
@@ -4619,6 +4649,25 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::ViewportResized => {
                 self.update_scroll_policies(&widgets.viewport_scroll);
+            }
+            PdfReaderMsg::LayoutSettled => {
+                // Fired from the adjustment's upper notify: the freshly
+                // rebuilt viewport has now been allocated and its extent is
+                // real. This is the moment the scroll back to the current
+                // page can actually compute a correct position — running it
+                // immediately after set_child (as this code used to) read
+                // the old layout's adjustment, landed the view in the wrong
+                // place, and left the pages on screen as placeholders until
+                // the user scrolled (2026-10-05 field run #2). The scroll's
+                // own value-changed re-anchors current_page and reloads; the
+                // explicit trigger covers a scroll that changes nothing.
+                if self.viewport_rebuild_pending {
+                    self.viewport_rebuild_pending = false;
+                    if self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1 {
+                        self.scroll_to_current_page(&widgets.viewport_scroll);
+                    }
+                    self.trigger_loads(&sender);
+                }
             }
         }
 

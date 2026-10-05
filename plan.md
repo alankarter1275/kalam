@@ -1658,8 +1658,101 @@ CI green after every step; every commit HEAD-checked (§36).
   "after task_done:Checking storage (ended 18 s ago)" — a known
   watchdog attribution limitation, not a finding.
   - **Action:** the owner rebuilds from the latest tip and runs once
-  more; that run judges the page-cache fix (hits should survive
-  reading; the reader exit should log `page_cache_forced_miss` once).
+    more; that run judges the page-cache fix (hits should survive
+    reading; the reader exit should log `page_cache_forced_miss` once).
+- **Step 4 field run #2 (2026-10-05, owner's machine, latest tip) —
+  the two field questions answered yes, and it came back with two
+  reader bug reports plus one gap of mine.**
+  - **Increment 3 is field-confirmed:** the reading-list picker logged
+    `picker_read 0.6 ms`, `picker_fill 1.3 ms`, 13 rows,
+    `picker_window 1350 ms` — no scaling stall anywhere near the old
+    N+1 (run #1's build already had it, but this run seals it).
+  - **Increment 4 is field-confirmed on its main half:** a
+    `page_cache_hit` landed immediately after the EPUB reader closed —
+    a cached page survived a whole reading session for the first time
+    in the app's history.
+  - **And increment 4's second half exposed its one gap:** not a single
+    `page_cache_forced_miss` in the whole log. The forced rebuild was
+    wired into `swap_page` only, but reader close buttons send
+    `AppMsg::Back`, which navigates around `swap_page` — so the landing
+    page after a reader came from the cache with the pre-session
+    position. (The PDF reader's close did land as a plain miss, not a
+    forced one: his spread-toggle testing had written prefs, and a
+    non-activity write evicting is the designed conservative rule, not
+    a defect.) Fixed this session — see the reader-fixes entry.
+  - **Numbers vs run #1:** window 1291 ms, splash pump 965.9 ms with
+    ~350 ms blocks, post-window worst ~550 ms ("Organizing comic
+    series folders"), dashboard 49.0 ms (was 114.6), epub reader open
+    171.8/99.5 ms, pdf `route_open` 121.1/146.6 ms,
+    `pdf_open_total` 672.3/224.1 ms, comics reader 175.1 ms.
+  - **New leads for the next hunts:** (1) `author_fill 301.9 ms` with
+    a ≥350 ms stall while it runs — the heaviest UI-thread fill left
+    after the big pages were migrated; needs the same
+    skeleton/worker/budget treatment (its read is batched already, the
+    fill is the cost). (2) one ≥951 ms stall after
+    `book_page_rebuild`. (3) the `Preloading covers` 250–550 ms family
+    persists — still the #1 hunt, still waiting on spans for that
+    path. (4) Watchdog misattributions recurred (stale task_done /
+    home_fill anchors — known limitation, not findings).
+- **Reader fixes (2026-10-05, tenth session): the three reports of
+  run #2 — two from the owner, one mine — root-caused and fixed.**
+  - **PDF: blank pages after a settings toggle (owner: "unless I
+    scroll a bit").** The three viewport-rebuilding settings (scroll
+    mode, spreads, gap) all did `set_child` →
+    `scroll_to_current_page` **immediately** — but right after
+    `set_child` the scrolled window's adjustment still describes the
+    OLD layout; GTK allocates the new child on the next layout pass.
+    The scroll therefore computed its position against stale geometry,
+    landed the view in the wrong place, and the value-changed handler
+    (`UpdateScrollPage`) then re-derived `current_page` from wherever
+    the stale scroll value sat in the NEW geometry — far from where
+    the reader actually stood. `prune_textures` + `trigger_loads` then
+    ran around that wrong page: the pages on screen kept placeholder
+    styling until the user scrolled, which re-ran the whole recompute
+    against finally-settled geometry and loaded what was actually
+    visible. The proof the mechanism is right was in the file all
+    along: `DocumentLoaded` (initial open) restores the reading
+    position through a **`glib::idle_add_local_once`** — the open path
+    already defers this exact scroll past the allocation, which is
+    exactly why opens never showed the bug. Fix: the three settings
+    now set `viewport_rebuild_pending` instead of scrolling; a new
+    `LayoutSettled` message fires from the adjustment's `upper`
+    notify (the "new extent is real" moment — `page_size_notify` was
+    already wired but only tracks viewport resizes, and the child swap
+    changes `upper`, not `page_size`) and runs the deferred scroll +
+    a follow-up `trigger_loads`. Page-scrolling mode never scrolls
+    (unchanged); page jumps (next/prev/first/last/bookmark) still
+    scroll immediately — no child swap, the adjustment is already
+    truthful.
+  - **EPUB: a dark band along the upper edge (owner).**
+    `.kalam-reader-stage` carried `padding-top: 12px` from the mockup
+    shell era, and the stage's background is the app background — so
+    a 12px strip of app bg sat above the reading surface on the top
+    edge only (left/right/bottom were flush). Whenever the reading
+    theme's paper did not match the app background, the strip read as
+    a dark band. Fix: the padding is gone; the paper runs flush on
+    all four edges.
+  - **Mine: reader close could serve a stale landing page.**
+    `force_rebuild_next` (increment 4's forced fresh build of the page
+    you land on after a reader) was set in `swap_page` only; reader
+    close buttons send `AppMsg::Back`, whose handler does its own
+    detach → route → take_or_build and never set the flag. Fix: the
+    Back handler now applies the same `matches!` rule (same three
+    reader routes) before detaching. `take_or_build` has exactly two
+    callers (swap_page, Back) — no other gap exists.
+  - **§19 sabotage-verify, owed since increment 4:** the page-cache
+    token test shipped green first try and had never failed (the
+    harness red of increment 2 settled increments 1–2; increment 3's
+    unit test caught the peers bug; increment 5's scanner caught six
+    export paths — increment 4's test was the one check with no
+    observed red). One deliberate break-and-revert cycle runs this
+    session on it: `page_cache_token` sabotaged back to the raw
+    `total_changes()` (the exact pre-fix bug — every progress save
+    evicts), a red run must fail the test on exactly its "a whole
+    reading round trip must not evict the page cache" assert, then a
+    revert re-verifies green. The run IDs land in this entry when the
+    cycle completes.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

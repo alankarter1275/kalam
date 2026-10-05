@@ -990,9 +990,11 @@ button.kalam-float-icon-btn.kalam-float-icon-btn-danger:hover {
     background: @kalam_bg;
 }
 
-.kalam-reader-stage {
-    padding-top: 12px;
-}
+/* No top padding on the stage: the reading surface runs flush to the
+   top edge exactly as it does left, right and bottom. The 12px of app
+   background this rule used to add showed up as a dark band along the
+   upper edge whenever the reading theme's paper did not match the app
+   background (2026-10-05 field run #2 report). */
 
 button.kalam-reader-dim {
     background: alpha(@kalam_bg, 0.22);

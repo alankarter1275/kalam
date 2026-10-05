@@ -1667,6 +1667,21 @@ impl Component for AppModel {
                         _ => None,
                     };
 
+                    // Reader close buttons send AppMsg::Back rather than a
+                    // swap_page navigation, so the swap_page rule that forces
+                    // a fresh build when leaving a reader never runs here.
+                    // Without it the landing page comes straight from the
+                    // cache with a reading position that predates the whole
+                    // session (2026-10-05 field run #2: page_cache_hit right
+                    // after reader close, no forced miss, ever). Same rule,
+                    // same route list as swap_page.
+                    self.force_rebuild_next = matches!(
+                        self.route,
+                        Route::Reader { .. }
+                            | Route::PdfReader { .. }
+                            | Route::ComicsReader { .. }
+                    );
+
                     self.detach_current(&widgets.content_host);
 
                     self.route = prev;

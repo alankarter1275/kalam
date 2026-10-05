@@ -144,11 +144,21 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
     crate::tasks::spawn_stream_internal(
         "Preloading covers",
         move |reporter, emit| {
+            // Covers hunt, probe half 1 (2026-10-05, run #3: 250–951 ms UI
+            // blocks with fresh "Preloading covers" anchors). The decode runs
+            // off the UI thread, so these numbers say how fast items are
+            // PRODUCED — the arrival cadence the main thread sees. The
+            // consumer half (per-item landing cost and the arrival pattern)
+            // is measured in the on_item callback below; together they let a
+            // field run say which side of the stream the block lives on.
+            let mut sent = 0usize;
+            let mut total = std::time::Duration::ZERO;
+            let mut worst = std::time::Duration::ZERO;
             for (i, cover) in covers.into_iter().enumerate() {
                 // Cheap to check and worth checking: closing the page should
                 // not leave a thread decoding covers nobody will see.
                 if reporter.cancelled() {
-                    return;
+                    break;
                 }
                 // Pace every cover, the first batch included (7.1 step
                 // 2b.1). The old unpaced first 24 was a burst of swaps the
@@ -162,21 +172,55 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
                     std::thread::sleep(std::time::Duration::from_millis(4));
                 }
                 let src = source_for(&cover, w, h);
+                let decode_started = std::time::Instant::now();
                 let Some(mut decoded) = decode_rgba(&src, w, h) else {
                     continue;
                 };
+                let took = decode_started.elapsed();
                 // Report the *cover* path even when a thumbnail was decoded,
                 // so the cache key matches what the grid will ask for.
                 decoded.cover = cover;
                 // A closed channel means the UI is gone; stop rather than
                 // decode the rest into nothing.
                 if !emit.send(decoded) {
-                    return;
+                    break;
+                }
+                sent += 1;
+                total += took;
+                if took > worst {
+                    worst = took;
                 }
             }
+            crate::timing::note("covers_decoded", sent);
+            crate::timing::duration("covers_decode", total);
+            crate::timing::duration("covers_decode_max", worst);
         },
-        |decoded| {
-            crate::widgets::book_row::cache_decoded_cover(&decoded);
+        {
+            // Covers hunt, probe half 2: the consumer side. `covers_land`
+            // is the full synchronous cost of one landing on the main
+            // thread (texture wrap + cache insert + the in-place picture
+            // swap). A `covers_gap` line means two landings were less than
+            // 2 ms of idle apart — back-to-back. The 4 ms producer pacing
+            // cannot prevent that: when the main thread is busy, the
+            // unbounded channel takes everything the worker sends and the
+            // `spawn_future_local` loop drains the backlog without ever
+            // yielding to the frame clock. If the field run shows cheap
+            // landings AND back-to-back gaps under a stall, the block is
+            // the drain (or the paint it bunches); expensive landings say
+            // the swap itself; neither says the worker.
+            let last_end = std::cell::Cell::new(None::<std::time::Instant>);
+            move |decoded| {
+                let started = std::time::Instant::now();
+                if let Some(prev_end) = last_end.get() {
+                    let idle = started - prev_end;
+                    if idle < std::time::Duration::from_millis(2) {
+                        crate::timing::duration("covers_gap", idle);
+                    }
+                }
+                crate::widgets::book_row::cache_decoded_cover(&decoded);
+                crate::timing::duration("covers_land", started.elapsed());
+                last_end.set(Some(std::time::Instant::now()));
+            }
         },
     );
 }

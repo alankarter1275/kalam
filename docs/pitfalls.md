@@ -2481,6 +2481,10 @@ status completely clean. The lesson holds: the first git command after
 a turn gap is the log, and a file list you do not recognize is the
 finding, not the scenery.
 
+*Sixth occurrence, later the same day:* identical variant (single-commit
+clone at the fork point), caught by the same rule, recovered by the same
+recipe with nothing new to add.
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

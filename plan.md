@@ -1793,6 +1793,45 @@ CI green after every step; every commit HEAD-checked (§36).
     log-first rule before any staging; the recorded recipe worked
     unchanged (fetch → mixed reset → checkout ci-logs + Cargo.lock →
     clean status). Pitfalls entry updated.
+- **Reader fixes owner-verified; the covers hunt opened with its
+  probe increment (2026-10-05, eleventh session): both reader
+  reports confirmed fixed by the owner's own eyes ("the epub and pdf
+  readers are fixed"), and the go given for the covers hunt.**
+  - The reader-fixes chunk is closed: pdf blank-after-toggle and the
+    epub top band both verified visually, the Back-path cache fix
+    already log-verified in run #3 (two `page_cache_forced_miss`).
+  - **Probes before the chase, per doctrine.** The plan's run-#1
+    record said the covers family "needs spans on that path before
+    anyone chases it" — so this increment adds exactly those spans,
+    and the fix waits for the field run that reads them.
+  - What the code reading established first: the landing path is
+    already the cheap shape — `cache_decoded_cover` wraps ~100 KB of
+    RGBA in a `MemoryTexture` and `swap_in_cover` swaps in place
+    (§48: a repaint, not a relayout). So the synchronous cost of one
+    landing should be ~1–3 ms, which cannot explain 250–951 ms
+    blocks. The remaining suspects: (a) **burst-drain** — the 4 ms
+    pacing paces the *producer*; the channel is unbounded and the
+    `spawn_future_local` consumer loop drains any backlog the main
+    thread's busyness created back-to-back, without yielding to the
+    frame clock, bunching every swap (and their paints) into one
+    dispatch; (b) the paint/texture-upload cycle the swaps schedule;
+    (c) something outside covers entirely (the stale-anchor blocks).
+  - **The probes** (all `KALAM_TIMING=1`-gated, zero cost otherwise):
+    worker half — `covers_decoded` (count), `covers_decode` (total),
+    `covers_decode_max` (worst single decode): the producer cadence.
+    Consumer half — `covers_land` per landing (the full synchronous
+    main-thread cost: texture wrap + cache insert + in-place swap),
+    and `covers_gap` printed only when two landings were under 2 ms
+    of idle apart (back-to-back): the burst detector. Read together:
+    cheap landings + back-to-back gaps under a stall = the drain;
+    expensive landings = the swap; slow decodes = the worker.
+    Early exits (cancel, closed channel) now `break` instead of
+    `return` so the aggregates always print; behavior is otherwise
+    identical.
+  - The next field run judges. The stale-anchor family (350–450 ms
+    blocks with 1.4–8.9 s stale anchors during pdf reading) stays
+    recorded as unknown — out of this chunk's scope by discipline;
+    if it survives the covers fix, it gets its own probes.
 
 
 ## The measured ranked list (owner field run, 2026-10-02)

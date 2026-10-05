@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.3894.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.3878.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,40 +32,40 @@ navigation: 'read-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'read-1'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init      110.9 ms
-  [timing] startup_style          56.7 ms
+  [timing] startup_gtk_init      126.1 ms
+  [timing] startup_style          56.8 ms
   [timing] startup_splash_show      1.9 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    120.6 ms
+  [timing] startup_splash_pump    120.3 ms
   [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open         8.7 ms
-  [timing] startup_theme          15.4 ms
-  [timing] pre_run               314.8 ms
+  [timing] startup_db_open         9.0 ms
+  [timing] startup_theme          15.5 ms
+  [timing] pre_run               330.2 ms
   [timing] route_open:home         0.4 ms
   [timing] startup_first_page      0.4 ms
   [timing] service_home            1.8 ms
-  [timing] init_done             319.1 ms
-  [timing] window_shown          321.2 ms
+  [timing] init_done             334.7 ms
+  [timing] window_shown          336.7 ms
   [timing] covers_queued            11
-  [timing] home_fill               2.7 ms
+  [timing] home_fill               2.9 ms
   [timing] page_cache_miss           1
   [timing] service_reader          0.2 ms
-  [timing] book_open               3.5 ms
-  [timing] route_open:reader      21.7 ms
+  [timing] book_open               3.1 ms
+  [timing] route_open:reader      20.0 ms
   [timing] folders_renamed         139
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        1950.8 ms
+  [timing] startup_dicts        1806.1 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 296 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 15 ms ago)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 222 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 450 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 38 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 212 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 450 ms — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 77 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 287 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 46 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === did the covers actually load? ===
@@ -83,30 +83,30 @@ navigation: OK -- the images below are 'read-1'
 
 === app stderr (non-timing lines) ===
   
-  (process:3931): Gtk-WARNING **: 15:44:19.888: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:3915): Gtk-WARNING **: 15:58:21.390: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=read-1 — navigating
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 296 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 15 ms ago)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 222 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 450 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 38 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 212 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 450 ms — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 77 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 287 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 46 ms ago)
 
 === peak memory ===
-books=139 peak_rss_kb=274144 peak_rss_mb=267
+books=139 peak_rss_kb=267952 peak_rss_mb=261
 
 === shutting down ===
 
 === artifacts ===
   total 1320
-  drwxr-xr-x  2 runner runner   4096 Oct  5 15:45 .
-  drwxr-xr-x 20 runner runner   4096 Oct  5 15:44 ..
-  -rw-r--r--  1 runner runner 414507 Oct  5 15:44 01-read-1.png
-  -rw-r--r--  1 runner runner 414507 Oct  5 15:44 02-read-1-settling.png
-  -rw-r--r--  1 runner runner 414507 Oct  5 15:45 03-read-1-settled.png
-  -rw-r--r--  1 runner runner  60451 Oct  5 15:45 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner      0 Oct  5 15:44 grim.log
-  -rw-r--r--  1 runner runner   1449 Oct  5 15:45 kalam-home.log
-  -rw-r--r--  1 runner runner   2027 Oct  5 15:44 kalam.log
-  -rw-r--r--  1 runner runner   4780 Oct  5 15:45 report.txt
-  -rw-r--r--  1 runner runner     88 Oct  5 15:44 sway.log
-  -rw-r--r--  1 runner runner   7184 Oct  5 15:44 tree.json
---- run 37334144108 ---
+  drwxr-xr-x  2 runner runner   4096 Oct  5 15:59 .
+  drwxr-xr-x 20 runner runner   4096 Oct  5 15:58 ..
+  -rw-r--r--  1 runner runner 414507 Oct  5 15:58 01-read-1.png
+  -rw-r--r--  1 runner runner 414507 Oct  5 15:58 02-read-1-settling.png
+  -rw-r--r--  1 runner runner 414507 Oct  5 15:59 03-read-1-settled.png
+  -rw-r--r--  1 runner runner  60451 Oct  5 15:59 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner      0 Oct  5 15:58 grim.log
+  -rw-r--r--  1 runner runner   1449 Oct  5 15:59 kalam-home.log
+  -rw-r--r--  1 runner runner   2027 Oct  5 15:58 kalam.log
+  -rw-r--r--  1 runner runner   4780 Oct  5 15:59 report.txt
+  -rw-r--r--  1 runner runner     88 Oct  5 15:58 sway.log
+  -rw-r--r--  1 runner runner   7184 Oct  5 15:58 tree.json
+--- run 37336034225 ---

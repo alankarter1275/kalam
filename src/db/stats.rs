@@ -113,16 +113,7 @@ impl Catalog {
             .lock()
             .map(|c| c.total_changes() as i64)
             .unwrap_or(0);
-        // §19 sabotage — deliberate, reverted in the next commit. The raw
-        // total_changes() is the exact pre-increment-4 bug: every progress
-        // save evicts every cached page. This exists only to prove the
-        // page_cache_token_ignores_reading_activity_but_not_content test
-        // can fail; if CI stays green on this, the test is decoration.
-        let _ = total
-            - self
-                .activity_rows
-                .load(std::sync::atomic::Ordering::Relaxed);
-        total
+        total - self.activity_rows.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn library_stats(&self) -> Result<LibraryStats> {

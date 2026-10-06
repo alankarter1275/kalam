@@ -2226,6 +2226,22 @@ CI green after every step; every commit HEAD-checked (§36).
   blurs) would add their own per-frame cost on this hardware;
   if the driver is fixed and slowness persists, the next
   comparison is under plain sway. Context, no claim.
+  - **`glxinfo -B` (2026-10-06, owner's machine): the X11/GLX
+    route is genuinely hardware-accelerated** — "Mesa Intel(R)
+    UHD Graphics 605 (GLK 3)", Accelerated: yes, direct
+    rendering: yes, Mesa 26.2.3-arch1.1 (a very new stack),
+    GL 4.6. So the driver exists and works — on the X11 door.
+    The app, native Wayland under SwayFX, enters the GPU through
+    the EGL door instead, and runs #6–#7 say that door is where
+    the software path lives. Two discriminating follow-ups:
+    `eglinfo -B` (does the Wayland/EGL platform report Intel or
+    llvmpipe?), and one timing run with `GDK_BACKEND=x11` (the
+    app through the proven-fast door) — fast paints there pin
+    the culprit on the EGL path; still-slow paints pin it on
+    GskGLRenderer-with-this-Mesa, and cairo stays the right
+    setting for this machine. XWayland has polish costs
+    (fractional scaling, no native Wayland features) — a fair
+    trade for speed here, noted for the recommendation.
 
 
 ## The measured ranked list (owner field run, 2026-10-02)

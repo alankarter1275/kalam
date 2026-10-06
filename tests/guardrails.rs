@@ -456,11 +456,6 @@ const ALLOWED_UI_THREAD_SITES: &[(&str, &str, &str)] = &[
     ),
     (
         "src/pages/remote_detail.rs",
-        "Pixbuf::from_stream_at_scale",
-        "apply-on-arrival decode of a bounded 160x230 thumbnail",
-    ),
-    (
-        "src/pages/remote_detail.rs",
         "OpenBook::open(&b.file_path, &cache_dir)",
         "ReadChapter checks its EPUB cache synchronously in the handler; recorded follow-up with the metadata editor",
     ),

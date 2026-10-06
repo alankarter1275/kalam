@@ -1994,6 +1994,11 @@ CI green after every step; every commit HEAD-checked (§36).
     unchanged; the callbacks now only wrap the pixels in a
     `MemoryTexture`, the same R8G8B8A8/stride wrap
     `cache_decoded_cover` does — a pointer copy, not a decode.
+    The remote detail page's decode was a licensed UI-thread site in
+    the boundary allowlist ("apply-on-arrival decode of a bounded
+    160×230 thumbnail"); that entry is deleted with this fix — the
+    allowlist shrank by one (§65 records the lesson: the entry must
+    ride in the same commit as the fix that frees it).
   - **Tests:** `decode_rgba_bytes` — decodes to a fitting size with
     the aspect kept, never upscales, and every bad input (garbage,
     empty body, zero/negative dimensions) is a quiet `None`. The

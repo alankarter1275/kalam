@@ -2599,3 +2599,25 @@ only pre-push chance to catch it.
 The fix: `#[derive(Debug)] pub(crate) struct AuthorPageLoad` — both of
 its fields (`AuthorPageSnapshot`, `DecodedCover`) were already `Debug`
 and public; only the wrapper lacked the annotations.
+
+## 65. Deleting a licensed call site must take its allowlist entry with it — in the same commit
+
+The remote-cover chunk's third CI round failed on the boundary
+guardrail's *stale* check, not a new violation: the remote detail
+page's cover decode (`Pixbuf::from_stream_at_scale`) was a licensed
+UI-thread site in `ALLOWED_UI_THREAD_SITES`, and the fix that moved the
+decode into the worker deleted the call — leaving an allowlist entry
+that matched nothing. The guardrail fails on those by design ("the list
+silently rots into decoration", §59's contract), so the fix and its
+allowlist cleanup must land together.
+
+The check when moving or deleting any disk/document/parser call in
+`src/pages/`: **grep the allowlist in `tests/guardrails.rs` for the
+file before pushing.** A moved site needs the entry's needle updated;
+a deleted site needs the entry removed; a new site needs a *reasoned*
+entry or a worker — never silence the guardrail by adding an entry
+without a comment.
+
+The good news buried in this one: the remote detail page's decode was
+an ALLOWED UI-thread site, and the fix removed it — the allowlist got
+strictly smaller, the direction the boundary is supposed to move.

@@ -2118,6 +2118,54 @@ CI green after every step; every commit HEAD-checked (§36).
     stats, and `GSK_RENDERER=cairo` for a comparison run if the
     name turns out to be a GL fallback on his machine).
 
+- **Step 4 field run #7 (2026-10-06, owner's machine, the
+  render_backend build) — the engine is named: `GskGLRenderer`.
+  But the numbers do not behave like hardware GL, and the run also
+  widened the suspect set: expensive paints occur with NO new
+  textures at all. The decisive next step is a one-variable
+  comparison run, not code.**
+  - **The name alone does not settle hardware-vs-software.** The
+    paint floor for trivial pages is ~50 ms (`task_manager` 51.7 —
+    a plain list, no pictures), card grids reach 200–800 ms (book
+    page `covers_land` **809.0**, biggest yet, stall 751;
+    library **445.3**; book float **362.2**; startup's
+    twelve-cover frame **297.3**), and revisits of the same page
+    cost half (author 357.9 first, 113.6 revisit). A hardware GPU
+    renders a full-window frame in single-digit ms; this profile —
+    a 50 ms floor, complexity-scaling spikes — is what software
+    rasterization looks like. But `GskGLRenderer` is also what
+    GTK picks on top of Mesa's llvmpipe (CPU-implemented GL), so
+    the name cannot distinguish the two.
+  - **The "new textures" theory from run #6 weakened:**
+    `route_open:analytics` **183.5** (charts, no cover textures
+    anywhere) and `route_open:shelf_detail` **225.7** (5 cards,
+    all covers already cached — no new decodes, no uploads) were
+    both expensive. The cost tracks snapshot complexity ×
+    pixels, not uploads alone.
+  - **The decisive experiment is owner-side and costs one run:**
+    `GSK_RENDERER=cairo` next to `KALAM_TIMING=1`. Cairo is GTK's
+    pure-CPU renderer — no GL involved. If cairo matches or beats
+    the GL numbers, the "GL" was the CPU in disguise and the
+    engine choice becomes a deliberate decision; if cairo is
+    dramatically slower, the GL is real hardware and the hunt
+    moves to WHAT is drawn (card shadows, blurs, texture
+    handling). `glxinfo -B`'s "OpenGL renderer string" would name
+    the driver directly if he has it.
+  - **Steady everything else:** `author_fill` 5.9–6.2 ms (the
+    warming fix holds), covers 12 thumb / 0 full / 59.7 ms,
+    `frame_after` small everywhere (max 17.3), `frame_layout`
+    still zero occurrences all session, page-cache hits on
+    revisits, splash pump 928.6 ms with its ~350–450 ms blocks
+    (unchanged family, pre-window, under no frame clock), no
+    reader visit this run, and the remote-cover fix remains
+    unexercised (no online surface visited yet).
+  - Machine slightly busier than run #6 (`pre_run` 1232.4 vs
+    1170.5; every paint ~1.2–1.5× run #6's) — same family, same
+    shape: the paint profile is stable across runs, which is
+    itself evidence against "transient machine state" as the
+    cause. §60 recurred a tenth time before this chunk (same
+    recipe, ten for ten, recorded).
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

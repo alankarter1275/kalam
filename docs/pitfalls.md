@@ -2497,6 +2497,11 @@ nothing new to learn.
 Nine recoveries in five days; the rule — log first, then anything — has
 held every time, and the recipe has never needed a change.
 
+*Tenth occurrence, later the same day:* the re-clone landed with HEAD
+at the fork point and 181 phantom modifications; the fetch-mixed-reset
+recipe brought it back to the true tip with zero dirty files. Ten for
+ten.
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

@@ -118,7 +118,7 @@ impl FramesState {
         let layout = self.layout_start.take().filter(|l| {
             *l <= paint
                 && paint - *l <= STALE_LAYOUT_MS
-                && self.last_done.map_or(true, |d| *l > d)
+                && self.last_done.is_none_or(|d| *l > d)
         });
         self.last_done = Some(now_ms);
         for (label, ended) in self.pending.drain(..) {
@@ -132,8 +132,7 @@ impl FramesState {
         }
         let interest_hot = self
             .interest_until
-            .map(|until| now_ms <= until)
-            .unwrap_or(false);
+            .is_some_and(|until| now_ms <= until);
         if interest_hot {
             if let Some(label) = self.interest_label {
                 let paint_ms = now_ms - paint;

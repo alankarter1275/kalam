@@ -2621,3 +2621,19 @@ without a comment.
 The good news buried in this one: the remote detail page's decode was
 an ALLOWED UI-thread site, and the fix removed it — the allowlist got
 strictly smaller, the direction the boundary is supposed to move.
+
+## 66. Without a local toolchain, the codebase's clippy vocabulary is part of the contract
+
+The frame-probe chunk's first CI round died on one clippy error:
+`this map_or can be simplified`. `Option::map_or(true, …)` is now
+`is_none_or(…)` in clippy's eyes (and `map(…).unwrap_or(false)` wants
+to be `is_some_and(…)`) — the lint fires as an error on this repo's CI
+settings, and there is no local Rust to catch it before the push.
+
+The rule: when writing new `Option`/`Result` combinators, match the
+forms the existing code already passes clippy with — grep for the
+combinator in `src/` first and copy the vocabulary that is already
+green (`is_some_and`, `is_none_or`, `map_or_else`), and be suspicious
+of `map_or` specifically: it is the one the linter has been narrowing.
+Ten minutes of CI per round is the price of a wrong guess; the grep is
+seconds.

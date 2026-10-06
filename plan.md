@@ -2166,6 +2166,67 @@ CI green after every step; every commit HEAD-checked (§36).
     cause. §60 recurred a tenth time before this chunk (same
     recipe, ten for ten, recorded).
 
+- **Step 4 field run #8 (2026-10-06, owner's machine, the
+  `GSK_RENDERER=cairo` comparison run) — the experiment settled
+  the fork: cairo beats the "GL" of runs #6–#7 on every heavy
+  frame, 2–3×. That GL was never the graphics card — it was
+  CPU-implemented GL (Mesa llvmpipe), which is even slower than
+  the plain CPU renderer. The owner's hardware specs (below)
+  complete the story: the machine has a real, capable-enough
+  Intel graphics chip that the driver stack is simply not
+  offering to the app.**
+  - **The comparison, same surfaces, cairo vs the GL runs:**
+    book page with covers landing **809.0 → 263.1** (3.1×),
+    library **445.3 → 194.2** (2.3×), book float's cover frame
+    **362.2 → 204.9** (the dialog's own paint did not even cross
+    the 50 ms bar this run), reader **379.7 → 202.5**, author
+    first **357.9 → 198.4**, startup's twelve-cover frame
+    **297.3 → 227.2**; light frames are a wash (`task_manager`
+    51.7 → 51.3, shelves 77.1 → 81.5, home 51.7 → 61.7). The
+    heavy-frame gap is the llvmpipe signature — and cairo was
+    measured on a marginally slower machine state (splash 993.1
+    vs 928.6), so the verdict is if anything understated.
+  - **What remains on cairo is the honest CPU floor:** 50–260 ms
+    for full-window redraws on a Pentium Silver. With working
+    hardware GL these should collapse to single-digit ms — so
+    the biggest single remaining win for this machine is the
+    driver fix, not app code. The check: `glxinfo -B`
+    (`mesa-utils`); "OpenGL renderer string: llvmpipe" confirms
+    the diagnosis, an "Intel …" line would reopen the question.
+  - **New app-side finding, the heaviest synchronous fill now
+    measured: `settings_fill:storage 472.7 ms`** (the watchdog
+    caught the block while it was open). It builds from an
+    already-fetched fs snapshot (library registry + sidecar
+    survey) — pure widget construction on the UI thread, no
+    worker. Next-fix candidate; awaiting the owner's go.
+  - Also visible: `covers_decode_max` 91.4–95.7 ms on the
+    all-books first visit — single-thumbnail cold reads off the
+    HDD, worker-side (no stall, just a slow disk). `route_open:
+    reader 346.8` / `book_open 90.8` — the reader's best field
+    numbers yet.
+  - Steady: `author_fill` 5.2–6.3 ms, covers 12 thumb / 0 full /
+    56.8 ms startup, `frame_after` small, `frame_layout` zero
+    all session, splash unchanged (~1 s, pre-window), the
+    reader-close forced miss present, and the remote-cover fix
+    STILL unexercised (no online surface visited in any run
+    since it shipped).
+
+- **The field machine (owner-provided specs, 2026-10-06 — the
+  hardware every number in this campaign is judged on):**
+  Arch Linux with SwayFX; Intel Pentium Silver N5030 (4 cores,
+  3.10 GHz); Intel UHD Graphics 605 (integrated, 0.75 GHz);
+  3.64 GiB RAM; **HDD**. Implications, recorded so future runs
+  read correctly: the iGPU is modest but entirely capable — a
+  full-window UI frame is single-digit-ms work for it, so
+  anything slower is a software path; the HDD explains run #4's
+  machine state (cold `db_open` 857.9 ms) and the occasional
+  90-ms single-thumbnail decode (worker-side seeks); 3.6 GB RAM
+  is tight for a GTK app plus a compositor. SwayFX is an
+  effects-capable compositor — compositor-side effects (window
+  blurs) would add their own per-frame cost on this hardware;
+  if the driver is fixed and slowness persists, the next
+  comparison is under plain sway. Context, no claim.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

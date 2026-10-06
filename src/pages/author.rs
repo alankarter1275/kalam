@@ -45,6 +45,7 @@ pub enum AuthorPageMsg {
 /// fill's whole weight (323 ms in field runs #2–#5). The worker decodes
 /// them instead; the handler caches them; the fill then takes its
 /// "already decoded" branch everywhere.
+#[derive(Debug)]
 struct AuthorPageLoad {
     snap: AuthorPageSnapshot,
     covers: Vec<crate::preload::DecodedCover>,

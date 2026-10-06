@@ -2568,3 +2568,23 @@ replacement asserts it fired — `assert!(old in s)` before, or count the
 replacements and assert the count. A no-op replace is worse than a
 failed one: it fails later, in CI, with a message (a type mismatch
 three files away) that points nowhere near the cause.
+
+## 64. A message enum's derive is part of every variant's contract
+
+The author-page warming chunk's first CI run failed on one line:
+`AuthorPageLoad doesn't implement Debug`. `AuthorPageMsg` carries
+`#[derive(Debug)]`, so any type a new variant holds inherits that
+requirement — the wrapper struct added for the warmed-covers payload
+had no derive, and there is no local Rust to catch it before the push.
+
+The pattern will recur: the `PageLoad` recipe (snapshot + covers
+bundled for the `Loaded` message) is now on two pages, and every future
+page that adopts it will define its own payload struct next to a
+Debug-deriving enum. The check is one glance at the enum, not just the
+struct: **when a variant's payload type changes, re-read the derive on
+the enum itself** — the compiler error names only the missing trait,
+never the enum that demanded it.
+
+The fix: `#[derive(Debug)]` on `AuthorPageLoad` (both of its fields —
+`AuthorPageSnapshot`, `DecodedCover` — were already `Debug`; only the
+wrapper lacked it).

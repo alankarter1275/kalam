@@ -1,4 +1,4 @@
-src/pages/author.rs:35:12: [1m[91merror[E0277][0m: `pages::author::AuthorPageLoad` doesn't implement `std::fmt::Debug`: the trait `std::fmt::Debug` is not implemented for `pages::author::AuthorPageLoad`
+src/pages/author.rs:35:12: [1m[91merror[0m: type `pages::author::AuthorPageLoad` is more private than the item `pages::author::AuthorPageMsg::Loaded::0`: field `pages::author::AuthorPageMsg::Loaded::0` is reachable at visibility `pub(crate)`
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
@@ -21,11 +21,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/author.rs:35:12: [1m[91merror[E0277][0m: `pages::author::AuthorPageLoad` doesn't implement `std::fmt::Debug`: the trait `std::fmt::Debug` is not implemented for `pages::author::AuthorPageLoad`
+src/pages/author.rs:35:12: [1m[91merror[0m: type `pages::author::AuthorPageLoad` is more private than the item `pages::author::AuthorPageMsg::Loaded::0`: field `pages::author::AuthorPageMsg::Loaded::0` is reachable at visibility `pub(crate)`
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 37417396169 ---
+--- run 37418296681 ---

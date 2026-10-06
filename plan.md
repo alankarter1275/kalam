@@ -2068,6 +2068,56 @@ CI green after every step; every commit HEAD-checked (§36).
     interleaved with the existing spans and watchdog blocks — same
     log, now with the frame side of the story.
 
+- **Step 4 field run #6 (2026-10-06, owner's machine, the probe
+  build) — the instrument answered in one run: every remaining
+  block sits INSIDE the paint phase. The wait is innocent
+  everywhere, the layout phase never cost anything, and the paint
+  numbers match the watchdog stalls line for line. Both of the
+  day's fixes are confirmed in the same log.**
+  - **The three-way split, answered:**
+    - `frame_after:*` is small in every single block (0.0–10 ms)
+      — nothing waits between a span's end and the frame's start;
+      the main loop is not the problem anywhere it was measured.
+    - `frame_layout:*` never appeared — not one layout phase
+      reached 50 ms all session. Arrangement of the freshly built
+      trees is exonerated.
+    - `frame_paint:*` IS the family, stall for stall: book float
+      dialog **247.0** (watchdog 250), author page **246.5**
+      (250), book page with covers landing **639.7** (551),
+      library **305.2** (250), reader first paint **379.7** (route
+      455.8, `book_open` 207.7 inside it), settings **127.0**,
+      home's first build 51.7, and startup's twelve-cover frame
+      **288.1** (450). The one big `frame_after` — `service_reader`
+      at 435.4 — is the reader's own remaining route work
+      (`route_open:reader` was still open when that span ended),
+      the known out-of-scope cost, not a new suspect.
+  - **Inside the paint family, the expensive frames are the ones
+    where NEW cover textures land:** the 639.7/288.1/380.4/305.2/
+    219.0 spikes all carry `covers_*` attribution (the last span
+    before the frame), while paints without new textures run
+    50–130 ms (settings 127, author revisit 124.4 vs first
+    246.5, home 51.7 — and home revisits produced no paint line
+    at all). Two sub-suspects for the next fork: per-frame
+    texture upload cost, or the renderer itself being software.
+  - **The day's fixes, judged in the same log:** `author_fill`
+    **323.0 → 5.4/6.4 ms** — the warming collapsed the fill to
+    widget-build cost exactly as designed; what remains on the
+    author page is the same paint family as everywhere else.
+    Covers steady: 12 thumb / 0 full / 56.6 ms decode. The
+    remote-cover fix was not exercised this run (no online
+    browse/detail surface visited) — neutral, awaiting a visit.
+  - Machine healthy: `db_open 5.8`, `gtk_init 100.5`,
+    `window_shown 1187.0`, `pre_run 1170.5`. The splash pump's
+    ~350 ms blocks remain (866.4 total, pre-window, under no
+    frame clock yet) — still ranked, unchanged.
+  - **Next fork, and the probe for it:** hardware GL or software
+    renderer — they behave very differently at 250–640 ms a
+    frame. The probe now names the renderer in the log
+    (`render_backend`, printed once at the first frame; GTK's own
+    `GSK_DEBUG=renderer` remains available for full render-node
+    stats, and `GSK_RENDERER=cairo` for a comparison run if the
+    name turns out to be a GL fallback on his machine).
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

@@ -196,7 +196,20 @@ pub fn install(window: &gtk::Window) {
         let mut s = state().lock().unwrap_or_else(|e| e.into_inner());
         s.frame_paint_start(now_ms());
     });
-    clock.connect_after_paint(|_clock| {
+    // Run #6 named the family: every remaining block sits inside the
+    // paint phase, and the expensive paints are the ones where new
+    // cover textures land. The next fork is WHICH renderer is drawing
+    // those frames — a hardware GL renderer and a software fallback
+    // behave very differently at 250–640 ms per frame — so the first
+    // frame also names it, once. (The renderer certainly exists by
+    // then: a frame was just painted.)
+    let window_for_name = window.clone();
+    let named = std::cell::Cell::new(false);
+    clock.connect_after_paint(move |_clock| {
+        if !named.replace(true) {
+            let renderer = window_for_name.renderer();
+            println!("[timing] render_backend     {}", renderer.type_().name());
+        }
         let lines = {
             let mut s = state().lock().unwrap_or_else(|e| e.into_inner());
             s.frame_after_paint(now_ms())

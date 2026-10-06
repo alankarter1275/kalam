@@ -2569,22 +2569,33 @@ replacements and assert the count. A no-op replace is worse than a
 failed one: it fails later, in CI, with a message (a type mismatch
 three files away) that points nowhere near the cause.
 
-## 64. A message enum's derive is part of every variant's contract
+## 64. A message enum's derives and visibility are part of every variant's contract
 
-The author-page warming chunk's first CI run failed on one line:
-`AuthorPageLoad doesn't implement Debug`. `AuthorPageMsg` carries
-`#[derive(Debug)]`, so any type a new variant holds inherits that
-requirement — the wrapper struct added for the warmed-covers payload
-had no derive, and there is no local Rust to catch it before the push.
+The author-page warming chunk burned two CI rounds on the same glance
+it skipped — both errors were the enum's own attributes, not the new
+code's logic:
+
+1. **Round one:** `AuthorPageLoad doesn't implement Debug`.
+   `AuthorPageMsg` carries `#[derive(Debug)]`, so any type a new
+   variant holds inherits that requirement — the wrapper struct added
+   for the warmed-covers payload had no derive.
+2. **Round two:** `AuthorPageLoad is more private than the item
+   AuthorPageMsg::Loaded::0`. The enum is reachable at `pub(crate)`,
+   so a private payload struct in its variant is E0446 — the recipe's
+   own source (`book.rs`'s `PageLoad`) is `pub` for exactly this
+   reason, and the copy dropped the visibility while keeping the
+   shape.
 
 The pattern will recur: the `PageLoad` recipe (snapshot + covers
 bundled for the `Loaded` message) is now on two pages, and every future
 page that adopts it will define its own payload struct next to a
-Debug-deriving enum. The check is one glance at the enum, not just the
-struct: **when a variant's payload type changes, re-read the derive on
-the enum itself** — the compiler error names only the missing trait,
-never the enum that demanded it.
+deriving, visible enum. The check is one look at the enum above the new
+variant, not just the struct: **when a variant's payload type changes,
+re-read the derive and the visibility on the enum itself** — the
+compiler error names only the missing trait or the private type, never
+the enum that demanded it. With no local Rust, that one glance is the
+only pre-push chance to catch it.
 
-The fix: `#[derive(Debug)]` on `AuthorPageLoad` (both of its fields —
-`AuthorPageSnapshot`, `DecodedCover` — were already `Debug`; only the
-wrapper lacked it).
+The fix: `#[derive(Debug)] pub(crate) struct AuthorPageLoad` — both of
+its fields (`AuthorPageSnapshot`, `DecodedCover`) were already `Debug`
+and public; only the wrapper lacked the annotations.

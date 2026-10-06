@@ -2489,6 +2489,10 @@ recipe with nothing new to add.
 have now held across five recoveries in two days; nothing new to learn —
 run the log first, run the recipe, move on.
 
+*Eighth occurrence, same day:* the recipe is now reflex — fetch, mixed
+reset, checkout ci-logs + Cargo.lock, verify zero modified files. Still
+nothing new to learn.
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

@@ -1907,6 +1907,57 @@ CI green after every step; every commit HEAD-checked (§36).
     blocks were smaller this run (~350 ms). §60 recurred a seventh
     time before this chunk (same variant, same recipe, zero
     damage).
+- **Step 4 field run #5 (2026-10-05, owner's machine, the covers-fix
+  build) — the fix is field-confirmed with the strongest numbers of
+  the campaign, the machine theory from run #4 is confirmed too,
+  and the covers hunt closes. What remains is one family: the paint
+  cycle.**
+  - **The fix, judged:** `covers_full 0` on every batch — not one
+    fallback to a full image all session. Startup's 12 covers:
+    `covers_decode 57.4 ms` total (was 1806.8 — a 31× drop),
+    `covers_decode_max 5.5 ms` (was 653.4 — 119×). Every later
+    batch 3.7–12.2 ms total, maxes 3.3–8.5 ms: thumbnail territory,
+    exactly as designed. `covers_land` 0.0–0.1 ms, unchanged.
+  - **The machine theory confirmed:** `startup_db_open 8.3 ms`
+    (run #4: 857.9), `startup_gtk_init 100.3` (340),
+    `startup_splash_show 117.1` (417) — the same pre-app spans that
+    proved run #4's machine slowness are back at their run-#3
+    levels, no code change on those paths. Run #4's sluggishness was
+    machine state + the decode CPU; both are gone.
+  - **Everything the campaign touched is now at its best field
+    numbers:** `window_shown 1199.0 ms` (best yet; runs #1–4:
+    1260–2745); home fill 3.6–4.6 ms; dashboard read 3.9 ms (run #4:
+    65.7 — the storm was inflating it); shelves 0.8; book page
+    rebuild 4.0; **the EPUB reader open collapsed to
+    `route_open:reader 189.4 ms` / `book_open 126.4 ms`** (runs
+    #1–4: 587–1179 / 126–878 — the decode storm was polluting
+    reader opens all along, from *outside* the readers); pdf
+    15.8/86.7/259.4. Readers stay out of scope, but the number is
+    recorded.
+  - **What remains, ranked from this log:** (1) the **paint-cycle
+    family** — blocks of 250–550 ms around page builds and cover
+    landings that the probes have now cleared of every app-side
+    suspect: decodes are 3–8 ms, landings 0.1 ms, fills 3–6 ms, yet
+    a 550 ms block still sits on the library grid while its covers
+    land (fresh anchor) and a 450 ms block sits right after the
+    first home build. What is left between those spans is GTK's own
+    work: realizing, laying out, styling, and painting the freshly
+    built trees, and uploading the swapped textures — the
+    "post-construction freeze" family named in the 2026-10-02 run.
+    Frame-level probes (first-frame cost per page build) are the
+    next instrument if the owner points there. (2)
+    **`author_fill 323.0 ms`** — the heaviest measured UI fill left,
+    with its own 350 ms block. (3) A new, small, clear one: the
+    remote comics browse decodes each downloaded cover ON the UI
+    thread (`Texture::from_bytes` in the done-callback of
+    "Loading comic cover", 410 ms download + a 450 ms block after
+    its done) — the worker-decodes-main-wraps recipe (the
+    preloader's own pattern) is the established fix. (4) The splash
+    pump's ~350 ms blocks, unchanged, pre-window.
+  - The two `page_cache_forced_miss` lines are present again (both
+    reader closes), cache hits everywhere else. §60 recurred an
+    eighth time before this chunk (same variant, same recipe, zero
+    damage).
 
 
 ## The measured ranked list (owner field run, 2026-10-02)

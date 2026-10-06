@@ -1959,6 +1959,54 @@ CI green after every step; every commit HEAD-checked (§36).
     eighth time before this chunk (same variant, same recipe, zero
     damage).
 
+- **Step 4 (2026-10-06) — the two follow-ups run #5 ranked next: the
+  author page's fill warming, and every remote-cover decode moved
+  off the UI thread. Both are the book page's `PageLoad` recipe,
+  applied to the last places that still decoded on the UI thread.**
+  - **The author page (run #5: `author_fill 323.0 ms` + its own
+    350 ms block).** The fill builds its cards with synchronous
+    `cover_widget` calls, and the heaviest two kinds never had
+    thumbnails: the author photo (220×220) and the works' group
+    covers (136×204) live in the authors dir, outside the library —
+    every fill decoded them from the full image, on the UI thread.
+    The snapshot worker now warms every cover the fill will show
+    (photo, works, series strip at 72×112, owned cards at
+    `COVER_W`×`COVER_H`) via `decode_for_cache` — the same call,
+    the same sizes, the same thumbnail choice the fill's own path
+    makes, so the warmed entries are real hits — and the `Loaded`
+    message carries snapshot + covers; the handler caches them
+    before the fill runs. The fetch worker warms the freshly
+    downloaded photo the same way: the `Fetched` handler fills with
+    the new profile *before* the re-snapshot it asks for can land,
+    so one decode would have slipped through.
+  - **The remote covers (run #5: a 410 ms download with a 450 ms
+    block right after its done-callback).** Three surfaces had the
+    same shape: the worker downloads bytes, then the done-callback —
+    which runs on the UI thread — decodes the whole image there
+    (`Texture::from_bytes` decodes on whatever thread calls it).
+    The comics browse ("Loading comic cover", 150×210 slot), the
+    library browse (`BrowseMsg::CoverLoaded`, 160×220), and the
+    remote detail page (`Pixbuf::from_stream_at_scale` in its
+    done-callback, 160×230). New `preload::decode_rgba_bytes`
+    decodes in-memory bytes to raw RGBA on the worker — fitted
+    inside 2× the slot with the aspect ratio kept, never upscaled,
+    so `ContentFit::Cover`'s crop and each picture's look are
+    unchanged; the callbacks now only wrap the pixels in a
+    `MemoryTexture`, the same R8G8B8A8/stride wrap
+    `cache_decoded_cover` does — a pointer copy, not a decode.
+  - **Tests:** `decode_rgba_bytes` — decodes to a fitting size with
+    the aspect kept, never upscales, and every bad input (garbage,
+    empty body, zero/negative dimensions) is a quiet `None`. The
+    author warming is worker wiring over the same `decode_for_cache`
+    the preloader already uses — the book page's identical recipe
+    was field-judged by `book_fill`, and this one is judged by the
+    next run's `author_fill` line.
+  - Expected in the field: `author_fill` collapses to widget-build
+    cost (the decode was its whole weight — sibling fills run
+    3–6 ms); the comics-browse block after a cover download
+    disappears. §60 recurred a ninth time before this chunk (same
+    recipe, zero damage, recorded).
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

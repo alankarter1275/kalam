@@ -5,13 +5,13 @@ use crate::db::{AuthorProfile, AuthorWork, Catalog};
 use crate::models::Book;
 use crate::service::{AuthorPageSnapshot, LibraryService};
 use crate::widgets::{
-    book_row::{build_book_card, cover_widget},
+    book_row::{build_book_card, cache_decoded_cover, cover_widget, COVER_H, COVER_W},
     charts::stars_label,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -29,9 +29,25 @@ pub enum AuthorPageMsg {
     // AuthorPageMsg that large -- including the far more frequent Refresh.
     Fetched(Box<Result<AuthorProfile, String>>),
     /// The page's data arrived from the worker (7.1 step 2c): profile,
-    /// owned books and the series grouping. Boxed with `Fetched` for the
-    /// same size reason.
-    Loaded(Box<AuthorPageSnapshot>),
+    /// owned books, the series grouping — and the covers the worker
+    /// decoded for the fill. Boxed with `Fetched` for the same size
+    /// reason.
+    Loaded(Box<AuthorPageLoad>),
+}
+
+/// The snapshot plus the covers its worker decoded for the fill — the
+/// book page's `PageLoad` recipe (7.1 step 2a.2).
+///
+/// `fill_author_page` builds its cards with synchronous `cover_widget`
+/// calls, and the heaviest of them — the author photo and the works'
+/// group covers — live in the authors dir, outside the library, so no
+/// thumbnail exists for them: decoding them on the UI thread was the
+/// fill's whole weight (323 ms in field runs #2–#5). The worker decodes
+/// them instead; the handler caches them; the fill then takes its
+/// "already decoded" branch everywhere.
+struct AuthorPageLoad {
+    snap: AuthorPageSnapshot,
+    covers: Vec<crate::preload::DecodedCover>,
 }
 
 pub struct AuthorPageModel {
@@ -239,8 +255,15 @@ impl Component for AuthorPageModel {
                 // it lands (7.1 step 2c).
                 request_snapshot(&self.service, &self.requested_name, &sender);
             }
-            AuthorPageMsg::Loaded(snap) => {
-                let snap = *snap;
+            AuthorPageMsg::Loaded(load) => {
+                let load = *load;
+                // Cache what the worker decoded before the fill runs, so
+                // every `cover_widget` below takes its "already decoded"
+                // branch instead of decoding on the UI thread.
+                for decoded in &load.covers {
+                    cache_decoded_cover(decoded);
+                }
+                let snap = load.snap;
                 self.profile = snap.profile;
                 self.owned_books = snap.owned_books;
                 self.series = snap.series;
@@ -283,12 +306,54 @@ fn request_snapshot(
     let s = sender.input_sender().clone();
     crate::tasks::spawn_internal(
         "Reading author",
-        move |_reporter| service.author_page(&name),
+        move |_reporter| {
+            let snap = service.author_page(&name);
+            let covers = warm_author_covers(&snap);
+            AuthorPageLoad { snap, covers }
+        },
         |_| {},
-        move |snap| {
-            let _ = s.send(AuthorPageMsg::Loaded(Box::new(snap)));
+        move |load| {
+            let _ = s.send(AuthorPageMsg::Loaded(Box::new(load)));
         },
     );
+}
+
+/// Decode, off the UI thread, every cover the fill will show on it.
+///
+/// The sizes are the fill's own card sizes; if a card size changes,
+/// this list must change with it — a drift does not break anything,
+/// it just puts the fill's synchronous decode back on the UI thread,
+/// visible again as a slow `author_fill` line.
+fn warm_author_covers(snap: &AuthorPageSnapshot) -> Vec<crate::preload::DecodedCover> {
+    let mut covers = Vec::new();
+    let mut want = |path: Option<&Path>, w: i32, h: i32| {
+        let Some(path) = path else { return };
+        if let Some(d) = crate::preload::decode_for_cache(path, w, h) {
+            covers.push(d);
+        }
+    };
+    if let Some(profile) = &snap.profile {
+        // The photo (220×220) and the works' group covers (136×204):
+        // authors-dir files, no thumbnails — the fill's old weight.
+        want(profile.photo_path.as_deref(), 220, 220);
+        for work in &profile.works {
+            want(work_cover_path(work).as_deref(), 136, 204);
+        }
+    }
+    // The series strip's first-book covers (72×112) and the owned
+    // books' cards (COVER_W×COVER_H — the deferred path; warmed here,
+    // they paint immediately instead of through the placeholder swap).
+    for entry in &snap.series {
+        want(
+            entry.owned.first().and_then(|b| b.cover_path.as_deref()),
+            72,
+            112,
+        );
+    }
+    for book in &snap.owned_books {
+        want(book.cover_path.as_deref(), COVER_W, COVER_H);
+    }
+    covers
 }
 
 fn spawn_author_fetch(
@@ -305,12 +370,37 @@ fn spawn_author_fetch(
     let tx = sender.input_sender().clone();
     crate::tasks::spawn(
         "Fetching author photo",
-        move |_reporter| author::fetch_and_cache_author(&catalog, &author_name, &owned_books),
+        move |_reporter| {
+            let result = author::fetch_and_cache_author(&catalog, &author_name, &owned_books);
+            // The handler swaps the new profile in and fills the page the
+            // moment this lands — before the re-snapshot it also asks for
+            // can arrive. Warm the new photo here (220×220, the hero's
+            // size) so that fill takes its "already decoded" branch too.
+            let photo = match &result {
+                Ok(profile) => profile
+                    .photo_path
+                    .as_deref()
+                    .and_then(|p| crate::preload::decode_for_cache(p, 220, 220)),
+                Err(_) => None,
+            };
+            AuthorFetchLoad { result, photo }
+        },
         |_update| {},
-        move |result| {
-            let _ = tx.send(AuthorPageMsg::Fetched(Box::new(result)));
+        move |load| {
+            if let Some(photo) = &load.photo {
+                cache_decoded_cover(photo);
+            }
+            let _ = tx.send(AuthorPageMsg::Fetched(Box::new(load.result)));
         },
     );
+}
+
+/// The fetch result plus the photo its worker decoded for the immediate
+/// fill (see `spawn_author_fetch`); the profile itself still rides the
+/// `Fetched` message unchanged.
+struct AuthorFetchLoad {
+    result: Result<AuthorProfile, String>,
+    photo: Option<crate::preload::DecodedCover>,
 }
 
 fn fill_author_page(

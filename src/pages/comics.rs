@@ -692,24 +692,43 @@ fn rebuild_comics_view(model: &ComicsModel, sender: &ComponentSender<ComicsModel
                 let pic_weak = pic.downgrade();
                 crate::tasks::spawn(
                     "Loading comic cover",
-                    move |_| -> anyhow::Result<Vec<u8>> {
+                    move |_| -> anyhow::Result<crate::preload::DecodedPixels> {
                         let mut reader = ureq::get(&url)
                             .set("User-Agent", "Mozilla/5.0")
                             .call()?
                             .into_reader();
                         let mut buf = Vec::new();
                         std::io::Read::read_to_end(&mut reader, &mut buf)?;
-                        Ok(buf)
+                        // Decode on the worker, not in the done-callback:
+                        // Texture::from_bytes decodes on whatever thread
+                        // it runs on, and the callback runs on the UI
+                        // one — a remote cover used to block it for the
+                        // whole decode. Decoding to raw pixels here and
+                        // wrapping them there makes the callback a
+                        // pointer copy (150×210 slot, so ≤300×420 fits
+                        // every source sharp).
+                        match crate::preload::decode_rgba_bytes(&buf, 150, 210) {
+                            Some(pixels) => Ok(pixels),
+                            None => Err(anyhow::anyhow!("cover bytes are not a decodable image")),
+                        }
                     },
                     |_| {},
                     move |res| {
-                        if let Ok(bytes) = res {
+                        if let Ok(pixels) = res {
                             if let Some(pic) = pic_weak.upgrade() {
-                                if let Ok(tex) =
-                                    gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from(&bytes))
-                                {
-                                    pic.set_paintable(Some(&tex));
-                                }
+                                // The same wrap book_row::cache_decoded_cover
+                                // does: R8G8B8A8, tightly packed, stride =
+                                // width × 4.
+                                let bytes = gtk::glib::Bytes::from_owned(pixels.rgba);
+                                let texture: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(
+                                    pixels.width,
+                                    pixels.height,
+                                    gtk::gdk::MemoryFormat::R8g8b8a8,
+                                    &bytes,
+                                    pixels.width as usize * 4,
+                                )
+                                .upcast();
+                                pic.set_paintable(Some(&texture));
                             }
                         }
                     },

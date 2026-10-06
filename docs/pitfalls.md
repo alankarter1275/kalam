@@ -2493,6 +2493,10 @@ run the log first, run the recipe, move on.
 reset, checkout ci-logs + Cargo.lock, verify zero modified files. Still
 nothing new to learn.
 
+*Ninth occurrence, 2026-10-06:* same variant, same reflex, zero damage.
+Nine recoveries in five days; the rule — log first, then anything — has
+held every time, and the recipe has never needed a change.
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

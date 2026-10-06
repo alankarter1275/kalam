@@ -17,7 +17,10 @@ pub enum BrowseMsg {
     SearchSuccess(SearchPage),
     SearchFailed(String),
     OpenBook(String), // remote_id
-    CoverLoaded { remote_id: String, bytes: Vec<u8> },
+    CoverLoaded {
+        remote_id: String,
+        pixels: crate::preload::DecodedPixels,
+    },
 }
 
 pub struct BrowseInit {
@@ -310,11 +313,24 @@ impl Component for BrowseModel {
                         let s = sender.input_sender().clone();
                         crate::tasks::spawn(
                             "Loading cover",
-                            move |_| source.fetch_image(&url),
+                            move |_| {
+                                // Decode on the worker, not in the handler:
+                                // the handler runs on the UI thread, and a
+                                // cover decode there is a visible stall. The
+                                // handler only wraps the raw pixels in a
+                                // texture (160×220 slot, ≤320×440 pixels).
+                                source.fetch_image(&url).and_then(|bytes| {
+                                    crate::preload::decode_rgba_bytes(&bytes, 160, 220)
+                                        .ok_or_else(|| anyhow::anyhow!("undecodable cover"))
+                                })
+                            },
                             |_| {},
                             move |res| {
-                                if let Ok(bytes) = res {
-                                    let _ = s.send(BrowseMsg::CoverLoaded { remote_id, bytes });
+                                if let Ok(pixels) = res {
+                                    let _ = s.send(BrowseMsg::CoverLoaded {
+                                        remote_id,
+                                        pixels,
+                                    });
                                 }
                             },
                         );
@@ -351,7 +367,7 @@ impl Component for BrowseModel {
 
             // ── Cover image arrived — find the matching Picture and set it ────────
             // NOTE: Because the grid children are FlowBoxChild wrappers, we walk them.
-            BrowseMsg::CoverLoaded { remote_id, bytes } => {
+            BrowseMsg::CoverLoaded { remote_id, pixels } => {
                 // Match by position: find the result index for this remote_id
                 if let Some(idx) = self.results.iter().position(|r| r.remote_id == remote_id) {
                     // nth FlowBoxChild → its child Box → first child is the Picture
@@ -360,11 +376,19 @@ impl Component for BrowseModel {
                             let card_box = card.downcast::<gtk::Box>().unwrap();
                             if let Some(pic_widget) = card_box.first_child() {
                                 if let Ok(pic) = pic_widget.downcast::<gtk::Picture>() {
-                                    if let Ok(tex) = gtk::gdk::Texture::from_bytes(
-                                        &gtk::glib::Bytes::from(&bytes),
-                                    ) {
-                                        pic.set_paintable(Some(&tex));
-                                    }
+                                    // The wrap the worker-side decode bought us:
+                                    // a pointer copy into a texture, not a decode.
+                                    let bytes = gtk::glib::Bytes::from_owned(pixels.rgba);
+                                    let texture: gtk::gdk::Texture =
+                                        gtk::gdk::MemoryTexture::new(
+                                            pixels.width,
+                                            pixels.height,
+                                            gtk::gdk::MemoryFormat::R8g8b8a8,
+                                            &bytes,
+                                            pixels.width as usize * 4,
+                                        )
+                                        .upcast();
+                                    pic.set_paintable(Some(&texture));
                                 }
                             }
                         }

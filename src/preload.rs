@@ -111,6 +111,55 @@ pub fn decode_for_cache(cover: &Path, w: i32, h: i32) -> Option<DecodedCover> {
     Some(decoded)
 }
 
+/// Decoded pixels for a cover that never had a file — bytes straight
+/// from the network (the comics browser's remote covers).
+///
+/// Same "plain data crosses threads" rule as [`DecodedCover`], minus
+/// the cache key: these are shown once, so there is no stable path to
+/// key on and nothing to invalidate.
+#[derive(Debug)]
+pub struct DecodedPixels {
+    pub width: i32,
+    pub height: i32,
+    /// Tightly packed RGBA, `width * height * 4` bytes.
+    pub rgba: Vec<u8>,
+}
+
+/// Decode in-memory image bytes to raw RGBA that fits inside `w`×`h`
+/// with the aspect ratio kept — `ContentFit::Cover` crops at paint
+/// time, so the picture's look is unchanged; only the decode moved.
+///
+/// Headless, GTK-free, worker-legal: the comics browser's remote-cover
+/// task downloads *and decodes* on the worker this way, and its
+/// done-callback only wraps the pixels in a texture — that wrap is a
+/// pointer copy, not a decode. A `None` here is a placeholder picture,
+/// not a failure worth reporting, matching [`decode_rgba`].
+pub fn decode_rgba_bytes(bytes: &[u8], w: i32, h: i32) -> Option<DecodedPixels> {
+    if w <= 0 || h <= 0 || bytes.is_empty() {
+        return None;
+    }
+    let img = image::load_from_memory(bytes).ok()?;
+    // Fit inside 2× the slot (enough resolution that ContentFit::Cover
+    // stays sharp, small enough that the wrap stays cheap); never
+    // upscale — a tiny source image gains nothing from it.
+    let (max_w, max_h) = (w as u32 * 2, h as u32 * 2);
+    let resized = if img.width() > max_w || img.height() > max_h {
+        img.thumbnail(max_w, max_h)
+    } else {
+        img
+    };
+    let rgba = resized.to_rgba8();
+    let (width, height) = (rgba.width() as i32, rgba.height() as i32);
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    Some(DecodedPixels {
+        width,
+        height,
+        rgba: rgba.into_raw(),
+    })
+}
+
 /// Which file to decode for a cover slot: the thumbnail when it exists and is
 /// big enough, else the original.
 ///
@@ -390,6 +439,53 @@ mod tests {
         write_png(&real, 20, 20);
         assert!(decode_rgba(&real, 0, 10).is_none(), "zero width");
         assert!(decode_rgba(&real, 10, -1).is_none(), "negative height");
+    }
+
+    #[test]
+    fn network_bytes_decode_to_a_fitting_size() {
+        // The comics/browse covers arrive as raw bytes from the network;
+        // the decode must land inside 2× the slot with the aspect ratio
+        // kept (ContentFit::Cover crops at paint, so a squashed image
+        // here would be a squashed card there).
+        let dir = Scratch::new();
+        let src = dir.join("remote.png");
+        write_png(&src, 600, 900);
+        let bytes = std::fs::read(&src).expect("read the png back");
+
+        let got = decode_rgba_bytes(&bytes, 150, 210).expect("png bytes decode");
+        assert!(
+            got.width <= 300 && got.height <= 420,
+            "fits inside 2x the slot, got {}x{}",
+            got.width,
+            got.height
+        );
+        let ratio = got.width as f64 / got.height as f64;
+        assert!(
+            (ratio - 600.0 / 900.0).abs() < 0.02,
+            "aspect kept: ratio {ratio}"
+        );
+        assert_eq!(got.rgba.len(), got.width as usize * got.height as usize * 4);
+    }
+
+    #[test]
+    fn network_bytes_are_never_upscaled() {
+        let dir = Scratch::new();
+        let src = dir.join("tiny.png");
+        write_png(&src, 60, 84);
+        let bytes = std::fs::read(&src).expect("read the png back");
+
+        let got = decode_rgba_bytes(&bytes, 150, 210).expect("tiny png decodes");
+        assert_eq!((got.width, got.height), (60, 84), "no upscale, no pad");
+    }
+
+    #[test]
+    fn bad_network_bytes_are_skipped_not_fatal() {
+        // A remote source can hand back anything; every one of these
+        // must be a quiet `None`, matching `decode_rgba`.
+        assert!(decode_rgba_bytes(b"not an image", 150, 210).is_none());
+        assert!(decode_rgba_bytes(b"", 150, 210).is_none(), "empty body");
+        assert!(decode_rgba_bytes(b"gif89a", 0, 210).is_none(), "zero width");
+        assert!(decode_rgba_bytes(b"gif89a", 150, -1).is_none(), "negative height");
     }
 
     #[test]

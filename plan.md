@@ -2012,6 +2012,62 @@ CI green after every step; every commit HEAD-checked (§36).
     disappears. §60 recurred a ninth time before this chunk (same
     recipe, zero damage, recorded).
 
+- **Step 4 (2026-10-06, later) — the paint-family hunt opens with its
+  instrument: frame-level probes on the main window's frame clock.
+  No behavior change; the field run that reads them is the next
+  step.**
+  - Run #5 left the paint-cycle family as the only unexplained
+    stalls: 250–550 ms blocks around page builds and cover landings
+    with every app-side suspect cleared (decodes 3–8 ms, landings
+    0.1 ms, fills 3–6 ms). What no span covers is GTK's own frame
+    work — realize, layout, style, snapshot, texture upload. You
+    cannot fix what you cannot see, so this chunk only adds eyes.
+  - **The instrument** (`src/frames.rs`, entirely inside
+    `KALAM_TIMING=1` — on an ordinary launch `install` returns
+    before connecting anything): three passive handlers on the main
+    window's frame clock, hooked at realize so the first frame is
+    captured, doing arithmetic only. Every measured `timing` line
+    (a span end) becomes a watched anchor, and the next frame
+    reports:
+    - `frame_after:<span>` — span end → the frame's before-paint:
+      how long the freshly built content waited before the toolkit
+      began drawing it. Big = the main loop was busy after the span
+      (work no span covers yet).
+    - `frame_layout:<span>` — the frame's layout phase: size
+      negotiation and allocation of the freshly built tree.
+    - `frame_paint:<span>` — before-paint → after-paint: snapshot,
+      render, texture upload — the "post-construction freeze"
+      candidate itself.
+    Phase costs report only at ≥ 50 ms and only within 2 s of a
+    watched span, so an idle animation can never spray the log.
+  - **Why these three signals:** the clock emits `update` only for
+    animation frames, so the probes hook the phases a repaint always
+    runs — `layout` (when requested), `before-paint`, `after-paint`
+    (that pair is emitted together in the paint phase, which is why
+    the frame exists). A layout time is charged to a frame only if
+    it ran after the previous frame completed and no more than 1 s
+    before the paint began — a layout whose cycle never painted is
+    dropped, not measured.
+  - **The three-way split the log will speak:** a big `frame_after`
+    with cheap phases = app work between the span and the frame (a
+    new suspect, now bounded); a big `frame_layout` = the tree
+    build's layout cost landing at draw time; a big `frame_paint` =
+    the draw/upload family the hunt suspects; all three cheap while
+    the watchdog still reports a block = the block is elsewhere and
+    the hunt moves on.
+  - **Tests** (the state machine is plain f64-ms data, headless):
+    the wait delta; every pending span flushing on one frame and
+    none on the next; an expensive paint attributed; an expensive
+    layout attributed; silence outside the interest window; a
+    layout from an abandoned cycle ignored (both guards); a missing
+    paint-start falling back to the frame's end; the pending cap
+    dropping oldest entries. The GTK half is wiring the state
+    machine to three signals — nothing headless to test there.
+  - What the owner will see in the next `KALAM_TIMING=1` run: new
+    `frame_after:*` / `frame_layout:*` / `frame_paint:*` lines
+    interleaved with the existing spans and watchdog blocks — same
+    log, now with the frame side of the story.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

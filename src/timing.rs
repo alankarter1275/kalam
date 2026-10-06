@@ -64,7 +64,10 @@ static ENABLED: OnceLock<bool> = OnceLock::new();
 static START: OnceLock<Instant> = OnceLock::new();
 static SPANS: OnceLock<Mutex<HashMap<&'static str, Instant>>> = OnceLock::new();
 
-fn enabled() -> bool {
+/// Whether the timing harness is on. `frames::install` asks this once
+/// at startup so the frame probes — which only ever print lines this
+/// module would print — cost nothing on an ordinary launch.
+pub(crate) fn enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("KALAM_TIMING").is_some())
 }
 
@@ -86,6 +89,9 @@ pub fn now(label: &'static str) {
     }
     let el = start_anchor().elapsed().as_secs_f64() * 1000.0;
     println!("[timing] {label:<18} {el:>8.1} ms");
+    // The frame probes want this marker too: `frame_after:window_shown`
+    // is how long the first window took to actually draw.
+    crate::frames::note_span_end(label);
 }
 
 /// Print a labelled count, e.g. how many tasks were still running at exit.
@@ -110,6 +116,10 @@ pub fn duration(label: &'static str, d: std::time::Duration) {
         return;
     }
     println!("[timing] {label:<18} {:>8.1} ms", d.as_secs_f64() * 1000.0);
+    // Every measured span end is a candidate anchor for the frame
+    // probes (7.1 step 4): the next `frame_after:<label>` line will say
+    // how long the freshly built content waited for its first frame.
+    crate::frames::note_span_end(label);
 }
 
 /// Measures the scope it is bound to and prints on drop. Returned by
@@ -178,6 +188,8 @@ pub fn span_end(label: &'static str) {
     };
     let el = start.elapsed().as_secs_f64() * 1000.0;
     println!("[timing] {label:<18} {el:>8.1} ms");
+    // Same as `duration`: a span end the frame probes can anchor to.
+    crate::frames::note_span_end(label);
 }
 
 // ---------------------------------------------------------------------------

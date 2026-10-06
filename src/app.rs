@@ -1582,8 +1582,12 @@ impl Component for AppModel {
         // the point GTK has produced the native window; it fires once. This is
         // a no-op unless KALAM_TIMING=1.
         let housekeeping_catalog = model.catalog.clone();
-        widgets.main_window.connect_realize(move |_| {
+        widgets.main_window.connect_realize(move |window| {
             crate::timing::now("window_shown");
+            // The frame probes hook the clock here, at realize, so the
+            // very first frame is captured too (7.1 step 4). No-op and
+            // costless unless KALAM_TIMING=1.
+            crate::frames::install(window);
             // The splash has done its job the moment the real window draws,
             // and the disk-hungry housekeeping may now begin without having
             // raced the home screen's covers for the drive.

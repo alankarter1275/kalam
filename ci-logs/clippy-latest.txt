@@ -39,5 +39,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m rusqlite v0.32.1
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 21.71s
---- run 37406166953 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 22.65s
+--- run 37409690657 ---

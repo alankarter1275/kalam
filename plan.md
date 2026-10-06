@@ -2242,6 +2242,47 @@ CI green after every step; every commit HEAD-checked (§36).
     setting for this machine. XWayland has polish costs
     (fractional scaling, no native Wayland features) — a fair
     trade for speed here, noted for the recommendation.
+  - **`eglinfo -B` + run #9 (the `GDK_BACKEND=x11` run, same
+    day) — both follow-ups answered, and the llvmpipe theory is
+    FALSIFIED.** eglinfo reports the Intel UHD 605 on EVERY
+    platform — GBM, Wayland, X11, surfaceless, device #0 — with
+    llvmpipe present only as unused device #1. So the driver is
+    fully working on both doors; run #8's "the GL was llvmpipe"
+    had the right effect and the wrong mechanism. The best
+    current explanation for runs #6–#7: hardware GL whose
+    frames were sabotaged by the app→compositor buffer handoff
+    under SwayFX (a slow path — wl_shm copies instead of
+    zero-copy dmabuf — would charge every GL frame a readback,
+    and cairo, which renders into shm buffers natively, avoids
+    exactly that; that is why cairo won on Wayland).
+  - **Run #9, same surfaces, X11+GL vs Wayland+GL (runs #6–#7)
+    vs Wayland+cairo (run #8):** book page **142.1/172.8** vs
+    639.7/809.0 (4–5× better) vs 263.1; library **91.2** vs
+    305.2/445.3 vs 194.2; author first **66.5** vs 246.5/357.9
+    vs 198.4; book float dialog **62.3** vs 247.0/362.2 vs ~205;
+    startup's twelve-cover frame **170.0** vs 288.1/297.3 vs
+    227.2. Cairo's one win: settings appearance 76.4 vs GL's
+    213.1 (picture-free surface). New surfaces recorded:
+    lookup_history 172.2, all_books 102.1.
+  - **And run #9 ran on the coldest machine state yet** —
+    `gtk_init` 507.9 (usual ~100), `icons_theme` 402.3 (usual
+    4.5–11.5), `pre_run` 1588.9, `home_fill` 23.8 (usual 4–5),
+    cold-HDD `covers_decode` 100.8/75.7 for single thumbnails —
+    a first-launch-of-the-day profile that inflates every
+    absolute number, which makes the X11 win conservative: it
+    beat cairo while the machine was against it.
+  - **Practical recommendation (recorded, offered to the
+    owner):** on this machine, `GDK_BACKEND=x11` is the fastest
+    measured configuration for every picture-heavy surface;
+    `GSK_RENDERER=cairo` stays the fallback if X11 mode
+    misbehaves visually (fractional-scaling blur is its known
+    polish cost). Root-cause chase, optional: one app run under
+    plain sway — if Wayland GL turns fast there, SwayFX's
+    buffer/effects path is named as the culprit; and one
+    warm-machine X11 re-run for clean absolute numbers.
+  - Steady: `author_fill` 7.5 ms, covers 12 thumb / 0 full,
+    reader open 205.1/114.8, the reader-close forced miss
+    present, remote-cover fix still unexercised.
 
 
 ## The measured ranked list (owner field run, 2026-10-02)

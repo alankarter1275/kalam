@@ -207,8 +207,9 @@ pub fn install(window: &gtk::Window) {
     let named = std::cell::Cell::new(false);
     clock.connect_after_paint(move |_clock| {
         if !named.replace(true) {
-            let renderer = window_for_name.renderer();
-            println!("[timing] render_backend     {}", renderer.type_().name());
+            if let Some(renderer) = window_for_name.renderer() {
+                println!("[timing] render_backend     {}", renderer.type_().name());
+            }
         }
         let lines = {
             let mut s = state().lock().unwrap_or_else(|e| e.into_inner());

@@ -2654,3 +2654,19 @@ the fixture (`Box::leak(format!(…).into_boxed_str())` for the
 `&'static str` case) instead of enumerating a hand-written table. An
 enumeration that drifts from its own asserts is invisible in review —
 both sides look plausible side by side.
+
+## 68. Verify the foreign signature, not just the foreign name
+
+The render_backend probe's first CI round failed on `the method
+type_ exists for enum Option<Renderer>`: `NativeExt::renderer()` had
+been confirmed to EXIST in the docs search, but its return type was
+recalled from memory as `Renderer` — in this binding version it is
+`Option<Renderer>`. Without a local compiler, a recalled signature is
+a guess wearing a docs citation: the search that proves the method
+exists does not prove what it returns.
+
+Same family as §64 (the enum's derive and visibility) and §66 (the
+clippy vocabulary): every line that calls into gtk-rs gets its exact
+signature read from the docs page — name, parameters, AND return
+type — before it is written. The three CI rounds those two lessons
+cost were each one glance that was skipped.

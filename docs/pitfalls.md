@@ -2637,3 +2637,20 @@ green (`is_some_and`, `is_none_or`, `map_or_else`), and be suspicious
 of `map_or` specifically: it is the one the linter has been narrowing.
 Ten minutes of CI per round is the price of a wrong guess; the grep is
 seconds.
+
+## 67. A hand-written test fixture can assert on a value that never existed
+
+The frame-probe chunk's second CI round failed on its own new test:
+the pending-cap test asserted `pending[0] == "span_6"`, but its
+hand-written label table only ever produced `span_0`–`span_5` and then
+`"span_later"` for every index from 6 on — so the assert compared
+against a label no code path had ever pushed. The state machine was
+right; the fixture lied. CI caught it because the assert failed — but
+the same fixture shape with a ">= some_index" style assert would have
+passed vacuously and proven nothing (§19's trap wearing a new coat).
+
+The rule: when a test asserts on generated fixture values, generate
+the fixture (`Box::leak(format!(…).into_boxed_str())` for the
+`&'static str` case) instead of enumerating a hand-written table. An
+enumeration that drifts from its own asserts is invisible in review —
+both sides look plausible side by side.

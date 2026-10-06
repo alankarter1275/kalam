@@ -329,23 +329,13 @@ mod tests {
     #[test]
     fn pending_is_capped_so_a_silent_clock_cannot_grow_it_forever() {
         let mut s = FramesState::default();
-        let mut labels = Vec::new();
         for i in 0..70 {
-            let label: &'static str = if i < 6 {
-                match i {
-                    0 => "span_0",
-                    1 => "span_1",
-                    2 => "span_2",
-                    3 => "span_3",
-                    4 => "span_4",
-                    _ => "span_5",
-                }
-            } else {
-                "span_later"
-            };
-            labels.push(label);
-        }
-        for (i, label) in labels.iter().enumerate() {
+            // Distinct labels for every index, so the test can prove
+            // exactly WHICH entries fell off. (A hand-written label
+            // table once stopped at span_5 and called index 6
+            // "span_later", so an assert on "span_6" tested a label
+            // that never existed; generate, don't enumerate.)
+            let label: &'static str = Box::leak(format!("span_{i}").into_boxed_str());
             s.span_ended(label, i as f64);
         }
         assert_eq!(s.pending.len(), PENDING_CAP, "capped at the constant");
@@ -353,6 +343,6 @@ mod tests {
             s.pending[0].0, "span_6",
             "the oldest entries fell off, not the newest"
         );
-        assert_eq!(s.pending[PENDING_CAP - 1].0, "span_later");
+        assert_eq!(s.pending[PENDING_CAP - 1].0, "span_69");
     }
 }

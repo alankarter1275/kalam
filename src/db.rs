@@ -1763,8 +1763,9 @@ impl Catalog {
             let _ = fs::remove_dir_all(&dir);
         }
         // A0 step 3: drop the cover thumbnail so the cache cannot grow with
-        // deleted books.
-        crate::thumbs::remove_thumbnail(&book.uuid);
+        // deleted books — both the cover-path key and the legacy uuid key a
+        // pre-2026-10-05 import may still carry.
+        crate::thumbs::remove_thumbnail(book.cover_path.as_deref(), &book.uuid);
         // The startup backfill skips itself when the book count matches its
         // last complete run. A delete followed by an import nets to the same
         // count, which would wrongly skip the new book, so forget the marker

@@ -154,6 +154,12 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
             let mut sent = 0usize;
             let mut total = std::time::Duration::ZERO;
             let mut worst = std::time::Duration::ZERO;
+            // Which source each decode read: the tiny thumbnail (the fix
+            // working) or the full cover (the 100–1167 ms decodes of run
+            // #4, when a comic chapter's series-folder cover could never
+            // find its uuid-keyed thumbnail).
+            let mut from_thumb = 0usize;
+            let mut from_full = 0usize;
             for (i, cover) in covers.into_iter().enumerate() {
                 // Cheap to check and worth checking: closing the page should
                 // not leave a thread decoding covers nobody will see.
@@ -172,6 +178,11 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
                     std::thread::sleep(std::time::Duration::from_millis(4));
                 }
                 let src = source_for(&cover, w, h);
+                if src != cover {
+                    from_thumb += 1;
+                } else {
+                    from_full += 1;
+                }
                 let decode_started = std::time::Instant::now();
                 let Some(mut decoded) = decode_rgba(&src, w, h) else {
                     continue;
@@ -192,6 +203,8 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
                 }
             }
             crate::timing::note("covers_decoded", sent);
+            crate::timing::note("covers_thumb", from_thumb);
+            crate::timing::note("covers_full", from_full);
             crate::timing::duration("covers_decode", total);
             crate::timing::duration("covers_decode_max", worst);
         },

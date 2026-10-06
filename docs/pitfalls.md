@@ -2485,6 +2485,10 @@ finding, not the scenery.
 clone at the fork point), caught by the same rule, recovered by the same
 recipe with nothing new to add.
 
+*Seventh occurrence, hours later:* same again. The rule and the recipe
+have now held across five recoveries in two days; nothing new to learn —
+run the log first, run the recipe, move on.
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

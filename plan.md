@@ -1832,6 +1832,81 @@ CI green after every step; every commit HEAD-checked (§36).
     blocks with 1.4–8.9 s stale anchors during pdf reading) stays
     recorded as unknown — out of this chunk's scope by discipline;
     if it survives the covers fix, it gets its own probes.
+- **Step 4 field run #4 (2026-10-05, owner's machine, the probe
+  build, second run of it) — the probes named the culprit in one
+  run, and it is not the landing: covers decode from FULL images
+  because comic covers can never find their thumbnails. Fixed the
+  same session. The owner's question "why is the startup lagging"
+  has a two-part answer; the machine was also slow this run.**
+  - **Probe verdict:** `covers_land` 0.0–0.2 ms for every single
+    landing — the texture wrap + cache insert + in-place swap are
+    exonerated, and so is the burst-drain theory as a stall cause
+    (the first 12 covers DID land back-to-back, `covers_gap 0.0`,
+    all twelve inside ~2 ms — harmless). The cost is the DECODE:
+    `covers_decode 1806.8 ms` for 12 startup covers,
+    `covers_decode_max 653.4`; the author page batch: 1284 ms for
+    4, worst 1166.8. A 256×408 thumbnail decodes in single-digit
+    milliseconds — these were full-cover decodes.
+  - **Root cause, in the code:** a comic chapter's cover lives at
+    `library/<Series>/covers/0010.jpg` (library-relative, item
+    2.22), but `thumbnail_for_cover` derived the thumbnail key from
+    the cover path's PARENT FOLDER — correct for a plain book's
+    `library/<uuid>/cover.jpg`, and always wrong for a comic: it
+    looked for `thumbs/covers.png`, a file that can never exist.
+    The backfill had generated the right thumbnails all along (keyed
+    by book uuid — the log's `thumbs_backfilled 15` with no
+    `thumbs_backfill_done` means all 15 covered books had theirs);
+    the lookups simply could not name them. Every comic cover
+    decoded from the full scanned page, every session, on every
+    card — and the same wrong key served the on-demand grid decode
+    and the split bubbles.
+  - **The fix:** thumbnails are now keyed by the cover's
+    library-relative path, mirrored under the thumbs dir
+    (`thumbs/<uuid>/cover.jpg.png`, `thumbs/<Series>/covers/
+    0010.jpg.png`). Every caller shape can compute it from what it
+    already holds — the preloader, the on-demand decode, the
+    bubbles, the import, the cover-change regeneration, the
+    backfill — no signature changes anywhere. The startup backfill
+    migrates: it generates under the new key and removes the legacy
+    uuid-keyed file once the new one exists (one-time); delete and
+    cover-change clean both shapes. Two new probe counters verify
+    the fix in the field: `covers_thumb` (decodes served by a
+    thumbnail) and `covers_full` (fallbacks to the full image).
+    Expect `covers_full` at (or near) zero and `covers_decode` to
+    collapse from ~1800 ms to tens of ms.
+  - **Tests:** the mapping itself (plain + series + outside-library
+    + jpg/png non-collision), the migration (legacy file removed
+    once replaced), the outside-library refusal, and the comic
+    import end-to-end (thumbnail now found at the path-keyed
+    location). One test rewrite worth recording: the backfill
+    closure in tests must map the cover to a destination DISTINCT
+    from the source — mapping it onto its own path made
+    `thumb.is_file()` true because the source exists, a test that
+    could not fail (§19, caught before commit, not by CI).
+  - **The other half of the owner's question — the machine was slow
+    this run:** spans that complete BEFORE any app work exists were
+    several times slower than the same spans an hour earlier:
+    `startup_db_open 857.9 ms` (run #3: 10.4), `startup_gtk_init
+    340.0` (101.6), `startup_splash_show 417.1` (116.2),
+    `startup_libraries 23.3` (0.3) — no app thread has started at
+    those points, and no code on those paths changed between the
+    builds. Meanwhile `startup_splash_pump` got FASTER (375 vs
+    948). That signature (disk-path spans catastrophically slow,
+    in-memory spans unchanged) says machine state — cold cache,
+    busy disk, another program, throttling. The app-side decode CPU
+    (1.8 s at startup, another ~1 s on the author page) burned on
+    top of it, which is what "sluggish again" felt like. The fix
+    removes that CPU; if `startup_db_open` is still in the hundreds
+    on a warm next run, that becomes its own hunt with its own
+    probes. Reader opens stay out of scope (this run's
+    `route_open:reader` 1178.9 with `book_open` 877.9 — slower
+    than run #3's 979.9/513.7, same machine-slow signature).
+  - The 1251 ms block right after `settings_fill:appearance` (26.6
+    ms) is the known post-construction GTK freeze family on a slow
+    machine; the stale-anchor family persists unchanged; the splash
+    blocks were smaller this run (~350 ms). §60 recurred a seventh
+    time before this chunk (same variant, same recipe, zero
+    damage).
 
 
 ## The measured ranked list (owner field run, 2026-10-02)

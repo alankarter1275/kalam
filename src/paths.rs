@@ -457,19 +457,36 @@ pub fn thumbs_dir() -> PathBuf {
     data_dir().join("cache").join("thumbs")
 }
 
-/// Thumbnail path for a book's uuid.
-pub fn thumbnail_path(uuid: &str) -> PathBuf {
-    thumbs_dir().join(format!("{uuid}.png"))
-}
-
-/// Derive the thumbnail path for a *library* cover path.
+/// The thumbnail file for a *library* cover.
 ///
-/// Covers live at `library/<uuid>/cover.ext`, so the parent directory name is
-/// the uuid. Returns `None` for any path that is not a library cover (e.g. a
-/// stashed override or a remote series cover) — those simply decode full.
+/// Keyed by the cover's path relative to the library root and mirrored
+/// under the thumbs dir: a plain book's `library/<uuid>/cover.jpg` maps to
+/// `thumbs/<uuid>/cover.jpg.png`, a comic chapter's
+/// `library/Series/covers/0010.jpg` maps to
+/// `thumbs/Series/covers/0010.jpg.png`. The 2026-10-05 covers hunt proved
+/// why the key cannot be derived from the uuid alone: a comic chapter's
+/// cover lives in the series folder, so no book uuid can be recovered from
+/// the cover's path — and the preloader, the grid's on-demand decode, and
+/// the split bubbles all hold only the cover path. Those callers were
+/// silently decoding full covers (100–1167 ms each on the owner's machine)
+/// for books whose thumbnails existed all along, keyed under a uuid the
+/// path could not name. One path-based rule serves every caller shape.
+///
+/// Returns `None` for any path that is not under the library (a stashed
+/// override, a remote series cover, an author photo) — those simply decode
+/// full.
 pub fn thumbnail_for_cover(cover: &Path) -> Option<PathBuf> {
-    let uuid = cover.parent()?.file_name()?.to_str()?;
-    Some(thumbnail_path(uuid))
+    let rel = cover.strip_prefix(library_dir()).ok()?;
+    if rel == Path::new("") {
+        return None;
+    }
+    let mut dest = thumbs_dir();
+    dest.push(rel);
+    // Append, not replace: `0010.jpg.png` names *the thumbnail of
+    // 0010.jpg*, and two source formats cannot collide on one thumb.
+    let mut name = dest.into_os_string();
+    name.push(".png");
+    Some(PathBuf::from(name))
 }
 
 /// The user's home directory.
@@ -888,6 +905,72 @@ mod tests {
         assert_eq!(
             resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "Horimiya (Official)/covers/0010.jpg"),
             library_dir().join("Horimiya (Official)/covers/0010.jpg")
+        );
+    }
+
+    #[test]
+    fn thumbnails_are_keyed_by_the_cover_path_not_the_uuid() {
+        // The 2026-10-05 covers hunt: a comic chapter's cover lives in the
+        // series folder, so the old rule ("the parent folder name is the
+        // uuid") produced thumbs/<nonexistent-uuid>.png for every chapter —
+        // a file that could never exist, so every session decoded the full
+        // scanned cover instead (100–1167 ms each on the owner's machine).
+        // The key now mirrors the cover's library-relative path, which every
+        // caller shape can compute: preloader, on-demand grid decode, split
+        // bubbles.
+        let plain = library_dir()
+            .join("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6")
+            .join("cover.jpg");
+        assert_eq!(
+            thumbnail_for_cover(&plain),
+            Some(
+                thumbs_dir()
+                    .join("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6")
+                    .join("cover.jpg.png")
+            )
+        );
+
+        let comic = library_dir()
+            .join("Horimiya (Official)")
+            .join("covers")
+            .join("0010.jpg");
+        assert_eq!(
+            thumbnail_for_cover(&comic),
+            Some(
+                thumbs_dir()
+                    .join("Horimiya (Official)")
+                    .join("covers")
+                    .join("0010.jpg.png")
+            ),
+            "a series-folder cover must map like any other"
+        );
+
+        // The .png is appended, not substituted: two source formats in one
+        // covers folder cannot collide on one thumbnail.
+        let png_comic = library_dir()
+            .join("Horimiya (Official)")
+            .join("covers")
+            .join("0010.png");
+        assert_ne!(
+            thumbnail_for_cover(&comic),
+            thumbnail_for_cover(&png_comic),
+            "jpg and png sources must be distinct thumbnails"
+        );
+    }
+
+    #[test]
+    fn covers_outside_the_library_have_no_thumbnail() {
+        // Stashed overrides, remote covers, author photos: never under the
+        // library root, so no thumbnail is claimed for them — they decode
+        // full, as before.
+        assert_eq!(
+            thumbnail_for_cover(Path::new("/tmp/override/cover.png")),
+            None
+        );
+        assert_eq!(
+            thumbnail_for_cover(&library_dir()),
+            None,
+            "the library dir itself is not a cover"
         );
     }
 }

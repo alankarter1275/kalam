@@ -335,10 +335,9 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     };
 
     if let Some(cover) = &final_cover_name {
-        crate::thumbs::generate_thumbnail(
-            &dest_dir.join(cover),
-            &crate::paths::thumbnail_path(&uuid),
-        );
+        if let Some(thumb) = crate::paths::thumbnail_for_cover(&dest_dir.join(cover)) {
+            crate::thumbs::generate_thumbnail(&dest_dir.join(cover), &thumb);
+        }
     }
 
     // Comic chapters store their names relative to the library root, so the
@@ -859,13 +858,19 @@ pub fn replace_cover_bytes(
                 let _ = fs::remove_file(&old_path);
             }
             crate::widgets::book_row::invalidate_cover_cache(&old_path);
+            // The old cover's thumbnail is keyed by that path — remove it
+            // too, or every cover change leaves one behind for ever.
+            crate::thumbs::remove_thumbnail(Some(&old_path), &book.uuid);
         }
     }
 
     catalog.set_cover_name(book.id, Some(&stored_name))?;
     // A0 step 3: the cover changed, so regenerate the thumbnail to keep it in
-    // sync (the grid prefers the thumbnail when it exists).
-    crate::thumbs::generate_thumbnail(&path, &crate::paths::thumbnail_path(&book.uuid));
+    // sync (the grid prefers the thumbnail when it exists). Keyed by the new
+    // cover's path — the same rule every lookup uses.
+    if let Some(thumb) = crate::paths::thumbnail_for_cover(&path) {
+        crate::thumbs::generate_thumbnail(&path, &thumb);
+    }
     Ok(stored_name)
 }
 
@@ -1267,12 +1272,20 @@ mod tests {
         assert_eq!(comic_series.title, series);
         assert_eq!(chapter.chapter_number, 10.0);
 
-        // The thumbnail was generated from the extracted cover.
-        assert!(crate::paths::thumbnail_path(&book.uuid).is_file());
+        // The thumbnail was generated from the extracted cover, keyed by
+        // the cover's library-relative path (the 2026-10-05 re-keying — the
+        // old uuid-keyed name was unreachable for a series-folder cover).
+        let cover_path = book
+            .cover_path
+            .as_deref()
+            .expect("comic chapter has a cover path");
+        let thumb = crate::paths::thumbnail_for_cover(cover_path)
+            .expect("a library cover has a thumbnail path");
+        assert!(thumb.is_file());
 
         // Tidy up: the series folder, the thumbnail, the temp source.
         let _ = std::fs::remove_dir_all(crate::paths::library_dir().join(&folder));
-        let _ = std::fs::remove_file(crate::paths::thumbnail_path(&book.uuid));
+        let _ = std::fs::remove_file(&thumb);
         let _ = std::fs::remove_dir_all(&src_dir);
     }
 }

@@ -2774,6 +2774,18 @@ CI green after every step; every commit HEAD-checked (§36).
   contains no personal data beyond hardware details and links
   his public repo.
 
+- **Step 12 completed (2026-10-08): the owner supplied the two
+  missing values — kernel `7.2.8-arch1-2`, and swayfx 0.6
+  (based on sway 1.12.0) — and the draft is final.** The
+  environment section now reads: swayfx 0.6 (based on sway
+  1.12.0), same behavior under plain sway; kernel 7.2.8-
+  arch1-2. (Plain sway's exact version was never captured, so
+  the report claims no version for it — precision over
+  assumption.) The draft's status header moved from DRAFT to
+  FINAL, ready to file. Next: the owner reads it, creates the
+  gitlab.gnome.org account, searches GTK issues for duplicates,
+  files, and sends back the issue URL.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

@@ -1,8 +1,8 @@
 # Upstream report draft for GTK (gitlab.gnome.org/GNOME/gtk)
 
-Status: DRAFT for the owner's review. Nothing gets filed until he has read it.
-Two placeholders remain for him to fill: the kernel version and the sway
-version (marked FILL below).
+Status: FINAL draft, ready to file. All placeholders filled (kernel and
+compositor versions provided by the owner, 2026-10-08). Nothing gets filed
+until he has read it.
 
 ---
 
@@ -30,9 +30,9 @@ not in rendering itself.
 - Distro: Arch Linux (rolling)
 - GTK: gtk4 1:4.22.5-1
 - Mesa: 26.2.4-arch1.1 (with vulkan-intel)
-- Compositor: sway (version: FILL - run `sway --version` or `swayfx --version`)
-  and swayfx 0.6 - same behavior under both
-- Kernel: FILL (run `uname -r`)
+- Compositor: swayfx 0.6 (based on sway 1.12.0); the same behavior was
+  reproduced under plain sway
+- Kernel: 7.2.8-arch1-2
 - XWayland: running on :0 (used only for the `GDK_BACKEND=x11` comparison)
 - Realized renderer under Wayland (default): GskGLRenderer, verified by
   logging the realized renderer's type name in every session

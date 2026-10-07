@@ -2541,6 +2541,69 @@ CI green after every step; every commit HEAD-checked (§36).
     data-size; the parked fix candidate remains parked), covers
     12 thumb / 0 full, remote-cover fix still unexercised.
 
+- **Step 8 field run #13 (2026-10-07, owner's machine,
+  `GSK_RENDERER=vulkan` AFTER installing `vulkan-intel`,
+  same warm state and likely same compositor as #12 — the
+  cleanest renderer A/B of the campaign) — Vulkan RAN this
+  time (`render_backend GskVulkanRenderer`, no realize
+  failures) and the answer is: it does not fix it. And that
+  failure is the most diagnostic result yet.**
+  - **Vulkan (warm) vs GL best-case (#12, warm) vs X11
+    (#9, coldest):** startup twelve-cover frame **232.3**
+    (GL 283.4; X11 170.0), library covers **198.0** (297.2;
+    91.2), book page **127.6/189.1** (128.1/127.6; 142.1/
+    172.8 — parity), reader first open **331.7**, warm
+    127.8 (207.8/65.4; 209.8), author **174.3** (191.1;
+    66.5), settings appearance **67.6** (74.4; 213.1),
+    storage paint 162.3 (213.4), book float calm
+    **118.5–317.3** (114.0; 62.3), home 50.2–56.2
+    (61.7; ~60). Vulkan edges GL on several surfaces but
+    never reaches X11 on cover-heavy pages, and it shares
+    the disease signature.
+  - **The freeze is still there:** the first book-float
+    dialog, opened while background cover-preloading
+    churned, painted in **943.5 ms with a 950-ms UI
+    freeze** — the same preload-storm collision pattern the
+    GL runs showed (#11: library 536.7 / settings 600.4
+    with 550-ms stalls; #10 cold: float 1320.6). The
+    pattern, not the renderer, is the constant.
+  - **Why this failure is gold: Vulkan is a completely
+    different road from GL** — different driver (ANV, not
+    iris), different API, does not touch EGL at all — and
+    it is still slow in the same way on the same pages.
+    With GL slow + Vulkan slow + cairo fast + X11 fast,
+    under two compositors, in warm and cold states, the
+    bottleneck is almost certainly NOT Mesa's GL/EGL: it is
+    the road GTK uses to hand finished GPU frames to the
+    compositor under Wayland (the readback/buffer-handoff
+    theory, strengthened). The upstream report now aims at
+    GTK (gitlab.gnome.org/GNOME/gtk) rather than Mesa.
+  - **Advice to the owner:** unset `GSK_RENDERER` (back to
+    default — Vulkan gives no benefit and the one 944-ms
+    freeze happened under it); daily mode remains
+    `GDK_BACKEND=x11`. The Mesa downgrade test (26.1.x or
+    25.3.x) is now even more decisive as a root-cause
+    discriminator: old-Mesa-also-slow confirms GTK; old-
+    Mesa-fast convicts Mesa after all. Report remains parked
+    per his word; evidence is complete, only `uname -r`
+    still missing.
+  - **Machine state:** warm like #12 (db_open 8.3,
+    libraries 0.3, icons_theme 4.6, service_home 2.8,
+    home_fill 5.1, covers_decode 56.1 / max 5.0 for twelve,
+    splash_pump 928.4 with 350-ms stalls — the pre-window
+    splash story unchanged).
+  - **New surfaces and diagnostics:** shelf_detail 151.1 +
+    grid_build 70.6 (first numbers), shelf picker's timing
+    lines fast (picker_read 0.6, picker_fill 1.2 ms) — note
+    for future log readers: `picker_window 1350`,
+    `picker_natural 520`, `picker_width 0` are PIXEL SIZE
+    diagnostics, not durations; PDF reader again healthy
+    (pdf_open_total 197.3, paints 60.6/116.7).
+  - Steady: settings storage fill **5.0** (range now
+    5–474 ms across runs), settings appearance fill 48.5,
+    covers 12 thumb / 0 full, portal warning once (harmless),
+    remote-cover fix still unexercised.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

@@ -2284,6 +2284,60 @@ CI green after every step; every commit HEAD-checked (§36).
     reader open 205.1/114.8, the reader-close forced miss
     present, remote-cover fix still unexercised.
 
+- **Step 4 field run #10 (2026-10-07, owner's machine, plain
+  sway — default mode, Wayland+EGL+GL again) — the decisive
+  test came back: plain sway does NOT fix it. SwayFX is
+  exonerated. The slow GL-on-Wayland path lives in the
+  graphics stack itself (GTK's Wayland GL + Mesa 26.2.3 EGL on
+  the GLK chip), not in either compositor.**
+  - **Same surfaces, plain sway vs swayfx (runs #6–#7) vs X11
+    (run #9):** startup's twelve-cover frame **1609.8** (worst
+    frame ever recorded; swayfx 288.1/297.3; X11 170.0), book
+    float dialog **1320.6** (247.0/362.2; 62.3), book page
+    **802.1** (639.7/809.0; 142.1/172.8), library **601.1**
+    (305.2/445.3; 91.2), settings appearance **265.9**
+    (127.0/213.1). Light frames fine everywhere (home 59.3,
+    history 63.8, dictionaries 71.4) — the texture-bearing
+    frames are the ones that explode, consistent with the
+    buffer-handoff theory: a frame that just uploaded new
+    textures pays the biggest ferry toll.
+  - **Honest caveat, and why the verdict stands anyway:** this
+    run rode the coldest machine state of the whole campaign —
+    `db_open` 290.3 (typical 6.9–7.6), `libraries` 62.8
+    (typical 0.2), `service_home` 155.9 (typical 3–4),
+    `home_fill` 83.6 (typical 4–5), `pre_run` 2184.2, and the
+    first frame waited 2.5 s — first launch after a fresh
+    session, HDD thrashing. Absolute numbers are inflated. But
+    the verdict does not rest on absolutes: run #9 (X11) ran on
+    an equally cold machine and painted the same pages 5–10×
+    faster (170.0 vs 1609.8 for the same startup frame), and no
+    disk state makes a healthy GL path cost 1.6 s per frame.
+  - **The complete, closed picture of the renderer hunt:** the
+    card works (glxinfo/eglinfo: Intel everywhere); both
+    compositors are innocent (sway and swayfx show the same
+    disease); the X11/GLX road is fast; the EGL-on-Wayland road
+    with this Mesa on this 2019 chip is broken-slow for
+    texture-heavy frames. This is either a Mesa regression or a
+    GTK-Wayland-GL issue on this stack — upstream territory.
+    A Gdk-WARNING about the `org.freedesktop.portal.Inhibit`
+    interface appeared in the plain-sway session — an
+    xdg-desktop-portal version difference, unrelated to speed,
+    noted so it is not mistaken for a symptom.
+  - **Final recommendation to the owner (standing):** run the
+    app with `GDK_BACKEND=x11` on this machine, under whichever
+    compositor he prefers — swayfx is welcome back; blur-off is
+    now only a minor compositor tweak, not a fix. Offered: I
+    write the upstream report (GTK or Mesa) from glxinfo +
+    eglinfo + runs #6–#10 — "GLX fast, EGL/Wayland GL 5–10×
+    slower than cairo on GLK + Mesa 26.2.3, under two different
+    compositors" is exactly what maintainers need.
+  - Steady: covers 12 thumb / 0 full / 58.9 ms, `author_fill`
+    not visited this run, `settings_fill:storage` 319.8 (its
+    range across runs is now 8–473 ms — the parked fix
+    candidate, awaiting the owner's go), remote-cover fix still
+    unexercised. §60 eleventh occurrence before this chunk
+    (same recipe, zero damage, recorded).
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

@@ -2502,6 +2502,10 @@ at the fork point and 181 phantom modifications; the fetch-mixed-reset
 recipe brought it back to the true tip with zero dirty files. Ten for
 ten.
 
+*Eleventh occurrence, next day:* identical variant, identical recovery,
+zero damage. The recipe has now survived eleven rounds; the rule stays
+the same — the log comes before anything else.
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

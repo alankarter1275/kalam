@@ -2687,3 +2687,25 @@ clippy vocabulary): every line that calls into gtk-rs gets its exact
 signature read from the docs page — name, parameters, AND return
 type — before it is written. The three CI rounds those two lessons
 cost were each one glance that was skipped.
+
+## 69. An environment-variable experiment can silently not happen
+
+Field run #11 was launched with `GSK_RENDERER=ngl` to test GTK's
+"other" GL renderer. It tested nothing: the log carried a single
+`Gsk-WARNING` — "The new GL renderer has been renamed to gl" —
+buried among 300 timing lines, and the app then ran the same GL
+renderer as every default-mode run. GTK chose a friendly warning
+over an error, so the run "succeeded" while the knob silently did
+nothing. (Verified afterwards in GNOME/gtk's gsk/gskrenderer.c:
+`ngl` warns and returns GSK_TYPE_GL_RENDERER; the old GL renderer
+was removed in GTK 4.18, so only one GL renderer exists there.)
+
+What saved the turn: the `render_backend` probe — one line in
+frames.rs that prints the realized renderer's type name in every
+timing log — turned "I ran an experiment" into "here is which
+renderer actually ran". The rule: whenever a run is supposed to
+flip an environment-controlled mode, the log must print the mode's
+realized value, and the analysis reads that line before touching
+any numbers. Without the probe, run #11's numbers would have been
+recorded as "the ngl renderer is slow" — a false fact with real
+consequences for the upstream report.

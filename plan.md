@@ -2406,6 +2406,65 @@ CI green after every step; every commit HEAD-checked (§36).
     on the report draft; go/no-go on the launcher bake-in;
     optional ngl experiment; optional older-Mesa test.
 
+- **Step 6 field run #11 (2026-10-07, owner's machine, plain
+  sway, `GSK_RENDERER=ngl`) — the ngl experiment was a no-op:
+  his GTK renamed that renderer and ran the same one as
+  always. The road "try the other GL renderer" is closed —
+  but the run accidentally became the best evidence yet,
+  because this time the machine was warm.**
+  - **The no-op, proven two ways.** The log itself: `Gsk-
+    WARNING: The new GL renderer has been renamed to gl.
+    Try GSK_RENDERER=help` followed by `render_backend
+    GskGLRenderer` — the same type name as every default-mode
+    run. And GTK's own source (checked in GNOME/gtk's
+    gsk/gskrenderer.c on GitHub): `GSK_RENDERER=ngl` prints
+    that warning and returns GSK_TYPE_GL_RENDERER — the same
+    renderer as `gl`. The same file states the old OpenGL
+    renderer "has been removed in GTK 4.18". Conclusion:
+    his GTK (Arch, therefore current) has exactly ONE GL
+    renderer — the post-ngl one — and every GL run of this
+    campaign (#6, #7, #9, #10, #11) ran it. There is no
+    second GL renderer to try; the `render_backend` probe in
+    frames.rs is what caught this — the env var "succeeded"
+    while testing nothing new.
+  - **The accidental win: a warm-machine Wayland-GL run.**
+    Page-side services were back to typical (libraries 0.3,
+    service_home 3.8, home_fill 4.5, icons_theme 4.9 —
+    versus #10's 62.8/155.9/83.6 cold-state blowup), so
+    caches were warm this time. The heavy paints were STILL
+    slow: library covers paint **536.7** (with a 550-ms UI
+    stall), settings first paint **600.4**, comics **264.8**,
+    reader **256.4**, dictionaries 196.6, book_files 229.5,
+    lookup_history 150.9, analytics 138.7; light frames fine
+    (home revisit 64.0, history 76.4, tags 74.8). Startup
+    itself was half-cold (splash_pump 812.5, db_open 390.5,
+    first home paint 460.3 with the twelve covers landing at
+    121.2 — decode was warm, 469.1 total). This closes the
+    last machine-state doubt: warm caches do not fix the
+    GL-on-Wayland road, while X11 painted the same surfaces
+    at 62–172 ms on the campaign's coldest state.
+  - **The one remaining renderer road: `GSK_RENDERER=vulkan`.**
+    Current GTK offers cairo, gl, vulkan (per the same source
+    file's help text). The Vulkan renderer does not use the
+    EGL road we suspect — if it is fast under Wayland, the
+    owner gets a fully native mode AND the report's
+    discriminates sharpen (GL slow + Vulkan fast points at
+    EGL/Mesa, not GTK's buffer management). Prescribed as the
+    next free experiment; if his Arch GTK build lacks Vulkan
+    it will say so and that too is information.
+  - **Owner's answers this turn:** Arch Linux (version
+    unknown — `pacman -Q gtk4 mesa sway` requested in one
+    paste, which also feeds the future report); he does not
+    know what fractional scaling is — meaning he has not set
+    it (sway defaults to 1×), so the X11 mode has no visual
+    cost on his setup; the upstream report is parked ("just
+    wait") — no drafting.
+  - Steady: settings storage fill **357.6** + paint 238.2
+    (the parked fix candidate strikes again; range now
+    8–474 ms), covers 12 thumb / 0 full, portal-Inhibit
+    warning again (plain sway, harmless), remote-cover fix
+    still unexercised.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

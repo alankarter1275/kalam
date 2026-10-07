@@ -2746,6 +2746,34 @@ CI green after every step; every commit HEAD-checked (§36).
     itself three times (ngl no-op, Vulkan fallback, dead
     downgrades).
 
+- **Step 12, same day — the owner gave the go: the upstream
+  GTK report is DRAFTED (`docs/upstream-gtk-report.md`), and
+  the step-by-step filing guide was sent.** The draft carries:
+  the summary (GPU renderers 3–10× slower than cairo/X11 on
+  texture-heavy frames under Wayland); the full environment
+  (Gemini Lake / UHD 605 / 0x3184 / Gen9, Arch, gtk4 4.22.5,
+  Mesa 26.2.4-arch1.1, sway+swayfx, XWayland on :0, realized
+  renderer verified); the seven-surface measurement table
+  across GL/Vulkan/cairo/X11 with the coldest-state caveat
+  making the X11 gap conservative; the seven-item ruled-out
+  list (llvmpipe, single-GL-renderer reality, GL-driver theory
+  killed by Vulkan, app code killed by cairo, compositor,
+  machine state, old-Mesa untestable with the libLLVM.so.22.1
+  finding); the readback hypothesis framed humbly with four
+  questions for maintainers; and reproduction via the public
+  repo with KALAM_TIMING=1 and the env matrix. **Two
+  placeholders remain for the owner to fill before filing:**
+  kernel (`uname -r`) and sway version (`sway --version` /
+  `swayfx --version`). **Filing guide sent:** fill the
+  placeholders → read the draft → create the gitlab.gnome.org
+  account (GitHub sign-in available) → search GTK issues for
+  duplicates first ("wayland gl slow", "wayland readback") →
+  file under GNOME/gtk → Issues → New issue → send me the URL
+  → forward maintainer responses for drafting answers.
+  Nothing gets filed before he has read the draft; the draft
+  contains no personal data beyond hardware details and links
+  his public repo.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

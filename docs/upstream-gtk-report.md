@@ -1,10 +1,11 @@
 # Upstream report draft for GTK (gitlab.gnome.org/GNOME/gtk)
 
-Status: FINAL draft, ready to file. All placeholders filled (kernel and
-compositor versions provided by the owner, 2026-10-08). Duplicate search
-done the same day: three candidate issues reviewed, none matches this case
-(see "Related prior reports") - filing a new issue is the right path.
-Nothing gets filed until he has read it.
+Status: FILED 2026-10-08 as GNOME/gtk issue #8450:
+https://gitlab.gnome.org/GNOME/gtk/-/work_items/8450
+This file is now the archival copy of what was filed. All placeholders
+were filled by the owner (kernel and compositor versions, 2026-10-08);
+the duplicate search the same day reviewed three candidates and found
+no match (see "Related prior reports"), so a new issue was filed.
 
 ---
 

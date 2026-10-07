@@ -2817,6 +2817,28 @@ CI green after every step; every commit HEAD-checked (§36).
     the duplicate search. Next: the owner files the new issue
     and sends the URL.
 
+- **Step 14 (2026-10-08) — FILED. The report is live as
+  GTK issue #8450:
+  https://gitlab.gnome.org/GNOME/gtk/-/work_items/8450**
+  (owner's account: @alan.karter.1275). Verified by fetching
+  the page: title, full body, the seven-surface table, the
+  ruled-out list, and the working links to #4704 / #4112 /
+  #8114 all rendered correctly. One cosmetic note flagged to
+  the owner: GitLab's page showed the body as the first
+  comment with an empty description box in one render — if
+  the description field is indeed empty on the live page, he
+  can move the text into it via Edit (harmless either way;
+  all content is on the page). **Standing flow from here:**
+  the owner forwards any maintainer replies; answers are
+  drafted here and pasted by him. The draft file's status
+  header now records the issue number — it is the archival
+  copy. The environment-verification arc, the renderer
+  matrix, and the upstream report are COMPLETE; what remains
+  of this thread is watching for responses. The rest of the
+  queue is unchanged: settings-storage fix (awaiting go),
+  remote-covers confirmation (awaits an online browse),
+  Phase 6 not started, Phase 8 Material 3 last.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

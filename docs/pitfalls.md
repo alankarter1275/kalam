@@ -2709,3 +2709,15 @@ realized value, and the analysis reads that line before touching
 any numbers. Without the probe, run #11's numbers would have been
 recorded as "the ngl renderer is slow" — a false fact with real
 consequences for the upstream report.
+
+*Second instance, same day:* run #12 requested
+`GSK_RENDERER=vulkan`; no usable Vulkan driver was present, GTK
+warned (twice for the toplevel at startup, then once for every
+popup that opened later — each new surface retries the requested
+renderer, so the env var kept costing failed attempts all
+session) and fell back to GskGLRenderer. The probe again made the
+fallback visible in the same log. Two additions to the rule: an
+experimental GSK_RENDERER must not be left set after the test,
+and a fallback that announces itself only in warnings is easy to
+misread as a successful experiment — read `render_backend` first,
+numbers second.

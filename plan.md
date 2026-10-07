@@ -2465,6 +2465,82 @@ CI green after every step; every commit HEAD-checked (§36).
     warning again (plain sway, harmless), remote-cover fix
     still unexercised.
 
+- **Step 7 field run #12 (2026-10-07, owner's machine,
+  `GSK_RENDERER=vulkan`, session compositor unconfirmed — swayfx
+  0.6 is his installed compositor per the version paste, so
+  likely swayfx again) — Vulkan never ran: the renderer failed
+  to start (`VK_ERROR_INCOMPATIBLE_DRIVER` — no usable Vulkan
+  driver present), GTK fell back to the same GskGLRenderer
+  (the probe says so; three Gsk-WARNINGS — two for the
+  toplevel, one per popup that opened later, since every new
+  surface retries the requested renderer — so an experimental
+  GSK_RENDERER must not be left set after the test). The run
+  became the warmest-state Wayland-GL datapoint of the
+  campaign, and therefore its best-case numbers.**
+  - **Best-case Wayland-GL vs X11-on-coldest (run #9):**
+    startup twelve-cover frame **283.4** (X11 170.0; #10
+    1609.8), library covers **297.2** (91.2; #11 536.7),
+    settings first paint **98.5** / appearance 74.4 (213.1;
+    #11 600.4; cairo 76.4), book float **129.5 + cover 114.0**
+    (62.3; #10 1320.6), book page **128.1/127.6 — parity or
+    better** (142.1/172.8), reader **207.8/65.4 — parity**
+    (209.8), author **191.1** (66.5), home revisit 61.7. Even
+    GL's best day loses 2–3× to X11 on the cover-heavy
+    surfaces while matching it on book page/reader.
+    **Recommendation unchanged: `GDK_BACKEND=x11`.**
+  - **Why the Vulkan road failed, and what was checked:** the
+    error is the classic loader-present-driver-absent
+    signature — Arch's gtk4 pulls the Vulkan loader but the
+    Intel Vulkan driver package (`vulkan-intel`) is opt-in.
+    Researched via the Mesa mirror (GitHub,
+    intel-lgci-fdo-gitlab-mirror/mesa.mesa, current through
+    26.2.4): hasvk exists but was created for Gen7/Gen8 only
+    (22.3 split, Phoronix 2022-09/12); no Gen9 move or removal
+    is announced in any release note through 26.2.4, so ANV
+    should still own Gemini Lake. Hypothesis: `vulkan-intel`
+    simply isn't installed. Prescribed check
+    `pacman -Q vulkan-icd-loader vulkan-intel`; if missing,
+    install and re-run the Vulkan test; if present and still
+    failing, current-Mesa Gen9 Vulkan support is the wall and
+    the road closes (then the Mesa downgrade is the last
+    experiment).
+  - **Versions banked for the future report:** gtk4 1:4.22.5-1,
+    mesa 1:26.2.4-1, swayfx 0.6-0; kernel still to collect
+    (`uname -r`). **Noteworthy:** Mesa moved 26.2.3 → 26.2.4
+    between the Oct-6 eglinfo capture and this run (Arch
+    update) — run #12's improvement over #11 is unattributable
+    (warmness + Mesa bump + possible compositor difference all
+    confounded).
+  - **Honest record correction on the compositor question:**
+    run #10's "plain sway equally slow" verdict is
+    state-confounded — it rode the coldest state, and a
+    same-state sway-vs-swayfx A/B was never run. The
+    exoneration of SwayFX stands as the best available
+    evidence, but it is weaker than recorded; moot in practice,
+    since X11 wins in every state and both compositors
+    observed.
+  - **Machine state (warmest of the campaign):** db_open 8.1
+    (typical), libraries 0.3, icons_theme 4.3, service_home
+    3.0, home_fill 5.1, covers_decode 56.8 / max 6.0 for
+    twelve — fully warm; the splash still pumped 859.6 with
+    350/450-ms stalls (the pre-window splash story remains its
+    own thing, unattributed by design).
+  - **New surfaces measured:** pdf_reader (pdf_open_doc 116.5,
+    pdf_open_total 294.7, paints 57.1/59.0 — first PDF numbers,
+    healthy), task_manager 64.1, analytics 107.6, all_books
+    66.8, shelves 110.5, dictionaries 146.7, book_files 138.6,
+    metadata 104.9.
+  - **Diagnostic quirk noted, no action:** the final stall was
+    attributed to a task_item that had ended 8792 ms earlier —
+    the stall detector names the most recent task event, so
+    long-delayed blame is possible. Diagnostic-only code; also
+    a late home_fill of 95.6 (forced-miss rebuild after the PDF
+    reader) vs 4.5–5.1 warm fills.
+  - Steady: settings storage fill **15.2** (the range across
+    runs is now 8–474 ms — the variance is environmental, not
+    data-size; the parked fix candidate remains parked), covers
+    12 thumb / 0 full, remote-cover fix still unexercised.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

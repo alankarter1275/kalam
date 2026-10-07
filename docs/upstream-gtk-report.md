@@ -1,8 +1,10 @@
 # Upstream report draft for GTK (gitlab.gnome.org/GNOME/gtk)
 
 Status: FINAL draft, ready to file. All placeholders filled (kernel and
-compositor versions provided by the owner, 2026-10-08). Nothing gets filed
-until he has read it.
+compositor versions provided by the owner, 2026-10-08). Duplicate search
+done the same day: three candidate issues reviewed, none matches this case
+(see "Related prior reports") - filing a new issue is the right path.
+Nothing gets filed until he has read it.
 
 ---
 
@@ -91,6 +93,26 @@ Notes:
   build-day LLVM soname; both 26.1.8 and 25.3.5 fail to load
   (`ldd libgallium-26.1.8-arch1.1.so` reports `libLLVM.so.22.1 => not
   found`). Mentioned in case it matters for triage.
+
+### Related prior reports (checked before filing)
+
+We searched the tracker and reviewed three candidates; none matches this
+case:
+
+- #4704 "`gdk_x11_gl_context_texture_from_surface` is not fit for purpose,
+  slower than the software fallback" (GTK3, X11): the mirror image of our
+  case - there the dedicated X11 GLX texture-from-pixmap path was slower
+  than the software fallback, i.e. X11 slow and Wayland fine. Here it is
+  the reverse, on GTK4.
+- #4112 "OpenGL show window performance is significantly slower than
+  cairo" (GTK 4.2.1, NVIDIA, closed): closest in spirit, but it measured
+  the first window shown - one-time GL context creation, per the
+  maintainer's analysis - and GL was slow under X11 too. Our case is a
+  sustained per-frame cost on every texture-heavy frame, X11 is our
+  fastest configuration, and the hardware is Intel Gen9.
+- #8114 "Images for recolored icons are constantly being reloaded"
+  (GTK3/gdk-pixbuf, closed): an icon reload loop; different mechanism
+  entirely - our images decode once off the UI thread and are cached.
 
 ### Hypothesis (and what we cannot see from outside)
 

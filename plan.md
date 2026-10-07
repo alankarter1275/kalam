@@ -2786,6 +2786,37 @@ CI green after every step; every commit HEAD-checked (§36).
   gitlab.gnome.org account, searches GTK issues for duplicates,
   files, and sends back the issue URL.
 
+- **Step 13 (2026-10-08) — duplicate check done: the owner
+  found three candidates on GNOME GitLab; none is our bug; a
+  new issue is the right path. All three were read in full
+  and recorded:**
+  - **#4704** "`gdk_x11_gl_context_texture_from_surface` is
+    not fit for purpose, slower than the software fallback"
+    (GTK3, X11, Arch): the MIRROR IMAGE of our case — there
+    the dedicated X11 GLX texture-from-pixmap path was slower
+    than the software fallback (X11 slow, Wayland fine); ours
+    is the reverse, on GTK4. Has merged MRs attached (a
+    removal of the slow path and a later revert of it).
+  - **#4112** "OpenGL show window performance is significantly
+    slower than cairo" (GTK 4.2.1, NVIDIA, Fedora 34, closed):
+    closest in spirit — but it measured the first window
+    shown only (one-time GL context creation, per Matthias
+    Clasen's analysis), and GL was slow under X11 too. Ours:
+    sustained per-frame cost on every texture-heavy frame,
+    X11 our fastest configuration, Intel Gen9. Related prior
+    art, not a duplicate.
+  - **#8114** "Images for recolored icons are constantly
+    being reloaded" (GTK3, gdk-pixbuf 2.44/glycin, Fedora 43,
+    closed): an icon reload loop in `gtk_css_image_recolor_load`
+    — a different mechanism entirely; our images decode once
+    off the UI thread and are cached.
+  - **A "Related prior reports" section was added to the
+    draft** naming all three with one-line differences — it
+    shows the search was done and pre-empts a lazy
+    duplicate-of-#4112 close. The status header now records
+    the duplicate search. Next: the owner files the new issue
+    and sends the URL.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

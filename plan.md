@@ -2697,6 +2697,55 @@ CI green after every step; every commit HEAD-checked (§36).
     toolchain, and the verify step must expect total failure,
     not just llvmpipe substitution.
 
+- **Step 11 (2026-10-07, catch-up records for the whole Option
+  B arc, written after the owner's one-round no-commit
+  exception during the talk): the old-Mesa comparison is
+  CLOSED as unrunnable on this machine — and the mechanism is
+  now a verified fact, not a hedge.**
+  - **The arc:** the owner chose Option B (the 26.1.8 middle
+    test). Procedure prescribed with the listing-arbitrated
+    filename (§70 lesson applied). He installed
+    `mesa 1:26.1.8-1` (confirmed by `pacman -Q mesa`), and
+    the mandatory verification failed with the same dead
+    errors as 25.3.5 — glxinfo: "couldn't find RGB GLX visual
+    or fbconfig"; eglinfo: "eglInitialize failed". A weeks-old
+    driver, same death. Option B closed; restore done and
+    verified healthy.
+  - **The verified mechanism:** `ldd /usr/lib/libgallium-
+    26.1.8-arch1.1.so | grep "not found"` → **`libLLVM.so.22.1
+    => not found`**. Every Mesa build is welded to the exact
+    LLVM soname of its build day; Arch's LLVM has already
+    moved past 22.1 (the current `26.2.4-arch1.1` build works,
+    so the system LLVM is newer); the pin breaks, libgallium —
+    which contains iris and every hardware driver — refuses
+    to dlopen, and all GL dies at once. This confirms §71's
+    model, sharpens it (soname pinning means even a
+    weeks-old package can be past the cliff), and pins
+    exactly what Option C would have required: llvm-libs
+    22.1 from the archive alongside the old Mesa. The
+    toolchain moves as one.
+  - **Restore verified:** `glxinfo -B` shows direct rendering
+    Yes, **Mesa Intel UHD Graphics 605 (GLK 3), PCI ID
+    0x3184, Mesa 26.2.4-arch1.1**, video memory 3729 MB
+    unified — the exact chip identity now banked for the
+    upstream report.
+  - **Verdict status, honestly recorded:** the old-Mesa
+    comparison could not run — an environment limitation of
+    Arch rolling, not evidence for or against Mesa. The
+    standing matrix is unchanged and still points at GTK's
+    Wayland handoff: GL slow, Vulkan slow (a road that does
+    not touch Mesa's GL/EGL), cairo fast, X11 fast, two
+    compositors, warm and cold states. Daily recommendation
+    unchanged: `GDK_BACKEND=x11`. Report draft remains parked
+    awaiting the owner's go, and will carry the honest note
+    that the old-Mesa comparison was not runnable on this
+    system.
+  - No timing runs happened anywhere in this arc — the
+    verify-before-numbers rule prevented every one of them
+    from being recorded as garbage. The rule has now paid for
+    itself three times (ngl no-op, Vulkan fallback, dead
+    downgrades).
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

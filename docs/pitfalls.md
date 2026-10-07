@@ -2762,3 +2762,14 @@ isolation; the honest options are a near-in-age version (26.1.8,
 weeks old, same-era libs) or a multi-package time-machine that
 is disproportionate for a diagnostic question. The middle option
 exists precisely because the toolchain moves as one.
+
+*Confirmed and sharpened, same day:* the 26.1.8 middle option
+also produced a dead stack, and the forensics made the mechanism
+a fact: `ldd /usr/lib/libgallium-26.1.8-arch1.1.so` reports
+`libLLVM.so.22.1 => not found` — the system's LLVM is already
+newer than the one that build was welded to. Soname pinning
+means "only weeks old" is no protection on a rolling distro;
+the exact-partner rule (Mesa build ↔ build-day LLVM) is the
+cliff, and the ldd-not-found check is now part of any future
+downgrade procedure — run it BEFORE the tour, alongside the
+version-and-renderer check.

@@ -2604,6 +2604,38 @@ CI green after every step; every commit HEAD-checked (§36).
     covers 12 thumb / 0 full, portal warning once (harmless),
     remote-cover fix still unexercised.
 
+- **Step 9, same day — the owner chose the Mesa downgrade test;
+  procedure sent (2026-10-07).** Target: **25.3.6** (the final
+  point release of the previous-year line — upstream's last
+  25.3.x per Mesa's own release notes; the biggest single step
+  back, therefore the most informative: fast convicts the 26.x
+  series, slow confirms GTK's Wayland handoff). Optional second
+  step if 25.3.6 is fast: 26.1.8 to narrow the window. Source:
+  Arch's package archive (archive.archlinux.org/packages/m/mesa/
+  — every version Arch ever shipped); install via
+  `sudo pacman -U '<file-url>'`. **Two mandatory safeguards
+  baked into the procedure** (69 discipline): verify the
+  realized version AND renderer via `glxinfo -B` + `eglinfo -B`
+  BEFORE trusting any timing numbers — the renderer must say
+  Intel UHD 605, not llvmpipe, because old-mesa-vs-new-llvm-libs
+  could silently drop the hardware driver to software and
+  produce a false verdict; and restore right after the tour
+  (`sudo pacman -S mesa`), with the TTY rescue path
+  (Ctrl+Alt+F2 → pacman -S mesa → reboot) if the session
+  glitches. Live install is standard practice on Arch; worst
+  realistic case is a graphical hiccup and a reboot. Notes
+  given: don't run `pacman -Syu` between install and test (it
+  would undo the downgrade); `IgnorePkg = mesa` only if the
+  test comes out fast and he wants to keep 25.3.6 daily;
+  `vulkan-intel` stays at 26.2.4 for this test (we test the GL
+  default path — if we later want Vulkan re-tested on old
+  Mesa, downgrade it to the same version). The tour: default
+  mode, `KALAM_TIMING=1` only, the usual pages; read the
+  library covers paint, book float, settings first paint
+  against #12/#13 warm-GL (283/297/74/129) and X11 (170/91/
+  62/213) — near X11 means Mesa guilty, still 200–600+ means
+  GTK guilty.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

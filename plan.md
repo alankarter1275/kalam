@@ -2839,6 +2839,41 @@ CI green after every step; every commit HEAD-checked (§36).
   remote-covers confirmation (awaits an online browse),
   Phase 6 not started, Phase 8 Material 3 last.
 
+- **Step 15 (2026-10-08) — issue #8450 tidied by the owner
+  (body moved from comment to description, verified by
+  fetching the page); CI policy changed on the owner's
+  request; the queue re-examined with the new warm-state
+  data.**
+  - **CI policy (owner's point, accepted): records-only
+    commits — plan.md, ROADMAP.md, pitfalls, the report doc —
+    cannot break the app, so they now carry `[skip ci]` in
+    the commit message, the exact convention the repo's own
+    CI-publish commits already use. Full CI remains the gate
+    for every commit touching src/, Cargo.*, or .github/.**
+    Side benefits: no more ~20-minute waits on records
+    turns, and fewer publish commits churning the remote
+    (which caused the recurring push-rejection dance). This
+    records commit is the first under the new policy.
+  - **Storage-fill fix verdict, presented to the owner with
+    the full data: recommend closing it.** The fix case was
+    built on the 8–473 ms range before warm-state numbers
+    existed. Runs #12/#13 (warmest states) measured the
+    storage fill at **15.2 and 5.0 ms** — the tab is cheap
+    when the machine is quiet. The 300–470 ms fills appeared
+    only during machine storms (cold boot, cover-preload
+    churn) that inflated everything — environment, not app
+    cost. The construction is pure prefetched-data widget
+    building (`build_paths`: libraries card + recovery card
+    + four fixed rows; registry and survey arrive via the
+    slow worker — no disk on the UI thread). Awaiting the
+    owner's confirm to close, or his word to do a light
+    widget-count reduction anyway.
+  - **Queue map after this:** remote covers stays passive
+    (confirms on the next online browse); **Phase 6 (the
+    EPUB editor — the biggest item in Part 1) is the real
+    next work and needs its own planning turn**; Phase 8
+    Material 3 stays last.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

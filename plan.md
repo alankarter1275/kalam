@@ -2636,6 +2636,26 @@ CI green after every step; every commit HEAD-checked (§36).
   62/213) — near X11 means Mesa guilty, still 200–600+ means
   GTK guilty.
 
+- **Step 9 correction, same day — the prescribed target did
+  not exist as a package.** The owner opened the archive and
+  could not find 25.3.6: Arch never packaged it (upstream
+  released 25.3.6, but Arch had already moved to 26.0.0 on
+  20-Feb-2026), and archive filenames carry the epoch prefix
+  (`mesa-1:25.3.5-1-...`) the prescription lacked. **Target
+  corrected to `mesa-1:25.3.5-1` (07-Feb-2026, the newest
+  25.3-line package Arch shipped)** — command:
+  `sudo pacman -U 'https://archive.archlinux.org/packages/m/
+  mesa/mesa-1:25.3.5-1-x86_64.pkg.tar.zst'`, with the
+  download-then-install fallback if pacman dislikes the colon
+  in the URL. Expected pacman line: "downgrading mesa
+  (1:26.2.4-1 -> 1:25.3.5-1)". The owner's paste also
+  confirmed the archive chain through 26.0.4-1 (01-Apr-2026);
+  26.1.x/26.2.x continue below (his paste window stopped at
+  26.0.4) — relevant only if a fast result later needs
+  narrowing. All other procedure steps unchanged. Pitfalls
+  §70 recorded: an upstream release list is not a distro
+  package list.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

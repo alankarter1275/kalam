@@ -2721,3 +2721,22 @@ experimental GSK_RENDERER must not be left set after the test,
 and a fallback that announces itself only in warnings is easy to
 misread as a successful experiment — read `render_backend` first,
 numbers second.
+
+## 70. An upstream release list is not a distro package list
+
+The Mesa downgrade prescription named 25.3.6 because Mesa's own
+release notes listed it as the final point release of the 25.3
+line. The owner opened Arch's package archive and could not find
+it — Arch never packaged 25.3.6; by the time upstream shipped it,
+Arch had already moved to 26.0.0. Two assumption errors in one
+prescription: upstream's newest release of a line does not imply
+the distro packaged it, and Arch filenames embed the epoch prefix
+(`mesa-1:25.3.5-1-x86_64.pkg.tar.zst`, not `mesa-25.3.5-1-...`),
+so a hand-built URL without the epoch 404s even when the version
+exists. Caught by the owner before any command ran; zero damage.
+
+The rule: when prescribing an exact package or file, verify it
+against the distro's own listing (the archive page the owner will
+actually use), or write the step as "pick the newest 25.3.x you
+see there" and let the listing arbitrate. Upstream release notes
+prove what upstream shipped, not what the user can install.

@@ -2578,6 +2578,14 @@ replacements and assert the count. A no-op replace is worse than a
 failed one: it fails later, in CI, with a message (a type mismatch
 three files away) that points nowhere near the cause.
 
+*63 in action (2026-10-07):* the run #10 ROADMAP row's replace
+anchored on text recalled from memory — `author_fill` in backticks
+— while the file carried it plain. The assert fired, the commit
+landed without the row, and the mismatch was caught and repaired
+in a follow-up commit the same turn. The sharpened rule: never
+hand-write an anchor from memory; grep the file for the exact
+current text first, then paste that text into the script.
+
 ## 64. A message enum's derives and visibility are part of every variant's contract
 
 The author-page warming chunk burned two CI rounds on the same glance

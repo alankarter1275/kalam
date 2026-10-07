@@ -2338,6 +2338,74 @@ CI green after every step; every commit HEAD-checked (§36).
     unexercised. §60 eleventh occurrence before this chunk
     (same recipe, zero damage, recorded).
 
+- **Step 5, same day — the owner's "what now" questions
+  (2026-10-07, talk turn, records requested): the owner is
+  uneasy about the X11 recommendation ("using x11 while I am
+  on Wayland is kind of...unusual") and asked whether a real
+  fix exists and how upstream bug reporting works. Answers
+  given and recorded:**
+  - **X11-on-Wayland is more normal than it sounds.**
+    `GDK_BACKEND=x11` runs the app through XWayland — a
+    supported, always-on compatibility layer inside every
+    Wayland session (any X11 app he has opened under sway has
+    been using it all along, silently). The window, clipboard
+    and workflow are identical. The only measurable cost on
+    this machine is fractional-scaling softness: under 1.25x /
+    1.5x scale, X11 windows are scaled as bitmaps and text
+    looks slightly soft; at 1x scale there is no visible
+    difference. Whether he uses fractional scaling is unknown —
+    asked.
+  - **"Can it be fixed anyhow?" — the honest answer: not from
+    inside the app (the slowness happens below us), but three
+    roads exist.** (1) The free experiment: `GSK_RENDERER=ngl`
+    — GTK's newer-generation GL renderer. One environment
+    variable, zero system changes; if his GTK is too old to
+    have it, GTK warns and falls back to the default
+    renderer, harmless. If ngl is fast under Wayland, the
+    broken road is specifically the old GskGLRenderer and the
+    fix is a one-word launch setting. (2) The prime suspect:
+    his Mesa 26.2.3 is brand new, and old Intel chips
+    regressing under a brand-new Mesa is a known pattern —
+    installing the previous stable Mesa and re-running the
+    timing tour takes ten minutes; if it is fast, he pins the
+    older Mesa, stays fully native, and the upstream report
+    becomes a slam-dunk regression report. Needs his distro
+    for exact steps — it touches system packages. (3) The
+    upstream report — the real fix, months away even if
+    confirmed. Plus the two already-standing mitigations:
+    `GSK_RENDERER=cairo` (fully native, predictable, heavy
+    frames 1.3-2x slower than X11+GL but far faster than the
+    broken GL road, and it wins on picture-free surfaces), and
+    an offered one-line app-side change that bakes
+    `GDK_BACKEND=x11` into the launcher/.desktop so the choice
+    is invisible — a mitigation, not a fix, pending his go.
+  - **Upstream report process (explained in full).** The
+    report is a public issue on the tracker of the project
+    that owns the broken code: GTK (gitlab.gnome.org/GNOME/gtk)
+    if GTK's Wayland-GL buffer handoff is at fault, or Mesa
+    (gitlab.freedesktop.org/mesa/mesa) if EGL itself is slow
+    on this chip. A five-minute standard GL benchmark under
+    EGL-Wayland vs GLX discriminates (benchmark also slow ->
+    Mesa; benchmark fine but GTK apps slow -> GTK); exact
+    commands once the distro is known. The owner's part,
+    about 15 minutes: tell me the distro so I can collect
+    versions (Mesa, GTK, sway, kernel); read my drafted
+    report (nothing gets filed before he has seen it); create
+    a free account on the relevant GitLab (GitHub sign-in
+    works); paste title and body into "New issue"; forward
+    maintainer follow-ups to me and paste my answers back.
+    My part: write the full report from glxinfo + eglinfo +
+    runs #6-#10 with step-by-step reproduction (the repo is
+    public, so maintainers can run the app themselves) and
+    prepare follow-up answers. Payoff if confirmed: the fix
+    ships in a future Mesa or GTK release and native Wayland
+    GL gets fast for every GTK app on the machine, not just
+    this one.
+  - **Pending owner decisions carried to next turn:**
+    distro name/version; fractional-scaling usage; go/no-go
+    on the report draft; go/no-go on the launcher bake-in;
+    optional ngl experiment; optional older-Mesa test.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

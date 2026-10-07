@@ -2656,6 +2656,47 @@ CI green after every step; every commit HEAD-checked (§36).
   §70 recorded: an upstream release list is not a distro
   package list.
 
+- **Step 10, same day — the 25.3.5 downgrade attempt result:
+  the old Mesa will not load on the rolling system at all.
+  After installing `mesa-1:25.3.5-1`, both verification tools
+  failed hard — `glxinfo -B`: "couldn't find RGB GLX visual or
+  fbconfig"; `eglinfo -B`: "eglInitialize failed". No usable
+  GL driver of any kind. The mandatory verify step caught it
+  exactly as designed: no timing run happened, no false
+  numbers were recorded, nothing was damaged.**
+  - **Likely mechanism (hedged):** Arch's Mesa ships all
+    Gallium drivers — iris included — in one shared library
+    that links LLVM; that library was built against
+    February-2026 LLVM, the system's llvm-libs are from
+    October — so the shared library refuses to load, and with
+    it every hardware driver dies at once. A one-package
+    downgrade cannot time-travel eight months on a rolling
+    distro; the whole toolchain (llvm-libs, possibly
+    libdrm/libglvnd) would have to go back with it.
+  - **Restore prescribed immediately** (`sudo pacman -S mesa`,
+    expect "upgrading mesa (1:25.3.5-1 -> 1:26.2.4-1)",
+    verify with `glxinfo -B` back to Intel UHD 605), plus the
+    standing rule: do not run the app in this state — numbers
+    from a dead-GL stack are garbage (worst case GTK falls
+    back silently to software and fakes a verdict).
+  - **Where the test goes — three options laid out for the
+    owner, honestly:** (A) skip it — recommended; the verdict
+    barely needs it, since GL slow + Vulkan slow (a road that
+    does not touch Mesa's GL/EGL) + cairo fast + X11 fast
+    already points at GTK's Wayland handoff. (B) the middle
+    test: **26.1.8** — only weeks older than current, almost
+    certainly compatible with today's libs (it sits further
+    down the same archive page, below his paste window which
+    stopped at 26.0.4); fast ⇒ 26.2-series regression and an
+    airtight Mesa report; slow ⇒ the disease predates 26.2
+    and the GTK story strengthens further. (C) the full
+    time-machine (downgrade llvm-lds and friends to February
+    too) — works for experts, several packages, more risk,
+    disproportionate; not recommended. Pitfalls §71 recorded:
+    a driver downgrade on a rolling distro drags its whole
+    toolchain, and the verify step must expect total failure,
+    not just llvmpipe substitution.
+
 
 ## The measured ranked list (owner field run, 2026-10-02)
 

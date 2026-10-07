@@ -2740,3 +2740,25 @@ against the distro's own listing (the archive page the owner will
 actually use), or write the step as "pick the newest 25.3.x you
 see there" and let the listing arbitrate. Upstream release notes
 prove what upstream shipped, not what the user can install.
+
+## 71. A driver downgrade on a rolling distro drags its whole toolchain
+
+The corrected downgrade to mesa-1:25.3.5-1 installed cleanly and
+then produced a dead GL stack: glxinfo reported "couldn't find
+RGB GLX visual or fbconfig" and eglinfo "eglInitialize failed" —
+no driver of any kind. Most likely mechanism: Arch's Mesa puts
+every Gallium driver (iris included) in one LLVM-linked shared
+library, built against February's LLVM, which refuses to load
+against October's llvm-libs. pacman reported no conflict because
+package dependencies carry no upper bounds — the failure was
+invisible until something asked for GL.
+
+Two lessons. First, the verify step must expect TOTAL failure,
+not just the llvmpipe substitution it was written for — "no GL
+at all" is a real outcome of a too-old driver on a current
+system, and the procedure should say so. Second, on a rolling
+distro an eight-month-old driver package is not installable in
+isolation; the honest options are a near-in-age version (26.1.8,
+weeks old, same-era libs) or a multi-package time-machine that
+is disproportionate for a diagnostic question. The middle option
+exists precisely because the toolchain moves as one.

@@ -11,40 +11,51 @@ glib-2.0: 2.88.0
 [1m[92m Downloading[0m crates ...
 [1m[92m  Downloaded[0m either v1.19.0
 [1m[92m  Downloaded[0m jiff v0.2.38
+[1m[92m  Downloaded[0m zerocopy-derive v0.8.61
+[1m[92m  Downloaded[0m zerocopy v0.8.61
 [1m[92m  Downloaded[0m zeroize v1.9.1
 [1m[92m    Checking[0m either v1.19.0
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
-[1m[92m    Checking[0m zeroize v1.9.1
-[1m[92m    Checking[0m rustls-pki-types v1.15.1
+[1m[92m   Compiling[0m zerocopy v0.8.61
+[1m[92m   Compiling[0m zerocopy-derive v0.8.61
 [1m[92m    Checking[0m rayon v1.12.0
-[1m[92m    Checking[0m itertools v0.14.0
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
+[1m[92m    Checking[0m itertools v0.14.0
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
+[1m[92m    Checking[0m zeroize v1.9.1
 [1m[92m   Compiling[0m itertools v0.13.0
+[1m[92m    Checking[0m rustls-pki-types v1.15.1
 [1m[92m    Checking[0m rustls-webpki v0.103.15
-[1m[92m    Checking[0m webpki-roots v1.0.9
-[1m[92m    Checking[0m rustls v0.23.45
-[1m[92m    Checking[0m jiff v0.2.38
-[1m[92m   Compiling[0m bindgen v0.72.1
 [1m[92m    Checking[0m stylo v0.20.0
 [1m[92m    Checking[0m rten-parallel v0.26.0
 [1m[92m    Checking[0m rten-tensor v0.26.0
-[1m[92m    Checking[0m webpki-roots v0.26.11
-[1m[92m    Checking[0m rten-gemm v0.26.0
+[1m[92m   Compiling[0m bindgen v0.72.1
 [1m[92m    Checking[0m rten-shape-inference v0.26.0
-[1m[92m    Checking[0m rten-imageproc v0.26.0
+[1m[92m    Checking[0m rten-gemm v0.26.0
+[1m[92m    Checking[0m webpki-roots v1.0.9
+[1m[92m    Checking[0m jiff v0.2.38
+[1m[92m    Checking[0m rustls v0.23.45
 [1m[92m    Checking[0m rten v0.26.0
+[1m[92m    Checking[0m webpki-roots v0.26.11
+[1m[92m    Checking[0m rten-imageproc v0.26.0
 [1m[92m    Checking[0m ureq v2.12.1
-[1m[92m    Checking[0m env_logger v0.11.11
 [1m[92m    Checking[0m ocrs v0.13.1
+[1m[92m    Checking[0m env_logger v0.11.11
+[1m[92m    Checking[0m ppv-lite86 v0.2.21
+[1m[92m    Checking[0m rand_chacha v0.9.0
+[1m[92m    Checking[0m proptest v1.11.0
+[1m[92m    Checking[0m ahash v0.8.12
+[1m[92m    Checking[0m hashbrown v0.14.5
+[1m[92m    Checking[0m hashlink v0.9.1
+[1m[92m    Checking[0m rusqlite v0.32.1
 [1m[92m   Compiling[0m mupdf-sys v0.8.0
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 02s
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 20s

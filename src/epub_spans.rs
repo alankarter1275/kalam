@@ -80,13 +80,15 @@ pub struct ParagraphSpan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParagraphLocate {
     Found(ParagraphSpan),
-    /// No paragraph carries that text. Either the text is not
-    /// paragraph-granular, or the chapter changed under the caller.
+    /// No paragraph carries that text with those neighbours. Either the
+    /// text is not paragraph-granular, or the chapter changed under the
+    /// caller.
     NotFound,
-    /// The text matches, but not that many of them — the `ordinal`-th
-    /// equal-text paragraph does not exist (any more). The count is
-    /// carried for the message.
-    NotCurrent(usize),
+    /// The text and neighbours match more than one paragraph — a
+    /// repeated passage whose surroundings also repeat. The count is
+    /// carried for the message; guessing would risk editing the wrong
+    /// one, so this is a refusal.
+    Ambiguous(usize),
     /// The entry's structure could not be scanned trustworthily
     /// (malformed XML, no single root, not UTF-8). The HTML-fallback
     /// territory; conservative by design.
@@ -98,31 +100,57 @@ pub enum ParagraphLocate {
 pub enum ParagraphRefusal {
     /// New text normalizes to the old one.
     Unchanged,
-    /// No paragraph carries that text.
+    /// No paragraph carries that text with those neighbours.
     NotFound,
-    /// The ordinal-th equal-text paragraph is not there.
-    NotCurrent(usize),
+    /// The paragraph cannot be told apart from its repeats even with
+    /// the neighbours — the count of indistinguishable candidates.
+    Ambiguous(usize),
     /// The entry is not span-mappable.
     NotMappable,
 }
 
-/// Locate the paragraph whose reader text is `want_text`, the
-/// `ordinal`-th (0-based) among the paragraphs carrying exactly that
-/// text, in document order.
+/// The chapter's paragraph texts, in document order, reader-normalized —
+/// the mapper's own enumeration of what a chapter's paragraphs are.
+/// `None` when the entry is not span-mappable. The proofread surfaces
+/// use this to say whether a chapter offers paragraph editing at all;
+/// tests use it to assert the paragraph set directly.
+pub fn paragraph_texts(bytes: &[u8]) -> Option<Vec<String>> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let scan = Scan::parse(text).ok()?;
+    Some(scan.paragraphs().iter().map(|&id| scan.element_text(id)).collect())
+}
+
+/// Locate the paragraph whose reader text is `want_text`, told apart
+/// from its repeats by its neighbours: `prev` is the preceding
+/// paragraph's text, `next` the following one's, and `None` asserts
+/// that the paragraph is the chapter's first (resp. last) — the reader
+/// always knows, so a mismatch is a chapter that changed underneath
+/// the caller, and the locate refuses rather than guesses.
 ///
 /// `want_text` is compared in identity space: trimmed, whitespace-run
 /// collapsed — the same normalization the reader's `extract_text_at`
 /// applies — so a source-wrapped paragraph matches its rendered form.
-pub fn locate_paragraph(bytes: &[u8], want_text: &str, ordinal: usize) -> ParagraphLocate {
+/// The neighbours are trimmed the same way before comparing.
+pub fn locate_paragraph(
+    bytes: &[u8],
+    want_text: &str,
+    prev: Option<&str>,
+    next: Option<&str>,
+) -> ParagraphLocate {
     match std::str::from_utf8(bytes) {
-        Ok(text) => locate_in_str(text, want_text, ordinal),
+        Ok(text) => locate_in_str(text, want_text, prev, next),
         Err(_) => ParagraphLocate::NotMappable,
     }
 }
 
 /// The locate body, over source that is known UTF-8 (the planner checks
 /// once and shares the result with the span extraction).
-fn locate_in_str(text: &str, want_text: &str, ordinal: usize) -> ParagraphLocate {
+fn locate_in_str(
+    text: &str,
+    want_text: &str,
+    prev: Option<&str>,
+    next: Option<&str>,
+) -> ParagraphLocate {
     let want = want_text.trim_matches(is_css_space);
     if want.is_empty() {
         return ParagraphLocate::NotFound;
@@ -131,27 +159,42 @@ fn locate_in_str(text: &str, want_text: &str, ordinal: usize) -> ParagraphLocate
         Ok(scan) => scan,
         Err(_) => return ParagraphLocate::NotMappable,
     };
+    let ids = scan.paragraphs();
+    let texts: Vec<String> = ids.iter().map(|&id| scan.element_text(id)).collect();
+    let prev = prev.map(|h| h.trim_matches(is_css_space));
+    let next = next.map(|h| h.trim_matches(is_css_space));
     let mut hits: Vec<usize> = Vec::new();
-    for id in scan.paragraphs() {
-        if scan.element_text(id) == want {
-            hits.push(id);
+    for i in 0..texts.len() {
+        if texts[i] != want {
+            continue;
+        }
+        let prev_ok = match &prev {
+            None => i == 0,
+            Some(hint) => i > 0 && texts[i - 1] == *hint,
+        };
+        let next_ok = match &next {
+            None => i + 1 == texts.len(),
+            Some(hint) => i + 1 < texts.len() && texts[i + 1] == *hint,
+        };
+        if prev_ok && next_ok {
+            hits.push(i);
         }
     }
-    if hits.is_empty() {
-        return ParagraphLocate::NotFound;
+    match hits.len() {
+        0 => ParagraphLocate::NotFound,
+        1 => {
+            let id = ids[hits[0]];
+            let node = &scan.nodes[id];
+            ParagraphLocate::Found(ParagraphSpan {
+                outer: node.outer.clone(),
+                inner: node.inner.clone(),
+                open_tag: node.open_tag.clone(),
+                close_tag: node.close_tag.clone(),
+                text: texts[hits[0]].clone(),
+            })
+        }
+        n => ParagraphLocate::Ambiguous(n),
     }
-    if ordinal >= hits.len() {
-        return ParagraphLocate::NotCurrent(hits.len());
-    }
-    let id = hits[ordinal];
-    let node = &scan.nodes[id];
-    ParagraphLocate::Found(ParagraphSpan {
-        outer: node.outer.clone(),
-        inner: node.inner.clone(),
-        open_tag: node.open_tag.clone(),
-        close_tag: node.close_tag.clone(),
-        text: scan.element_text(id),
-    })
 }
 
 /// Serialize an edited paragraph back to source.
@@ -188,7 +231,8 @@ pub fn serialize_paragraph(span: &ParagraphSpan, new_text: &str) -> String {
 /// `virtual_bytes` is the entry's source with the book's earlier pending
 /// patches already applied, because that is what this patch will run
 /// against. `paragraph_text` is the reader's text for the paragraph (the
-/// editor's prefill), `ordinal` disambiguates equal-text paragraphs, and
+/// editor's prefill); `prev` and `next` are its neighbours' texts, `None`
+/// at the chapter's ends, disambiguating equal-text paragraphs; and
 /// `new_text` is the edited text, plain — inline markup in the old
 /// source is replaced by it wholesale.
 ///
@@ -200,7 +244,8 @@ pub fn serialize_paragraph(span: &ParagraphSpan, new_text: &str) -> String {
 pub fn plan_paragraph_patch(
     virtual_bytes: &[u8],
     paragraph_text: &str,
-    ordinal: usize,
+    prev: Option<&str>,
+    next: Option<&str>,
     new_text: &str,
 ) -> Result<PlannedPatch, ParagraphRefusal> {
     // The unchanged check runs in identity space, so cosmetic whitespace
@@ -215,10 +260,10 @@ pub fn plan_paragraph_patch(
         Ok(text) => text,
         Err(_) => return Err(ParagraphRefusal::NotMappable),
     };
-    let span = match locate_in_str(text, paragraph_text, ordinal) {
+    let span = match locate_in_str(text, paragraph_text, prev, next) {
         ParagraphLocate::Found(span) => span,
         ParagraphLocate::NotFound => return Err(ParagraphRefusal::NotFound),
-        ParagraphLocate::NotCurrent(n) => return Err(ParagraphRefusal::NotCurrent(n)),
+        ParagraphLocate::Ambiguous(n) => return Err(ParagraphRefusal::Ambiguous(n)),
         ParagraphLocate::NotMappable => return Err(ParagraphRefusal::NotMappable),
     };
     let find_text = text[span.outer.clone()].to_string();
@@ -882,6 +927,22 @@ mod tests {
         "</html>\n",
     );
 
+    /// The chapter's paragraphs, in document order — the enumeration
+    /// every neighbour hint is drawn from.
+    const PARAGRAPHS: [&str; 11] = [
+        "He said teh word & left.",
+        "The second paragraph, wrapped in the source with a numeric A entity.",
+        "duplicate",
+        "duplicate",
+        "Quoted line.",
+        "Wrapped in a div.",
+        "Second in div.",
+        "One item",
+        "Two items",
+        "a\nb",
+        "a & b",
+    ];
+
     fn paragraph_record(
         id: i64,
         href: &str,
@@ -908,10 +969,30 @@ mod tests {
     }
 
     #[test]
+    fn the_paragraph_enumeration_matches_the_reader_text() {
+        // The paragraph set itself: reader text semantics end to end —
+        // source wrapping collapses, numeric entities decode, the
+        // head's title is not a paragraph, blockquote/div/li bear
+        // paragraphs while their containers do not, `<br>` is a hard
+        // newline, CDATA is raw text.
+        let texts = paragraph_texts(CHAPTER.as_bytes()).expect("the chapter is mappable");
+        assert_eq!(texts, PARAGRAPHS.to_vec());
+        // A structurally untrustworthy entry has no paragraph list.
+        let unclosed = "<html><body><ul><li>one<li>two</ul></body></html>";
+        assert_eq!(paragraph_texts(unclosed.as_bytes()), None);
+    }
+
+    #[test]
     fn locates_a_paragraph_with_exact_spans() {
         // The first paragraph: outer must cover the whole element
         // including the <em>, inner exactly its content, tags verbatim.
-        let located = locate_paragraph(CHAPTER.as_bytes(), "He said teh word & left.", 0);
+        // `prev` of None asserts it is the chapter's first.
+        let located = locate_paragraph(
+            CHAPTER.as_bytes(),
+            PARAGRAPHS[0],
+            None,
+            Some(PARAGRAPHS[1]),
+        );
         let span = match located {
             ParagraphLocate::Found(span) => span,
             other => panic!("expected Found, got {other:?}"),
@@ -926,71 +1007,82 @@ mod tests {
             &CHAPTER[span.inner.clone()],
             "He said <em>teh</em> word &amp; left."
         );
-        assert_eq!(span.text, "He said teh word & left.");
+        assert_eq!(span.text, PARAGRAPHS[0]);
     }
 
     #[test]
-    fn reader_text_semantics_are_reproduced() {
-        // Source-wrapped text collapses; numeric entities decode; the
-        // head's title is not a paragraph; blockquote/div/li bear
-        // paragraphs, their containers do not.
-        let cases = [
-            ("The second paragraph, wrapped in the source with a numeric A entity.", true),
-            ("Chapter title", false),
-            ("Quoted line.", true),
-            ("Wrapped in a div.", true),
-            ("Second in div.", true),
-            ("One item", true),
-            ("Two items", true),
-            ("a\nb", true),
-            ("a & b", true),
-        ];
-        for (want, expected) in cases {
-            let found = matches!(
-                locate_paragraph(CHAPTER.as_bytes(), want, 0),
-                ParagraphLocate::Found(_)
-            );
-            assert_eq!(found, expected, "text {want:?} (expected found={expected})");
-        }
-    }
-
-    #[test]
-    fn identical_paragraphs_are_disambiguated_by_ordinal() {
-        let first = match locate_paragraph(CHAPTER.as_bytes(), "duplicate", 0) {
+    fn identical_paragraphs_are_disambiguated_by_neighbours() {
+        // Two identical paragraphs: truthful neighbours pick each one
+        // out, and the wrong neighbours (or asserting first/last)
+        // refuse rather than guess.
+        let first = match locate_paragraph(
+            CHAPTER.as_bytes(),
+            "duplicate",
+            Some(PARAGRAPHS[1]),
+            Some("duplicate"),
+        ) {
             ParagraphLocate::Found(span) => span,
             other => panic!("expected Found, got {other:?}"),
         };
-        let second = match locate_paragraph(CHAPTER.as_bytes(), "duplicate", 1) {
+        let second = match locate_paragraph(
+            CHAPTER.as_bytes(),
+            "duplicate",
+            Some("duplicate"),
+            Some(PARAGRAPHS[4]),
+        ) {
             ParagraphLocate::Found(span) => span,
             other => panic!("expected Found, got {other:?}"),
         };
         assert!(first.outer.start < second.outer.start);
         assert_eq!(&CHAPTER[first.outer.clone()], "<p>duplicate</p>");
         assert_eq!(&CHAPTER[second.outer.clone()], "<p>duplicate</p>");
-        // There are only two — a third is not current.
+        // Neither duplicate is the chapter's first paragraph.
         assert_eq!(
-            locate_paragraph(CHAPTER.as_bytes(), "duplicate", 2),
-            ParagraphLocate::NotCurrent(2)
+            locate_paragraph(CHAPTER.as_bytes(), "duplicate", None, None),
+            ParagraphLocate::NotFound
+        );
+    }
+
+    #[test]
+    fn refrains_that_neighbours_cannot_split_refuse() {
+        // y refrain y refrain y: both refrains have the same text and
+        // the same neighbours, and the truth cannot tell them apart.
+        // Two candidates is a refusal, never a guess.
+        let refrain = concat!(
+            "<html><body>",
+            "<p>y</p><p>refrain</p><p>y</p><p>refrain</p><p>y</p>",
+            "</body></html>"
+        );
+        assert_eq!(
+            locate_paragraph(refrain.as_bytes(), "refrain", Some("y"), Some("y")),
+            ParagraphLocate::Ambiguous(2)
+        );
+        // A neighbour that does not sit beside a refrain finds nothing.
+        assert_eq!(
+            locate_paragraph(refrain.as_bytes(), "refrain", Some("x"), Some("y")),
+            ParagraphLocate::NotFound
         );
     }
 
     #[test]
     fn unknown_text_is_not_found() {
         assert_eq!(
-            locate_paragraph(CHAPTER.as_bytes(), "no paragraph says this", 0),
+            locate_paragraph(CHAPTER.as_bytes(), "no paragraph says this", None, None),
             ParagraphLocate::NotFound
         );
         // Whitespace-only text is never a paragraph identity.
         assert_eq!(
-            locate_paragraph(CHAPTER.as_bytes(), "   ", 0),
+            locate_paragraph(CHAPTER.as_bytes(), "   ", None, None),
             ParagraphLocate::NotFound
         );
     }
 
     #[test]
     fn plan_refuses_unchanged_edits() {
-        // Same text, cosmetic whitespace difference: not an edit.
-        let refusal = plan_paragraph_patch(CHAPTER.as_bytes(), "Quoted line.", 0, "Quoted  line.\n");
+        // Same text, cosmetic whitespace difference: not an edit. The
+        // check runs before any locating, so the hints are moot here.
+        let refusal =
+            plan_paragraph_patch(CHAPTER.as_bytes(), "Quoted line.", None, None, "Quoted  line.\n");
         assert_eq!(refusal, Err(ParagraphRefusal::Unchanged));
     }
 
@@ -1001,8 +1093,9 @@ mod tests {
         // verbatim and writes the new text flat.
         let planned = plan_paragraph_patch(
             CHAPTER.as_bytes(),
-            "He said teh word & left.",
-            0,
+            PARAGRAPHS[0],
+            None,
+            Some(PARAGRAPHS[1]),
             "He said the word & left, quickly.",
         )
         .expect("the paragraph is locatable");
@@ -1021,9 +1114,14 @@ mod tests {
         // The whole point of carrying the outer source as the find: the
         // existing apply path needs nothing new but the widened kind
         // filter. Everything outside the span must stay identical bytes.
-        let planned =
-            plan_paragraph_patch(CHAPTER.as_bytes(), "Quoted line.", 0, "Amended line.")
-                .expect("the paragraph is locatable");
+        let planned = plan_paragraph_patch(
+            CHAPTER.as_bytes(),
+            PARAGRAPHS[4],
+            Some("duplicate"),
+            Some(PARAGRAPHS[5]),
+            "Amended line.",
+        )
+        .expect("the paragraph is locatable");
         let record = paragraph_record(
             7,
             "c.xhtml",
@@ -1046,7 +1144,12 @@ mod tests {
         assert_eq!(String::from_utf8(out).unwrap(), expected);
         // And the edited paragraph locates under its new text.
         assert!(matches!(
-            locate_paragraph(expected.as_bytes(), "Amended line.", 0),
+            locate_paragraph(
+                expected.as_bytes(),
+                "Amended line.",
+                Some("duplicate"),
+                Some(PARAGRAPHS[5])
+            ),
             ParagraphLocate::Found(_)
         ));
     }
@@ -1055,8 +1158,14 @@ mod tests {
     fn round_trip_stability_br_and_all() {
         // The <br> paragraph: reader text "a\nb"; editing to "x\ny"
         // must serialize as <br/> and round-trip back to "x\ny".
-        let planned = plan_paragraph_patch(CHAPTER.as_bytes(), "a\nb", 0, "x\ny")
-            .expect("the paragraph is locatable");
+        let planned = plan_paragraph_patch(
+            CHAPTER.as_bytes(),
+            PARAGRAPHS[9],
+            Some(PARAGRAPHS[8]),
+            Some(PARAGRAPHS[10]),
+            "x\ny",
+        )
+        .expect("the paragraph is locatable");
         assert_eq!(planned.replace_text, "<p>x<br/>y</p>");
         let record = paragraph_record(
             9,
@@ -1069,7 +1178,12 @@ mod tests {
         let (out, _) = apply_text_patches("c.xhtml", CHAPTER.as_bytes(), &[record]);
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("<p>x<br/>y</p>"));
-        let again = match locate_paragraph(text.as_bytes(), "x\ny", 0) {
+        let again = match locate_paragraph(
+            text.as_bytes(),
+            "x\ny",
+            Some(PARAGRAPHS[8]),
+            Some(PARAGRAPHS[10]),
+        ) {
             ParagraphLocate::Found(span) => span,
             other => panic!("expected Found, got {other:?}"),
         };
@@ -1080,7 +1194,12 @@ mod tests {
     fn cdata_text_needs_no_decoding() {
         // CDATA content is raw text to both the reader and this scan —
         // "a & b" matches without any entity involved.
-        let span = match locate_paragraph(CHAPTER.as_bytes(), "a & b", 0) {
+        let span = match locate_paragraph(
+            CHAPTER.as_bytes(),
+            PARAGRAPHS[10],
+            Some(PARAGRAPHS[9]),
+            None,
+        ) {
             ParagraphLocate::Found(span) => span,
             other => panic!("expected Found, got {other:?}"),
         };
@@ -1092,30 +1211,30 @@ mod tests {
         // Unclosed <li>: the HTML fallback's implied close — unmappable.
         let unclosed = "<html><body><ul><li>one<li>two</ul></body></html>";
         assert_eq!(
-            locate_paragraph(unclosed.as_bytes(), "one", 0),
+            locate_paragraph(unclosed.as_bytes(), "one", None, None),
             ParagraphLocate::NotMappable
         );
         // A close that skips an open element.
         let misnested = "<html><body><div><p>a</div></body></html>";
         assert_eq!(
-            locate_paragraph(misnested.as_bytes(), "a", 0),
+            locate_paragraph(misnested.as_bytes(), "a", None, None),
             ParagraphLocate::NotMappable
         );
         // A bare `<` in text is not XML.
         let stray_lt = "<html><body><p>a < b</p></body></html>";
         assert_eq!(
-            locate_paragraph(stray_lt.as_bytes(), "a < b", 0),
+            locate_paragraph(stray_lt.as_bytes(), "a < b", None, None),
             ParagraphLocate::NotMappable
         );
         // No single root.
         let two_roots = "<html></html><html></html>";
         assert_eq!(
-            locate_paragraph(two_roots.as_bytes(), "x", 0),
+            locate_paragraph(two_roots.as_bytes(), "x", None, None),
             ParagraphLocate::NotMappable
         );
         // Not UTF-8.
         assert_eq!(
-            locate_paragraph(&[0xff, 0xfe], "x", 0),
+            locate_paragraph(&[0xff, 0xfe], "x", None, None),
             ParagraphLocate::NotMappable
         );
     }
@@ -1128,7 +1247,7 @@ mod tests {
         // map a paragraph the reader sees differently.
         let nbsp_entry = "<html><body><p>a &nbsp; b</p></body></html>";
         assert_eq!(
-            locate_paragraph(nbsp_entry.as_bytes(), "a\u{a0} b", 0),
+            locate_paragraph(nbsp_entry.as_bytes(), "a\u{a0} b", None, None),
             ParagraphLocate::NotFound
         );
     }
@@ -1138,7 +1257,7 @@ mod tests {
         // <br> without the slash: html5ever voids it too, so the trees
         // agree and the paragraph is mappable.
         let unslashed = "<html><body><p>a<br>b</p></body></html>";
-        let span = match locate_paragraph(unslashed.as_bytes(), "a\nb", 0) {
+        let span = match locate_paragraph(unslashed.as_bytes(), "a\nb", None, None) {
             ParagraphLocate::Found(span) => span,
             other => panic!("expected Found, got {other:?}"),
         };
@@ -1149,8 +1268,14 @@ mod tests {
     fn emptying_a_paragraph_is_a_real_edit() {
         // Whitespace-only new text is a change: the serializer writes
         // the empty element, which the reader renders as nothing.
-        let planned = plan_paragraph_patch(CHAPTER.as_bytes(), "duplicate", 1, "  ")
-            .expect("the paragraph is locatable");
+        let planned = plan_paragraph_patch(
+            CHAPTER.as_bytes(),
+            "duplicate",
+            Some("duplicate"),
+            Some(PARAGRAPHS[4]),
+            "  ",
+        )
+        .expect("the paragraph is locatable");
         assert_eq!(planned.replace_text, "<p></p>");
         let record = paragraph_record(
             11,
@@ -1162,12 +1287,13 @@ mod tests {
         );
         let (out, _) = apply_text_patches("c.xhtml", CHAPTER.as_bytes(), &[record]);
         assert!(String::from_utf8(out).unwrap().contains("<p></p>"));
-        // And the emptied paragraph no longer locates: it has no text.
-        let expected =
-            CHAPTER.replace("<p>duplicate</p>\n<p>duplicate</p>", "<p>duplicate</p>\n<p></p>");
+        // And the emptied paragraph's old identity is gone: no
+        // "duplicate" is preceded by a "duplicate" any more.
+        let expected = CHAPTER
+            .replace("<p>duplicate</p>\n<p>duplicate</p>", "<p>duplicate</p>\n<p></p>");
         assert_eq!(
-            locate_paragraph(expected.as_bytes(), "duplicate", 1),
-            ParagraphLocate::NotCurrent(1)
+            locate_paragraph(expected.as_bytes(), "duplicate", Some("duplicate"), None),
+            ParagraphLocate::NotFound
         );
     }
 }

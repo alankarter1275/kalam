@@ -4099,6 +4099,28 @@ entry.k-inline-edit > text {
   caret-color: #61afef;
 }
 
+/* Phase 6.7: the paragraph editor — the same box, sized for a whole
+   paragraph. The text view's internal GtkText paints its own background,
+   so it is told to stay out of the way. */
+textview.k-inline-edit {
+  background: rgba(22,24,30,0.96);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: rgba(255,255,255,0.92);
+  caret-color: #61afef;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+textview.k-inline-edit:focus,
+textview.k-inline-edit:focus-within {
+  border-color: rgba(97,175,239,0.8);
+}
+textview.k-inline-edit text {
+  background: transparent;
+  color: rgba(255,255,255,0.92);
+  caret-color: #61afef;
+}
+
 .k-color-bar { padding: 0 4px; }
 
 .k-color-dot {

@@ -92,9 +92,22 @@ pub struct ReaderModel {
     pub(crate) dict_lookup_def: Option<String>,
     pub(crate) dict_context: Option<String>,
     pub(crate) last_selection: Option<String>,
-    /// Phase 6.4: the open inline edit, if any — the entry laid over the
-    /// selection, the text it started as, and the chapter it belongs to.
+    /// Phase 6.4: the open inline edit, if any — the editor laid over
+    /// the selection or paragraph, the text it started as, and the
+    /// chapter it belongs to.
     pub(crate) inline_edit: Option<InlineEdit>,
+    /// Phase 6.7: proofreading mode — a tap on a paragraph opens the
+    /// inline editor over the whole paragraph. View state; nothing
+    /// persists it.
+    pub(crate) proofreading: bool,
+    /// The open book's format — proofreading is an EPUB's mode (the
+    /// others have no XHTML paragraphs to edit), so the chrome's pencil
+    /// shows only for one.
+    pub(crate) book_format: crate::models::BookFormat,
+    /// Serial of the next inline edit: verdicts carry the serial of the
+    /// edit they verified, so a stale verdict cannot close a newer
+    /// editor (phase 6.7 — a quick second tap).
+    pub(crate) next_edit_serial: u64,
     /// Set while a committed edit swaps the reader's view (phase 6.4):
     /// the open→reload→restore window must not read as reader input.
     pub(crate) reader_reloading: bool,

@@ -63,6 +63,21 @@ pub use scroll::PageExtent;
 // here — the same rule as the types below.
 pub use chapbook_epub::EntryFilter;
 
+/// A paragraph's editing identity (Phase 6.7): its own extraction text
+/// and its neighbours', so a host's source-span mapper can find the
+/// element in the entry's bytes. See [`Session::paragraph_identity`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParagraphIdentity {
+    /// The paragraph's text, reader-extracted, ends trimmed.
+    pub text: String,
+    /// The previous paragraph's text in document order, or `None` when
+    /// the paragraph is the chapter's first.
+    pub prev: Option<String>,
+    /// The next paragraph's text in document order, or `None` when the
+    /// paragraph is the chapter's last.
+    pub next: Option<String>,
+}
+
 /// A host's highlight ([`HostHighlight`]) resolved into the open book's
 /// locator space — what a shell paints and lists.
 #[derive(Debug, Clone, PartialEq, Eq)]

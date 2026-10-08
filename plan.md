@@ -465,3 +465,80 @@ step 1 is the only thing awaited.
   passing on their first execution. A stray 2-second cancelled
   duplicate run appeared beside the green one — the ci-logs
   publishing pushes racing, not a code signal.
+
+- **Step 7 (proofreading edit mode) — implemented 2026-10-08.** The
+  reader names a paragraph; the app opens the step-4 editor over it;
+  commit stores a paragraph patch. A pencil `ToggleButton`
+  (`document-edit-symbolic`) sits in the reader's back dock after
+  Search, visible on EPUBs only (`model.book_format`, set at init
+  from the catalog row); nothing persists it — the flag is view
+  state, re-applied on the reader's view swaps so a reopen mid-book
+  keeps the mode. With it on, a tap that lands on a paragraph
+  selects the paragraph (the selection's moved-rect stream anchors
+  the editor from the next frame, as for the selection editor) and
+  fires a new `paragraph_tap` callback carrying the paragraph's
+  identity and the union rect of its visible lines. A tap that lands
+  elsewhere behaves exactly as before; a tap that lands on a
+  paragraph while a selection stands replaces it — one tap opens the
+  editor, the old selection's report having committed any open one
+  as its click-away. The identity comes from the reader crate:
+  `paragraph_tag_at_page` (the tap's hit, now carrying the block's
+  layout tag) and `Session::paragraph_identity`, which walks the
+  chapter's tagged blocks in document order and returns the tapped
+  one's reader-extracted text with its neighbours' — `None`
+  neighbours asserting first/last.
+
+  **One design change to step 6, settled with the owner before the
+  code:** paragraphs are disambiguated by their neighbours, not by
+  an ordinal into the chapter's paragraph list. The ordinal coupled
+  the reader's enumeration to the mapper's — an anonymous text block
+  shifts every ordinal after it, and a mismatch edits the wrong
+  paragraph or refuses the right one — while neighbours disagree
+  only locally, around the paragraph itself, and a disagreement is a
+  refusal. `locate_paragraph` takes `(want, prev, next)`, matching
+  `None` as a hard first/last assertion; the enums renamed to match
+  (`NotCurrent(n)` → `Ambiguous(n)` in both `ParagraphLocate` and
+  `ParagraphRefusal`), and the reader side was written to the same
+  contract: its enumeration is the layout's own (the blocks that
+  got line fragments, anonymous text runs borrowing their parent's
+  tag), its text is `extract_text_at` with the ends trimmed — the
+  same normalization `epub_spans`'s scan applies, whitespace runs
+  collapsed, `<br>` a hard newline, U+00A0 content. Where the two
+  enumerations can disagree (a hidden footnote the layout never
+  tags, a mixed div>text+p container), the locate refuses —
+  paragraph editing declines, the selection editor still works.
+
+  The editor is the step-4 box grown to a paragraph:
+  `build_paragraph_editor` (a `gtk::TextView`, `WordChar` wrap, tabs
+  to the reader, Enter/KP_Enter commit, Escape cancel, focus-out
+  commit, the reader's own family and size, the same overlay
+  positioning and the same `textview.k-inline-edit` styling beside
+  the entry's — its internal `text` child transparent so the
+  bordered box is the only background). `EditScope` carries which
+  kind of edit is open; `EditorWidget` carries which widget;
+  `CommitInlineEdit` branches to `verify_paragraph_edit`, the
+  step-4 worker with `plan_paragraph_patch` in place of the text
+  matcher, over the same virtual chapter (prior patches applied).
+  Refusal toasts name the way out; `Ambiguous(n)` points at the
+  full editor (step 8).
+
+  **Two races in the step-4 commit path closed.** Enter, click-away
+  and focus-out can all arrive for one edit, and the engine's
+  `done` flag only knows about its own two controllers — a
+  selection-path commit followed by a later focus-out verified the
+  same editor twice. The model now carries `InlineEdit::committed`,
+  set when a commit is dispatched, and every commit path passes it;
+  a refusal carries the editor's serial back (`Err(toast, serial)`)
+  and re-arms exactly the editor it refused — the retry loop step 4
+  promised, now actually safe. `next_edit_serial` hands out the
+  serials; verdicts store their patch regardless (the editor they
+  verified may already be gone), and close-and-reload only when the
+  serial is the editor still standing.
+
+  Tests: the epub_spans suite rewritten to the neighbour contract
+  (the chapter fixture's refrain pair now asserting
+  `Ambiguous(2)`, first/last asserting `None`), and a new
+  chapbook-reader integration test (`paragraph_identity.rs`) pinning
+  the reader half of the contract on `fixtures/epub/minimal.epub`:
+  markup-carrying paragraph, document-order neighbours, firstness,
+  and the refusal for a tag the chapter does not carry.

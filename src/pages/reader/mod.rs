@@ -29,7 +29,7 @@ use ui_prefs::{apply_reader_ui_prefs, register_reader_ui_provider, update_reader
 
 use crate::db::Catalog;
 use crate::epub_book::ReadingTheme;
-use crate::models::Book;
+use crate::models::{Book, BookFormat};
 use crate::service::LibraryService;
 use gtk::glib;
 use gtk::prelude::*;
@@ -219,6 +219,18 @@ impl Component for ReaderModel {
                         add_css_class: "kalam-reader-back",
                         set_tooltip_text: Some("Search in book (Ctrl+F)"),
                         connect_clicked => ReaderMsg::ToggleSearch,
+                    },
+
+                    #[name = "proofread_btn"]
+                    gtk::ToggleButton {
+                        set_child: Some(&crate::icons::symbolic_with_classes("document-edit-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Proofread — click a paragraph to edit it (EPUB)"),
+                        #[watch]
+                        set_visible: model.book_format == BookFormat::Epub,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(ReaderMsg::ToggleProofreading(btn.is_active()));
+                        },
                     },
 
                     gtk::Button {
@@ -939,6 +951,9 @@ impl Component for ReaderModel {
             dict_context: None,
             last_selection: None,
             inline_edit: None,
+            proofreading: false,
+            book_format: book.as_ref().map(|b| b.format).unwrap_or(BookFormat::Epub),
+            next_edit_serial: 0,
             reader_reloading: false,
             reader_overlay: None,
             book_path: book.as_ref().map(|b| b.file_path.clone()),
@@ -1869,12 +1884,12 @@ impl Component for ReaderModel {
                 if sel.is_some() && self.inline_edit.is_some() {
                     // A fresh drag while the editor stood open: the page
                     // is not focusable, so this click did not go through
-                    // the entry's focus-out — the selection changing is
+                    // the editor's focus-out — the selection changing is
                     // the click-away. Commit what stands and let the new
                     // selection proceed.
                     if let Some(edit) = &self.inline_edit {
                         sender.input(ReaderMsg::CommitInlineEdit(
-                            edit.entry.text().to_string(),
+                            edit.editor.text(),
                         ));
                     }
                 }
@@ -1885,7 +1900,7 @@ impl Component for ReaderModel {
                     // geometry, not the selection.)
                     if let Some(edit) = &self.inline_edit {
                         sender.input(ReaderMsg::CommitInlineEdit(
-                            edit.entry.text().to_string(),
+                            edit.editor.text(),
                         ));
                     }
                 }
@@ -1900,7 +1915,7 @@ impl Component for ReaderModel {
                 // and nothing typed is ever lost to a scroll.
                 if let Some(rect) = rect {
                     if let Some(edit) = &self.inline_edit {
-                        engine::position_inline_editor(&edit.entry, &rect);
+                        engine::position_inline_editor(edit.editor.widget(), &rect);
                     } else {
                         // No editor open: keep the anchor current, so the
                         // pencil (and the popovers) place against where
@@ -1908,6 +1923,67 @@ impl Component for ReaderModel {
                         self.dict_anchor = Some(rect);
                     }
                 }
+            }
+            ReaderMsg::ToggleProofreading(on) => {
+                // The chrome's pencil (phase 6.7): on, a tap on a
+                // paragraph opens the inline editor over the whole
+                // paragraph. View state only; nothing persists it.
+                self.proofreading = on;
+                if let Some(view) = &self.view {
+                    view.set_proofreading(on);
+                }
+            }
+            ReaderMsg::EngineParagraphTap(tap) => {
+                // A proofread tap found its paragraph. Guards first — an
+                // editor already open means the tap's selection report
+                // already committed it as its click-away, and a reload in
+                // flight has no chapter to edit.
+                if self.inline_edit.is_some() || self.reader_reloading {
+                    return;
+                }
+                let Some(view) = self.view.clone() else { return };
+                let Some(overlay) = self.reader_overlay.clone() else { return };
+                let Some((identity, rect)) = tap else {
+                    crate::notify::info(
+                        "Proofreading",
+                        "That paragraph cannot be edited here.",
+                    );
+                    return;
+                };
+                // The popovers and the chip stand down — the tap also
+                // made the paragraph the selection, and its report may
+                // have raised the chip; the editor replaces it, exactly
+                // as the selection pencil does.
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                engine::dismiss(self.word_preview_popover.take());
+                engine::dismiss(self.note_popover.take());
+                let (textview, provider) = engine::build_paragraph_editor(
+                    &identity.text,
+                    self.font_family.as_deref(),
+                    self.font_px,
+                    &sender,
+                );
+                engine::position_inline_editor(&textview, &rect);
+                overlay.add_overlay(&textview);
+                // Cursor-hiding would blank the pointer over the box
+                // mid-edit; it resumes when the editor closes.
+                view.set_autohide_cursor(false);
+                textview.grab_focus();
+                let serial = self.next_edit_serial;
+                self.next_edit_serial += 1;
+                self.inline_edit = Some(InlineEdit {
+                    original: identity.text,
+                    chapter: self.chapter,
+                    scope: EditScope::Paragraph {
+                        prev: identity.prev,
+                        next: identity.next,
+                    },
+                    serial,
+                    committed: false,
+                    editor: EditorWidget::Paragraph(textview),
+                    provider,
+                });
             }
             ReaderMsg::BeginInlineEdit => {
                 // The pencil: the selection becomes the editor. Guards
@@ -1939,15 +2015,27 @@ impl Component for ReaderModel {
                 // mid-edit; it resumes when the editor closes.
                 view.set_autohide_cursor(false);
                 entry.grab_focus();
+                let serial = self.next_edit_serial;
+                self.next_edit_serial += 1;
                 self.inline_edit = Some(InlineEdit {
                     original: text,
                     chapter: self.chapter,
-                    entry,
+                    scope: EditScope::Selection,
+                    serial,
+                    committed: false,
+                    editor: EditorWidget::Selection(entry),
                     provider,
                 });
             }
             ReaderMsg::CommitInlineEdit(corrected) => {
                 let Some(edit) = self.inline_edit.as_ref() else { return };
+                if edit.committed {
+                    // A commit is already in flight for this editor —
+                    // Enter, click-away, and focus-out all race the
+                    // verdict, and each may arrive for one edit. One
+                    // edit, one commit.
+                    return;
+                }
                 if corrected == edit.original {
                     // The one verdict that needs no book opened: the text
                     // is unchanged, so nothing is stored. The box stays
@@ -1957,10 +2045,16 @@ impl Component for ReaderModel {
                 }
                 // Verify off the UI thread against the chapter as the
                 // reader shows it: the book's path, the chapter the
-                // selection was made in, and the fixes already stored.
+                // edit was made in, and the fixes already stored.
                 let Some(path) = self.book_path.clone() else { return };
                 let chapter = edit.chapter;
                 let original = edit.original.clone();
+                let serial = edit.serial;
+                let is_paragraph = matches!(edit.scope, EditScope::Paragraph { .. });
+                let (prev, next) = match &edit.scope {
+                    EditScope::Selection => (None, None),
+                    EditScope::Paragraph { prev, next } => (prev.clone(), next.clone()),
+                };
                 // Pending only — the same list the reader's entry filter
                 // runs, so the verification sees exactly the chapter the
                 // reader shows.
@@ -1980,16 +2074,26 @@ impl Component for ReaderModel {
                 // blocking, a local future on the main loop receives,
                 // and nothing GTK-side crosses the thread. One verdict
                 // per edit, so the future ends after one receive.
-                let (verdict_tx, verdict_rx) = async_channel::unbounded::<
-                    Result<(String, crate::epub_patches::PlannedPatch), String>,
-                >();
+                let (verdict_tx, verdict_rx) =
+                    async_channel::unbounded::<Result<VerifiedEdit, (String, u64)>>();
                 let tx = sender.input_sender().clone();
                 gtk::glib::spawn_future_local(async move {
                     if let Ok(verdict) = verdict_rx.recv().await {
                         let _ = tx.send(ReaderMsg::InlineEditVerified(verdict));
                     }
                 });
-                engine::verify_inline_edit(path, chapter, prior, original, corrected, verdict_tx);
+                if is_paragraph {
+                    engine::verify_paragraph_edit(
+                        path, chapter, prior, original, prev, next, corrected, serial, verdict_tx,
+                    );
+                } else {
+                    engine::verify_inline_edit(
+                        path, chapter, prior, original, corrected, serial, verdict_tx,
+                    );
+                }
+                if let Some(edit) = self.inline_edit.as_mut() {
+                    edit.committed = true;
+                }
                 // The editor stays open until the verdict lands — a
                 // refusal is information (widen the selection), not a
                 // lost edit, and a slow book must not freeze the page.
@@ -1999,41 +2103,73 @@ impl Component for ReaderModel {
                 self.close_inline_edit();
             }
             ReaderMsg::InlineEditVerified(verdict) => {
-                let Some(edit) = self.inline_edit.as_ref() else { return };
+                // The verdict carries everything it verified — href,
+                // kind, chapter, serial — because the editor it came
+                // from may already be gone (a quick second tap, or an
+                // Escape right after Enter): its patch still stores.
                 match verdict {
-                    Ok((href, planned)) => {
+                    Ok(verified) => {
+                        let source = if verified.kind == "paragraph" {
+                            "proofread"
+                        } else {
+                            "typo"
+                        };
                         let inserted = self.service.catalog().insert_patch(
                             self.book_id,
-                            "text",
-                            &href,
-                            edit.chapter as i64,
-                            &planned.find_text,
-                            &planned.replace_text,
-                            &planned.context_before,
-                            &planned.context_after,
-                            "typo",
+                            verified.kind,
+                            &verified.href,
+                            verified.chapter as i64,
+                            &verified.planned.find_text,
+                            &verified.planned.replace_text,
+                            &verified.planned.context_before,
+                            &verified.planned.context_after,
+                            source,
                         );
                         match inserted {
                             Ok(_) => {
-                                // The fix is stored; take the editor down
-                                // and reopen the book so the correction
-                                // shows in place, at the same spot.
-                                self.close_inline_edit();
-                                self.reload_reader(&sender);
-                                crate::notify::success(
-                                    "Fixed",
-                                    "The correction now shows in the book.",
-                                );
+                                // Only the editor this verdict belongs to
+                                // comes down. A newer editor stands — its
+                                // half-typed text is not the casualty of
+                                // an older edit's slow verification — and
+                                // the reload waits for its own commit.
+                                let current = self
+                                    .inline_edit
+                                    .as_ref()
+                                    .is_some_and(|edit| edit.serial == verified.serial);
+                                if current {
+                                    self.close_inline_edit();
+                                    self.reload_reader(&sender);
+                                    crate::notify::success(
+                                        "Fixed",
+                                        "The edit now shows in the book.",
+                                    );
+                                } else {
+                                    crate::notify::success(
+                                        "Fixed",
+                                        "The edit is saved — it shows when this paragraph edit lands.",
+                                    );
+                                }
                             }
                             Err(e) => {
                                 // The store refused: nothing is saved, and
-                                // the box stays so nothing typed is lost.
-                                crate::notify::error("Could not save the fix", &e.to_string());
+                                // an editor that still stands keeps its
+                                // text so nothing typed is lost.
+                                crate::notify::error("Could not save the edit", &e.to_string());
                             }
                         }
                     }
-                    Err(toast) => {
-                        crate::notify::info("Couldn't save that fix", &toast);
+                    Err((toast, serial)) => {
+                        crate::notify::info("Couldn't save that edit", &toast);
+                        // A refusal of the editor still standing re-arms
+                        // it: the fix may be widened or reworded and
+                        // committed again. A stale refusal touches
+                        // nothing — the editor it refused is gone, and
+                        // the one that replaced it keeps its own state.
+                        if let Some(edit) = self.inline_edit.as_mut() {
+                            if edit.serial == serial {
+                                edit.committed = false;
+                            }
+                        }
                     }
                 }
             }
@@ -3148,7 +3284,7 @@ impl ReaderModel {
         if let Some(edit) = self.inline_edit.take() {
             engine::remove_inline_edit_provider(&edit.provider);
             if let Some(overlay) = &self.reader_overlay {
-                overlay.remove_overlay(&edit.entry);
+                overlay.remove_overlay(edit.editor.widget());
             }
             if let Some(view) = &self.view {
                 view.set_autohide_cursor(self.autohide_cursor);
@@ -3250,6 +3386,9 @@ impl ReaderModel {
         }
         new_view.set_dual_page(self.dual_page);
         new_view.set_autohide_cursor(self.autohide_cursor);
+        // The proofread pencil survives the reopen (phase 6.7): the
+        // flag lives here, the view is new.
+        new_view.set_proofreading(self.proofreading);
         new_view.set_wheel_step(self.wheel_step as f32);
         new_view.set_arrow_step(self.arrow_step as f32);
         new_view.widget().grab_focus();

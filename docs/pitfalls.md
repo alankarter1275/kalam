@@ -3051,3 +3051,26 @@ types from what the BODY does, not from what the caller happens to
 hold — slices over Vecs, `&` over `&mut` — because the compiler
 accepts the wider forms silently and clippy is the only layer that
 objects, one CI run later.
+
+## §85 — python-heredoc rewrites silently eat Rust string continuations (Phase 6 step 7, caught in review)
+
+Every code edit this project makes without a local toolchain is a
+python heredoc `replace`, and one such rewrite rebuilt a `match` of
+multi-line string literals without the trailing-backslash
+continuations (`"...may have \
+             changed..."`). Rust
+accepts a plain newline inside a string literal — the newline and all
+the next line's indentation become content — so the file compiled
+clean and the toast would have shipped reading "it may have
+              changed underneath the edit", a dozen spaces wide.
+No compiler, no clippy, no test would have said a word: the failure
+is only visible to a reader.
+
+The lesson: after any heredoc edit that touches a string literal
+spanning lines, grep the touched region for long space runs inside
+quotes —
+`grep -n '"[^"]*         ' <file>` — and re-check every
+multi-line string kept its `\` at each break. The continuation
+backslash is the difference between a message and a message with a
+railroad track through it, and nothing automated can tell them
+apart.

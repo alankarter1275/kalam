@@ -48,9 +48,10 @@ pub use chapbook_core::{
 };
 pub use chapbook_reader::Highlight;
 pub use chapbook_reader::EntryFilter;
+pub use chapbook_reader::ParagraphIdentity;
 pub use fonts::{font_source, SANS_FONT};
 pub use prefs::{HighlightColor, KalamPrefs, KalamTheme, BODY_FONT};
 pub use view::{
-    NewHighlight, ReaderOptions, ReaderView, ReadingMode, ReadingPosition, SearchResult, SelectedText,
-    DEFAULT_CACHE_BUDGET,
+    NewHighlight, ParagraphTap, ReaderOptions, ReaderView, ReadingMode, ReadingPosition,
+    SearchResult, SelectedText, DEFAULT_CACHE_BUDGET,
 };

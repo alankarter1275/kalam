@@ -226,6 +226,18 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
         let _ = tx.send(ReaderMsg::EngineSelectionMoved(rect.map(gdk_rect)));
     });
 
+    // Phase 6.7: a proofread tap's paragraph — its editing identity and
+    // the rect its editor opens over, or None when the chapter has no
+    // editable paragraph there. The view fires it after reporting the
+    // tap's own selection, so an open editor commits as its click-away
+    // before this opens the next one.
+    let tx = sender.input_sender().clone();
+    view.connect_paragraph_tap(move |tap: Option<kalam_reader::ParagraphTap>| {
+        let _ = tx.send(ReaderMsg::EngineParagraphTap(tap.map(|tap| {
+            (tap.identity, gdk_rect(tap.rect))
+        })));
+    });
+
     view.connect_external_link(|href: &str| {
         if href.starts_with("http://") || href.starts_with("https://") {
             let launcher = gtk::UriLauncher::new(href);
@@ -768,15 +780,110 @@ pub(crate) fn remove_inline_edit_provider(provider: &gtk::CssProvider) {
     }
 }
 
+/// The paragraph editor (phase 6.7): the inline editor's paragraph
+/// scope. A wrapped, multi-line view rather than an entry — a paragraph
+/// keeps its `<br>` newlines, which an entry cannot hold — with the
+/// same contract as the selection editor: the reader's own typeface,
+/// Enter commits, Escape cancels, clicking away commits, and one flag
+/// settles whichever lands first. Enter commits rather than inserting a
+/// line break (the shared editing feel); the paragraph's existing line
+/// breaks survive in the buffer, and commit serializes them back as
+/// `<br/>`.
+pub(crate) fn build_paragraph_editor(
+    text: &str,
+    font_family: Option<&str>,
+    font_px: u32,
+    sender: &ComponentSender<ReaderModel>,
+) -> (gtk::TextView, gtk::CssProvider) {
+    let view = gtk::TextView::new();
+    view.add_css_class("k-inline-edit");
+    view.set_halign(gtk::Align::Start);
+    view.set_valign(gtk::Align::Start);
+    view.set_wrap_mode(gtk::WrapMode::WordChar);
+    // Tab belongs to the reader (focus moves), not the paragraph.
+    view.set_accepts_tab(false);
+    view.buffer().set_text(text);
+
+    // The reader's own type, as the selection editor typesets it.
+    let family = font_family
+        .filter(|f| !f.is_empty())
+        .map(|f| f.replace('\'', ""))
+        .unwrap_or_else(|| kalam_reader::BODY_FONT.to_string());
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(&format!(
+        "textview.k-inline-edit {{ font-family: '{}'; font-size: {}px; }}",
+        family,
+        font_px.max(1)
+    ));
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
+    // One flag, the selection editor's shape.
+    let done = std::rc::Rc::new(std::cell::Cell::new(false));
+
+    let tx = sender.input_sender().clone();
+    let view_keys = view.clone();
+    let done_keys = done.clone();
+    let key = gtk::EventControllerKey::new();
+    key.connect_key_pressed(move |_, keyval, _, _| {
+        if keyval == gtk::gdk::Key::Return || keyval == gtk::gdk::Key::KP_Enter {
+            if !done_keys.replace(true) {
+                let _ = tx.send(ReaderMsg::CommitInlineEdit(textview_text(&view_keys)));
+            }
+            return gtk::glib::Propagation::Stop;
+        }
+        if keyval == gtk::gdk::Key::Escape {
+            if !done_keys.replace(true) {
+                let _ = tx.send(ReaderMsg::CancelInlineEdit);
+            }
+            return gtk::glib::Propagation::Stop;
+        }
+        gtk::glib::Propagation::Proceed
+    });
+    view.add_controller(key);
+
+    // Clicking away is a commit, as in the selection editor.
+    let tx = sender.input_sender().clone();
+    let view_focus = view.clone();
+    let done_focus = done.clone();
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_leave(move |_| {
+        if done_focus.replace(true) {
+            return;
+        }
+        let _ = tx.send(ReaderMsg::CommitInlineEdit(textview_text(&view_focus)));
+    });
+    view.add_controller(focus);
+
+    (view, provider)
+}
+
+/// A text view's whole buffer, as plain text.
+fn textview_text(view: &gtk::TextView) -> String {
+    let buffer = view.buffer();
+    let (start, end) = buffer.bounds();
+    buffer.text(&start, &end, false).to_string()
+}
+
 /// Lay the editor over its selection. Overlay coordinates are the view
 /// widget's own — the same space the selection rect is measured in (the
 /// strip scrollbar is placed the same way) — so start-aligned margins
-/// land the entry exactly on the text. Width has a floor: a one-word
-/// selection still gets a box worth typing into.
-pub(crate) fn position_inline_editor(entry: &gtk::Entry, rect: &gtk::gdk::Rectangle) {
-    entry.set_margin_start(rect.x());
-    entry.set_margin_top(rect.y());
-    entry.set_size_request(rect.width().max(160), rect.height().max(28));
+/// land the editor exactly on the text. Width has a floor: a one-word
+/// selection still gets a box worth typing into. The same geometry
+/// places the selection editor (an entry) and the paragraph editor (a
+/// text view).
+pub(crate) fn position_inline_editor(
+    widget: &impl gtk::IsA<gtk::Widget>,
+    rect: &gtk::gdk::Rectangle,
+) {
+    widget.set_margin_start(rect.x());
+    widget.set_margin_top(rect.y());
+    widget.set_size_request(rect.width().max(160), rect.height().max(28));
 }
 
 /// Verify an inline edit against the book's source, off the UI thread —
@@ -799,13 +906,20 @@ pub(crate) fn verify_inline_edit(
     prior: Vec<PatchRecord>,
     original: String,
     corrected: String,
-    verdict_tx: async_channel::Sender<
-        Result<(String, crate::epub_patches::PlannedPatch), String>,
-    >,
+    serial: u64,
+    verdict_tx: async_channel::Sender<Result<VerifiedEdit, (String, u64)>>,
 ) {
     std::thread::spawn(move || {
         let verdict =
-            verify_inline_edit_in_thread(&book_path, chapter, &prior, &original, &corrected);
+            verify_inline_edit_in_thread(&book_path, chapter, &prior, &original, &corrected)
+                .map(|planned| VerifiedEdit {
+                    href: planned.0,
+                    kind: "text",
+                    chapter,
+                    serial,
+                    planned: planned.1,
+                })
+                .map_err(|toast| (toast, serial));
         let _ = verdict_tx.send_blocking(verdict);
     });
 }
@@ -837,6 +951,99 @@ fn verify_inline_edit_in_thread(
     crate::epub_patches::plan_text_patch(&virtual_bytes, original, corrected)
         .map(|planned| (href, planned))
         .map_err(|refusal| refusal_to_toast(&refusal))
+}
+
+/// The paragraph-scope sibling (phase 6.7): verify a proofreading edit
+/// against the chapter's source through the step-6 span mapper. Same
+/// worker-thread shape and the same verdict channel; the identity is
+/// the paragraph's text plus its neighbours', exactly what the tap
+/// carried. `serial` is the editor's, so a verdict landing after its
+/// editor was replaced stores its patch without closing the new one.
+pub(crate) fn verify_paragraph_edit(
+    book_path: std::path::PathBuf,
+    chapter: usize,
+    prior: Vec<PatchRecord>,
+    original: String,
+    prev: Option<String>,
+    next: Option<String>,
+    corrected: String,
+    serial: u64,
+    verdict_tx: async_channel::Sender<Result<VerifiedEdit, (String, u64)>>,
+) {
+    std::thread::spawn(move || {
+        let verdict = verify_paragraph_edit_in_thread(
+            &book_path,
+            chapter,
+            &prior,
+            &original,
+            prev.as_deref(),
+            next.as_deref(),
+            &corrected,
+        )
+        .map(|planned| VerifiedEdit {
+            href: planned.0,
+            kind: "paragraph",
+            chapter,
+            serial,
+            planned: planned.1,
+        })
+        .map_err(|toast| (toast, serial));
+        let _ = verdict_tx.send_blocking(verdict);
+    });
+}
+
+/// The thread body. The book-and-chapter preamble is the selection
+/// editor's; only the planning differs.
+fn verify_paragraph_edit_in_thread(
+    book_path: &std::path::Path,
+    chapter: usize,
+    prior: &[PatchRecord],
+    original: &str,
+    prev: Option<&str>,
+    next: Option<&str>,
+    corrected: &str,
+) -> Result<(String, crate::epub_patches::PlannedPatch), String> {
+    use chapbook_core::Publication;
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to verify the edit.".to_string())?;
+    let href = book
+        .spine()
+        .get(chapter)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| "The chapter being edited is no longer in the book.".to_string())?;
+    let bytes = book.unit_bytes(chapter).map_err(|_| {
+        "The chapter's text could not be read to verify the edit.".to_string()
+    })?;
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
+    crate::epub_spans::plan_paragraph_patch(&virtual_bytes, original, prev, next, corrected)
+        .map(|planned| (href, planned))
+        .map_err(|refusal| paragraph_refusal_to_toast(&refusal))
+}
+
+/// A paragraph refusal as the text the toast shows. Each one names the
+/// way out where there is one.
+fn paragraph_refusal_to_toast(refusal: &crate::epub_spans::ParagraphRefusal) -> String {
+    use crate::epub_spans::ParagraphRefusal;
+    match refusal {
+        ParagraphRefusal::Unchanged => {
+            "No change to save — the paragraph already says that.".to_string()
+        }
+        ParagraphRefusal::NotFound => {
+            "Couldn't locate that paragraph in the chapter's source — it may have \
+             changed underneath the edit."
+                .to_string()
+        }
+        ParagraphRefusal::Ambiguous(n) => format!(
+            "That paragraph cannot be told apart from {n} others — even its \
+             neighbours repeat. Move on past this one; the full editor will \
+             be able to name it."
+        ),
+        ParagraphRefusal::NotMappable => {
+            "This chapter's file is not well-formed enough for paragraph \
+             editing — its typos can still be fixed by selecting them."
+                .to_string()
+        }
+    }
 }
 
 /// A refusal as the text the toast shows. Each one names the way out:

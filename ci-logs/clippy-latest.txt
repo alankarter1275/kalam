@@ -1,11 +1,6 @@
-src/pages/reader/types.rs:203:24: [1m[91merror[E0277][0m: `pages::reader::types::VerifiedEdit` doesn't implement `std::fmt::Debug`: the trait `std::fmt::Debug` is not implemented for `pages::reader::types::VerifiedEdit`
-src/pages/reader/types.rs:203:24: [1m[91merror[E0277][0m: the trait bound `pages::reader::types::VerifiedEdit: std::clone::Clone` is not satisfied: the trait `std::clone::Clone` is not implemented for `pages::reader::types::VerifiedEdit`
-src/pages/reader/types.rs:308:53: [1m[91merror[E0599][0m: no method named `text` found for reference `&gtk4::Entry` in the current scope
-src/pages/reader/types.rs:310:35: [1m[91merror[E0599][0m: no method named `buffer` found for reference `&gtk4::TextView` in the current scope
-src/pages/reader/types.rs:320:53: [1m[91merror[E0599][0m: no method named `upcast_ref` found for reference `&gtk4::Entry` in the current scope
-src/pages/reader/types.rs:321:51: [1m[91merror[E0599][0m: no method named `upcast_ref` found for reference `&gtk4::TextView` in the current scope
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+src/pages/reader/types.rs:204:24: [1m[91merror[0m: type `pages::reader::types::VerifiedEdit` is more private than the item `pages::reader::types::ReaderMsg::InlineEditVerified::0`: field `pages::reader::types::ReaderMsg::InlineEditVerified::0` is reachable at visibility `pub`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -43,13 +38,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m rusqlite v0.32.1
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/reader/types.rs:203:24: [1m[91merror[E0277][0m: `pages::reader::types::VerifiedEdit` doesn't implement `std::fmt::Debug`: the trait `std::fmt::Debug` is not implemented for `pages::reader::types::VerifiedEdit`
-src/pages/reader/types.rs:203:24: [1m[91merror[E0277][0m: the trait bound `pages::reader::types::VerifiedEdit: std::clone::Clone` is not satisfied: the trait `std::clone::Clone` is not implemented for `pages::reader::types::VerifiedEdit`
-src/pages/reader/types.rs:308:53: [1m[91merror[E0599][0m: no method named `text` found for reference `&gtk4::Entry` in the current scope
-src/pages/reader/types.rs:310:35: [1m[91merror[E0599][0m: no method named `buffer` found for reference `&gtk4::TextView` in the current scope
-src/pages/reader/types.rs:320:53: [1m[91merror[E0599][0m: no method named `upcast_ref` found for reference `&gtk4::Entry` in the current scope
-src/pages/reader/types.rs:321:51: [1m[91merror[E0599][0m: no method named `upcast_ref` found for reference `&gtk4::TextView` in the current scope
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
+src/pages/reader/types.rs:204:24: [1m[91merror[0m: type `pages::reader::types::VerifiedEdit` is more private than the item `pages::reader::types::ReaderMsg::InlineEditVerified::0`: field `pages::reader::types::ReaderMsg::InlineEditVerified::0` is reachable at visibility `pub`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
---- run 37763660225 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 37765207494 ---

@@ -393,3 +393,21 @@ step 1 is the only thing awaited.
   this surface (the float opens over the book page, where the reader
   is unmounted; the next open reads the baked file from disk) and
   activates with step 8's editor.
+
+  **CI — green on run 4 (37747385207), after three fix rounds**, each
+  caught by a different layer of the project's own defenses, in the
+  order rustc stages them:
+
+  1. *Run 1 (E0599):* `set_margin_all` is relm4's `RelmWidgetExt`,
+     not gtk's — the working precedent imported the trait, my file
+     didn't. §81.
+  2. *Run 2 (E0382 + E0505):* the by-value `for p in pending` loop
+     consumed the Vec the refresh tail still needed, and the Apply
+     handler captured the very `apply` binding it was connected to
+     (receiver borrowed, closure moving the same value — the closure
+     now holds a differently-named clone). Both were invisible in
+     run 1: type errors mask the borrow-check pass. §82.
+  3. *Run 3 (guardrails):* `pages_touch_disk_or_documents_only_
+     inside_tasks` flagged one `path.is_file()` on the UI thread —
+     redundant, since `bake_epub` re-checks on the worker. Removed.
+     §83.

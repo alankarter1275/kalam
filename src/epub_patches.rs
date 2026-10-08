@@ -448,17 +448,19 @@ mod tests {
     }
 
     #[test]
-    fn only_pending_text_patches_for_this_href_run() {
+    fn only_pending_known_kinds_for_this_href_run() {
         // A patch that was already baked is in the file for real; re-running
-        // it would double the fix. Other kinds and other entries are not
-        // this function's business.
+        // it would double the fix. Unknown kinds and other entries are not
+        // this function's business. (The file kind was an "other kind"
+        // here once; Phase 6.9 made it a known one with its own tests —
+        // guardless is refused Stale, never skipped.)
         let applied = patch(1, "c.xhtml", "teh", "the", "said ", " word");
         let mut already = applied.clone();
         already.status = "applied".into();
         let mut other_file = applied.clone();
         other_file.href = "other.xhtml".into();
         let mut other_kind = applied.clone();
-        other_kind.kind = "file".into();
+        other_kind.kind = "note".into();
 
         let (out, outcomes) = apply_text_patches(
             "c.xhtml",
@@ -657,7 +659,10 @@ mod tests {
         assert_eq!(out, "<p>Raw.</p>".as_bytes());
         assert_eq!(outcomes.len(), 2);
         assert!(matches!(outcomes[0].resolution, Resolution::Found(_)));
-        assert_eq!(outcomes[1].resolution, Resolution::Found(0..10));
+        assert_eq!(
+            outcomes[1].resolution,
+            Resolution::Found(0.."<p>Raw.</p>".len())
+        );
     }
 
     #[test]

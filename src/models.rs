@@ -130,7 +130,7 @@ impl Route {
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
-            Route::BookPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
+            Route::BookPage { .. } | Route::Reader { .. } | Route::Editor { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {
                 if source_id == "royalroad" {

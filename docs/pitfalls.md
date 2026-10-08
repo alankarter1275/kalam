@@ -3129,3 +3129,21 @@ The rule for the mental compile pass: any type that appears in a
 `ReaderMsg` variant inherits the enum's visibility demand. Types that
 only live in the model's fields can stay `pub(crate)` — the step-4
 `InlineEdit` was exactly that shape and green.
+
+## §89 — a new enum variant is a contract with every exhaustive match (Phase 6 step 8, CI run 1)
+
+Run 1 of step 8 failed three ways, one old and two of a kind. The
+old one first: the commit callback shared by two controllers was
+cloned AFTER the first `move` closure had already taken it —
+E0382, the §82 family; the clone must happen before either
+controller exists.
+
+The pair: adding `ReaderOut::OpenEditor` and `Route::Editor` broke
+two exhaustive matches this branch never touched — the bubble
+windows' own reader forwarding in `bubbles.rs`, and `Route::
+sidebar_item` in `models.rs`. Both compile-fine lists until the
+variant lands, and the compiler names only the first three errors,
+so more can hide behind them. The pre-push sweep that finds them
+all: grep for the enum's LAST variant — every exhaustive match must
+mention it — and check each site for the new one. `ComicSeries`
+and `OpenAuthor` were the probes this time.

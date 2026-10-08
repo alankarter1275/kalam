@@ -876,6 +876,9 @@ impl BubbleManager {
                         crate::pages::reader::ReaderOut::OpenAuthor { name } => {
                             AppMsg::Push(crate::models::Route::AuthorPage { author: name })
                         }
+                        crate::pages::reader::ReaderOut::OpenEditor { book_id } => {
+                            AppMsg::Push(crate::models::Route::Editor { book_id })
+                        }
                     });
                 Some(BubbleReaderInstance::Epub { book_id, ctrl })
             }

@@ -830,6 +830,11 @@ pub(crate) fn build_paragraph_editor(
     // one editing feel by sharing this one implementation.
     let done = std::rc::Rc::new(std::cell::Cell::new(false));
 
+    // The focus controller below shares the commit callback with the
+    // key controller, and a `move` closure can only take it once —
+    // the clone happens before either does.
+    let on_commit_focus = on_commit.clone();
+
     let view_keys = view.clone();
     let done_keys = done.clone();
     let key = gtk::EventControllerKey::new();
@@ -850,10 +855,7 @@ pub(crate) fn build_paragraph_editor(
     });
     view.add_controller(key);
 
-    // Clicking away is a commit, as in the selection editor. The
-    // commit callback is shared with the key controller above, so it
-    // travels as a clone.
-    let on_commit_focus = on_commit.clone();
+    // Clicking away is a commit, as in the selection editor.
     let view_focus = view.clone();
     let done_focus = done.clone();
     let focus = gtk::EventControllerFocus::new();

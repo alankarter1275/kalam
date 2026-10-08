@@ -13,6 +13,7 @@
 
 use crate::db::{Catalog, PatchRecord};
 use gtk::prelude::*;
+use relm4::RelmWidgetExt;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;

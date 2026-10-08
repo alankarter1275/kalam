@@ -2989,3 +2989,14 @@ generalizes past constructors: when writing an expected value, state
 which space it is measured in, and derive it from the exact input the
 code sees — an expectation remembered rather than derived is a guess
 with a green-looking face.
+
+## §81 — `set_margin_all` is relm4's, not gtk's (Phase 6 step 5, CI run 1)
+
+`E0599: no method named set_margin_all found for struct gtk4::Box` —
+while the identical call compiled in `metadata_editor.rs`. The working
+file had one import mine didn't: `use relm4::RelmWidgetExt;` — the
+method is a relm4 extension trait, not `gtk::prelude::WidgetExt`. With
+a glob gtk prelude plus per-file trait imports, "same method, same
+call, different file" always means: diff the `use` lines, not the
+calls. (relm4's `view!` macro takes `set_margin_all:` for the same
+reason — it resolves through relm4, not gtk.)

@@ -927,7 +927,8 @@ impl Component for EpubEditorModel {
                     }
                 });
                 std::thread::spawn(move || {
-                    let staged = stage_cover(&book_dir, &picked);
+                    let staged = crate::epub::stage_cover_image(&book_dir, &picked)
+                        .map_err(|e| format!("{e:#}"));
                     let _ = tx.send_blocking(staged);
                 });
             }
@@ -983,16 +984,7 @@ impl Component for EpubEditorModel {
                                 let book_id = op.book_id;
                                 let catalog = self.service.catalog().clone();
                                 std::thread::spawn(move || {
-                                    if let Ok(Some(book)) = catalog.get_book(book_id) {
-                                        if let Some(staged) =
-                                            crate::epub_sanitizer::staged_asset_path(
-                                                &book.file_path,
-                                                &name,
-                                            )
-                                        {
-                                            let _ = std::fs::remove_file(staged);
-                                        }
-                                    }
+                                    crate::epub::remove_staged_asset(&catalog, book_id, &name);
                                 });
                             }
                         }
@@ -1698,33 +1690,6 @@ fn arrow_button(icon: &str, tooltip: &str, sensitive: bool) -> gtk::Button {
     btn.set_sensitive(sensitive);
     btn.set_child(Some(&crate::icons::symbolic(icon, 13)));
     btn
-}
-
-/// Stage a chosen cover image beside the book: `.kalam-staged/` under
-/// the book's folder, named by its own hash so re-picking the same
-/// image lands on the same file. The name is what the pending asset op
-/// will carry — relative, resolved against the book at bake.
-fn stage_cover(book_dir: &std::path::Path, picked: &std::path::Path) -> Result<String, String> {
-    let bytes = std::fs::read(picked)
-        .map_err(|e| format!("the image could not be read: {e}"))?;
-    if bytes.is_empty() {
-        return Err("that file is empty".to_string());
-    }
-    let hash = crate::epub_patches::hash_bytes(&bytes);
-    let ext = picked
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))
-        .unwrap_or_else(|| "png".to_string());
-    let name = format!(".kalam-staged/{}-cover.{ext}", &hash[..8]);
-    let dir = book_dir.join(".kalam-staged");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("the staging folder could not be made: {e}"))?;
-    let staged = book_dir.join(&name);
-    std::fs::copy(picked, &staged)
-        .map_err(|e| format!("the image could not be staged: {e}"))?;
-    Ok(name)
 }
 
 /// Rebuild the review panel inside its host. The panel is the step-5

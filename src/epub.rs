@@ -890,6 +890,76 @@ fn guess_image_ext(bytes: &[u8]) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
+// P6.10: staged cover replacement — the crate side of the editor's Cover
+// button. The pages call these from worker threads; the guardrail keeps
+// every disk touch out of src/pages, and the bake's follow-ups belong
+// with the cover service anyway.
+// ---------------------------------------------------------------------------
+
+/// Stage a chosen cover image beside a book: `.kalam-staged/` under the
+/// book's folder, named by its own hash so re-picking the same image
+/// lands on the same file. The returned name is what the pending asset
+/// op carries — relative, resolved against the book at bake.
+pub fn stage_cover_image(book_dir: &Path, picked: &Path) -> Result<String> {
+    let bytes = fs::read(picked).context("read the chosen image")?;
+    if bytes.is_empty() {
+        return Err(anyhow!("that file is empty"));
+    }
+    let hash = crate::epub_patches::hash_bytes(&bytes);
+    let ext = picked
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))
+        .unwrap_or_else(|| "png".to_string());
+    let name = format!(".kalam-staged/{}-cover.{ext}", &hash[..8]);
+    let dir = book_dir.join(".kalam-staged");
+    fs::create_dir_all(&dir).context("make the staging folder")?;
+    let staged = book_dir.join(&name);
+    fs::copy(picked, &staged).context("copy the image into staging")?;
+    Ok(name)
+}
+
+/// Finish an asset op the bake just applied: the library's jacket is a
+/// cover file in the book's folder, extracted at import — stale the
+/// moment the bake wrote new bytes into the book. Route the staged
+/// image through [`replace_cover_bytes`] (fresh file, old file and
+/// thumbnail cleaned, catalog pointed, new thumbnail made), then the
+/// staging itself goes. Best-effort: the book's cover entry is already
+/// right, and a jacket that lags one bake is clutter, not corruption.
+pub fn apply_baked_cover(catalog: &Catalog, book_id: i64, book_path: &Path, staged_name: &str) {
+    let Some(staged) = crate::epub_sanitizer::staged_asset_path(book_path, staged_name) else {
+        return;
+    };
+    let jacket = fs::read(&staged).ok().and_then(|bytes| {
+        catalog
+            .get_book(book_id)
+            .ok()
+            .flatten()
+            .and_then(|book| replace_cover_bytes(catalog, &book, &bytes).ok())
+    });
+    if jacket.is_none() {
+        log::warn!(
+            "bake: the cover file could not be updated — the book's own cover entry did"
+        );
+    }
+    let _ = fs::remove_file(&staged);
+}
+
+/// Delete a staged asset — a discarded or replaced pick's file, resolved
+/// through the book's own row like the bake does. Runs on a worker
+/// thread; a missing book row or file is silence, not an error.
+pub fn remove_staged_asset(catalog: &Catalog, book_id: i64, staged_name: &str) {
+    if let Ok(Some(book)) = catalog.get_book(book_id) {
+        if let Some(staged) =
+            crate::epub_sanitizer::staged_asset_path(&book.file_path, staged_name)
+        {
+            let _ = fs::remove_file(staged);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 //
 // This file parses files produced by other people's software, which is the

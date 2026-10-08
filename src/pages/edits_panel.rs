@@ -321,30 +321,13 @@ fn bake_and_record(
             })?;
         }
     }
-    // An asset op that landed re-dressed the book: the library's jacket
-    // is a cover file in the book's folder, extracted at import — stale
-    // the moment the bake wrote new bytes into the book. Route the
-    // staged image through the replace-cover service (fresh file, old
-    // file and thumbnail cleaned, catalog pointed, new thumbnail
-    // made), then the staging itself goes. Best-effort: the book's
-    // cover entry is already right, and a jacket that lags one bake is
-    // clutter, not corruption.
+    // An asset op that landed re-dressed the book. The jacket update is
+    // the cover service's to do (crate side — pages never touch disk),
+    // and it is best-effort: the book's own cover entry is already
+    // right, and a jacket that lags one bake is clutter, not
+    // corruption.
     for p in selected.iter().filter(|p| p.kind == "asset" && report.applied.contains(&p.id)) {
-        if let Some(staged) = crate::epub_sanitizer::staged_asset_path(path, &p.replace_text) {
-            let jacket = std::fs::read(&staged).ok().and_then(|bytes| {
-                catalog
-                    .get_book(book_id)
-                    .ok()
-                    .flatten()
-                    .and_then(|book| crate::epub::replace_cover_bytes(catalog, &book, &bytes).ok())
-            });
-            if jacket.is_none() {
-                log::warn!(
-                    "bake: the cover file could not be updated — the book's own cover entry did"
-                );
-            }
-            let _ = std::fs::remove_file(&staged);
-        }
+        crate::epub::apply_baked_cover(catalog, book_id, path, &p.replace_text);
     }
     crate::content_index::index_book(catalog, book_id)
         .map_err(|e| format!("the edits were written, but the search index could not be updated: {e}"))?;
@@ -479,13 +462,7 @@ fn edit_row(
                 // never moved out of the closure that owns it.
                 let catalog = catalog.clone();
                 std::thread::spawn(move || {
-                    if let Ok(Some(book)) = catalog.get_book(book_id) {
-                        if let Some(staged) =
-                            crate::epub_sanitizer::staged_asset_path(&book.file_path, &name)
-                        {
-                            let _ = std::fs::remove_file(staged);
-                        }
-                    }
+                    crate::epub::remove_staged_asset(&catalog, book_id, &name);
                 });
             }
         }

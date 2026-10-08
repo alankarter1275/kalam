@@ -1562,13 +1562,11 @@ mod tests {
         assert_eq!(report.applied, vec![11]);
         assert_eq!(report.entries_patched, 1);
         let new_opf = String::from_utf8(entry_bytes(&path, "content.opf")).unwrap();
-        let i1 = new_opf.find("c1").expect("c1 present");
-        let i2 = new_opf.find("c2").expect("c2 present");
-        let i3 = new_opf.find("c3").expect("c3 present");
         // The manifest names c1 first — the assertion is about the
         // SPINE's order, so compare the itemref positions: the last
         // occurrence of each id is its itemref (manifest items come
         // first, itemrefs after).
+        let i1 = new_opf.find("c1").expect("c1 present");
         let s1 = new_opf.rfind("c1").expect("itemref c1");
         let s2 = new_opf.rfind("c2").expect("itemref c2");
         let s3 = new_opf.rfind("c3").expect("itemref c3");

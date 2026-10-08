@@ -370,7 +370,7 @@ fn edit_row_lines(p: &crate::db::PatchRecord) -> (String, String) {
                 order
                     .iter()
                     .enumerate()
-                    .filter(|(new, &old)| new != old)
+                    .filter(|(new, old)| new != *old)
                     .count()
             })
             .unwrap_or(0);

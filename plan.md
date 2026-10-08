@@ -457,3 +457,11 @@ step 1 is the only thing awaited.
   conservative refusals (unclosed `li`, mis-nested close, stray `<`,
   two roots, non-UTF-8, `&nbsp;` text mismatch), void tolerance,
   paragraph-emptying as a real edit.
+
+  **CI — green on run 2 (37753823314, 16m).** Run 1 was three
+  clippy complaints about one helper's signature (`&mut Vec` where
+  only indexing happens, `&mut` flowing into an `&[usize]` — §84);
+  the slice-and-immutable fix went through with all 13 new tests
+  passing on their first execution. A stray 2-second cancelled
+  duplicate run appeared beside the green one — the ci-logs
+  publishing pushes racing, not a code signal.

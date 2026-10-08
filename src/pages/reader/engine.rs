@@ -893,6 +893,83 @@ pub(crate) fn position_inline_editor(
     widget.set_size_request(rect.width().max(160), rect.height().max(28));
 }
 
+/// The structural snapshot (Phase 6 step 10): everything the visual TOC
+/// editor and the cover picker need to know about the *files* — which
+/// entry is the package, which is the cover, and what each hashes to
+/// right now. One worker at editor open, so no structural control ever
+/// touches disk on the main thread; the hashes become the ops'
+/// `before_hash` guards, exactly like the raw mode's whole-file edits.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StructureSnapshot {
+    /// The package (OPF) entry's zip path — a spine op's href.
+    pub opf_href: Option<String>,
+    /// The package's current hash — a spine op's guard.
+    pub opf_hash: Option<String>,
+    /// The manifest cover's zip path, when the book names one.
+    pub cover_href: Option<String>,
+    /// The cover entry's current hash — an asset op's guard.
+    pub cover_hash: Option<String>,
+}
+
+/// The snapshot worker: [`StructureSnapshot`] over `snapshot_tx`, the
+/// same worker→main-loop shape as the verify workers. A book that
+/// cannot answer lands with `None`s — the editor keeps its structural
+/// buttons insensitive rather than toasting about a question it asked
+/// in passing at open.
+pub(crate) fn read_structure_snapshot(
+    book_path: std::path::PathBuf,
+    snapshot_tx: async_channel::Sender<StructureSnapshot>,
+) {
+    std::thread::spawn(move || {
+        let _ = snapshot_tx.send_blocking(structure_snapshot_in_thread(&book_path));
+    });
+}
+
+/// The thread body. The cover question needs the parse (`Book::open`);
+/// the package question needs the container (`ZipArchive`). One open of
+/// each answers both, and a failure to answer any part is a `None`
+/// field, never an error — the snapshot is a question asked in passing
+/// at open, not a read the user is waiting on.
+fn structure_snapshot_in_thread(book_path: &Path) -> StructureSnapshot {
+    let mut snapshot = StructureSnapshot::default();
+    let file = match std::fs::File::open(book_path) {
+        Ok(f) => f,
+        Err(_) => return snapshot,
+    };
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(_) => return snapshot,
+    };
+    if let Ok(opf) = crate::epub::find_opf_path_pub(&mut archive) {
+        if let Some(hash) = entry_hash(&mut archive, &opf) {
+            snapshot.opf_href = Some(opf);
+            snapshot.opf_hash = Some(hash);
+        }
+    }
+    if let Ok(book) = chapbook_epub::Book::open(book_path) {
+        if let Some(cover) = book.cover_href() {
+            if let Some(hash) = entry_hash(&mut archive, &cover) {
+                snapshot.cover_href = Some(cover);
+                snapshot.cover_hash = Some(hash);
+            }
+        }
+    }
+    snapshot
+}
+
+/// One entry's hash, or `None` when it cannot be read — the snapshot's
+/// unit of "could not answer".
+fn entry_hash<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    name: &str,
+) -> Option<String> {
+    use std::io::Read as _;
+    let mut entry = archive.by_name(name).ok()?;
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes).ok()?;
+    Some(crate::epub_patches::hash_bytes(&bytes))
+}
+
 /// Verify an inline edit against the book's source, off the UI thread —
 /// opening the book is the same cost as the initial open and never
 /// belongs on the main loop (the `unit_bytes` contract says so too).

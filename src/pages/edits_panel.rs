@@ -304,6 +304,48 @@ fn bake_and_record(
             format!("the edits were written, but recording patch {id} as applied failed: {e}")
         })?;
     }
+    // A spine op that landed changes the meaning of every chapter index
+    // in the database. Carry the book's positions, highlights, saved
+    // words and bookmarks across it (Phase 6 step 10); a remap failure
+    // is reported like any other follow-up — the file is already right.
+    let applied_spine = selected.iter().find(|p| {
+        p.kind == "spine" && report.applied.contains(&p.id)
+    });
+    if let Some(op) = applied_spine {
+        if let Some(order) = crate::epub_sanitizer::parse_spine_order(&op.replace_text) {
+            catalog.remap_spine_indices(book_id, &order).map_err(|e| {
+                format!(
+                    "the edits were written, but re-anchoring the book's highlights \
+                     and positions to the new chapter order failed: {e}"
+                )
+            })?;
+        }
+    }
+    // An asset op that landed re-dressed the book: the library's jacket
+    // is a cover file in the book's folder, extracted at import — stale
+    // the moment the bake wrote new bytes into the book. Route the
+    // staged image through the replace-cover service (fresh file, old
+    // file and thumbnail cleaned, catalog pointed, new thumbnail
+    // made), then the staging itself goes. Best-effort: the book's
+    // cover entry is already right, and a jacket that lags one bake is
+    // clutter, not corruption.
+    for p in selected.iter().filter(|p| p.kind == "asset" && report.applied.contains(&p.id)) {
+        if let Some(staged) = crate::epub_sanitizer::staged_asset_path(path, &p.replace_text) {
+            let jacket = std::fs::read(&staged).ok().and_then(|bytes| {
+                catalog
+                    .get_book(book_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|book| crate::epub::replace_cover_bytes(catalog, &book, &bytes).ok())
+            });
+            if jacket.is_none() {
+                log::warn!(
+                    "bake: the cover file could not be updated — the book's own cover entry did"
+                );
+            }
+            let _ = std::fs::remove_file(&staged);
+        }
+    }
     crate::content_index::index_book(catalog, book_id)
         .map_err(|e| format!("the edits were written, but the search index could not be updated: {e}"))?;
     Ok(report)
@@ -319,9 +361,57 @@ fn edit_row_lines(p: &crate::db::PatchRecord) -> (String, String) {
             "Whole file".to_string(),
             format!("→ edited source ({} chars)", p.replace_text.chars().count()),
         )
+    } else if p.kind == "spine" {
+        // The stored order is the new reading order as old chapter
+        // positions; what a reader wants to know is whether it moved
+        // at all, and how far the book was reshuffled.
+        let moved = crate::epub_sanitizer::parse_spine_order(&p.replace_text)
+            .map(|order| {
+                order
+                    .iter()
+                    .enumerate()
+                    .filter(|(new, old)| new != old)
+                    .count()
+            })
+            .unwrap_or(0);
+        (
+            "Chapter order".to_string(),
+            format!("→ {} of {} chapters reordered", moved, p.replace_text.split(',').count()),
+        )
+    } else if p.kind == "asset" {
+        (
+            "Cover".to_string(),
+            format!(
+                "→ replaced with {}",
+                p.replace_text.rsplit('/').next().unwrap_or(&p.replace_text)
+            ),
+        )
     } else {
         (p.find_text.clone(), format!("→ {}", p.replace_text))
     }
+}
+
+/// The row's meta line. Text edits name their chapter; structural
+/// ops are book-wide, so their line says what they are instead of a
+/// chapter they do not have (their `chapter_index` is a placeholder
+/// zero, never a position).
+fn edit_row_meta(p: &PatchRecord, applied: bool) -> String {
+    let structural = matches!(p.kind.as_str(), "spine" | "asset");
+    let chapter = if structural {
+        String::new()
+    } else {
+        format!("chapter {} · ", p.chapter_index + 1)
+    };
+    format!(
+        "{} · {chapter}{}{}",
+        source_name(&p.source),
+        if applied { "applied " } else { "" },
+        if applied {
+            p.applied_at.as_deref().and_then(|s| s.get(..10)).unwrap_or("")
+        } else {
+            p.created_at.get(..10).unwrap_or("")
+        }
+    )
 }
 
 fn edit_row(
@@ -356,12 +446,7 @@ fn edit_row(
     after.set_wrap(true);
     info.append(&after);
 
-    let meta = gtk::Label::new(Some(&format!(
-        "{} · chapter {} · {}",
-        source_name(&p.source),
-        p.chapter_index + 1,
-        p.created_at.get(..10).unwrap_or("")
-    )));
+    let meta = gtk::Label::new(Some(&edit_row_meta(p, false)));
     meta.add_css_class("k-edit-meta");
     meta.set_halign(gtk::Align::Start);
     meta.set_xalign(0.0);
@@ -376,11 +461,29 @@ fn edit_row(
     let id = p.id;
     let catalog = catalog.clone();
     let holder = holder.clone();
+    let discarded = p.clone();
     del.connect_clicked(move |_| {
         if let Err(err) = catalog.delete_patch(id) {
             crate::notify::error("Could not discard the edit", &err.to_string());
         } else {
             crate::notify::compact("Edit discarded", "");
+            // A discarded asset op leaves a staged file behind — delete
+            // it off-thread (ARCH.md: no disk on the UI thread). Only
+            // that op's own staging, resolved from the book's row like
+            // the bake does.
+            if discarded.kind == "asset" {
+                let name = discarded.replace_text.clone();
+                let book_id = discarded.book_id;
+                std::thread::spawn(move || {
+                    if let Ok(Some(book)) = catalog.get_book(book_id) {
+                        if let Some(staged) =
+                            crate::epub_sanitizer::staged_asset_path(&book.file_path, &name)
+                        {
+                            let _ = std::fs::remove_file(staged);
+                        }
+                    }
+                });
+            }
         }
         if let Some(refresh) = holder.borrow().clone() {
             refresh();
@@ -426,12 +529,7 @@ fn history_section(applied: &[PatchRecord]) -> gtk::Box {
         after.set_xalign(0.0);
         after.set_wrap(true);
         row.append(&after);
-        let meta = gtk::Label::new(Some(&format!(
-            "{} · chapter {} · applied {}",
-            source_name(&p.source),
-            p.chapter_index + 1,
-            p.applied_at.as_deref().and_then(|s| s.get(..10)).unwrap_or("")
-        )));
+        let meta = gtk::Label::new(Some(&edit_row_meta(p, true)));
         meta.add_css_class("k-edit-meta");
         meta.set_halign(gtk::Align::Start);
         meta.set_xalign(0.0);
@@ -458,6 +556,8 @@ fn source_name(source: &str) -> &str {
         "typo" => "Fix typo",
         "proofread" => "Proofreading",
         "editor" => "Editor",
+        "toc" => "TOC editor",
+        "asset" => "Cover",
         other => other,
     }
 }

@@ -690,3 +690,85 @@ step 1 is the only thing awaited.
   Run 4: build 8m42s (fmt clean, clippy clean, 590 tests), smoke
   2m39s. CI's lock step pushed the refreshed Cargo.lock
   (sourceview5 0.11.2) with run 1's publish.
+
+- **Step 10 (structural ops + asset manager + visual TOC editor) —
+  implemented 2026-10-09.** Two new pending-op kinds beside the text
+  kinds, both file operations rather than text matches, both guarded
+  by `before_hash` exactly like the raw mode's whole-file edits, both
+  one-per-file by construction (the composing surface replaces its own
+  pending op rather than stacking one).
+
+  **Spine ops** (`kind "spine"`, source `toc`): the visual TOC editor
+  is the editor's chapter list with reorder arrows. Every move swaps
+  two rows and stores the whole new order as the book's one pending
+  spine op — `href` the package's zip path, `replace_text` the order
+  as old chapter positions (`"2,0,1"`), `before_hash` the package's
+  current SHA-256. The identity order stores nothing: deleting the op
+  *is* the reset. The list shows the *pending* order; the engine is
+  never reordered virtually — `model.chapter` stays a real spine index
+  everywhere, and only the list (and the arrows' message) translate
+  between position and chapter.
+
+  The bake arm (epub_sanitizer) resolves the package entry through
+  the same raw→percent-decoded lookup as chapters, refuses on a hash
+  mismatch (stale, like every guard), then rewrites the spine with
+  `rewrite_spine_order`: a quick-xml scan over the package bytes that
+  captures each `<itemref>`'s raw byte slice by event positions
+  (buffer_position before/after each event — the v0.37/0.42 API is the
+  same here; the root crate pins 0.37, rbook and chapbook-epub ride
+  0.42) and rebuilds the file as everything before the spine's
+  content, the itemref slices reordered (their attributes never
+  re-serialized — `linear=`, `idref=` move verbatim), everything from
+  `</spine>` on. The separator is the original's own inter-itemref
+  whitespace when that is all it was. Permutation is validated against
+  the itemref count; a second spine, a missing spine, a non-permutation
+  are op failures, never bakes of garbage. The XML parse gate the text
+  patches pass applies: a package that parsed must still parse.
+
+  **Asset ops** (`kind "asset"`, source `asset`): a Cover button in
+  the editor's bar (insensitive until the book names a manifest cover)
+  opens a `gtk::FileDialog` (the import picker's pattern, image
+  filters), stages the chosen file off the UI thread as
+  `.kalam-staged/<sha8>-cover.<ext>` beside the book, and stores the
+  op — `href` the cover entry's zip path, `replace_text` the staged
+  *relative* name, `before_hash` the cover entry's current hash. The
+  bake arm swaps the entry's bytes for the staged file's, after the
+  same hash guard and a path-safety check (a database row never gets
+  a file handle on trust: no `..`, no absolute paths, no backslashes).
+
+  **The structure snapshot**: one worker at editor open (and after
+  every bake — the package's hash moves with it) answers both
+  questions the structural controls need: which entry is the package,
+  which is the cover, what each hashes to now. The arrows and the
+  Cover button stay insensitive until it lands; a book that cannot
+  answer keeps them that way rather than erroring at open.
+
+  **After a bake that applied a spine op**, the book's spine-keyed
+  rows travel with it: `Catalog::remap_spine_indices` translates
+  reading positions, annotations, saved words and bookmarks through
+  the new order in one `CASE` statement per table (a pair-by-pair
+  `UPDATE` run would undo itself on a swap), and rewrites the
+  annotations' stored locators' `spine_index` field by field —
+  `spine_href` is the primary anchor there, so this is belt and
+  braces, but a true href beside a stale index is a bug factory. The
+  pending `patches` rows are history, not state: href-keyed, never
+  remapped. An asset op that landed re-dresses the library too: the
+  staged image goes through the existing `replace_cover_bytes`
+  service (fresh cover file in the book's folder, old file and its
+  thumbnail cleaned, catalog pointed, new thumbnail made — the fresh
+  name each time is what keeps GTK's path-keyed texture cache
+  honest), then the staging itself is deleted. Discarded ops delete
+  their staging off-thread on the way out.
+
+  **The editor's reload now restores position by href**, not chapter
+  index: a spine bake moves indices underneath, and the old "min"
+  clamp would land somewhere else. The locator (`spine_href`, quote
+  re-anchor) survives the move; the index is only the no-locator
+  fallback.
+
+  Done-when fixture set: the phase's own composition test bakes a
+  typo fix, a spine reorder and a cover replacement in one bake into
+  one clean `.epub` (mimetype first, all three entries patched,
+  chapters intact) — `the_done_when_composition_bakes_all_three`.
+  The §38 field half (opens correctly in another reader) is the
+  owner's check.

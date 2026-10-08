@@ -1173,6 +1173,25 @@ button.kalam-editor-chapter-current {
     color: @kalam_accent;
 }
 
+/* The reorder rows (Phase 6 step 10): a title button that fills the
+   row and two compact arrows beside it. The row itself is transparent
+   chrome — the chapter button carries the row's look. */
+.kalam-editor-chapter-row {
+    background: transparent;
+}
+
+button.kalam-editor-arrow {
+    padding: 4px;
+    margin: 0;
+    border-radius: 6px;
+    color: @kalam_text_dim;
+}
+
+button.kalam-editor-arrow:hover:not(:disabled) {
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_text;
+}
+
 .kalam-editor-stage {
     background: @kalam_bg;
 }

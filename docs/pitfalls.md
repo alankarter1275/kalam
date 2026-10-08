@@ -3165,3 +3165,44 @@ genuinely cannot occur at a site, the arm still must exist — refuse
 along the site's existing failure path with a comment saying why the
 arm is unreachable, never `unreachable!()` (the no-panics rule) and
 never a guessed store.
+
+## §91 — heredoc-written Rust line continuations, and anchors inside doc comments (Phase 6 step 10)
+
+Two scripted-edit traps in one step, both silent.
+
+The first: a Rust string continuation (`\` at end of line, the
+repository's own multi-line `format!` style) written through a python
+heredoc. In python, `\<newline>` inside any string literal is a line
+continuation — it contributes nothing. The tool call's own escaping
+sat between intent and effect: four backslashes in the call became
+one backslash in the file, but two became *none*, and the continuation
+collapsed into a single over-long line with doubled spaces — which
+rustfmt cannot split (it never breaks literals) and so would have
+shipped as-is. The check that caught it was the mechanical one:
+every added line measured against the 100-column limit, every
+continuation inspected with `od -c` (one backslash byte, one newline
+byte — not two, not zero).
+
+The second: an insertion anchored on the first line of a doc comment.
+The anchor text was unique, but the block landed *inside* verify_inline_edit's
+doc — its first three lines now documented the new struct, and the
+function kept the tail. Compiles clean; the documentation is simply
+wrong, and only a context-reading diff review (not a grep for the
+anchor) shows it. The rule that fixes both: after any scripted
+multi-line insert, read the diff *hunk by hunk with context*, and
+never anchor on a doc comment's interior lines — anchor on the
+`pub fn`/`struct` line that owns it.
+
+## §92 — the quick-xml version the app actually compiles (Phase 6 step 10)
+
+The workspace pins quick-xml 0.42 (`[workspace.dependencies]` —
+chapbook-epub and rbook ride it), but the root crate's own
+`[dependencies]` table separately pins 0.37 — one version per table,
+both in the lockfile, both legal. Research read the workspace line
+and verified the 0.42 docs; the new sanitizer code compiles against
+0.37. Nothing broke only because the API surface used
+(`Reader::from_reader`, `read_event_into`, `buffer_position -> u64`,
+the `Event` shapes) is common to both. The rule: before writing
+against a dependency, read the *crate's own* requirement line, not
+the workspace's — grep the package name in Cargo.toml and take the
+last table that owns it.

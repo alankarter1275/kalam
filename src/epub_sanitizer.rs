@@ -282,6 +282,42 @@ pub fn bake_epub(path: &Path, patches: &[crate::db::PatchRecord]) -> Result<Bake
                 .by_name(&entry_name)?
                 .read_to_end(&mut bytes)
                 .with_context(|| format!("read {entry_name}"))?;
+
+            // The structural kinds (Phase 6 step 10) — the spine
+            // reorder and the staged asset replacement — are file
+            // operations, not text matches, so they have their own
+            // arms here. The UI keeps them one-per-file; a group that
+            // mixes them with text edits (no surface can make one)
+            // fails its structural ops rather than guessing.
+            let structural: Vec<&crate::db::PatchRecord> = group
+                .iter()
+                .filter(|p| matches!(p.kind.as_str(), "spine" | "asset"))
+                .collect();
+            if !structural.is_empty() {
+                // One structural op per file, alone in its group — the
+                // composing surface (the TOC editor, the asset picker)
+                // replaces its own pending op rather than stacking one.
+                if group.len() != 1 {
+                    for p in &structural {
+                        report.failed.push((
+                            p.id,
+                            "structural edits are one per file — this one cannot be composed"
+                                .to_string(),
+                        ));
+                    }
+                } else {
+                    apply_structural_op(
+                        path,
+                        &entry_name,
+                        &bytes,
+                        &group[0],
+                        &mut modified_files,
+                        &mut report,
+                    );
+                }
+                continue;
+            }
+
             // The matcher applies the group in creation order — the same
             // order the reader's entry filter applied when the later
             // patches were planned, so what verified then holds here.
@@ -386,6 +422,220 @@ pub fn bake_epub(path: &Path, patches: &[crate::db::PatchRecord]) -> Result<Bake
 
     fs::rename(&tmp, path).with_context(|| format!("replace {}", path.display()))?;
     Ok(report)
+}
+
+/// Apply one structural op (Phase 6 step 10) — the pending kind that
+/// is a *file* operation, not a text match. `spine` rewrites the
+/// package's reading order; `asset` swaps an entry's bytes for a file
+/// staged next to the book. Both are guarded by the op's `before_hash`
+/// exactly like the raw mode's whole-file edits, and both report into
+/// the [`BakeReport`] — a refusal is a failed row, never a silently
+/// skipped one.
+fn apply_structural_op(
+    book_path: &Path,
+    entry_name: &str,
+    entry_bytes: &[u8],
+    op: &crate::db::PatchRecord,
+    modified_files: &mut std::collections::HashMap<String, Vec<u8>>,
+    report: &mut BakeReport,
+) {
+    let entry_hash = crate::epub_patches::hash_bytes(entry_bytes);
+    if op.before_hash.is_empty() || entry_hash != op.before_hash {
+        report.failed.push((
+            op.id,
+            "the file changed after this structural edit was staged — re-make it"
+                .to_string(),
+        ));
+        return;
+    }
+    let replacement = match op.kind.as_str() {
+        "spine" => match rewrite_spine_order(entry_bytes, op.replace_text.as_str()) {
+            Ok(bytes) => bytes,
+            Err(why) => {
+                report.failed.push((op.id, why));
+                return;
+            }
+        },
+        "asset" => {
+            // The staged file's bytes. `replace_text` is a relative
+            // path under the book's folder, authored by the asset
+            // picker — validated anyway, because a patch record is a
+            // row in a database and databases can be edited.
+            let staged = match staged_asset_path(book_path, &op.replace_text) {
+                Some(path) => path,
+                None => {
+                    report.failed.push((
+                        op.id,
+                        "its staged file is not a plain name in the book's folder".to_string(),
+                    ));
+                    return;
+                }
+            };
+            match fs::read(&staged) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    report.failed.push((
+                        op.id,
+                        "its staged file is missing from the book's folder".to_string(),
+                    ));
+                    return;
+                }
+            }
+        }
+        _ => {
+            report.failed.push((op.id, "unknown structural kind".to_string()));
+            return;
+        }
+    };
+    // The parse gate the text patches pass: a package that was
+    // well-formed XML must stay that way (an asset is binary — bytes
+    // in, bytes out, and no gate applies).
+    if op.kind == "spine"
+        && entry_parses_as_xml(entry_bytes)
+        && !entry_parses_as_xml(&replacement)
+    {
+        report.failed.push((
+            op.id,
+            "the reordered spine would make the package unparseable — nothing was written"
+                .to_string(),
+        ));
+        return;
+    }
+    modified_files.insert(entry_name.to_string(), replacement);
+    report.applied.push(op.id);
+}
+
+/// A staged asset path, or `None` unless `name` is a plain relative
+/// path with no way out of the book's folder. The path is authored by
+/// the app's own picker, but a patch record is data — the bake does
+/// not hand a database row a file handle on trust.
+pub(crate) fn staged_asset_path(book_path: &Path, name: &str) -> Option<std::path::PathBuf> {
+    let folder = book_path.parent()?;
+    if name.is_empty()
+        || name.starts_with('/')
+        || name.contains('\\')
+        || name.split('/').any(|part| part == ".." || part.is_empty())
+    {
+        return None;
+    }
+    Some(folder.join(name))
+}
+
+/// A spine op's stored order: `replace_text` is the new reading order
+/// as the original spine indices, comma-separated (`"2,0,1"`). `None`
+/// when the text is not that shape.
+pub fn parse_spine_order(text: &str) -> Option<Vec<usize>> {
+    let parts: Vec<&str> = text.split(',').collect();
+    if parts.is_empty() {
+        return None;
+    }
+    parts
+        .iter()
+        .map(|p| p.trim().parse::<usize>().ok())
+        .collect()
+}
+
+/// Rewrite a package's `<spine>` reading order. The new order names
+/// the *old* itemref positions: `[2, 0, 1]` means the third chapter
+/// reads first. Everything outside `<spine>…</spine>` is preserved
+/// byte for byte, and each itemref element is moved verbatim — its
+/// attributes (`idref`, `linear`) are never re-serialized.
+///
+/// The element separator is the whitespace the original used between
+/// its itemrefs when that is all it was (the common one-line-per-
+/// itemref shape); anything else falls back to a newline. The spine
+/// element's own attributes are untouched — they sit in the open tag,
+/// which is copied as-is.
+fn rewrite_spine_order(opf: &[u8], order_text: &str) -> Result<Vec<u8>, String> {
+    let order = parse_spine_order(order_text)
+        .ok_or_else(|| "its stored order is not a list of chapter positions".to_string())?;
+
+    let mut reader = quick_xml::Reader::from_reader(opf);
+    let mut buf = Vec::new();
+    // Byte ranges in `opf`, all offset by the events' positions.
+    let mut content_start: Option<usize> = None; // just after `<spine …>`
+    let mut spine_end: Option<usize> = None; // at `</spine>`
+    let mut itemrefs: Vec<(usize, usize)> = Vec::new(); // raw element ranges
+    let mut open_itemref: Option<usize> = None; // a non-self-closing `<itemref>`
+    let mut in_spine = false;
+    loop {
+        let start = reader.buffer_position() as usize;
+        let event = reader
+            .read_event_into(&mut buf)
+            .map_err(|e| format!("the package does not parse: {e}"))?;
+        let end = reader.buffer_position() as usize;
+        match &event {
+            quick_xml::events::Event::Eof => break,
+            quick_xml::events::Event::Start(e) => {
+                match e.name().as_ref() {
+                    b"spine" if !in_spine => {
+                        in_spine = true;
+                        content_start = Some(end);
+                    }
+                    b"spine" => {
+                        return Err("the package has more than one spine".to_string());
+                    }
+                    b"itemref" if in_spine && open_itemref.is_none() => {
+                        open_itemref = Some(start);
+                    }
+                    _ => {}
+                }
+            }
+            quick_xml::events::Event::Empty(e) => {
+                if in_spine && e.name().as_ref() == b"itemref" && open_itemref.is_none() {
+                    itemrefs.push((start, end));
+                }
+            }
+            quick_xml::events::Event::End(e) => {
+                if e.name().as_ref() == b"itemref" {
+                    if let Some(s) = open_itemref.take() {
+                        itemrefs.push((s, end));
+                    }
+                } else if in_spine && e.name().as_ref() == b"spine" {
+                    spine_end = Some(start);
+                    in_spine = false;
+                }
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+    let content_start = content_start.ok_or("the package has no spine element")?;
+    let spine_end = spine_end.ok_or("the package's spine never closes")?;
+
+    // The order must be exactly a permutation of the itemrefs there
+    // are — the before-hash guard makes a mismatch near-impossible;
+    // this check makes it impossible.
+    let n = itemrefs.len();
+    let mut sorted = order.clone();
+    sorted.sort_unstable();
+    if order.len() != n || sorted != (0..n).collect::<Vec<_>>() {
+        return Err(format!(
+            "the book has {n} chapters but the stored order names {}",
+            order.len()
+        ));
+    }
+
+    // The separator: the original's leading whitespace before the
+    // first itemref, when that is all it was.
+    let first = itemrefs[0].0;
+    let separator: &[u8] = if opf[content_start..first].iter().all(u8::is_ascii_whitespace) {
+        &opf[content_start..first]
+    } else {
+        b"\n"
+    };
+
+    let mut out = Vec::with_capacity(opf.len());
+    out.extend_from_slice(&opf[..content_start]);
+    for (i, &old_pos) in order.iter().enumerate() {
+        if i > 0 {
+            out.extend_from_slice(separator);
+        }
+        let (s, e) = itemrefs[old_pos];
+        out.extend_from_slice(&opf[s..e]);
+    }
+    out.extend_from_slice(&opf[spine_end..]);
+    Ok(out)
 }
 
 /// Percent-decode a container path — the tolerance chapbook-epub's
@@ -1174,6 +1424,314 @@ mod tests {
     // ------------------------------------------------------------------
     // Phase 6 step 5: the bake
     // ------------------------------------------------------------------
+
+    /// The structural fixture: N chapters, a manifest, a spine in a
+    /// chosen order, and an optional cover entry — everything the
+    /// Phase 6 step 10 ops need to prove themselves against.
+    fn write_structural_epub(path: &Path, spine: &[&str], cover: Option<(&str, &[u8])>) {
+        let file = fs::File::create(path).expect("create test epub");
+        let mut zip = ZipWriter::new(file);
+        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file("mimetype", stored).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+        let deflated =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        zip.start_file("META-INF/container.xml", deflated).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#,
+        )
+        .unwrap();
+
+        let chapters = [
+            ("c1", "chapter1.xhtml", "<p>Chapter one says teh word.</p>"),
+            ("c2", "chapter2.xhtml", "<p>Chapter two is fine.</p>"),
+            ("c3", "chapter3.xhtml", "<p>Chapter three is fine.</p>"),
+        ];
+        let mut manifest = String::from("<manifest>");
+        for (id, href, _) in &chapters {
+            manifest.push_str(&format!(
+                "<item id=\"{id}\" href=\"{href}\" media-type=\"application/xhtml+xml\"/>"
+            ));
+        }
+        if let Some((href, _)) = cover {
+            let cover_item = format!(
+                "<item id=\"cover\" href=\"{href}\" media-type=\"image/png\" \
+                 properties=\"cover-image\"/>"
+            );
+            manifest.push_str(&cover_item);
+        }
+        manifest.push_str("</manifest>");
+        let mut spine_xml = String::from("<spine toc=\"ncx\">");
+        for id in spine {
+            spine_xml.push_str(&format!("<itemref idref=\"{id}\"/>"));
+        }
+        spine_xml.push_str("</spine>");
+        zip.start_file("content.opf", deflated).unwrap();
+        zip.write_all(
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">test-book</dc:identifier>
+    <dc:title>Structural Test</dc:title>
+  </metadata>
+  {manifest}
+  {spine_xml}
+</package>"#
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        for (_, href, body) in &chapters {
+            zip.start_file(href, deflated).unwrap();
+            zip.write_all(
+                format!(
+                    "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body>{body}</body></html>"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        }
+        if let Some((href, bytes)) = cover {
+            zip.start_file(href, deflated).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    /// Read one entry's bytes back out of a baked epub.
+    fn entry_bytes(path: &Path, name: &str) -> Vec<u8> {
+        let file = fs::File::open(path).expect("reopen epub");
+        let mut archive = ZipArchive::new(file).expect("valid zip");
+        let mut bytes = Vec::new();
+        archive
+            .by_name(name)
+            .unwrap_or_else(|_| panic!("{name} survives the bake"))
+            .read_to_end(&mut bytes)
+            .unwrap();
+        bytes
+    }
+
+    /// A structural op record — kind `spine` or `asset`, its href the
+    /// zip entry it targets, `replace` the new order / staged name.
+    fn structural_patch(
+        id: i64,
+        kind: &str,
+        href: &str,
+        replace: &str,
+        hash: &str,
+    ) -> PatchRecord {
+        PatchRecord {
+            id,
+            book_id: 1,
+            kind: kind.into(),
+            href: href.into(),
+            chapter_index: 0,
+            find_text: String::new(),
+            replace_text: replace.into(),
+            context_before: String::new(),
+            context_after: String::new(),
+            source: "toc".into(),
+            status: "pending".into(),
+            created_at: "2026-10-09T00:00:00Z".into(),
+            applied_at: None,
+            before_hash: hash.into(),
+        }
+    }
+
+    #[test]
+    fn a_spine_reorder_bake_rewrites_the_reading_order() {
+        // The visual TOC editor's op: the package's spine, its itemrefs
+        // moved verbatim (attributes intact), everything else in the
+        // package byte for byte.
+        let path = test_epub_path("spine");
+        write_structural_epub(&path, &["c1", "c2", "c3"], None);
+        let opf = entry_bytes(&path, "content.opf");
+        let op = structural_patch(
+            11,
+            "spine",
+            "content.opf",
+            "1,2,0",
+            &crate::epub_patches::hash_bytes(&opf),
+        );
+        let report = bake_epub(&path, &[op]).expect("bake");
+
+        assert_eq!(report.applied, vec![11]);
+        assert_eq!(report.entries_patched, 1);
+        let new_opf = String::from_utf8(entry_bytes(&path, "content.opf")).unwrap();
+        let i1 = new_opf.find("c1").expect("c1 present");
+        let i2 = new_opf.find("c2").expect("c2 present");
+        let i3 = new_opf.find("c3").expect("c3 present");
+        // The manifest names c1 first — the assertion is about the
+        // SPINE's order, so compare the itemref positions: the last
+        // occurrence of each id is its itemref (manifest items come
+        // first, itemrefs after).
+        let s1 = new_opf.rfind("c1").expect("itemref c1");
+        let s2 = new_opf.rfind("c2").expect("itemref c2");
+        let s3 = new_opf.rfind("c3").expect("itemref c3");
+        assert!(s2 < s3 && s3 < s1, "the spine now reads c2, c3, c1: {new_opf}");
+        assert!(i1 < s1, "sanity: manifest precedes spine");
+        // The spine element's own attribute survived, and the chapters'
+        // bytes are untouched.
+        assert!(new_opf.contains("<spine toc=\"ncx\">"));
+        assert!(String::from_utf8(entry_bytes(&path, "chapter1.xhtml"))
+            .unwrap()
+            .contains("teh"));
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(crate::epub_metadata::backup_path(&path));
+    }
+
+    #[test]
+    fn a_stale_spine_op_is_reported_not_written() {
+        let path = test_epub_path("spine-stale");
+        write_structural_epub(&path, &["c1", "c2"], None);
+        let before = fs::read(&path).unwrap();
+        let op = structural_patch(12, "spine", "content.opf", "1,0", "not-the-hash");
+        let report = bake_epub(&path, &[op]).expect("a stale op is a report");
+
+        assert!(report.applied.is_empty());
+        assert_eq!(report.failed.len(), 1);
+        assert_eq!(report.failed[0].0, 12);
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_cover_replacement_bake_swaps_the_bytes() {
+        // The asset op: staged next to the book, referenced by name,
+        // swapped into its entry at bake.
+        let path = test_epub_path("asset");
+        write_structural_epub(&path, &["c1"], Some(("cover.png", b"old-cover-bytes")));
+        let staged = path.parent().unwrap().join("kalam-staged-asset.png");
+        fs::write(&staged, b"new-cover-bytes").unwrap();
+        let op = structural_patch(
+            13,
+            "asset",
+            "cover.png",
+            "kalam-staged-asset.png",
+            &crate::epub_patches::hash_bytes(b"old-cover-bytes"),
+        );
+        let report = bake_epub(&path, &[op]).expect("bake");
+
+        assert_eq!(report.applied, vec![13]);
+        assert_eq!(entry_bytes(&path, "cover.png"), b"new-cover-bytes");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(crate::epub_metadata::backup_path(&path));
+        let _ = fs::remove_file(&staged);
+    }
+
+    #[test]
+    fn a_missing_staged_file_is_reported() {
+        let path = test_epub_path("asset-missing");
+        write_structural_epub(&path, &["c1"], Some(("cover.png", b"old-cover-bytes")));
+        let op = structural_patch(
+            14,
+            "asset",
+            "cover.png",
+            "never-staged.png",
+            &crate::epub_patches::hash_bytes(b"old-cover-bytes"),
+        );
+        let report = bake_epub(&path, &[op]).expect("a missing stage is a report");
+
+        assert!(report.applied.is_empty());
+        assert_eq!(report.failed.len(), 1);
+        assert!(report.failed[0].1.contains("missing"));
+        assert_eq!(entry_bytes(&path, "cover.png"), b"old-cover-bytes");
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_done_when_composition_bakes_all_three() {
+        // Phase 6's done-when fixture, the file half: a typo fix, a
+        // spine reorder and a cover replacement in one bake, into one
+        // clean epub. (The "opens in another reader" half is §38 — a
+        // human with a real reader; the container re-verify covers
+        // what a machine can check.)
+        let path = test_epub_path("done-when");
+        write_structural_epub(&path, &["c1", "c2", "c3"], Some(("cover.png", b"old-cover")));
+        let staged = path.parent().unwrap().join("kalam-done-when-cover.png");
+        fs::write(&staged, b"new-cover").unwrap();
+        let opf = entry_bytes(&path, "content.opf");
+        let ops = vec![
+            bake_patch(21, "chapter1.xhtml", "teh", "the", "says ", " word"),
+            structural_patch(
+                22,
+                "spine",
+                "content.opf",
+                "2,0,1",
+                &crate::epub_patches::hash_bytes(&opf),
+            ),
+            structural_patch(
+                23,
+                "asset",
+                "cover.png",
+                "kalam-done-when-cover.png",
+                &crate::epub_patches::hash_bytes(b"old-cover"),
+            ),
+        ];
+        let report = bake_epub(&path, &ops).expect("the composed bake");
+
+        assert_eq!(report.applied, vec![21, 22, 23]);
+        assert_eq!(report.entries_patched, 3);
+        let chapter = String::from_utf8(entry_bytes(&path, "chapter1.xhtml")).unwrap();
+        assert!(chapter.contains("Chapter one says the word."), "{chapter}");
+        let new_opf = String::from_utf8(entry_bytes(&path, "content.opf")).unwrap();
+        let (s1, s2, s3) = (
+            new_opf.rfind("c1").expect("itemref c1"),
+            new_opf.rfind("c2").expect("itemref c2"),
+            new_opf.rfind("c3").expect("itemref c3"),
+        );
+        assert!(s3 < s1 && s1 < s2, "the spine now reads c3, c1, c2: {new_opf}");
+        assert_eq!(entry_bytes(&path, "cover.png"), b"new-cover");
+        // The repack is still a spec-shaped container.
+        let file = fs::File::open(&path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        assert_eq!(archive.by_index(0).unwrap().name(), "mimetype");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(crate::epub_metadata::backup_path(&path));
+        let _ = fs::remove_file(&staged);
+    }
+
+    #[test]
+    fn rewrite_spine_keeps_everything_outside_the_spine() {
+        let opf = br#"<?xml version="1.0"?>
+<package><manifest><item id="a" href="a.xhtml"/></manifest>
+<spine><itemref idref="a"/><itemref idref="b" linear="no"/></spine>
+<guide><reference type="cover" href="a.xhtml"/></guide></package>"#;
+        let out = rewrite_spine_order(opf, "1,0").expect("rewrite");
+        let text = String::from_utf8(out.clone()).unwrap();
+        assert!(
+            text.starts_with("<?xml version=\"1.0\"?>\n<package><manifest>"),
+            "the manifest is untouched: {text}"
+        );
+        assert!(text.contains("<guide>"), "the guide survives: {text}");
+        // The itemrefs swapped — order "1,0" puts b first — and the
+        // second's attribute moved verbatim.
+        let (first, second) = (text.find("<itemref").unwrap(), text.rfind("<itemref").unwrap());
+        assert!(first < second);
+        assert!(
+            text[first..second].contains("idref=\"b\" linear=\"no\""),
+            "the moved-up itemref is b, attributes intact: {text}"
+        );
+        assert!(text[second..].contains("idref=\"a\""));
+    }
+
+    #[test]
+    fn rewrite_spine_refuses_a_non_permutation() {
+        let opf = br#"<package><spine><itemref idref="a"/><itemref idref="b"/></spine></package>"#;
+        assert!(rewrite_spine_order(opf, "0,0").is_err(), "a repeat");
+        assert!(rewrite_spine_order(opf, "0,1,2").is_err(), "too many");
+        assert!(rewrite_spine_order(opf, "0").is_err(), "too few");
+        assert!(rewrite_spine_order(opf, "one,two").is_err(), "not numbers");
+    }
+
+    #[test]
+    fn rewrite_spine_refuses_a_package_without_a_spine() {
+        assert!(rewrite_spine_order(br#"<package/>"#, "0").is_err());
+    }
 
     fn write_minimal_epub(path: &Path, chapter: &str) {
         let file = fs::File::create(path).expect("create test epub");

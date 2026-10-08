@@ -259,6 +259,17 @@ impl Book {
         self.entry_filter.is_set()
     }
 
+    /// The cover image's container path, if the manifest names one — the
+    /// host's asset-replacement hook (Phase 6 step 10). [`Publication::cover`]
+    /// hands back bytes; knowing *which* entry is the cover is the
+    /// structural question, and it needs no parse to answer.
+    pub fn cover_href(&self) -> Option<String> {
+        self.epub
+            .manifest()
+            .cover_image()
+            .map(|e| e.href().as_str().trim_start_matches('/').to_string())
+    }
+
     /// Resolve `href` relative to the container-root path `base` (the
     /// referencing document) and read the resource it points to.
     pub fn resource(&self, base: &str, href: &str) -> Result<Resource> {

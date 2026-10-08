@@ -55,8 +55,23 @@ pub enum EpubEditorMsg {
     /// The background verification finished: the patch to store, or
     /// the refusal's toast plus the editor's serial.
     InlineEditVerified(Result<VerifiedEdit, (String, u64)>),
-    /// A chapter was chosen in the list.
+    /// A chapter was chosen in the list — the row's position in the
+    /// *displayed* order, which the pending spine op may have shuffled.
     TocSelect(usize),
+    /// The structure snapshot landed (at open, or after a bake changed
+    /// the package): where the package and cover entries are, and what
+    /// each hashes to. The structural controls wait for it.
+    StructureReady(engine::StructureSnapshot),
+    /// A TOC row's arrow: the row's position in the displayed order,
+    /// and which way it asked to move.
+    MoveChapter(usize, bool),
+    /// The Cover button: open the file picker.
+    PickCover,
+    /// An image was chosen — stage it off the UI thread.
+    CoverChosen(std::path::PathBuf),
+    /// The staging worker's verdict: the staged file's name (relative
+    /// to the book's folder), or the refusal's toast.
+    CoverStaged(Result<String, String>),
     /// The review panel's open state — a plain desired state, not a
     /// toggle, so the button's own toggled signal and the panel's Done
     /// agree without a feedback loop.
@@ -132,6 +147,20 @@ pub struct EpubEditorModel {
     /// separate from `source_open` so reopening the pane restores it.
     preview_open: bool,
     source: Option<SourcePane>,
+    /// The pending reading order as original spine positions (Phase 6
+    /// step 10): `chapter_order[pos]` is the chapter the list's `pos`-th
+    /// row shows. Identity (`0..n`) until a TOC-editor move stores a
+    /// spine op, and again after a bake consumes it — re-synced from
+    /// the pending patches at open and whenever the review panel
+    /// closes. The engine is never reordered virtually: `chapter` stays
+    /// a real index everywhere, and only the list translates.
+    chapter_order: Vec<usize>,
+    /// The structure snapshot: the package and cover entries — where a
+    /// spine op lives, what an asset op replaces. `None` until the
+    /// open-time worker lands; the structural controls stay insensitive
+    /// until it does, and it is re-taken after a bake (the package's
+    /// hash moved with it).
+    structure: Option<engine::StructureSnapshot>,
 }
 
 /// The raw source pane: the widgets and the state they carry. Held in
@@ -267,6 +296,25 @@ impl Component for EpubEditorModel {
                         set_visible: model.source_open,
                         connect_toggled[sender] => move |btn| {
                             sender.input(EpubEditorMsg::SetPreviewOpen(btn.is_active()));
+                        },
+                    },
+
+                    // The cover door (Phase 6 step 10): pick a
+                    // replacement image — staged beside the book and
+                    // written in by the next bake, like every other
+                    // pending edit.
+                    #[name = "cover_btn"]
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic(
+                            "image-x-generic-symbolic",
+                            16,
+                        )),
+                        add_css_class: "kalam-icon-btn",
+                        set_tooltip_text: Some("Replace this book's cover"),
+                        #[watch]
+                        set_sensitive: model.can_pick_cover(),
+                        connect_clicked[sender] => move |_| {
+                            sender.input(EpubEditorMsg::PickCover);
                         },
                     },
                 },
@@ -448,7 +496,12 @@ impl Component for EpubEditorModel {
             source_open: false,
             preview_open: false,
             source: None,
+            chapter_order: Vec::new(),
+            structure: None,
         };
+        // A spine op left pending from an earlier session still owns
+        // the list's order; the identity otherwise.
+        model.sync_chapter_order();
 
         let widgets = view_output!();
         if let Some((family, px)) = font_bits {
@@ -494,8 +547,12 @@ impl Component for EpubEditorModel {
             widgets.web_host.append(&label);
         }
 
-        rebuild_chapter_list(&widgets.chapter_list, &model.chapter_titles, model.chapter, &sender);
+        rebuild_chapter_list(&widgets.chapter_list, &model, &sender);
         refresh_patches_panel(&model, &widgets.patches_host, &sender);
+        // The structural snapshot, off the UI thread — the spine/cover
+        // controls wait for it, and a book that cannot answer keeps
+        // them insensitive rather than erroring at open.
+        model.take_structure_snapshot(&sender);
 
         // Escape's ladder: a dirty source buffer reverts, a clean
         // source pane closes, and only then does Escape leave the
@@ -520,7 +577,7 @@ impl Component for EpubEditorModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
             EpubEditorMsg::Close => {
@@ -557,8 +614,13 @@ impl Component for EpubEditorModel {
                 }
             }
             EpubEditorMsg::TocSelect(idx) => {
+                // The row's position in the displayed order; the
+                // engine only ever hears real spine indices.
+                let Some(&real) = self.chapter_order.get(idx) else {
+                    return;
+                };
                 if let Some(view) = &self.view {
-                    if idx < self.chapter_count && idx != self.chapter {
+                    if real != self.chapter {
                         let dirty = self
                             .source
                             .as_ref()
@@ -570,14 +632,9 @@ impl Component for EpubEditorModel {
                             );
                             return;
                         }
-                        view.goto_chapter(idx, 0.0);
-                        self.chapter = idx;
-                        rebuild_chapter_list(
-                            &widgets.chapter_list,
-                            &self.chapter_titles,
-                            self.chapter,
-                            &sender,
-                        );
+                        view.goto_chapter(real, 0.0);
+                        self.chapter = real;
+                        rebuild_chapter_list(&widgets.chapter_list, self, &sender);
                         if self.source_open {
                             self.load_source(&sender);
                         }
@@ -585,14 +642,11 @@ impl Component for EpubEditorModel {
                 }
             }
             EpubEditorMsg::EnginePosition(chapter, _fraction) => {
+                // The engine reports real spine indices; the list
+                // highlights the row whose displayed chapter it is.
                 if chapter != self.chapter && chapter < self.chapter_count {
                     self.chapter = chapter;
-                    rebuild_chapter_list(
-                        &widgets.chapter_list,
-                        &self.chapter_titles,
-                        self.chapter,
-                        &sender,
-                    );
+                    rebuild_chapter_list(&widgets.chapter_list, self, &sender);
                 }
             }
             EpubEditorMsg::EngineSelection(sel) => {
@@ -781,6 +835,179 @@ impl Component for EpubEditorModel {
                     }
                 }
             }
+            EpubEditorMsg::StructureReady(snapshot) => {
+                self.structure = Some(snapshot);
+                // A bake may have consumed the pending spine op while
+                // this worker was in flight — the list's order comes
+                // from the patches, not from the snapshot.
+                self.sync_chapter_order();
+                rebuild_chapter_list(&widgets.chapter_list, self, &sender);
+            }
+            EpubEditorMsg::MoveChapter(pos, up) => {
+                // One arrow click: swap two rows in the *displayed*
+                // order, then store that whole order as the book's one
+                // pending spine op — replacing any it already has.
+                let Some(structure) = self.structure.clone() else {
+                    return;
+                };
+                let (Some(opf_href), Some(opf_hash)) =
+                    (structure.opf_href, structure.opf_hash)
+                else {
+                    return;
+                };
+                let target = if up {
+                    pos.checked_sub(1)
+                } else if pos + 1 < self.chapter_order.len() {
+                    Some(pos + 1)
+                } else {
+                    None
+                };
+                let Some(target) = target else { return };
+                let mut order = self.chapter_order.clone();
+                order.swap(pos, target);
+                if let Err(e) = self.store_spine_order(&order, &opf_href, &opf_hash) {
+                    crate::notify::error("Could not save the new order", &e.to_string());
+                    return;
+                }
+                self.sync_chapter_order();
+                self.patches_count = self.pending_count();
+                refresh_patches_panel(self, &widgets.patches_host, &sender);
+                rebuild_chapter_list(&widgets.chapter_list, self, &sender);
+            }
+            EpubEditorMsg::PickCover => {
+                let dialog = gtk::FileDialog::builder()
+                    .title("Choose a cover image")
+                    .modal(true)
+                    .build();
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("Images (*.png, *.jpg, *.webp, *.gif)"));
+                filter.add_suffix("png");
+                filter.add_suffix("jpg");
+                filter.add_suffix("jpeg");
+                filter.add_suffix("webp");
+                filter.add_suffix("gif");
+                let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+                filters.append(&filter);
+                dialog.set_filters(Some(&filters));
+                let window = root.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+                let window = window.or_else(|| {
+                    relm4::main_application()
+                        .active_window()
+                        .and_then(|w| w.downcast::<gtk::Window>().ok())
+                });
+                let tx = sender.input_sender().clone();
+                dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
+                    if let Ok(file) = result {
+                        if let Some(path) = file.path() {
+                            let _ = tx.send(EpubEditorMsg::CoverChosen(path));
+                        }
+                    }
+                });
+            }
+            EpubEditorMsg::CoverChosen(picked) => {
+                // The op's target and guard come from the snapshot at
+                // staging time; a book that never answered has no
+                // Cover button to click (the message is data, so the
+                // check stands here too).
+                if !self.can_pick_cover() {
+                    return;
+                }
+                let Some(book_dir) = self
+                    .book_path
+                    .as_ref()
+                    .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                else {
+                    return;
+                };
+                let (tx, rx) = async_channel::unbounded::<Result<String, String>>();
+                let itx = sender.input_sender().clone();
+                gtk::glib::spawn_future_local(async move {
+                    if let Ok(verdict) = rx.recv().await {
+                        let _ = itx.send(EpubEditorMsg::CoverStaged(verdict));
+                    }
+                });
+                std::thread::spawn(move || {
+                    let staged = stage_cover(&book_dir, &picked);
+                    let _ = tx.send_blocking(staged);
+                });
+            }
+            EpubEditorMsg::CoverStaged(verdict) => {
+                let Some(structure) = self.structure.clone() else {
+                    return;
+                };
+                let (Some(cover_href), Some(cover_hash)) =
+                    (structure.cover_href, structure.cover_hash)
+                else {
+                    return;
+                };
+                let staged_name = match verdict {
+                    Ok(name) => name,
+                    Err(toast) => {
+                        crate::notify::error("Could not stage the cover", &toast);
+                        return;
+                    }
+                };
+                // One pending cover op: the pick that lands replaces
+                // whatever was staged before, file and row together.
+                let old_ops: Vec<crate::db::PatchRecord> = self
+                    .pending_patches()
+                    .into_iter()
+                    .filter(|p| p.kind == "asset")
+                    .collect();
+                for op in &old_ops {
+                    if let Err(e) = self.service.catalog().delete_patch(op.id) {
+                        crate::notify::error("Could not replace the staged cover", &e.to_string());
+                        return;
+                    }
+                }
+                let inserted = self.service.catalog().insert_guarded_patch(
+                    self.book_id,
+                    "asset",
+                    &cover_href,
+                    0,
+                    "",
+                    &staged_name,
+                    "",
+                    "",
+                    "asset",
+                    &cover_hash,
+                );
+                match inserted {
+                    Ok(_) => {
+                        // The replaced picks' staging goes with their
+                        // rows — off the UI thread, and never the file
+                        // the new op just claimed.
+                        for op in &old_ops {
+                            if op.replace_text != staged_name {
+                                let name = op.replace_text.clone();
+                                let book_id = op.book_id;
+                                let catalog = self.service.catalog().clone();
+                                std::thread::spawn(move || {
+                                    if let Ok(Some(book)) = catalog.get_book(book_id) {
+                                        if let Some(staged) =
+                                            crate::epub_sanitizer::staged_asset_path(
+                                                &book.file_path,
+                                                &name,
+                                            )
+                                        {
+                                            let _ = std::fs::remove_file(staged);
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                        self.patches_count = self.pending_count();
+                        refresh_patches_panel(self, &widgets.patches_host, &sender);
+                        crate::notify::compact(
+                            "Cover staged",
+                            "Apply it from the Patches panel.",
+                        );
+                    }
+                    Err(e) => {
+                        crate::notify::error("Could not save the cover edit", &e.to_string());
+                    }
+                }
+            }
             EpubEditorMsg::SetPatchesOpen(open) => {
                 if open == self.patches_open {
                     // The button's toggled signal fires for programmatic
@@ -793,6 +1020,11 @@ impl Component for EpubEditorModel {
                     // The panel baked, accepted or rejected while it
                     // was open: what the engine is showing is stale.
                     self.reload(&sender);
+                    // And a bake that touched the package or the cover
+                    // moved every structural hash. Ask again, off the
+                    // UI thread; the buttons stay as they are until the
+                    // answer lands.
+                    self.take_structure_snapshot(&sender);
                     // And what a standing source pane loaded is past
                     // too — a bake rewrites the entry for real. Clean
                     // panes re-read; dirty ones meet their guard at
@@ -1106,6 +1338,103 @@ impl EpubEditorModel {
             })
     }
 
+    /// Whether the Cover button can do its work: the snapshot landed
+    /// and the book actually declares a cover entry to replace.
+    fn can_pick_cover(&self) -> bool {
+        self.structure
+            .as_ref()
+            .is_some_and(|s| s.cover_href.is_some() && s.cover_hash.is_some())
+    }
+
+    /// Re-read the pending reading order from the patches: the last
+    /// pending spine op's stored order when it is a true permutation of
+    /// the chapters there are, the book's own order otherwise (a bad
+    /// row is logged and ignored — the list must always show something
+    /// coherent, never a hole).
+    fn sync_chapter_order(&mut self) {
+        let identity: Vec<usize> = (0..self.chapter_count).collect();
+        let mut order = identity.clone();
+        if let Some(op) = self
+            .pending_patches()
+            .into_iter()
+            .filter(|p| p.kind == "spine")
+            .last()
+        {
+            if let Some(parsed) = crate::epub_sanitizer::parse_spine_order(&op.replace_text) {
+                let mut sorted = parsed.clone();
+                sorted.sort_unstable();
+                if parsed.len() == self.chapter_count && sorted == identity {
+                    order = parsed;
+                } else {
+                    log::warn!(
+                        "editor: pending spine op {} is not a permutation of {} chapters — \
+                         showing the book's own order",
+                        op.id,
+                        self.chapter_count
+                    );
+                }
+            }
+        }
+        self.chapter_order = order;
+    }
+
+    /// Store `order` as the book's one pending spine op, replacing any
+    /// it already has. The identity order stores nothing — deleting the
+    /// op *is* the reset. A small write on the main loop, the
+    /// `insert_patch` precedent.
+    fn store_spine_order(
+        &self,
+        order: &[usize],
+        opf_href: &str,
+        opf_hash: &str,
+    ) -> std::result::Result<(), crate::db::DbError> {
+        let catalog = self.service.catalog();
+        for op in catalog
+            .get_pending_patches_for_book(self.book_id)?
+            .into_iter()
+            .filter(|p| p.kind == "spine")
+        {
+            catalog.delete_patch(op.id)?;
+        }
+        let identity: Vec<usize> = (0..self.chapter_count).collect();
+        if *order != identity {
+            catalog.insert_guarded_patch(
+                self.book_id,
+                "spine",
+                opf_href,
+                0,
+                "",
+                &order
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                "",
+                "",
+                "toc",
+                opf_hash,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Ask the structure worker for the package and cover entries. The
+    /// answer lands as [`EpubEditorMsg::StructureReady`]; until one
+    /// has, the structural controls stay insensitive.
+    fn take_structure_snapshot(&self, sender: &ComponentSender<Self>) {
+        let Some(path) = self.book_path.clone() else {
+            return;
+        };
+        let (tx, rx) = async_channel::unbounded::<engine::StructureSnapshot>();
+        let itx = sender.input_sender().clone();
+        gtk::glib::spawn_future_local(async move {
+            if let Ok(snapshot) = rx.recv().await {
+                let _ = itx.send(EpubEditorMsg::StructureReady(snapshot));
+            }
+        });
+        engine::read_structure_snapshot(path, tx);
+    }
+
     fn close_inline_edit(&mut self) {
         if let Some(edit) = self.inline_edit.take() {
             engine::remove_inline_edit_provider(&edit.provider);
@@ -1225,6 +1554,13 @@ impl EpubEditorModel {
             }
         };
 
+        // Where the editor was, said as the old view would say it —
+        // by href, because a bake may have reordered the spine
+        // underneath (a chapter index would land somewhere else; the
+        // locator's href survived the move). The locator re-anchors by
+        // quote when the text differs; the index is only the fallback
+        // when there was no position at all.
+        let locator = self.view.as_ref().and_then(|v| v.locator());
         if let Some(old) = self.view.take() {
             old.close();
         }
@@ -1235,8 +1571,12 @@ impl EpubEditorModel {
         wire(&new_view, sender);
         new_view.set_proofreading(true);
         new_view.set_autohide_cursor(false);
-        new_view
-            .goto_chapter(self.chapter.min(self.chapter_count.saturating_sub(1)), 0.0);
+        let restored = locator
+            .as_ref()
+            .is_some_and(|loc| new_view.goto_locator(loc, false));
+        if !restored {
+            new_view.goto_chapter(self.chapter.min(self.chapter_count.saturating_sub(1)), 0.0);
+        }
         new_view.widget().grab_focus();
 
         self.reloading = false;
@@ -1272,32 +1612,116 @@ fn wire(view: &ReaderView, sender: &ComponentSender<EpubEditorModel>) {
     });
 }
 
-/// The chapter list: a flat column of buttons, the current chapter
-/// marked. Rebuilt rather than patched — a book's chapter count is
-/// small and this is not a path anyone scrolls hot.
+/// The chapter list: a flat column of rows — the title button, then
+/// the reorder arrows (Phase 6 step 10) — showing the *pending* order
+/// the TOC editor has staged, the current chapter marked. Rebuilt
+/// rather than patched — a book's chapter count is small and this is
+/// not a path anyone scrolls hot.
+///
+/// `model.chapter` and `chapter_titles` stay real-indexed; only this
+/// list (and the message the arrows send) know positions in the
+/// displayed order. The arrows stay insensitive until the structure
+/// snapshot lands: storing an order needs the package's path and hash.
 fn rebuild_chapter_list(
     list: &gtk::Box,
-    titles: &[String],
-    current: usize,
+    model: &EpubEditorModel,
     sender: &ComponentSender<EpubEditorModel>,
 ) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
-    for (idx, title) in titles.iter().enumerate() {
-        let btn = gtk::Button::with_label(title);
+    let can_reorder = model
+        .structure
+        .as_ref()
+        .is_some_and(|s| s.opf_href.is_some() && s.opf_hash.is_some())
+        && model.chapter_order.len() > 1;
+    for (pos, &real) in model.chapter_order.iter().enumerate() {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+        row.add_css_class("kalam-editor-chapter-row");
+        let title = model
+            .chapter_titles
+            .get(real)
+            .cloned()
+            .unwrap_or_else(|| format!("Chapter {}", real + 1));
+        let btn = gtk::Button::with_label(&title);
         btn.add_css_class("kalam-editor-chapter");
-        if idx == current {
+        if real == model.chapter {
             btn.add_css_class("kalam-editor-chapter-current");
         }
         btn.set_hexpand(true);
         btn.set_halign(gtk::Align::Fill);
         let tx = sender.input_sender().clone();
         btn.connect_clicked(move |_| {
-            let _ = tx.send(EpubEditorMsg::TocSelect(idx));
+            let _ = tx.send(EpubEditorMsg::TocSelect(pos));
         });
-        list.append(&btn);
+        row.append(&btn);
+
+        let up = arrow_button(
+            "go-up-symbolic",
+            "Move this chapter earlier",
+            pos > 0 && can_reorder,
+        );
+        {
+            let tx = sender.input_sender().clone();
+            up.connect_clicked(move |_| {
+                let _ = tx.send(EpubEditorMsg::MoveChapter(pos, true));
+            });
+        }
+        row.append(&up);
+        let down = arrow_button(
+            "go-down-symbolic",
+            "Move this chapter later",
+            pos + 1 < model.chapter_order.len() && can_reorder,
+        );
+        {
+            let tx = sender.input_sender().clone();
+            down.connect_clicked(move |_| {
+                let _ = tx.send(EpubEditorMsg::MoveChapter(pos, false));
+            });
+        }
+        row.append(&down);
+        list.append(&row);
     }
+}
+
+/// One reorder arrow: the icon-button shape the panel's discard button
+/// uses, sized for a list row.
+fn arrow_button(icon: &str, tooltip: &str, sensitive: bool) -> gtk::Button {
+    let btn = gtk::Button::new();
+    btn.add_css_class("kalam-icon-btn");
+    btn.add_css_class("kalam-editor-arrow");
+    btn.set_focus_on_click(false);
+    btn.set_tooltip_text(Some(tooltip));
+    btn.set_sensitive(sensitive);
+    btn.set_child(Some(&crate::icons::symbolic(icon, 13)));
+    btn
+}
+
+/// Stage a chosen cover image beside the book: `.kalam-staged/` under
+/// the book's folder, named by its own hash so re-picking the same
+/// image lands on the same file. The name is what the pending asset op
+/// will carry — relative, resolved against the book at bake.
+fn stage_cover(book_dir: &std::path::Path, picked: &std::path::Path) -> Result<String, String> {
+    let bytes = std::fs::read(picked)
+        .map_err(|e| format!("the image could not be read: {e}"))?;
+    if bytes.is_empty() {
+        return Err("that file is empty".to_string());
+    }
+    let hash = crate::epub_patches::hash_bytes(&bytes);
+    let ext = picked
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))
+        .unwrap_or_else(|| "png".to_string());
+    let name = format!(".kalam-staged/{}-cover.{ext}", &hash[..8]);
+    let dir = book_dir.join(".kalam-staged");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("the staging folder could not be made: {e}"))?;
+    let staged = book_dir.join(&name);
+    std::fs::copy(picked, &staged)
+        .map_err(|e| format!("the image could not be staged: {e}"))?;
+    Ok(name)
 }
 
 /// Rebuild the review panel inside its host. The panel is the step-5

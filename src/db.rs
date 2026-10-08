@@ -1972,6 +1972,90 @@ impl Catalog {
         // call sites would otherwise read this one as a bug.
         Ok(())
     }
+
+    /// Translate a book's spine-keyed rows through a reading-order change
+    /// (Phase 6 step 10). `order` is the *new* spine as old indices —
+    /// `order[j]` is the chapter that now sits at position `j` — so a row on
+    /// old index `i` moves to the `j` where `order[j] == i`.
+    ///
+    /// One `CASE` statement per table, not a pair-by-pair run of updates:
+    /// a swap performed as two `UPDATE`s undoes itself. The annotations'
+    /// stored locator JSON is rewritten field by field — `spine_href` is the
+    /// primary anchor there, so this is belt and braces, but a stale
+    /// `spine_index` beside a true href is a bug factory.
+    ///
+    /// The pending `patches` rows are history, not state — their
+    /// `chapter_index` is where the edit was *made* — and they are keyed by
+    /// href when it matters, so they are not remapped.
+    pub fn remap_spine_indices(&self, book_id: i64, order: &[usize]) -> Result<()> {
+        let conn = self.conn();
+        let moved: Vec<(usize, usize)> = order
+            .iter()
+            .enumerate()
+            .filter_map(|(new, &old)| (old != new).then_some((old, new)))
+            .collect();
+        if moved.is_empty() {
+            return Ok(());
+        }
+        let cases = moved
+            .iter()
+            .map(|(old, new)| format!("WHEN {old} THEN {new}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        for table in ["reading_progress", "annotations", "saved_words", "reading_bookmarks"] {
+            conn.execute(
+                &format!(
+                    "UPDATE {table} SET chapter_index = CASE chapter_index {cases} \
+                     ELSE chapter_index END WHERE book_id = ?1"
+                ),
+                params![book_id],
+            )?;
+        }
+        // The annotations' locator JSON: rewrite `spine_index` in place,
+        // preserving every other field — including fields a future version
+        // might add that this one does not know.
+        let mut stmt = conn.prepare(
+            "SELECT id, cfi FROM annotations WHERE book_id = ?1 AND cfi IS NOT NULL",
+        )?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map(params![book_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        drop(stmt);
+        for (id, cfi) in rows {
+            let Ok(mut locator) = serde_json::from_str::<serde_json::Value>(&cfi) else {
+                continue; // not ours to touch
+            };
+            // The locator shape is `{"start": {...}, "end": {...}}` with the
+            // spine_index inside each endpoint (engine.rs `locator_to_json`).
+            let mut changed = false;
+            for endpoint in ["start", "end"] {
+                let Some(point) = locator.get_mut(endpoint) else {
+                    continue;
+                };
+                let Some(old) = point.get("spine_index").and_then(|v| v.as_u64()) else {
+                    continue;
+                };
+                let Some(new) = order
+                    .iter()
+                    .position(|&o| o as u64 == old)
+                    .filter(|&new| new as u64 != old)
+                else {
+                    continue; // unmoved, or off the end of the new spine
+                };
+                point["spine_index"] = serde_json::json!(new);
+                changed = true;
+            }
+            if changed {
+                if let Ok(text) = serde_json::to_string(&locator) {
+                    conn.execute(
+                        "UPDATE annotations SET cfi = ?1 WHERE id = ?2",
+                        params![text, id],
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Shared projection so every book query returns the same column order.
@@ -2436,6 +2520,79 @@ mod tests {
         assert_eq!(out[&a], (2usize, 0.25));
         assert_eq!(out[&b], (4usize, 0.5));
         assert!(!out.contains_key(&c));
+    }
+
+    #[test]
+    fn remap_spine_indices_moves_every_spine_keyed_row() {
+        // A reading-order change (Phase 6 step 10) must carry position,
+        // highlights, saved words and bookmarks with it — and rewrite the
+        // stored locators' spine_index without disturbing their other
+        // fields. What it must not touch: another book's rows, or a row on
+        // a chapter the order did not move.
+        let cat = Catalog::open_in_memory().unwrap();
+        let book = seed(&cat, "Remap", "R", &[]);
+        let other = seed(&cat, "Other", "O", &[]);
+
+        // Everything sits on old chapter 1; one annotation sits on 2.
+        cat.set_reading_progress(book, 1, 0.5, 4).unwrap();
+        cat.set_reading_progress(other, 1, 0.9, 4).unwrap();
+        let moved = cat
+            .insert_annotation(
+                book, "highlight", 1, "", 0, "", 0, "yellow", "solid", "moved excerpt", "n",
+            )
+            .unwrap();
+        let still = cat
+            .insert_annotation(
+                book, "highlight", 2, "", 0, "", 0, "yellow", "solid", "still excerpt", "n",
+            )
+            .unwrap();
+        cat.update_annotation_cfi(
+            moved,
+            r#"{"kalam_locator":1,"start":{"spine_href":"ch2.xhtml","spine_index":1,"char_offset":10,"locator_version":1,"quote":{"prefix":"","exact":"moved","suffix":""},"spine_fraction":0.1,"book_progression":0.05},"end":{"spine_href":"ch2.xhtml","spine_index":1,"char_offset":20,"locator_version":1,"quote":{"prefix":"","exact":"excerpt","suffix":""},"spine_fraction":0.12,"book_progression":0.06}}"#,
+        )
+        .unwrap();
+        cat.update_annotation_cfi(
+            still,
+            r#"{"kalam_locator":1,"start":{"spine_href":"ch3.xhtml","spine_index":2,"char_offset":1,"locator_version":1},"end":{"spine_href":"ch3.xhtml","spine_index":2,"char_offset":9,"locator_version":1}}"#,
+        )
+        .unwrap();
+        cat.insert_saved_word("word", "def", None, Some(book), Some(1), None)
+            .unwrap();
+        cat.insert_saved_word("otherword", "def", None, Some(other), Some(1), None)
+            .unwrap();
+        cat.insert_reading_bookmark(book, 1, 0.5, "mark").unwrap();
+
+        // New spine as old indices: old 1 reads first now.
+        cat.remap_spine_indices(book, &[1, 0, 2]).unwrap();
+
+        assert_eq!(cat.get_reading_progress(book).unwrap(), Some((0, 0.5)));
+        assert_eq!(cat.get_reading_progress(other).unwrap(), Some((1, 0.9)));
+        let annotations = cat.get_annotations_for_book(book).unwrap();
+        let moved_row = annotations.iter().find(|a| a.id == moved).unwrap();
+        let still_row = annotations.iter().find(|a| a.id == still).unwrap();
+        assert_eq!(moved_row.chapter_index, 0);
+        assert_eq!(still_row.chapter_index, 2, "an unmoved chapter stays put");
+        // The locator's spine_index moved with the row; href and offsets
+        // survive verbatim.
+        let cfi: serde_json::Value =
+            serde_json::from_str(moved_row.cfi.as_deref().unwrap()).unwrap();
+        assert_eq!(cfi["start"]["spine_index"], 0);
+        assert_eq!(cfi["end"]["spine_index"], 0);
+        assert_eq!(cfi["start"]["spine_href"], "ch2.xhtml");
+        assert_eq!(cfi["start"]["char_offset"], 10);
+        let still_cfi: serde_json::Value =
+            serde_json::from_str(still_row.cfi.as_deref().unwrap()).unwrap();
+        assert_eq!(still_cfi["start"]["spine_index"], 2, "unmoved locator untouched");
+        let words = cat.get_saved_words_for_scope(book, "book").unwrap();
+        assert_eq!(words[0].chapter_index, Some(0));
+        let marks = cat.list_reading_bookmarks(book).unwrap();
+        assert_eq!(marks[0].chapter_index, 0);
+        let other_words = cat.get_saved_words_for_scope(other, "book").unwrap();
+        assert_eq!(other_words[0].chapter_index, Some(1), "other books untouched");
+
+        // An identity order is a no-op, not a shuffle.
+        cat.remap_spine_indices(book, &[0, 1, 2]).unwrap();
+        assert_eq!(cat.get_reading_progress(book).unwrap(), Some((0, 0.5)));
     }
 
     fn seed(cat: &Catalog, title: &str, authors: &str, tags: &[&str]) -> i64 {

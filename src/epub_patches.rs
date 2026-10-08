@@ -351,6 +351,34 @@ mod tests {
     }
 
     #[test]
+    fn structural_kinds_pass_through_untouched() {
+        // A spine or asset op (Phase 6 step 10) is a bake-time file
+        // operation, never a render-time text edit. Its href is the
+        // package or an image entry, so it should not even reach this
+        // filter — but if one does (a href re-used, a record edited),
+        // the text path must skip it silently rather than treat an
+        // order string or a staged filename as replacement text.
+        let mut spine = file_patch(31, "c.xhtml", "", "");
+        spine.kind = "spine".into();
+        spine.replace_text = "1,0".into();
+        let mut asset = file_patch(32, "c.xhtml", "", "");
+        asset.kind = "asset".into();
+        asset.replace_text = "kalam-staged-cover.png".into();
+        let typo = patch(33, "c.xhtml", "teh", "the", "He said ", " word");
+        let (out, outcomes) =
+            apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[spine, asset, typo]);
+        assert_eq!(
+            outcomes.iter().map(|o| o.id).collect::<Vec<_>>(),
+            vec![33],
+            "only the text patch is applied"
+        );
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("He said the word"), "{text}");
+        assert!(!text.contains("1,0"), "the order never lands in a chapter");
+        assert!(!text.contains("staged"), "the asset name never lands in a chapter");
+    }
+
+    #[test]
     fn zero_patches_is_the_identity() {
         // Byte-stability, base case: with nothing to apply the entry must
         // come back identical, not re-encoded, not re-wrapped.

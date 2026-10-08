@@ -1820,6 +1820,7 @@ pub(crate) fn render_source_preview(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_source_preview_in_thread(
     book_path: &std::path::Path,
     prefs: KalamPrefs,

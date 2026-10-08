@@ -142,7 +142,6 @@ pub struct EpubEditorModel {
 /// callbacks (the buffer's `changed`) must read them without touching
 /// the model; everything runs on the main loop, so there is no racing.
 struct SourcePane {
-    view: sourceview5::View,
     buffer: sourceview5::Buffer,
     /// The preview's pages, stacked into one tall texture.
     picture: gtk::Picture,
@@ -560,18 +559,16 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::TocSelect(idx) => {
                 if let Some(view) = &self.view {
                     if idx < self.chapter_count && idx != self.chapter {
-                        if self.source_open {
-                            if self
-                                .source
-                                .as_ref()
-                                .is_some_and(|pane| pane.dirty.get())
-                            {
-                                crate::notify::info(
-                                    "Unsaved source",
-                                    "Save or revert the raw source before changing chapter.",
-                                );
-                                return;
-                            }
+                        let dirty = self
+                            .source
+                            .as_ref()
+                            .is_some_and(|pane| pane.dirty.get());
+                        if self.source_open && dirty {
+                            crate::notify::info(
+                                "Unsaved source",
+                                "Save or revert the raw source before changing chapter.",
+                            );
+                            return;
                         }
                         view.goto_chapter(idx, 0.0);
                         self.chapter = idx;
@@ -1446,7 +1443,6 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
     }
 
     SourcePane {
-        view,
         buffer,
         picture,
         preview_box,

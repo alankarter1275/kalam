@@ -220,12 +220,18 @@ impl Session {
     /// re-imported copy of the same file resolves exactly, and if the file
     /// changed underneath, the offset is bounds-checked and the quote
     /// context is the fallback the way it always was.
+    ///
+    /// A host entry filter counts as "changed underneath" for as long as
+    /// it is installed: the session's text is then a derived view, and a
+    /// href match proves nothing about offsets an edit may have shifted.
+    /// Filtered means untrusted; the quote layer answers.
     fn href_matches(&self, spine: usize, locator: &LayeredLocator) -> bool {
         self.book
             .publication()
             .spine_item(spine)
             .map(|item| item.href == locator.spine_href)
             .unwrap_or(false)
+            && !self.text_is_filtered()
     }
 
     fn resolve_host_highlights(&self, spine: usize, text: &str) -> Vec<Highlight> {

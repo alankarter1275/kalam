@@ -676,7 +676,15 @@ impl Component for ReaderModel {
                 false, // no hyphenation: retired after the round-1 field report
                 catalog_publisher,
             );
-            match engine::open_engine(&book.file_path, prefs) {
+            // The book's pending edits (Phase 6) ride along: the reader
+            // applies them to each chapter's bytes as it parses, and the
+            // file itself stays untouched. A failed read opens the book
+            // unpatched rather than not at all — the log says why.
+            let patches = catalog.get_patches_for_book(book_id).unwrap_or_else(|err| {
+                log::warn!("patches for book {book_id} unreadable: {err:#} — opening unpatched");
+                Vec::new()
+            });
+            match engine::open_engine(&book.file_path, prefs, patches) {
                 Ok(view) => {
                     let (ch, frac) = catalog
                         .get_reading_progress(book_id)

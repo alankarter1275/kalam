@@ -158,3 +158,62 @@ fn a_book_in_no_series_is_in_no_series() {
     assert_eq!(md.series, None);
     assert_eq!(md.series_index, None);
 }
+
+/// The virtual-edit seam (Phase 6): a host filter transforms the bytes of
+/// the entries it names, sees each entry's href, and leaves the others
+/// alone. The book itself knows nothing about what the filter does.
+#[test]
+fn a_host_entry_filter_transforms_the_units_it_names() {
+    use chapbook_epub::EntryFilter;
+    use std::sync::{Arc, Mutex};
+
+    let mut book = minimal();
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen_filter = seen.clone();
+    book.set_entry_filter(EntryFilter::new(move |href, bytes| {
+        seen_filter.lock().unwrap().push(href.to_string());
+        if href != "OEBPS/chapter1.xhtml" {
+            return bytes;
+        }
+        String::from_utf8(bytes)
+            .expect("fixture chapter is utf-8")
+            .replace("truth", "verity")
+            .into_bytes()
+    }));
+
+    let ch1 = book.unit_bytes(0).expect("chapter one reads");
+    let text = String::from_utf8(ch1).expect("bytes are utf-8");
+    assert!(
+        text.contains("verity") && !text.contains("truth"),
+        "the reader sees the filtered bytes"
+    );
+
+    // The other spine entry passes through the same hook untouched — the
+    // filter decides by href, and the book does not filter by itself.
+    let ch2 = book.unit_bytes(1).expect("chapter two reads");
+    let text2 = String::from_utf8(ch2).expect("bytes are utf-8");
+    assert!(text2.contains("This chapter exists so the spine has more than one entry"));
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec!["OEBPS/chapter1.xhtml".to_string(), "OEBPS/chapter2.xhtml".to_string()],
+        "the filter saw each entry under its own href"
+    );
+}
+
+/// No filter installed — the default for every host that never asks —
+/// means the book's bytes are the archive's bytes, exactly.
+#[test]
+fn with_no_filter_unit_bytes_is_the_archive_verbatim() {
+    use chapbook_epub::EntryFilter;
+
+    let plain = minimal();
+    let mut identity = minimal();
+    identity.set_entry_filter(EntryFilter::new(|_, bytes| bytes));
+    for spine in 0..plain.spine().len() {
+        assert_eq!(
+            plain.unit_bytes(spine).unwrap(),
+            identity.unit_bytes(spine).unwrap(),
+            "spine {spine}: an unset filter and an identity filter agree"
+        );
+    }
+}

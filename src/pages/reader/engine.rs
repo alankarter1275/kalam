@@ -23,7 +23,7 @@
 
 use super::mod_model::ReaderModel;
 use super::types::*;
-use crate::db::{Annotation, HighlightColor as DbColor, AnnotationStyle};
+use crate::db::{Annotation, HighlightColor as DbColor, AnnotationStyle, PatchRecord};
 use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use kalam_reader::{
@@ -81,14 +81,21 @@ pub(crate) fn engine_color(name: &str) -> HighlightColor {
 /// budget — the settings the engine was tuned with on the target
 /// machine. `Err` for a file the engine cannot read; the caller shows
 /// the "Could not open book" placeholder as before.
+///
+/// `patches` are the book's pending edits (Phase 6). They are applied to
+/// each chapter's bytes as the reader parses them — the book on disk is
+/// untouched — so what the reader sees is the edited text. An empty list
+/// installs no filter at all and reads the file verbatim.
 pub(crate) fn open_engine(
     file_path: &Path,
     prefs: KalamPrefs,
+    patches: Vec<PatchRecord>,
 ) -> Result<ReaderView, kalam_reader::ChapbookError> {
     crate::timing::span("book_open");
     // Roadmap 2.8: a reader's own typefaces, scanned when the book opens.
     let options = ReaderOptions {
         fonts_dir: Some(crate::paths::fonts_dir()),
+        entry_filter: patch_filter(patches),
         ..ReaderOptions::default()
     };
     // Say what the cache ceiling actually is instead of leaving it to be
@@ -108,6 +115,39 @@ pub(crate) fn open_engine(
     let view = ReaderView::open(file_path, prefs, &options);
     crate::timing::span_end("book_open");
     view
+}
+
+/// The virtual-edit seam (Phase 6): wrap the book's pending patches in the
+/// engine's entry filter. Every chapter the reader parses goes through
+/// this — the edit exists only in memory, until a review-panel bake
+/// writes it into the file for real.
+///
+/// An empty patch list yields an unset filter: the common book — no
+/// pending edits — is read verbatim and keeps full-exactness locator
+/// resolution, which the session deliberately gives up while a filter is
+/// installed.
+fn patch_filter(patches: Vec<PatchRecord>) -> kalam_reader::EntryFilter {
+    if patches.is_empty() {
+        return kalam_reader::EntryFilter::default();
+    }
+    kalam_reader::EntryFilter::new(move |href, bytes| {
+        let (patched, outcomes) = crate::epub_patches::apply_text_patches(href, &bytes, &patches);
+        // A patch that no longer matches its chapter is flagged, never
+        // silently skipped: the review panel surfaces these (step 5); this
+        // log line is the developer's trace of the same fact, at a level
+        // that stays out of the way of a normal session.
+        for outcome in &outcomes {
+            if outcome.resolution != crate::epub_patches::Resolution::Found {
+                log::debug!(
+                    "patch {} no longer matches {}: {:?}",
+                    outcome.id,
+                    href,
+                    outcome.resolution
+                );
+            }
+        }
+        patched
+    })
 }
 
 /// The reader's "continuous scroll" preference, kept under the

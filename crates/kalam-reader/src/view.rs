@@ -178,6 +178,13 @@ pub struct ReaderOptions {
     /// Faces are read when a book opens, so a file dropped in shows up in
     /// the typeface picker on the next open, not the next page turn.
     pub fonts_dir: Option<std::path::PathBuf>,
+    /// A host byte filter over the EPUB's entries — Kalam's pending-edit
+    /// seam (Phase 6). Unset — the default — reads the book exactly as it
+    /// sits on disk. When set, every chapter the widget lays out is the
+    /// filter's view of the entry, and locator resolution re-anchors over
+    /// the edits instead of trusting stored offsets. See
+    /// [`chapbook_reader::EntryFilter`].
+    pub entry_filter: chapbook_reader::EntryFilter,
 }
 
 /// How the book is shown: one page at a time, or as one long strip.
@@ -328,6 +335,13 @@ impl ReaderView {
         ))
             .with_cache_budget(budget);
         let mut session = Session::open_with(path.as_ref(), config)?;
+        // The host's virtual-edit seam, if it brought one (Phase 6). Set
+        // before anything is read — the same rule as the settings below —
+        // so the first layout parses the filtered view, never the raw
+        // bytes, and never lays anything out twice.
+        if options.entry_filter.is_set() {
+            session.set_entry_filter(options.entry_filter.clone());
+        }
         // Kalam's settings, before the first layout, so nothing is laid
         // out twice. The scope is a formality now that the engine keeps
         // no records of its own.

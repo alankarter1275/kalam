@@ -18,13 +18,6 @@
 //! previous one — a later patch can build on an earlier edit, and a patch
 //! whose target an earlier edit consumed reports `NotFound`.
 
-// No production caller until step 3 wires the matcher into the reader's
-// chapter-loading seam; until then only tests construct these items, and
-// dead_code fires on test-only reachability (pitfalls §73 — free functions
-// are flagged where impl-methods were not). The allow comes off when the
-// seam lands.
-#![allow(dead_code)]
-
 use crate::db::PatchRecord;
 use std::ops::Range;
 

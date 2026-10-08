@@ -58,6 +58,10 @@ use open::OpenBook;
 
 pub use host_highlights::HostHighlight;
 pub use scroll::PageExtent;
+// The host's entry-filter type (the virtual-edit seam): a shell installs
+// it through `Session::set_entry_filter`, so it has to be nameable from
+// here — the same rule as the types below.
+pub use chapbook_epub::EntryFilter;
 
 /// A host's highlight ([`HostHighlight`]) resolved into the open book's
 /// locator space — what a shell paints and lists.

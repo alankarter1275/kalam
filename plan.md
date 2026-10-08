@@ -1,8 +1,9 @@
 # Plan — Phase 6: the EPUB editor
 
-**Status: IMPLEMENTING — plan approved; step 1 (patch store) and step 2
-(matcher) shipped and CI-green; step 3 (the reader seam) next. Each step
-lands as its own CI-gated commit with the owner's go.**
+**Status: IMPLEMENTING — plan approved; steps 1 (patch store), 2 (matcher)
+and 3 (reader seam) shipped and CI-green; step 4 (the [Fix Typo]
+popover) next. Each step lands as its own CI-gated commit with the
+owner's go.**
 
 The settled design (2026-10-08, recorded in ROADMAP's Phase 6 section, the
 record of authority): two surfaces kept; Markdown-style presentation over
@@ -200,3 +201,22 @@ step 1 is the only thing awaited.
   backwards — the clone belongs in the earlier array; third run
   (37719896642, commit `d62d49c`) green: 558 kalam tests, all 8 matcher
   tests named in the full log, rustfmt clean.
+- **Step 3 (the reader seam) — implemented 2026-10-08.** The
+  virtual-edit chain, bottom up: `EntryFilter` in `chapbook-epub` (a
+  newtype, default none, applied inside `unit_bytes` so every consumer
+  sees the filtered view), `Session::set_entry_filter` (right after
+  open, before the first read — the same rule as settings),
+  `ReaderOptions.entry_filter`, and `open_engine` taking the book's
+  patch list (empty list installs nothing — unedited books keep
+  full-exactness locator resolution). The exact-offset consequence is
+  handled where it lives: `href_matches` and `goto_layered` treat a
+  filtered session as never-same-source, so stored locators re-anchor
+  through their quote context and degrade to the fraction layer when an
+  edit consumed the quote. Step 2's dead-code allow came off. Fixtures
+  in `crates/chapbook-reader/tests/entry_filter.rs` (patched text layer,
+  patched paint, re-anchor +1, destroyed-quote degradation) and the
+  hook-contract tests in `chapbook-epub`. **Known gap for a later
+  step:** the app's content index (search, vocabulary:
+  `src/content_index.rs`) opens its own `Book` and still indexes
+  unpatched text — wire the filter there when the review panel lands
+  (step 5) so search matches what the reader shows.

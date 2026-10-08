@@ -27,6 +27,67 @@ pub struct Book {
     /// Container paths whose leading bytes are obfuscated (fonts), from
     /// META-INF/encryption.xml. Reads de-obfuscate transparently.
     obfuscated: std::collections::HashMap<String, Obfuscation>,
+    /// Host-installed entry filter — see [`EntryFilter`]. Default: none,
+    /// and `unit_bytes` returns the archive's bytes verbatim.
+    entry_filter: EntryFilter,
+}
+
+/// A host-installed byte filter over spine entries — the virtual-edit seam.
+///
+/// The host hands the book a transformation from (entry href, raw bytes) to
+/// the bytes the reader should actually parse. The book applies it inside
+/// [`Publication::unit_bytes`], so every consumer — layout, navigation,
+/// text extraction, search — sees the filtered view without knowing it
+/// exists, while the `.epub` on disk stays untouched. Kalam's Phase 6 uses
+/// this to apply pending text patches at render time; a permanent bake
+/// later writes them into the file for real.
+///
+/// A newtype rather than a bare `Arc<dyn Fn>` so the options and configs
+/// that carry one can stay `Debug + PartialEq`, which closures are neither.
+#[derive(Clone, Default)]
+pub struct EntryFilter(Option<std::sync::Arc<dyn Fn(&str, Vec<u8>) -> Vec<u8> + Send + Sync>>);
+
+impl EntryFilter {
+    /// Wrap a host transformation. It runs on whatever thread reads the
+    /// entry — never the UI thread, per the `unit_bytes` contract — and
+    /// should be cheap enough to run per read: chapters are kilobytes.
+    pub fn new(filter: impl Fn(&str, Vec<u8>) -> Vec<u8> + Send + Sync + 'static) -> Self {
+        Self(Some(std::sync::Arc::new(filter)))
+    }
+
+    /// Whether a transformation is installed.
+    pub fn is_set(&self) -> bool {
+        self.0.is_some()
+    }
+
+    /// Run the transformation, or pass the bytes through when none is set.
+    pub fn apply(&self, href: &str, bytes: Vec<u8>) -> Vec<u8> {
+        match &self.0 {
+            Some(filter) => filter(href, bytes),
+            None => bytes,
+        }
+    }
+}
+
+impl std::fmt::Debug for EntryFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntryFilter")
+            .field("set", &self.0.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for EntryFilter {
+    /// Pointer equality: the same installed closure, or both unset. Two
+    /// different closures that would happen to transform alike are not
+    /// equal — hosts that want to compare options should share the filter.
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (None, None) => true,
+            (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
 }
 
 /// Makes any `Send` reader `Send + Sync`, for rbook's benefit.
@@ -100,6 +161,7 @@ impl Book {
             fixed_layout,
             direction,
             obfuscated,
+            entry_filter: EntryFilter::default(),
         })
     }
 
@@ -170,6 +232,25 @@ impl Book {
 
     pub fn is_fixed_layout(&self) -> bool {
         self.fixed_layout
+    }
+
+    /// Install a host byte filter over the entries — see [`EntryFilter`].
+    ///
+    /// The natural place is right after opening, before anything has read
+    /// a unit: every later `unit_bytes` call — layout, text extraction,
+    /// search — then sees the filtered view. Installing one after content
+    /// has already been read does not invalidate what consumers cached
+    /// from the unfiltered bytes.
+    pub fn set_entry_filter(&mut self, filter: EntryFilter) {
+        self.entry_filter = filter;
+    }
+
+    /// Whether an entry filter is installed (see [`EntryFilter`]). Hosts
+    /// that track locator stability want this: while a filter is set, the
+    /// bytes a reader sees are a *derived* view of the file, not the
+    /// file's own.
+    pub fn has_entry_filter(&self) -> bool {
+        self.entry_filter.is_set()
     }
 
     /// Resolve `href` relative to the container-root path `base` (the
@@ -263,7 +344,12 @@ impl Publication for Book {
             )));
         }
         let href = item.href.clone();
-        self.read_by_path(&href)
+        let bytes = self.read_by_path(&href)?;
+        // The host's view of the entry, if it asked for one. Applied after
+        // the gates (fixed layout, empty href) and before anything parses:
+        // consumers downstream never see the raw bytes when a filter is
+        // installed.
+        Ok(self.entry_filter.apply(&href, bytes))
     }
 
     fn cover(&self) -> Result<Option<Resource>> {

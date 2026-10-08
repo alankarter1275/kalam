@@ -15,6 +15,7 @@ mod dictionaries;
 mod history;
 mod lookup_history;
 mod metadata;
+mod patches;
 mod prefs;
 mod pronunciation;
 mod series;
@@ -69,7 +70,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v16 = page_ocr_cache (persistent per-page OCR results keyed by file fingerprint)
 /// · v17 = purge comic bubble-OCR rows from page_ocr_cache (feature removed in 2.17;
 ///          the table itself stays because scanned-PDF OCR still uses it)
-pub const SCHEMA_VERSION: i64 = 17;
+/// · v18 = patches (Phase 6: non-destructive EPUB edit patches, mirrored into kalam.json)
+pub const SCHEMA_VERSION: i64 = 18;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -117,6 +119,34 @@ pub struct Annotation {
     pub created_at: String,
     #[allow(dead_code)] // written on update; no edited-at stamp is shown yet
     pub updated_at: String,
+}
+
+/// One EPUB edit patch (Phase 6): a non-destructive replacement rule. It
+/// lives in the database and the book's `kalam.json`; the `.epub` on disk is
+/// untouched until an explicit apply bakes it in.
+#[derive(Debug, Clone)]
+pub struct PatchRecord {
+    pub id: i64,
+    pub book_id: i64,
+    /// `text` today; whole-file (raw mode) and structural kinds are later
+    /// Phase 6 steps — the column is ready so they need no migration.
+    pub kind: String,
+    /// The entry's container path, e.g. `text/chapter3.xhtml`.
+    pub href: String,
+    pub chapter_index: i64,
+    /// What to find, in source space (entity-escaped DOM text).
+    pub find_text: String,
+    pub replace_text: String,
+    /// Anchor text around the find, disambiguating repeated words — the
+    /// same find-again-by-context idea as the locator quote layer.
+    pub context_before: String,
+    pub context_after: String,
+    /// Which surface made the edit: `typo`, `proofread`, `editor`, `raw`.
+    pub source: String,
+    /// `pending` until an explicit apply bakes it into the `.epub`.
+    pub status: String,
+    pub created_at: String,
+    pub applied_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -983,6 +1013,29 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_book_search_status_indexed
                 ON book_search_index_status(indexed_at);
+
+            -- v18: EPUB edit patches (Phase 6). Every edit from every mode is
+            -- a pending replacement rule stored here and mirrored into the
+            -- book's kalam.json; the .epub on disk is untouched until an
+            -- explicit apply bakes it in. `kind` is 'text' today; whole-file
+            -- and structural kinds arrive in later steps without a migration.
+            CREATE TABLE IF NOT EXISTS patches (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id        INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                kind           TEXT NOT NULL DEFAULT 'text',
+                href           TEXT NOT NULL,
+                chapter_index  INTEGER NOT NULL DEFAULT 0,
+                find_text      TEXT NOT NULL,
+                replace_text   TEXT NOT NULL,
+                context_before TEXT NOT NULL DEFAULT '',
+                context_after  TEXT NOT NULL DEFAULT '',
+                source         TEXT NOT NULL DEFAULT 'typo',
+                status         TEXT NOT NULL DEFAULT 'pending',
+                created_at     TEXT NOT NULL,
+                applied_at     TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_patches_book
+                ON patches(book_id, status);
             "#,
         )?;
 

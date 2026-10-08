@@ -2773,3 +2773,35 @@ the exact-partner rule (Mesa build ↔ build-day LLVM) is the
 cliff, and the ldd-not-found check is now part of any future
 downgrade procedure — run it BEFORE the tour, alongside the
 version-and-renderer check.
+
+## 72. Parallel edits to one file race — a reported success can vanish or mangle
+
+**Date:** 2026-10-08, Phase 6 step 1 (the patch store).
+
+**What happened.** Several edit calls to the *same file* were issued in one
+parallel batch. Every call reported success, but the file afterwards was
+missing three of the changes entirely, and three regions were corrupted:
+two stray fragments appended at file tails (the leftover tail of a sibling
+edit's replacement text), and one two-lines-joined-into-one inside
+`SavedWord` — the §52 line-join shape, produced by a racing sibling whose
+old/new pair differed only in whitespace. With no local toolchain (§11),
+none of this was visible until the diff was read; a bracket-balance check
+cannot catch a joined line, and compile-clean would have been claimed from
+memory — §27's exact failure mode.
+
+**What caught it.** The §31/§52 discipline: reading the complete `git diff`
+immediately after the edits, then grepping for every expected marker
+(`SCHEMA_VERSION`, the new struct, the new field). Three "successful"
+edits were simply absent from the file; the tails and the joined line were
+repaired one edit at a time, each verified.
+
+**The rules.**
+
+- One edit per file per message. Parallel edits are safe only when each
+  targets a different file.
+- A success report from the edit tool is not evidence the change is in the
+  file. Verify markers with grep, then read the whole diff — corruption
+  lands at file tails and in lines the edit never named.
+- The §52 anchor rules matter double in a batch: a whitespace-only
+  old/new difference does not just risk a line join, it hands a racing
+  sibling a mangle template.

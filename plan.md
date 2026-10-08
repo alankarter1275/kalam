@@ -166,3 +166,18 @@ is isolated in its own step with fixture tests before any UI depends on it.
 
 None blocking. The UX is settled; the plan above implements it. The go for
 step 1 is the only thing awaited.
+
+## Step log
+
+- **Step 1 (patch store) — implemented 2026-10-08.** `patches` table
+  (schema v18), `PatchRecord` + queries in the new `src/db/patches.rs`
+  (every write refreshes the sidecar), and the `kalam.json` mirror (sidecar
+  v2, `#[serde(default)]` so every v1 file reads clean — tested). Applied
+  patches kept as history with `applied_at`. Implementation note: the plan
+  said "sidecar v2"; the version bump is a signal of the shape change, not
+  a break — the serde default is what makes v1 files readable, and that is
+  what the tolerance test proves. **Pitfalls §72 recorded** from this
+  step: parallel edits to one file raced (three vanished edits, three
+  corrupted regions — two stray tails, one line join); caught by the
+  full-diff read, repaired one edit at a time. The rule going forward: one
+  edit per file per message. Awaiting CI; step 2 (the matcher) next.

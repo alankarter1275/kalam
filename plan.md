@@ -558,3 +558,53 @@ step 1 is the only thing awaited.
   and the headless-sway smoke test booted the app. The heredoc
   string-continuation near-miss (§85) was caught in review, before
   any run wasted on it.
+
+- **Step 8 (full editor) — implemented 2026-10-09.** A route of its
+  own (`Route::Editor { book_id }`), a way back (its own bar, Esc,
+  Back), and the reader's machinery doing the editing — the editor
+  page is a chrome around its own engine: `open_engine` on the
+  book's file with the reader's prefs and the book's pending
+  patches, a flat chapter list (TOC titles, `toc_title` promoted to
+  `pub(crate)`) on the left, the rendered chapter in the middle, and
+  the step-5 review panel in a right-edge revealer behind a
+  `Patches · N` badge. Proofreading is not a mode here —
+  `set_proofreading(true)` at open and at every reload; the
+  pointer never auto-hides over a work surface.
+
+  The owner's entry point ships with it: a pencil beside the cover
+  at the top of the reader's left sidebar (`document-edit-symbolic`,
+  EPUB-gated by the step-7 `book_format` watch), emitting
+  `ReaderOut::OpenEditor` as a route push, so Back returns to the
+  reader exactly where it was.
+
+  Reuse is by sharing, not by copying: `build_paragraph_editor` was
+  generalized over its commit/cancel callbacks (the reader passes
+  closures over its `ReaderMsg`, the editor over its own
+  `EpubEditorMsg`; the commit callback is shared by the key and
+  focus controllers, so it travels as a clone), and the step-7
+  types — `InlineEdit`, `EditScope`, `EditorWidget`,
+  `VerifiedEdit` — went `pub` and are re-exported from the reader
+  module (§88's shape: pub in a private module is crate-local).
+  `verify_paragraph_edit` was already model-agnostic. The editor's
+  commits store with the source `Editor`; its commit pipeline is
+  the reader's, including the `committed` gate and the serial-carrying
+  refusals.
+
+  The editor's own seams: its `wire` installs only the four
+  callbacks it uses (selection, selection-moved, paragraph-tap,
+  position — the chapter list follows the position, nothing
+  persists); its reload is the reader's shape (open before
+  touching the old view, swap inside the overlay, restore chapter,
+  `editor_reload` span + activity — §45, §48); the panel is
+  rebuilt after every commit and, because the panel can bake,
+  accept or reject on its own, the pending count is snapshotted
+  when it opens and compared when it closes — a change reloads the
+  engine. Sharp edge, accepted for this step: while the panel
+  stands open, a bake or reject inside it shows in the view only
+  when it closes.
+
+  Route plumbing: `cache_key` refuses to cache editor pages (the
+  same None as readers), `route_label` gets `route_open:editor`,
+  `is_reader` includes it (full-bleed content classes, no shell
+  back chip), and both force-rebuild lists (leaving an editor
+  rebuilds the landing page, like leaving a reader).

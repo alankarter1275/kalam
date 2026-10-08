@@ -15,6 +15,9 @@ mod ui_prefs;
 
 pub use mod_model::ReaderModel;
 pub use types::ReaderOut;
+// Phase 6.8: the editor page builds its paragraph edits from these —
+// the same structs, so both scopes of editing stay one machinery.
+pub use types::{EditScope, EditorWidget, InlineEdit, VerifiedEdit};
 
 use chrome::{
     connect_hover_zone, find_overlay_by_class, overlay_child_box, rebuild_cover_host,
@@ -339,6 +342,23 @@ impl Component for ReaderModel {
                             set_orientation: gtk::Orientation::Vertical,
                             add_css_class: "kalam-reader-cover-slot",
                             set_width_request: 48,
+                        },
+
+                        // The editor's door (Phase 6.8, the owner's
+                        // 2026-10-08 addition): a pencil beside the
+                        // cover at the top of the TOC. EPUBs only — the
+                        // other formats have no source to edit.
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "document-edit-symbolic",
+                                14,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-edit-book",
+                            set_tooltip_text: Some("Edit the book (opens the editor)"),
+                            #[watch]
+                            set_visible: model.book_format == BookFormat::Epub,
+                            connect_clicked => ReaderMsg::OpenEditor,
                         },
 
                         gtk::Box {
@@ -1924,6 +1944,12 @@ impl Component for ReaderModel {
                     }
                 }
             }
+            ReaderMsg::OpenEditor => {
+                // The sidebar pencil: the full editor for this book, as
+                // a route push — the reader stays where it is in the
+                // history stack, and Back returns to this page.
+                sender.output(ReaderOut::OpenEditor { book_id: self.book_id }).ok();
+            }
             ReaderMsg::ToggleProofreading(on) => {
                 // The chrome's pencil (phase 6.7): on, a tap on a
                 // paragraph opens the inline editor over the whole
@@ -1962,7 +1988,18 @@ impl Component for ReaderModel {
                     &identity.text,
                     self.font_family.as_deref(),
                     self.font_px,
-                    &sender,
+                    {
+                        let tx = sender.input_sender().clone();
+                        move |text| {
+                            let _ = tx.send(ReaderMsg::CommitInlineEdit(text));
+                        }
+                    },
+                    {
+                        let tx = sender.input_sender().clone();
+                        move || {
+                            let _ = tx.send(ReaderMsg::CancelInlineEdit);
+                        }
+                    },
                 );
                 engine::position_inline_editor(&textview, &rect);
                 overlay.add_overlay(&textview);
@@ -3198,7 +3235,7 @@ impl ReaderModel {
 
 /// The first table-of-contents label that points at chapter `spine`,
 /// searching through nested entries.
-fn toc_title(entries: &[kalam_reader::TocEntry], spine: usize) -> Option<String> {
+pub(crate) fn toc_title(entries: &[kalam_reader::TocEntry], spine: usize) -> Option<String> {
     for entry in entries {
         if entry.spine_index == Some(spine) && !entry.label.trim().is_empty() {
             return Some(entry.label.trim().to_string());

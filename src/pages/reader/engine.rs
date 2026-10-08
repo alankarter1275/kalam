@@ -793,7 +793,8 @@ pub(crate) fn build_paragraph_editor(
     text: &str,
     font_family: Option<&str>,
     font_px: u32,
-    sender: &ComponentSender<ReaderModel>,
+    on_commit: impl Fn(String) + Clone + 'static,
+    on_cancel: impl Fn() + 'static,
 ) -> (gtk::TextView, gtk::CssProvider) {
     let view = gtk::TextView::new();
     view.add_css_class("k-inline-edit");
@@ -823,23 +824,25 @@ pub(crate) fn build_paragraph_editor(
         );
     }
 
-    // One flag, the selection editor's shape.
+    // One flag, the selection editor's shape. The callers' commits and
+    // cancels arrive as closures (Phase 6.8: the full editor builds
+    // the same box around its own messages), so the two surfaces keep
+    // one editing feel by sharing this one implementation.
     let done = std::rc::Rc::new(std::cell::Cell::new(false));
 
-    let tx = sender.input_sender().clone();
     let view_keys = view.clone();
     let done_keys = done.clone();
     let key = gtk::EventControllerKey::new();
     key.connect_key_pressed(move |_, keyval, _, _| {
         if keyval == gtk::gdk::Key::Return || keyval == gtk::gdk::Key::KP_Enter {
             if !done_keys.replace(true) {
-                let _ = tx.send(ReaderMsg::CommitInlineEdit(textview_text(&view_keys)));
+                on_commit(textview_text(&view_keys));
             }
             return gtk::glib::Propagation::Stop;
         }
         if keyval == gtk::gdk::Key::Escape {
             if !done_keys.replace(true) {
-                let _ = tx.send(ReaderMsg::CancelInlineEdit);
+                on_cancel();
             }
             return gtk::glib::Propagation::Stop;
         }
@@ -847,8 +850,10 @@ pub(crate) fn build_paragraph_editor(
     });
     view.add_controller(key);
 
-    // Clicking away is a commit, as in the selection editor.
-    let tx = sender.input_sender().clone();
+    // Clicking away is a commit, as in the selection editor. The
+    // commit callback is shared with the key controller above, so it
+    // travels as a clone.
+    let on_commit_focus = on_commit.clone();
     let view_focus = view.clone();
     let done_focus = done.clone();
     let focus = gtk::EventControllerFocus::new();
@@ -856,7 +861,7 @@ pub(crate) fn build_paragraph_editor(
         if done_focus.replace(true) {
             return;
         }
-        let _ = tx.send(ReaderMsg::CommitInlineEdit(textview_text(&view_focus)));
+        on_commit_focus(textview_text(&view_focus));
     });
     view.add_controller(focus);
 

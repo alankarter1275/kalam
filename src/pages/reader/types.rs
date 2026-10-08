@@ -12,6 +12,9 @@ pub enum ReaderOut {
     Close,
     MinimizeToBubble { book_id: i64 },
     OpenAuthor { name: String },
+    /// Phase 6.8: the pencil beside the cover in the reader's left
+    /// sidebar — open the full editor for this book.
+    OpenEditor { book_id: i64 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +189,8 @@ pub enum ReaderMsg {
     BeginInlineEdit,
     /// Phase 6.7: the proofreading pencil in the chrome was toggled.
     ToggleProofreading(bool),
+    /// Phase 6.8: the sidebar pencil — open the full editor.
+    OpenEditor,
     /// Phase 6.7: a proofread tap found — or failed to yield — an
     /// editable paragraph. Ok carries the paragraph's identity (its
     /// text and neighbours' texts) and the rect its editor opens over.
@@ -283,7 +288,7 @@ pub enum ReaderMsg {
 /// The scope an open inline edit covers: a selection-level typo fix
 /// (phase 6.4), or a whole paragraph in proofreading mode (phase 6.7)
 /// — one editing feel, two granularities.
-pub(crate) enum EditScope {
+pub enum EditScope {
     /// The selected run, matched in text space by the step-2 matcher.
     Selection,
     /// A whole paragraph, matched through the step-6 span mapper. The
@@ -297,7 +302,7 @@ pub(crate) enum EditScope {
 /// The editor widget of an open edit: an entry for a selection, a
 /// wrapped multi-line view for a paragraph — a paragraph keeps its
 /// `<br>` newlines, which an entry cannot hold.
-pub(crate) enum EditorWidget {
+pub enum EditorWidget {
     Selection(gtk::Entry),
     Paragraph(gtk::TextView),
 }
@@ -329,7 +334,7 @@ impl EditorWidget {
 /// typesets it in the reader's own face. The editor is the source of
 /// truth for the current text; `original` is what a commit is planned
 /// against.
-pub(crate) struct InlineEdit {
+pub struct InlineEdit {
     pub(crate) original: String,
     pub(crate) chapter: usize,
     pub(crate) scope: EditScope,

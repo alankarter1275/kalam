@@ -41,4 +41,5 @@ pub mod browse;
 pub mod remote_detail;
 pub mod downloads;
 pub mod edits_panel;
+pub mod epub_editor;
 pub mod pdf_reader;

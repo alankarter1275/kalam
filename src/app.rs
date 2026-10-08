@@ -19,6 +19,7 @@ use crate::pages::{downloads::DownloadsModel,
     placeholder::PlaceholderPageModel,
     pdf_reader::{PdfReaderInit, PdfReaderModel, PdfReaderOut},
     reader::{ReaderModel, ReaderOut},
+    epub_editor::{EpubEditorModel, EpubEditorOut},
     reading_list::{ReadingListModel, ReadingListOut},
     review::{ReviewModel, ReviewOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
@@ -140,6 +141,7 @@ enum PageSlot {
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
+    Editor(Controller<EpubEditorModel>),
     PdfReader(Controller<PdfReaderModel>),
     Comics(Controller<ComicsModel>),
     ComicsReader(Controller<ComicsReaderModel>),
@@ -172,6 +174,7 @@ impl PageSlot {
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
+            PageSlot::Editor(c) => c.widget().clone().upcast(),
             PageSlot::PdfReader(c) => c.widget().clone().upcast(),
             PageSlot::Comics(c) => c.widget().clone().upcast(),
             PageSlot::ComicsReader(c) => c.widget().clone().upcast(),
@@ -278,6 +281,7 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::BookPage { .. }
         | Route::ComicSeries { .. }
         | Route::Reader { .. }
+        | Route::Editor { .. }
         | Route::PdfReader { .. }
         | Route::ComicsReader { .. }
         | Route::RemoteDetail { .. }
@@ -784,8 +788,20 @@ impl AppModel {
                         ReaderOut::OpenAuthor { name } => {
                             AppMsg::Push(Route::AuthorPage { author: name })
                         }
+                        ReaderOut::OpenEditor { book_id } => {
+                            AppMsg::Push(Route::Editor { book_id })
+                        }
                     });
                 PageSlot::Reader(ctrl)
+            }
+            Route::Editor { book_id } => {
+                let id = *book_id;
+                let ctrl = EpubEditorModel::builder()
+                    .launch((catalog.clone(), id))
+                    .forward(sender.input_sender(), |out| match out {
+                        EpubEditorOut::Close => AppMsg::Back,
+                    });
+                PageSlot::Editor(ctrl)
             }
 
             Route::PdfReader { book_id } => {
@@ -1008,7 +1024,9 @@ impl AppModel {
         }
 
         self.sidebar_override = match &route {
-            Route::BookPage { .. } | Route::Reader { .. } => Some(self.sidebar_item()),
+            Route::BookPage { .. } | Route::Reader { .. } | Route::Editor { .. } => {
+                Some(self.sidebar_item())
+            }
             _ => None,
         };
 
@@ -1016,7 +1034,10 @@ impl AppModel {
         // position is stale by definition), everything else stays cached.
         self.force_rebuild_next = matches!(
             self.route,
-            Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. }
+            Route::Reader { .. }
+                | Route::Editor { .. }
+                | Route::PdfReader { .. }
+                | Route::ComicsReader { .. }
         );
         self.detach_current(content_host);
 
@@ -1719,6 +1740,7 @@ impl Component for AppModel {
                     self.force_rebuild_next = matches!(
                         self.route,
                         Route::Reader { .. }
+                            | Route::Editor { .. }
                             | Route::PdfReader { .. }
                             | Route::ComicsReader { .. }
                     );
@@ -2179,6 +2201,7 @@ fn route_label(route: &Route) -> &'static str {
         Route::RemoteDetail { .. } => "route_open:remote_detail",
         Route::RemoteReader { .. } => "route_open:remote_reader",
         Route::Reader { .. } => "route_open:reader",
+        Route::Editor { .. } => "route_open:editor",
         Route::ComicsReader { .. } => "route_open:comics_reader",
         Route::PdfReader { .. } => "route_open:pdf_reader",
         Route::RemoteSearch { .. } => "route_open:remote_search",

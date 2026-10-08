@@ -1109,6 +1109,80 @@ button.kalam-reader-back:hover {
     -gtk-icon-size: 16px;
 }
 
+/* Phase 6.8: the sidebar pencil beside the cover — the editor's door. */
+button.kalam-reader-edit-book {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 4px;
+}
+
+button.kalam-reader-edit-book:hover {
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_accent;
+}
+
+/* Phase 6.8: the full editor — a work surface, so the chrome stays. */
+.kalam-editor-bar {
+    background: @kalam_sidebar;
+    border-bottom: 1px solid @kalam_border;
+    padding: 6px 10px;
+}
+
+.kalam-editor-title {
+    color: @kalam_text;
+    font-size: 15px;
+}
+
+button.kalam-editor-patches-btn {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    color: @kalam_text;
+    padding: 6px 12px;
+}
+
+button.kalam-editor-patches-btn:checked {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    border-color: alpha(@kalam_accent, 0.5);
+}
+
+.kalam-editor-chapters {
+    background: @kalam_sidebar;
+    border-right: 1px solid @kalam_border;
+}
+
+button.kalam-editor-chapter {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 8px 12px;
+    margin: 1px 6px;
+}
+
+button.kalam-editor-chapter:hover {
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_text;
+}
+
+button.kalam-editor-chapter-current {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+}
+
+.kalam-editor-stage {
+    background: @kalam_bg;
+}
+
+.kalam-editor-panel-shell {
+    background: @kalam_surface;
+    border-left: 1px solid @kalam_border;
+    box-shadow: 0 12px 32px alpha(black, 0.35);
+}
+
 .kalam-reader-bottom-dock {
     background: transparent;
     /* float the page pill off the bottom edge instead of hugging it */

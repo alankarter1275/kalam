@@ -99,6 +99,12 @@ pub enum Route {
     Reader {
         book_id: i64,
     },
+    /// The full EPUB editor (Phase 6 step 8): its own engine on the
+    /// book's file, paragraph edits as patches, the review panel in
+    /// its chrome. Reached from the reader's sidebar pencil.
+    Editor {
+        book_id: i64,
+    },
     /// Immersive Comics reader (P8).
     ComicsReader {
         book_id: i64,
@@ -137,7 +143,14 @@ impl Route {
     }
 
     pub fn is_reader(&self) -> bool {
-        matches!(self, Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. })
+        matches!(
+            self,
+            Route::Reader { .. }
+                | Route::Editor { .. }
+                | Route::PdfReader { .. }
+                | Route::ComicsReader { .. }
+                | Route::RemoteReader { .. }
+        )
     }
 }
 

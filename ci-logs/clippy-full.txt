@@ -12,8 +12,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
-crates/chapbook-epub/tests/book.rs:167:9: [1m[91merror[E0432][0m: unresolved import `chapbook_epub::EntryFilter`
-crates/chapbook-epub/tests/book.rs:207:9: [1m[91merror[E0432][0m: unresolved import `chapbook_epub::EntryFilter`
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
-[1m[91merror[0m: could not compile `chapbook-epub` (test "book") due to 2 previous errors
+[1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
+[1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
+crates/chapbook-reader/src/open.rs:392:12: [1m[91merror[0m: irrefutable `if let` pattern
+crates/chapbook-reader/src/open.rs:405:13: [1m[91merror[0m: unreachable pattern: no value can reach this
+[1m[91merror[0m: could not compile `chapbook-reader` (lib) due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `chapbook-reader` (lib test) due to 2 previous errors

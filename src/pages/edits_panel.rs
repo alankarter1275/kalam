@@ -370,7 +370,7 @@ fn edit_row_lines(p: &crate::db::PatchRecord) -> (String, String) {
                 order
                     .iter()
                     .enumerate()
-                    .filter(|(new, old)| new != old)
+                    .filter(|(new, &old)| new != old)
                     .count()
             })
             .unwrap_or(0);
@@ -474,6 +474,10 @@ fn edit_row(
             if discarded.kind == "asset" {
                 let name = discarded.replace_text.clone();
                 let book_id = discarded.book_id;
+                // A click handler is `Fn` — it runs again — so the
+                // thread gets its own clone; the captured handle is
+                // never moved out of the closure that owns it.
+                let catalog = catalog.clone();
                 std::thread::spawn(move || {
                     if let Ok(Some(book)) = catalog.get_book(book_id) {
                         if let Some(staged) =

@@ -1523,8 +1523,8 @@ mod tests {
         href: &str,
         replace: &str,
         hash: &str,
-    ) -> PatchRecord {
-        PatchRecord {
+    ) -> crate::db::PatchRecord {
+        crate::db::PatchRecord {
             id,
             book_id: 1,
             kind: kind.into(),

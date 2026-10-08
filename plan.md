@@ -331,3 +331,29 @@ step 1 is the only thing awaited.
   honestly. Seven new unit tests cover the planner: escape
   round-trip, verified-with-context, unchanged, markup-crossing,
   ambiguous, prior-patch composition, and char-boundary anchors.
+- **Step 4 CI outcome — green on the fourth run, three fix-forwards.**
+  (1) 37733497947 — the verdict bridge was written from remembered
+  gtk-rs docs: glib 0.22 has neither `MainContext::channel` nor a
+  root `Sender`, and `connect_leave` passes the controller → the
+  house worker→main-loop shape instead (`async_channel` +
+  `send_blocking` + `spawn_future_local`, straight out of
+  `tasks.rs`) and the one-argument closure (§78); (2) 37734781134 —
+  three `move` closures shared one `Rc<Cell<bool>>` binding → a
+  clone per closure, the drawer's own shape (§79); (3) 37735334310 —
+  clippy fully green and 564 tests passing; the one failure was the
+  planner's own context-anchor test, its expected value computed in
+  DOM space while the planner matches in source space (the span
+  covers the entity's semicolon) → the expectation now derives from
+  the source string (§80). Run 37736281896 (commit `466e2e3`)
+  green: all seven new planner tests named and passing in the full
+  log (`dom_text_is_escaped_back_to_source_form`,
+  `a_correction_verifies_with_context_captured_around_it`,
+  `an_unchanged_correction_is_refused`,
+  `a_selection_crossing_markup_is_not_found`,
+  `an_ambiguous_run_is_refused_not_guessed`,
+  `verification_sees_earlier_pending_fixes`,
+  `context_windows_respect_char_boundaries`), the bin at 565 passed
+  / 0 failed, and the smoke-test job green with its report
+  published. The reader reload cost is instrumented as
+  `reader_reload` in the timing spans — the step log for it belongs
+  to the first field run.

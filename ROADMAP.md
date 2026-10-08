@@ -1704,6 +1704,44 @@ means fighting the publisher's CSS).
   `crates/chapbook-core`), so annotations re-anchor to their text regardless of
   reflow, font size or window size. Verify it holds after edits.
 
+**Design settled with the owner (2026-10-08):**
+
+- **Two surfaces, both kept.** Small fixes inside the reader (the
+  `[Fix Typo]` popover and the proofreading pencil toggle) and the
+  full-screen editor.
+- **Markdown is the presentation, never the storage.** Chapters stay
+  XHTML. The default surface is Obsidian-Live-Preview style: the chapter
+  rendered by our own engine, click a paragraph to edit in place, changes
+  visible as you type, `**bold**` becoming bold as you type. No Markdown
+  round-trips — XHTML says things Markdown cannot write down, and
+  wholesale regeneration fights both the surgical patches and the
+  quote-anchored annotations.
+- **Raw HTML/CSS mode for deep edits:** one Preview button toggles a
+  side-by-side rendered pane; refresh is debounced (never per keystroke)
+  and runs on the reader's service thread.
+- **Every edit is a pending patch by default, from every mode.** Stored in
+  the existing `kalam.json` sidecar — one file, already read at open (the
+  owner's explicit one-file-not-dozens choice) — mirrored in the database
+  the same way annotations are. Nothing touches the `.epub` until an
+  explicit apply.
+- **Pending patches apply virtually at render**, so the book reads
+  corrected immediately; the permanent apply is about other applications
+  seeing it.
+- **Review panel on demand, never an auto-prompt** (owner's choice): a
+  Patches badge with a count on the book details page and in the editor
+  chrome; the shared panel shows before → after and applies all or a
+  selected subset, baking through the sanitizer's safety net
+  (`.epub.orig` backup, container re-verify).
+- **Applied patches are kept as history**, collapsed below the pending
+  list (agent recommendation, accepted 2026-10-08). The undo story is the
+  `.epub.orig` backup, not the patch list.
+- Patches apply in creation order; a patch whose original text no longer
+  matches is flagged for review, never silently skipped.
+- **Structural edits** (chapter split/merge, TOC reorder, asset
+  replacement) are a second kind of pending operation in the same panel;
+  replaced binary assets stage as files in the book folder, referenced by
+  the patch record, so `kalam.json` stays text-only.
+
 **Done when:** you can fix a typo mid-paragraph, restructure a bad table of
 contents, and produce a clean `.epub` that opens correctly in another reader.
 
@@ -2438,6 +2476,7 @@ top-to-bottom like a journal.
 | 2026-10-08 | **Duplicate check done — the owner found three GNOME GitLab candidates; none is our bug; a new issue is the right path.** All three read in full and recorded: **#4704** (GTK3/X11: the dedicated GLX texture-from-pixmap path slower than software fallback — the mirror image of our case, X11 slow/Wayland fine; ours is the reverse on GTK4); **#4112** (GTK 4.2.1/NVIDIA, closed: "GL slower than cairo" but first-window-only — one-time context creation per the maintainer — and GL slow under X11 too; ours is sustained per-frame cost with X11 fastest, on Intel Gen9); **#8114** (GTK3/gdk-pixbuf glycin icon reload loop — different mechanism entirely; our images decode once and are cached). **A "Related prior reports" section was added to the draft** naming all three with one-line differences — shows the search was done and pre-empts a lazy duplicate close. Next: the owner files the new issue and sends the URL. |
 | 2026-10-08 | **FILED — the report is live as GNOME/gtk issue #8450** (https://gitlab.gnome.org/GNOME/gtk/-/work_items/8450, owner's account @alan.karter.1275). Verified by fetching the page: title, full body, the seven-surface table, the ruled-out list, and working links to #4704/#4112/#8114 all rendered. One cosmetic flag for the owner: if the description box on the live page is empty with the body in the first comment, Edit can move it (harmless either way). **Standing flow:** maintainer replies are forwarded here, answers drafted and pasted by the owner. The draft file is now the archival copy with the issue number in its header. **The environment-verification arc, the renderer matrix, and the upstream report are COMPLETE** — what remains of this thread is watching for responses. Queue unchanged: settings-storage fix (awaiting go), remote-covers confirmation (awaits an online browse), Phase 6 not started, Phase 8 last. |
 | 2026-10-08 | **Issue #8450 tidied** (owner moved the body into the description; verified live). **CI policy changed on the owner's request: records-only commits now carry `[skip ci]`** — the repo's own publish-commit convention; full CI still gates every commit touching src/, Cargo.*, or .github/. Benefits: no ~20-minute waits on records turns, fewer publish commits churning the remote. This is the first commit under the new policy. **Storage-fill fix verdict presented: recommend closing.** Runs #12/#13 (warmest states) measured the fill at 15.2 and 5.0 ms — cheap when quiet; the 300–470 ms fills were machine storms (environment), and the construction is pure prefetched-data widget building with no disk on the UI thread. Awaiting the owner's confirm to close. **Queue:** remote covers passive; Phase 6 (EPUB editor) is the real next work and needs its own planning turn; Phase 8 last. |
+| 2026-10-08 | **Phase 6 (the EPUB editor) begun: the prior-record review done, then the design settled with the owner across three discussion turns.** Prior-record findings: the remembered discussion is a spec, not a transcript — one line in conversation.md's Sept-8 redux ("Inline EPUB Editing: non-destructive sidecar patches in `kalam.json`"), the full four-layer spec in the old offline-roadmap Module 1 (Sept 18, preserved at `4b64e0c^:docs/offline-roadmap.md` in git history), distilled into ROADMAP Phase 6; the "how" was never discussed anywhere and is the plan's job. **Settled design (full text in the Phase 6 section):** both surfaces kept (in-reader fixes + full editor); Markdown as presentation over XHTML storage — Obsidian-Live-Preview-style default surface, no lossy Markdown round-trips; raw HTML/CSS mode with a debounced side-by-side preview; every edit a pending patch in the single `kalam.json` sidecar with a database mirror (the annotations arrangement); pending patches apply virtually at render; an on-demand review panel with a badge — no auto-prompt, the owner's choice — offering apply-all or apply-selected through the sanitizer's bake safety (`.epub.orig` backup, container re-verify); applied patches kept as collapsed history (agent recommendation accepted); structural edits as a second pending-op kind with staged binary assets. `plan.md` rewritten as the Phase 6 plan (research checklist next; nothing built until the owner's go). **Also this session:** pdfcraft reviewed on the owner's lead (note added to the parked 2.21); a Medium Rust-performance article assessed against the repo — nothing to adopt, our spans/budgets/watchdog already exceed its advice, heaptrack noted as the one keep-in-toolbox tool. |
 
 **Rows are append-only.** Do not edit or delete an old row — if a decision is
 later reversed, add a new row saying so. A plan that quietly changes is worse

@@ -2830,6 +2830,7 @@ into one call's array and used again in the next (`E0382`).
   used can survive test-only callers; *free functions* cannot. Plan for
   the stricter case and the lenient one takes care of itself.
 - Borrowed-by-array test fixtures are moves: `[&a, &b]` borrows, but
-  `[a, b]` moves — and the next test line that mentions `a` is the
-  compile error. `.clone()` in the second array, or pass references
-  both times.
+  `[a, b]` moves — and any later mention of `a` is the compile error.
+  The clone goes in the **earlier** array (prevent the move), not the
+  later one (which would itself be the use-after-move — a second CI
+  cycle, 37718889665, was spent learning this).

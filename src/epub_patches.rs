@@ -246,7 +246,8 @@ mod tests {
         // sequential rather than parallel.
         let first = patch(1, "c.xhtml", "teh word", "the word", "said ", " &");
         let second = patch(2, "c.xhtml", "said the word", "uttered the word", "", " &amp;");
-        let (out, outcomes) = apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[first, second]);
+        let (out, outcomes) =
+            apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[first.clone(), second]);
         assert!(matches!(outcomes[0].resolution, Resolution::Found(_)));
         assert!(matches!(outcomes[1].resolution, Resolution::Found(_)));
         let expected = ENTRY.replace("said teh word", "uttered the word");
@@ -255,7 +256,7 @@ mod tests {
         // And the mirror case: a patch targeting text an earlier patch
         // already consumed is flagged, not silently dropped.
         let stale = patch(3, "c.xhtml", "said teh word", "uttered the word", "", " &amp;");
-        let (_, outcomes) = apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[first.clone(), stale]);
+        let (_, outcomes) = apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[first, stale]);
         assert_eq!(outcomes[1].resolution, Resolution::NotFound);
     }
 

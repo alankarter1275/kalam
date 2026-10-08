@@ -137,7 +137,10 @@ fn patch_filter(patches: Vec<PatchRecord>) -> kalam_reader::EntryFilter {
         // log line is the developer's trace of the same fact, at a level
         // that stays out of the way of a normal session.
         for outcome in &outcomes {
-            if outcome.resolution != crate::epub_patches::Resolution::Found {
+            if !matches!(
+                outcome.resolution,
+                crate::epub_patches::Resolution::Found(_)
+            ) {
                 log::debug!(
                     "patch {} no longer matches {}: {:?}",
                     outcome.id,

@@ -2906,3 +2906,16 @@ can be the only one. And the meta-lesson of this step's three runs: a
 crate that compiles under one feature set proves nothing about another —
 the workspace clippy and test builds exercise different sets, so new
 enum-touching code has to be right under all of them.
+
+## 77. A payload-carrying variant is not a value — `matches!`, never `!=`
+
+**Date:** 2026-10-08, Phase 6 step 3; fourth failed run (37726510604).
+
+`Resolution::Found` carries a `Range<usize>`, so `x != Resolution::Found`
+does not compare — it hands `!=` a constructor function and the compiler
+says "expected `Resolution`, found enum constructor". The matcher's own
+tests had this right (`matches!(..., Resolution::Found(_))`); the seam's
+caller wrote the bare comparison out of fieldless-variant habit. Rule:
+for any variant with a payload, `matches!(x, Variant(_))` — and the
+broader one, already in §73, that a fix written from habit rather than
+from the error is a guess.

@@ -143,6 +143,10 @@ pub struct PatchRecord {
     pub context_after: String,
     /// Which surface made the edit: `typo`, `proofread`, `editor`, `raw`.
     pub source: String,
+    /// The whole-file guard (kind `file`): the entry's SHA-256 when the
+    /// raw-mode edit was made, hex. Empty for the find/replace kinds —
+    /// their find text is their own guard.
+    pub before_hash: String,
     /// `pending` until an explicit apply bakes it into the `.epub`.
     pub status: String,
     pub created_at: String,
@@ -1043,6 +1047,10 @@ impl Catalog {
         // way to extend an existing table created by v1–v3.
         add_column_if_missing(&conn, "books", "last_opened_at", "TEXT")?;
         add_column_if_missing(&conn, "books", "finished_at", "TEXT")?;
+        // Phase 6.9: the raw mode's whole-file guard — the entry's hash
+        // when the source edit was made. An empty string is the
+        // find/replace patches' "no guard" and stays that way.
+        add_column_if_missing(&conn, "patches", "before_hash", "TEXT NOT NULL DEFAULT ''")?;
         // v5: half-star ratings stored as 0..=10 (i.e. tenths of the 5-star
         // scale x2) so "3.5 stars" is an integer 7 and needs no float compare.
         add_column_if_missing(&conn, "books", "rating", "INTEGER NOT NULL DEFAULT 0")?;

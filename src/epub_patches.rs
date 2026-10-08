@@ -40,6 +40,11 @@ pub enum Resolution {
     /// Still several candidates after context filtering. Also flagged —
     /// guessing would risk editing the wrong sentence.
     Ambiguous(usize),
+    /// A whole-file patch whose guard failed: the entry no longer hashes
+    /// to what the raw editor saw. The edit is stale, not lost — the
+    /// raw editor re-reads the entry and the edit is made again against
+    /// what is actually there.
+    Stale,
 }
 
 /// One patch's result against one entry.
@@ -92,13 +97,15 @@ pub fn resolve_span(bytes: &[u8], find: &str, before: &str, after: &str) -> Reso
 /// Apply a book's pending text patches for one entry, in creation order.
 ///
 /// `patches` is the book's full list as the database returns it (id
-/// ascending, which *is* creation order); entries are filtered to
-/// `kind == "text"` or `kind == "paragraph"` (both carry literal,
-/// source-space find/replace — a paragraph patch's find is the
-/// element's whole outer source, built by `epub_spans`), `status ==
-/// "pending"` and this `href`. Returns the new bytes — identical to
-/// the input when nothing applies — and one outcome per processed
-/// patch.
+/// ascending, which *is* creation order); entries are filtered to the
+/// literal find/replace kinds (`text`, `paragraph` — a paragraph
+/// patch's find is the element's whole outer source, built by
+/// `epub_spans`) and the whole-entry kind (`file`, Phase 6.9 — the
+/// raw mode's replacement of the entire entry, admitted only when
+/// the entry still hashes to what the raw editor saw). All kinds
+/// require `status == "pending"` and this `href`. Returns the new
+/// bytes — identical to the input when nothing applies — and one
+/// outcome per processed patch.
 ///
 /// Applied-in-the-past patches are not re-run: their text is already in
 /// the file for real (a bake wrote it there), and re-applying would double
@@ -111,15 +118,34 @@ pub fn apply_text_patches(
     let mut out = bytes.to_vec();
     let mut outcomes = Vec::new();
     for p in patches {
-        if !matches!(p.kind.as_str(), "text" | "paragraph")
-            || p.status != "pending"
-            || p.href != href
-        {
+        if p.status != "pending" || p.href != href {
             continue;
         }
-        let resolution = resolve_span(&out, &p.find_text, &p.context_before, &p.context_after);
+        let resolution = match p.kind.as_str() {
+            "text" | "paragraph" => {
+                resolve_span(&out, &p.find_text, &p.context_before, &p.context_after)
+            }
+            "file" => {
+                // The whole-entry guard: the entry as it stands must hash
+                // to what the raw editor saw. It stands changed — a bake,
+                // an accepted-away patch, anything — and the patch
+                // refuses rather than clobbers. The hash is over the
+                // bytes as this loop has them, so the pending patches
+                // created before this one hold exactly as they did when
+                // the raw editor read the entry.
+                if !p.before_hash.is_empty() && hash_bytes(&out) == p.before_hash {
+                    out = p.replace_text.bytes().collect();
+                    Resolution::Found(0..out.len())
+                } else {
+                    Resolution::Stale
+                }
+            }
+            _ => continue,
+        };
         if let Resolution::Found(span) = &resolution {
-            out.splice(span.clone(), p.replace_text.bytes());
+            if p.kind != "file" {
+                out.splice(span.clone(), p.replace_text.bytes());
+            }
         }
         outcomes.push(PatchOutcome {
             id: p.id,
@@ -127,6 +153,15 @@ pub fn apply_text_patches(
         });
     }
     (out, outcomes)
+}
+
+/// An entry's SHA-256, hex — the raw mode's guard. The same digest
+/// `Catalog::hash_file` takes of a whole book file, over one entry.
+pub fn hash_bytes(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
 }
 
 /// Why a planned patch could not be verified at save time.
@@ -264,6 +299,25 @@ mod tests {
         </body>\n\
         </html>\n";
 
+    fn file_patch(id: i64, href: &str, replace: &str, before_hash: &str) -> PatchRecord {
+        PatchRecord {
+            id,
+            book_id: 1,
+            kind: "file".into(),
+            href: href.into(),
+            chapter_index: 0,
+            find_text: String::new(),
+            replace_text: replace.into(),
+            context_before: String::new(),
+            context_after: String::new(),
+            source: "raw".into(),
+            status: "pending".into(),
+            created_at: "2026-10-09T00:00:00Z".into(),
+            applied_at: None,
+            before_hash: before_hash.into(),
+        }
+    }
+
     fn patch(
         id: i64,
         href: &str,
@@ -286,6 +340,7 @@ mod tests {
             status: "pending".into(),
             created_at: "2026-10-08T00:00:00Z".into(),
             applied_at: None,
+            before_hash: String::new(),
         }
     }
 
@@ -533,6 +588,84 @@ mod tests {
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "<p>He uttered the word.</p>"
+        );
+    }
+
+    #[test]
+    fn a_file_patch_replaces_the_whole_entry_when_the_guard_matches() {
+        // The raw editor read the entry, hashed it, and wrote a whole
+        // replacement. The entry is unchanged since — the hash is the
+        // input's — so the replacement is taken wholesale: everything
+        // before and after is gone, the outcome claims the full new
+        // span, and no other entry's patch ran.
+        let replacement = "<p>Wholly rewritten.</p>";
+        let guard = hash_bytes(ENTRY.as_bytes());
+        let p = file_patch(7, "c.xhtml", replacement, &guard);
+        let other = file_patch(8, "other.xhtml", "<p>x</p>", "deadbeef");
+        let (out, outcomes) = apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[p, other]);
+        assert_eq!(out, replacement.as_bytes());
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].id, 7);
+        assert_eq!(outcomes[0].resolution, Resolution::Found(0..replacement.len()));
+    }
+
+    #[test]
+    fn a_file_patch_refuses_when_the_entry_changed() {
+        // One byte different from what the raw editor saw and the whole
+        // patch refuses: Stale, not a clobber. The caller decides what
+        // to tell the person; the bytes are untouched either way.
+        let guard = hash_bytes(b"<p>He said teh word.</p><p>Bye.</p>");
+        let p = file_patch(9, "c.xhtml", "<p>New.</p>", &guard);
+        let (out, outcomes) = apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[p]);
+        assert_eq!(out, ENTRY.as_bytes());
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].id, 9);
+        assert_eq!(outcomes[0].resolution, Resolution::Stale);
+    }
+
+    #[test]
+    fn an_empty_guard_is_always_stale() {
+        // A file patch without a hash is malformed — never a blank cheque
+        // to replace whatever happens to be there.
+        let p = file_patch(10, "c.xhtml", "<p>New.</p>", "");
+        let (out, outcomes) = apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[p]);
+        assert_eq!(out, ENTRY.as_bytes());
+        assert_eq!(outcomes[0].resolution, Resolution::Stale);
+    }
+
+    #[test]
+    fn a_file_patch_applies_over_pending_predecessors() {
+        // The guard is taken over the bytes *as the patch loop has them*
+        // — after the earlier pending patches of the same entry ran. So
+        // a typo fix made in the reader, then a raw-mode whole-file
+        // save, both apply: the file patch's hash was computed on the
+        // fixed text, and that is exactly what it sees here. The reader
+        // patch fixes only the first `teh` (its context pins it), so
+        // the fixed text is one replacement, not three.
+        let fixed = ENTRY.replacen("teh", "the", 1);
+        assert_ne!(fixed, ENTRY);
+        let guard = hash_bytes(fixed.as_bytes());
+        let earlier = patch(1, "c.xhtml", "teh", "the", "said ", " word");
+        let whole = file_patch(2, "c.xhtml", "<p>Raw.</p>", &guard);
+        let (out, outcomes) = apply_text_patches("c.xhtml", ENTRY.as_bytes(), &[earlier, whole]);
+        assert_eq!(out, "<p>Raw.</p>".as_bytes());
+        assert_eq!(outcomes.len(), 2);
+        assert!(matches!(outcomes[0].resolution, Resolution::Found(_)));
+        assert_eq!(outcomes[1].resolution, Resolution::Found(0..10));
+    }
+
+    #[test]
+    fn hash_bytes_is_the_hex_sha256() {
+        // The guard's shape, fixed: hex SHA-256, the same digest
+        // `Catalog::hash_file` takes of a whole book. One known vector
+        // so a digest change is caught here and not in a saved book.
+        assert_eq!(
+            hash_bytes(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            hash_bytes(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
     }
 

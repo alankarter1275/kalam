@@ -965,6 +965,7 @@ mod tests {
             status: "pending".into(),
             created_at: "2026-10-08T00:00:00Z".into(),
             applied_at: None,
+            before_hash: String::new(),
         }
     }
 

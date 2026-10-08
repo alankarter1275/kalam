@@ -626,3 +626,51 @@ step 1 is the only thing awaited.
   tip (`git reset origin/arena/…`) with the tree untouched, and
   `git status` confirmed the diff was exactly this step's set
   before the commit.
+
+- **Step 9 (raw source mode) — implemented 2026-10-09.** A Source
+  toggle in the editor's bar swaps the stage's proofreading surface
+  for a raw pane on the current chapter's entry: GtkSourceView
+  (`sourceview5` 0.11, lockstep with gtk4 0.11; `libgtksourceview-5-dev`
+  added to both CI apt installs, `gtksourceview5` to the README's Arch
+  line) with line numbers, XML highlighting by default (CSS by
+  extension — the machinery is href-generic, CSS files could ride
+  later; v1 scope is spine XHTML chapters).
+
+  A source edit is a whole-entry patch, kind `file`: find empty,
+  replace = the buffer, source `raw`, and a new `before_hash` column
+  (`add_column_if_missing`, the books-v4 pattern) carrying the
+  entry's SHA-256 at load time — the guard. `apply_text_patches`
+  takes kind `file`: hash matches → whole-entry replace; mismatch →
+  the new `Resolution::Stale` (bake reports it like its other
+  refusals). The guard is computed over the bytes *as the patch loop
+  has them*, so a pending reader fix made before the raw save still
+  chains — proven by test. Empty guard is always Stale: a file patch
+  without a hash is never a blank cheque. `insert_patch` delegates to
+  a new `insert_guarded_patch` (same row, plus the guard); the
+  review panel's rows summarize a file patch ("Whole file → edited
+  source (N chars)") instead of printing a chapter.
+
+  The pane's lifecycle: built once in init (hidden until toggled —
+  visibility swap, never a child swap, so the engine keeps its
+  scroll and the buffer keeps its undo); loads through a worker
+  (Book open → unit_bytes → pending patches applied → the virtual
+  bytes are both the buffer's content and the hash baseline); saves
+  through a guard-check worker (re-hash now vs. the baseline — Fresh
+  stores the patch, Stale raises the pane's banner and disables Save
+  until Revert), then refreshes counts, panel and engine. Escapes
+  ladder: dirty buffer reverts, clean pane closes, then the page.
+  Dirty buffers hold Back, chapter clicks and the toggle with a
+  toast. A bake or an inline fix under a clean pane reloads it
+  automatically; a dirty one is protected by its save-time guard.
+
+  The Preview toggle (visible while Source is open) renders the
+  buffer as it will read: 700 ms debounce, generation counter, a
+  service thread re-opens a headless `Session` per tick (the engine
+  has no cache-invalidation API, so nothing is shared) with an
+  `EntryFilter` substituting the buffer for its entry and the pending
+  patches everywhere else, stacks ~3 pages at the reader's own
+  column width into one tall pixmap, and the main loop turns the
+  RGBA bytes into a `gdk::MemoryTexture` on a `gtk::Picture` beside
+  the editor. The headless render itself is kalam-reader's
+  `preview::render` — the widget crate owns Session usage; the app
+  only ever builds the filter.

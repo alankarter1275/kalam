@@ -113,6 +113,9 @@ bundled-dictionaries = []
 relm4 = { version = "0.11", features = ["libadwaita", "gnome_45"] }
 libadwaita = { version = "0.9", features = ["v1_4"] }
 gtk = { version = "0.11", package = "gtk4", features = ["v4_12"] }
+# Phase 6.9: the raw source pane's highlighting. Lockstep with gtk4
+# releases — 0.11 pairs with gtk4 0.11.
+sourceview5 = "0.11"
 gdk-pixbuf = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 glib = "0.22"

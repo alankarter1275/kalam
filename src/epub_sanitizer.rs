@@ -297,6 +297,12 @@ pub fn bake_epub(path: &Path, patches: &[crate::db::PatchRecord]) -> Result<Bake
                     crate::epub_patches::Resolution::Ambiguous(n) => report
                         .failed
                         .push((outcome.id, format!("it now appears {n} times"))),
+                    crate::epub_patches::Resolution::Stale => report.failed.push((
+                        outcome.id,
+                        "the chapter changed after this whole-file edit — re-make it in the \
+                         raw editor"
+                            .to_string(),
+                    )),
                 }
             }
             // Unchanged bytes — every patch in this group failed to
@@ -1225,6 +1231,7 @@ mod tests {
             status: "pending".into(),
             created_at: "2026-10-08T00:00:00Z".into(),
             applied_at: None,
+            before_hash: String::new(),
         }
     }
 

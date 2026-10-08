@@ -20,6 +20,9 @@
 //!   `prefs.rs`.
 //! * The bundled fonts (Literata and Noto Sans, compiled in). See
 //!   `fonts.rs`.
+//! * [`preview::render`] — a headless, widget-less raster of one
+//!   chapter's pages through an [`EntryFilter`], for the editor's raw
+//!   source pane. See `preview.rs`.
 //!
 //! What it deliberately does not hold: a database, a dictionary, a menu, a
 //! settings panel. Those are Kalam's; the widget reports and obeys.
@@ -40,6 +43,7 @@ mod divider;
 mod fonts;
 mod handles;
 mod prefs;
+pub mod preview;
 mod scroll;
 mod view;
 

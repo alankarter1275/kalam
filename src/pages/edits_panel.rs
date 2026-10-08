@@ -310,6 +310,20 @@ fn bake_and_record(
 }
 
 /// One pending edit: checkbox, before → after, meta, discard.
+/// The row's two lines. A whole-file patch's replace text is the
+/// entire entry — showing it would be a thousand-line row — so it
+/// summarizes instead.
+fn edit_row_lines(p: &crate::db::PatchRecord) -> (String, String) {
+    if p.kind == "file" {
+        (
+            "Whole file".to_string(),
+            format!("→ edited source ({} chars)", p.replace_text.chars().count()),
+        )
+    } else {
+        (p.find_text.clone(), format!("→ {}", p.replace_text))
+    }
+}
+
 fn edit_row(
     p: &PatchRecord,
     catalog: &Arc<Catalog>,
@@ -327,14 +341,15 @@ fn edit_row(
     let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
     info.set_hexpand(true);
 
-    let before = gtk::Label::new(Some(&p.find_text));
+    let (before_line, after_line) = edit_row_lines(p);
+    let before = gtk::Label::new(Some(&before_line));
     before.add_css_class("k-edit-before");
     before.set_halign(gtk::Align::Start);
     before.set_xalign(0.0);
     before.set_wrap(true);
     info.append(&before);
 
-    let after = gtk::Label::new(Some(&format!("→ {}", p.replace_text)));
+    let after = gtk::Label::new(Some(&after_line));
     after.add_css_class("k-edit-after");
     after.set_halign(gtk::Align::Start);
     after.set_xalign(0.0);
@@ -398,13 +413,14 @@ fn history_section(applied: &[PatchRecord]) -> gtk::Box {
         let row = gtk::Box::new(gtk::Orientation::Vertical, 2);
         row.set_margin_top(6);
         row.set_margin_bottom(6);
-        let before = gtk::Label::new(Some(&p.find_text));
+        let (before_line, after_line) = edit_row_lines(p);
+        let before = gtk::Label::new(Some(&before_line));
         before.add_css_class("k-edit-before");
         before.set_halign(gtk::Align::Start);
         before.set_xalign(0.0);
         before.set_wrap(true);
         row.append(&before);
-        let after = gtk::Label::new(Some(&format!("→ {}", p.replace_text)));
+        let after = gtk::Label::new(Some(&after_line));
         after.add_css_class("k-edit-after");
         after.set_halign(gtk::Align::Start);
         after.set_xalign(0.0);

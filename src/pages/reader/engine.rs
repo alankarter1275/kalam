@@ -1648,6 +1648,223 @@ pub(crate) fn dismiss(popover: Option<gtk::Popover>) {
     }
 }
 
+// ---------------------------------------------------------------------
+// The raw source pane's workers (Phase 6.9)
+// ---------------------------------------------------------------------
+
+/// What the raw pane loaded: the chapter's entry as the reader shows
+/// it — pending patches applied — plus the hash of exactly those bytes.
+/// The hash is the whole-file guard: every save made from this load
+/// carries it, and an entry that no longer hashes to it has changed
+/// underneath the pane.
+#[derive(Debug, Clone)]
+pub(crate) struct SourceEntry {
+    pub(crate) href: String,
+    pub(crate) text: String,
+    pub(crate) hash: String,
+    pub(crate) chapter: usize,
+}
+
+/// Read one chapter's source off the UI thread (the `unit_bytes`
+/// contract again — opening a book never belongs on the main loop).
+/// `prior` are the book's pending patches: the pane edits the chapter
+/// as the reader shows it, so a save re-verified against the same
+/// virtual bytes holds at render too.
+pub(crate) fn load_source_entry(
+    book_path: std::path::PathBuf,
+    chapter: usize,
+    prior: Vec<PatchRecord>,
+    tx: async_channel::Sender<Result<SourceEntry, String>>,
+) {
+    std::thread::spawn(move || {
+        let verdict = load_source_entry_in_thread(&book_path, chapter, &prior);
+        let _ = tx.send_blocking(verdict);
+    });
+}
+
+fn load_source_entry_in_thread(
+    book_path: &std::path::Path,
+    chapter: usize,
+    prior: &[PatchRecord],
+) -> Result<SourceEntry, String> {
+    use chapbook_core::Publication;
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to read the source.".to_string())?;
+    let href = book
+        .spine()
+        .get(chapter)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| "This chapter is no longer in the book.".to_string())?;
+    let bytes = book
+        .unit_bytes(chapter)
+        .map_err(|_| "The chapter's source could not be read.".to_string())?;
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
+    let text = String::from_utf8(virtual_bytes).map_err(|_| {
+        "The chapter's source is not UTF-8 text, so it cannot be edited here.".to_string()
+    })?;
+    Ok(SourceEntry {
+        hash: crate::epub_patches::hash_bytes(text.as_bytes()),
+        text,
+        href,
+        chapter,
+    })
+}
+
+/// A save-time guard's verdict: the entry still hashes to what the pane
+/// loaded, or it does not. `Stale` is a refusal, not an error — nothing
+/// is wrong with the book; the edit was made against a past.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SourceSaveCheck {
+    /// The entry still hashes to the pane's baseline: the save may
+    /// store its whole-entry patch.
+    Fresh,
+    /// The entry changed since the pane loaded it (an inline fix, a
+    /// bake, another window). The caller must not store the patch.
+    Stale,
+}
+
+/// Re-read the chapter and check the pane's baseline hash against the
+/// bytes as they stand now. The insert itself stays on the main thread
+/// with the catalog; this worker only reads.
+pub(crate) fn check_source_save(
+    book_path: std::path::PathBuf,
+    chapter: usize,
+    prior: Vec<PatchRecord>,
+    href: &str,
+    before_hash: &str,
+    tx: async_channel::Sender<Result<SourceSaveCheck, String>>,
+) {
+    let href = href.to_string();
+    let before_hash = before_hash.to_string();
+    std::thread::spawn(move || {
+        let verdict =
+            check_source_save_in_thread(&book_path, chapter, &prior, &href, &before_hash);
+        let _ = tx.send_blocking(verdict);
+    });
+}
+
+fn check_source_save_in_thread(
+    book_path: &std::path::Path,
+    chapter: usize,
+    prior: &[PatchRecord],
+    href: &str,
+    before_hash: &str,
+) -> Result<SourceSaveCheck, String> {
+    use chapbook_core::Publication;
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to verify the source edit.".to_string())?;
+    let current_href = book
+        .spine()
+        .get(chapter)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| "This chapter is no longer in the book.".to_string())?;
+    if current_href != href {
+        return Err(
+            "The chapter this pane edits has moved in the book. Revert the pane and edit it again."
+                .to_string(),
+        );
+    }
+    let bytes = book
+        .unit_bytes(chapter)
+        .map_err(|_| "The chapter's source could not be read.".to_string())?;
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(href, &bytes, prior);
+    let fresh = !before_hash.is_empty()
+        && crate::epub_patches::hash_bytes(&virtual_bytes) == before_hash;
+    Ok(if fresh {
+        SourceSaveCheck::Fresh
+    } else {
+        SourceSaveCheck::Stale
+    })
+}
+
+/// One preview raster, already plain bytes: the pixmap's RGBA taken
+/// out of the worker thread and handed to the main loop, which turns
+/// it into a texture. No GTK type crosses threads — the tasks
+/// manager's worker→main-loop shape.
+#[derive(Debug, Clone)]
+pub(crate) struct PreviewPixels {
+    /// The debounce generation this raster answers; the pane drops
+    /// anything older than its own.
+    pub(crate) generation: u64,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    /// Premultiplied RGBA8888, row-major, stride `width * 4`.
+    pub(crate) rgba: Vec<u8>,
+}
+
+/// Render the pane's edited chapter through a headless session: the
+/// edited bytes substituted for its entry, the pending patches applied
+/// to every other. One debounce tick = one open + a few pages — the
+/// engine has no cache-invalidation API, so the preview simply does
+/// not share a cache with anything.
+// Ten inputs, one purpose — the same allow as the paragraph verifier
+// above; they all travel to the same thread body together.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_source_preview(
+    book_path: std::path::PathBuf,
+    prefs: KalamPrefs,
+    fonts_dir: Option<std::path::PathBuf>,
+    href: String,
+    text: String,
+    prior: Vec<PatchRecord>,
+    spine: usize,
+    generation: u64,
+    page: (u32, u32),
+    tx: async_channel::Sender<Result<PreviewPixels, String>>,
+) {
+    std::thread::spawn(move || {
+        let verdict = render_source_preview_in_thread(
+            &book_path, prefs, fonts_dir, &href, &text, &prior, spine, generation, page,
+        );
+        let _ = tx.send_blocking(verdict);
+    });
+}
+
+fn render_source_preview_in_thread(
+    book_path: &std::path::Path,
+    prefs: KalamPrefs,
+    fonts_dir: Option<std::path::PathBuf>,
+    href: &str,
+    text: &str,
+    prior: &[PatchRecord],
+    spine: usize,
+    generation: u64,
+    page: (u32, u32),
+) -> Result<PreviewPixels, String> {
+    let prior = prior.to_vec();
+    let edited_href = href.to_string();
+    let edited = text.as_bytes().to_vec();
+    let filter = kalam_reader::EntryFilter::new(move |entry_href, bytes| {
+        if entry_href == edited_href {
+            return edited.clone();
+        }
+        let (patched, _) = crate::epub_patches::apply_text_patches(entry_href, &bytes, &prior);
+        patched
+    });
+    let pixmap = kalam_reader::preview::render(
+        book_path,
+        &prefs,
+        fonts_dir,
+        kalam_reader::preview::Preview {
+            filter,
+            spine,
+            start_page: 0,
+            pages: kalam_reader::preview::PREVIEW_PAGES,
+            page_width: page.0,
+            page_height: page.1,
+        },
+    )
+    .map_err(|err| format!("The preview could not be rendered:\n{err:#}"))?;
+    let (width, height) = (pixmap.width(), pixmap.height());
+    let rgba = pixmap.take();
+    Ok(PreviewPixels {
+        generation,
+        width,
+        height,
+        rgba,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

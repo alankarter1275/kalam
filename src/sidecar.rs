@@ -70,6 +70,11 @@ pub struct SidecarPatch {
     pub status: String,
     pub created_at: String,
     pub applied_at: Option<String>,
+    /// The whole-file guard (kind `file`, Phase 6.9). `#[serde(default)]`
+    /// so sidecars written before the raw mode still read — their
+    /// patches predate it and carry no guard.
+    #[serde(default)]
+    pub before_hash: String,
 }
 
 /// Everything worth keeping about one book, in one file.
@@ -154,6 +159,7 @@ impl Sidecar {
                     status: p.status.clone(),
                     created_at: p.created_at.clone(),
                     applied_at: p.applied_at.clone(),
+                    before_hash: p.before_hash.clone(),
                 })
                 .collect(),
         }
@@ -392,6 +398,7 @@ mod tests {
             status: "pending".into(),
             created_at: "2026-10-08T00:00:00Z".into(),
             applied_at: None,
+            before_hash: String::new(),
         }
     }
 
@@ -422,6 +429,34 @@ mod tests {
             !side.file_name.contains('/'),
             "file_name must be a name, not a path"
         );
+    }
+
+    #[test]
+    fn a_file_patchs_guard_survives_the_sidecar() {
+        // Phase 6.9: a whole-file patch is only as good as its guard.
+        // A sidecar that drops it turns every raw edit Stale on
+        // rebuild — a silent loss, so it is proven here, not assumed.
+        let mut p = a_patch();
+        p.kind = "file".into();
+        p.before_hash = "deadbeef".into();
+        let side = Sidecar::from_parts(&a_book(), None, &[], &[p]);
+        assert_eq!(side.patches[0].kind, "file");
+        assert_eq!(side.patches[0].before_hash, "deadbeef");
+    }
+
+    #[test]
+    fn an_old_sidecar_patch_without_the_guard_still_reads() {
+        // Sidecars written before the raw mode carry no before_hash
+        // key; their patches predate whole-file edits, and the empty
+        // guard reads back as "the find text is its own guard".
+        let old = serde_json::from_str::<SidecarPatch>(
+            r#"{"id":1,"kind":"text","href":"c.xhtml","chapter_index":0,
+                "find_text":"teh","replace_text":"the","context_before":"",
+                "context_after":"","source":"typo","status":"pending",
+                "created_at":"2026-10-08T00:00:00Z","applied_at":null}"#,
+        )
+        .expect("sidecars written before Phase 6.9 still read");
+        assert_eq!(old.before_hash, "");
     }
 
     #[test]

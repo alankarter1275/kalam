@@ -194,7 +194,7 @@ rebuilt as needed and does not need to travel.
 ## Requirements (Arch Linux)
 
 ```bash
-sudo pacman -S --needed rust gtk4 libadwaita base-devel pkgconf
+sudo pacman -S --needed rust gtk4 libadwaita gtksourceview5 base-devel pkgconf
 ```
 
 **GTK 4.16 or newer.** Kalam itself asks gtk4-rs for 4.12, but
@@ -206,6 +206,10 @@ than `-latest`.
 WebKitGTK is **not** a dependency and has not been since the reader was
 replaced by `kalam-reader`. If a build error mentions webkit, something is
 stale.
+
+**GtkSourceView 5** (`gtksourceview5` on Arch, `libgtksourceview-5-dev`
+on Debian/Ubuntu) is a dependency since the editor's raw source mode
+landed — it is the syntax-highlighted text view the raw pane is built on.
 
 ## Build & run
 

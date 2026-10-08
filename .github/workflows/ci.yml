@@ -47,6 +47,7 @@ jobs:
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
+            libgtksourceview-5-dev \
             libclang-dev libfontconfig1-dev
 
       - name: Install Rust toolchain
@@ -372,6 +373,7 @@ jobs:
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
+            libgtksourceview-5-dev \
             sway grim wtype \
             xwayland \
             fonts-dejavu-core \

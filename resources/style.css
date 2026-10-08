@@ -4852,3 +4852,52 @@ popover.kalam-reader-dict-popover > contents {
     color: @kalam_text;
     margin-top: 2px;
 }
+
+/* Phase 6.9: the raw source pane — GtkSourceView on the left of the
+ * stage, the debounced reading preview beside it. */
+.kalam-editor-source {
+    background: @kalam_bg;
+}
+
+.kalam-editor-source-bar {
+    background: @kalam_sidebar;
+    border-bottom: 1px solid @kalam_border;
+    padding: 6px 10px;
+}
+
+.kalam-source-view {
+    font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
+    font-size: 0.86rem;
+    padding: 8px 6px;
+}
+
+.kalam-source-href {
+    color: @kalam_text_dim;
+    font-size: 0.82rem;
+    font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
+    margin-start: 8px;
+}
+
+.kalam-source-preview {
+    background: @kalam_surface;
+    border-right: 1px solid @kalam_border;
+    min-width: 280px;
+}
+
+.kalam-source-preview-page {
+    border-radius: 6px;
+}
+
+.kalam-source-status {
+    color: @kalam_text_dim;
+    font-size: 0.78rem;
+}
+
+.kalam-source-stale {
+    background: alpha(@kalam_warning, 0.12);
+    color: @kalam_text;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 10px;
+    font-size: 0.86rem;
+}

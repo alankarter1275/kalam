@@ -26,13 +26,45 @@ impl Catalog {
         context_after: &str,
         source: &str,
     ) -> Result<i64> {
+        self.insert_guarded_patch(
+            book_id,
+            kind,
+            href,
+            chapter_index,
+            find_text,
+            replace_text,
+            context_before,
+            context_after,
+            source,
+            "",
+        )
+    }
+
+    /// Phase 6.9: the raw mode's whole-file patch — same row, plus the
+    /// entry's hash when the edit was made. The find/replace kinds call
+    /// [`Self::insert_patch`] above; an empty guard there is the
+    /// "the find text is its own guard" of every earlier patch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_guarded_patch(
+        &self,
+        book_id: i64,
+        kind: &str,
+        href: &str,
+        chapter_index: i64,
+        find_text: &str,
+        replace_text: &str,
+        context_before: &str,
+        context_after: &str,
+        source: &str,
+        before_hash: &str,
+    ) -> Result<i64> {
         let conn = self.conn();
         let now = chrono_like_now();
         conn.execute(
             "INSERT INTO patches
                 (book_id, kind, href, chapter_index, find_text, replace_text,
-                 context_before, context_after, source, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)",
+                 context_before, context_after, source, status, created_at, before_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10, ?11)",
             params![
                 book_id,
                 kind,
@@ -43,7 +75,8 @@ impl Catalog {
                 context_before,
                 context_after,
                 source,
-                now
+                now,
+                before_hash
             ],
         )?;
         let id = conn.last_insert_rowid();
@@ -61,7 +94,8 @@ impl Catalog {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, href, chapter_index, find_text, replace_text,
-                    context_before, context_after, source, status, created_at, applied_at
+                    context_before, context_after, source, status, created_at, applied_at,
+                    before_hash
              FROM patches WHERE book_id = ?1 ORDER BY id ASC",
         )?;
         let rows = stmt.query_map(params![book_id], |r| {
@@ -79,6 +113,7 @@ impl Catalog {
                 status: r.get(10)?,
                 created_at: r.get(11)?,
                 applied_at: r.get(12)?,
+                before_hash: r.get(13)?,
             })
         })?;
         Ok(rows.flatten().collect())
@@ -94,7 +129,8 @@ impl Catalog {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, href, chapter_index, find_text, replace_text,
-                    context_before, context_after, source, status, created_at, applied_at
+                    context_before, context_after, source, status, created_at, applied_at,
+                    before_hash
              FROM patches WHERE book_id = ?1 AND status = 'pending' ORDER BY id ASC",
         )?;
         let rows = stmt.query_map(params![book_id], |r| {
@@ -112,6 +148,7 @@ impl Catalog {
                 status: r.get(10)?,
                 created_at: r.get(11)?,
                 applied_at: r.get(12)?,
+                before_hash: r.get(13)?,
             })
         })?;
         Ok(rows.flatten().collect())

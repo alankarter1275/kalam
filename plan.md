@@ -220,3 +220,20 @@ step 1 is the only thing awaited.
   `src/content_index.rs`) opens its own `Book` and still indexes
   unpatched text — wire the filter there when the review panel lands
   (step 5) so search matches what the reader shows.
+- **Step 3 CI outcome — green on the fifth run, four fix-forwards.** Each
+  run failed on one thing and moved one crate further down the chain:
+  (1) 37723814937 — `clippy::type_complexity` on the filter newtype's raw
+  closure field → private `EntryTransform` alias (§74); (2) 37724717910 —
+  the type was `pub` in a private module but missing from the crate
+  root's selective re-export list → `pub use book::EntryFilter;` (§75);
+  (3) 37725602605 — `OpenBook`'s other variants are feature-gated, so a
+  single-variant build made the seam's if-let irrefutable and its
+  wildcard unreachable → cfg-gated fallback arms, the enum's own
+  pattern (§76); (4) 37726510604 — the flag-logging compared a bare
+  `Resolution::Found` (a payload-carrying variant, so a constructor,
+  not a value) → `!matches!(..., Found(_))` (§77). Run 37727355176
+  (commit `dcb1009`) green: all four session fixtures
+  (`patched_text_reaches_the_session_layer`,
+  `the_patched_view_paints`, `a_highlight_re_anchors_over_edits_before_it`,
+  `a_highlight_whose_words_were_edited_degrades_gracefully`) and both
+  hook-contract tests named and passing in the full log.

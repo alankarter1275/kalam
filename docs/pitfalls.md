@@ -2805,3 +2805,31 @@ repaired one edit at a time, each verified.
 - The §52 anchor rules matter double in a batch: a whitespace-only
   old/new difference does not just risk a line join, it hands a racing
   sibling a mangle template.
+## 73. Test-only free functions are dead code in the bin — impl-methods are not
+
+**Date:** 2026-10-08, Phase 6 step 2; one failed CI run (37717908065).
+
+**What happened.** Step 1 shipped `pub` methods on `impl Catalog`
+(`insert_patch` and friends) whose only callers were their own tests, and
+CI was green — so step 2 shipped free `pub` functions
+(`resolve_span`, `apply_text_patches`) on the same assumption. Wrong:
+the bin target flagged every one of them (`never used`, `never
+constructed`), because **test-only reachability does not count** (§11's
+rule, now with its precise boundary): methods on a used type passed the
+lint; free functions in a private module did not. The same run also
+caught a genuine test bug the eye had missed — a `PatchRecord` moved
+into one call's array and used again in the next (`E0382`).
+
+**The rules.**
+
+- A new module with no production caller yet needs an explicit interim:
+  `#![allow(dead_code)]` at the top with the reason and the step that
+  removes it (the Annotation-field precedent, module-sized). Wire the
+  real caller or keep the allow — never ship "it should be fine".
+- The §11 boundary, sharpened: *impl-methods* on a type that is itself
+  used can survive test-only callers; *free functions* cannot. Plan for
+  the stricter case and the lenient one takes care of itself.
+- Borrowed-by-array test fixtures are moves: `[&a, &b]` borrows, but
+  `[a, b]` moves — and the next test line that mentions `a` is the
+  compile error. `.clone()` in the second array, or pass references
+  both times.

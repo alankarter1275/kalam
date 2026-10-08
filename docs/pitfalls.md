@@ -3074,3 +3074,21 @@ multi-line string kept its `\` at each break. The continuation
 backslash is the difference between a message and a message with a
 railroad track through it, and nothing automated can tell them
 apart.
+
+## §86 — gtk traits live in the prelude, not the crate root (Phase 6 step 7, CI run 1)
+
+`position_inline_editor` was generalized from `&gtk::Entry` to
+`&impl gtk::IsA<gtk::Widget>` — and `gtk::IsA` does not exist:
+E0405, trait not found in crate `gtk`. The gtk-rs traits (`IsA`,
+`Cast`, `WidgetExt`, …) are exported through `gtk::prelude`, not the
+crate root, so the qualified path is `gtk::prelude::IsA<…>` — while
+the bare `IsA<…>` works only in files that `use gtk::prelude::*`
+(or relm4's, which re-exports it; that is why `upcast_ref` resolved
+in types.rs while the same trait family failed as a qualified path
+one file over).
+
+The lesson for the mental compile pass: when a new bound or method
+call involves a gtk-rs trait, check the file's prelude import before
+spelling the trait — a qualified `gtk::` path is right for structs
+(`gtk::TextView`), wrong for traits (`gtk::prelude::IsA`), and a
+bare name silently depends on which prelude the file pulls in.

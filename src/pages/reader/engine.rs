@@ -878,7 +878,7 @@ fn textview_text(view: &gtk::TextView) -> String {
 /// places the selection editor (an entry) and the paragraph editor (a
 /// text view).
 pub(crate) fn position_inline_editor(
-    widget: &impl gtk::IsA<gtk::Widget>,
+    widget: &impl gtk::prelude::IsA<gtk::Widget>,
     rect: &gtk::gdk::Rectangle,
 ) {
     widget.set_margin_start(rect.x());

@@ -181,3 +181,12 @@ step 1 is the only thing awaited.
   corrupted regions — two stray tails, one line join); caught by the
   full-diff read, repaired one edit at a time. The rule going forward: one
   edit per file per message. Awaiting CI; step 2 (the matcher) next.
+- **Step 2 (the matcher) — implemented 2026-10-08.** `src/epub_patches.rs`:
+  `resolve_span` (find + immediate context anchors; one hit applies, zero is
+  `NotFound`, several are `Ambiguous` — flagged, never guessed) and
+  `apply_text_patches` (creation order, each patch sees the previous one's
+  result; filters to pending/text/this-href). Literal matching in source
+  space — the byte-stability property the design promised, now proven by
+  tests: zero patches is the identity, one patch touches only its span.
+  The matcher has no production caller until step 3's seam — the same
+  test-only shape step 1's queries shipped with.

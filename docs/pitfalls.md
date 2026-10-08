@@ -3023,3 +3023,18 @@ errors; a clean mental compile must include the borrow pass.
   later `s.pending = pending;` uses it after move. Iterate
   `&pending`; remember a `&p` loop variable is already a reference
   (`edit_row(p, ...)` — not `&p`, which would be `&&`).
+
+## §83 — the guardrails suite audits new page code (Phase 6 step 5, CI run 3)
+
+`tests/guardrails.rs` is this project's static-analysis suite, and it
+reads every file in `src/pages/`: disk/database/parsing on the UI
+thread, catalog handle counts in pages, hex colours in stylesheets,
+panic growth, worker suppression. Adding or editing a page means
+re-reading those tests first — `pages_touch_disk_or_documents_only_
+inside_tasks` failed CI on a single `path.is_file()` pre-check that
+was also redundant: the worker's `bake_epub` had the same check with
+a proper error string. If a UI-thread pre-check merely duplicates a
+worker-side error, it is not UX polish — it is an ARCH.md violation.
+
+Rule: when a new file lands under `src/pages/`, grep guardrails.rs
+for every `pages_…` test and walk the new file against each.

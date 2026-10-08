@@ -183,7 +183,10 @@ pub fn build_edits_panel(
                 return;
             }
             // What the bake needs from the book row: the file to rewrite
-            // and the hash the row must move from.
+            // and the hash the row must move from. The file's existence
+            // is NOT checked here — ARCH.md: no disk on the UI thread —
+            // and bake_epub's own missing-file error arrives through the
+            // same verdict channel.
             let (path, old_hash) = match catalog.get_book(book_id) {
                 Ok(Some(book)) => (book.file_path.clone(), book.file_hash.clone()),
                 _ => {
@@ -194,13 +197,6 @@ pub fn build_edits_panel(
                     return;
                 }
             };
-            if !path.is_file() {
-                crate::notify::error(
-                    "Could not apply the edits",
-                    &format!("the book's file is missing: {}", path.display()),
-                );
-                return;
-            }
 
             {
                 let mut s = state.borrow_mut();

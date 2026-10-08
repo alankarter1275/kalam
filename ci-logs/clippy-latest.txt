@@ -1,6 +1,6 @@
-crates/chapbook-epub/src/book.rs:48:24: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-[1m[91merror[0m: could not compile `chapbook-epub` (lib) due to 1 previous error
-[1m[91merror[0m: could not compile `chapbook-epub` (lib test) due to 1 previous error
+crates/chapbook-epub/tests/book.rs:167:9: [1m[91merror[E0432][0m: unresolved import `chapbook_epub::EntryFilter`
+crates/chapbook-epub/tests/book.rs:207:9: [1m[91merror[E0432][0m: unresolved import `chapbook_epub::EntryFilter`
+[1m[91merror[0m: could not compile `chapbook-epub` (test "book") due to 2 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -16,8 +16,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
-crates/chapbook-epub/src/book.rs:48:24: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-[1m[91merror[0m: could not compile `chapbook-epub` (lib) due to 1 previous error
+[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
+crates/chapbook-epub/tests/book.rs:167:9: [1m[91merror[E0432][0m: unresolved import `chapbook_epub::EntryFilter`
+crates/chapbook-epub/tests/book.rs:207:9: [1m[91merror[E0432][0m: unresolved import `chapbook_epub::EntryFilter`
+[1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
+[1m[91merror[0m: could not compile `chapbook-epub` (test "book") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `chapbook-epub` (lib test) due to 1 previous error
---- run 37723814937 ---
+--- run 37724717910 ---

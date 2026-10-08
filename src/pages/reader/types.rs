@@ -2,6 +2,7 @@
 
 use crate::db::HighlightColor;
 use crate::epub_book::ReadingTheme;
+use gtk::prelude::*;
 use relm4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -353,6 +354,7 @@ pub(crate) struct InlineEdit {
 /// A verified edit coming back from the worker thread: where it lives,
 /// what kind of patch it is, the serial of the editor it verified, and
 /// the ready-to-store plan.
+#[derive(Debug, Clone)]
 pub(crate) struct VerifiedEdit {
     pub(crate) href: String,
     pub(crate) kind: &'static str,

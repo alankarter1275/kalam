@@ -959,6 +959,9 @@ fn verify_inline_edit_in_thread(
 /// the paragraph's text plus its neighbours', exactly what the tap
 /// carried. `serial` is the editor's, so a verdict landing after its
 /// editor was replaced stores its patch without closing the new one.
+// Nine inputs, one purpose — the same allow as `engine_prefs` and the
+// db inserts.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn verify_paragraph_edit(
     book_path: std::path::PathBuf,
     chapter: usize,

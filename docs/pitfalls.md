@@ -3092,3 +3092,24 @@ call involves a gtk-rs trait, check the file's prelude import before
 spelling the trait — a qualified `gtk::` path is right for structs
 (`gtk::TextView`), wrong for traits (`gtk::prelude::IsA`), and a
 bare name silently depends on which prelude the file pulls in.
+
+## §87 — relm4's prelude is not gtk's, and one resolution error hides a layer (Phase 6 step 7, CI runs 1–2)
+
+Run 2 of step 7 surfaced six errors that run 1 never showed, in two
+families. First: `relm4::prelude::*` does not re-export gtk's prelude
+in this project's versions — a file that stores gtk widgets needs
+`use gtk::prelude::*` of its own the moment it CALLS anything on them
+(`Entry::text` is `EditableExt`, `upcast_ref` is `Cast`), and types.rs
+had never called a widget method before this step. Second: the
+message enum's `Debug`/`Clone` derives now reach into `VerifiedEdit`,
+so any type placed in a `ReaderMsg` payload needs the derives too —
+the enum's derive is what demands them, and the compiler's message
+names the payload type, not the enum.
+
+The structural lesson: run 1's single `E0405` (the §86 trait path)
+masked all six — a resolution error in one signature stops the
+compiler before method-resolution elsewhere in the crate reports.
+With no local toolchain, each CI run peels exactly one error layer,
+so the pre-push review should treat every qualified gtk trait path
+AND every new widget method call in a file that never made one as
+the likeliest failures — the layers run 1 cannot see.

@@ -2842,3 +2842,23 @@ into one call's array and used again in the next (`E0382`).
   The clone goes in the **earlier** array (prevent the move), not the
   later one (which would itself be the use-after-move — a second CI
   cycle, 37718889665, was spent learning this).
+
+## 74. `clippy::type_complexity` fires on newtypes over multi-bound closures
+
+**Date:** 2026-10-08, Phase 6 step 3; one failed CI run (37723814937).
+
+**What happened.** The step-3 seam's `EntryFilter` newtype wrapped
+`Option<Arc<dyn Fn(&str, Vec<u8>) -> Vec<u8> + Send + Sync>>` directly in
+its tuple field — and clippy (`-D warnings`) rejected the field's type as
+"very complex" before anything downstream compiled, so the run also
+verified none of the other new code in the step. The one-line fix: a
+private type alias for the wrapped shape, which is exactly what the
+lint's own message suggests ("factor into type definitions") — aliases
+don't trip the lint, and the struct reads better for it.
+
+**The rule.** A newtype over `Arc<dyn Fn(...) + Send + Sync>` needs the
+closure shape factored into a `type` alias first. And the corollary that
+cost this run its coverage: a compile failure in an early crate
+(`chapbook-epub` compiles before `chapbook-reader`, `kalam-reader` and
+the app) means the rest of the step's code was never checked — read a
+failed run's log as "verified up to the first error, nothing after".

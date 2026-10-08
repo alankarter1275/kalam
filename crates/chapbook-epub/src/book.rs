@@ -32,6 +32,12 @@ pub struct Book {
     entry_filter: EntryFilter,
 }
 
+/// The wrapped transformation: (entry href, raw bytes) → the bytes to
+/// parse. A type alias because the full shape is what clippy's
+/// type-complexity lint measures, and what every reader of this struct
+/// would otherwise have to parse again.
+type EntryTransform = std::sync::Arc<dyn Fn(&str, Vec<u8>) -> Vec<u8> + Send + Sync>;
+
 /// A host-installed byte filter over spine entries — the virtual-edit seam.
 ///
 /// The host hands the book a transformation from (entry href, raw bytes) to
@@ -45,7 +51,7 @@ pub struct Book {
 /// A newtype rather than a bare `Arc<dyn Fn>` so the options and configs
 /// that carry one can stay `Debug + PartialEq`, which closures are neither.
 #[derive(Clone, Default)]
-pub struct EntryFilter(Option<std::sync::Arc<dyn Fn(&str, Vec<u8>) -> Vec<u8> + Send + Sync>>);
+pub struct EntryFilter(Option<EntryTransform>);
 
 impl EntryFilter {
     /// Wrap a host transformation. It runs on whatever thread reads the

@@ -118,8 +118,8 @@ pub fn build_edits_panel(
                         pending.len()
                     ));
                     host.append(&head);
-                    for p in pending {
-                        let (row, check) = edit_row(&p, &catalog, &holder);
+                    for p in &pending {
+                        let (row, check) = edit_row(p, &catalog, &holder);
                         host.append(&row);
                         checks.insert(p.id, check);
                     }
@@ -157,7 +157,12 @@ pub fn build_edits_panel(
     {
         let catalog = catalog.clone();
         let state = state.clone();
-        let apply = apply.clone();
+        // A differently-named clone: this closure must not capture the
+        // very button it is connected to — the receiver `apply` is
+        // borrowed by the connect call while a same-named capture would
+        // have to move it (E0505). gtk::Button is refcounted; the clone
+        // IS the same button.
+        let apply_btn = apply.clone();
         let holder = holder.clone();
         apply.connect_clicked(move |_| {
             {
@@ -201,7 +206,7 @@ pub fn build_edits_panel(
                 let mut s = state.borrow_mut();
                 s.busy = true;
             }
-            sync_apply_button(&state, &apply);
+            sync_apply_button(&state, &apply_btn);
 
             let (verdict_tx, verdict_rx) =
                 async_channel::unbounded::<Result<crate::epub_sanitizer::BakeReport, String>>();
@@ -213,7 +218,7 @@ pub fn build_edits_panel(
             });
 
             let state = state.clone();
-            let apply = apply.clone();
+            let apply_btn = apply_btn.clone();
             let holder = holder.clone();
             gtk::glib::spawn_future_local(async move {
                 if let Ok(verdict) = verdict_rx.recv().await {
@@ -265,7 +270,7 @@ pub fn build_edits_panel(
                 if let Some(refresh) = holder.borrow().clone() {
                     refresh();
                 }
-                sync_apply_button(&state, &apply);
+                sync_apply_button(&state, &apply_btn);
             });
         });
     }

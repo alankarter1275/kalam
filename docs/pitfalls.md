@@ -3000,3 +3000,26 @@ a glob gtk prelude plus per-file trait imports, "same method, same
 call, different file" always means: diff the `use` lines, not the
 calls. (relm4's `view!` macro takes `set_margin_all:` for the same
 reason — it resolves through relm4, not gtk.)
+
+## §82 — a closure must not capture the very widget it is connected to (Phase 6 step 5, CI run 2)
+
+Two borrow errors after run 1's import fix — and both were invisible
+in run 1 because E0599 resolution failures mask borrow-check errors
+(rustc runs typeck first). Expect a second wave after fixing type
+errors; a clean mental compile must include the borrow pass.
+
+- **E0505, the real lesson:** `btn.connect_clicked(move |_| { ...
+  btn ... })` — when the closure body uses the same binding as the
+  method receiver, the receiver is borrowed by the connect call while
+  the `move` closure must move that same value in. Fix: a
+  differently-named clone for the closure's internal use
+  (`let apply_btn = apply.clone();` — refcounted, same widget). This
+  is why earlier panels never hit it: their handlers used *other*
+  widgets than the one they connect to (the history_section toggle's
+  `revealer_ref` was the pattern all along). When writing any
+  `connect_*` handler, check the receiver's name against every name
+  the closure body uses.
+- **E0382:** `for p in pending { ... }` consumes the Vec, and the
+  later `s.pending = pending;` uses it after move. Iterate
+  `&pending`; remember a `&p` loop variable is already a reference
+  (`edit_row(p, ...)` — not `&p`, which would be `&&`).

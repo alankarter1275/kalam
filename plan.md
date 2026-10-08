@@ -608,3 +608,21 @@ step 1 is the only thing awaited.
   `is_reader` includes it (full-bleed content classes, no shell
   back chip), and both force-rebuild lists (leaving an editor
   rebuilds the landing page, like leaving a reader).
+
+  **CI — green on run 2 (37830650342, 10m).** Run 1 (37829171113)
+  failed three ways (§89): the shared commit callback cloned after
+  the first `move` closure took it (the §82 family), and the two
+  exhaustive matches the new variants broke that this plan never
+  named — the bubble windows' own reader forwarding in `bubbles.rs`
+  and `Route::sidebar_item` in `models.rs`. The sweep lesson — grep
+  the enum's last variant to find every exhaustive match — is now
+  in §89. Run 2 compiled, clippy'd, formatted, passed every test
+  and the headless-sway smoke boot.
+
+  Workspace note, recorded here because it happened mid-step: the
+  sandbox was recycled between steps and re-cloned at the session's
+  base commit while the working tree kept the full phase-1–7 state
+  plus this step's edits; the branch was re-anchored to the remote
+  tip (`git reset origin/arena/…`) with the tree untouched, and
+  `git status` confirmed the diff was exactly this step's set
+  before the commit.

@@ -3147,3 +3147,21 @@ so more can hide behind them. The pre-push sweep that finds them
 all: grep for the enum's LAST variant — every exhaustive match must
 mention it — and check each site for the new one. `ComicSeries`
 and `OpenAuthor` were the probes this time.
+
+## §90 — the sweep must include the enum's own module (Phase 6 step 9, CI run 1)
+
+Step 9 added `Resolution::Stale`. The §89 sweep ran — grep every
+exhaustive match, check each for the new variant — but with a filter
+that excluded `epub_patches.rs`, the enum's own defining module, on
+the theory that in-module matches were safe. They are not: the module
+matched its own enum at `plan_text_patch`, over the result of its own
+`resolve_span` helper, and that helper could never yield the new
+variant — which is exactly why the arm was easy to forget. E0004 at
+`epub_patches.rs:240`, run 1, nothing else behind it.
+
+The corrected rule: the §89 sweep greps the whole workspace, defining
+module included, and there is no "safe" module. When the new variant
+genuinely cannot occur at a site, the arm still must exist — refuse
+along the site's existing failure path with a comment saying why the
+arm is unreachable, never `unreachable!()` (the no-panics rule) and
+never a guessed store.

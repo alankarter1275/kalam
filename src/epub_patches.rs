@@ -241,6 +241,12 @@ pub fn plan_text_patch(
         Resolution::Found(span) => span,
         Resolution::NotFound => return Err(PatchRefusal::NotFound),
         Resolution::Ambiguous(n) => return Err(PatchRefusal::Ambiguous(n)),
+        // Planning never sees Stale: it is the whole-file kind's
+        // apply-time resolution, and `resolve_span` cannot yield it.
+        // The arm exists because this match is exhaustive; should that
+        // ever change, the patch is refused as not-found rather than
+        // stored on a guess.
+        Resolution::Stale => return Err(PatchRefusal::NotFound),
     };
     // Round the context windows to char boundaries so the anchors are
     // valid UTF-8 strings; an entry that is not valid UTF-8 (exotic — XML

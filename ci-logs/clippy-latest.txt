@@ -1,9 +1,4 @@
-src/epub_patches.rs:251:79: [1m[91merror[E0382][0m: use of moved value: `first`: value used here after move
-src/epub_patches.rs:26:10: [1m[91merror[0m: enum `Resolution` is never used
-src/epub_patches.rs:40:12: [1m[91merror[0m: struct `PatchOutcome` is never constructed
-src/epub_patches.rs:54:8: [1m[91merror[0m: function `resolve_span` is never used
-src/epub_patches.rs:96:8: [1m[91merror[0m: function `apply_text_patches` is never used
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+src/epub_patches.rs:258:79: [1m[91merror[E0382][0m: borrow of moved value: `first`: value borrowed here after move
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
 === last 80 lines of the raw log ===
@@ -25,15 +20,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/epub_patches.rs:251:79: [1m[91merror[E0382][0m: use of moved value: `first`: value used here after move
-src/epub_patches.rs:26:10: [1m[91merror[0m: enum `Resolution` is never used
-src/epub_patches.rs:40:12: [1m[91merror[0m: struct `PatchOutcome` is never constructed
-src/epub_patches.rs:54:8: [1m[91merror[0m: function `resolve_span` is never used
-src/epub_patches.rs:96:8: [1m[91merror[0m: function `apply_text_patches` is never used
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/epub_patches.rs:258:79: [1m[91merror[E0382][0m: borrow of moved value: `first`: value borrowed here after move
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 37717908065 ---
+--- run 37718889665 ---

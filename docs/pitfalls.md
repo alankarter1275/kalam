@@ -2506,6 +2506,14 @@ ten.
 zero damage. The recipe has now survived eleven rounds; the rule stays
 the same — the log comes before anything else.
 
+*Twelfth occurrence, 2026-10-08 (recorded late — the session's own
+leftover list caught the omission):* mid-Phase-6-step-1, a turn gap
+re-cloned the workspace and the three `src/db.rs` edits had vanished;
+found by reading the log before touching anything, re-applied one at a
+time (one re-anchored — the `·` middle-dot lesson again), zero damage,
+HEAD never moved. Twelve for twelve; nothing new to learn, and the
+discipline that caught it is the same one that files these entries.
+
 ## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
 
 The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`

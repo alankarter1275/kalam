@@ -1,7 +1,8 @@
 # Plan — Phase 6: the EPUB editor
 
-**Status: PLANNING — research complete, implementation plan below. Awaiting
-the owner's go. Nothing is built until then (his 2026-09-29 rule).**
+**Status: IMPLEMENTING — plan approved; step 1 (patch store) and step 2
+(matcher) shipped and CI-green; step 3 (the reader seam) next. Each step
+lands as its own CI-gated commit with the owner's go.**
 
 The settled design (2026-10-08, recorded in ROADMAP's Phase 6 section, the
 record of authority): two surfaces kept; Markdown-style presentation over
@@ -190,3 +191,12 @@ step 1 is the only thing awaited.
   tests: zero patches is the identity, one patch touches only its span.
   The matcher has no production caller until step 3's seam — the same
   test-only shape step 1's queries shipped with.
+- **Step 2 CI outcome — green on the third run.** The first run
+  (37717908065) failed on the dead-code boundary: free `pub` functions
+  with only test callers are flagged in the bin target where step 1's
+  impl-methods were not — the module now carries `#![allow(dead_code)]`
+  with the reason and the step that removes it (pitfalls §73). The
+  second (37718889665) failed because the move-fix was applied
+  backwards — the clone belongs in the earlier array; third run
+  (37719896642, commit `d62d49c`) green: 558 kalam tests, all 8 matcher
+  tests named in the full log, rustfmt clean.

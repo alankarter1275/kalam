@@ -1354,11 +1354,14 @@ impl EpubEditorModel {
     fn sync_chapter_order(&mut self) {
         let identity: Vec<usize> = (0..self.chapter_count).collect();
         let mut order = identity.clone();
+        // rev().find, not filter().next_back(): clippy's double-ended
+        // lints police the whole family — last, next_back, and the
+        // filter-composed form each have their own lint.
         if let Some(op) = self
             .pending_patches()
-            .into_iter()
-            .filter(|p| p.kind == "spine")
-            .next_back()
+            .iter()
+            .rev()
+            .find(|p| p.kind == "spine")
         {
             if let Some(parsed) = crate::epub_sanitizer::parse_spine_order(&op.replace_text) {
                 let mut sorted = parsed.clone();

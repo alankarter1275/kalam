@@ -2973,3 +2973,19 @@ closure, and each `move` takes its own handle. The tell in the diff
 review that was skipped: three `move` closures, one binding, no
 `clone()` between them. A one-closure-per-variable audit belongs in
 the pre-push review for any multi-handler widget.
+
+## 80. Test expectations live in the space the code under test works in
+
+**Date:** 2026-10-08, Phase 6 step 4; third failed run (37735334310).
+
+The planner's context-anchor test failed on one character: the
+expected `context_after` was written as `"; she smiled.</p>"` — the
+`&` thought of as the span's end — but the planner works in source
+space, where the find string is `"teh word &amp;"` and the span
+covers the entity's semicolon too, so the anchor is
+`" she smiled.</p>"`. The code was right; the expectation was
+computed in DOM space while asserting about source space. §77's rule
+generalizes past constructors: when writing an expected value, state
+which space it is measured in, and derive it from the exact input the
+code sees — an expectation remembered rather than derived is a guess
+with a green-looking face.

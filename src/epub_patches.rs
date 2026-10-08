@@ -439,9 +439,12 @@ mod tests {
             .expect("the run verifies");
         assert_eq!(planned.find_text, "teh word &amp;");
         assert_eq!(planned.replace_text, "the word &amp;");
-        // The anchors are the bytes immediately around the span.
+        // The anchors are the bytes immediately around the span — and
+        // the span is in source space: it covers the whole entity,
+        // semicolon included, so the after-anchor starts at the space
+        // that follows `&amp;`, not at its `;`.
         assert_eq!(planned.context_before, "<p>He said ");
-        assert_eq!(planned.context_after, "; she smiled.</p>");
+        assert_eq!(planned.context_after, " she smiled.</p>");
         // And the planned patch, applied over the same bytes, is exactly
         // the correction.
         let (out, outcomes) = apply_text_patches(

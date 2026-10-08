@@ -3038,3 +3038,16 @@ worker-side error, it is not UX polish — it is an ARCH.md violation.
 
 Rule: when a new file lands under `src/pages/`, grep guardrails.rs
 for every `pages_…` test and walk the new file against each.
+
+## §84 — helper signatures in their narrowest useful form (Phase 6 step 6, CI run 1)
+
+Clippy (`-D warnings`) rejected three spots in one helper: the
+signature said `&mut Vec<ScanNode>` where only indexing happens
+(`&mut [ScanNode]` — `ptr_arg`), and both call sites passed `&mut
+stack` where the parameter is `&[usize]`
+(`unnecessary_mut_passed`). The general lesson for the mental
+compile pass: when adding a private helper, write the parameter
+types from what the BODY does, not from what the caller happens to
+hold — slices over Vecs, `&` over `&mut` — because the compiler
+accepts the wider forms silently and clippy is the only layer that
+objects, one CI run later.

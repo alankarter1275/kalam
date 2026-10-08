@@ -345,7 +345,7 @@ impl<'a> Scan<'a> {
                     .iter()
                     .position(|&b| b == b'<')
                     .map_or(bytes.len(), |off| i + off);
-                Self::push_text(&mut nodes, &mut stack, i..end, false);
+                Self::push_text(&mut nodes, &stack, i..end, false);
                 i = end;
                 continue;
             }
@@ -360,7 +360,7 @@ impl<'a> Scan<'a> {
             } else if starts_with_at(bytes, i, b"<![CDATA[") {
                 let content = i + 9;
                 let end = find_from(bytes, content, b"]]>").ok_or(())?;
-                Self::push_text(&mut nodes, &mut stack, content..end, true);
+                Self::push_text(&mut nodes, &stack, content..end, true);
                 i = end + 3;
             } else if bytes[i + 1] == b'!' {
                 // DOCTYPE (internal subsets in EPUB content documents
@@ -522,7 +522,7 @@ impl<'a> Scan<'a> {
         Ok((name, i, self_closing))
     }
 
-    fn push_text(nodes: &mut Vec<ScanNode>, stack: &[usize], range: Range<usize>, cdata: bool) {
+    fn push_text(nodes: &mut [ScanNode], stack: &[usize], range: Range<usize>, cdata: bool) {
         if range.is_empty() {
             return;
         }

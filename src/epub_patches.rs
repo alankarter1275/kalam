@@ -93,9 +93,12 @@ pub fn resolve_span(bytes: &[u8], find: &str, before: &str, after: &str) -> Reso
 ///
 /// `patches` is the book's full list as the database returns it (id
 /// ascending, which *is* creation order); entries are filtered to
-/// `kind == "text"`, `status == "pending"` and this `href`. Returns the
-/// new bytes — identical to the input when nothing applies — and one
-/// outcome per processed patch.
+/// `kind == "text"` or `kind == "paragraph"` (both carry literal,
+/// source-space find/replace — a paragraph patch's find is the
+/// element's whole outer source, built by `epub_spans`), `status ==
+/// "pending"` and this `href`. Returns the new bytes — identical to
+/// the input when nothing applies — and one outcome per processed
+/// patch.
 ///
 /// Applied-in-the-past patches are not re-run: their text is already in
 /// the file for real (a bake wrote it there), and re-applying would double
@@ -108,7 +111,10 @@ pub fn apply_text_patches(
     let mut out = bytes.to_vec();
     let mut outcomes = Vec::new();
     for p in patches {
-        if p.kind != "text" || p.status != "pending" || p.href != href {
+        if !matches!(p.kind.as_str(), "text" | "paragraph")
+            || p.status != "pending"
+            || p.href != href
+        {
             continue;
         }
         let resolution = resolve_span(&out, &p.find_text, &p.context_before, &p.context_after);
@@ -225,7 +231,7 @@ pub fn plan_text_patch(
 
 /// `text[index - back..index]` as a char-boundary-safe start, clamped to
 /// the string's beginning.
-fn floor_char_boundary(text: &str, index: usize, back: usize) -> usize {
+pub(crate) fn floor_char_boundary(text: &str, index: usize, back: usize) -> usize {
     let mut i = index.saturating_sub(back);
     while i < index && !text.is_char_boundary(i) {
         i += 1;
@@ -235,7 +241,7 @@ fn floor_char_boundary(text: &str, index: usize, back: usize) -> usize {
 
 /// `text[index..index + fwd]` as a char-boundary-safe end, clamped to the
 /// string's length.
-fn ceil_char_boundary(text: &str, index: usize, fwd: usize) -> usize {
+pub(crate) fn ceil_char_boundary(text: &str, index: usize, fwd: usize) -> usize {
     let mut i = (index + fwd).min(text.len());
     while i > index && !text.is_char_boundary(i) {
         i -= 1;

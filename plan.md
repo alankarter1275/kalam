@@ -411,3 +411,49 @@ step 1 is the only thing awaited.
      inside_tasks` flagged one `path.is_file()` on the UI thread —
      redundant, since `bake_epub` re-checks on the worker. Removed.
      §83.
+
+- **Step 6 (source-span mapper + serializer) — implemented
+  2026-10-08.** New `src/epub_spans.rs`, deliberately unwired (step 7
+  is its first caller; module carries the dead-code allow with that
+  reason, the step-2 precedent). The parser stack builds its DOM
+  without source positions and markup5ever's `TreeSink` has nowhere
+  to put them, so the mapper is a standalone span-tracking scan: a
+  small strict-XML tokenizer over the raw bytes that builds an
+  element tree with byte ranges attached. Strict where the HTML
+  fallback is loose — implied closes, mis-nested tags, stray `<`,
+  unquoted attributes, missing single root all make the entry
+  `NotMappable` — with one documented tolerance: the HTML void set
+  unslashed (`<br>`), because html5ever voids exactly those too, so
+  the trees agree.
+
+  Paragraph identity is the reader's text: the scan's extraction
+  mirrors `chapbook-layout`'s `extract_text_at` (entities decoded —
+  the five XML names plus numeric refs, unknown ones left verbatim so
+  an HTML-parsed entry mismatches and refuses rather than maps wrong;
+  CSS whitespace collapse; `<br>` as hard newline; block boundaries),
+  and `locate_paragraph(bytes, text, ordinal)` matches it against the
+  scanned paragraphs — the deepest text-bearing non-inline elements,
+  head/script/style/template skipped, disambiguated by an ordinal
+  among the equal-text ones. Refusals are explicit: `NotFound`,
+  `NotCurrent(n)`, `NotMappable` — never a guessed span.
+
+  The serializer writes spans this module authored: verbatim opening
+  tag (class, id, `epub:type` are content), the new text escaped to
+  source with `\n` as `<br/>` and whitespace collapsed (the reader's
+  normalization inverted), verbatim closing tag. Empty text writes
+  the empty element. `plan_paragraph_patch` is the paragraph sibling
+  of `plan_text_patch`: unchanged-check in identity space, locate,
+  find = the paragraph's whole outer source, replace = serialized,
+  context anchors captured around the outer span.
+
+  One change to the existing pipeline: `apply_text_patches`' kind
+  filter widened from `"text"` to `"text" | "paragraph"` — a
+  paragraph patch carries literal source-space find/replace like any
+  text patch, so render filter, bake and search index apply it with
+  no further changes. 13 fixture tests: exact spans, reader text
+  semantics (wrapping, entities, CDATA, skipped head), ordinal
+  disambiguation, unchanged refusal, flattening round-trip through
+  the matcher (byte-identical outside the span), `<br>` round-trip,
+  conservative refusals (unclosed `li`, mis-nested close, stray `<`,
+  two roots, non-UTF-8, `&nbsp;` text mismatch), void tolerance,
+  paragraph-emptying as a real edit.

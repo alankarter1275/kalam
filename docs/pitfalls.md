@@ -2919,3 +2919,12 @@ caller wrote the bare comparison out of fieldless-variant habit. Rule:
 for any variant with a payload, `matches!(x, Variant(_))` — and the
 broader one, already in §73, that a fix written from habit rather than
 from the error is a guess.
+
+*Thirteenth occurrence, later the same day (caught live, on time this
+time):* the pre-commit status check showed the full signature — HEAD
+quietly back at the fork point, ~140 phantom modifications, this
+session's tracked files untracked. Log first, fetch, `git reset --mixed
+origin/arena/01a0b2ee-kalam`: two dirty files left, exactly the two
+being committed, edits intact, recommit on the correct base. The recipe
+held for the thirteenth time; the check that catches it is the one that
+runs before every commit, no exceptions.

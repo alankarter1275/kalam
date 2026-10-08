@@ -144,6 +144,17 @@ is isolated in its own step with fixture tests before any UI depends on it.
    unlocatable or ambiguous selection, or a selection crossing inline
    markup (that is paragraph editing, step 7's scope). Commit stores the
    patch (source: `typo`), reloads the chapter, confirms with a toast.
+   **The no-glitch contract (the owner, 2026-10-08):** the edit box is
+   anchored to the text, not the screen — repositioned on every repaint
+   from the same geometry highlights paint with, in the same frame the
+   page moves, so scrolling never leaves it behind or lagging. Scrolling
+   or turning while editing never commits, cancels or loses the half-
+   typed text; a paragraph scrolled off-view takes its box with it and
+   gives it back on return. While the box is open the selection chip
+   hides and the reader's idle cursor-hiding is suspended. Commit
+   reloads without a blank flash (repaint-in-place, position held by the
+   step-3 locator re-anchor) — on the test list. Fallback if fast
+   scrolling still swims: hold the viewport still while editing.
 5. **Review panel + bake.** Shared panel component (pending list with
    before → after, subset selection, collapsed history); bake worker on
    the sanitizer skeleton (mimetype-first, temp, verify — including a

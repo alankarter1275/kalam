@@ -674,3 +674,19 @@ step 1 is the only thing awaited.
   the editor. The headless render itself is kalam-reader's
   `preview::render` — the widget crate owns Session usage; the app
   only ever builds the filter.
+
+  **CI — green on run 4 (37840405710, 12m).** Three failures on the
+  way, one per run, each a different class. Run 1 (2m, clippy): the
+  §89 sweep for `Resolution::Stale` had excluded the enum's own
+  module — `plan_text_patch` matches `resolve_span`'s result
+  exhaustively there — §90. Run 2 (clippy): three lints — a
+  collapsible guard pair, `SourcePane.view` dead after its last
+  reader moved to the engine view, and the preview thread body
+  missing its wrapper's `too_many_arguments` allow. Run 3 (tests):
+  two epub_patches tests — my predecessor test asserted a 10-byte
+  span for an 11-byte replacement, and the kinds test's "other
+  kinds" probe *was* the new file kind, which now runs by design
+  (the probe is an unknown `note` kind again, the test renamed).
+  Run 4: build 8m42s (fmt clean, clippy clean, 590 tests), smoke
+  2m39s. CI's lock step pushed the refreshed Cargo.lock
+  (sourceview5 0.11.2) with run 1's publish.

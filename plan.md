@@ -542,3 +542,19 @@ step 1 is the only thing awaited.
   the reader half of the contract on `fixtures/epub/minimal.epub`:
   markup-carrying paragraph, document-order neighbours, firstness,
   and the refusal for a tag the chapter does not carry.
+
+  **CI — green on run 4 (37766393364, 11m).** Three runs, three
+  layers, one lesson apiece, none a design fault. Run 1
+  (37762409883): `gtk::IsA` is not a path — gtk-rs traits come from
+  the prelude (§86). Run 2 (37763660225): the layer run 1's
+  resolution error had masked — relm4's prelude is not gtk's, so
+  types.rs's first widget method calls needed `use gtk::prelude::*`,
+  and `VerifiedEdit` in a message payload needs the enum's derives
+  (§87). Run 3 (37765207494): the private-interfaces layer — a
+  `pub(crate)` type cannot sit in a `pub` enum's variant, even in a
+  private module (§88). Run 4 compiled, clippy'd, formatted, passed
+  every test — the 14 rewritten epub_spans tests and the 4
+  paragraph_identity integration tests on their first execution —
+  and the headless-sway smoke test booted the app. The heredoc
+  string-continuation near-miss (§85) was caught in review, before
+  any run wasted on it.

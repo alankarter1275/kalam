@@ -772,3 +772,24 @@ step 1 is the only thing awaited.
   chapters intact) — `the_done_when_composition_bakes_all_three`.
   The §38 field half (opens correctly in another reader) is the
   owner's check.
+
+  **CI — green on run 6 (37852991711, 9m: build 6m9s, smoke 2m35s).**
+  Five failures on the way, each a different class, three of them
+  lessons now in the pitfalls ledger. Run 1: four compile errors —
+  the sanitizer's test module imports none of the db types (its main
+  code is fully qualified), a filter closure over `(usize, &usize)`
+  whose binding modes shift with the pattern, and an `Fn` click
+  handler moving its captured `Arc` into a spawned thread (§93).
+  Run 2: the same filter, flipped — adding `&old` had turned `new`
+  into a reference; `new != *old` is the shape that holds either way.
+  Run 3–4: clippy's double-ended-iterator lints, a family — `.last()`
+  wants `.next_back()`, and `filter(..).next_back()` is its own lint;
+  `iter().rev().find(..)` ends the family (§94). Run 5: the
+  pages-touch-disk guardrail caught all eight of the new disk calls
+  in `src/pages` — staging, jacket update, staged deletions, every
+  one on a worker thread but none of them the guardrail's to excuse:
+  the follow-ups are the cover service's work, and they moved to
+  `src/epub.rs` beside `replace_cover_bytes` (§95). Run 6 green with
+  all 602 tests (12 new: 6 sanitizer structural, 1 remap, 1
+  pass-through, 4 rewrite units — plus the phase's composition
+  fixture among them).

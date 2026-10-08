@@ -2862,3 +2862,23 @@ cost this run its coverage: a compile failure in an early crate
 (`chapbook-epub` compiles before `chapbook-reader`, `kalam-reader` and
 the app) means the rest of the step's code was never checked — read a
 failed run's log as "verified up to the first error, nothing after".
+
+## 75. `pub` in a private module is not exported — the crate root decides
+
+**Date:** 2026-10-08, Phase 6 step 3; one more failed CI run (37724717910).
+
+**What happened.** §74's fix compiled the `chapbook-epub` library clean —
+and its own integration tests then failed to import
+`chapbook_epub::EntryFilter`, because the crate's `mod book;` is private
+and the crate root re-exports its public surface item by item
+(`pub use book::Book;`), a convention stated in that very lib.rs — which
+had never been read. A `pub` item in a private module is visible to the
+crate and to nothing else; external tests, downstream crates and the
+re-export chain all resolve through the root's explicit list.
+
+**The rule.** Adding a public type to one of this repo's crates means
+adding it to the crate root's re-exports in the same change — these
+crates export selectively by design (see the reasoning comment in
+`crates/chapbook-epub/src/lib.rs`), not by glob. And the general form:
+when work touches a crate's public surface, read its `lib.rs` first; it
+is the contract, and it is short.

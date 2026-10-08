@@ -1358,7 +1358,7 @@ impl EpubEditorModel {
             .pending_patches()
             .into_iter()
             .filter(|p| p.kind == "spine")
-            .last()
+            .next_back()
         {
             if let Some(parsed) = crate::epub_sanitizer::parse_spine_order(&op.replace_text) {
                 let mut sorted = parsed.clone();

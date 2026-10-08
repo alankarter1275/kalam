@@ -102,8 +102,25 @@ pub fn highlight_match_markers(snippet_with_markers: &str) -> String {
 }
 
 /// Extract chapters and text from an EPUB file.
-fn extract_epub_content(path: &Path) -> Result<Vec<(usize, String, String)>> {
-    let book = chapbook_epub::Book::open(path)?;
+///
+/// `patches` are the book's pending edits (Phase 6): applied to each
+/// chapter's bytes as it is read, through the same entry-filter seam the
+/// reader uses, so search matches what the reader shows — an unindexed
+/// fix would otherwise leave search pointing at wording the book no
+/// longer has.
+fn extract_epub_content(
+    path: &Path,
+    patches: Vec<crate::db::PatchRecord>,
+) -> Result<Vec<(usize, String, String)>> {
+    let mut book = chapbook_epub::Book::open(path)?;
+    if !patches.is_empty() {
+        // The reader's own rule: no filter at all for the common book —
+        // nothing to apply — keeps the read verbatim.
+        book.set_entry_filter(chapbook_epub::EntryFilter::new(move |href, bytes| {
+            let (patched, _) = crate::epub_patches::apply_text_patches(href, &bytes, &patches);
+            patched
+        }));
+    }
     let mut chapter_titles: HashMap<usize, String> = HashMap::new();
 
     fn collect_toc(entries: &[chapbook_core::TocEntry], map: &mut HashMap<usize, String>) {
@@ -171,8 +188,16 @@ pub fn index_book(catalog: &Catalog, book_id: i64) -> Result<()> {
         return Ok(());
     }
 
+    // Pending edits ride along (Phase 6): the index must reflect the
+    // text the reader shows, not the file's pre-edit bytes.
+    let pending = catalog
+        .get_pending_patches_for_book(book_id)
+        .unwrap_or_else(|err| {
+            log::warn!("pending patches for book {book_id} unreadable: {err} — indexing unpatched");
+            Vec::new()
+        });
     let sections = match book.format {
-        BookFormat::Epub => extract_epub_content(&book.file_path).unwrap_or_default(),
+        BookFormat::Epub => extract_epub_content(&book.file_path, pending).unwrap_or_default(),
         BookFormat::Pdf => extract_pdf_content(&book.file_path).unwrap_or_default(),
         _ => Vec::new(),
     };

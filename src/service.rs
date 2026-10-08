@@ -171,6 +171,10 @@ pub struct BookPageSnapshot {
     /// Why the highlights list is empty when that read failed — reported
     /// with the highlights wording, not a generic database error.
     pub annotations_error: Option<String>,
+    /// Pending EPUB edits (Phase 6), for the action row's badge. A failed
+    /// read shows zero — the same degrade-to-empty the rest of the
+    /// snapshot practices — rather than blocking the page.
+    pub pending_edits: usize,
     pub author_profile: Option<AuthorProfile>,
     /// Other books by the same (first) author, for the author card's
     /// thumbnails. Read once here instead of in the fill function.
@@ -563,6 +567,11 @@ impl LibraryService {
                 Ok(rows) => (rows, None),
                 Err(err) => (Vec::new(), Some(err.to_string())),
             };
+        let pending_edits = self
+            .catalog
+            .get_pending_patches_for_book(book_id)
+            .map(|rows| rows.len())
+            .unwrap_or(0);
         let first_author = detail
             .book
             .as_ref()
@@ -587,6 +596,7 @@ impl LibraryService {
             stats,
             annotations,
             annotations_error,
+            pending_edits,
             author_profile,
             author_other_books,
             // The service is DB-pure; the page's worker fills this.

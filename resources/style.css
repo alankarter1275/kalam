@@ -3339,11 +3339,46 @@ button.kalam-journey-more:hover {
  * Kept as separate selectors because each is addressed elsewhere by name. */
 .kalam-annotations-float,
 .kalam-shelves-float,
-.kalam-tags-float {
+.kalam-tags-float,
+.kalam-edits-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;
     box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
+}
+
+/* ── edits review panel (phase 6.5) ───────────────────── */
+/* Before → after reads as a correction: the old text struck and dim, the
+   new text bright below it, the meta line quiet — same hierarchy as the
+   highlights panel's text/meta pair. */
+.k-edit-before {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 0.86rem;
+    line-height: 1.4;
+    color: @kalam_text_dim;
+    text-decoration: line-through;
+}
+
+.k-edit-after {
+    font-family: "Fraunces", serif;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    color: @kalam_text;
+}
+
+.k-edit-meta {
+    font-size: 0.7rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.k-edits-section {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: @kalam_text_dim;
+    margin-top: 10px;
 }
 
 .kalam-series-float-title {

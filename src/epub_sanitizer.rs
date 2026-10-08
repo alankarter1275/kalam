@@ -205,6 +205,212 @@ pub fn sanitize_epub(path: &Path, backup: bool) -> Result<SanitizerReport> {
     Ok(report)
 }
 
+/// What one bake did: which patches were written into the file, which
+/// could not be (and why, as panel-ready text), and how many entries
+/// changed. `failed` patches stay pending — a bake never silently skips
+/// a patch it was told to apply.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct BakeReport {
+    pub applied: Vec<i64>,
+    pub failed: Vec<(i64, String)>,
+    pub entries_patched: usize,
+}
+
+/// Bake pending edits into the EPUB file itself (Phase 6 step 5) — the
+/// moment the virtual becomes real.
+///
+/// Same skeleton as [`sanitize_epub`]: mimetype first and stored, every
+/// other entry raw-copied, patched entries written deflated, all into a
+/// temp file that is verified before the swap, with the first bake's
+/// `.orig` backup kept as the undo story. Two things are stricter here:
+/// every patched entry must parse with the reader's own parser before
+/// anything is written (a fix that would break the chapter refuses the
+/// whole bake — the file on disk is never left worse), and every patch
+/// that fails to match is reported in the [`BakeReport`] rather than
+/// skipped.
+///
+/// The caller owns the database side — marking patches applied,
+/// re-hashing the book row, reindexing search — so this stays a pure
+/// file operation that tests can run against a zip alone.
+pub fn bake_epub(path: &Path, patches: &[crate::db::PatchRecord]) -> Result<BakeReport> {
+    if !path.is_file() {
+        return Err(anyhow!("file not found: {}", path.display()));
+    }
+    let mut report = BakeReport::default();
+
+    // Group the patches by their href. Patches carry the spine href the
+    // reader showed when the edit was made; all patches on one entry
+    // share that string, and the matcher matches against exactly it.
+    // Records are small strings — cloned per group so the matcher takes
+    // its own `&[PatchRecord]`.
+    let mut groups: std::collections::HashMap<String, Vec<crate::db::PatchRecord>> =
+        std::collections::HashMap::new();
+    for p in patches {
+        groups.entry(p.href.clone()).or_default().push(p.clone());
+    }
+    if groups.is_empty() {
+        return Ok(report);
+    }
+
+    // Resolve each href group to the zip member it names — raw first,
+    // then percent-decoded, the tolerance chapbook-epub's manifest
+    // lookup applies. A group whose entry is gone fails its patches.
+    let mut modified_files: std::collections::HashMap<String, Vec<u8>> =
+        std::collections::HashMap::new();
+    {
+        let file = fs::File::open(path)?;
+        let mut archive = ZipArchive::new(file).context("open EPUB for baking")?;
+        let mut hrefs: Vec<String> = groups.keys().cloned().collect();
+        hrefs.sort();
+        for href in hrefs {
+            let group = groups.remove(&href).unwrap_or_default();
+            let entry_name = if archive.by_name(&href).is_ok() {
+                href.clone()
+            } else if archive.by_name(&percent_decode_path(&href)).is_ok() {
+                percent_decode_path(&href)
+            } else {
+                for p in &group {
+                    report.failed.push((
+                        p.id,
+                        "its chapter is not in the book's file".to_string(),
+                    ));
+                }
+                continue;
+            };
+            let mut bytes = Vec::new();
+            archive
+                .by_name(&entry_name)?
+                .read_to_end(&mut bytes)
+                .with_context(|| format!("read {entry_name}"))?;
+            // The matcher applies the group in creation order — the same
+            // order the reader's entry filter applied when the later
+            // patches were planned, so what verified then holds here.
+            let (new_bytes, outcomes) =
+                crate::epub_patches::apply_text_patches(&href, &bytes, &group);
+            for outcome in &outcomes {
+                match &outcome.resolution {
+                    crate::epub_patches::Resolution::Found(_) => report.applied.push(outcome.id),
+                    crate::epub_patches::Resolution::NotFound => report.failed.push((
+                        outcome.id,
+                        "its text is no longer in the chapter — the file changed".to_string(),
+                    )),
+                    crate::epub_patches::Resolution::Ambiguous(n) => report
+                        .failed
+                        .push((outcome.id, format!("it now appears {n} times"))),
+                }
+            }
+            // Unchanged bytes — every patch in this group failed to
+            // match — leave the entry exactly as it is.
+            if new_bytes == bytes {
+                continue;
+            }
+            // The parse gate. `parse_xhtml`, the reader's parser, has a
+            // lenient HTML fallback that would shrug at an unclosed tag
+            // our splice introduced — so the gate is stricter than the
+            // reader: roxmltree, no fallback. An entry that was already
+            // not well-formed XML (real-world books exist) keeps its
+            // lenient path; one that was well-formed must stay that way.
+            if entry_parses_as_xml(&bytes) && !entry_parses_as_xml(&new_bytes) {
+                return Err(anyhow!(
+                    "the correction would make {href} unparseable — nothing was written"
+                ));
+            }
+            modified_files.insert(entry_name, new_bytes);
+        }
+    }
+
+    report.entries_patched = modified_files.len();
+    if modified_files.is_empty() {
+        // Nothing matched; the file stays as it is, byte for byte.
+        return Ok(report);
+    }
+
+    // The undo story: the first bake's backup is the pristine file.
+    {
+        let orig_path = crate::epub_metadata::backup_path(path);
+        if !orig_path.exists() {
+            fs::copy(path, &orig_path).context("back up the EPUB before baking")?;
+        }
+    }
+
+    // Repack — the sanitizer's skeleton, verbatim in shape.
+    let tmp = path.with_extension("epub.kalam-tmp");
+    {
+        let src = fs::File::open(path)?;
+        let mut archive = ZipArchive::new(src)?;
+        let dest = fs::File::create(&tmp)?;
+        let mut out = ZipWriter::new(dest);
+
+        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        if archive.by_name("mimetype").is_ok() {
+            out.start_file("mimetype", stored)?;
+            out.write_all(b"application/epub+zip")?;
+        }
+        let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i)?;
+            let name = entry.name().to_string();
+            if name == "mimetype" || name.ends_with('/') {
+                continue;
+            }
+            if let Some(replacement) = modified_files.remove(&name) {
+                drop(entry);
+                out.start_file(&name, deflated)?;
+                out.write_all(&replacement)?;
+            } else {
+                out.raw_copy_file(entry)?;
+            }
+        }
+        for (name, content) in modified_files {
+            out.start_file(&name, deflated)?;
+            out.write_all(&content)?;
+        }
+        out.finish()?;
+    }
+
+    let opf_path = {
+        let file = fs::File::open(&tmp)?;
+        let mut archive = ZipArchive::new(file)?;
+        crate::epub::find_opf_path_pub(&mut archive)?
+    };
+    if let Err(err) = verify_archive(&tmp, &opf_path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
+    }
+
+    fs::rename(&tmp, path).with_context(|| format!("replace {}", path.display()))?;
+    Ok(report)
+}
+
+/// Percent-decode a container path — the tolerance chapbook-epub's
+/// manifest lookup applies. A package may list a href encoded while the
+/// zip member is decoded; baking has to find the member either way.
+fn percent_decode_path(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    let hex = |b: u8| -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            _ => None,
+        }
+    };
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(hi << 4 | lo);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 struct ManifestInfo {
     css_paths: Vec<String>,
     spine_paths: Vec<String>,
@@ -821,6 +1027,14 @@ fn verify_archive(path: &Path, opf_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// The bake's parse gate: strict XML, no fallback (see `bake_epub`).
+fn entry_parses_as_xml(bytes: &[u8]) -> bool {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => roxmltree::Document::parse(text).is_ok(),
+        Err(_) => false,
+    }
+}
+
 fn read_entry_string<R: Read + Seek>(archive: &mut ZipArchive<R>, name: &str) -> Result<String> {
     let mut entry = archive
         .by_name(name)
@@ -951,4 +1165,229 @@ mod tests {
 
         let _ = fs::remove_file(test_epub);
     }
+    // ------------------------------------------------------------------
+    // Phase 6 step 5: the bake
+    // ------------------------------------------------------------------
+
+    fn write_minimal_epub(path: &Path, chapter: &str) {
+        let file = fs::File::create(path).expect("create test epub");
+        let mut zip = ZipWriter::new(file);
+        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file("mimetype", stored).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+        let deflated =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        zip.start_file("META-INF/container.xml", deflated).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#,
+        )
+        .unwrap();
+        zip.start_file("content.opf", deflated).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">test-book</dc:identifier>
+    <dc:title>Bake Test</dc:title>
+  </metadata>
+  <manifest><item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/></manifest>
+  <spine><itemref idref="c1"/></spine>
+</package>"#,
+        )
+        .unwrap();
+        zip.start_file("chapter1.xhtml", deflated).unwrap();
+        zip.write_all(chapter.as_bytes()).unwrap();
+        zip.finish().unwrap();
+    }
+
+    fn bake_patch(
+        id: i64,
+        href: &str,
+        find: &str,
+        replace: &str,
+        before: &str,
+        after: &str,
+    ) -> crate::db::PatchRecord {
+        crate::db::PatchRecord {
+            id,
+            book_id: 1,
+            kind: "text".into(),
+            href: href.into(),
+            chapter_index: 0,
+            find_text: find.into(),
+            replace_text: replace.into(),
+            context_before: before.into(),
+            context_after: after.into(),
+            source: "typo".into(),
+            status: "pending".into(),
+            created_at: "2026-10-08T00:00:00Z".into(),
+            applied_at: None,
+        }
+    }
+
+    fn chapter_text(path: &Path) -> String {
+        let file = fs::File::open(path).expect("reopen baked epub");
+        let mut archive = ZipArchive::new(file).expect("baked file is a valid zip");
+        let mut text = String::new();
+        archive
+            .by_name("chapter1.xhtml")
+            .expect("chapter survives the bake")
+            .read_to_string(&mut text)
+            .unwrap();
+        text
+    }
+
+    fn test_epub_path(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "kalam-test-bake-{tag}-{}.epub",
+            uuid::Uuid::new_v4()
+        ))
+    }
+
+    #[test]
+    fn a_bake_writes_the_fix_and_repacks_a_valid_epub() {
+        let path = test_epub_path("apply");
+        write_minimal_epub(
+            &path,
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>t</title></head><body><p>He said teh word.</p></body></html>"#,
+        );
+        let report = bake_epub(
+            &path,
+            &[bake_patch(1, "chapter1.xhtml", "teh", "the", "said ", " word")],
+        )
+        .expect("bake");
+
+        assert_eq!(report.applied, vec![1]);
+        assert!(report.failed.is_empty());
+        assert_eq!(report.entries_patched, 1);
+        let text = chapter_text(&path);
+        assert!(text.contains("He said the word."), "the fix is in the file: {text}");
+        assert!(!text.contains("teh"));
+
+        // The repack keeps the spec shape: mimetype first and stored.
+        let file = fs::File::open(&path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        assert_eq!(archive.by_index(0).unwrap().name(), "mimetype");
+        let mut mt = String::new();
+        archive.by_index(0).unwrap().read_to_string(&mut mt).unwrap();
+        assert_eq!(mt, "application/epub+zip");
+        assert!(archive.by_name("content.opf").is_ok());
+
+        // And the first bake's backup is the pristine original.
+        let orig = crate::epub_metadata::backup_path(&path);
+        assert!(orig.is_file(), "the .orig backup exists");
+        let backup = chapter_text(&orig);
+        assert!(backup.contains("teh"), "the backup holds the pre-bake text");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&orig);
+    }
+
+    #[test]
+    fn a_patch_that_no_longer_matches_is_reported_not_written() {
+        let path = test_epub_path("stale");
+        write_minimal_epub(
+            &path,
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>He said teh word.</p></body></html>"#,
+        );
+        let before = fs::read(&path).unwrap();
+        let report = bake_epub(
+            &path,
+            &[bake_patch(7, "chapter1.xhtml", "xyzzy", "nothing", "", "")],
+        )
+        .expect("a stale patch is a report, not an error");
+
+        assert!(report.applied.is_empty());
+        assert_eq!(report.failed.len(), 1);
+        assert_eq!(report.failed[0].0, 7);
+        assert_eq!(report.entries_patched, 0);
+        // Nothing matched, so nothing was rewritten — byte for byte.
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert!(
+            !crate::epub_metadata::backup_path(&path).exists(),
+            "no backup for a no-op bake"
+        );
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_bake_that_would_break_the_chapter_is_refused() {
+        let path = test_epub_path("broken");
+        write_minimal_epub(
+            &path,
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>He said teh word.</p></body></html>"#,
+        );
+        let before = fs::read(&path).unwrap();
+        // The splice is a raw source edit: an unescaped `<` in the
+        // replacement makes the entry unparseable, and the gate refuses
+        // the whole bake.
+        let err = bake_epub(
+            &path,
+            &[bake_patch(1, "chapter1.xhtml", "teh", "<b", "said ", " word")],
+        )
+        .expect_err("the parse gate refuses");
+        assert!(err.to_string().contains("unparseable"));
+        assert_eq!(fs::read(&path).unwrap(), before, "the file is untouched");
+        assert!(!crate::epub_metadata::backup_path(&path).exists());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_bake_composes_patches_in_creation_order() {
+        let path = test_epub_path("compose");
+        write_minimal_epub(
+            &path,
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>He said teh word.</p></body></html>"#,
+        );
+        // The second patch's text only exists once the first has applied
+        // — the same composition the virtual edits guarantee.
+        let report = bake_epub(
+            &path,
+            &[
+                bake_patch(1, "chapter1.xhtml", "teh", "the", "said ", " word"),
+                bake_patch(2, "chapter1.xhtml", "He said the word.", "She said the word.", "", ""),
+            ],
+        )
+        .expect("bake");
+        assert_eq!(report.applied, vec![1, 2]);
+        assert_eq!(report.entries_patched, 1);
+        let text = chapter_text(&path);
+        assert!(text.contains("She said the word."), "both fixes landed: {text}");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(crate::epub_metadata::backup_path(&path));
+    }
+
+    #[test]
+    fn the_second_bake_keeps_the_first_bakes_pristine_backup() {
+        let path = test_epub_path("twice");
+        write_minimal_epub(
+            &path,
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>He said teh word.</p></body></html>"#,
+        );
+        bake_epub(
+            &path,
+            &[bake_patch(1, "chapter1.xhtml", "teh", "the", "said ", " word")],
+        )
+        .expect("first bake");
+        let orig = crate::epub_metadata::backup_path(&path);
+        let first_backup = fs::read(&orig).unwrap();
+        bake_epub(
+            &path,
+            &[bake_patch(2, "chapter1.xhtml", "the word.", "the sentence.", "said ", "</p>")],
+        )
+        .expect("second bake");
+        // The backup still holds the pre-any-bake original — the undo
+        // story unwinds to the pristine file, not to an intermediate.
+        assert_eq!(fs::read(&orig).unwrap(), first_backup);
+        let text = chapter_text(&path);
+        assert!(
+            text.contains("He said the sentence."),
+            "the second bake composed onto the first: {text}"
+        );
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&orig);
+    }
+
 }

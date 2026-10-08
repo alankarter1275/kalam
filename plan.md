@@ -357,3 +357,39 @@ step 1 is the only thing awaited.
   published. The reader reload cost is instrumented as
   `reader_reload` in the timing spans — the step log for it belongs
   to the first field run.
+- **Step 5 (review panel + bake) — implemented 2026-10-08.** The
+  book details page's action row gains the edits entry point: a pencil
+  button, EPUB-only, badged with the pending count from the page
+  snapshot's new `pending_edits` field. It opens the review panel as
+  an in-app float — a shared panel component the full editor (step 8)
+  will host in its own chrome: pending edits as before → after rows
+  (struck dim over bright, the highlights panel's hierarchy) with live
+  checkboxes, per-edit discard, source · chapter · date meta, an Apply
+  button that counts its selection, and the applied history collapsed
+  under a disclosure toggle.
+
+  Apply runs the bake on a worker thread: `bake_epub` reuses the
+  sanitizer's repack skeleton — mimetype first and stored, other
+  entries raw-copied, patched entries deflated, temp file,
+  `verify_archive`, swap — with the first bake's `.orig` kept as the
+  pristine undo and a stricter parse gate than the reader's:
+  roxmltree (no HTML fallback) must still parse every entry that
+  parsed before, so a splice that would break a chapter refuses the
+  whole bake and nothing is written. `BakeReport` says what applied
+  and what could not match (nothing is silently skipped; a no-op bake
+  rewrites nothing). The worker then re-hashes the book row with
+  `rehash_book` (the remaster path, which also moves metadata
+  overrides), marks the applied patches, and reindexes search — all
+  on the same thread, because reindexing is not a main-loop job.
+
+  Search now matches the reader: the content index extracts through
+  the step-3 entry-filter seam with the book's pending patches (no
+  filter when there are none — the established verbatim rule). And
+  every render-side patch read became pending-only — the reader's
+  open, the inline-edit verification, the reload, and the index all
+  moved to `get_pending_patches_for_book`; the sidecar alone keeps
+  the full history, because a backup documents everything, not just
+  what is still to do. The bake's reader-reopen clause is dormant on
+  this surface (the float opens over the book page, where the reader
+  is unmounted; the next open reads the baked file from disk) and
+  activates with step 8's editor.

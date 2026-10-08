@@ -40,4 +40,5 @@ pub mod task_manager;
 pub mod browse;
 pub mod remote_detail;
 pub mod downloads;
+pub mod edits_panel;
 pub mod pdf_reader;

@@ -40,6 +40,8 @@ pub enum BookPageOut {
     },
     /// Open the highlights & quotes panel (in-app float).
     ViewHighlights,
+    /// Open the edits review panel (in-app float, Phase 6).
+    ViewEdits,
     /// Open the shelves checklist panel (in-app float).
     ShowShelves,
     /// Open the tags panel (in-app float) from the hero's "+" chip.
@@ -99,6 +101,8 @@ pub enum BookPageMsg {
     ViewHighlights,
     /// Remaster comic archive using Lanczos3 upscaler.
     RemasterComic,
+    /// Open the edits review panel (Phase 6).
+    ViewEdits,
 }
 
 pub struct BookPageModel {
@@ -117,6 +121,9 @@ pub struct BookPageModel {
     /// True from `init` until the first `Loaded` arrives: the skeleton
     /// phase. The not-found wording must not flash during it.
     loading: bool,
+    /// Pending EPUB edits (Phase 6), from the snapshot — the action
+    /// row's badge count.
+    pending_edits: usize,
     /// A chapter-titles parse is in flight; the journey card says
     /// "Loading chapter list…" rather than "unavailable" while it is.
     chapters_loading: bool,
@@ -318,6 +325,18 @@ impl Component for BookPageModel {
                                         16,
                                     )),
                                     connect_clicked => BookPageMsg::ToggleFinished,
+                                },
+
+                                #[name = "edits_btn"]
+                                gtk::Button {
+                                    add_css_class: "kalam-icon-btn",
+                                    set_focus_on_click: false,
+                                    set_tooltip_text: Some("Book edits"),
+                                    set_child: Some(&crate::icons::symbolic(
+                                        "document-edit-symbolic",
+                                        16,
+                                    )),
+                                    connect_clicked => BookPageMsg::ViewEdits,
                                 },
 
                                 #[name = "remaster_btn"]
@@ -663,6 +682,7 @@ impl Component for BookPageModel {
             chapter_titles: Vec::new(),
             chapter_titles_for: 0,
             loading: true,
+            pending_edits: 0,
             chapters_loading: false,
             file_btn_wired: false,
             progress: None,
@@ -707,6 +727,7 @@ impl Component for BookPageModel {
                     stats,
                     annotations,
                     annotations_error,
+                    pending_edits,
                     author_profile,
                     author_other_books,
                     file_size,
@@ -722,6 +743,7 @@ impl Component for BookPageModel {
                 self.progress = progress;
                 self.stats = stats;
                 self.annotations = annotations;
+                self.pending_edits = pending_edits;
                 self.author_profile = author_profile;
                 self.author_other_books = author_other_books;
                 self.file_size = file_size;
@@ -937,6 +959,9 @@ impl Component for BookPageModel {
             BookPageMsg::ViewHighlights => {
                 sender.output(BookPageOut::ViewHighlights).ok();
             }
+            BookPageMsg::ViewEdits => {
+                sender.output(BookPageOut::ViewEdits).ok();
+            }
             BookPageMsg::Refresh => {
                 // After a metadata save or a remaster the page needs fresh
                 // rows — same worker path as the initial load. Chapter
@@ -1075,6 +1100,7 @@ impl BookPageModel {
             // that is merely still loading.
             widgets.title.set_label("Loading…");
             widgets.remaster_btn.set_visible(false);
+            widgets.edits_btn.set_visible(false);
             widgets
                 .description
                 .set_label("Reading this book's details…");
@@ -1109,9 +1135,29 @@ impl BookPageModel {
                 book.format,
                 crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
             ));
+            // Edits are the EPUB's panel (Phase 6): shown for EPUBs, with
+            // the pending count as a badge when there is one — the tasks
+            // button's badge shape.
+            widgets.edits_btn.set_visible(book.format == BookFormat::Epub);
+            if self.pending_edits > 0 {
+                let n = gtk::Label::new(Some(&self.pending_edits.to_string()));
+                n.set_halign(gtk::Align::Center);
+                n.set_valign(gtk::Align::Center);
+                widgets.edits_btn.set_child(Some(&n));
+                widgets
+                    .edits_btn
+                    .set_tooltip_text(Some(&format!("Pending edits — {}", self.pending_edits)));
+            } else {
+                let icon = crate::icons::symbolic("document-edit-symbolic", 16);
+                icon.set_halign(gtk::Align::Center);
+                icon.set_valign(gtk::Align::Center);
+                widgets.edits_btn.set_child(Some(&icon));
+                widgets.edits_btn.set_tooltip_text(Some("Book edits"));
+            }
         } else {
             widgets.title.set_label("Book not found");
             widgets.remaster_btn.set_visible(false);
+            widgets.edits_btn.set_visible(false);
             widgets
                 .description
                 .set_label("This book was removed or does not exist.");
@@ -1925,7 +1971,7 @@ fn open_in_file_manager(file: &std::path::Path) {
 /// No close button here on purpose: these panels are dismissed by clicking
 /// the dimmed backdrop or pressing Esc, and each already ends in a Done
 /// button.
-fn panel_title(text: &str) -> gtk::Box {
+pub(crate) fn panel_title(text: &str) -> gtk::Box {
     let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     head.add_css_class("kalam-in-app-dialog-head");
     let label = gtk::Label::new(Some(text));

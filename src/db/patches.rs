@@ -84,6 +84,39 @@ impl Catalog {
         Ok(rows.flatten().collect())
     }
 
+    /// Only the pending patches, in creation order — what every render
+    /// path wants. Applied patches are already in the file's bytes once a
+    /// bake has written them; feeding them to the matcher again can only
+    /// produce not-found flags. The sidecar keeps reading
+    /// [`Self::get_patches_for_book`]: a backup documents everything that
+    /// was ever done, not just what is still to do.
+    pub fn get_pending_patches_for_book(&self, book_id: i64) -> Result<Vec<PatchRecord>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, book_id, kind, href, chapter_index, find_text, replace_text,
+                    context_before, context_after, source, status, created_at, applied_at
+             FROM patches WHERE book_id = ?1 AND status = 'pending' ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![book_id], |r| {
+            Ok(PatchRecord {
+                id: r.get(0)?,
+                book_id: r.get(1)?,
+                kind: r.get(2)?,
+                href: r.get(3)?,
+                chapter_index: r.get(4)?,
+                find_text: r.get(5)?,
+                replace_text: r.get(6)?,
+                context_before: r.get(7)?,
+                context_after: r.get(8)?,
+                source: r.get(9)?,
+                status: r.get(10)?,
+                created_at: r.get(11)?,
+                applied_at: r.get(12)?,
+            })
+        })?;
+        Ok(rows.flatten().collect())
+    }
+
     /// Mark one patch permanently applied. The row is kept — applied patches
     /// are history, documenting what a bake changed and when; the undo story
     /// is the `.epub.orig` backup, not this table.
@@ -232,4 +265,37 @@ mod tests {
         assert_eq!(side.patches[0].href, "text/chapter1.xhtml");
         assert_eq!(side.patches[0].status, "pending");
     }
+    #[test]
+    fn pending_reads_leave_applied_history_behind() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let book = seed(&cat, "Dune");
+        let first = cat
+            .insert_patch(book, "text", "c1.xhtml", 0, "teh", "the", "", "", "typo")
+            .unwrap();
+        let second = cat
+            .insert_patch(book, "text", "c1.xhtml", 0, "recieve", "receive", "", "", "typo")
+            .unwrap();
+
+        // Before any bake: everything the matcher will see, in apply order.
+        let pending = cat.get_pending_patches_for_book(book).unwrap();
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending[0].id, first, "creation order is the apply order");
+
+        // A bake lands: the first is applied, the second stays pending.
+        cat.mark_patch_applied(first).unwrap();
+
+        let pending = cat.get_pending_patches_for_book(book).unwrap();
+        assert_eq!(
+            pending.iter().map(|p| p.id).collect::<Vec<_>>(),
+            vec![second],
+            "the render path must not re-feed applied patches to the matcher"
+        );
+
+        // The sidecar's read still sees the whole history.
+        let all = cat.get_patches_for_book(book).unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].status, "applied");
+        assert_eq!(all[1].status, "pending");
+    }
+
 }

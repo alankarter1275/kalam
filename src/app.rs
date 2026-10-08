@@ -68,6 +68,11 @@ pub enum AppMsg {
     OpenAnnotationsFloat {
         book_id: i64,
     },
+    /// Open the edits review panel (in-app float, Phase 6) from the book
+    /// page's action row.
+    OpenEditsFloat {
+        book_id: i64,
+    },
     /// Open the shelves checklist panel (in-app float).
     OpenShelvesFloat {
         book_id: i64,
@@ -197,6 +202,10 @@ enum Floating {
     },
     /// Tags panel — a plain widget panel, nothing to keep alive.
     Tags,
+    /// Edits review panel (Phase 6) — a plain widget panel; the bake
+    /// worker it spawns outlives the float harmlessly (its channel
+    /// delivers to widgets that stay ref-counted until the verdict).
+    Edits,
     /// The `w` task dialog. Holds the box its rows are drawn into so the
     /// app-wide tick can repaint it.
     Tasks,
@@ -430,6 +439,33 @@ impl AppModel {
         panel.grab_focus();
 
         self.floating = Some(Floating::Annotations);
+    }
+
+    /// The edits review panel (Phase 6 step 5): one book's pending
+    /// edits, before → after, and the bake that writes them into the
+    /// file. The shared panel component — the full editor (step 8)
+    /// hosts the same builder in its own chrome.
+    fn open_edits_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        let _span = crate::timing::measure("dialog_open:edits_float");
+        let _activity = crate::timing::activity("dialog_open:edits_float");
+        self.close_floating();
+
+        let s = sender.clone();
+        let panel =
+            crate::pages::edits_panel::build_edits_panel(self.catalog.clone(), book_id, move || {
+                s.input(AppMsg::CloseBookDialog)
+            });
+        panel.set_size_request(520, 540);
+        panel.set_hexpand(false);
+        panel.set_vexpand(false);
+        panel.set_halign(gtk::Align::Center);
+        panel.set_valign(gtk::Align::Center);
+        self.float_host.append(&panel);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        panel.grab_focus();
+
+        self.floating = Some(Floating::Edits);
     }
 
     fn open_shelves_floating(
@@ -726,6 +762,7 @@ impl AppModel {
                             }
                         }
                         BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat { book_id: id },
+                        BookPageOut::ViewEdits => AppMsg::OpenEditsFloat { book_id: id },
                         BookPageOut::ShowShelves => AppMsg::OpenShelvesFloat {
                             book_id: id,
                             from_book_float: false,
@@ -1706,6 +1743,9 @@ impl Component for AppModel {
             }
             AppMsg::OpenAnnotationsFloat { book_id } => {
                 self.open_annotations_floating(book_id, &sender);
+            }
+            AppMsg::OpenEditsFloat { book_id } => {
+                self.open_edits_floating(book_id, &sender);
             }
             AppMsg::OpenShelvesFloat {
                 book_id,

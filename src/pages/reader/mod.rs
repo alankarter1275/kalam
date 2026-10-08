@@ -678,12 +678,18 @@ impl Component for ReaderModel {
             );
             // The book's pending edits (Phase 6) ride along: the reader
             // applies them to each chapter's bytes as it parses, and the
-            // file itself stays untouched. A failed read opens the book
-            // unpatched rather than not at all — the log says why.
-            let patches = catalog.get_patches_for_book(book_id).unwrap_or_else(|err| {
-                log::warn!("patches for book {book_id} unreadable: {err:#} — opening unpatched");
-                Vec::new()
-            });
+            // file itself stays untouched. Pending only: applied patches
+            // are already in the file's bytes once a bake has written
+            // them. A failed read opens the book unpatched rather than
+            // not at all — the log says why.
+            let patches = catalog
+                .get_pending_patches_for_book(book_id)
+                .unwrap_or_else(|err| {
+                    log::warn!(
+                        "patches for book {book_id} unreadable: {err:#} — opening unpatched"
+                    );
+                    Vec::new()
+                });
             match engine::open_engine(&book.file_path, prefs, patches) {
                 Ok(view) => {
                     let (ch, frac) = catalog
@@ -1955,7 +1961,14 @@ impl Component for ReaderModel {
                 let Some(path) = self.book_path.clone() else { return };
                 let chapter = edit.chapter;
                 let original = edit.original.clone();
-                let prior = match self.service.catalog().get_patches_for_book(self.book_id) {
+                // Pending only — the same list the reader's entry filter
+                // runs, so the verification sees exactly the chapter the
+                // reader shows.
+                let prior = match self
+                    .service
+                    .catalog()
+                    .get_pending_patches_for_book(self.book_id)
+                {
                     Ok(p) => p,
                     Err(e) => {
                         crate::notify::error("Could not read this book's saved fixes", &e.to_string());
@@ -3185,7 +3198,7 @@ impl ReaderModel {
         let patches = self
             .service
             .catalog()
-            .get_patches_for_book(self.book_id)
+            .get_pending_patches_for_book(self.book_id)
             .unwrap_or_else(|err| {
                 log::warn!(
                     "patches for book {} unreadable: {err:#} — reloading unpatched",

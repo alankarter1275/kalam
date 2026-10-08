@@ -2928,3 +2928,33 @@ origin/arena/01a0b2ee-kalam`: two dirty files left, exactly the two
 being committed, edits intact, recommit on the correct base. The recipe
 held for the thirteenth time; the check that catches it is the one that
 runs before every commit, no exceptions.
+
+## 78. glib's channel API is not where memory says it is — copy the house pattern, not the docs in your head
+
+**Date:** 2026-10-08, Phase 6 step 4; first failed run (37733497947).
+
+Three errors in one lesson. The inline edit's verdict needed to cross
+from a worker thread to the main loop as plain data. Written from
+memory of gtk-rs docs: `gtk::glib::MainContext::channel::<T>()` plus
+`gtk::glib::Sender<T>`/`Receiver::attach` — none of it exists in the
+workspace's glib 0.22 (`E0599` no `channel` on `MainContext`, `E0425`
+no `Sender` in the crate root). The API moved across glib versions,
+and "it worked in a project once" is not an API check. The same run
+caught the sibling mistake: `EventControllerFocus::connect_leave` was
+written as a zero-argument closure; generated gtk-rs signals pass the
+object, so it takes one (`E0593`).
+
+The fix was already in the tree: `tasks.rs` ships the worker→main-loop
+shape this repo uses — `async_channel::unbounded::<T>()`, the worker
+calling `send_blocking`, and `glib::spawn_future_local` receiving on
+the main loop (no `Send` bound on the receiving future, which is the
+whole point: the relm4 sender stays main-loop-side). Rule: before
+inventing a threading bridge, grep for an existing one in the codebase
+and copy it; a pattern that already compiles here beats an API
+remembered from anywhere else.
+
+*And the retrieval worked as designed:* the Actions log is unreadable
+from this environment (results-receiver host unreachable), so the
+errors came from `ci-logs/clippy-latest.txt` — the workflow commits
+its own failure log to the branch. `git pull --rebase` after a red run
+is step one, before any `gh run view --log`.

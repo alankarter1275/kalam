@@ -1962,17 +1962,19 @@ impl Component for ReaderModel {
                         return;
                     }
                 };
-                // Plain data over a glib main-context channel — nothing
-                // GTK-side crosses the thread; the main loop turns the
-                // verdict into InlineEditVerified. One verdict per
-                // channel, so the source detaches on delivery.
-                let (verdict_tx, verdict_rx) = gtk::glib::MainContext::channel::<
+                // Plain data over an async_channel — the tasks
+                // manager's worker→main-loop shape: the worker sends
+                // blocking, a local future on the main loop receives,
+                // and nothing GTK-side crosses the thread. One verdict
+                // per edit, so the future ends after one receive.
+                let (verdict_tx, verdict_rx) = async_channel::unbounded::<
                     Result<(String, crate::epub_patches::PlannedPatch), String>,
                 >();
                 let tx = sender.input_sender().clone();
-                verdict_rx.attach(None, move |verdict| {
-                    let _ = tx.send(ReaderMsg::InlineEditVerified(verdict));
-                    gtk::glib::ControlFlow::Break
+                gtk::glib::spawn_future_local(async move {
+                    if let Ok(verdict) = verdict_rx.recv().await {
+                        let _ = tx.send(ReaderMsg::InlineEditVerified(verdict));
+                    }
                 });
                 engine::verify_inline_edit(path, chapter, prior, original, corrected, verdict_tx);
                 // The editor stays open until the verdict lands — a

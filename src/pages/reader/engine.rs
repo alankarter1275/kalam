@@ -740,7 +740,7 @@ pub(crate) fn build_inline_editor(
     let tx = sender.input_sender().clone();
     let entry_focus = entry.clone();
     let focus = gtk::EventControllerFocus::new();
-    focus.connect_leave(move || {
+    focus.connect_leave(move |_| {
         if done.replace(true) {
             return;
         }
@@ -779,24 +779,27 @@ pub(crate) fn position_inline_editor(entry: &gtk::Entry, rect: &gtk::gdk::Rectan
 /// `prior` are the book's already-stored patches: the correction is
 /// planned against the chapter as the reader currently shows it, which
 /// is the text it will be matched against at render as well. The
-/// verdict goes back over `verdict_tx` — a glib main-context channel
-/// carrying plain data, so nothing GTK-side crosses the thread — and
-/// the main loop turns it into [`ReaderMsg::InlineEditVerified`]: `Ok`
-/// carries the entry href and the ready-to-store patch, `Err` carries
-/// the toast text for a refusal. The editor stays open either way; a
-/// refusal is information, not a lost edit.
+/// verdict goes back over `verdict_tx` — an `async_channel` carrying
+/// plain data, the tasks manager's worker→main-loop shape, so nothing
+/// GTK-side crosses the thread — and the main loop turns it into
+/// [`ReaderMsg::InlineEditVerified`]: `Ok` carries the entry href and
+/// the ready-to-store patch, `Err` carries the toast text for a
+/// refusal. The editor stays open either way; a refusal is
+/// information, not a lost edit.
 pub(crate) fn verify_inline_edit(
     book_path: std::path::PathBuf,
     chapter: usize,
     prior: Vec<PatchRecord>,
     original: String,
     corrected: String,
-    verdict_tx: gtk::glib::Sender<Result<(String, crate::epub_patches::PlannedPatch), String>>,
+    verdict_tx: async_channel::Sender<
+        Result<(String, crate::epub_patches::PlannedPatch), String>,
+    >,
 ) {
     std::thread::spawn(move || {
         let verdict =
             verify_inline_edit_in_thread(&book_path, chapter, &prior, &original, &corrected);
-        let _ = verdict_tx.send(verdict);
+        let _ = verdict_tx.send_blocking(verdict);
     });
 }
 

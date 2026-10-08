@@ -315,9 +315,10 @@ step 1 is the only thing awaited.
   to source form first (`&`, `<`, `>`); the span resolves anchor-free
   (zero matches → NotFound, more than one → Ambiguous); 32-byte
   context anchors are captured around the verified span, rounded to
-  char boundaries. The verdict crosses back as plain data over a glib
-  main-context channel — no GTK types cross the thread, the main loop
-  turns it into `InlineEditVerified`. Unchanged is answered inline
+  char boundaries. The verdict crosses back as plain data over an
+  `async_channel` — the tasks manager's worker→main-loop shape: no GTK
+  types cross the thread, a local future on the main loop turns it into
+  `InlineEditVerified`. Unchanged is answered inline
   without opening the book; every refusal toasts and leaves the box
   open with its text. A verified patch stores with source `typo`, and
   the book reopens through the step-3 seam: the reader's overlay is

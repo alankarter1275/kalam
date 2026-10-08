@@ -130,9 +130,20 @@ is isolated in its own step with fixture tests before any UI depends on it.
    crate); `open_engine` gains the patch set; loader thread applies
    patches before parse. Fixtures: patched render; annotation re-anchor
    survival (on patched text) and graceful degradation (quote changed).
-4. **`[Fix Typo]` popover.** Chip button → popover (selected text,
-   correction, Save). Save resolves the span against the entry bytes,
-   stores the patch, reloads the chapter, confirms with a toast.
+4. **Inline selection editing** (redesigned 2026-10-08 at the owner's
+   direction — no popover). A pencil button on the selection chip makes
+   the selection itself editable: a text field overlaid exactly on the
+   selection's rectangle, in the reader's own typeface and size,
+   outlined like a focused field, pre-filled with the selected text, a
+   live caret in it. The reader is a canvas renderer, so this is an
+   overlay made to match the page — on commit the chapter re-renders
+   through the step-3 seam, which is what makes the change look instant
+   and in-place. Enter or clicking elsewhere commits; Escape cancels.
+   Commit verifies the run against the entry bytes (`resolve_span`) and
+   refuses — toast, the box stays open — an unchanged text, an
+   unlocatable or ambiguous selection, or a selection crossing inline
+   markup (that is paragraph editing, step 7's scope). Commit stores the
+   patch (source: `typo`), reloads the chapter, confirms with a toast.
 5. **Review panel + bake.** Shared panel component (pending list with
    before → after, subset selection, collapsed history); bake worker on
    the sanitizer skeleton (mimetype-first, temp, verify — including a
@@ -145,15 +156,21 @@ is isolated in its own step with fixture tests before any UI depends on it.
    edited elements (deterministic output for spans we author). Fixtures:
    round-trip stability, spans across inline markup, the HTML-fallback
    path's conservative behavior.
-7. **Proofreading edit mode.** Pencil toggle in the reader chrome; click a
-   paragraph → in-place editing bound to that paragraph; commit = a
-   paragraph patch via step 6's machinery.
+7. **Proofreading edit mode — the same overlay, paragraph-scoped.** With
+   proofreading on (a pencil toggle in the reader chrome), clicking a
+   paragraph opens the step-4 inline editor over the whole paragraph;
+   commit = a paragraph patch via step 6's span machinery, so rewording
+   that crosses inline markup works. One editing feel for both scopes.
 8. **Full editor, default surface.** New route with a way back (the
    anti-bloat rule); the editor opens its own `chapbook_epub::Book`;
    chapter list; rendered chapter; paragraph editing as in step 7; edits
    saved as patches (source: Editor); patches badge + panel in the editor
    chrome. Every apply path gets an activity guard + timing span (§45);
-   no container-mutation swaps (§48).
+   no container-mutation swaps (§48). **Entry point from the reader
+   (the owner's 2026-10-08 addition): a small pencil button at the top
+   of the reader's left sidebar TOC, beside the cover, opening the
+   editor for the current book** — it ships with this step, because
+   before the editor exists it would be a button to nowhere.
 9. **Raw HTML/CSS mode.** `sourceview5` dependency (README + CI image
    notes); whole-entry file patches with before-hash guards; debounced
    preview rendered on a service thread; the Preview toggle and the
@@ -237,3 +254,16 @@ step 1 is the only thing awaited.
   `the_patched_view_paints`, `a_highlight_re_anchors_over_edits_before_it`,
   `a_highlight_whose_words_were_edited_degrades_gracefully`) and both
   hook-contract tests named and passing in the full log.
+- **Design change for step 4 (the owner, 2026-10-08): no popover —
+  inline selection editing.** The owner's view: select something, click
+  the pencil on the actions box (the selection chip), and the selection
+  itself becomes editable — an outline around it, a cursor in it, the
+  paragraph seemingly edited in realtime on the page. The step-4
+  implementation is that feel: a text field overlaid on the selection's
+  rectangle in the reader's own typeface (the canvas renderer makes a
+  matched overlay the honest way to get a real caret), Enter/click-away
+  commits, Escape cancels, commit-time verification and refusals
+  unchanged. Step 7 reuses the same overlay paragraph-scoped. Also the
+  owner's addition for step 8: a small pencil button at the top of the
+  reader's left sidebar TOC, beside the cover, opening the full editor —
+  ships with the editor, not before.

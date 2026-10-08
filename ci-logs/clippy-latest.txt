@@ -1,4 +1,8 @@
-(no lines matched; last 100 lines of output)
+src/pages/reader/engine.rs:794:28: [1m[91merror[E0425][0m: cannot find type `Sender` in crate `gtk::glib`: not found in `gtk::glib`
+src/pages/reader/engine.rs:743:11: [1m[91merror[E0593][0m: closure is expected to take 1 argument, but it takes 0 arguments: expected closure that takes 1 argument
+src/pages/reader/mod.rs:1969:72: [1m[91merror[E0599][0m: no associated function or constant named `channel` found for struct `glib::MainContext` in the current scope: associated function or constant not found in `glib::MainContext`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -19,8 +23,13 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 11.81s
---- run 37727355176 ---
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/pages/reader/engine.rs:794:28: [1m[91merror[E0425][0m: cannot find type `Sender` in crate `gtk::glib`: not found in `gtk::glib`
+src/pages/reader/engine.rs:743:11: [1m[91merror[E0593][0m: closure is expected to take 1 argument, but it takes 0 arguments: expected closure that takes 1 argument
+src/pages/reader/mod.rs:1969:72: [1m[91merror[E0599][0m: no associated function or constant named `channel` found for struct `glib::MainContext` in the current scope: associated function or constant not found in `glib::MainContext`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+--- run 37733497947 ---

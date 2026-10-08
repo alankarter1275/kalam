@@ -389,8 +389,12 @@ impl Session {
     /// highlight made before an edit still lands on its words after text
     /// before them shifted. No-op for non-EPUB books.
     pub fn set_entry_filter(&mut self, filter: EntryFilter) {
-        if let OpenBook::Epub(epub) = &mut self.book {
-            epub.set_entry_filter(filter);
+        match &mut self.book {
+            OpenBook::Epub(epub) => epub.set_entry_filter(filter),
+            // Reachable only when an image-book feature built the other
+            // variants; the filter is EPUB-only capability, a no-op there.
+            #[cfg(any(feature = "_comic", feature = "pdf"))]
+            _ => {}
         }
     }
 
@@ -402,6 +406,7 @@ impl Session {
     pub(crate) fn text_is_filtered(&self) -> bool {
         match &self.book {
             OpenBook::Epub(epub) => epub.has_entry_filter(),
+            #[cfg(any(feature = "_comic", feature = "pdf"))]
             _ => false,
         }
     }

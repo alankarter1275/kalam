@@ -2882,3 +2882,27 @@ crates export selectively by design (see the reasoning comment in
 `crates/chapbook-epub/src/lib.rs`), not by glob. And the general form:
 when work touches a crate's public surface, read its `lib.rs` first; it
 is the contract, and it is short.
+
+## 76. `OpenBook`'s other variants are feature-gated — no if-lets, no bare wildcards
+
+**Date:** 2026-10-08, Phase 6 step 3; the third failed run of the step
+(37725602605).
+
+**What happened.** The seam's `set_entry_filter` used
+`if let OpenBook::Epub(..)` and `text_is_filtered` a `_` wildcard arm —
+both fine in a build with the image-book features, both errors under
+`-D warnings` in a build without them, because `OpenBook`'s `Comic` and
+`Pdf` variants are `#[cfg]`-gated and the default workspace build sees a
+single-variant enum: the if-let is irrefutable and the `_` arm
+unreachable. Nothing had ever matched on `OpenBook` before — the enum's
+own `publication()` shows the house pattern: cfg-gate the arms, no
+wildcard.
+
+**The rule.** Matching a feature-gated enum in this repo means gating
+the fallback arm with the same features
+(`#[cfg(any(feature = "_comic", feature = "pdf"))] _ => ...`) or, like
+`publication()`, gating each named arm. Never `if let` on a variant that
+can be the only one. And the meta-lesson of this step's three runs: a
+crate that compiles under one feature set proves nothing about another —
+the workspace clippy and test builds exercise different sets, so new
+enum-touching code has to be right under all of them.

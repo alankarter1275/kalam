@@ -176,6 +176,22 @@ pub enum ReaderMsg {
     EnginePosition(usize, f64),
     /// From the engine: a finished selection (text, where), or cleared.
     EngineSelection(Option<(String, gtk::gdk::Rectangle)>),
+    /// From the engine, after a draw moved it: where the selection now
+    /// sits in widget coordinates (`None` = gone/off screen). The inline
+    /// editor follows its text with this.
+    EngineSelectionMoved(Option<gtk::gdk::Rectangle>),
+    /// Phase 6.4: the pencil on the selection chip was pressed — open
+    /// the inline editor over the selection.
+    BeginInlineEdit,
+    /// Commit the inline edit with this text (Enter or click-away).
+    CommitInlineEdit(String),
+    /// Abandon the inline edit (Escape).
+    CancelInlineEdit,
+    /// The background verification of an inline edit finished. Ok carries
+    /// the entry href and the planned patch to store; Err carries
+    /// ready-to-show toast text for a refusal (unchanged, not locatable,
+    /// ambiguous) — the editor stays open either way.
+    InlineEditVerified(Result<(String, crate::epub_patches::PlannedPatch), String>),
     /// From the selection chip.
     HighlightSelection(String),
     SaveAnnotationDetails {
@@ -252,4 +268,19 @@ pub enum ReaderMsg {
     UserScrolled,
     TopEdgeHover(bool),
     BottomEdgeHover(bool),
+}
+
+/// An open inline edit (phase 6.4): the selection's original text, the
+/// chapter it was made in, the entry laid over it, and the provider that
+/// typesets the entry in the reader's own face. The entry is the source
+/// of truth for the current text; `original` is what a commit is planned
+/// against.
+pub(crate) struct InlineEdit {
+    pub(crate) original: String,
+    pub(crate) chapter: usize,
+    pub(crate) entry: gtk::Entry,
+    /// The entry's typeface provider, registered on the display by
+    /// `engine::build_inline_editor` and unregistered when this edit
+    /// closes, so sessions do not accumulate one per edit.
+    pub(crate) provider: gtk::CssProvider,
 }

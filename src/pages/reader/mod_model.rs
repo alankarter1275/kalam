@@ -92,6 +92,20 @@ pub struct ReaderModel {
     pub(crate) dict_lookup_def: Option<String>,
     pub(crate) dict_context: Option<String>,
     pub(crate) last_selection: Option<String>,
+    /// Phase 6.4: the open inline edit, if any — the entry laid over the
+    /// selection, the text it started as, and the chapter it belongs to.
+    pub(crate) inline_edit: Option<InlineEdit>,
+    /// Set while a committed edit swaps the reader's view (phase 6.4):
+    /// the open→reload→restore window must not read as reader input.
+    pub(crate) reader_reloading: bool,
+    /// The reader's persistent overlay (phase 6.4): the view mounts in it
+    /// and the inline editor mounts over it. A reload swaps the view
+    /// with `set_child`; the overlay itself stays, so widgets laid over
+    /// the reader keep their parent across a reload.
+    pub(crate) reader_overlay: Option<gtk::Overlay>,
+    /// The open book's file path, for the edit-verification worker —
+    /// the thread cannot reach the view's own copy.
+    pub(crate) book_path: Option<std::path::PathBuf>,
     pub(crate) session_id: Option<i64>,
     pub(crate) session_start: std::time::Instant,
     pub(crate) session_start_pct: i64,

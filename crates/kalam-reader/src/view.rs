@@ -207,6 +207,9 @@ type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
 type HighlightTapCallback = dyn Fn(i64, f64, f64);
 type WordTapCallback = dyn Fn(&str, f64, f64);
 type WordHoverCallback = dyn Fn(Option<&str>, f64, f64);
+/// Told where the selection ended up after a layout: its union rect in
+/// widget coordinates, or `None` when it is not on screen.
+type SelectionMovedCallback = dyn Fn(Option<Rect>);
 
 /// Callbacks a shell installs. All run on the GTK main thread, from inside
 /// the widget's own handlers — keep them quick, or defer to an idle. A
@@ -223,6 +226,7 @@ struct Callbacks {
     highlight_tap: Option<Box<HighlightTapCallback>>,
     word_tap: Option<Box<WordTapCallback>>,
     word_hover: Option<Box<WordHoverCallback>>,
+    selection_moved: Option<Box<SelectionMovedCallback>>,
 }
 
 struct Inner {
@@ -277,6 +281,14 @@ struct Inner {
     /// The handles as last painted, widget coordinates — what the next
     /// press is tested against. `None` without a selection on screen.
     handles: Cell<Option<[Handle; 2]>>,
+    /// The selection's union rect as last laid out, widget coordinates:
+    /// what the chip anchors to and the inline editor follows. `None`
+    /// without a selection on screen. Set by [`Self::place_handles`],
+    /// told to the shell by [`Self::report_selection_moved`].
+    selection_rect: Cell<Option<Rect>>,
+    /// The last rect the shell was told about, so a repaint that moved
+    /// nothing says nothing — same shape as `last_reported`.
+    selection_rect_reported: Cell<Option<Rect>>,
     /// The named cursor the area shows, so motion events set it only
     /// when it changes. `None` is the default arrow.
     cursor: Cell<Option<&'static str>>,
@@ -405,6 +417,8 @@ impl ReaderView {
                 pending_jump: Cell::new(false),
                 dragging: Cell::new(false),
                 handles: Cell::new(None),
+                selection_rect: Cell::new(None),
+                selection_rect_reported: Cell::new(None),
                 cursor: Cell::new(None),
                 reading_offset: Cell::new(None),
                 vadjustment: gtk::Adjustment::new(0.0, 0.0, 0.0, ARROW_STEP as f64, 0.0, 0.0),
@@ -616,6 +630,16 @@ impl ReaderView {
     /// when the selection is cleared (`None`) — show and hide the chip.
     pub fn connect_selection(&self, f: impl Fn(Option<&SelectedText>) + 'static) {
         self.inner.callbacks.borrow_mut().selection = Some(Box::new(f));
+    }
+
+    /// Called after every draw that moved the selection's rect: where the
+    /// selected text now sits in widget coordinates (`None` when the
+    /// selection is gone or scrolled off screen). What the selection chip
+    /// anchors to, and what the inline editor (phase 6.4) follows as the
+    /// reader scrolls mid-edit. Fired from an idle after the draw, and
+    /// only on change — a repaint that moved nothing says nothing.
+    pub fn connect_selection_moved(&self, f: impl Fn(Option<Rect>) + 'static) {
+        self.inner.callbacks.borrow_mut().selection_moved = Some(Box::new(f));
     }
 
     /// Called for a link the engine will not follow itself — anything
@@ -1426,8 +1450,24 @@ impl ReaderView {
     fn after_draw(&self) {
         self.sync_adjustment();
         self.report_position();
+        self.report_selection_moved();
         self.schedule_char_count();
         self.schedule_prefetch();
+    }
+
+    /// Tell the shell when the selection's rect moved — the chip and the
+    /// inline editor both anchor to it. Runs from the same idle as the
+    /// position report, after the frame that moved it is on screen: by
+    /// the time the shell repositions anything, the text it is anchoring
+    /// to is already where it belongs, so nothing visibly swims.
+    fn report_selection_moved(&self) {
+        let rect = self.inner.selection_rect.get();
+        if self.inner.selection_rect_reported.replace(rect) == rect {
+            return;
+        }
+        if let Some(cb) = &self.inner.callbacks.borrow().selection_moved {
+            cb(rect);
+        }
     }
 
     /// Count the book's characters once, in an idle after the first
@@ -1588,14 +1628,23 @@ impl ReaderView {
     /// — without a selection, or with one whose lines are all off screen
     /// (scrolled away in a strip).
     fn place_handles(&self, s: &mut Session) -> Option<[Handle; 2]> {
-        let handles = s.selected_range().and_then(|(start, end)| {
+        let placed = s.selected_range().and_then(|(start, end)| {
             let spine = s.spine();
             let rects = self.widget_rects(s, spine, start, end);
             let (first, last) = ends(&rects)?;
-            Some(Handle::pair(first, last))
+            let rect = union(&rects)?;
+            Some((Handle::pair(first, last), rect))
         });
-        self.inner.handles.set(handles);
-        handles
+        self.inner.handles.set(placed.as_ref().map(|(h, _)| *h));
+        // Where the selection sits this frame — the chip's anchor, and
+        // what the inline editor follows on scroll. Not told to the shell
+        // here (a callback fired mid-draw could queue another draw and
+        // the two would chase); `report_selection_moved`, from the idle
+        // after this frame, picks it up.
+        self.inner
+            .selection_rect
+            .set(placed.as_ref().map(|(_, r)| *r));
+        placed.map(|(h, _)| h)
     }
 
     /// Report the position if it moved since last time. Called from an

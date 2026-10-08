@@ -932,6 +932,10 @@ impl Component for ReaderModel {
             dict_lookup_def: None,
             dict_context: None,
             last_selection: None,
+            inline_edit: None,
+            reader_reloading: false,
+            reader_overlay: None,
+            book_path: book.as_ref().map(|b| b.file_path.clone()),
             session_id: None,
             session_start: std::time::Instant::now(),
             session_start_pct: 0,
@@ -1025,6 +1029,10 @@ impl Component for ReaderModel {
             overlay.set_child(Some(view.widget()));
             overlay.add_overlay(&scrollbar);
             widgets.web_host.append(&overlay);
+            // The overlay outlives this view: a committed edit (phase
+            // 6.4) swaps the view inside it and the inline editor stays
+            // a child of the overlay, not of either view.
+            model.reader_overlay = Some(overlay);
 
             engine::wire(view, &sender);
             if model.scrolled {
@@ -1851,6 +1859,167 @@ impl Component for ReaderModel {
                         engine::build_selection_chip(view.widget().upcast_ref(), rect, &sender);
                     chip.popup();
                     self.selection_chip = Some(chip);
+                }
+                if sel.is_some() && self.inline_edit.is_some() {
+                    // A fresh drag while the editor stood open: the page
+                    // is not focusable, so this click did not go through
+                    // the entry's focus-out — the selection changing is
+                    // the click-away. Commit what stands and let the new
+                    // selection proceed.
+                    if let Some(edit) = &self.inline_edit {
+                        sender.input(ReaderMsg::CommitInlineEdit(
+                            edit.entry.text().to_string(),
+                        ));
+                    }
+                }
+                if sel.is_none() && self.inline_edit.is_some() {
+                    // A tap on the page cleared the selection while the
+                    // inline editor stood open — that is the click-away
+                    // commit. (Scrolls never come through here: they move
+                    // geometry, not the selection.)
+                    if let Some(edit) = &self.inline_edit {
+                        sender.input(ReaderMsg::CommitInlineEdit(
+                            edit.entry.text().to_string(),
+                        ));
+                    }
+                }
+            }
+            ReaderMsg::EngineSelectionMoved(rect) => {
+                // The selection's rect after the frame that moved it. While
+                // an inline edit stands, the box rides along — and because
+                // the view reports from an idle after that frame is already
+                // painted, the box converges with the text rather than
+                // chasing it. No rect (scrolled off screen): hold the last
+                // position — the text and the box reunite on the way back,
+                // and nothing typed is ever lost to a scroll.
+                if let Some(rect) = rect {
+                    if let Some(edit) = &self.inline_edit {
+                        engine::position_inline_editor(&edit.entry, &rect);
+                    } else {
+                        // No editor open: keep the anchor current, so the
+                        // pencil (and the popovers) place against where
+                        // the selection is now, not where it was made.
+                        self.dict_anchor = Some(rect);
+                    }
+                }
+            }
+            ReaderMsg::BeginInlineEdit => {
+                // The pencil: the selection becomes the editor. Guards
+                // first — an edit already open, a reload in flight, or a
+                // selection whose where is unknown cannot become one.
+                if self.inline_edit.is_some() || self.reader_reloading {
+                    return;
+                }
+                let Some(rect) = self.dict_anchor else { return };
+                let Some(text) = self.last_selection.clone() else { return };
+                let Some(view) = self.view.clone() else { return };
+                let Some(overlay) = self.reader_overlay.clone() else { return };
+                // The popovers stand down; the selection itself stays —
+                // the entry is the selection now. Dismissing a chip
+                // never clears the selection under it.
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                engine::dismiss(self.word_preview_popover.take());
+                engine::dismiss(self.note_popover.take());
+                let (entry, provider) = engine::build_inline_editor(
+                    &text,
+                    self.font_family.as_deref(),
+                    self.font_px,
+                    &sender,
+                );
+                engine::position_inline_editor(&entry, &rect);
+                overlay.add_overlay(&entry);
+                // Cursor-hiding would blank the pointer over the box
+                // mid-edit; it resumes when the editor closes.
+                view.set_autohide_cursor(false);
+                entry.grab_focus();
+                self.inline_edit = Some(InlineEdit {
+                    original: text,
+                    chapter: self.chapter,
+                    entry,
+                    provider,
+                });
+            }
+            ReaderMsg::CommitInlineEdit(corrected) => {
+                let Some(edit) = self.inline_edit.as_ref() else { return };
+                if corrected == edit.original {
+                    // The one verdict that needs no book opened: the text
+                    // is unchanged, so nothing is stored. The box stays
+                    // exactly as it is — its text intact, still editable.
+                    crate::notify::info("Nothing to fix", "The text already says that.");
+                    return;
+                }
+                // Verify off the UI thread against the chapter as the
+                // reader shows it: the book's path, the chapter the
+                // selection was made in, and the fixes already stored.
+                let Some(path) = self.book_path.clone() else { return };
+                let chapter = edit.chapter;
+                let original = edit.original.clone();
+                let prior = match self.service.catalog().get_patches_for_book(self.book_id) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        crate::notify::error("Could not read this book's saved fixes", &e.to_string());
+                        return;
+                    }
+                };
+                // Plain data over a glib main-context channel — nothing
+                // GTK-side crosses the thread; the main loop turns the
+                // verdict into InlineEditVerified. One verdict per
+                // channel, so the source detaches on delivery.
+                let (verdict_tx, verdict_rx) = gtk::glib::MainContext::channel::<
+                    Result<(String, crate::epub_patches::PlannedPatch), String>,
+                >();
+                let tx = sender.input_sender().clone();
+                verdict_rx.attach(None, move |verdict| {
+                    let _ = tx.send(ReaderMsg::InlineEditVerified(verdict));
+                    gtk::glib::ControlFlow::Break
+                });
+                engine::verify_inline_edit(path, chapter, prior, original, corrected, verdict_tx);
+                // The editor stays open until the verdict lands — a
+                // refusal is information (widen the selection), not a
+                // lost edit, and a slow book must not freeze the page.
+            }
+            ReaderMsg::CancelInlineEdit => {
+                // Escape: nothing was changed, nothing to reload.
+                self.close_inline_edit();
+            }
+            ReaderMsg::InlineEditVerified(verdict) => {
+                let Some(edit) = self.inline_edit.as_ref() else { return };
+                match verdict {
+                    Ok((href, planned)) => {
+                        let inserted = self.service.catalog().insert_patch(
+                            self.book_id,
+                            "text",
+                            &href,
+                            edit.chapter as i64,
+                            &planned.find_text,
+                            &planned.replace_text,
+                            &planned.context_before,
+                            &planned.context_after,
+                            "typo",
+                        );
+                        match inserted {
+                            Ok(_) => {
+                                // The fix is stored; take the editor down
+                                // and reopen the book so the correction
+                                // shows in place, at the same spot.
+                                self.close_inline_edit();
+                                self.reload_reader(&sender);
+                                crate::notify::success(
+                                    "Fixed",
+                                    "The correction now shows in the book.",
+                                );
+                            }
+                            Err(e) => {
+                                // The store refused: nothing is saved, and
+                                // the box stays so nothing typed is lost.
+                                crate::notify::error("Could not save the fix", &e.to_string());
+                            }
+                        }
+                    }
+                    Err(toast) => {
+                        crate::notify::info("Couldn't save that fix", &toast);
+                    }
                 }
             }
             ReaderMsg::SaveAnnotationDetails { color, style, note } => {
@@ -2953,4 +3122,130 @@ fn build_search_snippets_popover() -> (gtk::Popover, gtk::ListBox, gtk::Label) {
     popover.set_child(Some(&content_box));
 
     (popover, list_box, badge_lbl)
+}
+
+impl ReaderModel {
+    /// Take the inline editor down (phase 6.4): the entry and its
+    /// typeface provider off the overlay, the reader's cursor-hiding
+    /// back on, focus back to the page. Safe to call with no editor
+    /// open — the reload path uses it exactly that way.
+    pub(crate) fn close_inline_edit(&mut self) {
+        if let Some(edit) = self.inline_edit.take() {
+            engine::remove_inline_edit_provider(&edit.provider);
+            if let Some(overlay) = &self.reader_overlay {
+                overlay.remove_overlay(&edit.entry);
+            }
+            if let Some(view) = &self.view {
+                view.set_autohide_cursor(self.autohide_cursor);
+                view.widget().grab_focus();
+            }
+        }
+    }
+
+    /// Reopen the book the reader is already reading (phase 6.4). A
+    /// committed text edit has to be re-parsed to show, and the engine
+    /// has no incremental text swap — the honest way to re-parse is to
+    /// reopen. The cost is the same as the initial open (bounded, and
+    /// taken under a timing span so the step log records it honestly),
+    /// and the reader's place is restored from what the position
+    /// callback has been persisting all along.
+    ///
+    /// The order throughout is the contract: guard first so nothing
+    /// mid-swap reads as reader input; the popovers and editor down
+    /// before the view they ride on goes away; the view swapped inside
+    /// the persistent overlay with `set_child` — the overlay's place in
+    /// the web host is never touched (§48); the new view wired and
+    /// given every mode preference the old one had; then the chapter
+    /// and fraction put back.
+    pub(crate) fn reload_reader(&mut self, sender: &ComponentSender<ReaderModel>) {
+        if self.reader_reloading {
+            return;
+        }
+        self.reader_reloading = true;
+        let _timing = crate::timing::measure("reader_reload");
+
+        // Parented to the view that is about to go: down first.
+        engine::dismiss(self.selection_chip.take());
+        engine::dismiss(self.dict_popover.take());
+        engine::dismiss(self.word_preview_popover.take());
+        engine::dismiss(self.note_popover.take());
+        self.close_inline_edit();
+
+        // Where the reader was, current to the last position report.
+        let (chapter, fraction) = (self.chapter, self.fraction);
+        self.save_progress();
+
+        let Some(path) = self.book_path.clone() else {
+            self.reader_reloading = false;
+            return;
+        };
+        let prefs = engine::current_engine_prefs(self.service.catalog());
+        let patches = self
+            .service
+            .catalog()
+            .get_patches_for_book(self.book_id)
+            .unwrap_or_else(|err| {
+                log::warn!(
+                    "patches for book {} unreadable: {err:#} — reloading unpatched",
+                    self.book_id
+                );
+                Vec::new()
+            });
+        // Open before touching the old view: a failure here leaves the
+        // reader exactly where it was — the fix is stored and will show
+        // the next time the book opens.
+        let new_view = match engine::open_engine(&path, prefs, patches) {
+            Ok(view) => view,
+            Err(err) => {
+                self.reader_reloading = false;
+                crate::notify::error(
+                    "Could not reopen the book",
+                    &format!("{err:#}\nThe fix is saved and will show next time you open it."),
+                );
+                return;
+            }
+        };
+
+        if let Some(old) = self.view.take() {
+            old.close();
+        }
+        if let Some(bar) = self.strip_scrollbar.take() {
+            if let Some(overlay) = &self.reader_overlay {
+                overlay.remove_overlay(&bar);
+            }
+        }
+
+        self.view = Some(new_view.clone());
+        if let Some(overlay) = &self.reader_overlay {
+            // The strip scrollbar, rebuilt against the new view's
+            // adjustment, as the old one was in `init`.
+            let scrollbar =
+                gtk::Scrollbar::new(gtk::Orientation::Vertical, Some(new_view.vadjustment()));
+            scrollbar.set_halign(gtk::Align::End);
+            scrollbar.set_valign(gtk::Align::Fill);
+            scrollbar.add_css_class("kalam-reader-strip-bar");
+            scrollbar.set_visible(self.scrolled);
+            overlay.set_child(Some(new_view.widget()));
+            overlay.add_overlay(&scrollbar);
+            self.strip_scrollbar = Some(scrollbar);
+        }
+        engine::wire(&new_view, sender);
+        if self.scrolled {
+            new_view.set_mode(kalam_reader::ReadingMode::Scrolled);
+        }
+        new_view.set_dual_page(self.dual_page);
+        new_view.set_autohide_cursor(self.autohide_cursor);
+        new_view.set_wheel_step(self.wheel_step as f32);
+        new_view.set_arrow_step(self.arrow_step as f32);
+        new_view.widget().grab_focus();
+
+        // Back to where the reader was reading.
+        new_view.goto_chapter(chapter.min(self.chapter_count.saturating_sub(1)), fraction);
+        engine::show_all_highlights(&new_view, &self.all_book_annotations);
+        self.reload_annotations();
+        self.reload_bookmarks();
+        self.reload_saved_words();
+
+        self.reader_reloading = false;
+    }
 }

@@ -278,3 +278,55 @@ step 1 is the only thing awaited.
   owner's addition for step 8: a small pencil button at the top of the
   reader's left sidebar TOC, beside the cover, opening the full editor —
   ships with the editor, not before.
+- **Step 4 (inline selection editing) — implemented 2026-10-08.** The
+  pencil joins the chip's pill (`document-edit-symbolic`, "Fix typo")
+  and `BeginInlineEdit` opens the editor: a `gtk::Entry` laid over the
+  selection's rect as a child of the reader's overlay — start-aligned
+  margins in view-widget coordinates (the strip scrollbar's coordinate
+  system), size-request floored at 160×28, pre-filled with the
+  selection, and set in the reader's own family and size through a
+  per-edit CssProvider registered on the display (house style — no
+  widget-local StyleContext) and unregistered when the edit closes.
+  Enter commits, Escape cancels, focus leaving commits; a done-flag
+  shared by the three makes them one-shot, and the model re-guards on
+  every message, so doubles are benign. The page itself is not
+  focusable, so click-away is caught where it shows up instead: any
+  `EngineSelection` while an edit stands (a fresh drag or a
+  selection-clearing tap) commits it.
+
+  The no-glitch contract is met by the follow machinery, not by luck:
+  `kalam-reader` gained `connect_selection_moved`. `place_handles` —
+  which both paged and scrolled draws already run every frame to paint
+  the handles — now also records the selection's union rect, and
+  `after_draw`'s idle reports it to the shell only on change. The box
+  repositions from that report, which lands after the frame that moved
+  the text is already painted: the box converges with the text, never
+  chases it. Scrolls move geometry, not the selection, so half-typed
+  text is never lost; when the text scrolls off screen the box holds
+  its position and reunites with the text on the way back. The chip
+  and idle cursor-hiding stand down while the editor is open; the
+  cursor returns when it closes.
+
+  Commit-time verification is off the UI thread: the book is opened
+  (`chapbook_epub::Book::open`), the chapter's bytes read, the book's
+  earlier pending patches applied, and the new pure planner
+  `plan_text_patch` asked to verify the correction against exactly the
+  bytes the reader shows. `escape_to_source` re-escapes the DOM text
+  to source form first (`&`, `<`, `>`); the span resolves anchor-free
+  (zero matches → NotFound, more than one → Ambiguous); 32-byte
+  context anchors are captured around the verified span, rounded to
+  char boundaries. The verdict crosses back as plain data over a glib
+  main-context channel — no GTK types cross the thread, the main loop
+  turns it into `InlineEditVerified`. Unchanged is answered inline
+  without opening the book; every refusal toasts and leaves the box
+  open with its text. A verified patch stores with source `typo`, and
+  the book reopens through the step-3 seam: the reader's overlay is
+  persistent (created once in `init`), the view swaps inside it with
+  `set_child` (§48-clean), the new view is wired and re-given every
+  mode pref, and the chapter/fraction are restored from what the
+  position callback had been persisting all along. The reopen runs on
+  the main thread under a `reader_reload` timing span — same bounded
+  cost as the initial open; CI and the step log will record it
+  honestly. Seven new unit tests cover the planner: escape
+  round-trip, verified-with-context, unchanged, markup-crossing,
+  ambiguous, prior-patch composition, and char-boundary anchors.

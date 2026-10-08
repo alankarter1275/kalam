@@ -4039,6 +4039,31 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-sel-divider { min-width: 1px; min-height: 18px; background: rgba(255,255,255,0.12); margin: 0 2px; }
 
+/* ── inline selection editor (phase 6.4) ──────────────── */
+/* The chip's pencil, opened into the page itself: an entry laid exactly
+   over the selected text, set in the reader's own typeface (family and
+   size come from a runtime provider, not from here). The dark chip
+   family, because it floats over any page theme, like the toolbar it
+   came from; outlined and square-ish because it is a text field, not a
+   pill. */
+entry.k-inline-edit {
+  background: rgba(22,24,30,0.96);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: rgba(255,255,255,0.92);
+  caret-color: #61afef;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+entry.k-inline-edit:focus,
+entry.k-inline-edit:focus-within {
+  border-color: rgba(97,175,239,0.8);
+}
+entry.k-inline-edit > text {
+  color: rgba(255,255,255,0.92);
+  caret-color: #61afef;
+}
+
 .k-color-bar { padding: 0 4px; }
 
 .k-color-dot {

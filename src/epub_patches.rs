@@ -21,6 +21,13 @@
 use crate::db::PatchRecord;
 use std::ops::Range;
 
+/// How many bytes of context are captured on each side of a verified span.
+/// Render-time matching is literal, so the anchors only ever have to match
+/// the same bytes they were captured from; they earn their keep when the
+/// prefix text changes under the patch (an earlier pending patch deleted
+/// from the list, most likely) and the find text alone would be ambiguous.
+pub const PATCH_CONTEXT_BYTES: usize = 32;
+
 /// What the matcher concluded about one patch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolution {
@@ -114,6 +121,126 @@ pub fn apply_text_patches(
         });
     }
     (out, outcomes)
+}
+
+/// Why a planned patch could not be verified at save time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatchRefusal {
+    /// The correction matches the original text — nothing to store.
+    Unchanged,
+    /// The text is not in the entry's current (virtually patched) bytes.
+    /// A selection that crosses inline markup lands here: the source
+    /// between its two ends contains tags the selection's plain text does
+    /// not, so the run cannot be located. Paragraph editing (step 7) is
+    /// the surface for those.
+    NotFound,
+    /// The text occurs more than once, and which occurrence was meant is
+    /// not knowable from text alone — the selection's offsets live in
+    /// DOM space, and mapping them to source bytes is the span mapper's
+    /// job (step 6). Select a wider stretch instead.
+    Ambiguous(usize),
+}
+
+/// A verified text patch, ready to store: find and replace already in
+/// source form (entities escaped), anchors captured from the same bytes
+/// the matcher will see at render.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedPatch {
+    pub find_text: String,
+    pub replace_text: String,
+    pub context_before: String,
+    pub context_after: String,
+}
+
+/// DOM text → source form. A selection carries the text as the parser
+/// decoded it (`&`, `<`, `>`); the source bytes carry the escaped forms,
+/// and matching is literal, so the find and replace strings must be
+/// re-escaped before they are matched against or spliced into an entry.
+///
+/// Only the three characters XML serializers escape in text content are
+/// escaped; quotes stay literal, as serializers leave them in text. A
+/// book whose source does something else simply fails verification —
+/// refused, never stored broken.
+pub fn escape_to_source(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Verify a correction and turn it into a storable patch.
+///
+/// `virtual_bytes` is the entry's source with the book's earlier pending
+/// patches already applied — exactly the text this patch will run against
+/// at render, since application is in creation order and this one will be
+/// last. Callers build it with [`apply_text_patches`] over the prior list;
+/// passing raw entry bytes is the zero-prior-patch case of the same thing.
+///
+/// The span is located anchor-free first: one match verifies, zero or
+/// several refuse. Anchors are then *captured* from the bytes around the
+/// verified span, so they hold at render by construction — see
+/// [`PATCH_CONTEXT_BYTES`].
+pub fn plan_text_patch(
+    virtual_bytes: &[u8],
+    dom_find: &str,
+    dom_replace: &str,
+) -> Result<PlannedPatch, PatchRefusal> {
+    if dom_find == dom_replace {
+        return Err(PatchRefusal::Unchanged);
+    }
+    let find_text = escape_to_source(dom_find);
+    let replace_text = escape_to_source(dom_replace);
+    let span = match resolve_span(virtual_bytes, &find_text, "", "") {
+        Resolution::Found(span) => span,
+        Resolution::NotFound => return Err(PatchRefusal::NotFound),
+        Resolution::Ambiguous(n) => return Err(PatchRefusal::Ambiguous(n)),
+    };
+    // Round the context windows to char boundaries so the anchors are
+    // valid UTF-8 strings; an entry that is not valid UTF-8 (exotic — XML
+    // says it shouldn't be) gets empty anchors rather than guessed ones.
+    let (context_before, context_after) = match std::str::from_utf8(virtual_bytes) {
+        Ok(text) => {
+            let start = floor_char_boundary(text, span.start, PATCH_CONTEXT_BYTES);
+            let end = ceil_char_boundary(text, span.end, PATCH_CONTEXT_BYTES);
+            (
+                text[start..span.start].to_string(),
+                text[span.end..end].to_string(),
+            )
+        }
+        Err(_) => (String::new(), String::new()),
+    };
+    Ok(PlannedPatch {
+        find_text,
+        replace_text,
+        context_before,
+        context_after,
+    })
+}
+
+/// `text[index - back..index]` as a char-boundary-safe start, clamped to
+/// the string's beginning.
+fn floor_char_boundary(text: &str, index: usize, back: usize) -> usize {
+    let mut i = index.saturating_sub(back);
+    while i < index && !text.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
+/// `text[index..index + fwd]` as a char-boundary-safe end, clamped to the
+/// string's length.
+fn ceil_char_boundary(text: &str, index: usize, fwd: usize) -> usize {
+    let mut i = (index + fwd).min(text.len());
+    while i > index && !text.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
 }
 
 #[cfg(test)]
@@ -284,4 +411,133 @@ mod tests {
         assert_eq!(outcomes[0].resolution, Resolution::NotFound);
         assert_eq!(out, ENTRY.as_bytes());
     }
+    // ------------------------------------------------------------------
+    // Step 4: the save-time planner (DOM text -> verified patch)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn dom_text_is_escaped_back_to_source_form() {
+        // What the parser decoded, back to what the serializer wrote:
+        // the three text-content escapes, and quotes left alone.
+        assert_eq!(
+            escape_to_source("R & D < 10 > 2 \"truth\""),
+            "R &amp; D &lt; 10 &gt; 2 \"truth\""
+        );
+        // The escaping must compose with matching: an escaped find locates
+        // the source's entity form.
+        let entry = "<p>He said R &amp; D, twice: R &amp; D.</p>";
+        assert_eq!(
+            resolve_span(entry.as_bytes(), &escape_to_source("R & D"), "", ""),
+            Resolution::Ambiguous(2)
+        );
+    }
+
+    #[test]
+    fn a_correction_verifies_with_context_captured_around_it() {
+        let entry = "<p>He said teh word &amp; she smiled.</p>";
+        let planned = plan_text_patch(entry.as_bytes(), "teh word &", "the word &")
+            .expect("the run verifies");
+        assert_eq!(planned.find_text, "teh word &amp;");
+        assert_eq!(planned.replace_text, "the word &amp;");
+        // The anchors are the bytes immediately around the span.
+        assert_eq!(planned.context_before, "<p>He said ");
+        assert_eq!(planned.context_after, "; she smiled.</p>");
+        // And the planned patch, applied over the same bytes, is exactly
+        // the correction.
+        let (out, outcomes) = apply_text_patches(
+            "c.xhtml",
+            entry.as_bytes(),
+            &[patch(
+                1,
+                "c.xhtml",
+                &planned.find_text,
+                &planned.replace_text,
+                &planned.context_before,
+                &planned.context_after,
+            )],
+        );
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "<p>He said the word &amp; she smiled.</p>"
+        );
+        assert!(matches!(outcomes[0].resolution, Resolution::Found(_)));
+    }
+
+    #[test]
+    fn an_unchanged_correction_is_refused() {
+        let entry = "<p>teh</p>";
+        assert_eq!(
+            plan_text_patch(entry.as_bytes(), "teh", "teh"),
+            Err(PatchRefusal::Unchanged)
+        );
+    }
+
+    #[test]
+    fn a_selection_crossing_markup_is_not_found() {
+        // The DOM text of a selection that spans an <em> boundary is
+        // contiguous; the source between its ends is not, and the honest
+        // answer is a refusal the UI can explain, not a guess.
+        let entry = "<p>some <em>emphasis</em> here</p>";
+        assert_eq!(
+            plan_text_patch(entry.as_bytes(), "some emphasis here", "some stress here"),
+            Err(PatchRefusal::NotFound)
+        );
+    }
+
+    #[test]
+    fn an_ambiguous_run_is_refused_not_guessed() {
+        let entry = "<p>teh first, teh second.</p>";
+        assert_eq!(
+            plan_text_patch(entry.as_bytes(), "teh", "the"),
+            Err(PatchRefusal::Ambiguous(2))
+        );
+    }
+
+    #[test]
+    fn verification_sees_earlier_pending_fixes() {
+        // The planner runs over the entry with the book's earlier pending
+        // patches applied — the text a later patch will meet at render. A
+        // correction that only exists because an earlier fix created it
+        // verifies; the same correction against raw bytes would not.
+        let original = "<p>He said teh word.</p>";
+        let earlier = patch(1, "c.xhtml", "teh", "the", "said ", " word");
+        let (virtual_bytes, _) = apply_text_patches("c.xhtml", original.as_bytes(), &[earlier]);
+        // The earlier fix made "said the word"; now a second typo appears
+        // in the DOM text the reader shows.
+        let planned = plan_text_patch(&virtual_bytes, "He said the word.", "He uttered the word.")
+            .expect("verifies against the virtually patched bytes");
+        assert_eq!(planned.find_text, "He said the word.");
+        // And chaining the two patches reproduces the full correction.
+        let second = patch(
+            2,
+            "c.xhtml",
+            &planned.find_text,
+            &planned.replace_text,
+            &planned.context_before,
+            &planned.context_after,
+        );
+        let (out, _) = apply_text_patches(
+            "c.xhtml",
+            original.as_bytes(),
+            &[patch(1, "c.xhtml", "teh", "the", "said ", " word"), second],
+        );
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "<p>He uttered the word.</p>"
+        );
+    }
+
+    #[test]
+    fn context_windows_respect_char_boundaries() {
+        // Multibyte text just outside the span: the anchor windows round
+        // to whole characters and stay valid strings, never splitting one.
+        let entry = "<p>éèêô teh äïöü</p>";
+        let planned = plan_text_patch(entry.as_bytes(), "teh", "the")
+            .expect("the run verifies");
+        assert!(planned.context_before.ends_with("éèêô "));
+        assert!(planned.context_after.starts_with(" äïöü"));
+        assert!(planned.context_before.len() <= PATCH_CONTEXT_BYTES);
+        assert!(planned.context_after.len() <= PATCH_CONTEXT_BYTES);
+    }
+
 }

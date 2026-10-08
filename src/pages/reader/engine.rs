@@ -70,6 +70,38 @@ pub(crate) fn engine_prefs(
     .clamped()
 }
 
+/// The reading preferences as currently stored. The same reads `init`
+/// makes, in one place, so a mid-session reload reopens the book with
+/// exactly the preferences the reader had: every settings handler
+/// persists its pref before applying it, so the catalog is always the
+/// freshest source. Hyphenation stays retired (round-1 field report).
+pub(crate) fn current_engine_prefs(catalog: &crate::db::Catalog) -> KalamPrefs {
+    let theme = catalog
+        .get_pref("reader.theme")
+        .map(|v| ReadingTheme::from_str_lossy(&v))
+        .unwrap_or(ReadingTheme::Sepia);
+    let font_px = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
+    let line_height = catalog
+        .get_pref("reader.line_height")
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(1.8)
+        .clamp(1.3, 2.5);
+    let column_px = catalog.get_pref_i64("reader.column_px", 620).clamp(400, 860) as u32;
+    let font_family = catalog.get_pref("reader.font_family");
+    let justify = catalog.get_pref_i64("reader.justify", 0) != 0;
+    let publisher_styles = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
+    engine_prefs(
+        theme,
+        font_px,
+        line_height,
+        column_px,
+        font_family,
+        justify,
+        false,
+        publisher_styles,
+    )
+}
+
 /// Kalam's stored colour name → the engine's. Unknown names (and the
 /// legacy "rose") fall back the same way `HighlightColor::from_str_lossy`
 /// does: through Kalam's own parser first.
@@ -183,6 +215,15 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
         let _ = tx.send(ReaderMsg::EngineSelection(
             sel.map(|s| (s.text.clone(), gdk_rect(s.rect))),
         ));
+    });
+
+    // Phase 6.4: where the selection sits after each draw — the inline
+    // editor follows its text on scroll with this. The view fires it from
+    // an idle after the frame that moved the text is already painted, so
+    // repositioning converges before the next paint and nothing swims.
+    let tx = sender.input_sender().clone();
+    view.connect_selection_moved(move |rect: Option<kalam_reader::Rect>| {
+        let _ = tx.send(ReaderMsg::EngineSelectionMoved(rect.map(gdk_rect)));
     });
 
     view.connect_external_link(|href: &str| {
@@ -603,9 +644,207 @@ pub(crate) fn build_selection_chip(
     });
     pill.append(&define_btn);
 
+    // 3. Fix typo button (phase 6.4): the selection itself becomes
+    // editable — an entry laid exactly over it in the reader's own
+    // typeface. The model opens the editor; the chip stands down for it.
+    let edit_btn = action_button("document-edit-symbolic", "Fix typo", false);
+    let tx_edit = sender.input_sender().clone();
+    edit_btn.connect_clicked(move |_| {
+        let _ = tx_edit.send(ReaderMsg::BeginInlineEdit);
+    });
+    pill.append(&edit_btn);
+
     root_box.append(&pill);
     popover.set_child(Some(&root_box));
     popover
+}
+
+/// The inline editor (phase 6.4): a single-line entry laid exactly over
+/// the selected text, pre-filled with it, set in the reader's own
+/// typeface and size — the correction happens where the text is, not in
+/// a box beside it. Enter commits, Escape abandons, focus leaving
+/// commits; whichever fires first settles the edit (the done flag) and
+/// the model re-checks state on arrival, so a doubled message is benign.
+///
+/// Returns the entry and the CssProvider that typesets it. The entry is
+/// unparented — the model adds it to the reader overlay with margins
+/// for the selection rect; the provider is registered on the display
+/// here (house style: the widget-local StyleContext is the deprecated
+/// API) and the model unregisters it when the editor closes, so a
+/// session does not accumulate one per edit.
+pub(crate) fn build_inline_editor(
+    text: &str,
+    font_family: Option<&str>,
+    font_px: u32,
+    sender: &ComponentSender<ReaderModel>,
+) -> (gtk::Entry, gtk::CssProvider) {
+    let entry = gtk::Entry::new();
+    entry.add_css_class("k-inline-edit");
+    entry.set_text(text);
+    // Positioned by margins against the overlay's start edges — see
+    // `position_inline_editor`.
+    entry.set_halign(gtk::Align::Start);
+    entry.set_valign(gtk::Align::Start);
+
+    // The reader's own type at the selection, so the correction reads as
+    // part of the line it is fixing. A reader-chosen family with a quote
+    // in its name is clipped rather than allowed to break out of the
+    // CSS string.
+    let family = font_family
+        .filter(|f| !f.is_empty())
+        .map(|f| f.replace('\'', ""))
+        .unwrap_or_else(|| kalam_reader::BODY_FONT.to_string());
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(&format!(
+        "entry.k-inline-edit {{ font-family: '{}'; font-size: {}px; }}",
+        family,
+        font_px.max(1)
+    ));
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
+    let done = std::rc::Rc::new(std::cell::Cell::new(false));
+
+    let tx = sender.input_sender().clone();
+    let entry_activate = entry.clone();
+    entry.connect_activate(move |_| {
+        if done.replace(true) {
+            return;
+        }
+        let _ = tx.send(ReaderMsg::CommitInlineEdit(
+            entry_activate.text().to_string(),
+        ));
+    });
+
+    let tx = sender.input_sender().clone();
+    let key = gtk::EventControllerKey::new();
+    key.connect_key_pressed(move |_, keyval, _, _| {
+        if keyval == gtk::gdk::Key::Escape {
+            if !done.replace(true) {
+                let _ = tx.send(ReaderMsg::CancelInlineEdit);
+            }
+            return gtk::glib::Propagation::Stop;
+        }
+        gtk::glib::Propagation::Proceed
+    });
+    entry.add_controller(key);
+
+    // Clicking away is a commit: the reader is done with the box and
+    // expects the text to have been taken seriously. Leaving by Enter or
+    // Escape already set the done flag, so this stays quiet after them.
+    let tx = sender.input_sender().clone();
+    let entry_focus = entry.clone();
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_leave(move || {
+        if done.replace(true) {
+            return;
+        }
+        let _ = tx.send(ReaderMsg::CommitInlineEdit(
+            entry_focus.text().to_string(),
+        ));
+    });
+    entry.add_controller(focus);
+
+    (entry, provider)
+}
+
+/// Take the provider back off the display when an editor closes — the
+/// counterpart of the registration in [`build_inline_editor`].
+pub(crate) fn remove_inline_edit_provider(provider: &gtk::CssProvider) {
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_remove_provider_for_display(&display, provider);
+    }
+}
+
+/// Lay the editor over its selection. Overlay coordinates are the view
+/// widget's own — the same space the selection rect is measured in (the
+/// strip scrollbar is placed the same way) — so start-aligned margins
+/// land the entry exactly on the text. Width has a floor: a one-word
+/// selection still gets a box worth typing into.
+pub(crate) fn position_inline_editor(entry: &gtk::Entry, rect: &gtk::gdk::Rectangle) {
+    entry.set_margin_start(rect.x());
+    entry.set_margin_top(rect.y());
+    entry.set_size_request(rect.width().max(160), rect.height().max(28));
+}
+
+/// Verify an inline edit against the book's source, off the UI thread —
+/// opening the book is the same cost as the initial open and never
+/// belongs on the main loop (the `unit_bytes` contract says so too).
+///
+/// `prior` are the book's already-stored patches: the correction is
+/// planned against the chapter as the reader currently shows it, which
+/// is the text it will be matched against at render as well. The
+/// verdict goes back over `verdict_tx` — a glib main-context channel
+/// carrying plain data, so nothing GTK-side crosses the thread — and
+/// the main loop turns it into [`ReaderMsg::InlineEditVerified`]: `Ok`
+/// carries the entry href and the ready-to-store patch, `Err` carries
+/// the toast text for a refusal. The editor stays open either way; a
+/// refusal is information, not a lost edit.
+pub(crate) fn verify_inline_edit(
+    book_path: std::path::PathBuf,
+    chapter: usize,
+    prior: Vec<PatchRecord>,
+    original: String,
+    corrected: String,
+    verdict_tx: gtk::glib::Sender<Result<(String, crate::epub_patches::PlannedPatch), String>>,
+) {
+    std::thread::spawn(move || {
+        let verdict =
+            verify_inline_edit_in_thread(&book_path, chapter, &prior, &original, &corrected);
+        let _ = verdict_tx.send(verdict);
+    });
+}
+
+/// The thread body, split out so every early return reads as a verdict
+/// rather than a pile of nesting.
+fn verify_inline_edit_in_thread(
+    book_path: &std::path::Path,
+    chapter: usize,
+    prior: &[PatchRecord],
+    original: &str,
+    corrected: &str,
+) -> Result<(String, crate::epub_patches::PlannedPatch), String> {
+    use chapbook_core::Publication;
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to verify the fix.".to_string())?;
+    let href = book
+        .spine()
+        .get(chapter)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| "The chapter being edited is no longer in the book.".to_string())?;
+    let bytes = book.unit_bytes(chapter).map_err(|_| {
+        "The chapter's text could not be read to verify the fix.".to_string()
+    })?;
+    // The chapter as the reader shows it: earlier pending patches
+    // applied. This is exactly what the new patch will run against at
+    // render, so a find that verifies here holds there.
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
+    crate::epub_patches::plan_text_patch(&virtual_bytes, original, corrected)
+        .map(|planned| (href, planned))
+        .map_err(|refusal| refusal_to_toast(&refusal))
+}
+
+/// A refusal as the text the toast shows. Each one names the way out:
+/// paragraph editing for markup-crossing selections (step 7), a wider
+/// selection for ambiguity.
+fn refusal_to_toast(refusal: &crate::epub_patches::PatchRefusal) -> String {
+    use crate::epub_patches::PatchRefusal;
+    match refusal {
+        PatchRefusal::Unchanged => "No change to save — the text already says that.".to_string(),
+        PatchRefusal::NotFound => {
+            "Couldn't locate that text in the chapter's source — it may cross formatting \
+             (italics and the like), which paragraph editing will handle."
+                .to_string()
+        }
+        PatchRefusal::Ambiguous(n) => format!(
+            "That text appears {n} times — select a wider stretch so the fix lands on the right one."
+        ),
+    }
 }
 
 pub(crate) fn build_annotation_edit_popover(

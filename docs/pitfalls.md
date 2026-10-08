@@ -3206,3 +3206,55 @@ the `Event` shapes) is common to both. The rule: before writing
 against a dependency, read the *crate's own* requirement line, not
 the workspace's — grep the package name in Cargo.toml and take the
 last table that owns it.
+
+## §93 — three faces of one compile error, and clippy shows them one at a time (Phase 6 step 10, run 1)
+
+`clippy --workspace --all-targets -- -D warnings` compiles before it
+lints, so a type error arrives as a clippy failure — and the log
+carries every file's errors, not just the first. Step 10's four:
+
+1. A test module inherits nothing from the file's main code: the
+   sanitizer's tests needed `crate::db::PatchRecord` fully qualified
+   because the module above it never imports the type (the existing
+   `bake_patch` helper spelled it out; the new helper copied the
+   short form that doesn't exist there).
+2. A `filter` closure receives its tuple *by reference*, so pattern
+   shapes shift binding modes: `(new, old)` over `(usize, &usize)`
+   binds `(usize, &usize)`; adding `&old` to deref the second
+   instead turns the *first* into `&usize`. `new != *old` holds
+   either way — write the deref, not the pattern gymnastics.
+3. A `connect_clicked` closure is `Fn`: it runs again. Moving a
+   captured `Arc` into a `std::thread::spawn` inside it is a move
+   out of the closure — the thread needs its own clone per click.
+
+And run 2's lesson on top: fix one error class and the next run
+finds the next — budget for a compile-error run or two after any
+large scripted insertion, and re-read the *whole* log, not the first
+diagnostic.
+
+## §94 — clippy's double-ended lints are a family; end it with rev().find (Phase 6 step 10, runs 3–4)
+
+`Iterator::last` on a double-ended iterator wants `.next_back()`;
+fix that and `filter(..).next_back()` is *another* lint of the same
+family, with its own name. Two runs spent on two rungs of one
+ladder. When a clippy lint belongs to a named family (the error
+text says so), skip to the form the family cannot complain about:
+`iter().rev().find(..)` for "last match", written once.
+
+## §95 — the guardrail is not a false positive machine: pages never touch disk, workers included (Phase 6 step 10, run 5)
+
+The pages-touch-disk test scans `src/pages` source text and
+suppresses only `crate::tasks::spawn` bodies. Step 10 put eight
+disk calls there — staging, the jacket update, staged-file
+deletions — every one inside a `std::thread::spawn` worker, every
+one architecturally wrong anyway: the follow-ups of a baked cover
+op *are* the cover service's work, and the panel has no business
+knowing how a jacket gets re-made. The fix was moving them to
+`src/epub.rs` (`stage_cover_image`, `apply_baked_cover`,
+`remove_staged_asset`) beside `replace_cover_bytes` — smaller
+pages, one home for the cover's file lifecycle. The lesson: when
+the guardrail fires on code that runs off-thread, do not reach for
+the allowlist and do not reach for `tasks::spawn` — ask whether the
+code belongs in a page at all. It usually does not. (The scanner
+can be replicated locally in twenty lines of python; run it before
+pushing anything that touches files from UI code.)

@@ -354,8 +354,11 @@ pub(crate) struct InlineEdit {
 /// A verified edit coming back from the worker thread: where it lives,
 /// what kind of patch it is, the serial of the editor it verified, and
 /// the ready-to-store plan.
+// `pub` to match the enum whose variant carries it — the module is
+// private, so this is still crate-local; the private-interfaces lint
+// only compares declared visibilities.
 #[derive(Debug, Clone)]
-pub(crate) struct VerifiedEdit {
+pub struct VerifiedEdit {
     pub(crate) href: String,
     pub(crate) kind: &'static str,
     /// The spine index the edit was made in — the verdict's own, since

@@ -3113,3 +3113,19 @@ With no local toolchain, each CI run peels exactly one error layer,
 so the pre-push review should treat every qualified gtk trait path
 AND every new widget method call in a file that never made one as
 the likeliest failures — the layers run 1 cannot see.
+
+## §88 — a pub enum's payload must be as visible as the enum (Phase 6 step 7, CI run 3)
+
+Third layer: `VerifiedEdit` was `pub(crate)` while `ReaderMsg` is a
+`pub` enum, and the variant `InlineEditVerified(Result<VerifiedEdit,
+(String, u64)>)` puts the type where the enum's declared visibility
+reaches — the private-interfaces lint compares DECLARED visibilities
+and rejects `pub(crate)` inside `pub`, even though the enum lives in
+a private module and nothing is reachable outside the crate either
+way. The fix is declaring the payload `pub` — in a private module
+that is still crate-local, and the lint goes quiet.
+
+The rule for the mental compile pass: any type that appears in a
+`ReaderMsg` variant inherits the enum's visibility demand. Types that
+only live in the model's fields can stay `pub(crate)` — the step-4
+`InlineEdit` was exactly that shape and green.

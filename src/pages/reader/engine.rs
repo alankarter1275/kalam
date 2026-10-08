@@ -708,12 +708,17 @@ pub(crate) fn build_inline_editor(
         );
     }
 
+    // One flag, three closures: whichever of Enter, Escape, or focus-out
+    // lands first settles the edit; the other two stay quiet. Each
+    // closure owns its own handle on the flag (the drawer's `cur_color`
+    // shape — an Rc is moved once, cloned once per owner).
     let done = std::rc::Rc::new(std::cell::Cell::new(false));
 
     let tx = sender.input_sender().clone();
     let entry_activate = entry.clone();
+    let done_activate = done.clone();
     entry.connect_activate(move |_| {
-        if done.replace(true) {
+        if done_activate.replace(true) {
             return;
         }
         let _ = tx.send(ReaderMsg::CommitInlineEdit(
@@ -723,9 +728,10 @@ pub(crate) fn build_inline_editor(
 
     let tx = sender.input_sender().clone();
     let key = gtk::EventControllerKey::new();
+    let done_key = done.clone();
     key.connect_key_pressed(move |_, keyval, _, _| {
         if keyval == gtk::gdk::Key::Escape {
-            if !done.replace(true) {
+            if !done_key.replace(true) {
                 let _ = tx.send(ReaderMsg::CancelInlineEdit);
             }
             return gtk::glib::Propagation::Stop;
@@ -736,12 +742,13 @@ pub(crate) fn build_inline_editor(
 
     // Clicking away is a commit: the reader is done with the box and
     // expects the text to have been taken seriously. Leaving by Enter or
-    // Escape already set the done flag, so this stays quiet after them.
+    // Escape already set the flag, so this stays quiet after them.
     let tx = sender.input_sender().clone();
     let entry_focus = entry.clone();
+    let done_focus = done.clone();
     let focus = gtk::EventControllerFocus::new();
     focus.connect_leave(move |_| {
-        if done.replace(true) {
+        if done_focus.replace(true) {
             return;
         }
         let _ = tx.send(ReaderMsg::CommitInlineEdit(

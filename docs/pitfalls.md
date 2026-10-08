@@ -2958,3 +2958,18 @@ from this environment (results-receiver host unreachable), so the
 errors came from `ci-logs/clippy-latest.txt` — the workflow commits
 its own failure log to the branch. `git pull --rebase` after a red run
 is step one, before any `gh run view --log`.
+
+## 79. A shared `Rc` across `move` closures needs a clone per closure
+
+**Date:** 2026-10-08, Phase 6 step 4; second failed run (37734781134).
+
+The inline editor's done-flag — one `Rc<Cell<bool>>` consulted by three
+signal closures (Enter, Escape, focus-out) — was written with a bare
+`move` in each closure. The first closure moves the Rc; the second
+`move` of the same binding is a use-after-move (`E0382`, twice). The
+shape is everywhere in this repo (the annotation drawer's `cur_color`
+in the same file): create the Rc once, `let handle = rc.clone();` per
+closure, and each `move` takes its own handle. The tell in the diff
+review that was skipped: three `move` closures, one binding, no
+`clone()` between them. A one-closure-per-variable audit belongs in
+the pre-push review for any multi-handler widget.

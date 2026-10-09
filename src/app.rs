@@ -176,6 +176,7 @@ impl PageSlot {
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
+            PageSlot::EditorPicker(c) => c.widget().clone().upcast(),
             PageSlot::Editor(c) => c.widget().clone().upcast(),
             PageSlot::PdfReader(c) => c.widget().clone().upcast(),
             PageSlot::Comics(c) => c.widget().clone().upcast(),

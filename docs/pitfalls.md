@@ -3258,3 +3258,17 @@ the allowlist and do not reach for `tasks::spawn` — ask whether the
 code belongs in a page at all. It usually does not. (The scanner
 can be replicated locally in twenty lines of python; run it before
 pushing anything that touches files from UI code.)
+
+## §96 — a new enum variant is every match's business, and the sandbox cannot tell you (Phase 6 follow-up, run 1)
+
+`PageSlot` grew `EditorPicker` and the compiler knew immediately —
+`E0004, non-exhaustive patterns` — but only on CI, because the
+sandbox has no toolchain and a match on the variant list lives in a
+private `impl PageSlot::widget()` thirty lines below the enum, easy
+to read past when the wiring you are thinking about is in
+`build_page`. The fix was one arm. The lesson is the grep: when a
+variant joins an enum, `grep -n "EnumName::"` and account for every
+match before pushing — especially impl blocks near the definition,
+which look like bookkeeping and are exhaustive matches in disguise.
+The cost of skipping it is a full CI round trip (run 1 of the rail
+entry, ~11 minutes for one line).

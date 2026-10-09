@@ -793,3 +793,30 @@ step 1 is the only thing awaited.
   all 602 tests (12 new: 6 sanitizer structural, 1 remap, 1
   pass-through, 4 rewrite units — plus the phase's composition
   fixture among them).
+
+- **Follow-up (the editor's own rail entry) — implemented 2026-10-09.**
+  The owner's request, verbatim intent: an Editor button in the main
+  sidebar — where Home and My Library sit — that opens the epub
+  editor, with the book chosen *from* there, like Calibre's e-book
+  editor. The step-8 entry points (the reader's TOC pencil) all know
+  the book already; the rail entry knows none, so it gets the
+  editor's front door: a new page (`src/pages/editor_picker.rs`)
+  listing every EPUB in the library — search by title or author,
+  one click on a cover and the full editor opens on that book
+  (`Route::Editor`, pushed, so Back returns to the picker).
+  Non-EPUBs are not listed: the editor's pipeline is EPUB-shaped, so
+  a card it would refuse to open is a broken promise. Wiring:
+  `NavItem::Editor` (icon `text-editor-symbolic` — not the reader
+  pencil's `document-edit-symbolic`, which is a per-book
+  afterthought's icon; `is_bottom` stays Settings-only, so Editor is
+  the last of the top group), `route_by_name("editor")` for the CI
+  harness, `route_label` arm, and `sidebar_item` now maps
+  `Route::Editor` to `NavItem::Editor` so the rail lights the
+  Editor button whichever door the editor was reached through.
+  One shared widget changed honestly: the book card's tooltip hard
+  promised "Click: float · Ctrl+click: full page", which is a lie on
+  a picker where every gesture opens the editor — the hint is now a
+  parameter (`CLICK_HINT_LIBRARY` for the library pages,
+  `build_book_grid_open` for the picker), and a third CI screenshot
+  pass (`ROUTE=editor`, report in `ci-logs/editor-latest.txt`)
+  photographs the new page over the 139 seeded real EPUBs.

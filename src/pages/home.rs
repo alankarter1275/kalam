@@ -427,6 +427,7 @@ fn apply_snapshot(
             let s2 = sender.clone();
             let card = build_book_card(
                 book,
+                crate::widgets::book_row::CLICK_HINT_LIBRARY,
                 {
                     let s = s1.clone();
                     let sname = s_series.clone();
@@ -525,6 +526,7 @@ fn apply_snapshot(
             let s2 = sender.clone();
             let card = build_book_card(
                 book,
+                crate::widgets::book_row::CLICK_HINT_LIBRARY,
                 {
                     let s = s1.clone();
                     let sname = s_series.clone();

@@ -208,9 +208,18 @@ const GRID_COLS: i32 = 6;
 const COL_SPACING: u32 = 16;
 const ROW_SPACING: u32 = 20;
 
+/// The tooltip hint every library card carries: its two-gesture contract.
+/// A card built for a picker that only has one action passes its own hint
+/// instead, so the tooltip never promises a gesture the page does not offer.
+pub const CLICK_HINT_LIBRARY: &str = "Click: float · Ctrl+click: full page";
+
 /// One bookshelf card: fixed cover + title + author underneath.
+///
+/// `click_hint` is the last line of the tooltip — the card cannot know what
+/// its two gestures mean on the page that mounted it.
 pub fn build_book_card(
     book: &Book,
+    click_hint: &str,
     on_full: impl Fn() + 'static,
     on_float: impl Fn() + 'static,
 ) -> gtk::Box {
@@ -244,7 +253,7 @@ pub fn build_book_card(
     card.set_cursor_from_name(Some("pointer"));
     // Full title/author available on hover even when ellipsized.
     card.set_tooltip_text(Some(&format!(
-        "{}\n{}\n\nClick: float · Ctrl+click: full page",
+        "{}\n{}\n\n{click_hint}",
         book.title,
         book.authors_display()
     )));
@@ -437,6 +446,7 @@ fn card_position(index: usize) -> (i32, i32) {
 /// user sees today.
 fn build_windowed_grid(
     books: &[Book],
+    click_hint: &'static str,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
 ) -> gtk::Box {
@@ -512,7 +522,7 @@ fn build_windowed_grid(
                 let id = book.id;
                 let f1 = on_full.clone();
                 let f2 = on_float.clone();
-                let card = build_book_card(book, move || f1(id), move || f2(id));
+                let card = build_book_card(book, click_hint, move || f1(id), move || f2(id));
 
                 let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 cell.set_size_request(CARD_W, CARD_H);
@@ -602,11 +612,37 @@ pub fn build_book_grid(
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
 ) -> gtk::Box {
+    build_book_grid_hinted(books, CLICK_HINT_LIBRARY, on_full, on_float)
+}
+
+/// A picker's grid: one gesture, one meaning — plain click and Ctrl+click
+/// both call `on_open`, because a page whose only action is "open this
+/// book" has no float/full-page split to advertise. The card's tooltip
+/// says so instead of the library's two-gesture hint.
+pub fn build_book_grid_open(
+    books: &[Book],
+    on_open: impl Fn(i64) + Clone + 'static,
+) -> gtk::Box {
+    let second = on_open.clone();
+    build_book_grid_hinted(
+        books,
+        "Click: open in the editor",
+        on_open,
+        second,
+    )
+}
+
+fn build_book_grid_hinted(
+    books: &[Book],
+    click_hint: &'static str,
+    on_full: impl Fn(i64) + Clone + 'static,
+    on_float: impl Fn(i64) + Clone + 'static,
+) -> gtk::Box {
     // A0 step 6: build only the rows on screen. Same layout, same scrollbar --
     // see `build_windowed_grid`. `KALAM_NO_WINDOWED_GRID=1` restores the old
     // build-every-card behaviour.
     if windowed_grid_enabled() {
-        return build_windowed_grid(books, on_full, on_float);
+        return build_windowed_grid(books, click_hint, on_full, on_float);
     }
 
     // GtkGrid with homogeneous columns = true grid view.
@@ -637,7 +673,7 @@ pub fn build_book_grid(
         let id = book.id;
         let f1 = on_full.clone();
         let f2 = on_float.clone();
-        let card = build_book_card(book, move || f1(id), move || f2(id));
+        let card = build_book_card(book, click_hint, move || f1(id), move || f2(id));
 
         // Cell wrapper enforces CARD_W so Grid homogeneous cells stay equal.
         let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -676,7 +712,9 @@ pub fn build_book_card_selectable(
     on_full: impl Fn() + 'static,
     on_float: impl Fn() + 'static,
 ) -> gtk::Box {
-    let card = build_book_card(book, on_full, on_float);
+    // Selection mode is the library page's own, so its cards keep the
+    // library's two-gesture hint.
+    let card = build_book_card(book, CLICK_HINT_LIBRARY, on_full, on_float);
     if is_selected {
         card.add_css_class("kalam-card-selected");
         let check = gtk::Label::new(Some("✓ Selected"));

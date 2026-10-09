@@ -343,7 +343,9 @@ src/                       THE APPLICATION (~51k lines)
                    ReadingList, History, Tags, Analytics, Book (+ float),
                    Author, Series float, Reader, Comics (+ comics_reader/),
                    PDF reader, MetadataEditor, SavedQuotes, SavedWords,
-                   LookupHistory, Downloads, Browse, Settings
+                   LookupHistory, Downloads, Browse, Settings,
+                   EditorPicker (the rail's Editor entry — pick a book,
+                   the full editor opens on it, Calibre-style)
   widgets/         book row/card, charts, author links, focus trap, dialogs
 
 crates/                    THE READING ENGINE (vendored, ~24k lines)

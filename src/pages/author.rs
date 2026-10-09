@@ -540,6 +540,7 @@ fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender
         let float_sender = sender.clone();
         row.append(&build_book_card(
             book,
+            crate::widgets::book_row::CLICK_HINT_LIBRARY,
             move || {
                 if let Some(ser) = comic_series.as_ref() {
                     full_sender

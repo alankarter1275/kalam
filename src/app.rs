@@ -19,6 +19,7 @@ use crate::pages::{downloads::DownloadsModel,
     placeholder::PlaceholderPageModel,
     pdf_reader::{PdfReaderInit, PdfReaderModel, PdfReaderOut},
     reader::{ReaderModel, ReaderOut},
+    editor_picker::{EditorPickerModel, EditorPickerOut},
     epub_editor::{EpubEditorModel, EpubEditorOut},
     reading_list::{ReadingListModel, ReadingListOut},
     review::{ReviewModel, ReviewOut},
@@ -141,6 +142,7 @@ enum PageSlot {
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
+    EditorPicker(Controller<EditorPickerModel>),
     Editor(Controller<EpubEditorModel>),
     PdfReader(Controller<PdfReaderModel>),
     Comics(Controller<ComicsModel>),
@@ -775,6 +777,20 @@ impl AppModel {
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
+            }
+            Route::Module(NavItem::Editor) => {
+                // The editor's front door: no book yet, so the page's whole
+                // job is choosing one. Every EPUB is a click away from the
+                // full editor — Calibre's "Edit book" shape, which is what
+                // the owner asked the rail entry to be.
+                let ctrl = EditorPickerModel::builder()
+                    .launch(crate::service::LibraryService::new(catalog.clone()))
+                    .forward(sender.input_sender(), |out| match out {
+                        EditorPickerOut::OpenEditor { book_id } => {
+                            AppMsg::Push(Route::Editor { book_id })
+                        }
+                    });
+                PageSlot::EditorPicker(ctrl)
             }
             Route::Reader { book_id } => {
                 let id = *book_id;
@@ -2119,6 +2135,7 @@ fn route_by_name(name: &str) -> Option<Route> {
         "library" => Route::Module(NavItem::Library),
         "downloads" => Route::Module(NavItem::Downloads),
         "comics" => Route::Module(NavItem::Comics),
+        "editor" => Route::Module(NavItem::Editor),
         "browse" => Route::Module(NavItem::RemoteBrowse),
         "fanfiction" => Route::Module(NavItem::Fanfiction),
         "settings" => Route::Module(NavItem::Settings),
@@ -2145,6 +2162,7 @@ fn known_route_names() -> Vec<&'static str> {
         "library",
         "downloads",
         "comics",
+        "editor",
         "browse",
         "fanfiction",
         "settings",
@@ -2180,6 +2198,7 @@ fn route_label(route: &Route) -> &'static str {
         Route::Module(NavItem::Shelves) => "route_open:shelves",
         Route::Module(NavItem::Downloads) => "route_open:downloads",
         Route::Module(NavItem::Comics) => "route_open:comics",
+        Route::Module(NavItem::Editor) => "route_open:editor_picker",
         Route::Module(NavItem::RemoteBrowse) => "route_open:remote_browse",
         Route::Module(NavItem::Fanfiction) => "route_open:fanfiction",
         Route::Module(NavItem::Settings) => "route_open:settings",
@@ -2256,6 +2275,10 @@ mod tests {
             Some(Route::Module(NavItem::Settings))
         );
         assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
+        assert_eq!(
+            route_by_name("editor"),
+            Some(Route::Module(NavItem::Editor))
+        );
         assert_eq!(
             route_by_name("all-books"),
             Some(Route::LibrarySection(LibrarySection::AllBooks))

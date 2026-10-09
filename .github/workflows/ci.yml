@@ -420,6 +420,16 @@ jobs:
           BOOKS=139 OUT=ci-shots-tasks SETTLE=20 ROUTE=tasks \
             docs/ci/screenshot.sh
 
+      # The editor picker (Phase 6 follow-up): the rail's Editor entry and
+      # the page it opens. Same proof class as the tasks page — the route
+      # resolves, the component builds, the grid renders instead of
+      # panicking. The seeder writes real EPUBs, so this shows the full
+      # picker grid, not the empty state.
+      - name: open the editor picker and report
+        run: |
+          BOOKS=139 OUT=ci-shots-editor SETTLE=20 ROUTE=editor \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -436,9 +446,12 @@ jobs:
           cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
             || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
+          cp ci-shots-editor/report.txt ci-logs/editor-latest.txt 2>/dev/null \
+            || echo "(no editor report produced)" > ci-logs/editor-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-latest.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt
+          git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt ci-logs/editor-latest.txt
           git commit -m "ci: publish smoke-test report [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true

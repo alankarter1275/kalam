@@ -820,3 +820,15 @@ step 1 is the only thing awaited.
   `build_book_grid_open` for the picker), and a third CI screenshot
   pass (`ROUTE=editor`, report in `ci-logs/editor-latest.txt`)
   photographs the new page over the 139 seeded real EPUBs.
+
+  **CI — green on run 2 (37901417687, 15m47s).** Run 1 failed on
+  one line: the new `PageSlot::EditorPicker` variant's arm in
+  `impl PageSlot::widget()`, an exhaustive match sitting quietly
+  below the enum (E0004; pitfalls §96). Run 2 green with all 602
+  tests (the route-name test grew an "editor" assertion), and the new
+  screenshot pass proves the page on screen: route accepted, the
+  shot differs from Home, `grid_cards 139`, covers decoded with no
+  main-thread stall, and — because CI runs with
+  `KALAM_NO_WINDOWED_GRID=1` — the plain grid path rendered while
+  the windowed path stays the default in real use, both paths
+  verified in one run.

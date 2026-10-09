@@ -645,3 +645,40 @@ special screen is cheaper than that site abandoning the wall entirely.
    links) is the next design topic, before any code.
 5. Remote identity, Save-vs-Download boundary, downloads migration,
    follows scheduler — still to be designed.
+
+---
+
+## Entry 9 — 2026-10-09 — unpacking "the vocabulary"
+
+**The owner's question, verbatim:**
+
+> "what do you mean? every plug will answer what? I don't understand"
+
+Fair — Entry 8's closing line ("the exact list of questions every plug
+will answer") compressed the whole idea into one sentence and lost the
+owner. Re-explained in chat the same day, plainly:
+
+**The "vocabulary" = a fixed menu of requests the app can make to any
+plug.** The app is a customer who always orders from the same menu; each
+plug is a different cook who prepares every dish their own way. The menu,
+sketched in the chat walkthrough:
+
+1. *Who are you?* — name, icon, text or comics, what you can do
+   (the labels).
+2. *What shelves do you have?* — AO3 answers fandoms/popular/tags;
+   Literotica answers its category tree.
+3. *What's on this shelf?* — a page of items (title, author, cover,
+   blurb) plus "is there a next page?"
+4. *Tell me about this one* — full description, tags, chapter list,
+   author.
+5. *Search* — two-step: "what's your search form?" (the plug hands over
+   its fields as data), then "here are the filled-in fields, give me
+   results."
+6. *Everything with this tag / by this author* — trail links.
+7. *Give me chapter 12* — text or images.
+8. *Any new chapters since X?* — the background follow checker.
+
+Plugs may answer "I don't serve that" to anything except the core (the
+app hides the missing parts). Writing this list down before code is
+cheap; changing it after the screens exist is expensive — that is why it
+is the next design step, and nothing more mysterious than that.

@@ -197,3 +197,69 @@ sequencing fact, not a product statement.
 - 🔶 Which western comics sites (one or two)? — posed back in chat same day.
 - 🔶 Confirm reading of decision 2 (peer features; build reading first) —
   restated in chat same day for a yes/no.
+
+---
+
+## Entry 3 — 2026-10-09 — decision 2 confirmed; the western comics landscape, researched
+
+**The owner's answers, verbatim:**
+
+> "1. I don't know any. can you look up for a few popular websites where one
+> can read western comics for free"
+>
+> "2. yup"
+
+**✅ Decision 2 closed:** all options exist in the app as peer features
+(read online, download, follow); "reading first" is build order only.
+
+**🔶 Western comics sources — the researched landscape** (web search,
+2026-10-09). The owner asked for popular free sites; the honest finding is
+that the landscape splits by legality and by consumption model:
+
+*Unlicensed, current Marvel/DC ("the popular free sites"):*
+
+- **ReadComicOnline.li** — the best-known page-streaming reader; the
+  engineering catch is Cloudflare-class bot protection.
+- **ReadAllComics.com** — page-streaming, no account, long-running,
+  simpler protections historically.
+- **ViewComic / ViewComics** — long-running simple streamer, Marvel/DC/
+  Image/Vertigo.
+- **ZipComic.com** — stream + download; top-traffic competitor as of
+  mid-2026.
+- **Batcave.biz** — DC-heavy plus golden-age.
+- **GetComics.org** — direct-download archive: whole issues as CBZ/CBR/PDF
+  behind third-party file hosters (Mega, MediaFire). Fits kalam's importer
+  model exactly, but the bytes live on hosters with their own friction.
+  Torrents (1337x, TPB) surfaced too — out of scope for a source adapter.
+
+*Legal, free:*
+
+- **Comic Book Plus** — ~17,000 public-domain Golden/Silver Age issues,
+  fully legal, online reader. Digital Comic Museum is the same category.
+- **GlobalComix** — legit creator-first platform, 100k+ comics, publishers
+  include DC, Marvel, Kodansha, Dark Horse; free tier + one subscription
+  unlocking everything. **No documented public API** (searched; only an old
+  2021 PHP API client on GitHub and third-party Apify scrapers exist), so
+  an adapter would target the undocumented internal API — fragile, same
+  class of work as scraping despite the legit content.
+- Marvel.com / DC Kids free rotations, Hoopla (library card, app/DRM
+  bound) — real but not source-adapter material.
+
+**Fit with kalam, as assessed in this entry:**
+
+- A page-streaming site maps 1:1 onto the existing `Source` trait
+  (`search → get_details → get_chapters → ChapterContent::Images +
+  fetch_image` with referer) and the ComicsReader's RemoteProvider.
+- GetComics maps onto the *other* half of the owner's ambition — download
+  into the library — feeding the existing CBZ/CBR importer; cost is the
+  file-hoster layer.
+- Legality recorded plainly: the current-issues sites are unlicensed;
+  Comic Book Plus is the clean legal archive but its content is
+  1940s–60s vintage.
+
+**Recommendation posed to the owner (same day, in chat):** one streamer
+first — ReadAllComics (simplest, no Cloudflare reputation) or
+ReadComicOnline (biggest catalog, bot-protection risk); GetComics as the
+download-side addition if whole-issue files are wanted; Comic Book Plus if
+a legal source matters to them. Awaiting the owner's pick of one or two
+(🔶 open).

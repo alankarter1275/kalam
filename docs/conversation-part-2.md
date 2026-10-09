@@ -682,3 +682,18 @@ Plugs may answer "I don't serve that" to anything except the core (the
 app hides the missing parts). Writing this list down before code is
 cheap; changing it after the screens exist is expensive — that is why it
 is the next design step, and nothing more mysterious than that.
+
+---
+
+## Entry 10 — 2026-10-09 — a partial "yup"
+
+**The owner's reply, verbatim:**
+
+> "yup, kind of..."
+
+Understood partially, accepted as enough for now — the right call, not a
+failure: the fixed-question-menu idea settles with use, not with more
+explaining. No new decisions. Deliberately did **not** pile on another
+explanation; the next concrete step (writing the menu against AO3,
+question by question, in plain words) is where anything still fuzzy will
+surface naturally. Teed up, awaiting the owner's word.

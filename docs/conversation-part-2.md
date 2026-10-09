@@ -697,3 +697,93 @@ explaining. No new decisions. Deliberately did **not** pile on another
 explanation; the next concrete step (writing the menu against AO3,
 question by question, in plain words) is where anything still fuzzy will
 surface naturally. Teed up, awaiting the owner's word.
+
+---
+
+## Entry 11 — 2026-10-09 — REQUIREMENT CHANGE: plugins must be true plugins
+
+**The owner's requirement, verbatim:**
+
+> "you know, I want the plugins to be like...well, plugins. If a plugin
+> breaks mid use, I should be able to change it and then reload it without
+> recompiling the whole app.....understand? what else should be a standard
+> behavior of a plugin? I don't know these things...."
+
+### What this changes
+
+This **updates the Entry 6/8 substrate verdict.** The tiered answer stood
+on "the first four sources are native Rust; the plugin machinery waits for
+a proven need." The owner's requirement makes reloadability a core
+property, not a deferred one: *fixing a source must never require
+rebuilding kalam.* Consequences:
+
+- **Everything becomes a plugin.** A plugin = a folder with a manifest
+  (id, name, version, capability labels) plus either a `.wasm` file
+  (logic-bearing sources) or a `.toml` file (pure-data sources — the
+  mangaball shape). Native Rust is demoted from a *destination* to
+  *temporary scaffolding* during the wall-proving phase.
+- **The app core freezes.** Once the wall + gate + loader exist, kalam
+  itself should never need a rebuild because a website changed. All churn
+  lives in plugin files.
+- **§22's three conditions, revisited.** (1) wasmtime behind an
+  off-by-default Cargo feature — *stays* (CI and plugin-less builds stay
+  light; the owner's build turns it on). (2) "no host before a second
+  plugin" — *overtaken by this requirement*: the host moves onto the
+  critical path once the wall is proven, because every source is a
+  consumer from day one. (3) TOML alongside — *stays*, reframed: a plugin
+  may be pure data. The wasmtime cost on a 4 GB machine is now a price
+  the owner has consciously chosen to pay; it is manageable, not optional.
+- **Honest fix-loop numbers:** a TOML plugin fix = edit text, reload, done
+  (zero compiling). A wasm plugin fix = edit Rust, compile *only that
+  small crate* to a `.wasm` target (seconds to low minutes — one tiny
+  crate, not the fat-LTO whole-app build), drop the file in, reload.
+  Neither touches kalam's 20-minute-class full build.
+
+### Standard plugin behaviors (the owner's question, answered)
+
+The norm across plugin systems (Tachiyomi/Mihon extensions, OBS, Figma,
+browser extensions), translated to kalam:
+
+1. **Install by dropping a folder in a directory; remove by deleting it.**
+   No app changes either way.
+2. **Update = replace the file, then reload.** The app never needs
+   rebuilding for a source fix. Plugin version numbers make old vs new
+   visible.
+3. **Enable / disable without deleting** — a source can be switched off
+   and keep its settings.
+4. **Crash containment** — a broken plugin shows an error for that source
+   and nothing else. It must never take the reader down. (Wasm's core
+   value; TOML parse errors are contained trivially.)
+5. **Per-plugin settings** — a small standard options page each source can
+   add controls to, stored by the app (never inside the plugin file).
+6. **Everything through the gate** — plugins get no direct internet or
+   filesystem access; they ask the host. One user-agent, one rate
+   limiter, one cache, one cookie jar. Safety and consistency in one
+   place.
+7. **An error log per plugin** — a "why is this source broken" console
+   in-app; the single most important debugging surface when the plugin is
+   a sandboxed binary.
+8. **The app must work with zero plugins** — kalam stays today's complete
+   offline reader; sources are additions, not limbs.
+9. **Mid-use reload, honestly defined:** already-open chapters stay open
+   (content is already unpacked in the reader cache); in-flight fetches
+   finish or fail cleanly; the swap happens between fetches, not during
+   one. A "reload plugin" action in settings plus change-detection on the
+   plugin folder.
+
+### Revised build path
+
+1. Design + build the wall and gate (unchanged — still first).
+2. AO3 built *natively as scaffolding* — fastest way to prove the wall
+   end-to-end against the richest site (the Entry 8 fallback trigger
+   also fires earliest this way).
+3. While AO3 proves the wall: the minimal wasm host, the plugin folder +
+   manifest format, the per-plugin settings page, the error console.
+4. Lift AO3 out of the binary into the first true plugin. From then on:
+   the core is frozen; Royal Road, Literotica, MangaDex and everything
+   else arrive as plugins directly.
+
+**🔶 Open, put to the owner in chat:** confirm that *everything becomes a
+plugin* (AO3 and MangaDex included) is what they meant — stable API sites
+break rarely, so they *could* stay native; the recommendation is
+everything-is-a-plugin for one uniform system.

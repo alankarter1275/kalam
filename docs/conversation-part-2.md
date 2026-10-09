@@ -535,3 +535,67 @@ into `cache/reader/<uuid>/` exactly as it does today → three tiers apply
 (nothing kept / Save / Download-to-library). Downloads go through the
 existing queue (after its `tasks.rs` migration). Follows check for new
 chapters on a schedule through the same gate.
+
+---
+
+## Entry 7 — 2026-10-09 — the owner proposes per-site sockets
+
+**The owner's proposal, verbatim:**
+
+> "actually, I was thinking making website specific sockets. like AO3's
+> interface is completely different from Literotica's. their search system,
+> tag system (AO3's tag system is very powerful), and other things are
+> completely different. so they all need separate approach! each hand
+> crafted. what do you think?"
+
+### What's right in the proposal, and what it costs
+
+**Right:** every source needs a *hand-crafted approach*. AO3's tag system
+(fandoms, relationships, characters, ratings, exclusions, wrangled tags,
+its dozen sort orders) genuinely is a different world from Literotica's
+category tree. Nobody — not Tachiyomi, not us — disputes this. The
+per-site craft lands in the **plug**, and it is unavoidable.
+
+**The cost of taking it one step further — per-site *sockets*** (i.e. a
+bespoke interface + bespoke app-side handling per site):
+
+1. The Browse screen, search screen, details screen and reader entry all
+   become per-site code forests: "if AO3 draw this; if Literotica draw
+   that." Every new source edits the app itself.
+2. The downloads queue, the follow/update scheduler and the one-gate
+   fetcher all ask sources uniform questions ("any new chapters?", "fetch
+   this") — per-site sockets fork every one of them.
+3. The punchline: **the plugs' hand-crafted code would still have to be
+   hand-crafted.** Per-site sockets duplicate the app-side work and remove
+   none of the plug-side work.
+
+### The reconciliation: one wall, data-rich; hand-crafted plugs
+
+The standard answer (Tachiyomi's, and already half-present in our unused
+`traits.rs` as `get_filter_definitions` → Text/Checkbox/Select/Sort):
+
+- **Search forms as data, not code.** Each plug hands the app a *list of
+  controls* — and the shared search screen draws whatever it is given,
+  natively. AO3's plug hands over a rich form (text fields for
+  characters/ships, dropdowns for rating and sort, checkboxes for
+  completion, word-count ranges); Literotica's hands over one category
+  dropdown. Hand-crafted where it matters, shared where it matters.
+- **Trail links as data** (the P7c "follow a trail" idea): anything
+  tappable in a result or detail page — a tag, an author, a series, a
+  fandom — is a generic link that produces a new browse query. AO3's plugs
+  produce many (every tag, every wrangled relationship), Literotica's few.
+- **Capability labels** decide which parts of the app even appear for a
+  source.
+- **The socket grows, it does not fork:** when a site proves the
+  vocabulary too small, the vocabulary gains a concept every source may
+  use. The acknowledged danger of one-socket designs is
+  lowest-common-denominator flattening — the defense is richness
+  (data-driven filters + trail links), and the escape hatch is a bespoke
+  screen behind a special capability, allowed but discouraged, decided
+  only when a real case demands it.
+
+**Position posed to the owner (🔶 open, awaiting their reply):** one
+shared, deliberately rich socket; per-site hand-crafted plugs that fill it
+with each site's full personality. Their instinct is already honored in
+the plan — tier-1 sources (AO3, MangaDex, FFN-via-FicHub, Royal Road's
+binder) are exactly hand-crafted native code.

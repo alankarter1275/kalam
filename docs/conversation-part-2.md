@@ -402,3 +402,28 @@ a legal source matters to them. Awaiting the owner's pick of one or two
 5. **The downloads migration** — `downloads.rs` → `tasks.rs` before the
    hub lights up.
 6. **Webnovel's scope ruling** — the Entry 2 collision.
+
+---
+
+## Entry 5 — 2026-10-09 — Webnovel removed; a standing instruction on language
+
+**The owner's ruling, verbatim:**
+
+> "alright, remove WebNovel. also, whtever else you said, I don't understand
+> a thing. please use simple language. very simple language, and if possible
+> explain it nicely so I can understand"
+
+**✅ Webnovel is removed from the roster.** The 2026-09-04 reasoning stands
+after all: most of what is worth reading there sits behind their coin
+paywall, and bypassing a paywall is out of scope. It never reached
+ROADMAP's stub list, so no roadmap edit is needed. The roster is now:
+AO3, MangaDex, Royal Road, Literotica, FFN **+ one or two western comics
+sources, pick deferred** (🔶 still open, Entry 3).
+
+**✅ Standing instruction for this conversation (and beyond): very simple
+language.** The Entry 4 briefing was too dense — terms like "trait verbs,"
+"substrate," "capability declaration" were never unpacked. Every future
+entry's chat summary must be plain words, short sentences, and everyday
+analogies first, technical terms only when immediately explained. The
+full-technical version still lives in this file (the record must stay
+precise), but the person must never need it to follow along.

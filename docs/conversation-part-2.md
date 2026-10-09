@@ -427,3 +427,111 @@ entry's chat summary must be plain words, short sentences, and everyday
 analogies first, technical terms only when immediately explained. The
 full-technical version still lives in this file (the record must stay
 precise), but the person must never need it to follow along.
+
+---
+
+## Entry 6 — 2026-10-09 — the Tachiyomi question: how it works, and whether WASM is right
+
+**The owner's ask, verbatim:**
+
+> "the plugs will be build later. right now I want to talk about how it will
+> work, and if wasm is the correct answer for this or not. how to make it
+> work like how tachiyomi works...."
+
+### How Tachiyomi actually works (architecture, from its source model)
+
+Tachiyomi (community-continued as Mihon since the 2024 shutdown of
+tachiyomi.org) is an Android manga reader whose sources are **extensions
+delivered as APKs** — small installable packages, each containing one
+source's Kotlin code, loaded at runtime without touching the main app. Four
+load-bearing parts:
+
+1. **A fixed interface.** Every source implements the same verbs
+   (popular / latest / search → details → chapters → pages). The app talks
+   only to this interface; it never knows which site it is talking to.
+2. **Capability flags.** A source declares what it can do (`supportsLatest`,
+   etc.); screens adapt. A source without "latest" just doesn't show that
+   tab.
+3. **Host-owned I/O.** Extensions do not do raw networking. They build
+   requests and parse responses; the shared base class (`HttpSource`)
+   provides the client, the per-source rate limit, headers, cookies. One
+   shared identity, one place for politeness, one place for caching later.
+   This is the single best idea in the system.
+4. **Separate distribution.** A repo index (JSON) lists extension APKs with
+   versions; the app can update a source without an app update. This part
+   exists because Tachiyomi serves *millions of users who cannot compile
+   the app*. It is the part kalam explicitly does not need
+   (`source-seam.md` §0: personal app, no ecosystem, no marketplace, no
+   versioning story — one user who is the developer).
+
+The loading mechanism itself (DexClassLoader) is nothing special — it is
+just what Android hands you. On desktop Linux the equivalent (loading
+`.so` libraries at runtime) is crash-prone and unsafe; where hot-loading
+is wanted, WASM beats it.
+
+### The clarifying split: API-shaped vs scraper-shaped
+
+The roster splits by *how a site breaks*:
+
+- **API-shaped** — MangaDex (official API), AO3 (EPUB endpoint + search
+  pages), FFN (FicHub's documented API). These speak stable, documented
+  shapes; they essentially never break on markup changes. They are
+  ordinary Rust code and want **no plugin substrate at all**.
+- **Scraper-shaped** — manga aggregators, Literotica, Royal Road's chapter
+  pages. These break when a site redesigns its HTML. Only these care about
+  the fix loop.
+
+**Consequence: none of the first four sources needs WASM.** AO3, MangaDex
+and FFN are API-shaped; Royal Road is *app logic* (the shared EPUB binder)
+that belongs in the binary regardless. The substrate question only bites on
+the long tail — which is exactly why §22's "no host before a second
+plugin" condition was right.
+
+### The substrate verdict
+
+- **WASM** (a way to run small programs inside a big one, sandboxed,
+  without rebuilding the big one — the tech behind Figma/Photoshop plugin
+  systems): buys crash isolation, sandboxing, no-app-rebuild fixes. Costs:
+  the `wasmtime` dependency tree (heavy for a 4 GB RAM machine), a wasm
+  toolchain step per fix, harder debugging, and real host-API design work
+  (plugins must do HTTP *through* host functions or the sandbox is either
+  crippled or leaky).
+- **TOML selector packs** (`mangaball.toml` shape): the seconds fix-loop
+  for the *most common* breakage (a changed CSS selector), zero compiling,
+  hand-editable. Ceiling: only fits fetch-URL-extract-with-selectors
+  sites; no logic. The engine itself is code we must write.
+- **Native Rust in the app**: fastest, type-checked, zero new deps; the
+  cost is the rebuild loop (fat LTO, `codegen-units = 1`) when a site
+  changes — precisely what the archive flagged in `source-seam.md`'s scope
+  note.
+- (Lua — the original ARCH.md plan — remains the lighter middle option:
+  no compile at all, real logic, but no crash isolation; superseded by the
+  owner's §22 decision and not revisited unless they ask.)
+
+**Position taken in this entry (affirms §22, sharpens it):** copy
+Tachiyomi's *architecture*, not its *distribution*. The three tiers stand:
+
+1. API sources → native Rust, always;
+2. simple scraper sites → TOML selector packs;
+3. complex scraper sites → WASM, **built only when a real second-plugin
+   case exists**, behind the off-by-default feature.
+
+And two Tachiyomi ideas must go into the socket rewrite *now*, because
+they are substrate-independent: **capability flags** (browse shelves?
+author pages? login? per-chapter? text or images?) and the **one network
+gate** — sources never fetch directly; they ask the gate ("fetch this URL,
+these headers"), and the gate owns the user-agent (identifying kalam, with
+contact info as FicHub requires), per-source rate limits, retry/backoff,
+and the future cache. One gate is also what keeps a broken plug from
+hammering a site.
+
+### The end-to-end flow, as it will work
+
+Tap Browse → pick a source → the app asks that source's plug for shelves
+(what it declared it can do) → you wander/search → tap a work → details
+(chapters, description, cover) → tap a chapter → the gate fetches, the
+plug parses (or the EPUB endpoint hands over a file), the reader unpacks
+into `cache/reader/<uuid>/` exactly as it does today → three tiers apply
+(nothing kept / Save / Download-to-library). Downloads go through the
+existing queue (after its `tasks.rs` migration). Follows check for new
+chapters on a schedule through the same gate.

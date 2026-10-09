@@ -143,3 +143,57 @@ In dependency order, the conversation has five questions:
    update checking, metadata mapping into the library.
 
 Question 1 opens the conversation (posed in chat the same day).
+
+---
+
+## Entry 2 — 2026-10-09 — Question 1 and 2 answered: the roster grows, the staging philosophy falls
+
+**The owner's answers, verbatim:**
+
+> "1. yes a few more. Webnovel. and one or two for the western comics."
+>
+> "2. kind of.....but it's a feature, alright? nothing like last or first.
+> there is an option and it's up to use to do it. though I agree that the
+> first work is to read"
+
+### Decisions
+
+**✅ Roster — the stub's five stand, plus two additions.** AO3, MangaDex,
+Royal Road, Literotica, FFN (ROADMAP Part 2 stub) **+ Webnovel** **+ one or
+two western comics sources** (sites not yet named — open follow-up 🔶).
+Seven-ish sources once named. ROADMAP's stub list will be updated when the
+roster closes, not per-turn.
+
+Two per-source notes recorded now, researched when each source is designed:
+
+- **Webnovel** (webnovel.com, Qidian International): free + paywalled
+  (VIP/locked) chapters; app-centric platform. A logged-out scraper reaches
+  free chapters only — locked content needs an account, and the standing
+  rulings (no passwords ever; session-cookie login last, if ever) apply
+  squarely. The source's honest scope is free content until and unless an
+  account path exists.
+- **Western comics** differ from manga in *consumption model*, and that
+  matters for the trait later: manga streams chapter-by-chapter (the
+  MangaDex API model, `ChapterContent::Images`), while western comics are
+  usually consumed as **whole issue files** (CBZ/CBR) — which is exactly
+  what kalam's existing importer and comics reader already eat. A
+  direct-download source (archive-style site) may fit kalam better than a
+  page-streaming source, and might want a *file-download* verb the current
+  trait does not have. Design question, parked until the sites are named
+  and the substrate question (map item 3) is taken.
+
+**✅ Ambition — the P7 staging inversion is rejected as philosophy.**
+Read-online and download are **peer features**, both present, both
+user-choice — "nothing like last or first. there is an option and it's up
+to us to do it." The old P7f framing (download as the *last* stage,
+presented as a philosophical inversion) is struck. What survives is
+narrower and practical: **build order starts with reading** ("the first
+work is to read") — because the reader's cache-unpack design makes
+remote-reading cheap, per the archived P7 evidence. Build order is a
+sequencing fact, not a product statement.
+
+### Open follow-ups from this entry
+
+- 🔶 Which western comics sites (one or two)? — posed back in chat same day.
+- 🔶 Confirm reading of decision 2 (peer features; build reading first) —
+  restated in chat same day for a yes/no.

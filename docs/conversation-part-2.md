@@ -263,3 +263,142 @@ ReadComicOnline (biggest catalog, bot-protection risk); GetComics as the
 download-side addition if whole-issue files are wanted; Comic Book Plus if
 a legal source matters to them. Awaiting the owner's pick of one or two
 (🔶 open).
+
+---
+
+## Entry 4 — 2026-10-09 — the engineering state, surveyed from every doc
+
+**The owner's ask, verbatim:**
+
+> "well, we will get to it later. forget it. for now, let's talk about the
+> real engineering, ok? what do you know about it right now? what is in the
+> docs?"
+
+(Western comics site pick deferred; the 🔶 from Entry 3 stays open.)
+
+### Where the design lives — nine places, all read today
+
+1. **`ROADMAP.md` Part 2 stub** — the gate rule (*nothing in Part 1 may
+   depend on online*) and four threads: WASM substrate, the source roster,
+   the downloads-hub debt (must move to `src/tasks.rs`; `src/downloads.rs`
+   is bare `thread::spawn` + six `lock().unwrap()`s), Literotica account
+   sync (raised, never decided).
+2. **`docs/conversation.md` §22** — the WASM ruling (owner's, 2026-09-18,
+   superseding Lua *and* a "pure Rust + TOML" pivot): buys crash isolation
+   + sandboxing; costs the wasmtime dep tree on a 4 GB RAM machine. Three
+   conditions: feature off by default; no host before a second plugin; TOML
+   alongside — *tiered: wasm for sources that need logic, TOML for sources
+   that need a selector*.
+3. **`ARCH.md`'s Source-seam section** — the Lua-era seam design,
+   banner-marked set aside, pointing to §22.
+4. **`docs/archive/roadmap-phases-p0-p12.md` P6+P7** — the richest doc.
+   P6+P7 deliberately combined: the queue is infrastructure, the client is
+   the feature, designed together so the queue answers to real needs.
+5. **`docs/archive/source-seam.md`** — the original seam design: the
+   dividing line for plugin surfaces is *does this break when a website
+   changes its HTML*; personal app, not an ecosystem; no marketplace, no
+   versioning; acceptance test: *a fresh chat can add a source from the
+   documented API alone.*
+6. **`docs/archive/p7-plan.md`** — the AO3 finding (below).
+7. **`docs/archive/p7-scope-correction.md`** — the browse-not-download
+   correction (below).
+8. **`docs/archive/p7-login-and-reading.md`** + **`p7-storage.md`** +
+   **`fichub-and-ffn.md`** — login posture (last, cookie-only, never
+   passwords); storage (folder-per-book is already the Calibre shape;
+   highlights survive fic updates without storage changes); FicHub's rules
+   of use.
+9. **`docs/archive/plugins-mod.rs`** — the archived WASM host attempt
+   (imported wasmtime that was never in the manifest; kept for its design).
+
+### The settled engineering positions, as the docs record them
+
+1. **The `Source` trait must be rewritten before anything is built.**
+   The scope correction (2026-09-04) is explicit: the current four verbs
+   (search → details → chapters → content) are a *downloader's* shape —
+   "I already know which work I want" — and cannot express wandering.
+   The rewrite is browse-first: categories/fandoms, site sort orders,
+   author pages, and **capability declaration** — a source says "I do
+   search but not author pages" and the UI adapts rather than breaks.
+   Retrofitting browse onto a download-shaped API means changing every
+   source and every screen, so it happens first.
+2. **One trait for fiction and manga, not FictionSource + MangaSource.**
+   They differ only in the final step — text vs image URLs, a two-variant
+   `Content` enum. Search, pagination, chapter lists, rate limits, the
+   download queue and the follow scheduler are identical and must not be
+   written twice.
+3. **Per-chapter fetching is required, not a nicety.** A 2,000-chapter
+   Royal Road serial cannot be fetched to read one chapter. **AO3 is the
+   unusual case, not the template** — `download.archiveofourown.org/
+   downloads/<id>/fic.epub` is a real EPUB built by AO3 with Calibre and
+   listed in their own FAQ, so scraping AO3 is only ever for *finding*
+   things, never for parsing text.
+4. **Source order proves something different each time:** AO3 (their EPUB
+   endpoint — search, filters, following) → Royal Road (first source where
+   *we* build the EPUB; the biggest untested piece, tested gently) →
+   Literotica (messy structure, no clean chapters) → FFN (a third-party
+   bridge).
+5. **One shared EPUB assembler** — new code; `epub_write.rs` edits EPUBs
+   and cannot create one, but `zip` is already compiled with write
+   support.
+6. **FFN = FicHub for download + WebKit for browsing.** FicHub has exactly
+   two endpoints (`/api/v0/epub`, `/api/v0/meta`), both requiring a fic
+   URL you already have — it solves downloading, nothing of browsing.
+   FicHub's rules are conditions of use: identify ourselves in the
+   user-agent with contact info, never concurrent requests, honour
+   429/Retry-After, no bulk export; the dependency must be visible in the
+   UI. Browsing FFN means Cloudflare, which means the browser engine.
+7. **Three-tier reading model (user-decided):** just reading → nothing
+   kept; **Save** → temp area, not a library book; **Download** → real
+   book. Open: what exactly separates Save from Download (the answer
+   decides whether saved fics need their own screen).
+8. **Downloads machinery is real, not vapour:** a job queue with progress
+   and cancellation (`src/downloads.rs`, made async in 1.3), a downloads
+   page, and a live route — with no sources feeding it. The Part 2 stub's
+   requirement stands: migrate to `tasks.rs` when it starts.
+9. **Login: in scope but last; never store passwords.** Session cookie
+   obtained through a real site page in a browser window we never read
+   the password from; stored in config, never in a library folder;
+   log-out actually deletes it; read-only always (a leaked session cannot
+   be used through kalam to damage an account — no writing actions at
+   all).
+10. **Remote identity:** downloaded books carry `source` + `remote_id`;
+    storage/`catalog.db` shape already supports keeping highlights
+    across fic updates (p7-storage). The missing piece is a *temporary*
+    identity for a non-library fic plus a promote action — the reader
+    itself already unpacks into `cache/reader/<uuid>/` and does not care
+    where bytes came from.
+
+### New engineering facts found today (not in the old docs)
+
+- **WebKitGTK is no longer in the binary.** The engine swap removed it
+  (Cargo.toml has no webkit entry). The FFN plan (WebKit for browsing) and
+  the login design (a real browser window) were written when WebKit shipped
+  with the reader. Bringing it back is now a *re-add the dependency*
+  decision with real weight — or these designs need a different answer.
+- **The trait in-tree is the pre-correction shape.** `src/sources/traits.rs`
+  implements exactly the download-shaped verbs the scope correction
+  struck down; the browse model was never written. Its only live consumer
+  is the comics `RemoteProvider` (streaming images per chapter, via
+  `get_chapter_content` + `fetch_image`) — the one working remote path in
+  the app, and the thing a trait rewrite must not break.
+- **Webnovel was dropped on 2026-09-04** — "almost everything worth
+  reading is behind their coin paywall, so a downloader gets a handful of
+  free chapters and stops. Bypassing a paywall is out of scope." The owner
+  re-added it in Entry 2. **Collision — needs the owner's ruling** 🔶:
+  keep it with an honest free-chapters-only scope, or let the old
+  reasoning stand?
+
+### The open engineering questions, in dependency order (revised map)
+
+1. **The trait rewrite** — browse verbs + capability declaration; must
+   keep RemoteProvider whole. (Everything else hangs off this.)
+2. **Substrate order** — all docs agree AO3 lands *native Rust* first to
+   prove the interface; the wasm host waits for a second plugin. What the
+   first source proves decides the tier split.
+3. **Remote identity + the three tiers** — temp identity, Save vs
+   Download boundary, promote action.
+4. **WebKit's return or replacement** — affects FFN browsing and any
+   account flow.
+5. **The downloads migration** — `downloads.rs` → `tasks.rs` before the
+   hub lights up.
+6. **Webnovel's scope ruling** — the Entry 2 collision.

@@ -599,3 +599,49 @@ shared, deliberately rich socket; per-site hand-crafted plugs that fill it
 with each site's full personality. Their instinct is already honored in
 the plan — tier-1 sources (AO3, MangaDex, FFN-via-FicHub, Royal Road's
 binder) are exactly hand-crafted native code.
+
+---
+
+## Entry 8 — 2026-10-09 — DECISION: one rich wall, per-site wall as fallback
+
+**The owner's decision, verbatim:**
+
+> "well, we will try it your way first, if it works good. if not....well,
+> per-site wall is always the fallback, and it will always work"
+
+**✅ Decision (closes Entry 7's open question):** one shared, deliberately
+rich socket — search forms as data, tappable trail-links, capability
+labels, one network gate — filled by hand-crafted per-site plugs.
+**Per-site walls are the recorded fallback, not a rejected idea**: if the
+rich wall cannot express a site without flattening it, forking that site's
+wall is the sanctioned answer. The owner's framing is sound — the per-site
+wall is the option with no shared abstraction, so it cannot be blocked by
+the abstraction's limits; its cost is duplicating the app-side screens,
+queue hooks and gate handling per site.
+
+**The fallback has an early, concrete trigger.** AO3 is first in the build
+order *and* the richest site — the wall's hardest test is also its first
+one. If AO3's tag/search system cannot be carried through the shared
+vocabulary without losing what makes it AO3, that is the moment the
+fallback fires, not after several sources are built on a wall that proves
+too small.
+
+**Halfway point before a full fork:** a bespoke screen behind a special
+capability label (the escape hatch from Entry 7) — one site getting one
+special screen is cheaper than that site abandoning the wall entirely.
+
+### State of the Part 2 question map after this entry
+
+1. Roster + ambition — settled except the western comics pick (🔶 open,
+   deferred by the owner).
+2. P7 rulings re-confirmation — presented across Entries 4–6 (read-only,
+   no passwords/login-last, three tiers, per-chapter) without objection;
+   explicit owner confirmation not yet asked for directly.
+3. Substrate — settled: tiered (native / TOML / WASM-when-proven), WASM
+   deferred per §22's conditions; this conversation added the API-vs-
+   scraper split as the reason the first four sources need no substrate.
+4. Socket shape — **direction settled (this entry)**; the vocabulary
+   itself (the actual questions, capabilities, filter-item kinds, trail
+   links) is the next design topic, before any code.
+5. Remote identity, Save-vs-Download boundary, downloads migration,
+   follows scheduler — still to be designed.

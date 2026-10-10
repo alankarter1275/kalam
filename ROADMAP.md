@@ -2560,3 +2560,4 @@ ocs/WORKING.md`](./docs/WORKING.md).
   `lopdf` mention) → git history, superseded 2026-10-02 by the
   prescriptive principles document. Navigation and UX decisions live in
   this file and `docs/conversation.md`.
+| 2026-10-10 | **KAL-5 EPUB Editor Overhaul design settled.** Shifted from the Phase 6 proofreader model to a full Calibre-parity IDE. Direct `.epub` saves for the full editor (dropping the virtual patch system to enable file management), while retaining lightweight patches for zero-lag in-reader quick fixes. Dual editing modes (Obsidian-style Live Preview and Raw Code). Added File Manager, TOC Editor, Check Book, and automated tools to the requirements. |

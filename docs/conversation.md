@@ -2508,3 +2508,19 @@ each screen as it moves, static check last — writing all three before the
 migration would just produce a wall of red.
 
 *Last updated: 2026-10-01.*
+
+---
+
+## 17. KAL-5 EPUB Editor Overhaul (2026-10-10)
+
+**Question:** The Phase 6 EPUB editor was deemed "horrendous" and "useless". How do we redesign it to match Calibre's power without the clutter?
+
+### Accepted: Calibre-parity IDE with Direct Saves + Reader Patches
+
+1. **Architecture shift (Direct Saves):** The complex virtual "Patch & Bake" system is dropped for the full editor. The editor behaves like an IDE: saving writes directly to the `.epub` archive (with a `.orig` backup). 
+2. **Reader Quick-Fixes (Hybrid Patching):** Modifying an EPUB on an HDD causes lag. To keep the reader snappy, inline quick fixes made *while reading* will still save as lightweight "patches". The full editor will flag these pending patches for review/baking before deep edits.
+3. **IDE Layout:** Left sidebar is a full file tree (HTML, CSS, images). Right pane is the content editor.
+4. **Dual Editing Modes:**
+   - **Light Mode:** An Obsidian-like Live Preview. HTML is visually rendered, but Markdown syntax (e.g. `**bold**`) is exposed for editing. Maps safely back to HTML tags to prevent data loss.
+   - **Deep Mode:** Raw HTML/CSS code editor with live preview (toggle or side-by-side).
+5. **Advanced Tools included:** File Manager (rename/merge/split), Visual TOC Editor, Check Book validator, Automated Tools (fonts, punctuation), and Saved Searches.

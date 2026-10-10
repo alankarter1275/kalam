@@ -862,3 +862,51 @@ hurts in practice, swapping tier 3 to Lua is pre-analyzed and contained
 (the wall and gate do not change; only the loader does). Performance
 does not decide this; if it did, LuaJIT and wasm would tie on an
 I/O-bound workload anyway.
+
+---
+
+## Entry 13 — 2026-10-09 — CORRECTION: one plugin system, not three
+
+**The owner's rebuke, verbatim:**
+
+> "what the hk? 3 kinds of plugin system? what are you yapping??? who the
+> hell does that??"
+
+**They are right, and the mistake is recorded as such.** Entry 12's
+tiering (TOML + wasm + Lua-as-fallback) was ecosystem-grade design for a
+single-user app — three loaders to build, three formats to document,
+three debugging stories, and a permanent "which tier does this site
+belong to" tax. Nobody with one user and one plugin author does that.
+The TOML tier in particular optimized for a plugin *author* who does not
+exist: the owner never writes plugins; fixes flow through the agent, and
+the owner's experience is "drop the new file in, reload" regardless of
+what the file is made of.
+
+**Collapsed: ONE plugin system.** The two real candidates:
+
+- **Lua** (mlua, Lua 5.4) — the original kalam plan (`source-seam.md`'s
+  era). Tiny dependency, instant edit-and-reload, *readable* errors on
+  the error page ("attempt to index a nil value, line 42"), simple sites
+  expressed as a short script whose body is mostly a selector table —
+  which keeps the text-file idea's benefit with zero extra machinery.
+  Safety is bricked up at the language level (strip `io`/`os`, `pcall`
+  catches runtime errors, watchdog hooks kill runaway loops) — adequate
+  because the only plugin author is trusted (the agent) and the threat
+  model is "my bugs shouldn't crash the owner's reading session."
+- **wasm** — bank-vault safety by construction, one language (Rust), the
+  §22 standing decision — but the heaviest machinery in the project on
+  the weakest machine (4 GB), cryptic errors without extra bridging
+  work, and a compile step per fix (author-side, invisible to the
+  owner).
+
+**Recommendation posed (🔶 awaiting the owner's final word, since it
+revisits their 2026-09-18 §22 decision):** **Lua as the one plugin
+system.** The September switch to wasm was made when plugins were framed
+as rare, complex-only additions; Entry 11 made every source a plugin,
+which changed the substrate's job to "the everyday system" — light,
+debuggable and instant-fixing now beats maximal sandboxing. **wasm is
+recorded as the escape hatch**, with concrete triggers: untrusted
+third-party plugins ever appear, a plugin needs real compute, or the Lua
+sandbox proves leaky in practice. **TOML is dead as a plugin format** —
+selector-as-data survives inside simple Lua scripts;
+`scrapers/mangaball.toml` becomes a historical artifact.

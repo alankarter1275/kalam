@@ -787,3 +787,78 @@ browser extensions), translated to kalam:
 plugin* (AO3 and MangaDex included) is what they meant — stable API sites
 break rarely, so they *could* stay native; the recommendation is
 everything-is-a-plugin for one uniform system.
+
+---
+
+## Entry 12 — 2026-10-09 — everything-is-a-plugin confirmed; performance; TOML vs Lua vs wasm
+
+**The owner's reply, verbatim:**
+
+> "yup. but what about performance? also, is text file the answer? I have
+> heard lua is great for scripting"
+
+**✅ Everything-is-a-plugin confirmed** (closes Entry 11's 🔶): AO3 and
+MangaDex included; one uniform system. The build path stands: wall + gate
+→ AO3 as native scaffolding → loader + plugin folder + settings/error
+pages → AO3 lifted out → core frozen, all sources arrive as plugins.
+
+### Performance (the owner's first question)
+
+Honest analysis:
+
+- **Source plugins are I/O-bound, not compute-bound.** A plugin's life:
+  build a request → *wait for the network* (hundreds of milliseconds) →
+  parse one page (single-digit milliseconds) → hand back data. The
+  network wait dominates by 2–4 orders of magnitude; even a 2× slowdown
+  in plugin compute is invisible next to one fetch.
+- **Wasmtime runs wasm at near-native speed** (Cranelift JIT; wasm is the
+  tech behind heavy in-browser apps). The sandbox tax on parsing is real
+  but tiny.
+- **One-time costs are once:** a plugin's `.wasm` is compiled when
+  loaded, not per request, and wasmtime can cache compiled modules
+  (`wasmtime-cache` already appeared in the archived CI logs). Loading
+  happens at app start or plugin reload.
+- **The genuine wasm cost is weight, not speed** — dependency tree, build
+  time, binary size on a 4 GB machine — already consciously accepted in
+  §22 and again in Entry 11. Per-plugin memory is modest; worth watching
+  with ~7 plugins resident, but not alarming.
+- **Design rule recorded:** keep the wall's questions *chunky* — one call
+  returns a whole page of results, not a hundred tiny calls — so the
+  host↔plugin boundary is crossed a handful of times per screen, where
+  its (small) serialization cost cannot matter.
+
+**Verdict: performance is a non-issue for this workload; the trade lives
+elsewhere (weight vs safety vs fix loop).**
+
+### The plug materials: TOML vs Lua vs wasm (the owner's second question)
+
+- **TOML — a form, not a program.** Pure data: URL patterns + selectors.
+  Cannot crash, cannot loop, worst case is "field not found." Ceiling:
+  only fits fetch-URL-extract-with-selectors sites. Best tool for the
+  *most common* breakage class (a moved button/selectors).
+- **Lua — a script.** The classic embedded language (WoW addons, Neovim,
+  game mods) and **kalam's original plan** — ARCH.md's source-seam era,
+  before the owner's §22 switch to wasm. Real logic, edit-and-reload
+  with zero compiling, tiny dependency (mlua). The trade: safety is
+  DIY — errors are catchable (`pcall`) but memory/CPU/filesystem limits
+  must be built by hand (strip `io`/`os`, watchdog hooks for runaway
+  loops); a buggy interpreter can, in principle, take the host down.
+- **wasm — a compiled sandbox.** Safety by construction (filesystem
+  unreachable, runaway loops stoppable via fuel/epoch, crashes
+  contained), one language (Rust) for app and plugins. The trade:
+  heaviest machinery, and a plugin fix needs compiling *the small
+  plugin crate* (not the app).
+
+**The collaboration reframe that decides it:** the owner does not write
+plugins — fixes flow through the agent/CI, and the owner's experience is
+identical either way: *receive a file, drop it in the folder, reload.*
+Lua's "no compiling" advantage mostly benefits the author-side loop, not
+the owner's. Wasm's safety is structural rather than maintained.
+
+**Position (recommends, owner may overrule):** keep the §22 decision —
+TOML for simple scrapers, wasm for logic-bearing sources — and record
+**Lua as the analyzed fallback**: if wasm's weight or debugging opacity
+hurts in practice, swapping tier 3 to Lua is pre-analyzed and contained
+(the wall and gate do not change; only the loader does). Performance
+does not decide this; if it did, LuaJIT and wasm would tie on an
+I/O-bound workload anyway.

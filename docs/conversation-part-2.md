@@ -1044,3 +1044,68 @@ the plugin *shape*, while every plugin gets rewritten in the other
 language. Choosing now is cheaper than switching later; choose once.
 
 **🔶 Still the owner's call: Lua (recommended) or wasm (their §22 pick).**
+
+---
+
+## Entry 15 — 2026-10-09 — the plugin's full job list, checked against Lua
+
+**The owner's question, verbatim:**
+
+> "first think of all the things that the plugin will be doing. not just
+> text, but photos (you know, cbr, cover arts, etc), browsing, and what
+> not. is Lua good enough for that?"
+
+### The principle that falls out of the architecture
+
+The wall-and-gate design already assigns every *heavy* duty to the Rust
+side. The plugin never touches bytes, images, archives, or the network
+socket. Its entire job is **deciding** — which URL, which selector, what
+shape the answer takes. Recorded as a design rule: **"Lua points, Rust
+carries."** Heavy engines stay in the app and are exposed to the plugin
+as functions: the gate fetches, a Rust HTML parser (the `scraper` stack)
+parses into a queryable tree, `serde_json` handles JSON, `zip` packs
+archives, the shared binder writes EPUBs, the reader caches and renders.
+
+### The duty list, with verdicts
+
+| Duty | Who actually does the work | Lua's part | Verdict |
+|---|---|---|---|
+| Browsing shelves (categories, fandoms, popular) | gate fetches; Rust parser builds the tree | say which selectors; shape the list | fine |
+| Search, incl. AO3's full tag/filter system | gate fetches | build the query URL from the form fields; parse results | fine — string work, Lua's home turf |
+| Search form as data | — | return a table of field descriptors | trivial |
+| Details pages (description, tags, chapter list) | gate + parser | selectors + shaping | fine |
+| Trail links (tag/author/series taps) | — | attach link descriptors to results | trivial |
+| Text chapters | gate + parser | extract + clean the chapter text/HTML | fine |
+| **Covers & comic pages (photos)** | **gate fetches bytes; app decodes/renders (image stack already in the app)** | **return URLs + header hints only — Lua never sees an image byte** | fine by design |
+| **CBR/CBZ** | importer already reads CBR; downloads packed as **CBZ** by the app's `zip` | none — archives are app work | fine by design |
+| EPUB building | the shared binder (new app code) | none — sources return text/URLs | fine by design |
+| JSON APIs (MangaDex, FicHub) | gate + `serde_json` exposed as a host function | read fields, assemble URLs (incl. MangaDex@Home token URLs) | fine |
+| Pagination / next-page detection | — | URL templates + selector checks | fine |
+| Rate limits, retries, user-agent, cookies | **the gate, entirely** | none | fine by design |
+| Follow checks ("new chapters since X?") | the app's scheduler (tasks.rs) runs and asks | parse the chapter list, compare | fine |
+| Remembering things (settings, last-seen) | host storage; exposed as get/set | read/write small values | fine |
+| Charset oddities (old Literotica) | gate decodes to UTF-8 before Lua sees it | nothing | fine |
+| Crypto/signing, if a site ever needs it | host helper (only if ever needed) | call it | fine; provide on demand |
+
+Even the "2,000-chapter serial" case is Lua-friendly: a 2,000-row table
+is native habitat, not strain — and it is data shaping, not computation.
+
+### The honest limits (where Lua would genuinely not be enough)
+
+- **Plugin-side image processing** (transcoding, stitching, thumbnails) —
+  not a plugin duty in this design; the app does such things if they are
+  ever wanted. If a source ever truly needed them *inside* the plugin,
+  that is the recorded wasm trigger (Entry 14).
+- **Grinding megabytes inside Lua itself** (walking a parsed tree via
+  interpreted loops) — avoided by rule: the Rust parser answers selector
+  queries; Lua only orchestrates.
+- **OCR/PDF-class compute** — same as above: app duty or wasm trigger.
+
+### Verdict
+
+**Yes — Lua is good enough for the entire job list, because the
+architecture already reserved every heavy job for Rust.** The plugin is
+the twisty-logic layer — deciding, not lifting — and that is exactly the
+shape of work scripting languages are best at. The duty list doubles as
+confirmation that the wall/gate/binder design was right: plugins come out
+thin on purpose.

@@ -1235,3 +1235,50 @@ into kalam) works but is poor ergonomics for a non-technical owner.
 **🔶 Open:** the owner's reply on whether logins go into the plan now
 (for AO3 etc., sequenced last) or get decided when the account-free
 follows are running.
+
+---
+
+## Entry 18 — 2026-10-10 — DECISION: logins planned for a few sites, last
+
+**The owner's decision, verbatim:**
+
+> "I think we should have a login for a few sites like AO3, but you are
+> right, it's a problem for future, not now."
+
+**✅ DECISION (closes Entry 17's 🔶):** site logins are **in the plan** —
+for a few sites, AO3 named — **sequenced last**, not part of early
+builds. The full posture, now settled end to end:
+
+- **Account-free kalam-native follows come first** and remain the primary
+  subscription mechanism (one list inside kalam, works on every source,
+  nothing to leak).
+- **Logins exist for what follows cannot reach:** AO3's registered-only
+  works (the real gap), possible Literotica account sync, minor MangaDex
+  perks. Site-side follow lists stay unused — kalam's own are better for
+  this owner.
+- **The how stands as ruled (re-affirmed by the owner's "you are right"):
+  kalam never sees a password, ever** — login happens on the site's own
+  real page in a browser window; the session cookie lives in config,
+  never in a library folder; logout actually deletes it; **read-only
+  against every site, forever** — even a stolen cookie cannot be used
+  through kalam to change anything.
+- **Open engineering item, decided-when-the-time-comes:** the login
+  window requires the browser piece (WebKitGTK) the engine swap removed
+  in September; re-adding it is the known, contained cost.
+
+ROADMAP's Part 2 stub updated in the same commit: the old
+"Literotica account sync — raised, never decided" line is replaced by
+this login decision (Literotica sync folds into it).
+
+### Question map after this entry
+
+1. Roster — settled except the comics pick (parked 🔶 by the owner).
+2. P7 rulings — read-only/no-passwords/login-last explicitly re-affirmed
+   this entry; three-tier reading and per-chapter fetching presented
+   (Entries 4–6) without objection.
+3. Substrate — settled: Lua (Entry 16).
+4. Logins — **settled this entry**: few sites, AO3 named, last.
+5. Socket shape — direction settled; **the question menu is the next
+   design step**.
+6. Remote identity, Save-vs-Download boundary, downloads migration,
+   follows scheduler — still to be designed.

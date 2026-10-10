@@ -2072,7 +2072,18 @@ Everything networked lives here and **nothing in Part 1 may depend on it.**
   `src/tasks.rs` — `src/downloads.rs` currently uses bare `thread::spawn` and six
   `lock().unwrap()` calls, which is the cascade-panic that `src/tasks.rs:52`
   exists to prevent.
-- **Literotica account sync** — raised, never decided.
+- **Site logins.** **Decided 2026-10-09: yes, for a few sites — AO3 named —
+  but last, not now** (`docs/conversation-part-2.md` Entries 17–18). The
+  how stands as long ruled: kalam never sees a password (login happens on
+  the site's own page in a browser window); the session cookie lives in
+  config, never in a library folder; logout actually deletes it; kalam
+  stays read-only against every site forever. Account-free kalam-native
+  follows come first and remain the primary subscription mechanism —
+  logins exist for AO3's registered-only works and possible Literotica
+  sync (the old "Literotica account sync — raised, never decided" stub
+  folds into this). Open engineering item for when the time comes: the
+  login window needs the browser piece (WebKitGTK) that the engine swap
+  removed — re-adding it is the known cost, decided then.
 
 ---
 

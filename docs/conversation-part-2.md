@@ -910,3 +910,137 @@ third-party plugins ever appear, a plugin needs real compute, or the Lua
 sandbox proves leaky in practice. **TOML is dead as a plugin format** —
 selector-as-data survives inside simple Lua scripts;
 `scrapers/mangaball.toml` becomes a historical artifact.
+
+---
+
+## Entry 14 — 2026-10-09 — the full Lua-vs-wasm comparison and the reasoning
+
+**The owner's ask, verbatim:**
+
+> "give me pros and cons of each. and you suggested lua over wasm. why?
+> what was the reasoning?"
+
+### Lua (via mlua, Lua 5.4)
+
+**Pros**
+
+1. **Tiny dependency** — mlua compiles the Lua C source in seconds; adds
+   well under a megabyte. Paid once per build, barely felt even on the
+   4 GB fat-LTO machine.
+2. **Zero-compile fix loop** — edit the script, reload. No wasm32 target,
+   no toolchain, no artifact pipeline; a plugin is a text file that is
+   diffable, greppable, and versionable in the repo with no CI changes.
+3. **Readable errors** — `literotica.lua:42: attempt to index a nil
+   value` lands on the per-plugin error page as-is. Diagnosing a broken
+   source at 2 AM is reading, not forensic work.
+4. **Human-readable artifacts** — the owner can open any plugin and
+   (mostly) follow it; nothing in the system is an opaque blob.
+5. **Simple host API** — call a Lua function, get a table back; mlua
+   handles marshaling. No component-model/WIT design burden.
+6. **Selector-as-data survives inside it** — a simple site's plugin is a
+   short script that is mostly a table of selectors; keeps the text-file
+   idea's easy fixes with no second loader.
+7. **Original kalam plan**, reasoned out in `source-seam.md`'s era for
+   exactly this fix-loop argument.
+
+**Cons**
+
+1. **Safety is DIY, not structural.** We build and maintain the guards
+   ourselves: strip `io`/`os` (filesystem/process unreachable at the
+   language level), `pcall` on every entry point (runtime errors become
+   clean "source errored" states), instruction-count hooks/watchdogs for
+   runaway loops, `set_memory_limit` (mlua, Lua 5.4) for memory caps.
+   Each guard is code; each can have holes.
+2. **Not a hard sandbox.** Lua sandbox escapes have historically existed
+   (it is a C interpreter, not a VM boundary). Irrelevant without an
+   attacker — but it is the honest statement.
+3. **Interpreter bugs can take the host down** — rare (Lua is 30 years
+   battle-tested), but the blast radius of a segfault inside mlua is
+   "kalam crashes," not "plugin errored."
+4. **No compile-time checking of plugins** — a typo is a runtime error
+   on the code path that hits it, caught by testing and containment
+   rather than by the build.
+5. **Second language** in the project; boundary type errors are runtime,
+   not compile-time.
+6. **Slower on tight compute loops** (plain 5.4, roughly 2–10× native)
+   — moot for an I/O-bound workload (Entry 12).
+
+### Wasm (via wasmtime)
+
+**Pros**
+
+1. **Safety by construction** — filesystem/network unreachable unless
+   explicitly granted; panics/traps caught by the host, period; runaway
+   loops killable via fuel metering or epoch interruption. Nothing to
+   maintain; the boundary simply exists.
+2. **True crash isolation** — even memory-corrupting bugs inside a
+   plugin cannot touch the host process.
+3. **One language, one type system** — Rust for app and plugins; plugin
+   typos die at *compile time*, before shipping; shared types across
+   the boundary (wit-bindgen).
+4. **Near-native speed** (Cranelift) — moot here, but true.
+5. **The standing §22 decision**, made deliberately by the owner.
+6. **Actively developed ecosystem** (Bytecode Alliance) with a
+   principled host-API story (component model).
+
+**Cons**
+
+1. **The heaviest dependency tree available to this project** — build
+   time and tens of MB of binary, paid on *every* full build, on a
+   4 GB fat-LTO machine: the slowest possible place to carry it.
+2. **A compile step for every plugin fix** — author-side (the owner just
+   drops the file in), but the toolchain, target setup and artifact
+   pipeline all exist and all can break.
+3. **Opaque debugging** — traps and serialized error strings; no natural
+   stack traces into plugin code without building symbol plumbing;
+   print-debugging requires host functions. The 2 AM diagnosis story is
+   markedly worse.
+4. **Opaque artifacts** — a `.wasm` file cannot be read by the owner;
+   a broken plugin is a blob until rebuilt.
+5. **Real host-API design burden** — WIT interfaces, boundary
+   versioning, a learning curve of its own.
+
+### The reasoning for Lua, step by step (the owner's direct question)
+
+1. **Start from the threat model.** Who can plugins hurt? The owner
+   never writes plugins; every plugin comes from this project's own
+   repo, authored by the agent. There is no store, no community, no
+   untrusted code. So the sandbox's job is not "keep attackers out" —
+   it is "keep the agent's bugs from crashing the owner's reading
+   session." That is a modest bar.
+2. **Both systems clear that bar.** Lua's `pcall` turns runtime errors
+   into clean per-source failures; wasm's traps do the same. The
+   difference only appears in exotic failure modes (interpreter
+   segfaults, sandbox escapes) that essentially require an attacker or
+   extraordinary bad luck to matter.
+3. **So wasm's single big advantage buys almost nothing here**, while
+   its costs are all real and recurring: heaviest tree on the weakest
+   machine, opaque debugging, toolchain steps, unreadable artifacts.
+4. **And the things that matter daily all favor Lua**: build weight on
+   4 GB, readable errors when a site breaks, instant fixes, artifacts
+   the owner can actually look at, no host-API ceremony.
+5. **The asymmetry that decides it**: wasm is the *safest possible*
+   choice; Lua is the *right-sized* choice — and when the protection
+   targets an adversary that does not exist, right-sized wins.
+6. **History note**: §22 chose wasm when plugins were framed as rare,
+   complex-only additions. Entry 11 made every source a plugin — the
+   substrate became the everyday system — which re-weights every line
+   of this trade.
+
+### What would flip the recommendation back to wasm (recorded triggers)
+
+- Untrusted or third-party plugins ever become real (a community, a
+  downloadable pack) — the hard sandbox becomes load-bearing.
+- A plugin needs genuine compute (heavy processing pipelines, image
+  work) where near-native speed plus fuel metering matter.
+- The DIY Lua guards prove leaky or high-maintenance in practice.
+- (Reverse trigger for Lua: none needed — if wasm is chosen now, Lua
+  needs no triggers to stay dead.)
+
+**Honest migration note:** the wall, the gate and the menu are
+substrate-agnostic — that was the point of the architecture — but plugin
+*bodies* are not. Swapping loaders later preserves the app's screens and
+the plugin *shape*, while every plugin gets rewritten in the other
+language. Choosing now is cheaper than switching later; choose once.
+
+**🔶 Still the owner's call: Lua (recommended) or wasm (their §22 pick).**

@@ -225,6 +225,15 @@ tested. (Historical: 884 = `36628490914`, 881 = `36613679329`, 750 =
 Part 1 is split into **eight phases**. Unlike the old plan, these *are* a queue:
 work top to bottom, and take the next unfinished item from the phase you are in.
 
+> **Resequenced 2026-10-10, at the owner's request:** *"performance
+> optimization should be the last thing… after all the heavy features are
+> done. so change it's phase. it should be the last thing."* The queue's
+> **execution order is now Phases 1–6 → 8 (Material 3 redesign) → 7
+> (Performance budgets) last.** The phase *numbers* never change — items
+> 7.1–7.7 keep their numbers because references, including code comments
+> in `src/app.rs` and `src/pages/author.rs`, cite them; the banners on
+> Phases 7 and 8 carry the order.
+
 **Why this order.** The question was whether to do all the invisible
 groundwork first so the backend is solid before anything visible gets built.
 The answer is **yes for the groundwork that later work sits on, but not all of
@@ -2540,6 +2549,13 @@ than one that visibly changes.
   now a pointer.
 - **Working agreements, anti-bloat rules, and the engine boundary** →
   [`docs/WORKING.md`](./docs/WORKING.md).
+- **The old ARCH.md living document** (product/navigation notes, the stale
+  `lopdf` mention) → git history, superseded 2026-10-02 by the
+  prescriptive principles document. Navigation and UX decisions live in
+  this file and `docs/conversation.md`.
+avigation and UX decisions live in
+  this file and `docs/conversation.md`.
+ocs/WORKING.md`](./docs/WORKING.md).
 - **The old ARCH.md living document** (product/navigation notes, the stale
   `lopdf` mention) → git history, superseded 2026-10-02 by the
   prescriptive principles document. Navigation and UX decisions live in

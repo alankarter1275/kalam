@@ -1324,3 +1324,38 @@ really shipped" table still said the EPUB editor was "not started"
 the September test baseline (870). Now: editor row marked shipped with
 KAL-5 noted; baseline updated to `37901417687` — 602 + 8 + 27 passed,
 3 ignored, delta from 870 unaudited and marked as such.
+
+---
+
+## Entry 20 — 2026-10-10 — DECISION: performance resequenced to last
+
+**The owner's decision, verbatim:**
+
+> "performance optimization should be the last thing. ok? after all the
+> heavy features are done. so change it's phase. it should be the last
+> thing."
+
+**✅ DECISION:** Part 1's execution order is now **Phases 1–6 → 8
+(Material 3 redesign) → 7 (Performance budgets), last.** Performance
+optimization waits until all heavy features are done, restyle included.
+
+**How it was recorded (the numbering rule respected):** items 7.1–7.7
+keep their numbers — code comments cite them (`src/app.rs:537`
+"Roadmap 7.1 step 0", `src/pages/author.rs` "7.1 step 2c"), and the
+rule exists precisely so references never break. The resequencing lives
+in three banners (the Part 1 queue note, the Phase 7 header, the Phase 8
+header) plus a changelog row — the same pattern as the archived plan's
+P7 reorder ("P7 now runs after the comics phases"), which kept numbers
+and redefined execution order.
+
+**One deliberate exception:** 7.1's *measurement* half (`src/stall.rs`,
+shipped 2026-10-02) stays live. It is diagnostic-only — the watchdog
+watches and logs, it changes nothing — so it costs nothing while the
+features and the restyle land, and the timing data it accumulates is
+exactly what the (now-last) fix work will need.
+
+**Effect on the Part 1 remainder (Entry 19's list, reordered):**
+1. KAL-5 — the editor overhaul (Backlog; complaint-gathering entry).
+2. Phase 8 — Material 3 redesign (now the *last feature phase*).
+3. Phase 7 — performance fixes (now last of all).
+KAL-6 (PDF tools) unchanged, beyond Part 1's list.

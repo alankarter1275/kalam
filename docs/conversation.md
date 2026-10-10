@@ -1816,11 +1816,16 @@ PDFium a close second and Poppler clearly behind both.
 
 ### Plugin substrate: WebAssembly
 
-**Set aside — Part 2 work (owner's instruction, 2026-09-18).** The decision
-below stands, but nothing is being built. This section is the record for
-whoever picks it up in Part 2. `ARCH.md`'s Source-seam section is now
-banner-marked as set aside and points here, so the stale Lua text there is no
-longer silently authoritative.
+**Superseded — the Part 2 conversation chose Lua (2026-10-09).** Part 2
+picked this up (as this section intended) and decided differently once
+*every* source became a plugin rather than a rare, complex-only addition:
+one Lua plugin system (`mlua`), with wasm recorded as the escape hatch
+and concrete triggers. The full reasoning, pros/cons and job-list check
+are in `docs/conversation-part-2.md`, Entries 11–16. The text below
+stands as the record of the 2026-09-18 decision and of wasm's costs —
+which is precisely why it lost. `ARCH.md`'s Source-seam section points
+here; the Lua design there is, ironically, closest to what was finally
+built.
 
 Owner's decision, and it is the one recorded in the most recent discussion. It
 supersedes both earlier answers — `ARCH.md`'s Lua and the "pure Rust + TOML

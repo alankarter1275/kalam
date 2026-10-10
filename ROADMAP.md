@@ -2054,14 +2054,17 @@ Raised, deliberately not decided, and **not** dropped.
 
 Everything networked lives here and **nothing in Part 1 may depend on it.**
 
-- **Plugin substrate.** The decision is **WebAssembly**, superseding the Lua
-  design still described in `ARCH.md`'s Source-seam section (that section is
-  banner-marked as set aside). Three conditions make it worth doing: put
-  `wasmtime` behind a Cargo feature that is off by default; do not ship the host
-  before a *second* plugin exists; keep a plain TOML selector config alongside,
-  because most scraper breakage is a changed CSS selector and a selector fix
-  that needs a wasm rebuild is not a fast fix loop. Reasoning in
-  [`docs/conversation.md`](./docs/conversation.md) §22.
+- **Plugin substrate.** **Decided 2026-10-09, in the Part 2 conversation:
+  one plugin system, Lua** (`mlua`, Lua 5.4). Every source is a plugin,
+  hot-reloadable — fixing a source never rebuilds the app. This supersedes
+  the §22 WebAssembly decision (which had itself superseded `ARCH.md`'s
+  Lua design): the full pros/cons, the reasoning, the job-list check
+  ("Lua points, Rust carries" — plugins return URLs and selectors; the
+  app fetches bytes, parses trees, packs CBZ/EPUB), and the escape-hatch
+  triggers that would bring wasm back are in
+  [`docs/conversation-part-2.md`](./docs/conversation-part-2.md)
+  Entries 11–16. TOML is dead as a plugin format;
+  `scrapers/mangaball.toml` is a historical artifact.
 - **Online sources.** AO3, MangaDex, Royal Road, Literotica, FFN. The old
   design and its evidence are in the archive; the `Source` trait has never been
   implemented, so treat it as unbuilt.

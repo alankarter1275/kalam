@@ -168,6 +168,7 @@ fn a_highlight_damages_only_its_own_lines() {
         start: s.layered_locator_at(start).expect("start captures"),
         end: s.layered_locator_at(end).expect("end captures"),
         color: None,
+        style: None,
         text: s.selected_text(),
     };
     s.show_host_highlight(row);

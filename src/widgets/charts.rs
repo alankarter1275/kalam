@@ -300,7 +300,11 @@ pub fn streak_strip(active: [bool; 7]) -> gtk::Box {
         name.add_css_class("kalam-streak-label");
         cell.append(&name);
 
-        let flame = gtk::Label::new(Some("🔥"));
+        // A plain filled dot, not a color-emoji glyph: the old fire emoji
+        // here sent Pango to Noto Color Emoji, whose bitmap font cairo
+        // cannot scale (Pango-WARNING "failed to create cairo scaled
+        // font", 2026-10-01).
+        let flame = gtk::Label::new(Some("●"));
         flame.add_css_class("kalam-streak-flame");
         if !on {
             flame.add_css_class("kalam-streak-off");

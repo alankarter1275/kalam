@@ -5,9 +5,12 @@
 //! relaunch, so a fresh launch re-decoded everything again.
 //!
 //! This module generates a small thumbnail at import time (a pure, headless,
-//! CI-testable function) into `cache/thumbs/<uuid>.png`. The grid then decodes
-//! that tiny PNG instead of the full cover, and because it survives relaunch,
-//! the first grid render after startup is cheap too.
+//! CI-testable function) into `cache/thumbs/`, mirroring the cover's
+//! library-relative path (`thumbs/<uuid>/cover.jpg.png`, and for a comic
+//! chapter `thumbs/Series/covers/0010.jpg.png` — see
+//! `paths::thumbnail_for_cover` for why the key is the cover's path). The
+//! grid then decodes that tiny PNG instead of the full cover, and because it
+//! survives relaunch, the first grid render after startup is cheap too.
 //!
 //! gdk-pixbuf in this toolchain can decode but not encode PNG, so we use the
 //! `image` crate (pure Rust, no system deps) for the resize + PNG encode.
@@ -47,19 +50,41 @@ pub fn generate_thumbnail(source: &Path, dest: &Path) -> bool {
 }
 
 /// Remove a book's thumbnail (used on book deletion so the cache cannot grow).
-pub fn remove_thumbnail(uuid: &str) {
-    let _ = std::fs::remove_file(crate::paths::thumbnail_path(uuid));
+///
+/// Takes the cover path and the uuid: the current thumbnail is keyed by the
+/// cover's library-relative path, and a book imported before the 2026-10-05
+/// re-keying may still carry the old uuid-keyed file — a deleted book must
+/// not leave either shape behind.
+pub fn remove_thumbnail(cover: Option<&Path>, uuid: &str) {
+    if let Some(thumb) = cover.and_then(crate::paths::thumbnail_for_cover) {
+        let _ = std::fs::remove_file(thumb);
+    }
+    let _ = std::fs::remove_file(crate::paths::thumbs_dir().join(format!("{uuid}.png")));
 }
 
 /// Generate the thumbnail for one book if it is missing. Returns `true` when
 /// it produced the file (or it already existed — i.e. the book is covered).
-/// `thumb_of` computes the destination path so tests can point somewhere inert.
-fn backfill_one(uuid: &str, cover: &Path, thumb_of: &dyn Fn(&str) -> PathBuf) -> bool {
-    let thumb = thumb_of(uuid);
-    if thumb.is_file() {
-        return true;
+/// `thumb_of` computes the destination from the *cover path* so tests can
+/// point somewhere inert.
+fn backfill_one(uuid: &str, cover: &Path, thumb_of: &dyn Fn(&Path) -> Option<PathBuf>) -> bool {
+    let Some(thumb) = thumb_of(cover) else {
+        // A cover outside the library has no thumbnail to make or find.
+        return false;
+    };
+    let covered = if thumb.is_file() {
+        true
+    } else {
+        generate_thumbnail(cover, &thumb)
+    };
+    if covered {
+        // One-time migration (2026-10-05): thumbnails used to be keyed by
+        // book uuid, which a comic chapter's series-folder cover could never
+        // be looked up by — the re-keying to cover paths is the whole fix.
+        // Drop the old file once the new one is in place so the thumbs dir
+        // cannot hold both shapes for one book.
+        let _ = std::fs::remove_file(crate::paths::thumbs_dir().join(format!("{uuid}.png")));
     }
-    generate_thumbnail(cover, &thumb)
+    covered
 }
 
 /// Backfill thumbnails for every book that has a cover but no thumbnail yet.
@@ -100,12 +125,15 @@ pub fn backfill_missing(cat: &crate::db::Catalog, reporter: &crate::tasks::Repor
             // would leave those books without thumbnails for good.
             return generated;
         }
-        let cover = crate::paths::book_dir(uuid).join(cover_name);
+        // Item 2.22: a comic chapter's cover is stored library-relative
+        // ("Series/covers/0010.jpg"); the same stored name that points a
+        // book at its cover points the backfill at it.
+        let cover = crate::paths::resolve_library_file(uuid, cover_name);
         // `backfill_one` returns true when the thumbnail is *present*, which
         // includes "was already there" — so count only the ones that were
         // actually missing beforehand, or the number is just the library size.
-        let existed = crate::paths::thumbnail_path(uuid).is_file();
-        if backfill_one(uuid, &cover, &crate::paths::thumbnail_path) {
+        let existed = crate::paths::thumbnail_for_cover(&cover).is_some_and(|p| p.is_file());
+        if backfill_one(uuid, &cover, &crate::paths::thumbnail_for_cover) {
             if !existed {
                 generated += 1;
             }
@@ -236,11 +264,15 @@ mod tests {
         let dir = Scratch::new();
         let cover = dir.join("cover.png");
         write_solid_png(&cover, 600, 900, [20, 40, 60]);
-        let thumb_of = |uuid: &str| dir.join(&format!("{uuid}.png"));
+        // A thumb destination DISTINCT from the source: mapping the cover
+        // onto its own path would make `thumb.is_file()` true because the
+        // source exists — a test that could not fail (§19).
+        let thumb_of =
+            |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
 
         // First call produces the thumbnail.
         assert!(backfill_one("abc", &cover, &thumb_of));
-        assert!(thumb_of("abc").is_file());
+        assert!(thumb_of(&cover).unwrap().is_file());
 
         // Second call sees the file is present and does no work.
         assert!(backfill_one("abc", &cover, &thumb_of));
@@ -249,11 +281,49 @@ mod tests {
     #[test]
     fn backfill_missing_source_is_a_noop() {
         let dir = Scratch::new();
-        let thumb_of = |uuid: &str| dir.join(&format!("{uuid}.png"));
+        let thumb_of =
+            |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
         // A missing source is not created, but it is not an error either.
         let got = backfill_one("nope", &dir.join("absent.png"), &thumb_of);
         assert!(!got);
-        assert!(!thumb_of("nope").exists());
+        assert!(!thumb_of(&dir.join("absent.png")).unwrap().exists());
+    }
+
+    #[test]
+    fn backfill_replaces_the_legacy_uuid_keyed_thumbnail() {
+        // The 2026-10-05 re-keying: thumbnails used to live at
+        // thumbs/<uuid>.png, a name no cover-path lookup could ever find
+        // for a comic chapter. Once the cover-keyed thumbnail exists, the
+        // legacy file must go, or every book would carry two files for
+        // ever. The migration runs inside the same pass that guarantees
+        // the new file.
+        let dir = Scratch::new();
+        let cover = dir.join("cover.png");
+        write_solid_png(&cover, 600, 900, [20, 40, 60]);
+        let thumb_of =
+            |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
+        // The pre-migration state: only the legacy file exists.
+        let legacy = crate::paths::thumbs_dir().join("legacy-uuid.png");
+        if let Some(parent) = legacy.parent() {
+            std::fs::create_dir_all(parent).expect("thumbs dir");
+        }
+        std::fs::write(&legacy, b"stale").expect("legacy thumb");
+        assert!(legacy.is_file());
+
+        assert!(backfill_one("legacy-uuid", &cover, &thumb_of));
+        assert!(thumb_of(&cover).unwrap().is_file(), "new key present");
+        assert!(!legacy.exists(), "legacy key removed once replaced");
+    }
+
+    #[test]
+    fn backfill_cannot_key_a_cover_outside_the_library() {
+        // thumb_of returning None models a cover outside the library root
+        // (a stashed override, a remote cover): no thumbnail is made and
+        // the book is reported uncovered so the pass does not lie.
+        let dir = Scratch::new();
+        let cover = dir.join("cover.png");
+        write_solid_png(&cover, 600, 900, [20, 40, 60]);
+        assert!(!backfill_one("abc", &cover, &|_: &Path| None));
     }
 
     // `should_skip` is a pure function precisely so the interesting decision

@@ -224,12 +224,16 @@ pub enum Blend {
 }
 
 /// kalam: how a [`Selection`] is rendered. `Band` is a block background tint;
-/// `Underline` is a crisp bottom border line under the text.
+/// `Underline` is a crisp bottom border line under the text; `Squiggly` is a
+/// wavy line; `Strikeout` is a middle strike line; `Dotted` is a subtle dotted line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectionStyle {
     #[default]
     Band,
     Underline,
+    Squiggly,
+    Strikeout,
+    Dotted,
 }
 
 /// A range to highlight: locator range plus fill color, painted per line
@@ -391,6 +395,51 @@ fn push_selection_rect(
                     ),
                     color: sel.color,
                 });
+            }
+            SelectionStyle::Strikeout => {
+                let strike_height = 2.0;
+                let strike_y = (top + bottom) * 0.5;
+                ops.push(DisplayOp::FillRect {
+                    rect: Rect::new(
+                        fragment.rect.origin.x + from,
+                        fragment.rect.origin.y + strike_y - (strike_height * 0.5),
+                        to - from,
+                        strike_height,
+                    ),
+                    color: sel.color,
+                });
+            }
+            SelectionStyle::Squiggly => {
+                let base_y = fragment.rect.origin.y + bottom - 2.0;
+                let mut x = fragment.rect.origin.x + from;
+                let end_x = fragment.rect.origin.x + to;
+                let step: f32 = 2.5;
+                let mut up = false;
+                while x < end_x {
+                    let w = step.min(end_x - x);
+                    let y = if up { base_y - 1.0 } else { base_y + 1.0 };
+                    ops.push(DisplayOp::FillRect {
+                        rect: Rect::new(x, y, w, 1.5),
+                        color: sel.color,
+                    });
+                    x += w;
+                    up = !up;
+                }
+            }
+            SelectionStyle::Dotted => {
+                let dot_y = fragment.rect.origin.y + bottom - 1.5;
+                let mut x = fragment.rect.origin.x + from;
+                let end_x = fragment.rect.origin.x + to;
+                let dot_w: f32 = 2.0;
+                let gap: f32 = 2.5;
+                while x < end_x {
+                    let w = dot_w.min(end_x - x);
+                    ops.push(DisplayOp::FillRect {
+                        rect: Rect::new(x, dot_y, w, 1.5),
+                        color: sel.color,
+                    });
+                    x += dot_w + gap;
+                }
             }
         }
     }

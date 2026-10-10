@@ -21,14 +21,17 @@
 //! saved word without abusing custom fields. Nothing else reads a stray
 //! `metadata.opf` either, so the compatibility argument is imaginary.
 
-use crate::db::{Annotation, Catalog};
+use crate::db::{Annotation, Catalog, PatchRecord};
 use crate::models::Book;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Bumped when the shape changes incompatibly, so a future reader can tell
-/// what it is looking at instead of guessing from which fields are present.
-const SIDECAR_VERSION: u32 = 1;
+/// Bumped when the shape changes, so a future reader can tell what it is
+/// looking at instead of guessing from which fields are present. v2 adds
+/// `patches` — additively: v1 files read clean through the serde default,
+/// and a v1 reader ignores the unknown field, so the bump is a signal, not
+/// a compatibility break.
+const SIDECAR_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SidecarHighlight {
@@ -40,7 +43,38 @@ pub struct SidecarHighlight {
     pub text_excerpt: String,
     pub note: String,
     pub color: String,
+    #[serde(default = "default_annotation_style")]
+    pub style: String,
     pub created_at: String,
+}
+
+fn default_annotation_style() -> String {
+    "solid".into()
+}
+
+/// One EPUB edit patch (Phase 6). A non-destructive replacement rule: it
+/// lives in this file and in the database, and the `.epub` on disk stays
+/// untouched until an explicit apply. Fields mirror `db::PatchRecord`; the
+/// id is the database row's, so the two stores stay joinable.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SidecarPatch {
+    pub id: i64,
+    pub kind: String,
+    pub href: String,
+    pub chapter_index: i64,
+    pub find_text: String,
+    pub replace_text: String,
+    pub context_before: String,
+    pub context_after: String,
+    pub source: String,
+    pub status: String,
+    pub created_at: String,
+    pub applied_at: Option<String>,
+    /// The whole-file guard (kind `file`, Phase 6.9). `#[serde(default)]`
+    /// so sidecars written before the raw mode still read — their
+    /// patches predate it and carry no guard.
+    #[serde(default)]
+    pub before_hash: String,
 }
 
 /// Everything worth keeping about one book, in one file.
@@ -67,10 +101,19 @@ pub struct Sidecar {
     /// Chapter and fraction, so reading position survives a rebuild.
     pub reading_position: Option<(usize, f64)>,
     pub highlights: Vec<SidecarHighlight>,
+    /// EPUB edit patches (Phase 6), mirroring the database rows. Added in
+    /// sidecar v2; `default` keeps files written by v1 readable.
+    #[serde(default)]
+    pub patches: Vec<SidecarPatch>,
 }
 
 impl Sidecar {
-    pub fn from_parts(book: &Book, position: Option<(usize, f64)>, marks: &[Annotation]) -> Self {
+    pub fn from_parts(
+        book: &Book,
+        position: Option<(usize, f64)>,
+        marks: &[Annotation],
+        patches: &[PatchRecord],
+    ) -> Self {
         Self {
             version: SIDECAR_VERSION,
             uuid: book.uuid.clone(),
@@ -97,7 +140,26 @@ impl Sidecar {
                     text_excerpt: a.text_excerpt.clone(),
                     note: a.note.clone(),
                     color: a.color.clone(),
+                    style: a.style.clone(),
                     created_at: a.created_at.clone(),
+                })
+                .collect(),
+            patches: patches
+                .iter()
+                .map(|p| SidecarPatch {
+                    id: p.id,
+                    kind: p.kind.clone(),
+                    href: p.href.clone(),
+                    chapter_index: p.chapter_index,
+                    find_text: p.find_text.clone(),
+                    replace_text: p.replace_text.clone(),
+                    context_before: p.context_before.clone(),
+                    context_after: p.context_after.clone(),
+                    source: p.source.clone(),
+                    status: p.status.clone(),
+                    created_at: p.created_at.clone(),
+                    applied_at: p.applied_at.clone(),
+                    before_hash: p.before_hash.clone(),
                 })
                 .collect(),
         }
@@ -109,6 +171,24 @@ pub fn sidecar_path(uuid: &str) -> std::path::PathBuf {
     crate::paths::book_dir(uuid).join("kalam.json")
 }
 
+/// Where one book's sidecar lives.
+///
+/// A regular book keeps `kalam.json` beside its file. A comic chapter
+/// (item 2.22) lives in a shared series folder with hundreds of siblings,
+/// so one `kalam.json` per folder is impossible; its sidecar is named for
+/// its uuid inside a hidden `.kalam/` directory — out of sight when a
+/// person browses the series, still beside the files it describes, so it
+/// travels with the library.
+fn sidecar_file_for(book: &Book) -> std::path::PathBuf {
+    match book.file_name.rsplit_once('/') {
+        Some((series, _)) => crate::paths::library_dir()
+            .join(series)
+            .join(".kalam")
+            .join(format!("{}.json", book.uuid)),
+        None => sidecar_path(&book.uuid),
+    }
+}
+
 /// Write one book's sidecar.
 ///
 /// Best-effort by design: the caller ignores the result. A failure here means
@@ -118,13 +198,27 @@ pub fn sidecar_path(uuid: &str) -> std::path::PathBuf {
 ///
 /// Temp-file-then-rename, so an interrupted write cannot leave a truncated
 /// sidecar that a future rebuild would read as authoritative-but-wrong.
-pub fn write_sidecar(book: &Book, position: Option<(usize, f64)>, marks: &[Annotation]) {
-    let data = Sidecar::from_parts(book, position, marks);
-    let dir = crate::paths::book_dir(&book.uuid);
-    if !dir.is_dir() {
+pub fn write_sidecar(
+    book: &Book,
+    position: Option<(usize, f64)>,
+    marks: &[Annotation],
+    patches: &[PatchRecord],
+) {
+    let data = Sidecar::from_parts(book, position, marks, patches);
+    let final_path = sidecar_file_for(book);
+    // A comic chapter's sidecar sits in `.kalam/`, which may not exist yet
+    // even though the series folder does — create it. For every other book
+    // the directory is the book's own folder, and a missing one means there
+    // are no files to sit beside, so the write is skipped as before.
+    if book.file_name.contains('/') {
+        if let Some(dir) = final_path.parent() {
+            if std::fs::create_dir_all(dir).is_err() {
+                return;
+            }
+        }
+    } else if !crate::paths::book_dir(&book.uuid).is_dir() {
         return;
     }
-    let final_path = sidecar_path(&book.uuid);
     let tmp = final_path.with_extension("json.tmp");
 
     let json = match serde_json::to_string_pretty(&data) {
@@ -153,7 +247,8 @@ pub fn refresh_for_book(catalog: &Catalog, book_id: i64) {
     };
     let position = catalog.get_reading_progress(book_id).ok().flatten();
     let marks = catalog.get_annotations_for_book(book_id).unwrap_or_default();
-    write_sidecar(&book, position, &marks);
+    let patches = catalog.get_patches_for_book(book_id).unwrap_or_default();
+    write_sidecar(&book, position, &marks, &patches);
 }
 
 /// Read a sidecar back. Used by the survey below, never during normal reading.
@@ -165,16 +260,17 @@ pub fn read_sidecar(path: &Path) -> Option<Sidecar> {
 /// What a rebuild would find if `catalog.db` disappeared right now.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SidecarSurvey {
-    /// Book folders in the library.
+    /// Books in the catalog.
     pub books: usize,
-    /// Folders with a readable `kalam.json`.
+    /// Books with a readable sidecar (`kalam.json`, or `.kalam/<uuid>.json`
+    /// for a comic chapter in a series folder).
     pub recoverable: usize,
-    /// Folders with a `kalam.json` that could not be parsed.
+    /// Books whose sidecar exists but could not be parsed.
     pub damaged: usize,
 }
 
 impl SidecarSurvey {
-    /// Folders with no sidecar at all — imported before this existed, or a
+    /// Books with no sidecar at all — imported before this existed, or a
     /// write that failed.
     pub fn missing(&self) -> usize {
         self.books
@@ -190,17 +286,18 @@ impl SidecarSurvey {
 /// that could silently stop running, and the failure would be invisible until
 /// the day someone actually needed them (pitfalls §19). Settings shows the
 /// number.
-pub fn survey() -> SidecarSurvey {
-    let mut out = SidecarSurvey::default();
-    let Ok(entries) = std::fs::read_dir(crate::paths::library_dir()) else {
-        return out;
+pub fn survey(catalog: &Catalog) -> SidecarSurvey {
+    // Counted from the catalog, not from the directory listing: comic
+    // chapters share one series folder (item 2.22), so folders no longer
+    // map one-to-one onto books. The database knows exactly what a rebuild
+    // would need to find.
+    let Ok(books) = catalog.list_books(crate::db::SortKey::Title, "") else {
+        return SidecarSurvey::default();
     };
-    for entry in entries.flatten() {
-        if !entry.path().is_dir() {
-            continue;
-        }
+    let mut out = SidecarSurvey::default();
+    for book in &books {
         out.books += 1;
-        let side = entry.path().join("kalam.json");
+        let side = sidecar_file_for(book);
         if !side.is_file() {
             continue;
         }
@@ -224,11 +321,11 @@ pub fn backfill_missing(catalog: &Catalog) -> usize {
     };
     let mut written = 0;
     for book in books {
-        if sidecar_path(&book.uuid).is_file() {
+        if sidecar_file_for(&book).is_file() {
             continue;
         }
         refresh_for_book(catalog, book.id);
-        if sidecar_path(&book.uuid).is_file() {
+        if sidecar_file_for(&book).is_file() {
             written += 1;
         }
     }
@@ -277,6 +374,7 @@ mod tests {
             end_path: "/1/2".into(),
             end_offset: 24,
             color: "yellow".into(),
+            style: "solid".into(),
             text_excerpt: "fear is the mind-killer".into(),
             note: "remember this".into(),
             cfi: None,
@@ -285,9 +383,28 @@ mod tests {
         }
     }
 
+    fn a_patch() -> PatchRecord {
+        PatchRecord {
+            id: 11,
+            book_id: 1,
+            kind: "text".into(),
+            href: "text/chapter1.xhtml".into(),
+            chapter_index: 0,
+            find_text: "teh".into(),
+            replace_text: "the".into(),
+            context_before: "fix ".into(),
+            context_after: " word".into(),
+            source: "typo".into(),
+            status: "pending".into(),
+            created_at: "2026-10-08T00:00:00Z".into(),
+            applied_at: None,
+            before_hash: String::new(),
+        }
+    }
+
     #[test]
     fn a_sidecar_keeps_what_a_rebuild_would_need() {
-        let side = Sidecar::from_parts(&a_book(), Some((3, 0.5)), &[a_mark()]);
+        let side = Sidecar::from_parts(&a_book(), Some((3, 0.5)), &[a_mark()], &[a_patch()]);
         assert_eq!(side.uuid, "abc-123");
         assert_eq!(side.title, "Dune");
         assert_eq!(side.tags, vec!["scifi", "classic"]);
@@ -305,7 +422,7 @@ mod tests {
     fn it_stores_names_not_paths() {
         // An absolute path would stop the folder being portable: copy the
         // library to another machine and every path in it is wrong.
-        let side = Sidecar::from_parts(&a_book(), None, &[]);
+        let side = Sidecar::from_parts(&a_book(), None, &[], &[]);
         assert_eq!(side.file_name, "book.epub");
         assert_eq!(side.cover_name.as_deref(), Some("cover.jpg"));
         assert!(
@@ -315,10 +432,38 @@ mod tests {
     }
 
     #[test]
+    fn a_file_patchs_guard_survives_the_sidecar() {
+        // Phase 6.9: a whole-file patch is only as good as its guard.
+        // A sidecar that drops it turns every raw edit Stale on
+        // rebuild — a silent loss, so it is proven here, not assumed.
+        let mut p = a_patch();
+        p.kind = "file".into();
+        p.before_hash = "deadbeef".into();
+        let side = Sidecar::from_parts(&a_book(), None, &[], &[p]);
+        assert_eq!(side.patches[0].kind, "file");
+        assert_eq!(side.patches[0].before_hash, "deadbeef");
+    }
+
+    #[test]
+    fn an_old_sidecar_patch_without_the_guard_still_reads() {
+        // Sidecars written before the raw mode carry no before_hash
+        // key; their patches predate whole-file edits, and the empty
+        // guard reads back as "the find text is its own guard".
+        let old = serde_json::from_str::<SidecarPatch>(
+            r#"{"id":1,"kind":"text","href":"c.xhtml","chapter_index":0,
+                "find_text":"teh","replace_text":"the","context_before":"",
+                "context_after":"","source":"typo","status":"pending",
+                "created_at":"2026-10-08T00:00:00Z","applied_at":null}"#,
+        )
+        .expect("sidecars written before Phase 6.9 still read");
+        assert_eq!(old.before_hash, "");
+    }
+
+    #[test]
     fn a_sidecar_survives_a_round_trip_through_a_file() {
         // The whole point: if catalog.db is lost, these files are what is
         // left. A round trip that drops a field loses it permanently.
-        let side = Sidecar::from_parts(&a_book(), Some((3, 0.5)), &[a_mark()]);
+        let side = Sidecar::from_parts(&a_book(), Some((3, 0.5)), &[a_mark()], &[]);
         let dir = std::env::temp_dir().join(format!("kalam-sidecar-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("kalam.json");
@@ -378,7 +523,8 @@ mod tests {
         // was wrong.
         let book = cat.get_book(id).unwrap().unwrap();
         let marks = cat.get_annotations_for_book(id).unwrap_or_default();
-        let side = Sidecar::from_parts(&book, None, &marks);
+        let patches = cat.get_patches_for_book(id).unwrap_or_default();
+        let side = Sidecar::from_parts(&book, None, &marks, &patches);
         assert_eq!(
             side.tags,
             vec!["scifi"],
@@ -387,7 +533,7 @@ mod tests {
 
         cat.remove_book_tag(id, "scifi").expect("remove tag");
         let book = cat.get_book(id).unwrap().unwrap();
-        let side = Sidecar::from_parts(&book, None, &[]);
+        let side = Sidecar::from_parts(&book, None, &[], &[]);
         assert!(
             side.tags.is_empty(),
             "removing a tag must reach the backup too"
@@ -403,5 +549,45 @@ mod tests {
             crate::paths::book_dir("abc-123"),
             "the sidecar must live in the book's own folder"
         );
+    }
+
+    #[test]
+    fn a_v1_sidecar_without_patches_still_reads() {
+        // Written before patches existed (sidecar v1). The serde default
+        // makes the new field optional on read, so no backup turns
+        // "damaged" the day this feature ships.
+        let side = Sidecar::from_parts(&a_book(), None, &[], &[a_patch()]);
+        let mut value = serde_json::to_value(&side).unwrap();
+        let obj = value.as_object_mut().expect("sidecar is a JSON object");
+        obj.remove("patches");
+        obj.insert("version".into(), serde_json::json!(1));
+
+        let dir = std::env::temp_dir().join(format!("kalam-sidecar-v1-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("kalam.json");
+        std::fs::write(&path, value.to_string()).unwrap();
+
+        let back = read_sidecar(&path).expect("a v1 sidecar must still read");
+        assert_eq!(back.version, 1);
+        assert!(back.patches.is_empty());
+        assert_eq!(back.title, "Dune", "everything else survives the read");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn patches_survive_a_round_trip_through_a_file() {
+        // A rebuild after losing catalog.db must recover the edit rules
+        // exactly — the find text, the anchors and the status are what the
+        // matcher and the review panel run on.
+        let side = Sidecar::from_parts(&a_book(), None, &[], &[a_patch()]);
+        let dir = std::env::temp_dir().join(format!("kalam-sidecar-patch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("kalam.json");
+        std::fs::write(&path, serde_json::to_string_pretty(&side).unwrap()).unwrap();
+
+        let back = read_sidecar(&path).expect("should read back");
+        assert_eq!(back.patches.len(), 1);
+        assert_eq!(back.patches[0], side.patches[0]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

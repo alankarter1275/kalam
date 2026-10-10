@@ -1,4 +1,6 @@
 use crate::db::Catalog;
+use crate::service::HomeSnapshot;
+use crate::models::BookFormat;
 use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
 use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
@@ -20,6 +22,10 @@ pub enum HomeOut {
     },
     /// My Library → All books (the full searchable/sortable grid).
     AllBooks,
+    /// Open a comic series in the Comics hub
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 #[derive(Debug)]
@@ -35,6 +41,10 @@ pub enum HomeMsg {
     },
     /// The whole import finished.
     ImportFinished(ImportTally),
+    /// The home snapshot finished on its worker (7.1 step 2b) — the
+    /// page painted its skeleton in `init` and fills every section from
+    /// this. No library read happens on the UI thread.
+    Loaded(Box<HomeSnapshot>),
 }
 
 pub struct HomePageModel {
@@ -131,6 +141,16 @@ impl Component for HomePageModel {
                 set_hexpand: true,
                 set_vexpand: false,
                 set_margin_bottom: 8,
+
+                // The skeleton's only moving part: cleared by the first
+                // `Loaded` apply along with the rest of the host. Without
+                // it, the empty sections paint as if the library were
+                // empty (2b; the book page learned this first).
+                gtk::Label {
+                    set_label: "Loading your library…",
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
             },
 
             #[name = "tbr_label"]
@@ -176,7 +196,9 @@ impl Component for HomePageModel {
         };
         let widgets = view_output!();
 
-        rebuild(&widgets, &model.service, &sender);
+        // Skeleton only (7.1 step 2b): the sections paint empty with a
+        // loading row, and every read runs on the worker below.
+        request_snapshot(&model.service, &sender);
 
         ComponentParts { model, widgets }
     }
@@ -214,7 +236,11 @@ impl Component for HomePageModel {
 
                 // New books are in the catalog now; refresh this page so the
                 // counts / continue / recently-added cards reflect them.
-                rebuild(widgets, &self.service, &sender);
+                // Same road as init: the worker reads, the apply builds.
+                request_snapshot(&self.service, &sender);
+            }
+            HomeMsg::Loaded(snap) => {
+                apply_snapshot(widgets, snap, &sender);
             }
             HomeMsg::AllBooks => {
                 sender.output(HomeOut::AllBooks).ok();
@@ -283,16 +309,16 @@ impl Component for HomePageModel {
                 // part of the read-snapshot seam (they belong to the task
                 // manager, A0 step 4).
                 let catalog = self.service.catalog().clone();
-                let step_sender = sender.clone();
-                let done_sender = sender.clone();
+                let step_tx = sender.input_sender().clone();
+                let done_tx = sender.input_sender().clone();
                 spawn_import(
                     catalog,
                     paths,
                     move |done, total, title| {
-                        step_sender.input(HomeMsg::ImportStep { done, total, title });
+                        let _ = step_tx.send(HomeMsg::ImportStep { done, total, title });
                     },
                     move |tally| {
-                        done_sender.input(HomeMsg::ImportFinished(tally));
+                        let _ = done_tx.send(HomeMsg::ImportFinished(tally));
                     },
                 );
             }
@@ -312,18 +338,37 @@ fn clear_box(host: &gtk::Box) {
     }
 }
 
-/// (Re)populate Home. Called at init and again after an import.
+/// Ask the worker for a fresh snapshot. Called at init, after an import,
+/// and nowhere else — the UI thread never reads the library (7.1 step 2b).
+fn request_snapshot(service: &LibraryService, sender: &ComponentSender<HomePageModel>) {
+    let service = LibraryService::new(service.catalog().clone());
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Reading home",
+        move |_reporter| service.home(),
+        |_| {},
+        move |snap| {
+            let _ = s.send(HomeMsg::Loaded(Box::new(snap)));
+        },
+    );
+}
+
+/// (Re)populate Home from an owned snapshot the worker already read.
 ///
-/// A0 step 2: one `service.home()` call replaces four direct catalog reads.
-/// Everything below is pure widget building against an owned snapshot — which
-/// is what makes moving the query to a worker thread a change in the service
-/// rather than in this function.
-fn rebuild(
+/// A0 step 2 made this pure widget building against one snapshot; 2b moved
+/// the read itself to the worker, so this is now the apply half of the
+/// skeleton/worker/apply recipe — the same shape as the book page.
+fn apply_snapshot(
     widgets: &HomePageModelWidgets,
-    service: &LibraryService,
+    snap: Box<HomeSnapshot>,
     sender: &ComponentSender<HomePageModel>,
 ) {
-    let snap = service.home();
+    let snap = *snap;
+    // The same attribution pair the book page uses (2a.1): a timing
+    // span for KALAM_TIMING=1 and an activity label so a stall during
+    // this build says "while home_fill" instead of naming nothing.
+    let _t = crate::timing::measure("home_fill");
+    let _a = crate::timing::activity("home_fill");
     for err in &snap.errors {
         crate::notify::error("Could not read the library", err);
     }
@@ -376,12 +421,25 @@ fn rebuild(
     } else {
         for book in cont {
             let id = book.id;
+            let s_series = book.series.clone();
+            let is_comic = matches!(book.format, BookFormat::Cbz | BookFormat::Cbr);
             let s1 = sender.clone();
             let s2 = sender.clone();
             let card = build_book_card(
                 book,
-                move || {
-                    s1.output(HomeOut::Book { book_id: id }).ok();
+                crate::widgets::book_row::CLICK_HINT_LIBRARY,
+                {
+                    let s = s1.clone();
+                    let sname = s_series.clone();
+                    move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
+                        s.output(HomeOut::Book { book_id: id }).ok();
+                    }
                 },
                 move || {
                     s2.output(HomeOut::BookDialog { book_id: id }).ok();
@@ -462,19 +520,36 @@ fn rebuild(
 
         for book in recent {
             let id = book.id;
+            let s_series = book.series.clone();
+            let is_comic = matches!(book.format, BookFormat::Cbz | BookFormat::Cbr);
             let s1 = sender.clone();
             let s2 = sender.clone();
             let card = build_book_card(
                 book,
+                crate::widgets::book_row::CLICK_HINT_LIBRARY,
                 {
                     let s = s1.clone();
+                    let sname = s_series.clone();
                     move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
                         s.output(HomeOut::Book { book_id: id }).ok();
                     }
                 },
                 {
                     let s = s2.clone();
+                    let sname = s_series.clone();
                     move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
                         s.output(HomeOut::BookDialog { book_id: id }).ok();
                     }
                 },

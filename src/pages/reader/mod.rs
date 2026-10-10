@@ -2,8 +2,9 @@
 
 mod chapter;
 mod chrome;
-mod engine;
-mod js_bridge;
+pub(crate) mod engine;
+mod dictionary_popover;
+mod keybinds;
 mod lists;
 mod mod_model;
 mod panels;
@@ -14,11 +15,14 @@ mod ui_prefs;
 
 pub use mod_model::ReaderModel;
 pub use types::ReaderOut;
+// Phase 6.8: the editor page builds its paragraph edits from these —
+// the same structs, so both scopes of editing stay one machinery.
+pub use types::{EditScope, EditorWidget, InlineEdit, VerifiedEdit};
 
 use chrome::{
-    connect_hover_zone, overlay_child_box, rebuild_cover_host, reader_sidebar_tab_content,
-    sync_reader_controls, sync_reader_stage_theme, sync_reader_stacks, sync_sidebar_tabs,
-    update_chrome_labels, update_sidebar_header,
+    connect_hover_zone, find_overlay_by_class, overlay_child_box, rebuild_cover_host,
+    reader_sidebar_tab_content, sync_reader_controls, sync_reader_stage_theme, sync_reader_stacks,
+    sync_sidebar_tabs, update_chrome_labels, update_sidebar_header,
 };
 use lists::{rebuild_bookmarks_list, rebuild_highlights_list, rebuild_toc, rebuild_words_list};
 use panels::{build_bookmarks_panel, build_highlights_panel, build_words_panel};
@@ -28,7 +32,7 @@ use ui_prefs::{apply_reader_ui_prefs, register_reader_ui_provider, update_reader
 
 use crate::db::Catalog;
 use crate::epub_book::ReadingTheme;
-use crate::models::Book;
+use crate::models::{Book, BookFormat};
 use crate::service::LibraryService;
 use gtk::glib;
 use gtk::prelude::*;
@@ -41,6 +45,83 @@ fn report_errors(errors: &[String]) {
     for err in errors {
         crate::notify::error("Could not open this book properly", err);
     }
+}
+
+
+/// Any visible `gtk::Popover` under `widget`? An open dropdown list or
+/// menu is one, so this is how a close-on-leave timer can tell "still
+/// engaged" from "genuinely left" without touching platform grab APIs.
+fn popover_visible_in(widget: &gtk::Widget) -> bool {
+    if let Some(pop) = widget.downcast_ref::<gtk::Popover>() {
+        if pop.is_visible() {
+            return true;
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        if popover_visible_in(&c) {
+            return true;
+        }
+        child = c.next_sibling();
+    }
+    false
+}
+
+/// Install (or replace) the window-global shortcut for jump-back from the
+/// current binding (roadmaps 2.6 and 2.9). There is deliberately no
+/// on-screen undo button — it read as clutter — so the key must answer
+/// wherever the focus happens to sit right after a jump: a sidebar row,
+/// a popup, nowhere at all. A window-global shortcut with a typing guard
+/// does that, the same route Ctrl+F always used; the focus-dependent
+/// capture path on the reader root could miss, which is what the first
+/// field report showed. When nothing jumpable is fresh, the handler
+/// declines.
+fn install_jump_back_shortcut(
+    root: &gtk::Overlay,
+    slot: &std::rc::Rc<std::cell::RefCell<Option<gtk::ShortcutController>>>,
+    keybinds: &std::rc::Rc<std::cell::RefCell<keybinds::KeyBindings>>,
+    sender: &ComponentSender<ReaderModel>,
+) {
+    if let Some(old) = slot.borrow_mut().take() {
+        root.remove_controller(&old);
+    }
+    let pref = keybinds
+        .borrow()
+        .binding(keybinds::ReaderAction::JumpBack)
+        .to_pref();
+    if pref == keybinds::UNBOUND {
+        return;
+    }
+    let accel = match pref.strip_prefix("<ctrl>") {
+        Some(rest) => format!("<Control>{rest}"),
+        None => pref,
+    };
+    let Some(trigger) = gtk::ShortcutTrigger::parse_string(&accel) else {
+        return;
+    };
+    let shortcuts = gtk::ShortcutController::new();
+    shortcuts.set_scope(gtk::ShortcutScope::Global);
+    let s = sender.clone();
+    let action = gtk::CallbackAction::new(move |w, _| {
+        // Deleting a character in the search box is not a jump.
+        let typing = w
+            .root()
+            .and_then(|r| r.focus())
+            .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
+        if typing {
+            return gtk::glib::Propagation::Proceed;
+        }
+        s.input(ReaderMsg::JumpBack);
+        gtk::glib::Propagation::Stop
+    });
+    shortcuts.add_shortcut(
+        gtk::Shortcut::builder()
+            .trigger(&trigger)
+            .action(&action)
+            .build(),
+    );
+    root.add_controller(shortcuts.clone());
+    *slot.borrow_mut() = Some(shortcuts);
 }
 
 #[relm4::component(pub)]
@@ -111,26 +192,56 @@ impl Component for ReaderModel {
                 set_valign: gtk::Align::Fill,
             },
 
-            add_overlay = &gtk::Box {
-                add_css_class: "kalam-reader-back-dock",
+            add_overlay = &gtk::Revealer {
                 #[watch]
-                set_visible: model.show_back_button,
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 6,
+                set_reveal_child: model.show_back_button && !model.left_sidebar_open,
+                set_transition_type: gtk::RevealerTransitionType::SlideDown,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
 
-                gtk::Button {
-                    set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
-                    add_css_class: "kalam-reader-back",
-                    connect_clicked => ReaderMsg::Close,
-                },
+                gtk::Box {
+                    add_css_class: "kalam-reader-back-dock",
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 6,
 
-                gtk::Button {
-                    set_child: Some(&crate::icons::symbolic_with_classes("bookmark-new-symbolic", 16, &["kalam-inline-icon"])),
-                    add_css_class: "kalam-reader-back",
-                    set_tooltip_text: Some("Bookmark (B)"),
-                    connect_clicked => ReaderMsg::AddBookmark,
+                    gtk::Button {
+                        set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
+                        add_css_class: "kalam-reader-back",
+                        connect_clicked => ReaderMsg::Close,
+                    },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("bookmark-new-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Bookmark (B)"),
+                        connect_clicked => ReaderMsg::AddBookmark,
+                    },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("edit-find-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Search in book (Ctrl+F)"),
+                        connect_clicked => ReaderMsg::ToggleSearch,
+                    },
+
+                    #[name = "proofread_btn"]
+                    gtk::ToggleButton {
+                        set_child: Some(&crate::icons::symbolic_with_classes("document-edit-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Proofread — click a paragraph to edit it (EPUB)"),
+                        #[watch]
+                        set_visible: model.book_format == BookFormat::Epub,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(ReaderMsg::ToggleProofreading(btn.is_active()));
+                        },
+                    },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("window-minimize-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-back",
+                        set_tooltip_text: Some("Minimize to Bubble"),
+                        connect_clicked => ReaderMsg::MinimizeToBubble,
+                    },
                 },
             },
 
@@ -151,18 +262,21 @@ impl Component for ReaderModel {
                 },
             },
 
-            add_overlay = &gtk::Box {
+            add_overlay = &gtk::Revealer {
                 #[watch]
-                set_visible: model.show_bottom_pill,
-                add_css_class: "kalam-reader-bottom-dock",
+                set_reveal_child: model.show_bottom_pill,
+                set_transition_type: gtk::RevealerTransitionType::SlideUp,
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::End,
 
                 gtk::Box {
-                    add_css_class: "kalam-reader-bottom-pill",
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 4,
-                    set_valign: gtk::Align::Center,
+                    add_css_class: "kalam-reader-bottom-dock",
+
+                    gtk::Box {
+                        add_css_class: "kalam-reader-bottom-pill",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 4,
+                        set_valign: gtk::Align::Center,
 
                     gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes("go-previous-symbolic", 15, &["kalam-inline-icon"])),
@@ -200,6 +314,7 @@ impl Component for ReaderModel {
                     },
                 },
             },
+        },
 
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-sidebar-shell",
@@ -213,6 +328,7 @@ impl Component for ReaderModel {
                 #[wrap(Some)]
                 set_child = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
+                    set_size_request: (340, -1),
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-left",
 
@@ -228,6 +344,23 @@ impl Component for ReaderModel {
                             set_width_request: 48,
                         },
 
+                        // The editor's door (Phase 6.8, the owner's
+                        // 2026-10-08 addition): a pencil beside the
+                        // cover at the top of the TOC. EPUBs only — the
+                        // other formats have no source to edit.
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "document-edit-symbolic",
+                                14,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-reader-edit-book",
+                            set_tooltip_text: Some("Edit the book (opens the editor)"),
+                            #[watch]
+                            set_visible: model.book_format == BookFormat::Epub,
+                            connect_clicked => ReaderMsg::OpenEditor,
+                        },
+
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_spacing: 4,
@@ -241,6 +374,8 @@ impl Component for ReaderModel {
                                 set_wrap: true,
                                 set_wrap_mode: gtk::pango::WrapMode::WordChar,
                                 set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                set_max_width_chars: 24,
+                                set_width_chars: 1,
                                 set_lines: 2,
                                 set_xalign: 0.0,
                             },
@@ -304,6 +439,7 @@ impl Component for ReaderModel {
                 #[wrap(Some)]
                 set_child = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
+                    set_size_request: (340, -1),
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-right",
 
@@ -375,16 +511,32 @@ impl Component for ReaderModel {
                         },
                     },
 
-                    #[name = "search_count_label"]
-                    gtk::Label {
-                        add_css_class: "kalam-reader-search-count",
-                        #[watch]
-                        set_label: &if model.search_query.is_empty() {
-                            String::new()
-                        } else if model.search_results.is_empty() {
-                            "0 matches".to_string()
-                        } else {
-                            format!("{} of {}", model.search_index + 1, model.search_results.len())
+                    #[name = "search_count_btn"]
+                    gtk::MenuButton {
+                        add_css_class: "kalam-reader-search-count-btn",
+                        set_tooltip_text: Some("Matches at a glance"),
+                        #[wrap(Some)]
+                        set_child = &gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 4,
+
+                            #[name = "search_count_label"]
+                            gtk::Label {
+                                add_css_class: "kalam-reader-search-count",
+                                #[watch]
+                                set_label: &if model.search_query.is_empty() {
+                                    String::new()
+                                } else if model.search_results.is_empty() {
+                                    "0 matches".to_string()
+                                } else {
+                                    format!("{} of {}", model.search_index + 1, model.search_results.len())
+                                },
+                            },
+
+                            gtk::Label {
+                                add_css_class: "kalam-reader-search-chevron",
+                                set_label: "▾",
+                            },
                         },
                     },
 
@@ -537,15 +689,40 @@ impl Component for ReaderModel {
         let catalog_column = catalog
             .get_pref_i64("reader.column_px", 620)
             .clamp(400, 860) as u32;
+        let catalog_family = catalog.get_pref("reader.font_family");
+        let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
+        let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
         let scrolled = catalog.get_pref_i64(engine::PREF_SCROLLED, 0) != 0;
 
         // The engine opens the EPUB itself: one widget holds the book, and
         // its failure is the only thing that leaves the page without text.
         let mut open_failure: Option<String> = None;
         let (book_meta, view, chapter, fraction) = if let Some(book) = book.clone() {
-            let prefs =
-                engine::engine_prefs(catalog_theme, catalog_font, catalog_line_height, catalog_column);
-            match engine::open_engine(&book.file_path, prefs) {
+            let prefs = engine::engine_prefs(
+                catalog_theme,
+                catalog_font,
+                catalog_line_height,
+                catalog_column,
+                catalog_family.clone(),
+                catalog_justify,
+                false, // no hyphenation: retired after the round-1 field report
+                catalog_publisher,
+            );
+            // The book's pending edits (Phase 6) ride along: the reader
+            // applies them to each chapter's bytes as it parses, and the
+            // file itself stays untouched. Pending only: applied patches
+            // are already in the file's bytes once a bake has written
+            // them. A failed read opens the book unpatched rather than
+            // not at all — the log says why.
+            let patches = catalog
+                .get_pending_patches_for_book(book_id)
+                .unwrap_or_else(|err| {
+                    log::warn!(
+                        "patches for book {book_id} unreadable: {err:#} — opening unpatched"
+                    );
+                    Vec::new()
+                });
+            match engine::open_engine(&book.file_path, prefs, patches) {
                 Ok(view) => {
                     let (ch, frac) = catalog
                         .get_reading_progress(book_id)
@@ -628,6 +805,26 @@ impl Component for ReaderModel {
         let catalog_column = catalog
             .get_pref_i64("reader.column_px", 620)
             .clamp(400, 860) as u32;
+        let catalog_family = catalog.get_pref("reader.font_family");
+        let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
+        let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
+        let catalog_dual_page = catalog.get_pref_i64("reader.dual_page", 1) != 0;
+        let catalog_autohide = catalog.get_pref_i64("reader.autohide_cursor", 1) != 0;
+        let catalog_wheel = catalog.get_pref_i64("reader.wheel_step", 92).clamp(20, 400) as i32;
+        let catalog_arrow = catalog.get_pref_i64("reader.arrow_step", 45).clamp(10, 200) as i32;
+        let word_memory_scope = catalog
+            .get_pref("reader.word_memory_scope")
+            .unwrap_or_else(|| "library".into());
+        if let Some(v) = &view {
+            let wm_words = catalog
+                .get_saved_words_for_scope(book_id, &word_memory_scope)
+                .unwrap_or_default();
+            v.set_word_memory(wm_words.into_iter().map(|w| w.word));
+        }
+        let font_families = view
+            .as_ref()
+            .map(|v| v.font_families())
+            .unwrap_or_default();
         let ui_prefs = ReaderUiPrefs::load(catalog);
         let ui_css_provider = gtk::CssProvider::new();
         register_reader_ui_provider(&ui_css_provider);
@@ -648,6 +845,16 @@ impl Component for ReaderModel {
         toc_scroll.add_css_class("kalam-reader-panel-scroll");
         left_stack.add_named(&toc_scroll, Some("toc"));
 
+        // Roadmap 2.9: the reader's keys. One table, shared with the key
+        // controller below, so a change in settings takes effect at once.
+        let keybinds = keybinds::KeyBindings::shared(catalog);
+
+        // Filled by install_jump_back_shortcut below, and swapped whenever
+        // the key is rebound in Settings.
+        let jump_back_shortcut: std::rc::Rc<
+            std::cell::RefCell<Option<gtk::ShortcutController>>,
+        > = std::rc::Rc::new(std::cell::RefCell::new(None));
+
         let ReaderSettingsControls {
             root: settings_panel,
             settings_stack,
@@ -655,6 +862,11 @@ impl Component for ReaderModel {
             font_size_label,
             line_height_label,
             column_width_label,
+            wheel_step_label,
+            arrow_step_label,
+            arrow_step_row,
+            keybind_buttons,
+            dual_page_switch,
             theme_dots,
             ui_controls,
         } = build_reader_settings_panel(
@@ -667,6 +879,16 @@ impl Component for ReaderModel {
             ui_prefs,
             catalog.get_pref_i64("dict_sense_hint", 1) != 0,
             catalog.get_pref_i64("dict_history_enabled", 1) != 0,
+            catalog_family.clone(),
+            font_families,
+            catalog_justify,
+            catalog_publisher,
+            catalog_dual_page,
+            catalog_autohide,
+            catalog_wheel,
+            catalog_arrow,
+            &keybinds,
+            &word_memory_scope,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -715,7 +937,21 @@ impl Component for ReaderModel {
             font_px: catalog_font,
             line_height: catalog_line_height,
             column_px: catalog_column,
+            font_family: catalog_family,
+            justify: catalog_justify,
+            publisher_styles: catalog_publisher,
+            dual_page: catalog_dual_page,
+            keybinds,
+            jump_back_shortcut,
+            autohide_cursor: catalog_autohide,
+            wheel_step: catalog_wheel,
+            arrow_step: catalog_arrow,
+            can_jump_back: false,
+            back_depth: 0,
             selection_chip: None,
+            word_preview_popover: None,
+            word_memory_scope,
+            note_popover: None,
             dict_popover: None,
             dict_anchor: None,
             dict_suppress_clear: 0,
@@ -734,6 +970,13 @@ impl Component for ReaderModel {
             dict_lookup_def: None,
             dict_context: None,
             last_selection: None,
+            inline_edit: None,
+            proofreading: false,
+            book_format: book.as_ref().map(|b| b.format).unwrap_or(BookFormat::Epub),
+            next_edit_serial: 0,
+            reader_reloading: false,
+            reader_overlay: None,
+            book_path: book.as_ref().map(|b| b.file_path.clone()),
             session_id: None,
             session_start: std::time::Instant::now(),
             session_start_pct: 0,
@@ -769,6 +1012,11 @@ impl Component for ReaderModel {
             font_size_label,
             line_height_label,
             column_width_label,
+            wheel_step_label,
+            arrow_step_label,
+            arrow_step_row,
+            keybind_buttons,
+            dual_page_switch,
             theme_dots,
             ui_controls,
             highlight_filter_buttons,
@@ -778,6 +1026,9 @@ impl Component for ReaderModel {
             search_query: String::new(),
             search_results: Vec::new(),
             search_index: 0,
+            search_popover: None,
+            search_list_box: None,
+            search_popover_badge: None,
             lightbox_active: false,
             lightbox_popover: None,
             lightbox_pixbuf: None,
@@ -819,11 +1070,22 @@ impl Component for ReaderModel {
             overlay.set_child(Some(view.widget()));
             overlay.add_overlay(&scrollbar);
             widgets.web_host.append(&overlay);
+            // The overlay outlives this view: a committed edit (phase
+            // 6.4) swaps the view inside it and the inline editor stays
+            // a child of the overlay, not of either view.
+            model.reader_overlay = Some(overlay);
 
             engine::wire(view, &sender);
             if model.scrolled {
                 view.set_mode(kalam_reader::ReadingMode::Scrolled);
             }
+            // Roadmap 2.7: the spread is a choice now, not a consequence
+            // of the window being wide.
+            view.set_dual_page(model.dual_page);
+            // Roadmap 2.9: the pointer and the wheel.
+            view.set_autohide_cursor(model.autohide_cursor);
+            view.set_wheel_step(model.wheel_step as f32);
+            view.set_arrow_step(model.arrow_step as f32);
             scrollbar.set_visible(model.scrolled);
             model.strip_scrollbar = Some(scrollbar);
             view.widget().grab_focus();
@@ -857,8 +1119,8 @@ impl Component for ReaderModel {
             .right_panel_host
             .parent()
             .and_then(|w| w.downcast::<gtk::Box>().ok());
-        model.back_dock = overlay_child_box(&root, 4);
-        model.bottom_dock = overlay_child_box(&root, 5);
+        model.back_dock = find_overlay_by_class(&root, "kalam-reader-back-dock");
+        model.bottom_dock = find_overlay_by_class(&root, "kalam-reader-bottom-dock");
         model.left_sidebar_shell = left_sidebar_box
             .as_ref()
             .and_then(|sidebar| sidebar.parent())
@@ -1003,13 +1265,20 @@ impl Component for ReaderModel {
         let key = gtk::EventControllerKey::new();
         key.set_propagation_phase(gtk::PropagationPhase::Capture);
         let s = sender.clone();
+        let keys = model.keybinds.clone();
         key.connect_key_pressed(move |controller, keyval, _, state| {
             use gtk::gdk::Key;
-            if state.contains(gtk::gdk::ModifierType::CONTROL_MASK) {
-                if keyval == Key::f || keyval == Key::F {
-                    s.input(ReaderMsg::ToggleSearch);
-                    return gtk::glib::Propagation::Stop;
-                }
+            let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            // Search is answered before the typing check, so Ctrl+F opens
+            // search from inside the search box too — as it always did.
+            if ctrl
+                && keys
+                    .borrow()
+                    .binding(keybinds::ReaderAction::Search)
+                    .is_key(keyval)
+            {
+                s.input(ReaderMsg::ToggleSearch);
+                return gtk::glib::Propagation::Stop;
             }
 
             let is_typing = controller
@@ -1043,52 +1312,13 @@ impl Component for ReaderModel {
                 return gtk::glib::Propagation::Proceed;
             }
 
-            match keyval {
-                Key::d | Key::D => {
-                    s.input(ReaderMsg::LookUpSelection);
+            // Roadmap 2.9: what a key does is the reader's to decide.
+            match keys.borrow().action_for(keyval, ctrl) {
+                Some(action) => {
+                    s.input(action.message());
                     gtk::glib::Propagation::Stop
                 }
-                Key::n | Key::N => {
-                    s.input(ReaderMsg::NextChapter);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::p | Key::P => {
-                    s.input(ReaderMsg::PrevChapter);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::plus | Key::equal => {
-                    s.input(ReaderMsg::FontDelta(1));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::minus => {
-                    s.input(ReaderMsg::FontDelta(-1));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::t | Key::T => {
-                    s.input(ReaderMsg::SwitchLeftTab(LeftSidebarTab::Toc));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::s | Key::S => {
-                    s.input(ReaderMsg::SwitchLeftTab(LeftSidebarTab::Settings));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::h | Key::H => {
-                    s.input(ReaderMsg::SwitchRightTab(RightSidebarTab::Highlights));
-                    gtk::glib::Propagation::Stop
-                }
-                Key::b | Key::B => {
-                    s.input(ReaderMsg::AddBookmark);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::m | Key::M => {
-                    s.input(ReaderMsg::AddBookmark);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::w | Key::W => {
-                    s.input(ReaderMsg::SwitchRightTab(RightSidebarTab::Words));
-                    gtk::glib::Propagation::Stop
-                }
-                _ => gtk::glib::Propagation::Proceed,
+                None => gtk::glib::Propagation::Proceed,
             }
         });
         root.add_controller(key);
@@ -1110,6 +1340,42 @@ impl Component for ReaderModel {
             shortcut_ctrl.add_shortcut(shortcut);
         }
         root.add_controller(shortcut_ctrl);
+
+        // Roadmap 2.6/2.9: jump back is keyboard-only, and it must answer
+        // wherever the focus happens to sit right after a jump, so it rides
+        // the window-global route above rather than the focus-dependent
+        // capture path. Rebinding in Settings swaps it through the slot.
+        install_jump_back_shortcut(
+            &root,
+            &model.jump_back_shortcut,
+            &model.keybinds,
+            &sender,
+        );
+
+        let (search_pop, search_lb, search_badge) = build_search_snippets_popover();
+        widgets.search_count_btn.set_popover(Some(&search_pop));
+        model.search_popover = Some(search_pop);
+        model.search_list_box = Some(search_lb);
+        model.search_popover_badge = Some(search_badge);
+
+        let entry_key = gtk::EventControllerKey::new();
+        let s_entry = sender.clone();
+        entry_key.connect_key_pressed(move |_, keyval, _code, state| {
+            if keyval == gtk::gdk::Key::Return || keyval == gtk::gdk::Key::KP_Enter {
+                if state.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+                    s_entry.input(ReaderMsg::PrevSearchResult);
+                } else {
+                    s_entry.input(ReaderMsg::NextSearchResult);
+                }
+                gtk::glib::Propagation::Stop
+            } else if keyval == gtk::gdk::Key::Escape {
+                s_entry.input(ReaderMsg::CloseSearch);
+                gtk::glib::Propagation::Stop
+            } else {
+                gtk::glib::Propagation::Proceed
+            }
+        });
+        widgets.search_entry.add_controller(entry_key);
 
         ComponentParts { model, widgets }
     }
@@ -1146,6 +1412,9 @@ impl Component for ReaderModel {
                             w.grab_focus();
                         });
                     }
+                    if let Some(popover) = &self.search_popover {
+                        popover.popdown();
+                    }
                 } else {
                     let entry = widgets.search_entry.clone();
                     gtk::glib::idle_add_local_once(move || {
@@ -1163,11 +1432,13 @@ impl Component for ReaderModel {
                     self.search_results.clear();
                 }
                 self.highlight_current_search_match();
+                self.update_search_snippets_popover(&sender);
             }
             ReaderMsg::NextSearchResult => {
                 if !self.search_results.is_empty() {
                     self.search_index = (self.search_index + 1) % self.search_results.len();
                     self.highlight_current_search_match();
+                    self.update_search_snippets_popover(&sender);
                 }
             }
             ReaderMsg::PrevSearchResult => {
@@ -1178,6 +1449,17 @@ impl Component for ReaderModel {
                         self.search_index -= 1;
                     }
                     self.highlight_current_search_match();
+                    self.update_search_snippets_popover(&sender);
+                }
+            }
+            ReaderMsg::JumpToSearchResult(idx) => {
+                if idx < self.search_results.len() {
+                    self.search_index = idx;
+                    self.highlight_current_search_match();
+                    self.update_search_snippets_popover(&sender);
+                    if let Some(popover) = &self.search_popover {
+                        popover.popdown();
+                    }
                 }
             }
             ReaderMsg::CloseSearch => {
@@ -1192,6 +1474,9 @@ impl Component for ReaderModel {
                     glib::idle_add_local_once(move || {
                         w.grab_focus();
                     });
+                }
+                if let Some(popover) = &self.search_popover {
+                    popover.popdown();
                 }
             }
             ReaderMsg::OpenImageLightbox(w, h, bytes) => {
@@ -1214,6 +1499,12 @@ impl Component for ReaderModel {
                     self.save_progress();
                     sender.output(ReaderOut::Close).ok();
                 }
+            }
+            ReaderMsg::MinimizeToBubble => {
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                self.save_progress();
+                sender.output(ReaderOut::MinimizeToBubble { book_id: self.book_id }).ok();
             }
             ReaderMsg::TocSelect(idx) | ReaderMsg::JumpToChapter(idx) => {
                 if idx < self.chapter_count {
@@ -1339,6 +1630,175 @@ impl Component for ReaderModel {
                     refresh_controls = true;
                 }
             }
+            ReaderMsg::SetFontFamily(family) => {
+                let family = if family.trim().is_empty() {
+                    None
+                } else {
+                    Some(family)
+                };
+                if family != self.font_family {
+                    self.font_family = family.clone();
+                    self.service
+                        .catalog()
+                        .set_pref("reader.font_family", family.as_deref().unwrap_or(""));
+                    self.with_view(move |v| v.set_font_family(family));
+                }
+            }
+            ReaderMsg::SetJustify(on) => {
+                if on != self.justify {
+                    self.justify = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.justify", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_justify(on));
+                }
+            }
+            ReaderMsg::SetPublisherStyles(on) => {
+                if on != self.publisher_styles {
+                    self.publisher_styles = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.publisher_styles", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_publisher_styles(on));
+                }
+            }
+            ReaderMsg::ShowNote { href, text, x, y } => {
+                // A note is worth more than a stale selection chip under
+                // the reader's finger.
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.note_popover.take());
+                let Some(view) = &self.view else { return };
+                let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                let card = engine::build_note_popover(
+                    view.widget().upcast_ref(),
+                    &rect,
+                    &text,
+                    &href,
+                    &sender,
+                );
+                card.popup();
+                self.note_popover = Some(card);
+            }
+            ReaderMsg::GoToNote(href) => {
+                engine::dismiss(self.note_popover.take());
+                // with_view's closure returns nothing; follow_link's bool
+                // answer is the reader's to keep.
+                self.with_view(|v| {
+                    v.follow_link(&href);
+                });
+            }
+            ReaderMsg::ClearNote => {
+                engine::dismiss(self.note_popover.take());
+            }
+            ReaderMsg::JumpBack => {
+                // Keyboard-only now, and a keystroke can land long after
+                // the jump went stale — the guard that used to be the
+                // button's visibility moves in here. The engine pops its
+                // own trail; the position report that follows withdraws
+                // the offer.
+                if self.can_jump_back {
+                    self.can_jump_back = false;
+                    self.with_view(|v| {
+                        v.go_back();
+                    });
+                }
+            }
+            ReaderMsg::SetDualPage(on) => {
+                if on != self.dual_page {
+                    self.dual_page = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.dual_page", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_dual_page(on));
+                }
+            }
+            ReaderMsg::OpenFontsFolder => {
+                // Created on demand too, so the first use is not a missing
+                // folder in a file manager.
+                let dir = crate::paths::fonts_dir();
+                if let Err(e) = std::fs::create_dir_all(&dir) {
+                    log::warn!("cannot create {}: {e}", dir.display());
+                }
+                let uri = gtk::gio::File::for_path(&dir).uri().to_string();
+                gtk::UriLauncher::new(&uri).launch(
+                    None::<&gtk::Window>,
+                    gtk::gio::Cancellable::NONE,
+                    move |res| {
+                        if let Err(e) = res {
+                            log::warn!("cannot open {}: {e}", dir.display());
+                            // No desktop file manager on this machine (a
+                            // terminal-only setup, e.g. yazi): the next
+                            // best thing is the path in the clipboard and
+                            // a toast saying so.
+                            if let Some(display) = gtk::gdk::Display::default() {
+                                display.clipboard().set_text(&dir.display().to_string());
+                                crate::notify::error(
+                                    "Could not open the fonts folder",
+                                    "Its path is on the clipboard instead",
+                                );
+                            }
+                        }
+                    },
+                );
+            }
+            ReaderMsg::SetAutohideCursor(on) => {
+                if on != self.autohide_cursor {
+                    self.autohide_cursor = on;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.autohide_cursor", if on { "1" } else { "0" });
+                    self.with_view(move |v| v.set_autohide_cursor(on));
+                }
+            }
+            ReaderMsg::WheelStepDelta(delta) => {
+                let next = (self.wheel_step + delta).clamp(20, 400);
+                if next != self.wheel_step {
+                    self.wheel_step = next;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.wheel_step", &next.to_string());
+                    self.with_view(move |v| v.set_wheel_step(next as f32));
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::ArrowStepDelta(delta) => {
+                let next = (self.arrow_step + delta).clamp(10, 200);
+                if next != self.arrow_step {
+                    self.arrow_step = next;
+                    self.service
+                        .catalog()
+                        .set_pref("reader.arrow_step", &next.to_string());
+                    self.with_view(move |v| v.set_arrow_step(next as f32));
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::SetKeyBinding(action, key, ctrl) => {
+                let Some(binding) = keybinds::KeyBinding::capture(key, ctrl) else {
+                    return;
+                };
+                {
+                    let mut bindings = self.keybinds.borrow_mut();
+                    bindings.bind(action, binding);
+                    bindings.save(self.service.catalog(), action);
+                }
+                install_jump_back_shortcut(
+                    _root,
+                    &self.jump_back_shortcut,
+                    &self.keybinds,
+                    &sender,
+                );
+                refresh_controls = true;
+            }
+            ReaderMsg::ResetKeyBindings => {
+                self.keybinds.borrow_mut().reset_all(self.service.catalog());
+                install_jump_back_shortcut(
+                    _root,
+                    &self.jump_back_shortcut,
+                    &self.keybinds,
+                    &sender,
+                );
+                refresh_controls = true;
+            }
             ReaderMsg::SwitchSettingsPane(pane) => {
                 if pane != self.settings_pane {
                     self.settings_pane = pane;
@@ -1390,6 +1850,14 @@ impl Component for ReaderModel {
                 // clears the selection too, but the widget says nothing on
                 // that path; that one is with the engine.
                 engine::dismiss(self.selection_chip.take());
+                // Roadmap 2.6: the engine keeps its own trail of jumps. A
+                // depth that grew means something just moved the reader —
+                // including a tap on a link the engine followed itself —
+                // so offer the way back. The next ordinary turn, or a
+                // return trip, withdraws the offer.
+                let depth = self.view.as_ref().map_or(0, |v| v.back_depth());
+                self.can_jump_back = depth > self.back_depth && depth > 0;
+                self.back_depth = depth;
                 let changed = chapter != self.chapter;
                 let moved = changed || (self.fraction - fraction).abs() > 0.001;
                 self.chapter = chapter.min(self.chapter_count.saturating_sub(1));
@@ -1433,6 +1901,429 @@ impl Component for ReaderModel {
                     chip.popup();
                     self.selection_chip = Some(chip);
                 }
+                if sel.is_some() && self.inline_edit.is_some() {
+                    // A fresh drag while the editor stood open: the page
+                    // is not focusable, so this click did not go through
+                    // the editor's focus-out — the selection changing is
+                    // the click-away. Commit what stands and let the new
+                    // selection proceed.
+                    if let Some(edit) = &self.inline_edit {
+                        sender.input(ReaderMsg::CommitInlineEdit(
+                            edit.editor.text(),
+                        ));
+                    }
+                }
+                if sel.is_none() && self.inline_edit.is_some() {
+                    // A tap on the page cleared the selection while the
+                    // inline editor stood open — that is the click-away
+                    // commit. (Scrolls never come through here: they move
+                    // geometry, not the selection.)
+                    if let Some(edit) = &self.inline_edit {
+                        sender.input(ReaderMsg::CommitInlineEdit(
+                            edit.editor.text(),
+                        ));
+                    }
+                }
+            }
+            ReaderMsg::EngineSelectionMoved(rect) => {
+                // The selection's rect after the frame that moved it. While
+                // an inline edit stands, the box rides along — and because
+                // the view reports from an idle after that frame is already
+                // painted, the box converges with the text rather than
+                // chasing it. No rect (scrolled off screen): hold the last
+                // position — the text and the box reunite on the way back,
+                // and nothing typed is ever lost to a scroll.
+                if let Some(rect) = rect {
+                    if let Some(edit) = &self.inline_edit {
+                        engine::position_inline_editor(edit.editor.widget(), &rect);
+                    } else {
+                        // No editor open: keep the anchor current, so the
+                        // pencil (and the popovers) place against where
+                        // the selection is now, not where it was made.
+                        self.dict_anchor = Some(rect);
+                    }
+                }
+            }
+            ReaderMsg::OpenEditor => {
+                // The sidebar pencil: the full editor for this book, as
+                // a route push — the reader stays where it is in the
+                // history stack, and Back returns to this page.
+                sender.output(ReaderOut::OpenEditor { book_id: self.book_id }).ok();
+            }
+            ReaderMsg::ToggleProofreading(on) => {
+                // The chrome's pencil (phase 6.7): on, a tap on a
+                // paragraph opens the inline editor over the whole
+                // paragraph. View state only; nothing persists it.
+                self.proofreading = on;
+                if let Some(view) = &self.view {
+                    view.set_proofreading(on);
+                }
+            }
+            ReaderMsg::EngineParagraphTap(tap) => {
+                // A proofread tap found its paragraph. Guards first — an
+                // editor already open means the tap's selection report
+                // already committed it as its click-away, and a reload in
+                // flight has no chapter to edit.
+                if self.inline_edit.is_some() || self.reader_reloading {
+                    return;
+                }
+                let Some(view) = self.view.clone() else { return };
+                let Some(overlay) = self.reader_overlay.clone() else { return };
+                let Some((identity, rect)) = tap else {
+                    crate::notify::info(
+                        "Proofreading",
+                        "That paragraph cannot be edited here.",
+                    );
+                    return;
+                };
+                // The popovers and the chip stand down — the tap also
+                // made the paragraph the selection, and its report may
+                // have raised the chip; the editor replaces it, exactly
+                // as the selection pencil does.
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                engine::dismiss(self.word_preview_popover.take());
+                engine::dismiss(self.note_popover.take());
+                let (textview, provider) = engine::build_paragraph_editor(
+                    &identity.text,
+                    self.font_family.as_deref(),
+                    self.font_px,
+                    {
+                        let tx = sender.input_sender().clone();
+                        move |text| {
+                            let _ = tx.send(ReaderMsg::CommitInlineEdit(text));
+                        }
+                    },
+                    {
+                        let tx = sender.input_sender().clone();
+                        move || {
+                            let _ = tx.send(ReaderMsg::CancelInlineEdit);
+                        }
+                    },
+                );
+                engine::position_inline_editor(&textview, &rect);
+                overlay.add_overlay(&textview);
+                // Cursor-hiding would blank the pointer over the box
+                // mid-edit; it resumes when the editor closes.
+                view.set_autohide_cursor(false);
+                textview.grab_focus();
+                let serial = self.next_edit_serial;
+                self.next_edit_serial += 1;
+                self.inline_edit = Some(InlineEdit {
+                    original: identity.text,
+                    chapter: self.chapter,
+                    scope: EditScope::Paragraph {
+                        prev: identity.prev,
+                        next: identity.next,
+                    },
+                    serial,
+                    committed: false,
+                    editor: EditorWidget::Paragraph(textview),
+                    provider,
+                });
+            }
+            ReaderMsg::BeginInlineEdit => {
+                // The pencil: the selection becomes the editor. Guards
+                // first — an edit already open, a reload in flight, or a
+                // selection whose where is unknown cannot become one.
+                if self.inline_edit.is_some() || self.reader_reloading {
+                    return;
+                }
+                let Some(rect) = self.dict_anchor else { return };
+                let Some(text) = self.last_selection.clone() else { return };
+                let Some(view) = self.view.clone() else { return };
+                let Some(overlay) = self.reader_overlay.clone() else { return };
+                // The popovers stand down; the selection itself stays —
+                // the entry is the selection now. Dismissing a chip
+                // never clears the selection under it.
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                engine::dismiss(self.word_preview_popover.take());
+                engine::dismiss(self.note_popover.take());
+                let (entry, provider) = engine::build_inline_editor(
+                    &text,
+                    self.font_family.as_deref(),
+                    self.font_px,
+                    &sender,
+                );
+                engine::position_inline_editor(&entry, &rect);
+                overlay.add_overlay(&entry);
+                // Cursor-hiding would blank the pointer over the box
+                // mid-edit; it resumes when the editor closes.
+                view.set_autohide_cursor(false);
+                entry.grab_focus();
+                let serial = self.next_edit_serial;
+                self.next_edit_serial += 1;
+                self.inline_edit = Some(InlineEdit {
+                    original: text,
+                    chapter: self.chapter,
+                    scope: EditScope::Selection,
+                    serial,
+                    committed: false,
+                    editor: EditorWidget::Selection(entry),
+                    provider,
+                });
+            }
+            ReaderMsg::CommitInlineEdit(corrected) => {
+                let Some(edit) = self.inline_edit.as_ref() else { return };
+                if edit.committed {
+                    // A commit is already in flight for this editor —
+                    // Enter, click-away, and focus-out all race the
+                    // verdict, and each may arrive for one edit. One
+                    // edit, one commit.
+                    return;
+                }
+                if corrected == edit.original {
+                    // The one verdict that needs no book opened: the text
+                    // is unchanged, so nothing is stored. The box stays
+                    // exactly as it is — its text intact, still editable.
+                    crate::notify::info("Nothing to fix", "The text already says that.");
+                    return;
+                }
+                // Verify off the UI thread against the chapter as the
+                // reader shows it: the book's path, the chapter the
+                // edit was made in, and the fixes already stored.
+                let Some(path) = self.book_path.clone() else { return };
+                let chapter = edit.chapter;
+                let original = edit.original.clone();
+                let serial = edit.serial;
+                let is_paragraph = matches!(edit.scope, EditScope::Paragraph { .. });
+                let (prev, next) = match &edit.scope {
+                    EditScope::Selection => (None, None),
+                    EditScope::Paragraph { prev, next } => (prev.clone(), next.clone()),
+                };
+                // Pending only — the same list the reader's entry filter
+                // runs, so the verification sees exactly the chapter the
+                // reader shows.
+                let prior = match self
+                    .service
+                    .catalog()
+                    .get_pending_patches_for_book(self.book_id)
+                {
+                    Ok(p) => p,
+                    Err(e) => {
+                        crate::notify::error("Could not read this book's saved fixes", &e.to_string());
+                        return;
+                    }
+                };
+                // Plain data over an async_channel — the tasks
+                // manager's worker→main-loop shape: the worker sends
+                // blocking, a local future on the main loop receives,
+                // and nothing GTK-side crosses the thread. One verdict
+                // per edit, so the future ends after one receive.
+                let (verdict_tx, verdict_rx) =
+                    async_channel::unbounded::<Result<VerifiedEdit, (String, u64)>>();
+                let tx = sender.input_sender().clone();
+                gtk::glib::spawn_future_local(async move {
+                    if let Ok(verdict) = verdict_rx.recv().await {
+                        let _ = tx.send(ReaderMsg::InlineEditVerified(verdict));
+                    }
+                });
+                if is_paragraph {
+                    engine::verify_paragraph_edit(
+                        path, chapter, prior, original, prev, next, corrected, serial, verdict_tx,
+                    );
+                } else {
+                    engine::verify_inline_edit(
+                        path, chapter, prior, original, corrected, serial, verdict_tx,
+                    );
+                }
+                if let Some(edit) = self.inline_edit.as_mut() {
+                    edit.committed = true;
+                }
+                // The editor stays open until the verdict lands — a
+                // refusal is information (widen the selection), not a
+                // lost edit, and a slow book must not freeze the page.
+            }
+            ReaderMsg::CancelInlineEdit => {
+                // Escape: nothing was changed, nothing to reload.
+                self.close_inline_edit();
+            }
+            ReaderMsg::InlineEditVerified(verdict) => {
+                // The verdict carries everything it verified — href,
+                // kind, chapter, serial — because the editor it came
+                // from may already be gone (a quick second tap, or an
+                // Escape right after Enter): its patch still stores.
+                match verdict {
+                    Ok(verified) => {
+                        let source = if verified.kind == "paragraph" {
+                            "proofread"
+                        } else {
+                            "typo"
+                        };
+                        let inserted = self.service.catalog().insert_patch(
+                            self.book_id,
+                            verified.kind,
+                            &verified.href,
+                            verified.chapter as i64,
+                            &verified.planned.find_text,
+                            &verified.planned.replace_text,
+                            &verified.planned.context_before,
+                            &verified.planned.context_after,
+                            source,
+                        );
+                        match inserted {
+                            Ok(_) => {
+                                // Only the editor this verdict belongs to
+                                // comes down. A newer editor stands — its
+                                // half-typed text is not the casualty of
+                                // an older edit's slow verification — and
+                                // the reload waits for its own commit.
+                                let current = self
+                                    .inline_edit
+                                    .as_ref()
+                                    .is_some_and(|edit| edit.serial == verified.serial);
+                                if current {
+                                    self.close_inline_edit();
+                                    self.reload_reader(&sender);
+                                    crate::notify::success(
+                                        "Fixed",
+                                        "The edit now shows in the book.",
+                                    );
+                                } else {
+                                    crate::notify::success(
+                                        "Fixed",
+                                        "The edit is saved — it shows when this paragraph edit lands.",
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                // The store refused: nothing is saved, and
+                                // an editor that still stands keeps its
+                                // text so nothing typed is lost.
+                                crate::notify::error("Could not save the edit", &e.to_string());
+                            }
+                        }
+                    }
+                    Err((toast, serial)) => {
+                        crate::notify::info("Couldn't save that edit", &toast);
+                        // A refusal of the editor still standing re-arms
+                        // it: the fix may be widened or reworded and
+                        // committed again. A stale refusal touches
+                        // nothing — the editor it refused is gone, and
+                        // the one that replaced it keeps its own state.
+                        if let Some(edit) = self.inline_edit.as_mut() {
+                            if edit.serial == serial {
+                                edit.committed = false;
+                            }
+                        }
+                    }
+                }
+            }
+            ReaderMsg::SaveAnnotationDetails { color, style, note } => {
+                engine::dismiss(self.selection_chip.take());
+                let Some(view) = self.view.clone() else {
+                    return;
+                };
+                let color_val = engine::engine_color(&color);
+                let Some(h) = view.capture_highlight_with_style(color_val, &style) else {
+                    return;
+                };
+                let cfi = engine::range_to_json(&h.start, &h.end);
+                let inserted = self.service.catalog().insert_annotation(
+                    self.book_id,
+                    "highlight",
+                    h.start.spine_index as i64,
+                    "",
+                    0,
+                    "",
+                    0,
+                    color_val.name(),
+                    &style,
+                    &h.text,
+                    &note,
+                );
+                match inserted {
+                    Ok(id) => {
+                        crate::notify::report(
+                            self.service.catalog().update_annotation_cfi(id, &cfi),
+                            "Could not place the highlight",
+                        );
+                        view.show_highlight(id, &h);
+                        self.reload_annotations();
+                        refresh_highlights = true;
+                    }
+                    Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
+                }
+            }
+            ReaderMsg::EditAnnotationDetails { id, color, style, note } => {
+                engine::dismiss(self.selection_chip.take());
+                let color_val = engine::engine_color(&color);
+                let res = self.service.catalog().update_annotation_details(
+                    id,
+                    color_val.name(),
+                    &style,
+                    &note,
+                );
+                match res {
+                    Ok(()) => {
+                        if let Some(view) = self.view.clone() {
+                            view.update_highlight(id, color_val, &style);
+                        }
+                        self.reload_annotations();
+                        refresh_highlights = true;
+                    }
+                    Err(e) => crate::notify::error("Could not update highlight", &e.to_string()),
+                }
+            }
+            ReaderMsg::HighlightTapped(id, x, y) => {
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                engine::dismiss(self.word_preview_popover.take());
+                let anno_opt = self.service.catalog().get_annotation_by_id(id).ok().flatten();
+                if let (Some(anno), Some(view)) = (anno_opt, self.view.clone()) {
+                    let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                    let popover = engine::build_annotation_edit_popover(
+                        view.widget().upcast_ref(),
+                        &rect,
+                        &anno,
+                        &sender,
+                    );
+                    popover.popup();
+                    self.selection_chip = Some(popover);
+                }
+            }
+            ReaderMsg::WordMemoryTapped(word, x, y) => {
+                engine::dismiss(self.selection_chip.take());
+                engine::dismiss(self.dict_popover.take());
+                engine::dismiss(self.word_preview_popover.take());
+                let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                self.dict_lookup(word, None, rect, &sender);
+            }
+            ReaderMsg::WordMemoryHover(word_opt, x, y) => {
+                if word_opt.is_none() {
+                    engine::dismiss(self.word_preview_popover.take());
+                    return;
+                }
+                let word = word_opt.unwrap_or_default();
+                if self.dict_popover.is_some() || self.selection_chip.is_some() {
+                    return;
+                }
+                let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                if let Some(view) = self.view.clone() {
+                    engine::dismiss(self.word_preview_popover.take());
+                    if let Some(pop) = engine::build_word_preview_tooltip(
+                        view.widget().upcast_ref(),
+                        &rect,
+                        &word,
+                        self.service.catalog(),
+                    ) {
+                        pop.popup();
+                        self.word_preview_popover = Some(pop);
+                    }
+                }
+            }
+            ReaderMsg::SetWordMemoryScope(scope) => {
+                self.word_memory_scope = scope.clone();
+                self.service.catalog().set_pref("reader.word_memory_scope", &scope);
+                if let Some(view) = &self.view {
+                    let wm_words = self
+                        .service
+                        .catalog()
+                        .get_saved_words_for_scope(self.book_id, &self.word_memory_scope)
+                        .unwrap_or_default();
+                    view.set_word_memory(wm_words.into_iter().map(|w| w.word));
+                }
             }
             ReaderMsg::HighlightSelection(color_name) => {
                 engine::dismiss(self.selection_chip.take());
@@ -1453,6 +2344,7 @@ impl Component for ReaderModel {
                     "",
                     0,
                     color.name(),
+                    "solid",
                     &h.text,
                     "",
                 );
@@ -1488,6 +2380,7 @@ impl Component for ReaderModel {
                     "",
                     0,
                     "yellow",
+                    "solid",
                     &h.text,
                     "",
                 );
@@ -1797,6 +2690,20 @@ impl Component for ReaderModel {
                 refresh_controls = true;
                 refresh_words = true;
             }
+            ReaderMsg::ExportAnnotations => {
+                let catalog = self.service.catalog();
+                match lists::export_highlights_markdown(
+                    catalog,
+                    self.book_id,
+                    &self.book_title,
+                ) {
+                    Ok((n, path)) => crate::notify::success(
+                        &format!("Exported {n} highlights & notes"),
+                        &path.display().to_string(),
+                    ),
+                    Err(err) => crate::notify::error("Could not export highlights", &err),
+                }
+            }
             ReaderMsg::ScheduleCloseLeft => {
                 self.schedule_left_close(sender.clone());
             }
@@ -1805,17 +2712,54 @@ impl Component for ReaderModel {
             }
             ReaderMsg::ForceCloseLeft(token) => {
                 if token == self.left_close_token {
-                    self.left_sidebar_open = false;
-                    self.left_close_timer = None;
-                    refresh_tabs = true;
+                    // THIS is the sidebar that hosts Settings — and its
+                    // dropdowns. Three previous fixes all patched the right
+                    // sidebar while the Typeface picker's list kept dying
+                    // over here. Same approach as the right: an open popup
+                    // shows up as a visible GtkPopover inside the tree;
+                    // hold and re-judge. (A pointer that simply comes back
+                    // sends OpenLeftSidebar and cancels this timer itself.)
+                    let hold = self
+                        .left_sidebar_box
+                        .as_ref()
+                        .is_some_and(|sb| popover_visible_in(sb.upcast_ref()));
+                    if hold {
+                        self.schedule_left_close(sender.clone());
+                    } else {
+                        self.left_sidebar_open = false;
+                        self.left_close_timer = None;
+                        refresh_tabs = true;
+                    }
                 }
             }
             ReaderMsg::ForceCloseRight(token) => {
                 if token == self.right_close_token {
-                    self.close_annotation_editor();
-                    self.right_sidebar_open = false;
-                    self.right_close_timer = None;
-                    refresh_tabs = true;
+                    // A dropdown's list (the Typeface picker) is a separate
+                    // surface: chasing the pointer into it fires the
+                    // sidebar's leave and starts this timer, while the
+                    // reader is very much still engaged. An open popup does
+                    // NOT reliably make the window inactive — the first fix
+                    // assumed it did and Wayland said no — but it always
+                    // takes a grab on a descendant of the sidebar. That
+                    // walk for a visible GtkPopover is the only hold
+                    // signal that survives the toolkit version churn.
+                    // (A pointer that comes back inside needs no check:
+                    // re-entering sends Open* and cancels this timer.)
+                    let hold = self
+                        .right_sidebar_box
+                        .as_ref()
+                        .is_some_and(|sb| {
+                            let sb = sb.upcast_ref::<gtk::Widget>();
+                            popover_visible_in(sb)
+                        });
+                    if hold {
+                        self.schedule_right_close(sender.clone());
+                    } else {
+                        self.close_annotation_editor();
+                        self.right_sidebar_open = false;
+                        self.right_close_timer = None;
+                        refresh_tabs = true;
+                    }
                 }
             }
             ReaderMsg::CloseSidebars => {
@@ -1984,6 +2928,7 @@ impl Component for ReaderModel {
         }
         engine::dismiss(self.selection_chip.take());
         engine::dismiss(self.dict_popover.take());
+        engine::dismiss(self.word_preview_popover.take());
         if let Some(view) = self.view.take() {
             view.close();
         }
@@ -2118,12 +3063,94 @@ impl ReaderModel {
         };
         let hl = kalam_reader::NewHighlight {
             color: kalam_reader::HighlightColor::Yellow,
+            style: "solid".to_string(),
             text: res.locator.quote.exact.clone(),
             start: res.locator.clone(),
             end: end_locator,
         };
         view.show_highlight(-9999, &hl);
         view.goto_locator(&res.locator, true);
+    }
+
+    fn update_search_snippets_popover(&self, sender: &ComponentSender<Self>) {
+        let Some(ref list_box) = self.search_list_box else { return };
+        let Some(ref badge_lbl) = self.search_popover_badge else { return };
+
+        while let Some(child) = list_box.first_child() {
+            list_box.remove(&child);
+        }
+
+        let total = self.search_results.len();
+        if total == 0 {
+            badge_lbl.set_label("0 matches");
+            let empty_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            empty_box.set_margin_all(20);
+            empty_box.set_halign(gtk::Align::Center);
+
+            let empty_lbl = gtk::Label::new(Some(if self.search_query.trim().is_empty() {
+                "Type to search across the entire book"
+            } else {
+                "No matches found"
+            }));
+            empty_lbl.add_css_class("kalam-search-popover-badge");
+            empty_box.append(&empty_lbl);
+            list_box.append(&empty_box);
+            return;
+        }
+
+        badge_lbl.set_label(&format!("{} matches", total));
+
+        let display_limit = 100.min(total);
+        for idx in 0..display_limit {
+            let res = &self.search_results[idx];
+            let row = gtk::Box::new(gtk::Orientation::Vertical, 3);
+            row.add_css_class("kalam-search-snippet-row");
+            if idx == self.search_index {
+                row.add_css_class("active");
+            }
+
+            let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            let ch_title = res.chapter_title.clone().unwrap_or_else(|| format!("Chapter {}", res.chapter + 1));
+            let ch_label = gtk::Label::new(Some(&ch_title));
+            ch_label.add_css_class("kalam-search-snippet-chapter");
+            ch_label.set_hexpand(true);
+            ch_label.set_halign(gtk::Align::Start);
+            ch_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+
+            let idx_label = gtk::Label::new(Some(&format!("#{}", idx + 1)));
+            idx_label.add_css_class("kalam-search-snippet-index");
+
+            top_row.append(&ch_label);
+            top_row.append(&idx_label);
+
+            let text_label = gtk::Label::new(None);
+            text_label.add_css_class("kalam-search-snippet-text");
+            text_label.set_use_markup(true);
+            text_label.set_markup(&format_search_snippet(&res.snippet, &self.search_query));
+            text_label.set_wrap(true);
+            text_label.set_wrap_mode(gtk::pango::WrapMode::Word);
+            text_label.set_halign(gtk::Align::Start);
+            text_label.set_xalign(0.0);
+
+            row.append(&top_row);
+            row.append(&text_label);
+
+            let gesture = gtk::GestureClick::new();
+            let s = sender.clone();
+            gesture.connect_released(move |_, _, _, _| {
+                s.input(ReaderMsg::JumpToSearchResult(idx));
+            });
+            row.add_controller(gesture);
+
+            list_box.append(&row);
+        }
+
+        if total > display_limit {
+            let more_lbl = gtk::Label::new(Some(&format!("+ {} more matches (use Next/Prev)", total - display_limit)));
+            more_lbl.add_css_class("kalam-search-snippet-index");
+            more_lbl.set_margin_all(8);
+            list_box.append(&more_lbl);
+        }
     }
 
     pub(crate) fn schedule_back_auto_hide(&mut self, sender: ComponentSender<Self>) {
@@ -2208,7 +3235,7 @@ impl ReaderModel {
 
 /// The first table-of-contents label that points at chapter `spine`,
 /// searching through nested entries.
-fn toc_title(entries: &[kalam_reader::TocEntry], spine: usize) -> Option<String> {
+pub(crate) fn toc_title(entries: &[kalam_reader::TocEntry], spine: usize) -> Option<String> {
     for entry in entries {
         if entry.spine_index == Some(spine) && !entry.label.trim().is_empty() {
             return Some(entry.label.trim().to_string());
@@ -2218,4 +3245,198 @@ fn toc_title(entries: &[kalam_reader::TocEntry], spine: usize) -> Option<String>
         }
     }
     None
+}
+
+fn format_search_snippet(snippet: &str, query: &str) -> String {
+    let query_lower = query.trim().to_lowercase();
+    let snippet_lower = snippet.to_lowercase();
+    if query_lower.is_empty() {
+        return glib::markup_escape_text(snippet).to_string();
+    }
+    if let Some(idx) = snippet_lower.find(&query_lower) {
+        let prefix = &snippet[..idx];
+        let matched = &snippet[idx..idx + query.trim().len().min(snippet.len() - idx)];
+        let suffix = &snippet[(idx + matched.len()).min(snippet.len())..];
+        format!(
+            "{}<span weight=\"bold\" foreground=\"#d97706\" background=\"#f4d35e\" background_alpha=\"30%\">{}</span>{}",
+            glib::markup_escape_text(prefix),
+            glib::markup_escape_text(matched),
+            glib::markup_escape_text(suffix)
+        )
+    } else {
+        glib::markup_escape_text(snippet).to_string()
+    }
+}
+
+fn build_search_snippets_popover() -> (gtk::Popover, gtk::ListBox, gtk::Label) {
+    let popover = gtk::Popover::new();
+    popover.add_css_class("kalam-search-snippet-popover");
+    popover.set_has_arrow(true);
+    popover.set_position(gtk::PositionType::Bottom);
+
+    let content_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content_box.set_width_request(340);
+
+    let header_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    header_box.add_css_class("kalam-search-popover-header");
+
+    let title_lbl = gtk::Label::new(Some("Matches at a Glance"));
+    title_lbl.add_css_class("kalam-search-popover-title");
+    title_lbl.set_hexpand(true);
+    title_lbl.set_halign(gtk::Align::Start);
+
+    let badge_lbl = gtk::Label::new(Some("0 matches"));
+    badge_lbl.add_css_class("kalam-search-popover-badge");
+
+    header_box.append(&title_lbl);
+    header_box.append(&badge_lbl);
+    content_box.append(&header_box);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .max_content_height(340)
+        .propagate_natural_height(true)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+
+    let list_box = gtk::ListBox::new();
+    list_box.set_selection_mode(gtk::SelectionMode::None);
+    list_box.add_css_class("kalam-search-popover-list");
+    scroll.set_child(Some(&list_box));
+
+    content_box.append(&scroll);
+    popover.set_child(Some(&content_box));
+
+    (popover, list_box, badge_lbl)
+}
+
+impl ReaderModel {
+    /// Take the inline editor down (phase 6.4): the entry and its
+    /// typeface provider off the overlay, the reader's cursor-hiding
+    /// back on, focus back to the page. Safe to call with no editor
+    /// open — the reload path uses it exactly that way.
+    pub(crate) fn close_inline_edit(&mut self) {
+        if let Some(edit) = self.inline_edit.take() {
+            engine::remove_inline_edit_provider(&edit.provider);
+            if let Some(overlay) = &self.reader_overlay {
+                overlay.remove_overlay(edit.editor.widget());
+            }
+            if let Some(view) = &self.view {
+                view.set_autohide_cursor(self.autohide_cursor);
+                view.widget().grab_focus();
+            }
+        }
+    }
+
+    /// Reopen the book the reader is already reading (phase 6.4). A
+    /// committed text edit has to be re-parsed to show, and the engine
+    /// has no incremental text swap — the honest way to re-parse is to
+    /// reopen. The cost is the same as the initial open (bounded, and
+    /// taken under a timing span so the step log records it honestly),
+    /// and the reader's place is restored from what the position
+    /// callback has been persisting all along.
+    ///
+    /// The order throughout is the contract: guard first so nothing
+    /// mid-swap reads as reader input; the popovers and editor down
+    /// before the view they ride on goes away; the view swapped inside
+    /// the persistent overlay with `set_child` — the overlay's place in
+    /// the web host is never touched (§48); the new view wired and
+    /// given every mode preference the old one had; then the chapter
+    /// and fraction put back.
+    pub(crate) fn reload_reader(&mut self, sender: &ComponentSender<ReaderModel>) {
+        if self.reader_reloading {
+            return;
+        }
+        self.reader_reloading = true;
+        let _timing = crate::timing::measure("reader_reload");
+
+        // Parented to the view that is about to go: down first.
+        engine::dismiss(self.selection_chip.take());
+        engine::dismiss(self.dict_popover.take());
+        engine::dismiss(self.word_preview_popover.take());
+        engine::dismiss(self.note_popover.take());
+        self.close_inline_edit();
+
+        // Where the reader was, current to the last position report.
+        let (chapter, fraction) = (self.chapter, self.fraction);
+        self.save_progress();
+
+        let Some(path) = self.book_path.clone() else {
+            self.reader_reloading = false;
+            return;
+        };
+        let prefs = engine::current_engine_prefs(self.service.catalog());
+        let patches = self
+            .service
+            .catalog()
+            .get_pending_patches_for_book(self.book_id)
+            .unwrap_or_else(|err| {
+                log::warn!(
+                    "patches for book {} unreadable: {err:#} — reloading unpatched",
+                    self.book_id
+                );
+                Vec::new()
+            });
+        // Open before touching the old view: a failure here leaves the
+        // reader exactly where it was — the fix is stored and will show
+        // the next time the book opens.
+        let new_view = match engine::open_engine(&path, prefs, patches) {
+            Ok(view) => view,
+            Err(err) => {
+                self.reader_reloading = false;
+                crate::notify::error(
+                    "Could not reopen the book",
+                    &format!("{err:#}\nThe fix is saved and will show next time you open it."),
+                );
+                return;
+            }
+        };
+
+        if let Some(old) = self.view.take() {
+            old.close();
+        }
+        if let Some(bar) = self.strip_scrollbar.take() {
+            if let Some(overlay) = &self.reader_overlay {
+                overlay.remove_overlay(&bar);
+            }
+        }
+
+        self.view = Some(new_view.clone());
+        if let Some(overlay) = &self.reader_overlay {
+            // The strip scrollbar, rebuilt against the new view's
+            // adjustment, as the old one was in `init`.
+            let scrollbar =
+                gtk::Scrollbar::new(gtk::Orientation::Vertical, Some(new_view.vadjustment()));
+            scrollbar.set_halign(gtk::Align::End);
+            scrollbar.set_valign(gtk::Align::Fill);
+            scrollbar.add_css_class("kalam-reader-strip-bar");
+            scrollbar.set_visible(self.scrolled);
+            overlay.set_child(Some(new_view.widget()));
+            overlay.add_overlay(&scrollbar);
+            self.strip_scrollbar = Some(scrollbar);
+        }
+        engine::wire(&new_view, sender);
+        if self.scrolled {
+            new_view.set_mode(kalam_reader::ReadingMode::Scrolled);
+        }
+        new_view.set_dual_page(self.dual_page);
+        new_view.set_autohide_cursor(self.autohide_cursor);
+        // The proofread pencil survives the reopen (phase 6.7): the
+        // flag lives here, the view is new.
+        new_view.set_proofreading(self.proofreading);
+        new_view.set_wheel_step(self.wheel_step as f32);
+        new_view.set_arrow_step(self.arrow_step as f32);
+        new_view.widget().grab_focus();
+
+        // Back to where the reader was reading.
+        new_view.goto_chapter(chapter.min(self.chapter_count.saturating_sub(1)), fraction);
+        engine::show_all_highlights(&new_view, &self.all_book_annotations);
+        self.reload_annotations();
+        self.reload_bookmarks();
+        self.reload_saved_words();
+
+        self.reader_reloading = false;
+    }
 }

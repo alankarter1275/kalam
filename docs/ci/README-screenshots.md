@@ -17,12 +17,31 @@ photographs so somebody (or the agent) can look.
 | Job | Blocks the build? | What it does |
 |---|---|---|
 | `build` | **Yes** | fmt, clippy `-D warnings`, tests, debug + release build |
-| `screenshots` | No | 139-book library, headless sway, PNGs as artifacts |
-| `scale` | No | 2,000-book library, peak memory |
+| `screenshots` (labelled *smoke test*) | No | one 139-book run on the `read-1` route, headless sway; publishes a text report |
 
-The two new jobs are `continue-on-error: true` **on purpose**. They are a
-diagnostic, not a gate. A flaky compositor must never block a correct code
-change. `build` remains the only thing that can fail the run.
+The smoke test is `continue-on-error: true` **on purpose**. It is a diagnostic,
+not a gate. A flaky compositor must never block a correct code change. `build`
+remains the only thing that can fail the run.
+
+### Slimmed on 2026-09-18 — two things were removed, and why
+
+This page used to describe three jobs. The other two pieces are gone:
+
+- **The `scale` job.** Its question — does the app survive 2,000 books — was
+  answered on 2026-09-04 and the answer is committed in
+  `ci-logs/scale-2000-comparison.txt`: the windowed grid at 247 MB / 7.1 ms
+  against the old build-every-card grid at 352 MB / 139.7 ms. Re-measuring a
+  settled number on every push bought nothing. **Bring it back deliberately if
+  the grid ever changes**, by copying the job out of git history.
+- **The PNG artifact upload, and the second (all-books) screenshot pass.** The
+  artifacts went to nobody: the Arena sandbox cannot download them, and the
+  text report carries the same facts. The all-books pass was redundant with
+  the `read-1` run for the one thing this job is still worth — proof that the
+  app launches and a book opens without panicking.
+
+`ci-logs/screenshots-latest.txt` and the `ci-logs/scale-2000-*.txt` files are
+**frozen records of their last runs**, not current output. Nothing writes them
+now. Only `ci-logs/reader-latest.txt` is live.
 
 ## The pieces
 
@@ -43,9 +62,9 @@ change. `build` remains the only thing that can fail the run.
 
 The Arena sandbox **cannot download Actions artifacts** — the blob host is
 unreachable from it, the same limitation that makes clippy failures get
-committed to `ci-logs/`. So both jobs copy their `report.txt` into
-`ci-logs/screenshots-latest.txt` and `ci-logs/scale-2000-latest.txt` and commit
-it back to the branch, on success *and* failure.
+committed to `ci-logs/`. So the smoke test copies its `report.txt` into
+`ci-logs/reader-latest.txt` and commits it back to the branch, on success *and*
+failure.
 
 The PNGs are for you. The committed text report is for the agent. It contains
 the `[timing]` lines, the cover-colour percentages, peak memory, and any fatal

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // payload for the author page's saved-quotes section, not built yet
 pub struct AuthorQuote {
     pub book_title: String,
     pub excerpt: String,
@@ -188,7 +188,7 @@ pub fn owned_books_for_author(catalog: &Catalog, author_name: &str) -> Vec<Book>
     catalog.books_for_author(author_name).unwrap_or_default()
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // feeds the future author saved-quotes section
 pub fn saved_quotes_for_books(catalog: &Catalog, books: &[Book], limit: usize) -> Vec<AuthorQuote> {
     let mut quotes = Vec::new();
     for book in books {
@@ -356,7 +356,7 @@ pub fn initials(name: &str) -> String {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // helper for that saved-quotes section
 pub fn line_text(parts: &[String]) -> String {
     parts
         .iter()
@@ -375,7 +375,7 @@ pub fn status_counts(books: &[Book]) -> (usize, usize, usize) {
     (books.len(), finished, reading)
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // as above
 fn is_saved_quote(ann: &Annotation) -> bool {
     matches!(ann.kind.as_str(), "quote" | "highlight") && !ann.text_excerpt.trim().is_empty()
 }

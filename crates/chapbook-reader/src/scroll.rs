@@ -47,10 +47,11 @@
 //! not this round's problem — so these calls are for text books.
 
 use chapbook_core::{Locator, Point, Rect, Rgba};
+use chapbook_layout::dom;
 use chapbook_paint::{Blend, DisplayList, FragmentKind, FrameIntent, Page, Selection};
 use chapbook_render_tinyskia::tiny_skia;
 
-use crate::{Highlight, Session};
+use crate::{Highlight, ParagraphIdentity, Session};
 
 /// Every line on a page as (top, bottom, locator start), in fragment
 /// order.
@@ -151,11 +152,20 @@ impl Session {
         let highlight_color = palette.highlight;
         let paint = |h: &Highlight| {
             let color_str = h.color.as_deref().unwrap_or("");
-            let is_underline = color_str == "#3b82f6ff" || color_str == "#2563ebff" || color_str.eq_ignore_ascii_case("underline");
-            let style = if is_underline {
-                chapbook_paint::SelectionStyle::Underline
-            } else {
-                chapbook_paint::SelectionStyle::Band
+            let style_str = h.style.as_deref().unwrap_or("");
+            let style = match style_str.to_ascii_lowercase().as_str() {
+                "underline" | "straight" => chapbook_paint::SelectionStyle::Underline,
+                "squiggly" | "wavy" => chapbook_paint::SelectionStyle::Squiggly,
+                "strikeout" | "strike" => chapbook_paint::SelectionStyle::Strikeout,
+                "dotted" => chapbook_paint::SelectionStyle::Dotted,
+                "solid" | "band" => chapbook_paint::SelectionStyle::Band,
+                _ => {
+                    if color_str == "#3b82f6ff" || color_str == "#2563ebff" || color_str.eq_ignore_ascii_case("underline") {
+                        chapbook_paint::SelectionStyle::Underline
+                    } else {
+                        chapbook_paint::SelectionStyle::Band
+                    }
+                }
             };
             Selection {
                 start: h.start,
@@ -171,6 +181,33 @@ impl Session {
         };
         let mut selections: Vec<Selection> =
             self.host_highlights(spine).iter().map(paint).collect();
+
+        // Word Memory: Subtle dotted underlines for saved vocabulary words
+        if !self.word_memory.is_empty() {
+            if let Some(speakable) = self.speakable_unit_page(spine, page) {
+                let dot_color = Rgba::new(89, 140, 242, 180);
+                let chars: Vec<char> = speakable.text.chars().collect();
+                for w in &speakable.words {
+                    let s = w.text_start as usize;
+                    let e = w.text_end as usize;
+                    if s < chars.len() && e <= chars.len() && s < e {
+                        let word_str: String = chars[s..e].iter().collect();
+                        let clean = word_str
+                            .trim_matches(|c: char| !c.is_alphanumeric())
+                            .to_lowercase();
+                        if !clean.is_empty() && self.word_memory.contains(&clean) {
+                            selections.push(Selection {
+                                start: w.locator_start,
+                                end: w.locator_end,
+                                color: dot_color,
+                                blend: Blend::Normal,
+                                style: chapbook_paint::SelectionStyle::Dotted,
+                            });
+                        }
+                    }
+                }
+            }
+        }
         if spine == self.spine {
             if let Some((start, end)) = self.selected_range() {
                 selections.push(Selection {
@@ -259,6 +296,34 @@ impl Session {
         x: f32,
         y: f32,
     ) -> Option<(u32, u32)> {
+        let (start, end, _tag) = self.paragraph_core_at_page(spine, page_idx, x, y)?;
+        Some((start, end))
+    }
+
+    /// The paragraph under a point on any page, as a locator range plus
+    /// the layout tag of the block it belongs to — the tag a host needs
+    /// to ask for the paragraph's editing identity
+    /// ([`Session::paragraph_identity`]).
+    pub fn paragraph_tag_at_page(
+        &mut self,
+        spine: usize,
+        page_idx: usize,
+        x: f32,
+        y: f32,
+    ) -> Option<(u32, u32, u64)> {
+        self.paragraph_core_at_page(spine, page_idx, x, y)
+    }
+
+    /// The shared body of the two paragraph hit-tests above: the
+    /// paragraph's locator range and the tag of the block whose lines
+    /// were hit. The tag groups a paragraph's fragments across pages.
+    fn paragraph_core_at_page(
+        &mut self,
+        spine: usize,
+        page_idx: usize,
+        x: f32,
+        y: f32,
+    ) -> Option<(u32, u32, u64)> {
         let layout = self.layout_unit(spine)?;
         let page = layout.pages.get(page_idx)?;
         let pt = Point::new(x, y);
@@ -296,10 +361,61 @@ impl Session {
                 }
             }
             if found && max_loc > min_loc {
-                return Some((min_loc, max_loc));
+                return Some((min_loc, max_loc, tag));
             }
         }
-        hit_range
+        hit_range.map(|(start, end)| (start, end, tag))
+    }
+
+    /// The editing identity of a paragraph (Phase 6.7): its own text in
+    /// extraction form, plus its neighbours', for a host's source-span
+    /// mapper to locate the element in the entry's bytes.
+    ///
+    /// The neighbours are what make the identity robust: an ordinal into
+    /// the paragraph list would break wherever the layout's tag list and
+    /// the mapper's paragraph list disagree — an anonymous text block in
+    /// a `div` shifts every ordinal after it — while neighbours only
+    /// refuse, locally, where the two lists disagree around the tapped
+    /// paragraph.
+    ///
+    /// EPUB-only by construction (the entry is parsed as XHTML); `None`
+    /// for image books, or a chapter that will not parse. The parse is
+    /// the same one-shot cost class as `cached_unit_text`'s misses,
+    /// paid per tap.
+    pub fn paragraph_identity(&mut self, spine: usize, tag: u64) -> Option<ParagraphIdentity> {
+        // Which blocks the layout gave lines to. Collected first — the
+        // layout borrows the session, and the parse below needs it back.
+        let tags: std::collections::HashSet<u64> = {
+            let layout = self.layout_unit(spine)?;
+            let mut seen = std::collections::HashSet::new();
+            for page in &layout.pages {
+                for fragment in &page.fragments {
+                    if matches!(
+                        fragment.kind,
+                        FragmentKind::Line(_) | FragmentKind::HiddenText(_)
+                    ) && fragment.tag != 0
+                    {
+                        seen.insert(fragment.tag);
+                    }
+                }
+            }
+            seen
+        };
+        let publication = self.book.publication();
+        let href = publication.spine_item(spine).ok()?.href.clone();
+        let bytes = publication.unit_bytes(spine).ok()?;
+        let doc = dom::parse_xhtml(&bytes, &href).ok()?;
+        // The paragraph sequence: tagged elements in document order.
+        let mut seq: Vec<(u64, String)> = Vec::new();
+        if let Some(root) = doc.document_element() {
+            collect_tagged_text(&doc, root, &tags, &mut seq);
+        }
+        let position = seq.iter().position(|(t, _)| *t == tag)?;
+        Some(ParagraphIdentity {
+            text: seq[position].1.clone(),
+            prev: position.checked_sub(1).map(|i| seq[i].1.clone()),
+            next: seq.get(position + 1).map(|(_, text)| text.clone()),
+        })
     }
 
     /// Select the word under a point on any page.
@@ -609,4 +725,33 @@ impl Session {
         let layout = self.layout_unit(spine)?;
         Some(layout.anchors.get(fragment).copied().unwrap_or(0))
     }
+}
+
+/// Depth-first over the tree in document order, collecting the
+/// extraction text of every element whose tag the layout gave lines to
+/// — the paragraph sequence [`Session::paragraph_identity`] searches.
+fn collect_tagged_text(
+    doc: &dom::Document,
+    id: dom::NodeId,
+    tags: &std::collections::HashSet<u64>,
+    out: &mut Vec<(u64, String)>,
+) {
+    let node = doc.node(id);
+    if let dom::NodeData::Element(_) = &node.data {
+        let tag = dom::node_tag(id);
+        if tags.contains(&tag) {
+            out.push((tag, trim_extract(&dom::extract_text_at(doc, id))));
+        }
+    }
+    for child in &node.children {
+        collect_tagged_text(doc, *child, tags, out);
+    }
+}
+
+/// The reader's paragraph text with its ends trimmed: the extraction's
+/// trailing block-boundary newline is an artifact, not content, and
+/// U+00A0 must survive — it is content, and exists to not collapse.
+fn trim_extract(text: &str) -> String {
+    text.trim_matches(|c| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0C'))
+        .to_string()
 }

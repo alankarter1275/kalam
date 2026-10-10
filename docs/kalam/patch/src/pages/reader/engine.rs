@@ -7,6 +7,12 @@
 // selection chip rebuilt — and that copy is authoritative. Do not copy
 // this file over it. It is kept so the recipe in docs/kalam/INTEGRATION.md
 // still has the code it describes; it is no longer shipped in the bundle.
+//
+// NOTE (2026-09-18): the `connect_word` / `TappedWord` block below refers to
+// an engine API that no longer exists. `ReaderView::connect_word` and the
+// `TappedWord` type were deleted from `crates/kalam-reader` outright when the
+// owner removed tap-a-word-to-open-dictionary as a feature. This file would
+// not compile as-is, and that is fine — it is a record, not a source.
 
 //! The reading engine, wired to the reader page.
 //!

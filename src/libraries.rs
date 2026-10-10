@@ -167,7 +167,7 @@ pub fn load_registry() -> LibraryRegistry {
 ///
 /// Written to a temporary file and renamed, so an interrupted write cannot
 /// leave a half-written registry behind — the same verify-then-rename rule
-/// `epub_write.rs` follows. A truncated file here would lose the list of every
+/// `epub_metadata.rs` follows. A truncated file here would lose the list of every
 /// library the user has.
 pub fn save_registry(reg: &LibraryRegistry) -> std::io::Result<()> {
     let dir = config_dir();
@@ -511,7 +511,7 @@ mod global_pref_tests {
         // switching would silently reset your theme and reader settings --
         // the user would see it as the app forgetting its configuration.
         // Exactly the keys the code really uses -- checked against
-        // theme.rs, epub_write.rs, dict.rs, reader.rs and settings.rs, not
+        // theme.rs, epub_metadata.rs, dict.rs, reader.rs and settings.rs, not
         // guessed. Three are counter-intuitive and were wrong on the first
         // attempt: `ui.theme`, `epub.write_metadata`, `bundled_dictionary_*`.
         for key in [

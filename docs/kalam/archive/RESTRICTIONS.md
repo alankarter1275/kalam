@@ -1,5 +1,23 @@
 # Architectural Restrictions & Guardrails
 
+> ## ⚠️ SUPERSEDED — two of these four rules are now false
+>
+> The live document is [`../RESTRICTIONS.md`](../RESTRICTIONS.md). Read that.
+>
+> **Rule 1's ban on `stylo` was lifted on 2026-09-08.** The stated reason for
+> the ban — "C++ toolchain requirements" — was incorrect; stylo is Rust. Five
+> stylo crates are now pinned in the workspace root and twelve files in
+> `chapbook-layout` are built on them.
+>
+> **Rules 1 and 4's `lol_html` sanitizer was never built** and is not a
+> dependency anywhere. Publisher CSS is no longer stripped; it goes through a
+> real cascade, with the host's sheets appended at user origin. That means
+> rule 4's "MUST be stripped" does not hold — see the origin table in the live
+> document for what theme authority actually is.
+>
+> Rules 2 and 3 still hold. Kept below for the record of what the first plan
+> intended.
+
 To ensure `kalam-engine` remains faithful to its core mission and never degenerates into a bloated web browser engine, every contributor and AI agent must strictly enforce the following rules.
 
 ---

@@ -5,10 +5,10 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub enum ChapterContent {
     /// Manga returns a list of image URLs to stream.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // no source returns raw images yet; reserved for the Wasm API
     Images(Vec<String>),
     /// Fiction returns an HTML string.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // fiction sources return HTML; consumed once the Wasm reader lands
     Html(String),
 }
 
@@ -29,7 +29,7 @@ pub struct RemoteBookDetails {
     pub author: String,
     pub description: String,
     pub cover_url: Option<String>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // source tags render once the browse page lists them
     pub tags: Vec<String>,
     pub status: String,
 }
@@ -47,13 +47,13 @@ pub struct RemoteChapter {
 /// Dynamic filter type definition for Tachiyomi-style UI generation.
 #[derive(Debug, Clone)]
 pub enum FilterType {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // filter/sort controls for source browse; wired with the Wasm UI
     Text { placeholder: String },
-    #[allow(dead_code)]
+    #[allow(dead_code)] // as above
     Checkbox,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // as above
     Select { options: Vec<(String, String)> },
-    #[allow(dead_code)]
+    #[allow(dead_code)] // as above
     Sort { options: Vec<(String, String)> },
 }
 
@@ -80,7 +80,7 @@ pub trait Source: Send + Sync {
     fn id(&self) -> &str;
     
     /// Human-readable name of this source.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // part of the Source contract; callers arrive with the Wasm sources
     fn name(&self) -> &str;
     
     /// Base URL for this source, if applicable.

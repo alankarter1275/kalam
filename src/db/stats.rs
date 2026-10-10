@@ -89,6 +89,33 @@ impl Catalog {
             .unwrap_or(0)
     }
 
+    /// The token the app's page cache invalidates on: `change_token` minus
+    /// the rows written by **reading activity** (progress saves, session
+    /// telemetry, mark-book-opened — the writes that happen because you read
+    /// a book, none of which add, remove or retitle anything).
+    ///
+    /// The owner's field run measured the cache mostly dead: every progress
+    /// save bumped `total_changes()` and evicted every cached page, so every
+    /// navigation paid full construction. Reading a book is the most common
+    /// thing this app does; it must not count as a content change.
+    ///
+    /// Same contract as `change_token`: **opaque, compared for equality
+    /// only.** The subtraction is wrap-safe in the safe direction — if
+    /// `total_changes()` ever wraps, the difference jumps once, which costs
+    /// one spurious rebuild, never a stale page. The one unsafe direction is
+    /// a *content* write being wrongly counted as activity: `note_activity_rows`
+    /// is therefore called from exactly five methods, all reading telemetry.
+    /// `auto_finish_if_complete` deliberately stays un-counted — it mutates
+    /// the reading list and the finished flag, which cached pages show.
+    pub fn page_cache_token(&self) -> i64 {
+        let total = self
+            .conn
+            .lock()
+            .map(|c| c.total_changes() as i64)
+            .unwrap_or(0);
+        total - self.activity_rows.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn library_stats(&self) -> Result<LibraryStats> {
         // Cheap: total_changes() is an in-memory counter, not a query.
         let version = {
@@ -117,14 +144,50 @@ impl Catalog {
         let one =
             |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(0) };
 
+        let total_books = one(
+            "SELECT (SELECT COUNT(*) FROM books WHERE id NOT IN (SELECT book_id FROM comic_chapters)) + (SELECT COUNT(*) FROM comic_series)",
+        );
+        let finished = one(
+            "SELECT (
+                SELECT COUNT(*) FROM books 
+                WHERE id NOT IN (SELECT book_id FROM comic_chapters) 
+                  AND (IFNULL(finished_at,'') <> '' OR progress >= 100)
+             ) + (
+                SELECT COUNT(*) FROM comic_series s
+                WHERE (SELECT COUNT(*) FROM comic_chapters cc WHERE cc.series_id = s.id) > 0
+                  AND (
+                      SELECT COUNT(*) FROM comic_chapters cc 
+                      JOIN books b ON b.id = cc.book_id 
+                      WHERE cc.series_id = s.id AND (b.progress < 100 OR IFNULL(b.finished_at,'') = '')
+                  ) = 0
+             )",
+        );
+        let reading = one(
+            "SELECT (
+                SELECT COUNT(*) FROM books 
+                WHERE id NOT IN (SELECT book_id FROM comic_chapters) 
+                  AND progress > 0 AND progress < 100 AND IFNULL(finished_at,'') = ''
+             ) + (
+                SELECT COUNT(*) FROM comic_series s
+                WHERE EXISTS (
+                    SELECT 1 FROM comic_chapters cc 
+                    JOIN books b ON b.id = cc.book_id 
+                    WHERE cc.series_id = s.id AND (b.progress > 0 OR b.last_opened_at IS NOT NULL)
+                )
+                AND EXISTS (
+                    SELECT 1 FROM comic_chapters cc 
+                    JOIN books b ON b.id = cc.book_id 
+                    WHERE cc.series_id = s.id AND b.progress < 100 AND IFNULL(b.finished_at,'') = ''
+                )
+             )",
+        );
+        let unread = total_books.saturating_sub(finished).saturating_sub(reading);
+
         let mut s = LibraryStats {
-            total_books: one("SELECT COUNT(*) FROM books"),
-            finished: one("SELECT COUNT(*) FROM books
-                 WHERE IFNULL(finished_at,'') <> '' OR progress >= 100"),
-            reading: one("SELECT COUNT(*) FROM books
-                 WHERE progress > 0 AND progress < 100 AND IFNULL(finished_at,'') = ''"),
-            unread: one("SELECT COUNT(*) FROM books
-                 WHERE progress <= 0 AND IFNULL(finished_at,'') = ''"),
+            total_books,
+            finished,
+            reading,
+            unread,
             highlights: one("SELECT COUNT(*) FROM annotations WHERE kind = 'highlight'"),
             quotes: one("SELECT COUNT(*) FROM annotations WHERE kind = 'quote'"),
             saved_words: one("SELECT COUNT(*) FROM saved_words"),

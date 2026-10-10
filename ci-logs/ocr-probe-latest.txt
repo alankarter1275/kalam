@@ -1,0 +1,260 @@
+[1m[92m   Compiling[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 11s
+[1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-0caf04674a0365ff)
+
+running 1 test
+=== page 1: 125 word boxes, 15 line groups, 15 recognition results
+  ocr line  0 [x   57.5.. 475.2  y   54.5..  76.9 pt] THE LIGHTHOUSE KEEPER'S
+  ocr line  1 [x   57.5.. 176.6  y   90.9.. 110.4 pt] LEDGER
+  ocr line  2 [x   58.0.. 524.7  y  133.9.. 150.9 pt] A story for testing eyes that cannot see five pages, every word
+  ocr line  3 [x   57.0.. 318.1  y  154.4.. 172.4 pt] a picture, no hidden text anywhere
+  ocr line  4 [x  174.6.. 264.1  y  191.9.. 203.9 pt] The Visitor
+  ocr line  5 [x   57.5.. 529.2  y  224.8.. 241.3 pt] Maren had kept the lighthouse at Point Auburn for eleven years,
+  ocr line  6 [x   58.0.. 497.2  y  246.8.. 264.8 pt] and in all that time she had written something in the ledger
+  ocr line  7 [x   57.5.. 513.7  y  269.8.. 286.3 pt] every single night. 4,015 entries. Rain, fog, or the strange flat
+  ocr line  8 [x   57.5.. 409.6  y  291.3.. 308.3 pt] calm of October, the record never missed a day.
+  ocr line  9 [x   56.5.. 497.2  y  326.8.. 343.3 pt] The visitor arrived on the twelfth of March, just as the lamp
+  ocr line 10 [x   58.0.. 532.2  y  348.3.. 365.7 pt] turned for the evening. He carried a canvas bag, wore a coat too
+  ocr line 11 [x   57.5.. 506.2  y  370.7.. 388.2 pt] thin for the season, and asked, of all things, to see the books.
+  ocr line 12 [x   59.0.. 491.2  y  406.2.. 424.2 pt] "The books?" Maren repeated. "There is only the one book.
+  ocr line 13 [x   58.5.. 302.1  y  441.2.. 455.7 pt] "That is the one  mean," he said.
+  ocr line 14 [x   58.0.. 158.1  y  191.9.. 206.9 pt] Chapter One
+page 1: 15 lines recognized, 0 dropped as None
+page 1: all expected snippets present in OCR output
+--- perform_ocr_rgba produced 15 lines for page 1
+  pt  line  0 [x   57.5.. 475.2  y   54.5..  76.9 pt] THE LIGHTHOUSE KEEPER'S
+  pt  line  1 [x   57.5.. 176.6  y   90.9.. 110.4 pt] LEDGER
+  pt  line  2 [x   58.0.. 524.7  y  133.9.. 150.9 pt] A story for testing eyes that cannot see five pages, every word
+  pt  line  3 [x   57.0.. 318.1  y  154.4.. 172.4 pt] a picture, no hidden text anywhere
+  pt  line  4 [x   58.0.. 158.1  y  191.9.. 206.9 pt] Chapter One
+  pt  line  5 [x  174.6.. 264.1  y  191.9.. 203.9 pt] The Visitor
+  pt  line  6 [x   57.5.. 529.2  y  224.8.. 241.3 pt] Maren had kept the lighthouse at Point Auburn for eleven years,
+  pt  line  7 [x   58.0.. 497.2  y  246.8.. 264.8 pt] and in all that time she had written something in the ledger
+  pt  line  8 [x   57.5.. 513.7  y  269.8.. 286.3 pt] every single night. 4,015 entries. Rain, fog, or the strange flat
+  pt  line  9 [x   57.5.. 409.6  y  291.3.. 308.3 pt] calm of October, the record never missed a day.
+  pt  line 10 [x   56.5.. 497.2  y  326.8.. 343.3 pt] The visitor arrived on the twelfth of March, just as the lamp
+  pt  line 11 [x   58.0.. 532.2  y  348.3.. 365.7 pt] turned for the evening. He carried a canvas bag, wore a coat too
+  pt  line 12 [x   57.5.. 506.2  y  370.7.. 388.2 pt] thin for the season, and asked, of all things, to see the books.
+  pt  line 13 [x   59.0.. 491.2  y  406.2.. 424.2 pt] "The books?" Maren repeated. "There is only the one book.
+  pt  line 14 [x   58.5.. 302.1  y  441.2.. 455.7 pt] "That is the one  mean," he said.
+--- full-page drag: selected 642 chars, 14 highlight rects
+  drag line  0: ok           -> THE LIGHTHOUSE KEEPER'S
+  drag line  1: ok           -> LEDGER
+  drag line  2: ok           -> A story for testing eyes that cannot see five pages, every w
+  drag line  3: ok           -> a picture, no hidden text anywhere
+  drag line  4: ok           -> Chapter One
+  drag line  5: ok           -> The Visitor
+  drag line  6: ok           -> Maren had kept the lighthouse at Point Auburn for eleven yea
+  drag line  7: ok           -> and in all that time she had written something in the ledger
+  drag line  8: ok           -> every single night. 4,015 entries. Rain, fog, or the strange
+  drag line  9: ok           -> calm of October, the record never missed a day
+  drag line 10: ok           -> The visitor arrived on the twelfth of March, just as the lam
+  drag line 11: ok           -> turned for the evening. He carried a canvas bag, wore a coat
+  drag line 12: ok           -> thin for the season, and asked, of all things, to see the bo
+  drag line 13: ok           -> "The books?" Maren repeated. "There is only the one book
+  drag line 14: ok           -> "That is the one  mean," he said
+page 1: reading-order regression checks passed
+=== end page 1 ===
+=== page 2: 128 word boxes, 14 line groups, 14 recognition results
+  ocr line  0 [x   57.5.. 426.1  y   54.0..  73.4 pt] Chapter One The Visitor (continued)
+  ocr line  1 [x   57.5.. 532.2  y   91.9.. 110.4 pt] She let him sit at the chart table while she made tea. He opened
+  ocr line  2 [x   58.0.. 492.2  y  112.4.. 130.9 pt] the ledger with both hands, the way a man opens a door he
+  ocr line  3 [x   57.5.. 211.6  y  134.4.. 152.9 pt] expects to be locked.
+  ocr line  4 [x   58.0.. 522.2  y  170.9.. 188.4 pt] "You wrote forty-one entries about fog." he said. turning pages.
+  ocr line  5 [x   58.5.. 345.6  y  192.4.. 210.4 pt] "Forty-one! Did the fog never change?"
+  ocr line  6 [x   57.5.. 537.2  y  228.3.. 245.3 pt] "Fog is fog." Maren answered. "But the ships inside it are always
+  ocr line  7 [x   57.5.. 532.2  y  248.8.. 265.8 pt] different. There Was the Marianne on the fourth of June, running
+  ocr line  8 [x   58.0.. 506.2  y  272.3.. 288.8 pt] dark. There was the cargo vessel that lost its rudder in 1997.
+  ocr line  9 [x   58.0.. 397.1  y  294.8.. 311.8 pt] There was a kayak, once, if you can believe it.
+  ocr line 10 [x   57.0.. 525.7  y  329.3.. 346.3 pt] The visitor smiled at that. "And the 3 a.m. watch? Anything at 3
+  ocr line 11 [x   57.5.. 104.0  y  350.8.. 364.2 pt] a.m.2"
+  ocr line 12 [x   58.0..  82.0  y  412.7.. 421.2 pt] me.
+  ocr line 13 [x   59.0.. 519.2  y  385.7.. 402.7 pt] "At 3 a.m.said Maren, "the lighthouse belongs to nobody but
+page 2: 14 lines recognized, 0 dropped as None
+page 2: all expected snippets present in OCR output
+--- perform_ocr_rgba produced 14 lines for page 2
+  pt  line  0 [x   57.5.. 426.1  y   54.0..  73.4 pt] Chapter One The Visitor (continued)
+  pt  line  1 [x   57.5.. 532.2  y   91.9.. 110.4 pt] She let him sit at the chart table while she made tea. He opened
+  pt  line  2 [x   58.0.. 492.2  y  112.4.. 130.9 pt] the ledger with both hands, the way a man opens a door he
+  pt  line  3 [x   57.5.. 211.6  y  134.4.. 152.9 pt] expects to be locked.
+  pt  line  4 [x   58.0.. 522.2  y  170.9.. 188.4 pt] "You wrote forty-one entries about fog." he said. turning pages.
+  pt  line  5 [x   58.5.. 345.6  y  192.4.. 210.4 pt] "Forty-one! Did the fog never change?"
+  pt  line  6 [x   57.5.. 537.2  y  228.3.. 245.3 pt] "Fog is fog." Maren answered. "But the ships inside it are always
+  pt  line  7 [x   57.5.. 532.2  y  248.8.. 265.8 pt] different. There Was the Marianne on the fourth of June, running
+  pt  line  8 [x   58.0.. 506.2  y  272.3.. 288.8 pt] dark. There was the cargo vessel that lost its rudder in 1997.
+  pt  line  9 [x   58.0.. 397.1  y  294.8.. 311.8 pt] There was a kayak, once, if you can believe it.
+  pt  line 10 [x   57.0.. 525.7  y  329.3.. 346.3 pt] The visitor smiled at that. "And the 3 a.m. watch? Anything at 3
+  pt  line 11 [x   57.5.. 104.0  y  350.8.. 364.2 pt] a.m.2"
+  pt  line 12 [x   59.0.. 519.2  y  385.7.. 402.7 pt] "At 3 a.m.said Maren, "the lighthouse belongs to nobody but
+  pt  line 13 [x   58.0..  82.0  y  412.7.. 421.2 pt] me.
+--- full-page drag: selected 658 chars, 13 highlight rects
+  drag line  0: ok           -> Chapter One The Visitor (continued)
+  drag line  1: ok           -> She let him sit at the chart table while she made tea. He op
+  drag line  2: ok           -> the ledger with both hands, the way a man opens a door he
+  drag line  3: ok           -> expects to be locked
+  drag line  4: ok           -> "You wrote forty-one entries about fog." he said. turning pa
+  drag line  5: ok           -> "Forty-one! Did the fog never change?"
+  drag line  6: ok           -> "Fog is fog." Maren answered. "But the ships inside it are a
+  drag line  7: ok           -> different. There Was the Marianne on the fourth of June, run
+  drag line  8: ok           -> dark. There was the cargo vessel that lost its rudder in 199
+  drag line  9: ok           -> There was a kayak, once, if you can believe it
+  drag line 10: ok           -> The visitor smiled at that. "And the 3 a.m. watch? Anything 
+  drag line 11: ok           -> a.m.2"
+  drag line 12: ok           -> "At 3 a.m.said Maren, "the lighthouse belongs to nobody but
+  drag line 13: ok           -> me
+page 2: reading-order regression checks passed
+=== end page 2 ===
+=== page 3: 112 word boxes, 12 line groups, 12 recognition results
+  ocr line  0 [x   57.5.. 294.6  y   53.0..  73.4 pt] Chapter Two The Shelf
+  ocr line  1 [x   58.0.. 514.2  y   90.4.. 108.9 pt] On the shelf beside the logbook sat a small library of salvaged
+  ocr line  2 [x   57.5.. 522.7  y  113.4.. 132.4 pt] things: a brass compass, a tin of buttons, and a battered manga
+  ocr line  3 [x   58.5.. 479.7  y  135.9.. 152.4 pt] volume three of Naruto, its spine cracked from a hundred
+  ocr line  4 [x   58.0.. 124.0  y  159.4.. 174.4 pt] readings.
+  ocr line  5 [x   57.5.. 529.7  y  213.8.. 232.8 pt] read it during the war, on night shift, by lamplight. Said the boy
+  ocr line  6 [x   57.0.. 371.1  y  236.8.. 252.8 pt] in it never gave up, and neither would she.
+  ocr line  7 [x   57.0.. 530.2  y  272.3.. 285.8 pt] The visitor turned the volume over in his hands, careful with the
+  ocr line  8 [x   57.5.. 376.6  y  294.8.. 311.8 pt] loose pages. "It has seen weather," he said.
+  ocr line  9 [x   58.5.. 528.2  y  329.3.. 344.3 pt] "It has seen everything I have," said Maren. "That is the trouble
+  ocr line 10 [x   57.5.. 515.2  y  351.7.. 369.7 pt] with keeping a light. Everything that passes, passes here first.
+  ocr line 11 [x   58.5.. 519.2  y  192.9.. 209.4 pt] "Grandmother's," Maren said, when she saw him looking. "She
+page 3: 12 lines recognized, 0 dropped as None
+page 3: all expected snippets present in OCR output
+--- perform_ocr_rgba produced 12 lines for page 3
+  pt  line  0 [x   57.5.. 294.6  y   53.0..  73.4 pt] Chapter Two The Shelf
+  pt  line  1 [x   58.0.. 514.2  y   90.4.. 108.9 pt] On the shelf beside the logbook sat a small library of salvaged
+  pt  line  2 [x   57.5.. 522.7  y  113.4.. 132.4 pt] things: a brass compass, a tin of buttons, and a battered manga
+  pt  line  3 [x   58.5.. 479.7  y  135.9.. 152.4 pt] volume three of Naruto, its spine cracked from a hundred
+  pt  line  4 [x   58.0.. 124.0  y  159.4.. 174.4 pt] readings.
+  pt  line  5 [x   58.5.. 519.2  y  192.9.. 209.4 pt] "Grandmother's," Maren said, when she saw him looking. "She
+  pt  line  6 [x   57.5.. 529.7  y  213.8.. 232.8 pt] read it during the war, on night shift, by lamplight. Said the boy
+  pt  line  7 [x   57.0.. 371.1  y  236.8.. 252.8 pt] in it never gave up, and neither would she.
+  pt  line  8 [x   57.0.. 530.2  y  272.3.. 285.8 pt] The visitor turned the volume over in his hands, careful with the
+  pt  line  9 [x   57.5.. 376.6  y  294.8.. 311.8 pt] loose pages. "It has seen weather," he said.
+  pt  line 10 [x   58.5.. 528.2  y  329.3.. 344.3 pt] "It has seen everything I have," said Maren. "That is the trouble
+  pt  line 11 [x   57.5.. 515.2  y  351.7.. 369.7 pt] with keeping a light. Everything that passes, passes here first.
+--- full-page drag: selected 629 chars, 12 highlight rects
+  drag line  0: ok           -> Chapter Two The Shelf
+  drag line  1: ok           -> On the shelf beside the logbook sat a small library of salva
+  drag line  2: ok           -> things: a brass compass, a tin of buttons, and a battered ma
+  drag line  3: ok           -> volume three of Naruto, its spine cracked from a hundre
+  drag line  4: ok           -> readings
+  drag line  5: ok           -> "Grandmother's," Maren said, when she saw him looking. "She
+  drag line  6: ok           -> read it during the war, on night shift, by lamplight. Said t
+  drag line  7: ok           -> in it never gave up, and neither would she
+  drag line  8: ok           -> The visitor turned the volume over in his hands, careful wit
+  drag line  9: ok           -> loose pages. "It has seen weather," he said
+  drag line 10: ok           -> "It has seen everything I have," said Maren. "That is the tr
+  drag line 11: ok           -> with keeping a light. Everything that passes, passes here fi
+page 3: reading-order regression checks passed
+=== end page 3 ===
+=== page 4: 130 word boxes, 15 line groups, 15 recognition results
+  ocr line  0 [x   54.5.. 476.2  y   53.5..  74.4 pt] Chapter Three The Ledger of Small Hours
+  ocr line  1 [x   55.0.. 529.7  y   91.4.. 110.4 pt] That night the visitor asked for a pencil and one blank page, and
+  ocr line  2 [x   55.5.. 533.7  y  111.9.. 131.9 pt] he began to copy the entries about ships, in a small careful hand,
+  ocr line  3 [x   55.5.. 453.7  y  136.4.. 153.9 pt] while the lamp swung its slow circle above them both.
+  ocr line  4 [x   56.5.. 294.6  y  171.9.. 188.4 pt] "Why copy them?" Maren asked.
+  ocr line  5 [x   57.0.. 506.2  y  205.4.. 223.8 pt] "Because a record that is kept in one place can be lost in one
+  ocr line  6 [x   55.5.. 534.7  y  226.3.. 246.8 pt] night," he said. "A record kept in two places is a lighthouse of its
+  ocr line  7 [x   57.0..  90.0  y  255.8.. 264.3 pt] Own.
+  ocr line  8 [x   57.5.. 295.1  y  330.3.. 347.8 pt] empty line beneath today's date.
+  ocr line  9 [x   58.0.. 500.7  y  363.2.. 381.2 pt] "Then write your name, she said. "The ledger does not take
+  ocr line 10 [x   57.0.. 106.5  y  387.7.. 402.7 pt] ghosts.
+  ocr line 11 [x   58.0.. 143.0  y  445.2.. 459.2 pt] continued.
+  ocr line 12 [x   57.0.. 494.7  y  285.3.. 301.3 pt] Maren considered this for a long moment. Then she slid the
+  ocr line 13 [x   56.5.. 508.2  y  306.8.. 325.3 pt] ledger across the table, open to the last page, and tapped the
+  ocr line 14 [x   58.0.. 506.2  y  421.2.. 438.7 pt] He wrote: Arun Vaidya, of the survey ship Kestrel. To be
+page 4: 15 lines recognized, 0 dropped as None
+page 4: all expected snippets present in OCR output
+--- perform_ocr_rgba produced 15 lines for page 4
+  pt  line  0 [x   54.5.. 476.2  y   53.5..  74.4 pt] Chapter Three The Ledger of Small Hours
+  pt  line  1 [x   55.0.. 529.7  y   91.4.. 110.4 pt] That night the visitor asked for a pencil and one blank page, and
+  pt  line  2 [x   55.5.. 533.7  y  111.9.. 131.9 pt] he began to copy the entries about ships, in a small careful hand,
+  pt  line  3 [x   55.5.. 453.7  y  136.4.. 153.9 pt] while the lamp swung its slow circle above them both.
+  pt  line  4 [x   56.5.. 294.6  y  171.9.. 188.4 pt] "Why copy them?" Maren asked.
+  pt  line  5 [x   57.0.. 506.2  y  205.4.. 223.8 pt] "Because a record that is kept in one place can be lost in one
+  pt  line  6 [x   55.5.. 534.7  y  226.3.. 246.8 pt] night," he said. "A record kept in two places is a lighthouse of its
+  pt  line  7 [x   57.0..  90.0  y  255.8.. 264.3 pt] Own.
+  pt  line  8 [x   57.0.. 494.7  y  285.3.. 301.3 pt] Maren considered this for a long moment. Then she slid the
+  pt  line  9 [x   56.5.. 508.2  y  306.8.. 325.3 pt] ledger across the table, open to the last page, and tapped the
+  pt  line 10 [x   57.5.. 295.1  y  330.3.. 347.8 pt] empty line beneath today's date.
+  pt  line 11 [x   58.0.. 500.7  y  363.2.. 381.2 pt] "Then write your name, she said. "The ledger does not take
+  pt  line 12 [x   57.0.. 106.5  y  387.7.. 402.7 pt] ghosts.
+  pt  line 13 [x   58.0.. 506.2  y  421.2.. 438.7 pt] He wrote: Arun Vaidya, of the survey ship Kestrel. To be
+  pt  line 14 [x   58.0.. 143.0  y  445.2.. 459.2 pt] continued.
+--- full-page drag: selected 672 chars, 14 highlight rects
+  drag line  0: ok           -> Chapter Three The Ledger of Small Hours
+  drag line  1: ok           -> That night the visitor asked for a pencil and one blank page
+  drag line  2: ok           -> he began to copy the entries about ships, in a small careful
+  drag line  3: ok           -> while the lamp swung its slow circle above them both
+  drag line  4: ok           -> "Why copy them?" Maren asked
+  drag line  5: ok           -> "Because a record that is kept in one place can be lost in o
+  drag line  6: ok           -> night," he said. "A record kept in two places is a lighthous
+  drag line  7: ok           -> Own
+  drag line  8: ok           -> Maren considered this for a long moment. Then she slid the
+  drag line  9: ok           -> ledger across the table, open to the last page, and tapped t
+  drag line 10: ok           -> empty line beneath today's date
+  drag line 11: ok           -> "Then write your name, she said. "The ledger does not take
+  drag line 12: ok           -> ghosts
+  drag line 13: ok           -> He wrote: Arun Vaidya, of the survey ship Kestrel. To be
+  drag line 14: ok           -> continued
+page 4: reading-order regression checks passed
+=== end page 4 ===
+=== page 5: 54 word boxes, 16 line groups, 16 recognition results
+  ocr line  0 [x   58.5.. 365.1  y   43.5..  64.0 pt] MEANWHILE, AT SCHOOL...
+  ocr line  1 [x   87.0.. 326.1  y  172.4.. 186.4 pt] WE'VE GOT ENGLISH FIRST
+  ocr line  2 [x   99.0.. 312.6  y  191.4.. 208.4 pt] PERIOD TODAY, RIGHT!?
+  ocr line  3 [x   88.0.. 101.0  y  297.8.. 307.3 pt] T
+  ocr line  4 [x  337.6.. 508.2  y  316.8.. 329.8 pt] LEMME COPY YOUR
+  ocr line  5 [x  318.6.. 526.2  y  336.8.. 350.8 pt] HOMEWORK PLEEEASE!
+  ocr line  6 [x   83.5.. 310.1  y  463.7.. 477.7 pt] NOT A CHANCE. TEACHER
+  ocr line  7 [x  102.5.. 290.1  y  484.7.. 498.6 pt] ALREADY KNOWS MY
+  ocr line  8 [x  129.5.. 264.1  y  506.1.. 519.6 pt] HANDWRITING.
+  ocr line  9 [x   78.0..  96.0  y  592.1.. 599.6 pt] L
+  ocr line 10 [x  334.6.. 529.2  y  619.1.. 631.5 pt] PLEASE? LL BUY YOU
+  ocr line 11 [x  399.1.. 464.7  y  640.5.. 652.5 pt] LUNCH!
+  ocr line 12 [x  322.1.. 329.1  y  737.5.. 742.5 pt] A
+  ocr line 13 [x   60.0.. 257.6  y  753.5.. 776.4 pt] DING-DONG!
+  ocr line 14 [x   58.5.. 588.2  y  787.9.. 800.9 pt] AFTER SCHOOL... THE OCR TEST PAGE: SAME WORDS AS A REAL. MANGA
+  ocr line 15 [x   68.5.. 469.2  y  812.4.. 825.4 pt] BUT IN A CLEAN FONT. COMPARE ME WITH PAGES 1-4.
+page 5: 16 lines recognized, 0 dropped as None
+page 5: all expected snippets present in OCR output
+--- perform_ocr_rgba produced 16 lines for page 5
+  pt  line  0 [x   58.5.. 365.1  y   43.5..  64.0 pt] MEANWHILE, AT SCHOOL...
+  pt  line  1 [x   87.0.. 326.1  y  172.4.. 186.4 pt] WE'VE GOT ENGLISH FIRST
+  pt  line  2 [x   99.0.. 312.6  y  191.4.. 208.4 pt] PERIOD TODAY, RIGHT!?
+  pt  line  3 [x   88.0.. 101.0  y  297.8.. 307.3 pt] T
+  pt  line  4 [x  337.6.. 508.2  y  316.8.. 329.8 pt] LEMME COPY YOUR
+  pt  line  5 [x  318.6.. 526.2  y  336.8.. 350.8 pt] HOMEWORK PLEEEASE!
+  pt  line  6 [x   83.5.. 310.1  y  463.7.. 477.7 pt] NOT A CHANCE. TEACHER
+  pt  line  7 [x  102.5.. 290.1  y  484.7.. 498.6 pt] ALREADY KNOWS MY
+  pt  line  8 [x  129.5.. 264.1  y  506.1.. 519.6 pt] HANDWRITING.
+  pt  line  9 [x   78.0..  96.0  y  592.1.. 599.6 pt] L
+  pt  line 10 [x  334.6.. 529.2  y  619.1.. 631.5 pt] PLEASE? LL BUY YOU
+  pt  line 11 [x  399.1.. 464.7  y  640.5.. 652.5 pt] LUNCH!
+  pt  line 12 [x  322.1.. 329.1  y  737.5.. 742.5 pt] A
+  pt  line 13 [x   60.0.. 257.6  y  753.5.. 776.4 pt] DING-DONG!
+  pt  line 14 [x   58.5.. 588.2  y  787.9.. 800.9 pt] AFTER SCHOOL... THE OCR TEST PAGE: SAME WORDS AS A REAL. MANGA
+  pt  line 15 [x   68.5.. 469.2  y  812.4.. 825.4 pt] BUT IN A CLEAN FONT. COMPARE ME WITH PAGES 1-4.
+--- full-page drag: selected 259 chars, 15 highlight rects
+  drag line  0: ok           -> MEANWHILE, AT SCHOOL..
+  drag line  1: ok           -> WE'VE GOT ENGLISH FIRST
+  drag line  2: ok           -> PERIOD TODAY, RIGHT!?
+  drag line  3: ok           -> T
+  drag line  4: ok           -> LEMME COPY YOUR
+  drag line  5: ok           -> HOMEWORK PLEEEASE
+  drag line  6: ok           -> NOT A CHANCE. TEACHER
+  drag line  7: ok           -> ALREADY KNOWS MY
+  drag line  8: ok           -> HANDWRITING
+  drag line  9: ok           -> L
+  drag line 10: ok           -> PLEASE? LL BUY YOU
+  drag line 11: ok           -> LUNCH
+  drag line 12: ok           -> A
+  drag line 13: ok           -> DING-DONG!
+  drag line 14: ok           -> AFTER SCHOOL... THE OCR TEST PAGE: SAME WORDS AS A REAL. MAN
+  drag line 15: ok           -> BUT IN A CLEAN FONT. COMPARE ME WITH PAGES 1-4
+=== end page 5 ===
+test ocr::tests::ocr_scan_probe_fixture_pages ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 604 filtered out; finished in 10.62s
+
+--- run 37901417687 ---

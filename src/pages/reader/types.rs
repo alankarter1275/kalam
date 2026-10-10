@@ -2,6 +2,7 @@
 
 use crate::db::HighlightColor;
 use crate::epub_book::ReadingTheme;
+use gtk::prelude::*;
 use relm4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -9,24 +10,28 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub enum ReaderOut {
     Close,
+    MinimizeToBubble { book_id: i64 },
     OpenAuthor { name: String },
+    /// Phase 6.8: the pencil beside the cover in the reader's left
+    /// sidebar — open the full editor for this book.
+    OpenEditor { book_id: i64 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LeftSidebarTab {
+pub enum LeftSidebarTab {
     Toc,
     Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RightSidebarTab {
+pub enum RightSidebarTab {
     Highlights,
     Bookmarks,
     Words,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HighlightFilter {
+pub enum HighlightFilter {
     All,
     Yellow,
     Green,
@@ -38,20 +43,21 @@ pub(crate) enum HighlightFilter {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum WordScope {
+pub enum WordScope {
     Chapter,
     Book,
     All,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReaderSettingsPane {
+pub enum ReaderSettingsPane {
     Reading,
     Ui,
+    Shortcuts,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReaderUiSetting {
+pub enum ReaderUiSetting {
     SidebarGap,
     LeftSidebarWidth,
     RightSidebarWidth,
@@ -96,6 +102,11 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) font_size_label: gtk::Label,
     pub(crate) line_height_label: gtk::Label,
     pub(crate) column_width_label: gtk::Label,
+    pub(crate) wheel_step_label: gtk::Label,
+    pub(crate) arrow_step_label: gtk::Label,
+    pub(crate) arrow_step_row: gtk::Box,
+    pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
+    pub(crate) dual_page_switch: gtk::Switch,
     pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
     pub(crate) ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
 }
@@ -114,9 +125,10 @@ pub(crate) const UI_PRESETS_BACK_SIDE: [(&str, i32); 3] = [("Tight", 12), ("Norm
 pub(crate) const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 22), ("Strong", 32)];
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // reader->app messages; some variants are not yet emitted
 pub enum ReaderMsg {
     Close,
+    MinimizeToBubble,
     TocSelect(usize),
     PrevChapter,
     NextChapter,
@@ -124,6 +136,38 @@ pub enum ReaderMsg {
     FontDelta(i32),
     LineHeightDelta(i32),
     ColumnWidthDelta(i32),
+    /// Font picker (roadmap 2.3): the chosen family, "" = default.
+    SetFontFamily(String),
+    /// Roadmap 2.4 text-layout toggles.
+    SetJustify(bool),
+    SetPublisherStyles(bool),
+    /// Roadmap 2.7: facing pages, or one page at a time.
+    SetDualPage(bool),
+    /// Roadmap 2.9: hide the pointer when it sits still.
+    SetAutohideCursor(bool),
+    /// Roadmap 2.9: how far one wheel notch scrolls.
+    WheelStepDelta(i32),
+    /// How far one arrow key step / hold tick scrolls in continuous mode.
+    ArrowStepDelta(i32),
+    /// Roadmap 2.9: a reader moved an action to a different key.
+    SetKeyBinding(super::keybinds::ReaderAction, gtk::gdk::Key, bool),
+    /// Roadmap 2.9: every action back on the key it shipped with.
+    ResetKeyBindings,
+    /// Roadmap 2.8: open the folder a reader drops typefaces into.
+    OpenFontsFolder,
+    /// Roadmap 2.5 footnotes: the engine has the text behind an internal
+    /// link and is offering it before the reader moves. `x`/`y` are the
+    /// press, in the drawing area's coordinates.
+    ShowNote {
+        href: String,
+        text: String,
+        x: f64,
+        y: f64,
+    },
+    /// The note card's escape hatch: go to the note itself.
+    GoToNote(String),
+    /// The note card closed on its own.
+    ClearNote,
     SwitchSettingsPane(ReaderSettingsPane),
     SetUiSetting(ReaderUiSetting, i32),
     AdjustUiSetting(ReaderUiSetting, i32),
@@ -136,8 +180,50 @@ pub enum ReaderMsg {
     EnginePosition(usize, f64),
     /// From the engine: a finished selection (text, where), or cleared.
     EngineSelection(Option<(String, gtk::gdk::Rectangle)>),
+    /// From the engine, after a draw moved it: where the selection now
+    /// sits in widget coordinates (`None` = gone/off screen). The inline
+    /// editor follows its text with this.
+    EngineSelectionMoved(Option<gtk::gdk::Rectangle>),
+    /// Phase 6.4: the pencil on the selection chip was pressed — open
+    /// the inline editor over the selection.
+    BeginInlineEdit,
+    /// Phase 6.7: the proofreading pencil in the chrome was toggled.
+    ToggleProofreading(bool),
+    /// Phase 6.8: the sidebar pencil — open the full editor.
+    OpenEditor,
+    /// Phase 6.7: a proofread tap found — or failed to yield — an
+    /// editable paragraph. Ok carries the paragraph's identity (its
+    /// text and neighbours' texts) and the rect its editor opens over.
+    EngineParagraphTap(Option<(kalam_reader::ParagraphIdentity, gtk::gdk::Rectangle)>),
+    /// Commit the inline edit with this text (Enter or click-away).
+    CommitInlineEdit(String),
+    /// Abandon the inline edit (Escape).
+    CancelInlineEdit,
+    /// The background verification of an inline edit finished. Ok
+    /// carries the verified edit — href, patch kind, the serial of the
+    /// editor it came from, and the planned patch to store; Err carries
+    /// ready-to-show toast text for a refusal (unchanged, not locatable,
+    /// ambiguous) plus that editor's serial — a refusal of the
+    /// still-open editor re-arms it for another try, while the editor
+    /// stays open either way.
+    InlineEditVerified(Result<VerifiedEdit, (String, u64)>),
     /// From the selection chip.
     HighlightSelection(String),
+    SaveAnnotationDetails {
+        color: String,
+        style: String,
+        note: String,
+    },
+    EditAnnotationDetails {
+        id: i64,
+        color: String,
+        style: String,
+        note: String,
+    },
+    HighlightTapped(i64, f64, f64),
+    WordMemoryTapped(String, f64, f64),
+    WordMemoryHover(Option<String>, f64, f64),
+    SetWordMemoryScope(String),
     QuoteSelection,
     LookUpSelection,
     CopySelection,
@@ -153,6 +239,8 @@ pub enum ReaderMsg {
     AnnotationNoteChanged(i64, String),
     SaveAnnotationNote(i64, String),
     JumpToChapter(usize),
+    /// Roadmap 2.6: back to where the last jump started.
+    JumpBack,
     JumpToLocation(usize, f64),
     DictSearch(String),
     DictSearchSelect(String),
@@ -165,6 +253,8 @@ pub enum ReaderMsg {
     SwitchLeftTab(LeftSidebarTab),
     SwitchRightTab(RightSidebarTab),
     SetHighlightFilter(HighlightFilter),
+    /// Write the book's highlights/quotes/notes to ~/Highlights.md.
+    ExportAnnotations,
     SetWordScope(WordScope),
     ScheduleCloseLeft,
     ScheduleCloseRight,
@@ -179,6 +269,7 @@ pub enum ReaderMsg {
     UpdateSearchQuery(String),
     NextSearchResult,
     PrevSearchResult,
+    JumpToSearchResult(usize),
     CloseSearch,
     OpenImageLightbox(u32, u32, Vec<u8>),
     CloseImageLightbox,
@@ -192,4 +283,92 @@ pub enum ReaderMsg {
     UserScrolled,
     TopEdgeHover(bool),
     BottomEdgeHover(bool),
+}
+
+/// The scope an open inline edit covers: a selection-level typo fix
+/// (phase 6.4), or a whole paragraph in proofreading mode (phase 6.7)
+/// — one editing feel, two granularities.
+pub enum EditScope {
+    /// The selected run, matched in text space by the step-2 matcher.
+    Selection,
+    /// A whole paragraph, matched through the step-6 span mapper. The
+    /// neighbours are the identity the proofread tap carried.
+    Paragraph {
+        prev: Option<String>,
+        next: Option<String>,
+    },
+}
+
+/// The editor widget of an open edit: an entry for a selection, a
+/// wrapped multi-line view for a paragraph — a paragraph keeps its
+/// `<br>` newlines, which an entry cannot hold.
+pub enum EditorWidget {
+    Selection(gtk::Entry),
+    Paragraph(gtk::TextView),
+}
+
+impl EditorWidget {
+    /// The text as it stands — the entry's text, or the view's buffer.
+    pub(crate) fn text(&self) -> String {
+        match self {
+            EditorWidget::Selection(entry) => entry.text().to_string(),
+            EditorWidget::Paragraph(view) => {
+                let buffer = view.buffer();
+                let (start, end) = buffer.bounds();
+                buffer.text(&start, &end, false).to_string()
+            }
+        }
+    }
+
+    /// The widget to overlay, position, and eventually unparent.
+    pub(crate) fn widget(&self) -> &gtk::Widget {
+        match self {
+            EditorWidget::Selection(entry) => entry.upcast_ref(),
+            EditorWidget::Paragraph(view) => view.upcast_ref(),
+        }
+    }
+}
+
+/// An open inline edit: the original text, the chapter it was made in,
+/// its scope, and the editor laid over it with the provider that
+/// typesets it in the reader's own face. The editor is the source of
+/// truth for the current text; `original` is what a commit is planned
+/// against.
+pub struct InlineEdit {
+    pub(crate) original: String,
+    pub(crate) chapter: usize,
+    pub(crate) scope: EditScope,
+    /// Which edit this is: verdicts carry the serial of the editor they
+    /// verified, so a verdict that lands after its editor was replaced
+    /// (a quick second tap) still stores its patch — without tearing
+    /// down the editor that replaced it.
+    pub(crate) serial: u64,
+    /// Set once a commit has been dispatched and no verdict has
+    /// landed: Enter, click-away, and focus-out can all race the
+    /// verdict, and none of them may re-send what another already
+    /// sent. A refusal of this editor's own verdict re-arms it.
+    pub(crate) committed: bool,
+    pub(crate) editor: EditorWidget,
+    /// The editor's typeface provider, registered on the display by
+    /// `engine::build_inline_editor` / `engine::build_paragraph_editor`
+    /// and unregistered when this edit closes, so sessions do not
+    /// accumulate one per edit.
+    pub(crate) provider: gtk::CssProvider,
+}
+
+/// A verified edit coming back from the worker thread: where it lives,
+/// what kind of patch it is, the serial of the editor it verified, and
+/// the ready-to-store plan.
+// `pub` to match the enum whose variant carries it — the module is
+// private, so this is still crate-local; the private-interfaces lint
+// only compares declared visibilities.
+#[derive(Debug, Clone)]
+pub struct VerifiedEdit {
+    pub(crate) href: String,
+    pub(crate) kind: &'static str,
+    /// The spine index the edit was made in — the verdict's own, since
+    /// the editor it verified may already be gone.
+    pub(crate) chapter: usize,
+    pub(crate) serial: u64,
+    pub(crate) planned: crate::epub_patches::PlannedPatch,
 }

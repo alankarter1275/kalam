@@ -23,26 +23,110 @@
 //! That split is the whole point: the type system stops you handing a widget
 //! to a worker thread, which is a bug you otherwise find by crashing.
 //!
+//! # The registry
+//!
+//! Every running task is recorded with a **label** and its most recent
+//! progress, so the task manager (roadmap 1.14) can show what is happening and
+//! cancel one task rather than all of them. Before this, the registry held
+//! only an id and a flag — enough to `cancel_all()` at shutdown, which was
+//! the only thing that ever called it, and no way to see the work at all.
+//!
+//! Progress is written to the registry **from the main thread**, by the reader
+//! that is already receiving the updates. Workers never take this lock, so a
+//! worker cannot block the UI by holding it and the UI cannot block a worker.
+//!
 //! # No tokio
 //!
 //! `thread::spawn` + `async-channel` + the GLib main loop, per the roadmap.
 //! relm4 is already the actor framework; a second runtime would be a second
 //! scheduler fighting the first.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-/// Every task currently running, so [`cancel_all`] can reach them.
+/// One running task, as the task manager sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskInfo {
+    pub id: u64,
+    /// What the task is doing, in words a reader would recognise —
+    /// "Importing EPUBs", not "spawn at all_books.rs:83".
+    pub label: String,
+    /// Units finished, from the most recent [`Reporter::step`]. `0` for a task
+    /// that has not reported yet.
+    pub done: usize,
+    /// Total units, or `0` when the task cannot know it up front.
+    pub total: usize,
+    /// The detail string from the most recent report — a file name, a page.
+    pub detail: String,
+    /// The individual entries behind the task — the titles a bulk import
+    /// brought in, so the finished row can list them on demand.
+    pub items: Vec<String>,
+    /// Housekeeping the user did not ask for. Hidden from the badge, the jobs
+    /// history and the live list; still cancellable at shutdown.
+    pub hidden: bool,
+}
+
+/// A task that has finished, kept briefly so the panel can show what just
+/// happened rather than flickering to empty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinishedTask {
+    pub id: u64,
+    pub label: String,
+    /// Whether it stopped because it was asked to.
+    pub cancelled: bool,
+    /// Whether the work itself reported failure via [`Reporter::fail`].
+    ///
+    /// Only tasks that can tell are recorded as failed. `spawn` is generic
+    /// over its result type, so nothing here can inspect it — a task that
+    /// returns a tuple with an error count inside is indistinguishable from
+    /// one that succeeded. Workers that know they failed say so; the rest are
+    /// recorded as finished, which is a gap rather than a lie.
+    pub failed: bool,
+    /// What the task did, in the worker's own words — “Imported 3 books” or a
+    /// single title. Empty when the task never said.
+    pub detail: String,
+    /// The individual entries, for an expandable “show all” in the history.
+    pub items: Vec<String>,
+}
+
+/// How many finished tasks the panel remembers. Bounded because this list is
+/// only there to say "that just happened"; unbounded would grow for the life
+/// of the process.
+const FINISHED_LIMIT: usize = 20;
+
+/// The two flags a task can have flipped from outside itself.
+struct Flags {
+    /// Set by [`cancel`] / [`cancel_all`]; read by [`Reporter::cancelled`].
+    cancel: Arc<AtomicBool>,
+    /// Set by [`Reporter::fail`]; read once, when the task is recorded.
+    failed: Arc<AtomicBool>,
+    /// Housekeeping the user did not ask for — thumbnail rebuilds, cover
+    /// preloading, dictionary checks. Runs and is cancellable like any task,
+    /// but never enters the finished list and never moves the badge, because a
+    /// jobs history of background chores answers no question anyone asked.
+    hidden: bool,
+}
+
+type Running = Vec<(TaskInfo, Flags)>;
+
+/// Every task currently running, so the panel can list them and [`cancel`]
+/// can reach one of them.
 ///
 /// A plain `Vec` because there are single digits of these at once; a map would
 /// be more code for no measurable gain.
-type Registry = Mutex<Vec<(u64, Arc<AtomicBool>)>>;
+type Registry = Mutex<Running>;
 
 static RUNNING: OnceLock<Registry> = OnceLock::new();
+static FINISHED: OnceLock<Mutex<VecDeque<FinishedTask>>> = OnceLock::new();
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 fn registry() -> &'static Registry {
     RUNNING.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn finished() -> &'static Mutex<VecDeque<FinishedTask>> {
+    FINISHED.get_or_init(|| Mutex::new(VecDeque::new()))
 }
 
 /// A lock that survives a panic in another task.
@@ -51,8 +135,17 @@ fn registry() -> &'static Registry {
 /// `.expect()` would then turn one failed task into a crash on the next one.
 /// The registry is a plain list of flags — a poisoned one is still perfectly
 /// readable, so take the data and carry on.
-fn locked<R>(f: impl FnOnce(&mut Vec<(u64, Arc<AtomicBool>)>) -> R) -> R {
+fn locked<R>(f: impl FnOnce(&mut Running) -> R) -> R {
     let mut guard = match registry().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    f(&mut guard)
+}
+
+/// Same, for the finished list.
+fn locked_finished<R>(f: impl FnOnce(&mut VecDeque<FinishedTask>) -> R) -> R {
+    let mut guard = match finished().lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
@@ -67,6 +160,8 @@ fn locked<R>(f: impl FnOnce(&mut Vec<(u64, Arc<AtomicBool>)>) -> R) -> R {
 pub struct Reporter {
     tx: async_channel::Sender<Update>,
     cancelled: Arc<AtomicBool>,
+    failed: Arc<AtomicBool>,
+    id: u64,
 }
 
 /// A progress report from a worker.
@@ -101,11 +196,108 @@ impl Reporter {
     pub fn cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
+
+    /// Say that this task failed.
+    ///
+    /// Worth calling even though the failure is already reported to the user,
+    /// because a toast disappears and the task manager's badge does not. A
+    /// worker that finishes with an error count of zero simply never calls
+    /// this.
+    pub fn fail(&self) {
+        self.failed.store(true, Ordering::Relaxed);
+    }
+
+    /// Leave a one-line summary of what the task did, for the finished list.
+    ///
+    /// Written straight to the registry rather than through the progress
+    /// channel, because the worker records its completion a moment later and
+    /// the channel is drained by the main thread on its own schedule — a
+    /// summary sent through it could arrive after the entry was already
+    /// written. This takes the registry lock only for one field write.
+    pub fn summarize(&self, text: impl Into<String>) {
+        set_summary(self.id, text);
+    }
+
+    /// Record the individual entries behind this task (e.g. every title a
+    /// bulk import brought in) so the finished row can expand to show them.
+    pub fn items(&self, items: Vec<String>) {
+        set_items(self.id, items);
+    }
+}
+
+/// Record a progress report against a running task.
+///
+/// Called on the main thread by the reader in [`spawn`], never by a worker —
+/// see the note on the registry at the top of this module.
+fn set_summary(id: u64, text: impl Into<String>) {
+    locked(|running| {
+        if let Some((info, _)) = running.iter_mut().find(|(info, _)| info.id == id) {
+            info.detail = text.into();
+        }
+    });
+}
+
+fn set_items(id: u64, items: Vec<String>) {
+    locked(|running| {
+        if let Some((info, _)) = running.iter_mut().find(|(info, _)| info.id == id) {
+            info.items = items;
+        }
+    });
+}
+
+fn set_progress(id: u64, update: &Update) {
+    locked(|running| {
+        if let Some((info, _)) = running.iter_mut().find(|(info, _)| info.id == id) {
+            info.done = update.done;
+            info.total = update.total;
+            info.detail = update.detail.clone();
+        }
+    });
+}
+
+/// Move a task from running to finished.
+fn finish(id: u64) {
+    let done = locked(|running| {
+        let pos = running.iter().position(|(info, _)| info.id == id);
+        pos.map(|i| {
+            let (info, flags) = running.remove(i);
+            (
+                info.label,
+                flags.cancel.load(Ordering::Relaxed),
+                flags.failed.load(Ordering::Relaxed),
+                flags.hidden,
+                info.detail,
+                info.items,
+            )
+        })
+    });
+    let Some((label, cancelled, failed, hidden, detail, items)) = done else {
+        return
+    };
+    if hidden {
+        return; // Housekeeping never enters the jobs history.
+    }
+    locked_finished(|list| {
+        list.push_back(FinishedTask {
+            id,
+            label,
+            cancelled,
+            failed,
+            detail,
+            items,
+        });
+        while list.len() > FINISHED_LIMIT {
+            list.pop_front();
+        }
+    });
 }
 
 /// Run `work` on a worker thread; report progress and the result on the main
 /// thread.
 ///
+/// * `label` is what the task manager shows. Name the *operation*, not the
+///   call site — "Importing EPUBs", not "reload". A task with no meaningful
+///   name is invisible in every way that matters.
 /// * `work` is `Send` and receives a [`Reporter`]. It must not touch GTK or
 ///   [`crate::notify`].
 /// * `on_progress` runs on the main thread for each [`Reporter::step`].
@@ -115,46 +307,116 @@ impl Reporter {
 ///
 /// Must be called from the main thread: it attaches a receiver to the GLib
 /// main context.
-pub fn spawn<T, W, P, D>(work: W, on_progress: P, on_done: D)
+/// Run `work` on a worker thread; report progress and the result on the main
+/// thread. The task appears in the finished list and moves the sidebar badge.
+pub fn spawn<T, W, P, D>(label: impl Into<String>, work: W, on_progress: P, on_done: D)
 where
     T: Send + 'static,
     W: FnOnce(Reporter) -> T + Send + 'static,
     P: Fn(Update) + 'static,
     D: FnOnce(T) + 'static,
 {
-    // Two channels rather than one enum: it keeps `Reporter` non-generic, so
-    // worker code does not have to name the task's result type to report a
-    // percentage.
+    spawn_with(label, false, work, on_progress, on_done)
+}
+
+/// Like [`spawn`], but the task is housekeeping the user did not ask for —
+/// rebuild a cache, warm something. It runs, can be cancelled, and shows in
+/// the live `w` dialog, but it never enters the finished list and never moves
+/// the badge. A jobs history of background chores answers no question anyone
+/// asked; Calibre shows imports and conversions, not its own indexing.
+pub fn spawn_internal<T, W, P, D>(label: impl Into<String>, work: W, on_progress: P, on_done: D)
+where
+    T: Send + 'static,
+    W: FnOnce(Reporter) -> T + Send + 'static,
+    P: Fn(Update) + 'static,
+    D: FnOnce(T) + 'static,
+{
+    spawn_with(label, true, work, on_progress, on_done)
+}
+
+fn spawn_with<T, W, P, D>(
+    label: impl Into<String>,
+    hidden: bool,
+    work: W,
+    on_progress: P,
+    on_done: D,
+)
+where
+    T: Send + 'static,
+    W: FnOnce(Reporter) -> T + Send + 'static,
+    P: Fn(Update) + 'static,
+    D: FnOnce(T) + 'static,
+{
     let (progress_tx, progress_rx) = async_channel::unbounded::<Update>();
     let (result_tx, result_rx) = async_channel::unbounded::<T>();
 
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let cancelled = Arc::new(AtomicBool::new(false));
-    locked(|running| running.push((id, cancelled.clone())));
+    let flags = Flags {
+        cancel: Arc::new(AtomicBool::new(false)),
+        failed: Arc::new(AtomicBool::new(false)),
+        hidden,
+    };
+    // Kept for the dispatch future below: a main-thread callback that
+    // blocks the loop is blamed on its task by name, not on
+    // "no span was open" (7.1 step 2a.1, pitfalls §45).
+    let label: String = label.into();
+    locked(|running| {
+        running.push((
+            TaskInfo {
+                id,
+                label: label.clone(),
+                done: 0,
+                total: 0,
+                detail: String::new(),
+                items: Vec::new(),
+                hidden,
+            },
+            Flags {
+                cancel: flags.cancel.clone(),
+                failed: flags.failed.clone(),
+                hidden,
+            },
+        ))
+    });
 
     std::thread::spawn(move || {
         let reporter = Reporter {
             tx: progress_tx,
-            cancelled,
+            cancelled: flags.cancel,
+            failed: flags.failed,
+            id,
         };
         let out = work(reporter);
         // `reporter` is dropped here, which closes the progress channel and
         // is how the reader below knows to stop waiting for updates.
         let _ = result_tx.send_blocking(out);
+        // The record is written by the worker the instant it finishes, not by
+        // the main-loop future. The owner's run showed an import can finish
+        // and never reach the list when only the future writes it; this makes
+        // the record independent of whatever the main loop is doing. The lock
+        // is held only for a remove and a push, never across slow work, so
+        // this does not reintroduce the "worker blocks the UI" problem.
+        finish(id);
     });
 
+    // Delivery is deliberately the plain, proven shape (7.1 step 2b.1,
+    // final revision — pitfalls §50): both attempts to make this drain
+    // interleave better (an idle priority, then a per-item yield) hung
+    // CI under the tests' `block_on` through GLib scheduling behavior
+    // that cannot be reproduced in this sandbox. Fairness between a
+    // flood of items and everything else is now bought on the producer
+    // side (see preload.rs's per-cover pacing), and any drain-side
+    // change reopens only with a local reproduction.
     gtk::glib::spawn_future_local(async move {
-        // Drain progress to exhaustion *first*, then take the result. One
-        // sequential future rather than two concurrent ones, because two would
-        // race: the completion toast could land before the last progress
-        // update and leave a stale "importing 3 of 5" on screen afterwards.
         while let Ok(update) = progress_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_progress:{label}"));
+            set_progress(id, &update);
             on_progress(update);
         }
         if let Ok(value) = result_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_done:{label}"));
             on_done(value);
         }
-        locked(|running| running.retain(|(other, _)| *other != id));
     });
 }
 
@@ -169,42 +431,81 @@ where
 /// `work` gets an [`Emit`] as well as a [`Reporter`]. `on_item` runs on the
 /// main thread once per emitted value, so it may touch widgets; like `spawn`,
 /// it is deliberately not `Send`.
-pub fn spawn_stream<T, W, F>(work: W, on_item: F)
+/// The stream shape is currently used only by housekeeping (the cover
+/// preloader), so this is the internal variant. A user-facing stream —
+/// downloads, when they exist — will re-add the visible form; deleting the
+/// dead wrapper now keeps the dead-code check honest.
+pub fn spawn_stream_internal<T, W, F>(label: impl Into<String>, work: W, on_item: F)
 where
     T: Send + 'static,
     W: FnOnce(Reporter, Emit<T>) + Send + 'static,
     F: Fn(T) + 'static,
 {
-    // A stream reports by emitting items, so there is no separate progress
-    // channel to listen on. The `Reporter` still exists for `cancelled()`;
-    // its sender goes nowhere, which is fine because `step` ignores send
-    // failures by design.
+    spawn_stream_with(label, true, work, on_item)
+}
+
+fn spawn_stream_with<T, W, F>(label: impl Into<String>, hidden: bool, work: W, on_item: F)
+where
+    T: Send + 'static,
+    W: FnOnce(Reporter, Emit<T>) + Send + 'static,
+    F: Fn(T) + 'static,
+{
     let (progress_tx, progress_rx) = async_channel::unbounded::<Update>();
     drop(progress_rx);
     let (item_tx, item_rx) = async_channel::unbounded::<T>();
 
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let cancelled = Arc::new(AtomicBool::new(false));
-    locked(|running| running.push((id, cancelled.clone())));
+    let flags = Flags {
+        cancel: Arc::new(AtomicBool::new(false)),
+        failed: Arc::new(AtomicBool::new(false)),
+        hidden,
+    };
+    // Same reasoning as `spawn_with`: the item callback is main-thread
+    // work and belongs in the watchdog's vocabulary by name.
+    let label: String = label.into();
+    locked(|running| {
+        running.push((
+            TaskInfo {
+                id,
+                label: label.clone(),
+                done: 0,
+                total: 0,
+                detail: String::new(),
+                items: Vec::new(),
+                hidden,
+            },
+            Flags {
+                cancel: flags.cancel.clone(),
+                failed: flags.failed.clone(),
+                hidden,
+            },
+        ))
+    });
 
     std::thread::spawn(move || {
         let reporter = Reporter {
             tx: progress_tx,
-            cancelled,
+            cancelled: flags.cancel,
+            failed: flags.failed,
+            id,
         };
         work(reporter, Emit { tx: item_tx });
+        // Same as `spawn_with`: the record is the worker's own last act.
+        finish(id);
     });
 
+    // Same as `spawn_with`: the plain, proven delivery (see the note
+    // there; pitfalls §50).
     gtk::glib::spawn_future_local(async move {
         // Ends when the worker drops its `Emit`, which closes the channel.
         while let Ok(item) = item_rx.recv().await {
+            let _a = crate::timing::activity(format!("task_item:{label}"));
             on_item(item);
         }
-        locked(|running| running.retain(|(other, _)| *other != id));
     });
 }
 
-/// The worker half of [`spawn_stream`]: hands finished items back one at a
+/// The worker half of [`spawn_stream_internal`]: hands finished items back one at a
 /// time.
 pub struct Emit<T> {
     tx: async_channel::Sender<T>,
@@ -221,6 +522,22 @@ impl<T> Emit<T> {
     }
 }
 
+/// Ask one task to stop. Returns whether it was still running.
+///
+/// Cancellation is cooperative: this sets a flag, and work that never checks
+/// [`Reporter::cancelled`] runs to completion. That is correct for a short
+/// query and wrong for a long download, which is why the long ones check.
+pub fn cancel(id: u64) -> bool {
+    locked(|running| {
+        if let Some((_, flags)) = running.iter().find(|(info, _)| info.id == id) {
+            flags.cancel.store(true, Ordering::Relaxed);
+            true
+        } else {
+            false
+        }
+    })
+}
+
 /// Ask every running task to stop.
 ///
 /// Called when the window is closing. Cancellation is cooperative, so this
@@ -228,10 +545,27 @@ impl<T> Emit<T> {
 /// completion, which is correct for short ones.
 pub fn cancel_all() {
     locked(|running| {
-        for (_, flag) in running.iter() {
-            flag.store(true, Ordering::Relaxed);
+        for (_, flags) in running.iter() {
+            flags.cancel.store(true, Ordering::Relaxed);
         }
     });
+}
+
+/// The tasks running right now, oldest first.
+pub fn tasks() -> Vec<TaskInfo> {
+    locked(|running| running.iter().map(|(info, _)| info.clone()).collect())
+}
+
+/// The tasks that finished most recently, newest last. Bounded — see
+/// [`FINISHED_LIMIT`].
+pub fn recent() -> Vec<FinishedTask> {
+    locked_finished(|list| list.iter().cloned().collect())
+}
+
+/// Forget the finished list. For the panel's clear button; the running tasks
+/// are untouched.
+pub fn clear_finished() {
+    locked_finished(VecDeque::clear);
 }
 
 /// How many tasks are running. Used by the shutdown path and the tests.
@@ -242,6 +576,27 @@ pub fn running_count() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    /// Held while a test touches the process-wide registry or finished list.
+    ///
+    /// Not optional, and the reason is a real false positive: tests share a
+    /// process and run in parallel, and `the_recent_list_is_bounded` clears the
+    /// finished list both before and after its assertions. Dropped between
+    /// another test's `finish()` and its `recent()` read, that produced a
+    /// failure reading exactly like the bug it was written to catch — a task
+    /// that finished and never appeared in the panel. The product was fine;
+    /// the test was racing its neighbour.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+        match TEST_LOCK.lock() {
+            Ok(guard) => guard,
+            // A panic in one test must not make the rest unrunnable.
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
 
     /// Build a reporter without going through `spawn`, which needs a GLib main
     /// context and therefore cannot run in CI (no display).
@@ -252,10 +607,45 @@ mod tests {
             Reporter {
                 tx,
                 cancelled: flag.clone(),
+                failed: Arc::new(AtomicBool::new(false)),
+                id: 0,
             },
             rx,
             flag,
         )
+    }
+
+    /// Register a fake task and hand back its flag, for tests that exercise
+    /// the registry without a GLib main loop.
+    ///
+    /// Uses ids far from the real counter so it cannot collide with a task
+    /// another test started. Tests share a process, so every one of these
+    /// cleans up after itself.
+    fn register_fake(id: u64, label: &str) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        locked(|running| {
+            running.push((
+                TaskInfo {
+                    id,
+                    label: label.to_string(),
+                    done: 0,
+                    total: 0,
+                    detail: String::new(),
+                    items: Vec::new(),
+                    hidden: false,
+                },
+                Flags {
+                    cancel: flag.clone(),
+                    failed: Arc::new(AtomicBool::new(false)),
+                    hidden: false,
+                },
+            ))
+        });
+        flag
+    }
+
+    fn unregister(id: u64) {
+        locked(|running| running.retain(|(info, _)| info.id != id));
     }
 
     #[test]
@@ -300,33 +690,251 @@ mod tests {
 
     #[test]
     fn cancel_all_flags_every_registered_task() {
+        let _guard = test_guard();
         // Uses the real registry, so clean up after itself rather than
         // assuming it starts empty -- tests share the process.
         let before = running_count();
-        let a = Arc::new(AtomicBool::new(false));
-        let b = Arc::new(AtomicBool::new(false));
-        locked(|running| {
-            running.push((90_001, a.clone()));
-            running.push((90_002, b.clone()));
-        });
+        let a = register_fake(90_001, "test task a");
+        let b = register_fake(90_002, "test task b");
         assert_eq!(running_count(), before + 2);
 
         cancel_all();
         assert!(a.load(Ordering::Relaxed));
         assert!(b.load(Ordering::Relaxed));
 
-        locked(|running| running.retain(|(id, _)| *id != 90_001 && *id != 90_002));
+        unregister(90_001);
+        unregister(90_002);
         assert_eq!(running_count(), before);
     }
 
     #[test]
+    fn cancel_reaches_one_task_and_leaves_the_others_running() {
+        let _guard = test_guard();
+        // The whole point of 1.14: cancelling the download you did not mean to
+        // start must not also cancel the thumbnail rebuild.
+        let before = running_count();
+        let keep = register_fake(90_011, "keep me");
+        let stop = register_fake(90_012, "stop me");
+
+        assert!(cancel(90_012), "the task was running");
+        assert!(stop.load(Ordering::Relaxed), "the named task stopped");
+        assert!(!keep.load(Ordering::Relaxed), "its neighbour did not");
+        assert!(!cancel(99_999), "an unknown id is reported as not running");
+
+        unregister(90_011);
+        unregister(90_012);
+        assert_eq!(running_count(), before);
+    }
+
+    #[test]
+    fn cancelling_twice_is_harmless() {
+        let _guard = test_guard();
+        let before = running_count();
+        register_fake(90_021, "cancel me twice");
+        assert!(cancel(90_021));
+        // Still registered — cancellation only sets a flag; the task leaves the
+        // registry when it actually finishes — so this must still succeed.
+        assert!(cancel(90_021), "the task is still running, so so is the flag");
+        unregister(90_021);
+        assert_eq!(running_count(), before);
+    }
+
+    #[test]
+    fn the_panel_sees_labels_and_progress() {
+        let _guard = test_guard();
+        let before = running_count();
+        register_fake(90_031, "Importing EPUBs");
+        set_progress(
+            90_031,
+            &Update {
+                done: 3,
+                total: 5,
+                detail: "dune.epub".to_string(),
+            },
+        );
+
+        let listed = tasks();
+        let found = listed.iter().find(|t| t.id == 90_031).expect("listed");
+        assert_eq!(found.label, "Importing EPUBs");
+        assert_eq!(found.done, 3);
+        assert_eq!(found.total, 5);
+        assert_eq!(found.detail, "dune.epub");
+
+        unregister(90_031);
+        assert_eq!(running_count(), before);
+    }
+
+    #[test]
+    fn finishing_moves_a_task_to_the_recent_list() {
+        let _guard = test_guard();
+        let before = running_count();
+        register_fake(90_041, "Downloading a chapter");
+        cancel(90_041);
+        finish(90_041);
+
+        assert_eq!(running_count(), before, "no longer running");
+        let recent = recent();
+        let found = recent.iter().find(|t| t.id == 90_041).expect("remembered");
+        assert_eq!(found.label, "Downloading a chapter");
+        assert!(found.cancelled, "recorded as cancelled, not completed");
+
+        locked_finished(|list| list.retain(|t| t.id != 90_041));
+    }
+
+    #[test]
+    fn the_recent_list_is_bounded() {
+        let _guard = test_guard();
+        // Unbounded would grow for the life of the process, and this list is
+        // only there to say "that just happened".
+        locked_finished(VecDeque::clear);
+        for i in 0..(FINISHED_LIMIT + 5) {
+            locked_finished(|list| {
+                list.push_back(FinishedTask {
+                    id: 90_100 + i as u64,
+                    label: format!("task {i}"),
+                    cancelled: false,
+                    failed: false,
+                    detail: String::new(),
+                    items: Vec::new(),
+                });
+                while list.len() > FINISHED_LIMIT {
+                    list.pop_front();
+                }
+            });
+        }
+        let recent = recent();
+        assert_eq!(recent.len(), FINISHED_LIMIT);
+        assert_eq!(
+            recent.first().map(|t| t.label.as_str()),
+            Some("task 5"),
+            "the oldest were dropped, not the newest"
+        );
+        locked_finished(VecDeque::clear);
+    }
+
+    /// A task that actually ran must be *visible* afterwards.
+    ///
+    /// The other tests here poke the registry directly, which proves the
+    /// registry works but not that `spawn` reaches it — and "reaches it" is
+    /// the half the owner found broken: an import finished and never showed up
+    /// in the list. So this drives the real thing: a real `spawn`, a real
+    /// worker thread, a real main context, and then looks at what the panel
+    /// would see.
+    ///
+    /// Needs no display. A GLib main context is not GTK, so this runs in the
+    /// ordinary `cargo test` step rather than only in the headless-sway smoke
+    /// test — which matters, because that smoke job is `continue-on-error`.
+    ///
+    /// The poll loop is bounded so a regression fails the test in a few
+    /// seconds instead of hanging CI until it times out.
+    #[test]
+    fn a_task_that_ran_lands_in_the_recent_list() {
+        let _guard = test_guard();
+        const LABEL: &str = "headless registry test";
+
+        let done = Rc::new(Cell::new(false));
+        let progress = Rc::new(Cell::new(false));
+        let value = Rc::new(Cell::new(0u32));
+
+        // Three sets, because `block_on` takes the async block by value: the
+        // two callbacks and the poll loop each need their own clone moved in,
+        // and the originals have to survive outside so the assertions after
+        // `block_on` can read them.
+        let (done_cb, progress_cb, value_cb) = (done.clone(), progress.clone(), value.clone());
+        let done_poll = done.clone();
+
+        // The default context, because `spawn_future_local` resolves against
+        // the thread-default and falls back to it, and `block_on` is what
+        // iterates it. Anything else and the future would be spawned onto a
+        // context nobody was running.
+        let ctx = gtk::glib::MainContext::default();
+        ctx.block_on(async move {
+            spawn(
+                LABEL,
+                |reporter| {
+                    reporter.step(1, 2, "halfway");
+                    42u32
+                },
+                move |_| progress_cb.set(true),
+                move |v| {
+                    value_cb.set(v);
+                    done_cb.set(true);
+                },
+            );
+
+            for _ in 0..500 {
+                if done_poll.get() && !tasks().iter().any(|t| t.label == LABEL) {
+                    break;
+                }
+                gtk::glib::timeout_future(std::time::Duration::from_millis(10)).await;
+            }
+        });
+
+        assert_eq!(value.get(), 42, "the result never reached on_done");
+        assert!(done.get(), "on_done never ran, so the future did not finish");
+        assert!(
+            progress.get(),
+            "the progress report never reached the main thread"
+        );
+        assert!(
+            recent().iter().any(|t| t.label == LABEL),
+            "the task finished but never reached the recent list — the panel \
+             would show nothing, which is what the owner reported"
+        );
+        assert!(
+            !tasks().iter().any(|t| t.label == LABEL),
+            "the task finished but is still listed as running"
+        );
+        assert!(
+            recent().iter().any(|t| t.label == LABEL && !t.cancelled),
+            "the task was recorded as cancelled when it was not"
+        );
+
+        // Clean up: the recent list is process-wide and other tests read it.
+        locked_finished(|list| list.retain(|t| t.label != LABEL));
+    }
+
+    #[test]
+    fn housekeeping_tasks_stay_out_of_the_jobs_history() {
+        let _guard = test_guard();
+        // The owner's exact complaint: thumbnail rebuilds and preloaders
+        // littered the history. `spawn_internal` must run and be cancellable
+        // but never appear as a finished job.
+        let done = Rc::new(Cell::new(false));
+        let done_cb = done.clone();
+        let done_poll = done.clone();
+
+        let ctx = gtk::glib::MainContext::default();
+        ctx.block_on(async move {
+            spawn_internal("internal chore", |_| 1u32, |_| {}, move |_| done_cb.set(true));
+            for _ in 0..500 {
+                if done_poll.get() {
+                    break;
+                }
+                gtk::glib::timeout_future(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        assert!(done.get(), "the internal task ran");
+        assert!(
+            !recent().iter().any(|t| t.label == "internal chore"),
+            "housekeeping must not appear in the finished list"
+        );
+        assert!(
+            !tasks().iter().any(|t| t.label == "internal chore"),
+            "the task must have left the running list too"
+        );
+    }
+
+    #[test]
     fn a_poisoned_registry_does_not_take_the_next_task_down() {
+        let _guard = test_guard();
         // One task panicking must not turn every later task into a crash.
         let _ = std::panic::catch_unwind(|| {
             locked(|_| panic!("worker exploded while holding the lock"));
         });
         // The lock is poisoned now; this must still work.
         let _ = running_count();
+        let _ = tasks();
         cancel_all();
     }
 }

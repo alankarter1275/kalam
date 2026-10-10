@@ -1435,6 +1435,11 @@ fn selection_paints_under_text_in_display_list() {
             end: 12,
             color: sel_color,
             blend: chapbook_paint::Blend::Multiply,
+            // Band is what this test asserts on: it looks for a
+            // `DisplayOp::Band` in the list below. Spelled out rather than
+            // `::default()` so the test says what it means, and so a change
+            // to the default cannot silently change what is being checked.
+            style: chapbook_paint::SelectionStyle::Band,
         }],
         &chapbook_paint::ImageStore::default(),
     );
@@ -1530,6 +1535,10 @@ fn selection_band_is_the_glyph_box_plus_padding_not_the_line_box() {
             end: line.locator_start + 6,
             color,
             blend: chapbook_paint::Blend::Screen,
+            // Band: this test asserts the painter fills a rounded rect, which
+            // is the Band arm. Underline would paint a rule instead and the
+            // assertions below would fail for an unrelated reason.
+            style: chapbook_paint::SelectionStyle::Band,
         }],
         &chapbook_paint::ImageStore::default(),
     );

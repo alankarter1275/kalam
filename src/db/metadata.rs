@@ -75,6 +75,14 @@ impl Catalog {
         // silently discard the edit.
         self.remember_overrides(book_id)?;
 
+        // Owner decision, 2026-09-29: the folder follows the metadata. A
+        // book edited from "Unknown" to its real author gets a folder that
+        // says so. Best-effort, exactly like the sidecar refresh below: a
+        // stale folder name deserves a log line, never a failed edit.
+        if let Ok(Some(book)) = self.get_book(book_id) {
+            crate::folders::rename_book_folder_if_needed(&book.uuid, &book.authors, &book.title);
+        }
+
         // Keep the per-book kalam.json in step. Best-effort: a stale backup
         // deserves a log line, never a failed edit.
         crate::sidecar::refresh_for_book(self, book_id);
@@ -311,10 +319,22 @@ impl Catalog {
                     .and_then(|e| e.to_str())
                     .unwrap_or("jpg")
                     .to_ascii_lowercase();
-                let dest_name = format!("cover-restored.{ext}");
-                let dest = book_dir(&book.uuid).join(&dest_name);
-                if fs::create_dir_all(book_dir(&book.uuid)).is_ok() && fs::copy(&src, &dest).is_ok()
-                {
+                // A comic chapter (item 2.22) keeps its cover in the series
+                // folder's `covers/`, stored library-relative; everything
+                // else restores beside the book file.
+                let file_part = format!("cover-restored.{ext}");
+                let (dest_dir, dest_name) = match book.file_name.rsplit_once('/') {
+                    Some((series, _)) => (
+                        crate::paths::library_dir().join(series).join("covers"),
+                        format!("{series}/covers/{file_part}"),
+                    ),
+                    // Cloned, not moved: `file_part` is joined again below,
+                    // and a value moved by one arm of a match is moved for
+                    // the whole match.
+                    None => (book_dir(&book.uuid), file_part.clone()),
+                };
+                let dest = dest_dir.join(&file_part);
+                if fs::create_dir_all(&dest_dir).is_ok() && fs::copy(&src, &dest).is_ok() {
                     self.set_cover_name_quiet(book_id, Some(&dest_name))?;
                 }
             }
@@ -323,7 +343,7 @@ impl Catalog {
     }
 
     /// Forget remembered edits for a file — used by "import fresh".
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn forget_overrides(&self, file_hash: &str) -> Result<()> {
         // Drop the stashed cover too, otherwise the covers directory grows
         // forever with images nothing references.

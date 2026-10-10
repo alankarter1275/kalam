@@ -1,8 +1,8 @@
 //! P4 — Reading list: an ordered to-be-read queue.
 
-use crate::db::{Catalog, ReadingListEntry, SortKey};
+use crate::db::{Catalog, ReadingListEntry};
 use crate::service::LibraryService;
-use crate::widgets::book_row::cover_widget;
+use crate::widgets::book_row::cover_widget_deferred;
 use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -13,6 +13,10 @@ use std::sync::Arc;
 pub enum ReadingListOut {
     OpenBook { book_id: i64 },
     OpenReader { book_id: i64 },
+    /// A comic series row — chapters are only ever seen on the series page.
+    /// (The Read button stays chapter-precise: it resumes exactly where the
+    /// reader left that series.)
+    ComicSeries { series_name: String },
 }
 
 #[derive(Debug)]
@@ -121,14 +125,28 @@ impl Component for ReadingListModel {
                 self.reload();
             }
             ReadingListMsg::Remove(book_id) => {
-                let title = self
-                    .entries
-                    .iter()
-                    .find(|e| e.book.id == book_id)
-                    .map(|e| e.book.title.clone())
-                    .unwrap_or_default();
+                let entry = self.entries.iter().find(|e| e.book.id == book_id);
+                let title = entry.map(|e| e.book.title.clone()).unwrap_or_default();
+                // The list is collapsed, so a comic row is the whole series —
+                // Remove clears every chapter of it, not just the
+                // representative.
+                let is_comic = entry
+                    .map(|e| {
+                        matches!(
+                            e.book.format,
+                            crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                        )
+                    })
+                    .unwrap_or(false);
+                let result = if is_comic {
+                    self.service
+                        .catalog()
+                        .remove_series_from_reading_list(book_id)
+                } else {
+                    self.service.catalog().remove_from_reading_list(book_id)
+                };
                 crate::notify::outcome_info(
-                    self.service.catalog().remove_from_reading_list(book_id),
+                    result,
                     "Removed from reading list",
                     &title,
                     "Could not update the reading list",
@@ -137,7 +155,7 @@ impl Component for ReadingListModel {
             }
             ReadingListMsg::AddBooks => {
                 let s = sender.clone();
-                open_picker(root, self.service.catalog().clone(), move || {
+                open_picker(root, self.service.clone(), move || {
                     s.input(ReadingListMsg::Refresh)
                 });
             }
@@ -194,9 +212,19 @@ fn rebuild(
     }
 
     let last = entries.len().saturating_sub(1);
+    crate::timing::span("reading_list_build");
     for (i, entry) in entries.iter().enumerate() {
         list.append(&build_row(i, last, entry, sender));
     }
+    crate::timing::span_end("reading_list_build");
+    crate::timing::note("reading_list_rows", entries.len());
+
+    // The warming half of the deferred-cover contract: placeholders fill
+    // only if this page queues the decode at the exact (path, 44, 70) key.
+    // After the first warm the cache serves every rebuild instantly, so the
+    // reorder/remove paths stay cheap too.
+    let books: Vec<crate::models::Book> = entries.iter().map(|e| e.book.clone()).collect();
+    crate::preload::warm_books(&books, 0, 44, 70);
 }
 
 fn build_row(
@@ -215,7 +243,11 @@ fn build_row(
     ordinal.set_width_chars(2);
     row.append(&ordinal);
 
-    let cover = cover_widget(book.cover_path.as_deref(), 44, 70);
+    // Deferred, not decode-on-the-spot: this is a list surface, and the
+    // owner's log measured the page opening in 322 ms with a 0.7 ms read —
+    // the covers were the cost. Rows get placeholders instantly; the decode
+    // is queued by `rebuild` (the other half of the contract, pitfalls §53).
+    let cover = cover_widget_deferred(book.cover_path.as_deref(), 44, 70);
     cover.set_valign(gtk::Align::Center);
     row.append(&cover);
 
@@ -305,12 +337,28 @@ fn build_row(
     }
     row.append(&remove);
 
-    // Clicking the row opens the book page.
+    // Clicking the row opens the book page — or the series page for a comic,
+    // the same rule every list obeys.
     let click = gtk::GestureClick::new();
     click.set_button(1);
+    let comic_series = if matches!(
+        book.format,
+        crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+    ) {
+        book.series.clone()
+    } else {
+        None
+    };
     {
         let s = sender.clone();
         click.connect_released(move |_, _, _, _| {
+            if let Some(ser) = comic_series.as_ref() {
+                s.output(ReadingListOut::ComicSeries {
+                    series_name: ser.clone(),
+                })
+                .ok();
+                return;
+            }
             s.output(ReadingListOut::OpenBook { book_id }).ok();
         });
     }
@@ -327,9 +375,23 @@ fn build_row(
 /// [`in_app_dialog::DialogExit::OwnButtons`]: ticking a box writes straight to
 /// the DB, so there is nothing unsaved and "Done" is just "I am finished
 /// looking". Backdrop-click and Esc mean the same thing here.
-fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() + 'static) {
+fn open_picker(anchor: &gtk::Box, service: LibraryService, on_changed: impl Fn() + 'static) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    root.set_size_request(520, 520);
+    // Fit the window, whatever its width (same rule as the shelf picker).
+    let win_w = anchor
+        .root()
+        .map(|r| r.upcast_ref::<gtk::Widget>().width())
+        .unwrap_or(0);
+    let want = if win_w > 0 {
+        520.min((win_w - 120).max(320))
+    } else {
+        520
+    };
+    root.set_size_request(want, 520);
+    // Same data-not-screenshots verification as the shelf picker.
+    if win_w > 0 {
+        crate::timing::note("picker_window", win_w as usize);
+    }
 
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Search library…"));
@@ -344,61 +406,130 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
     root.append(&scroll);
 
     let on_changed = Rc::new(on_changed);
+
+    // Skeleton first. The owner's log measured the open blocking the UI
+    // thread for 351 ms (2026-10-04): the whole-library read, the
+    // reading-list membership, the per-comic peers lookup and every row's
+    // widget were all built before the panel could appear. The panel now
+    // shows immediately with "Loading…"; the read runs on a worker and the
+    // rows swap in on arrival.
+    let loading = gtk::Label::new(Some("Loading…"));
+    loading.add_css_class("kalam-muted");
+    loading.set_halign(gtk::Align::Start);
+    list.append(&loading);
+
+    // A keystroke supersedes the read in flight; its answer is dropped on
+    // arrival (the history page's generation rule — the list keeps what it
+    // is showing and swaps, it never blanks while a read runs).
+    let gen = Rc::new(std::cell::Cell::new(0u64));
+    // The width diagnostics fire once, after the first rows arrive — the
+    // skeleton's width says nothing about cut-off rows.
+    let measured = Rc::new(std::cell::Cell::new(false));
+
     let fill = {
-        let catalog = catalog.clone();
+        let service = service.clone();
         let list = list.clone();
         let on_changed = on_changed.clone();
+        let root = root.clone();
+        let gen = gen.clone();
+        let measured = measured.clone();
         Rc::new(move |query: &str| {
-            while let Some(child) = list.first_child() {
-                list.remove(&child);
-            }
-            let books = catalog
-                .list_books(SortKey::Title, query)
-                .unwrap_or_default();
-            if books.is_empty() {
-                let empty = gtk::Label::new(Some("No books match."));
-                empty.add_css_class("kalam-muted");
-                empty.set_halign(gtk::Align::Start);
-                list.append(&empty);
-                return;
-            }
-            for book in books {
-                let check = gtk::CheckButton::with_label(&format!(
-                    "{} — {}",
-                    book.title,
-                    book.authors_display()
-                ));
-                check.add_css_class("kalam-picker-row");
-                check.set_active(catalog.is_in_reading_list(book.id).unwrap_or(false));
-
-                let catalog = catalog.clone();
-                let on_changed = on_changed.clone();
-                let book_id = book.id;
-                let book_title = book.title.clone();
-                check.connect_toggled(move |c| {
-                    if c.is_active() {
-                        crate::notify::outcome(
-                            catalog.add_to_reading_list(book_id),
-                            "Added to reading list",
-                            &book_title,
-                            "Could not update the reading list",
-                        );
-                    } else {
-                        crate::notify::outcome_info(
-                            catalog.remove_from_reading_list(book_id),
-                            "Removed from reading list",
-                            &book_title,
-                            "Could not update the reading list",
-                        );
+            gen.set(gen.get() + 1);
+            let my_gen = gen.get();
+            let read_service = service.clone();
+            let done_catalog = service.catalog().clone();
+            let done_list = list.clone();
+            let done_on_changed = on_changed.clone();
+            let done_root = root.clone();
+            let done_gen = gen.clone();
+            let done_measured = measured.clone();
+            let query = query.to_string();
+            crate::tasks::spawn(
+                "Loading books",
+                move |_reporter| {
+                    // The whole read — list, collapse, peers, membership —
+                    // is one service call now, with a step-4 budget on it
+                    // (`picker_read` measures inside the service, so field
+                    // logs stay comparable).
+                    read_service.reading_list_picker(&query)
+                },
+                |_| {},
+                move |rows| {
+                    // A newer fill was asked for while this read ran; keep
+                    // what is on screen and drop this answer.
+                    if my_gen != done_gen.get() {
+                        return;
                     }
-                    on_changed();
-                });
-                list.append(&check);
-            }
+                    let _fill = crate::timing::measure("picker_fill");
+                    crate::timing::note("picker_rows", rows.len());
+                    while let Some(child) = done_list.first_child() {
+                        done_list.remove(&child);
+                    }
+                    if rows.is_empty() {
+                        let empty = gtk::Label::new(Some("No books match."));
+                        empty.add_css_class("kalam-muted");
+                        empty.set_halign(gtk::Align::Start);
+                        done_list.append(&empty);
+                    } else {
+                        for row in rows {
+                            // Own label, not the button's internal one — see
+                            // the shelf picker (picker_width 1906 on a 1350
+                            // window, 2026-10-03).
+                            let check = gtk::CheckButton::new();
+                            let label = gtk::Label::new(Some(&row.line));
+                            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                            label.set_max_width_chars(44);
+                            label.set_xalign(0.0);
+                            label.set_hexpand(true);
+                            check.set_child(Some(&label));
+                            check.set_hexpand(true);
+                            check.set_halign(gtk::Align::Fill);
+                            check.add_css_class("kalam-picker-row");
+                            check.set_active(row.ticked);
+
+                            let catalog = done_catalog.clone();
+                            let on_changed = done_on_changed.clone();
+                            let book_id = row.id;
+                            let book_title = row.title.clone();
+                            check.connect_toggled(move |c| {
+                                if c.is_active() {
+                                    crate::notify::outcome(
+                                        catalog.add_series_to_reading_list(book_id),
+                                        "Added to reading list",
+                                        &book_title,
+                                        "Could not update the reading list",
+                                    );
+                                } else {
+                                    crate::notify::outcome_info(
+                                        catalog.remove_series_from_reading_list(book_id),
+                                        "Removed from reading list",
+                                        &book_title,
+                                        "Could not update the reading list",
+                                    );
+                                }
+                                on_changed();
+                            });
+                            done_list.append(&check);
+                        }
+                    }
+                    // Width diagnostics, once, with rows on screen: natural
+                    // vs allocated names the layer if the panel is ever cut
+                    // off again (natural huge = the rows; natural small,
+                    // width huge = the allocation).
+                    if !done_measured.get() {
+                        done_measured.set(true);
+                        let r = done_root.clone();
+                        gtk::glib::idle_add_local_once(move || {
+                            let (_, nat, _, _) = r.measure(gtk::Orientation::Horizontal, -1);
+                            crate::timing::note("picker_natural", nat as usize);
+                            crate::timing::note("picker_width", r.width() as usize);
+                        });
+                    }
+                },
+            );
         })
     };
 
-    fill("");
     {
         let fill = fill.clone();
         search.connect_search_changed(move |e| fill(&e.text()));
@@ -422,4 +553,8 @@ fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() +
         return;
     };
     done.connect_clicked(move |_| dialog.close());
+
+    // The first read starts only once the panel is on screen — the skeleton
+    // it replaces is the point of the fix.
+    fill("");
 }

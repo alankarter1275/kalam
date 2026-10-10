@@ -9,6 +9,15 @@
 > `docs/kalam/patch/src/pages/reader/engine.rs` as history; the handoff
 > bundle no longer ships it. Read on for the reasoning behind the wiring,
 > not for code to paste over a live file.
+>
+> **Update (2026-09-18):** the recipe below says "leave `connect_word`
+> unconnected" and "do not wire this for Kalam". That instruction is now
+> obsolete in the strongest way — **`ReaderView::connect_word` and the
+> `TappedWord` type have been deleted from `crates/kalam-reader` entirely.**
+> The owner removed tap-a-word-to-open-dictionary as a feature, not just as a
+> wiring choice, so there is nothing left to leave unconnected. Highlight taps
+> go through `ReaderView::highlight_at(x, y)`, which is separate and untouched.
+> Read the `EngineWord` bullet below as history.
 
 This is the recipe for swapping WebKit out of Kalam's reader page and
 putting `kalam-reader` in. It is written to be followed top to bottom,

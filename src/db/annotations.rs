@@ -21,6 +21,7 @@ impl Catalog {
         end_path: &str,
         end_offset: i64,
         color: &str,
+        style: &str,
         text_excerpt: &str,
         note: &str,
     ) -> Result<i64> {
@@ -29,8 +30,8 @@ impl Catalog {
         conn.execute(
             "INSERT INTO annotations
                 (book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
-                 color, text_excerpt, note, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+                 color, style, text_excerpt, note, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
             params![
                 book_id,
                 kind,
@@ -40,6 +41,7 @@ impl Catalog {
                 end_path,
                 end_offset,
                 color,
+                style,
                 text_excerpt,
                 note,
                 now
@@ -57,7 +59,7 @@ impl Catalog {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
-                    color, text_excerpt, note, cfi, created_at, updated_at
+                    color, style, text_excerpt, note, cfi, created_at, updated_at
              FROM annotations WHERE book_id = ?1 ORDER BY chapter_index ASC, created_at ASC",
         )?;
         let rows = stmt.query_map(params![book_id], row_to_annotation)?;
@@ -76,7 +78,7 @@ impl Catalog {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
-                    color, text_excerpt, note, cfi, created_at, updated_at
+                    color, style, text_excerpt, note, cfi, created_at, updated_at
              FROM annotations
              WHERE book_id = ?1 AND chapter_index = ?2
              ORDER BY created_at ASC",
@@ -97,7 +99,7 @@ impl Catalog {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT a.id, a.book_id, a.kind, a.chapter_index, a.start_path, a.start_offset,
-                    a.end_path, a.end_offset, a.color, a.text_excerpt, a.note, a.cfi,
+                    a.end_path, a.end_offset, a.color, a.style, a.text_excerpt, a.note, a.cfi,
                     a.created_at, a.updated_at, books.title, books.authors,
                     books.uuid, books.cover_name
              FROM annotations a
@@ -107,12 +109,12 @@ impl Catalog {
              LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit as i64], |r| {
-            let cover_name: Option<String> = r.get(17)?;
-            let uuid: String = r.get(16)?;
+            let cover_name: Option<String> = r.get(18)?;
+            let uuid: String = r.get(17)?;
             let ref_ = QuoteRef {
-                title: r.get(14)?,
-                author: r.get(15)?,
-                cover_path: cover_name.map(|name| book_dir(&uuid).join(name)),
+                title: r.get(15)?,
+                author: r.get(16)?,
+                cover_path: cover_name.map(|name| resolve_library_file(&uuid, &name)),
             };
             Ok((row_to_annotation(r)?, ref_))
         })?;
@@ -120,7 +122,7 @@ impl Catalog {
     }
 
     /// Total saved quotes, for counts that do not need the rows themselves.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn count_quotes(&self) -> Result<i64> {
         let conn = self.conn();
         let n: i64 = conn.query_row(
@@ -137,14 +139,14 @@ impl Catalog {
         let mut stmt = if q.is_empty() {
             conn.prepare_cached(
                 "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
-                        color, text_excerpt, note, cfi, created_at, updated_at
+                        color, style, text_excerpt, note, cfi, created_at, updated_at
                  FROM annotations WHERE kind IN ('quote','highlight')
                  ORDER BY created_at DESC LIMIT 500",
             )?
         } else {
             conn.prepare_cached(
                 "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
-                        color, text_excerpt, note, cfi, created_at, updated_at
+                        color, style, text_excerpt, note, cfi, created_at, updated_at
                  FROM annotations
                  WHERE kind IN ('quote','highlight')
                    AND (text_excerpt LIKE ?1 ESCAPE '\\' OR note LIKE ?1 ESCAPE '\\')
@@ -205,6 +207,48 @@ impl Catalog {
         drop(conn);
         self.refresh_sidecar_for_annotation(id);
         Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn update_annotation_style(&self, id: i64, style: &str) -> Result<()> {
+        let conn = self.conn();
+        let now = chrono_like_now();
+        conn.execute(
+            "UPDATE annotations SET style = ?1, updated_at = ?2 WHERE id = ?3",
+            params![style, now, id],
+        )?;
+        drop(conn);
+        self.refresh_sidecar_for_annotation(id);
+        Ok(())
+    }
+
+    pub fn update_annotation_details(
+        &self,
+        id: i64,
+        color: &str,
+        style: &str,
+        note: &str,
+    ) -> Result<()> {
+        let conn = self.conn();
+        let now = chrono_like_now();
+        conn.execute(
+            "UPDATE annotations SET color = ?1, style = ?2, note = ?3, updated_at = ?4 WHERE id = ?5",
+            params![color, style, note, now, id],
+        )?;
+        drop(conn);
+        self.refresh_sidecar_for_annotation(id);
+        Ok(())
+    }
+
+    pub fn get_annotation_by_id(&self, id: i64) -> Result<Option<Annotation>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                    color, style, text_excerpt, note, cfi, created_at, updated_at
+             FROM annotations WHERE id = ?1",
+        )?;
+        let anno = stmt.query_row(params![id], row_to_annotation).optional()?;
+        Ok(anno)
     }
 
     /// Store the engine's locator JSON for a highlight (the `cfi` column,
@@ -374,7 +418,7 @@ impl Catalog {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
-                    color, text_excerpt, note, cfi, created_at, updated_at
+                    color, style, text_excerpt, note, cfi, created_at, updated_at
              FROM annotations WHERE kind IN ('quote', 'highlight') ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_annotation)?;
@@ -389,6 +433,78 @@ impl Catalog {
             }
         }
         Ok((quotes, highlights))
+    }
+
+    /// Word Memory (Phase 2): Fetch saved vocabulary words scoped by user preference
+    /// ("library", "series", "book", "off").
+    pub fn get_saved_words_for_scope(&self, book_id: i64, scope: &str) -> Result<Vec<SavedWord>> {
+        let conn = self.conn();
+        match scope {
+            "off" => Ok(Vec::new()),
+            "book" => {
+                let mut stmt = conn.prepare_cached(
+                    "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                     FROM saved_words WHERE book_id = ?1 ORDER BY created_at DESC",
+                )?;
+                let rows = stmt.query_map(params![book_id], row_to_saved_word)?;
+                let mut out = Vec::new();
+                for r in rows {
+                    out.push(r?);
+                }
+                Ok(out)
+            }
+            "series" => {
+                let series: Option<String> = conn
+                    .query_row(
+                        "SELECT series FROM books WHERE id = ?1",
+                        params![book_id],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .flatten();
+                if let Some(ref s) = series {
+                    if !s.trim().is_empty() {
+                        let mut stmt = conn.prepare_cached(
+                            "SELECT sw.id, sw.word, sw.definition, sw.dict_name, sw.book_id, sw.chapter_index, sw.context_text, sw.created_at, sw.known
+                             FROM saved_words sw
+                             LEFT JOIN books b ON b.id = sw.book_id
+                             WHERE sw.book_id = ?1 OR b.series = ?2
+                             ORDER BY sw.created_at DESC",
+                        )?;
+                        let rows = stmt.query_map(params![book_id, s], row_to_saved_word)?;
+                        let mut out = Vec::new();
+                        for r in rows {
+                            out.push(r?);
+                        }
+                        return Ok(out);
+                    }
+                }
+                // If book has no series, fall back to book scope
+                let mut stmt = conn.prepare_cached(
+                    "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                     FROM saved_words WHERE book_id = ?1 ORDER BY created_at DESC",
+                )?;
+                let rows = stmt.query_map(params![book_id], row_to_saved_word)?;
+                let mut out = Vec::new();
+                for r in rows {
+                    out.push(r?);
+                }
+                Ok(out)
+            }
+            _ => {
+                // "library" / default: all saved words
+                let mut stmt = conn.prepare_cached(
+                    "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                     FROM saved_words ORDER BY created_at DESC",
+                )?;
+                let rows = stmt.query_map([], row_to_saved_word)?;
+                let mut out = Vec::new();
+                for r in rows {
+                    out.push(r?);
+                }
+                Ok(out)
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -483,6 +599,7 @@ mod tests {
                 "",
                 0,
                 "yellow",
+                "solid",
                 "Sample text excerpt",
                 "Test note",
             )
@@ -497,6 +614,97 @@ mod tests {
         assert_eq!(annotations[0].cfi.as_deref(), Some(cfi_json));
         assert_eq!(annotations[0].kind, "highlight");
         assert_eq!(annotations[0].chapter_index, 2);
+        assert_eq!(annotations[0].style, "solid");
+    }
+
+    #[test]
+    fn annotation_style_and_details_crud() {
+        let (cat, book_id) = catalog_with_book();
+        let id = cat
+            .insert_annotation(
+                book_id,
+                "highlight",
+                1,
+                "",
+                0,
+                "",
+                0,
+                "green",
+                "squiggly",
+                "Wavy text selection",
+                "Initial note",
+            )
+            .expect("insert annotation");
+
+        let anno = cat.get_annotation_by_id(id).expect("get annotation").expect("found");
+        assert_eq!(anno.color, "green");
+        assert_eq!(anno.style, "squiggly");
+        assert_eq!(anno.note, "Initial note");
+
+        cat.update_annotation_details(id, "pink", "strikeout", "Updated note")
+            .expect("update details");
+        let anno2 = cat.get_annotation_by_id(id).expect("get annotation").expect("found");
+        assert_eq!(anno2.color, "pink");
+        assert_eq!(anno2.style, "strikeout");
+        assert_eq!(anno2.note, "Updated note");
+    }
+
+    #[test]
+    fn word_memory_scoped_queries() {
+        let (cat, book_id1) = catalog_with_book();
+        let book_id2 = cat
+            .insert_book(
+                "uuid-book2",
+                "Book Two",
+                "Author",
+                Some("Test Series"),
+                "",
+                BookFormat::Epub,
+                "book2.epub",
+                "hash-book2",
+                None,
+                &[],
+            )
+            .expect("insert book 2");
+        let book_id3 = cat
+            .insert_book(
+                "uuid-book3",
+                "Book Three",
+                "Author",
+                Some("Test Series"),
+                "",
+                BookFormat::Epub,
+                "book3.epub",
+                "hash-book3",
+                None,
+                &[],
+            )
+            .expect("insert book 3");
+
+        let _ = cat.insert_saved_word("ubiquitous", "present everywhere", None, Some(book_id1), None, None);
+        let _ = cat.insert_saved_word("serendipity", "fortunate accident", None, Some(book_id2), None, None);
+        let _ = cat.insert_saved_word("ephemeral", "lasting a short time", None, Some(book_id3), None, None);
+
+        // Off scope
+        let off = cat.get_saved_words_for_scope(book_id2, "off").expect("query off");
+        assert!(off.is_empty());
+
+        // Book scope
+        let book_only = cat.get_saved_words_for_scope(book_id2, "book").expect("query book");
+        assert_eq!(book_only.len(), 1);
+        assert_eq!(book_only[0].word, "serendipity");
+
+        // Series scope (book2 and book3 share "Test Series")
+        let series_words = cat.get_saved_words_for_scope(book_id2, "series").expect("query series");
+        assert_eq!(series_words.len(), 2);
+        let words: Vec<&str> = series_words.iter().map(|w| w.word.as_str()).collect();
+        assert!(words.contains(&"serendipity"));
+        assert!(words.contains(&"ephemeral"));
+        assert!(!words.contains(&"ubiquitous"));
+
+        // Library scope (all saved words)
+        let all = cat.get_saved_words_for_scope(book_id2, "library").expect("query library");
+        assert_eq!(all.len(), 3);
     }
 
     #[test]

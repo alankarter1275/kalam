@@ -57,11 +57,39 @@ pub(crate) const MARGIN_TOP: f32 = 48.0;
 pub(crate) const MARGIN_BOTTOM: f32 = 40.0;
 const MARGIN_SIDE_MIN: f32 = 28.0;
 
+/// How long the pointer may sit still before it gets out of the way
+/// (roadmap 2.9). Two seconds: long enough that a reader moving to a
+/// control does not watch it blink, short enough to be out of the text.
+const CURSOR_HIDE_SECS: u64 = 2;
+
+/// Facing pages need room for two columns worth reading. Below this the
+/// spread would be two narrow strips, so the reader shows one page —
+/// whatever the toggle says.
+const SPREAD_MIN_WIDTH_PX: i32 = 900;
+
 /// One wheel notch in scrolled mode, CSS px — three lines at Kalam's
 /// default 17 px × 1.8, which is what a browser moves too.
 const WHEEL_STEP: f32 = 92.0;
-/// One arrow key in scrolled mode.
-const ARROW_STEP: f32 = 46.0;
+/// The most one smooth-scroll event may move the strip, whatever the speed
+/// setting — beyond this a two-finger flick teleports whole screens and
+/// reads as jumpy (2.9, field report round 2).
+const SMOOTH_STEP_CAP: f32 = 240.0;
+/// How long after a scroll event a pointer motion still counts as part of
+/// the scroll, not as the reader reaching for the pointer: touchpads drip
+/// sub-pixel motions through the whole two-finger gesture (2.9, field
+/// report round 2).
+const CURSOR_SCROLL_GRACE: std::time::Duration = std::time::Duration::from_millis(160);
+
+/// Below this fraction of a chapter the back arrow jumps to the previous
+/// chapter; above it the arrow "rewinds" to the start of the current one
+/// first — the two-step unwind the reader asked for.
+const CHAPTER_START_EPS: f64 = 0.01;
+/// Tick of the hold-to-scroll timer in strip mode.
+const HOLD_TICK_MS: u64 = 20;
+/// Pixels per hold tick: ~750 px a second at default speed, smooth to the eye.
+const HOLD_STEP: f32 = 15.0;
+/// One arrow key in scrolled mode at default speed: 45 px = ~1.5 lines of text.
+const ARROW_STEP: f32 = 45.0;
 /// Where a chapter's length is guessed from before it is laid out: a
 /// starting density in CSS px per character, replaced by the real one as
 /// soon as one chapter has been. Literata at 17 px in a 620 px column
@@ -103,22 +131,6 @@ pub struct ReadingPosition {
     pub fraction: f64,
 }
 
-/// A word the reader tapped, for the dictionary popover.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TappedWord {
-    /// The word itself, trimmed, as the page shows it.
-    pub word: String,
-    /// The sentence around it, for sense ranking — what Kalam's
-    /// `sentenceAroundText` produced from the DOM.
-    pub sentence: String,
-    /// Where the word sits, in widget coordinates, so a popover can point
-    /// at it.
-    pub rect: Rect,
-    /// Kalam's id of the highlight the word sits in, if any — the tap
-    /// that means "this highlight" (recolour, delete) rather than "this
-    /// word" (look it up). Kalam decides which; the widget reports both.
-    pub highlight: Option<i64>,
-}
 
 /// A text selection the reader finished, for the copy/highlight/lookup
 /// chip.
@@ -136,10 +148,23 @@ pub struct SelectedText {
     pub end_rect: Rect,
 }
 
+/// A paragraph tapped while proofreading is on (Phase 6.7): the
+/// paragraph's editing identity — its extraction text and its
+/// neighbours' — and the union rect of its visible lines in widget
+/// coordinates, where the editor opens. Fired only in proofreading
+/// mode; the paragraph is also selected, so the selection's moved-rect
+/// stream carries the editor's anchor from the next frame on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParagraphTap {
+    pub identity: chapbook_reader::ParagraphIdentity,
+    pub rect: Rect,
+}
+
 /// A match result from searching text across the book.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchResult {
     pub chapter: usize,
+    pub chapter_title: Option<String>,
     pub char_offset: u32,
     pub snippet: String,
     pub locator: LayeredLocator,
@@ -158,6 +183,20 @@ pub struct ReaderOptions {
     /// bytes. `None` is [`DEFAULT_CACHE_BUDGET`] (32 MB), not the engine's
     /// own, comic-sized default.
     pub cache_budget: Option<usize>,
+    /// A folder of the reader's own typefaces, scanned recursively and
+    /// loaded after the bundled faces (roadmap 2.8). `None` — the default
+    /// — loads nothing but what the widget ships with.
+    ///
+    /// Faces are read when a book opens, so a file dropped in shows up in
+    /// the typeface picker on the next open, not the next page turn.
+    pub fonts_dir: Option<std::path::PathBuf>,
+    /// A host byte filter over the EPUB's entries — Kalam's pending-edit
+    /// seam (Phase 6). Unset — the default — reads the book exactly as it
+    /// sits on disk. When set, every chapter the widget lays out is the
+    /// filter's view of the entry, and locator resolution re-anchors over
+    /// the edits instead of trusting stored offsets. See
+    /// [`chapbook_reader::EntryFilter`].
+    pub entry_filter: chapbook_reader::EntryFilter,
 }
 
 /// How the book is shown: one page at a time, or as one long strip.
@@ -173,10 +212,20 @@ pub enum ReadingMode {
 }
 
 type PositionCallback = dyn Fn(&ReadingPosition);
-type WordCallback = dyn Fn(&TappedWord);
 type SelectionCallback = dyn Fn(Option<&SelectedText>);
 type LinkCallback = dyn Fn(&str);
+type NoteCallback = dyn Fn(&str, &str, f64, f64) -> bool;
 type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
+type HighlightTapCallback = dyn Fn(i64, f64, f64);
+type WordTapCallback = dyn Fn(&str, f64, f64);
+/// A proofread paragraph tap: the identity when the tapped paragraph is
+/// editable, `None` when the chapter will not yield one (image books, a
+/// chapter that will not parse).
+type ParagraphTapCallback = dyn Fn(Option<ParagraphTap>);
+type WordHoverCallback = dyn Fn(Option<&str>, f64, f64);
+/// Told where the selection ended up after a layout: its union rect in
+/// widget coordinates, or `None` when it is not on screen.
+type SelectionMovedCallback = dyn Fn(Option<Rect>);
 
 /// Callbacks a shell installs. All run on the GTK main thread, from inside
 /// the widget's own handlers — keep them quick, or defer to an idle. A
@@ -186,15 +235,20 @@ type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
 #[derive(Default)]
 struct Callbacks {
     position: Option<Box<PositionCallback>>,
-    word: Option<Box<WordCallback>>,
     selection: Option<Box<SelectionCallback>>,
     link: Option<Box<LinkCallback>>,
+    note: Option<Box<NoteCallback>>,
     image_tap: Option<Box<ImageTapCallback>>,
+    highlight_tap: Option<Box<HighlightTapCallback>>,
+    word_tap: Option<Box<WordTapCallback>>,
+    paragraph_tap: Option<Box<ParagraphTapCallback>>,
+    word_hover: Option<Box<WordHoverCallback>>,
+    selection_moved: Option<Box<SelectionMovedCallback>>,
 }
 
 struct Inner {
     session: RefCell<Session>,
-    prefs: Cell<KalamPrefs>,
+    prefs: RefCell<KalamPrefs>,
     callbacks: RefCell<Callbacks>,
     /// Last position reported, so a repaint that moved nothing says
     /// nothing.
@@ -205,6 +259,29 @@ struct Inner {
     keys: KeyMap,
     zones: TapZones,
     mode: Cell<ReadingMode>,
+    /// Facing pages when there is room, or one page at a time. On by
+    /// default: what the reader has always done.
+    dual_page: Cell<bool>,
+    /// Whether an idle pointer hides itself (roadmap 2.9).
+    hide_cursor: Cell<bool>,
+    /// The pending hide, so a movement can cancel it.
+    cursor_timer: RefCell<Option<gtk::glib::SourceId>>,
+    /// When the last scroll event arrived; motions inside the grace window
+    /// after it are the touchpad dripping, not a reach for the pointer.
+    last_scroll: Cell<std::time::Instant>,
+    /// The arrow-key the reader last chapter-stepped with: `Some(true)` =
+    /// forward, `Some(false)` = back. Pressing the opposite arrow right
+    /// after is "take me back", answered by the session's own trail;
+    /// anything in between (a page turn, a scroll, another jump) clears it.
+    last_chapter_step: Cell<Option<bool>>,
+    /// Hold-to-scroll timers for the arrow keys in strip mode: holding an
+    /// arrow moves the text in a smooth stream instead of repeated hops.
+    hold_up: RefCell<Option<gtk::glib::SourceId>>,
+    hold_down: RefCell<Option<gtk::glib::SourceId>>,
+    /// CSS px one arrow key scrolls in scrolled mode.
+    arrow_step: Cell<f32>,
+    /// CSS px one wheel notch scrolls in scrolled mode.
+    wheel_step: Cell<f32>,
     /// The strip, in scrolled mode; `None` in paged mode and before the
     /// first scrolled draw.
     strip: RefCell<Option<Strip>>,
@@ -218,9 +295,20 @@ struct Inner {
     /// in one chapter's text and moving the session out of that chapter
     /// would drop it.
     dragging: Cell<bool>,
+    /// Proofreading mode (Phase 6.7): a tap on text asks to edit the
+    /// paragraph under it rather than doing the tap's usual work.
+    proofreading: Cell<bool>,
     /// The handles as last painted, widget coordinates — what the next
     /// press is tested against. `None` without a selection on screen.
     handles: Cell<Option<[Handle; 2]>>,
+    /// The selection's union rect as last laid out, widget coordinates:
+    /// what the chip anchors to and the inline editor follows. `None`
+    /// without a selection on screen. Set by [`Self::place_handles`],
+    /// told to the shell by [`Self::report_selection_moved`].
+    selection_rect: Cell<Option<Rect>>,
+    /// The last rect the shell was told about, so a repaint that moved
+    /// nothing says nothing — same shape as `last_reported`.
+    selection_rect_reported: Cell<Option<Rect>>,
     /// The named cursor the area shows, so motion events set it only
     /// when it changes. `None` is the default arrow.
     cursor: Cell<Option<&'static str>>,
@@ -273,9 +361,19 @@ impl ReaderView {
         options: &ReaderOptions,
     ) -> chapbook_core::Result<ReaderView> {
         let budget = options.cache_budget.unwrap_or(DEFAULT_CACHE_BUDGET);
-        let config = SessionConfig::new(crate::fonts::font_source(options.host_fonts))
+        let config = SessionConfig::new(crate::fonts::font_source(
+            options.host_fonts,
+            options.fonts_dir.clone(),
+        ))
             .with_cache_budget(budget);
         let mut session = Session::open_with(path.as_ref(), config)?;
+        // The host's virtual-edit seam, if it brought one (Phase 6). Set
+        // before anything is read — the same rule as the settings below —
+        // so the first layout parses the filtered view, never the raw
+        // bytes, and never lays anything out twice.
+        if options.entry_filter.is_set() {
+            session.set_entry_filter(options.entry_filter.clone());
+        }
         // Kalam's settings, before the first layout, so nothing is laid
         // out twice. The scope is a formality now that the engine keeps
         // no records of its own.
@@ -319,17 +417,29 @@ impl ReaderView {
             area,
             inner: Rc::new(Inner {
                 session: RefCell::new(session),
-                prefs: Cell::new(prefs.clamped()),
+                prefs: RefCell::new(prefs.clamped()),
                 callbacks: RefCell::new(Callbacks::default()),
                 last_reported: RefCell::new(None),
                 last_size: Cell::new((0, 0, 0)),
                 keys,
                 zones,
                 mode: Cell::new(ReadingMode::Paged),
+                dual_page: Cell::new(true),
+                hide_cursor: Cell::new(true),
+                last_scroll: Cell::new(std::time::Instant::now()),
+                last_chapter_step: Cell::new(None),
+                hold_up: RefCell::new(None),
+                hold_down: RefCell::new(None),
+                cursor_timer: RefCell::new(None),
+                arrow_step: Cell::new(ARROW_STEP),
+                wheel_step: Cell::new(WHEEL_STEP),
                 strip: RefCell::new(None),
                 pending_jump: Cell::new(false),
                 dragging: Cell::new(false),
+                proofreading: Cell::new(false),
                 handles: Cell::new(None),
+                selection_rect: Cell::new(None),
+                selection_rect_reported: Cell::new(None),
                 cursor: Cell::new(None),
                 reading_offset: Cell::new(None),
                 vadjustment: gtk::Adjustment::new(0.0, 0.0, 0.0, ARROW_STEP as f64, 0.0, 0.0),
@@ -364,6 +474,100 @@ impl ReaderView {
 
     pub fn mode(&self) -> ReadingMode {
         self.inner.mode.get()
+    }
+
+    /// Facing pages, or one page at a time (roadmap 2.7).
+    ///
+    /// On — the default, and all the reader has ever done — a window wide
+    /// enough shows two pages side by side. Off shows one page however
+    /// wide the window is.
+    pub fn set_dual_page(&self, on: bool) {
+        if self.inner.dual_page.replace(on) == on {
+            return;
+        }
+        // Page metrics are rebuilt from the width on every draw, so a
+        // redraw is the whole relayout. The left page of a spread is the
+        // session's page, which is where a single page picks up.
+        self.jumped();
+    }
+
+    pub fn dual_page(&self) -> bool {
+        self.inner.dual_page.get()
+    }
+
+    /// Hide the pointer when it sits still (roadmap 2.9). Turning it off
+    /// brings the pointer back at once and cancels any pending hide.
+    pub fn set_autohide_cursor(&self, on: bool) {
+        if self.inner.hide_cursor.replace(on) == on {
+            return;
+        }
+        if on {
+            self.arm_cursor_timer();
+        } else {
+            self.disarm_cursor_timer();
+            self.set_cursor(None);
+        }
+    }
+
+    pub fn autohide_cursor(&self) -> bool {
+        self.inner.hide_cursor.get()
+    }
+
+    /// How far one arrow key step scrolls in scrolled mode, in CSS px.
+    /// Also scales the hold-to-scroll glide speed (hold_step = arrow_step / 3).
+    pub fn set_arrow_step(&self, px: f32) {
+        let step = px.clamp(10.0, 200.0);
+        self.inner.arrow_step.set(step);
+        self.inner.vadjustment.set_step_increment(f64::from(step));
+    }
+
+    pub fn arrow_step(&self) -> f32 {
+        self.inner.arrow_step.get()
+    }
+
+    /// How far one wheel notch scrolls, in CSS px (roadmap 2.9). Clamped:
+    /// below a line or two the wheel feels broken, above a screenful it is
+    /// unusable.
+    pub fn set_wheel_step(&self, px: f32) {
+        self.inner.wheel_step.set(px.clamp(20.0, 400.0));
+    }
+
+    pub fn wheel_step(&self) -> f32 {
+        self.inner.wheel_step.get()
+    }
+
+    /// Arm the hide-the-pointer timer: [`CURSOR_HIDE_SECS`] after the
+    /// pointer last moved, the cursor goes. Called on every motion, so it
+    /// stays while the reader moves it and gets out of the way when they
+    /// read.
+    fn arm_cursor_timer(&self) {
+        if !self.inner.hide_cursor.get() {
+            return;
+        }
+        self.disarm_cursor_timer();
+        let view = self.clone();
+        let id = gtk::glib::timeout_add_local_once(
+            std::time::Duration::from_secs(CURSOR_HIDE_SECS),
+            move || {
+                view.inner.cursor_timer.borrow_mut().take();
+                view.set_cursor(Some("none"));
+            },
+        );
+        *self.inner.cursor_timer.borrow_mut() = Some(id);
+    }
+
+    fn disarm_cursor_timer(&self) {
+        if let Some(id) = self.inner.cursor_timer.borrow_mut().take() {
+            id.remove();
+        }
+    }
+
+    /// Whether the reader is showing facing pages at this width: paged
+    /// mode, the toggle on, and room for two columns worth reading.
+    fn spread_at(&self, width: i32) -> bool {
+        self.mode() == ReadingMode::Paged
+            && self.inner.dual_page.get()
+            && width > SPREAD_MIN_WIDTH_PX
     }
 
     /// Show the book one page at a time or as one strip. The reading
@@ -443,30 +647,41 @@ impl ReaderView {
         self.inner.callbacks.borrow_mut().position = Some(Box::new(f));
     }
 
-    /// Called when the reader taps a word (press and release without
-    /// moving, on text). Connecting this makes a tap on text a word
-    /// event instead of a page turn; a host that has no tap-to-look-up
-    /// (Kalam, since it removed the feature) simply never connects it.
-    pub fn connect_word(&self, f: impl Fn(&TappedWord) + 'static) {
-        self.inner.callbacks.borrow_mut().word = Some(Box::new(f));
-    }
-
-    /// Disconnect the single-tap word lookup handler so taps on text turn pages.
-    pub fn disconnect_word(&self) {
-        self.inner.callbacks.borrow_mut().word = None;
-    }
-
     /// Called when a drag-selection ends with text in it (`Some`), and
     /// when the selection is cleared (`None`) — show and hide the chip.
     pub fn connect_selection(&self, f: impl Fn(Option<&SelectedText>) + 'static) {
         self.inner.callbacks.borrow_mut().selection = Some(Box::new(f));
     }
 
+    /// Called after every draw that moved the selection's rect: where the
+    /// selected text now sits in widget coordinates (`None` when the
+    /// selection is gone or scrolled off screen). What the selection chip
+    /// anchors to, and what the inline editor (phase 6.4) follows as the
+    /// reader scrolls mid-edit. Fired from an idle after the draw, and
+    /// only on change — a repaint that moved nothing says nothing.
+    pub fn connect_selection_moved(&self, f: impl Fn(Option<Rect>) + 'static) {
+        self.inner.callbacks.borrow_mut().selection_moved = Some(Box::new(f));
+    }
+
     /// Called for a link the engine will not follow itself — anything
-    /// with a scheme (`https://…`, `mailto:`). Internal links (footnotes,
-    /// cross-references) are followed in place and never reported.
+    /// with a scheme (`https://…`, `mailto:`). An internal link the shell
+    /// declines in [`Self::connect_note`] lands here too.
     pub fn connect_external_link(&self, f: impl Fn(&str) + 'static) {
         self.inner.callbacks.borrow_mut().link = Some(Box::new(f));
+    }
+
+    /// Offered an internal link's note text before the reader moves — a
+    /// footnote popover's chance to answer in place. Arguments are the
+    /// href, the note as plain text, and the press in the drawing area's
+    /// coordinates, so a shell can point a popover at the marker that was
+    /// tapped. Return `true` when the shell showed it: the reader then
+    /// stays where it is. `false` — or no callback installed — follows the
+    /// link as before.
+    ///
+    /// Runs with the session unborrowed, so the callback may read the
+    /// view; keep it quick all the same.
+    pub fn connect_note(&self, f: impl Fn(&str, &str, f64, f64) -> bool + 'static) {
+        self.inner.callbacks.borrow_mut().note = Some(Box::new(f));
     }
 
     /// Called when the reader taps an image on the page, with width, height and RGBA8 bytes.
@@ -474,10 +689,52 @@ impl ReaderView {
         self.inner.callbacks.borrow_mut().image_tap = Some(Box::new(f));
     }
 
+    /// Called when the user clicks or taps an existing highlight on the page.
+    pub fn connect_highlight_tap(&self, f: impl Fn(i64, f64, f64) + 'static) {
+        self.inner.callbacks.borrow_mut().highlight_tap = Some(Box::new(f));
+    }
+
+    /// Called when the user clicks a Word Memory vocabulary word with dotted underline.
+    pub fn connect_word_tap(&self, f: impl Fn(&str, f64, f64) + 'static) {
+        self.inner.callbacks.borrow_mut().word_tap = Some(Box::new(f));
+    }
+
+    /// Called when the pointer hovers over a Word Memory word (Some(word)) or moves away (None).
+    pub fn connect_word_hover(&self, f: impl Fn(Option<&str>, f64, f64) + 'static) {
+        self.inner.callbacks.borrow_mut().word_hover = Some(Box::new(f));
+    }
+
+    /// Called when a proofread tap lands on — or fails to yield — an
+    /// editable paragraph (Phase 6.7). `Some` carries the identity and
+    /// the rect the editor opens over; `None` means the chapter has no
+    /// paragraph there to edit. Only fires while
+    /// [`ReaderView::set_proofreading`] is on.
+    pub fn connect_paragraph_tap(&self, f: impl Fn(Option<ParagraphTap>) + 'static) {
+        self.inner.callbacks.borrow_mut().paragraph_tap = Some(Box::new(f));
+    }
+
+    /// Proofreading mode (Phase 6.7): on, a tap on text asks to edit the
+    /// paragraph under it. The flag is view state, nothing persists it.
+    pub fn set_proofreading(&self, on: bool) {
+        self.inner.proofreading.replace(on);
+    }
+
+    /// Whether proofreading mode is on — for shells that sync their
+    /// chrome toggle against it.
+    pub fn proofreading(&self) -> bool {
+        self.inner.proofreading.get()
+    }
+
+    /// Set the vocabulary words list for Word Memory dotted underlines.
+    pub fn set_word_memory(&self, words: impl IntoIterator<Item = String>) {
+        self.inner.session.borrow_mut().set_word_memory(words);
+        self.area.queue_draw();
+    }
+
     // ---- Preferences ----
 
     pub fn prefs(&self) -> KalamPrefs {
-        self.inner.prefs.get()
+        self.inner.prefs.borrow().clone()
     }
 
     /// Apply new preferences. Relayout keeps the reading position (the
@@ -485,10 +742,10 @@ impl ReaderView {
     /// the position callback fires with the new page numbers.
     pub fn set_prefs(&self, prefs: KalamPrefs) {
         let prefs = prefs.clamped();
-        let old = self.inner.prefs.replace(prefs);
-        if old == prefs {
+        if *self.inner.prefs.borrow() == prefs {
             return;
         }
+        self.inner.prefs.replace(prefs.clone());
         {
             let mut s = self.inner.session.borrow_mut();
             s.set_settings(
@@ -529,6 +786,40 @@ impl ReaderView {
         });
     }
 
+    /// Choose the body typeface; `None` or blank restores Kalam's default.
+    pub fn set_font_family(&self, family: Option<String>) {
+        self.set_prefs(KalamPrefs {
+            font_family: family.filter(|f| !f.trim().is_empty()),
+            ..self.prefs()
+        });
+    }
+
+    pub fn set_justify(&self, justify: bool) {
+        self.set_prefs(KalamPrefs {
+            justify,
+            ..self.prefs()
+        });
+    }
+
+    pub fn set_hyphenate(&self, hyphenate: bool) {
+        self.set_prefs(KalamPrefs {
+            hyphenate,
+            ..self.prefs()
+        });
+    }
+
+    pub fn set_publisher_styles(&self, on: bool) {
+        self.set_prefs(KalamPrefs {
+            publisher_styles: on,
+            ..self.prefs()
+        });
+    }
+
+    /// The installed typefaces the engine can offer in a picker.
+    pub fn font_families(&self) -> Vec<String> {
+        self.inner.session.borrow().font_families()
+    }
+
     // ---- Navigation ----
 
     /// Forward a page. In scrolled mode, most of a viewport down.
@@ -547,6 +838,113 @@ impl ReaderView {
 
     pub fn prev_chapter(&self) {
         self.apply(Action::PrevUnit);
+    }
+
+    /// Follow a document-internal link the way a tap on the page does:
+    /// the escape hatch a footnote popover offers after showing the note
+    /// in place. An external link is the shell's, and comes back `false`
+    /// untouched.
+    pub fn follow_link(&self, href: &str) -> bool {
+        let moved = self.inner.session.borrow_mut().follow_link(href);
+        if moved {
+            self.jumped();
+        }
+        moved
+    }
+
+    /// Back to where the last jump started. The engine keeps the trail —
+    /// every `goto`, link follow and TOC entry pushes onto it — so this is
+    /// the return trip, however many jumps deep. `false` with nothing to
+    /// go back to.
+    /// One arrow-key chapter step (roadmap 2.9, third keyboard pass).
+    /// Forward (`next = true`) always lands on the next chapter's start.
+    /// Back first rewinds to the current chapter's start if the reader is
+    /// inside it, and only on a second press crosses into the previous
+    /// chapter. Pressing the opposite arrow right after any step is "take
+    /// me back" and is answered by the session trail; anything else
+    /// happening in between clears that notion.
+    fn chapter_step(&self, next: bool) {
+        let last = self.inner.last_chapter_step.get();
+        if last == Some(!next) && self.can_go_back() {
+            let _ = self.go_back();
+            self.inner.last_chapter_step.set(None);
+            return;
+        }
+        let pos = self.position();
+        let target = if next {
+            pos.chapter.saturating_add(1)
+        } else if pos.fraction > CHAPTER_START_EPS {
+            pos.chapter
+        } else {
+            pos.chapter.saturating_sub(1)
+        };
+        if next && target >= pos.chapter_count {
+            return;
+        }
+        if self.goto_chapter(target, 0.0) {
+            self.inner.last_chapter_step.set(Some(next));
+        }
+    }
+
+    /// Start (or ignore a repeat of) a held arrow scroll in strip mode.
+    /// The first press nudges by one step; the timer takes the motion over
+    /// so holding glides smoothly instead of hopping.
+    fn arrow_scroll_hold_start(&self, up: bool) {
+        let hold = if up { &self.inner.hold_up } else { &self.inner.hold_down };
+        if hold.borrow().is_some() {
+            return; // a repeat of the key we're already holding
+        }
+        let step = self.arrow_step();
+        let pix = if up { -step } else { step };
+        let _ = self.scroll_by(pix);
+        self.inner.last_chapter_step.set(None);
+        let view = self.clone();
+        let dir = if up { -1.0_f32 } else { 1.0_f32 };
+        let id = gtk::glib::timeout_add_local(
+            std::time::Duration::from_millis(HOLD_TICK_MS),
+            move || {
+                // Stop when the mode flips or the widget goes away.
+                if view.mode() != ReadingMode::Scrolled || !view.area.is_realized() {
+                    if up {
+                        view.inner.hold_up.borrow_mut().take();
+                    } else {
+                        view.inner.hold_down.borrow_mut().take();
+                    }
+                    return gtk::glib::ControlFlow::Break;
+                }
+                let current_step = view.arrow_step();
+                let hold_step = (current_step * (HOLD_STEP / ARROW_STEP)).max(1.0);
+                let _ = view.scroll_by(dir * hold_step);
+                gtk::glib::ControlFlow::Continue
+            },
+        );
+        *hold.borrow_mut() = Some(id);
+    }
+
+    fn arrow_scroll_hold_stop(&self, up: bool) {
+        let hold = if up { &self.inner.hold_up } else { &self.inner.hold_down };
+        if let Some(id) = hold.borrow_mut().take() {
+            id.remove();
+        }
+    }
+
+    pub fn go_back(&self) -> bool {
+        let moved = self.inner.session.borrow_mut().back();
+        if moved {
+            self.jumped();
+        }
+        moved
+    }
+
+    /// Whether the last jump has somewhere to return to.
+    pub fn can_go_back(&self) -> bool {
+        self.inner.session.borrow().can_go_back()
+    }
+
+    /// How many jumps are waiting to be undone — the signal that lets a
+    /// shell notice a jump, including one the engine made by itself.
+    pub fn back_depth(&self) -> usize {
+        self.inner.session.borrow().back_depth()
     }
 
     /// Jump to a chapter and a fraction of the way through it — Kalam's
@@ -635,7 +1033,6 @@ impl ReaderView {
     /// The current selection's text, if any — as a person would type it:
     /// the publisher's soft hyphens and zero-width spaces are gone and
     /// whitespace is collapsed, the same as the text in a `NewHighlight`
-    /// and a `TappedWord`.
     pub fn selected_text(&self) -> Option<String> {
         self.inner
             .session
@@ -654,7 +1051,7 @@ impl ReaderView {
     /// Search for text across every chapter in the book.
     pub fn search(&self, query: &str) -> Vec<SearchResult> {
         let query_trimmed = query.trim();
-        if query_trimmed.is_empty() {
+        if query_trimmed.chars().count() < 2 {
             return Vec::new();
         }
         let s = self.inner.session.borrow();
@@ -662,23 +1059,36 @@ impl ReaderView {
         let chapter_count = s.spine_len();
         let mut results = Vec::new();
 
+        // Map chapter index to friendly TOC title if available
+        let mut chapter_titles: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+        fn collect_toc_titles(entries: &[chapbook_core::TocEntry], map: &mut std::collections::HashMap<usize, String>) {
+            for e in entries {
+                if let Some(idx) = e.spine_index {
+                    map.entry(idx).or_insert_with(|| e.label.clone());
+                }
+                collect_toc_titles(&e.children, map);
+            }
+        }
+        collect_toc_titles(s.toc(), &mut chapter_titles);
+
         for spine in 0..chapter_count {
+            if results.len() >= 500 {
+                break;
+            }
             if let Some(text) = s.cached_unit_text(spine) {
                 let text_lower = text.to_lowercase();
 
                 // Collect chars **once per chapter**, outside the match loop.
-                // Previously `text.chars().collect()` was called inside the
-                // `match_indices` loop — 100 matches of "the" in a long chapter
-                // meant 100 full heap allocations of the chapter's characters.
                 let chars: Vec<char> = text.chars().collect();
 
                 // Compute match length once per query (it is constant).
                 let match_len = query_trimmed.chars().count() as u32;
+                let ch_title = chapter_titles.get(&spine).cloned();
 
                 for (byte_idx, _) in text_lower.match_indices(&query_lower) {
-                    // `text[..byte_idx].chars().count()` is still O(N) per match
-                    // but is the standard correct approach for byte→char conversion
-                    // when the text is already cached in memory.
+                    if results.len() >= 500 {
+                        break;
+                    }
                     let char_offset = text[..byte_idx].chars().count() as u32;
                     let end_offset = char_offset + match_len;
 
@@ -703,6 +1113,7 @@ impl ReaderView {
 
                     results.push(SearchResult {
                         chapter: spine,
+                        chapter_title: ch_title.clone(),
                         char_offset,
                         snippet: snippet_chars,
                         locator,
@@ -720,6 +1131,15 @@ impl ReaderView {
     /// with the row's id — that id is the handle for everything after.
     /// `None` without a selection.
     pub fn capture_highlight(&self, color: HighlightColor) -> Option<NewHighlight> {
+        self.capture_highlight_with_style(color, "solid")
+    }
+
+    /// Capture the current selection with a specific style (solid, underline, squiggly, strikeout).
+    pub fn capture_highlight_with_style(
+        &self,
+        color: HighlightColor,
+        style: &str,
+    ) -> Option<NewHighlight> {
         let result = {
             let mut s = self.inner.session.borrow_mut();
             let (start, end) = s.selected_range()?;
@@ -729,6 +1149,7 @@ impl ReaderView {
             s.selection_clear();
             NewHighlight {
                 color,
+                style: style.to_string(),
                 text,
                 start: start_locator,
                 end: end_locator,
@@ -776,6 +1197,15 @@ impl ReaderView {
         self.area.queue_draw();
     }
 
+    /// Update a shown highlight's color and style.
+    pub fn update_highlight(&self, id: i64, color: HighlightColor, style: &str) {
+        self.inner
+            .session
+            .borrow_mut()
+            .update_host_highlight(id, Some(color.css()), Some(style));
+        self.area.queue_draw();
+    }
+
     /// Stop painting a highlight (Kalam has already deleted its row).
     pub fn remove_highlight(&self, id: i64) {
         self.inner.session.borrow_mut().hide_host_highlight(id);
@@ -798,7 +1228,7 @@ impl ReaderView {
         match self.band_at(y as f32) {
             Some((band, py)) => s.host_highlight_at_page(band.spine, band.page, x as f32, py),
             None if self.mode() == ReadingMode::Paged => {
-                if let Some((spine, page, px, py)) = self.paged_point(&mut *s, x as f32, y as f32) {
+                if let Some((spine, page, px, py)) = self.paged_point(&mut s, x as f32, y as f32) {
                     s.host_highlight_at_page(spine, page, px, py)
                 } else {
                     None
@@ -875,7 +1305,7 @@ impl ReaderView {
                 _ => {}
             }
         }
-        if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+        if self.spread_at(self.area.width()) {
             if action == Action::NextPage {
                 let mut s = self.inner.session.borrow_mut();
                 let spine = s.spine();
@@ -939,20 +1369,12 @@ impl ReaderView {
         self.inner.strip.borrow().as_ref()?.widget_to_page(y)
     }
 
-    /// A page-space rect on `band`'s page, in widget coordinates.
-    fn to_widget_rect(&self, band: &Band, rect: Rect) -> Rect {
-        match self.inner.strip.borrow().as_ref() {
-            Some(strip) => strip.to_widget(band, rect),
-            None => rect,
-        }
-    }
-
     /// Map widget (x, y) coordinates to (spine, page, local_x, local_y) in paged mode.
-    /// In dual-page spread (>900px), points on the right half map to page + 1 with local_x = x - single_w.
+    /// In a facing-page spread, points on the right half map to page + 1 with local_x = x - single_w.
     fn paged_point(&self, s: &mut Session, x: f32, y: f32) -> Option<(usize, usize, f32, f32)> {
         let spine = s.spine();
         let page = s.page();
-        if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+        if self.spread_at(self.area.width()) {
             let single_w = (self.area.width() as f32 / 2.0).floor();
             let page_count = s.page_extents(spine).len();
             if x >= single_w {
@@ -985,7 +1407,7 @@ impl ReaderView {
                 })
                 .collect(),
             None => {
-                if self.mode() == ReadingMode::Paged && self.area.width() > 900 {
+                if self.spread_at(self.area.width()) {
                     let single_w = (self.area.width() as f32 / 2.0).floor();
                     let page_left = s.page();
                     let page_right = page_left + 1;
@@ -1070,8 +1492,24 @@ impl ReaderView {
     fn after_draw(&self) {
         self.sync_adjustment();
         self.report_position();
+        self.report_selection_moved();
         self.schedule_char_count();
         self.schedule_prefetch();
+    }
+
+    /// Tell the shell when the selection's rect moved — the chip and the
+    /// inline editor both anchor to it. Runs from the same idle as the
+    /// position report, after the frame that moved it is on screen: by
+    /// the time the shell repositions anything, the text it is anchoring
+    /// to is already where it belongs, so nothing visibly swims.
+    fn report_selection_moved(&self) {
+        let rect = self.inner.selection_rect.get();
+        if self.inner.selection_rect_reported.replace(rect) == rect {
+            return;
+        }
+        if let Some(cb) = &self.inner.callbacks.borrow().selection_moved {
+            cb(rect);
+        }
     }
 
     /// Count the book's characters once, in an idle after the first
@@ -1186,7 +1624,7 @@ impl ReaderView {
             value,
             0.0,
             upper,
-            f64::from(ARROW_STEP),
+            f64::from(self.arrow_step()),
             page * f64::from(PAGE_SCROLL_FRACTION),
             page,
         );
@@ -1211,7 +1649,7 @@ impl ReaderView {
             s.selected_range().and_then(|(start, end)| {
                 let text = readable(&s.selected_text()?);
                 let spine = s.spine();
-                let rects = self.widget_rects(&mut *s, spine, start, end);
+                let rects = self.widget_rects(&mut s, spine, start, end);
                 let rect = union(&rects)?;
                 let (start_rect, end_rect) = ends(&rects)?;
                 Some(SelectedText {
@@ -1232,14 +1670,23 @@ impl ReaderView {
     /// — without a selection, or with one whose lines are all off screen
     /// (scrolled away in a strip).
     fn place_handles(&self, s: &mut Session) -> Option<[Handle; 2]> {
-        let handles = s.selected_range().and_then(|(start, end)| {
+        let placed = s.selected_range().and_then(|(start, end)| {
             let spine = s.spine();
             let rects = self.widget_rects(s, spine, start, end);
             let (first, last) = ends(&rects)?;
-            Some(Handle::pair(first, last))
+            let rect = union(&rects)?;
+            Some((Handle::pair(first, last), rect))
         });
-        self.inner.handles.set(handles);
-        handles
+        self.inner.handles.set(placed.as_ref().map(|(h, _)| *h));
+        // Where the selection sits this frame — the chip's anchor, and
+        // what the inline editor follows on scroll. Not told to the shell
+        // here (a callback fired mid-draw could queue another draw and
+        // the two would chase); `report_selection_moved`, from the idle
+        // after this frame, picks it up.
+        self.inner
+            .selection_rect
+            .set(placed.as_ref().map(|(_, r)| *r));
+        placed.map(|(h, _)| h)
     }
 
     /// Report the position if it moved since last time. Called from an
@@ -1273,7 +1720,7 @@ impl ReaderView {
                 log::info!("page area {width}x{height} at {}x", size.2);
             }
             let scale = size.2 as f32;
-            let prefs = view.inner.prefs.get();
+            let prefs = view.inner.prefs.borrow().clone();
             // The column: never wider than Kalam's `column_px`, centred
             // when the widget is wider than that, with at least the
             // minimum side margin when it is narrower.
@@ -1292,7 +1739,7 @@ impl ReaderView {
             let pixmap = match view.mode() {
                 ReadingMode::Paged => {
                     let mut s = view.inner.session.borrow_mut();
-                    if width > 900 {
+                    if view.spread_at(width) {
                         let single_w = (width as f32 / 2.0).floor();
                         let side = ((single_w - prefs.column_px).max(0.0) / 2.0).max(MARGIN_SIDE_MIN);
                         let single_metrics = PageMetrics {
@@ -1353,7 +1800,7 @@ impl ReaderView {
                             }
 
                             // Subtle spine divider line down center
-                            let spine_x = (single_w * scale) as f32;
+                            let spine_x = single_w * scale;
                             let mut spine_paint = tiny_skia::Paint::default();
                             let spine_color = if prefs.theme.is_dark() {
                                 chapbook_core::Rgba::new(255, 255, 255, 25)
@@ -1365,7 +1812,7 @@ impl ReaderView {
                                 comb.fill_rect(rect, &spine_paint, tiny_skia::Transform::identity(), None);
                             }
 
-                            if let Some(handles) = view.place_handles(&mut *s) {
+                            if let Some(handles) = view.place_handles(&mut s) {
                                 handles::paint(comb, &handles, prefs.theme.handle(), scale);
                             }
                         }
@@ -1553,7 +2000,7 @@ impl ReaderView {
         let dividers = strip.visible_dividers();
         if !dividers.is_empty() {
             let style = DividerStyle {
-                font_px: self.inner.prefs.get().font_px,
+                font_px: self.inner.prefs.borrow().font_px,
                 foreground: s.settings().palette().foreground,
                 background,
             };
@@ -1584,7 +2031,7 @@ impl ReaderView {
             handles::paint(
                 &mut out,
                 &handles,
-                self.inner.prefs.get().theme.handle(),
+                self.inner.prefs.borrow().theme.handle(),
                 scale,
             );
         }
@@ -1602,21 +2049,43 @@ impl ReaderView {
                     view.clear_selection();
                     return glib::Propagation::Stop;
                 }
-                // In a strip the vertical arrows are lines, not pages;
-                // Home and End are the book's ends.
+                // Arrows, second keyboard pass: in a strip the vertical
+                // pair scrolls (holding glides, not hops) and the
+                // horizontal pair steps chapters; in paged mode it is the
+                // other way around — Left/Right turn pages via the KeyMap,
+                // Up/Down step chapters. PageUp/PageDown keep their KeyMap
+                // paging in both modes. Home/End stay the book's ends.
                 Some("Up") if scrolled => {
-                    let _ = view.scroll_by(-ARROW_STEP);
+                    view.arrow_scroll_hold_start(true);
                     return glib::Propagation::Stop;
                 }
                 Some("Down") if scrolled => {
-                    let _ = view.scroll_by(ARROW_STEP);
+                    view.arrow_scroll_hold_start(false);
+                    return glib::Propagation::Stop;
+                }
+                Some("Left") if scrolled => {
+                    view.chapter_step(false);
+                    return glib::Propagation::Stop;
+                }
+                Some("Right") if scrolled => {
+                    view.chapter_step(true);
+                    return glib::Propagation::Stop;
+                }
+                Some("Up") if !scrolled => {
+                    view.chapter_step(false);
+                    return glib::Propagation::Stop;
+                }
+                Some("Down") if !scrolled => {
+                    view.chapter_step(true);
                     return glib::Propagation::Stop;
                 }
                 Some("Home") if scrolled => {
+                    view.inner.last_chapter_step.set(None);
                     view.scroll_to(0.0);
                     return glib::Propagation::Stop;
                 }
                 Some("End") if scrolled => {
+                    view.inner.last_chapter_step.set(None);
                     view.scroll_to(f32::MAX);
                     return glib::Propagation::Stop;
                 }
@@ -1624,7 +2093,10 @@ impl ReaderView {
                     .and_then(engine_key)
                     .and_then(|k| view.inner.keys.action(k))
                 {
-                    Some(action) => view.apply(action),
+                    Some(action) => {
+                        view.inner.last_chapter_step.set(None);
+                        view.apply(action)
+                    }
                     None => return glib::Propagation::Proceed,
                 },
             };
@@ -1634,6 +2106,14 @@ impl ReaderView {
                 glib::Propagation::Stop
             } else {
                 glib::Propagation::Proceed
+            }
+        });
+        let view = self.clone();
+        key.connect_key_released(move |_, keyval, _, _| {
+            match keyval.name().as_deref() {
+                Some("Up") => view.arrow_scroll_hold_stop(true),
+                Some("Down") => view.arrow_scroll_hold_stop(false),
+                _ => {}
             }
         });
         self.keep_controller(&key);
@@ -1649,11 +2129,29 @@ impl ReaderView {
             if view.mode() != ReadingMode::Scrolled {
                 return glib::Propagation::Proceed;
             }
-            // A wheel reports whole notches; a touchpad reports pixels
-            // already, and says so.
+            // Stamp first: the motions a touchpad drips through a
+            // two-finger scroll must not undo the hide below.
+            view.inner.last_scroll.set(std::time::Instant::now());
+            view.inner.last_chapter_step.set(None);
+            // Scrolling is reading too: a reader who scrolls with a thumb
+            // on the pad still wants the pointer out of the text. Only
+            // motion brings it back (roadmap 2.9, second report).
+            if view.autohide_cursor() {
+                view.set_cursor(Some("none"));
+                view.arm_cursor_timer();
+            }
+            // A wheel reports whole notches; a touchpad reports pixels and
+            // says so via `ScrollUnit::Surface`. Both honour the step
+            // setting: a touchpad's raw pixels are the motion a 92 px step
+            // already gives, so the same ratio scales each — the setting
+            // used to be wheel-only, and a pad ignored it (2.9 field
+            // report).
             let step = match controller.unit() {
-                gtk::gdk::ScrollUnit::Surface => dy as f32,
-                _ => dy as f32 * WHEEL_STEP,
+                gtk::gdk::ScrollUnit::Surface => {
+                    (dy as f32 * (view.wheel_step() / WHEEL_STEP))
+                        .clamp(-SMOOTH_STEP_CAP, SMOOTH_STEP_CAP)
+                }
+                _ => dy as f32 * view.wheel_step(),
             };
             let _ = view.scroll_by(step);
             glib::Propagation::Stop
@@ -1678,7 +2176,7 @@ impl ReaderView {
                         Some((band, py)) => s.select_word_at_page(band.spine, band.page, x, py),
                         None if view.mode() == ReadingMode::Scrolled => false,
                         None => {
-                            if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                            if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
                                 s.select_word_at_page(spine, page, px, py)
                             } else {
                                 false
@@ -1699,7 +2197,7 @@ impl ReaderView {
                         }
                         None if view.mode() == ReadingMode::Scrolled => false,
                         None => {
-                            if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                            if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
                                 s.select_paragraph_at_page(spine, page, px, py)
                             } else {
                                 false
@@ -1771,7 +2269,7 @@ impl ReaderView {
                 let href = match band {
                     Some((band, py)) => s.link_at_page(band.spine, band.page, x, py),
                     None => {
-                        if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
                             s.link_at_page(spine, page, px, py)
                         } else {
                             None
@@ -1779,6 +2277,21 @@ impl ReaderView {
                     }
                 };
                 if let Some(href) = href {
+                    // A footnote, or anything else with text behind a
+                    // fragment: offer it to the shell first, and only move
+                    // the reader when the shell declines. Peeked with the
+                    // session held and called without it — a callback that
+                    // re-entered the view would otherwise deadlock.
+                    let note = s.peek_link(&href);
+                    drop(s);
+                    if let Some(text) = &note {
+                        if let Some(cb) = &view.inner.callbacks.borrow().note {
+                            if cb(&href, text, x as f64, y as f64) {
+                                return;
+                            }
+                        }
+                    }
+                    let mut s = view.inner.session.borrow_mut();
                     if s.follow_link(&href) {
                         drop(s);
                         view.jumped();
@@ -1793,7 +2306,7 @@ impl ReaderView {
                 let image = match band {
                     Some((band, py)) => s.image_at_page(band.spine, band.page, x, py),
                     None => {
-                        if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
                             s.image_at_page(spine, page, px, py)
                         } else {
                             None
@@ -1813,7 +2326,7 @@ impl ReaderView {
                         s.selection_begin_on_page(band.spine, band.page, x, py);
                     }
                     None => {
-                        if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
                             s.selection_begin_on_page(spine, page, px, py);
                         }
                     }
@@ -1843,7 +2356,7 @@ impl ReaderView {
                         // gap or past the last line; keep what it had.
                         None if view.mode() == ReadingMode::Scrolled => return,
                         None => {
-                            if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
+                            if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
                                 s.selection_drag_on_page(spine, page, px, py);
                             }
                         }
@@ -1894,49 +2407,124 @@ impl ReaderView {
                 // The press anchored an empty selection; drop it before
                 // anything else, so the anchor does not outlive the page.
                 s.selection_clear();
-                if had_selection {
+                if had_selection && !view.inner.proofreading.get() {
                     drop(s);
                     view.notify_selection();
                     view.area.queue_draw();
                     return;
                 }
-                // A tap on a word is a dictionary lookup only for a host
-                // that asked for one (`connect_word`); then it takes
-                // precedence over the page-turn zones, so a word near the
-                // edge is still a word. With no word handler a tap on text
-                // is just a tap, and the zones decide what it does.
-                let wants_words = view.inner.callbacks.borrow().word.is_some();
-                let word = match view.band_at(y) {
-                    _ if !wants_words => None,
-                    Some((band, py)) => {
-                        word_at(&mut s, band.spine, band.page, x, py).map(|mut word| {
-                            word.rect = view.to_widget_rect(&band, word.rect);
-                            word
-                        })
+
+                // Proofreading (Phase 6.7): a tap on text asks to edit
+                // the paragraph under it. The paragraph is also
+                // selected — the selection's own rect stream anchors
+                // the editor from the next frame — and the selection is
+                // reported BEFORE the paragraph callback, so an editor
+                // still open commits as the click-away it is before the
+                // new one opens. A tap that lands on no paragraph falls
+                // through to the tap's usual work, after reporting the
+                // selection this tap cleared.
+                if view.inner.proofreading.get() {
+                    let band = view.band_at(y);
+                    let hit = match band {
+                        Some((band, py)) => s
+                            .paragraph_tag_at_page(band.spine, band.page, x, py)
+                            .map(|(start, end, tag)| (band.spine, band.page, start, end, tag)),
+                        None if view.mode() == ReadingMode::Paged => view
+                            .paged_point(&mut s, x, y)
+                            .and_then(|(spine, page, px, py)| {
+                                s.paragraph_tag_at_page(spine, page, px, py)
+                                    .map(|(start, end, tag)| (spine, page, start, end, tag))
+                            }),
+                        None => None,
+                    };
+                    if let Some((spine, page, start, end, tag)) = hit {
+                        s.set_position(spine, page);
+                        s.select_range(start, end);
+                        let identity = s.paragraph_identity(spine, tag);
+                        // Where the editor opens: the paragraph's visible
+                        // lines, the same geometry the selection's
+                        // handles are placed from.
+                        let rects = view.widget_rects(&mut s, spine, start, end);
+                        let rect = union(&rects);
+                        drop(s);
+                        view.notify_selection();
+                        if let Some(cb) = &view.inner.callbacks.borrow().paragraph_tap {
+                            let tap = match (&identity, rect) {
+                                (Some(identity), Some(rect)) => Some(ParagraphTap {
+                                    identity: identity.clone(),
+                                    rect,
+                                }),
+                                _ => None,
+                            };
+                            cb(tap);
+                        }
+                        view.area.queue_draw();
+                        return;
                     }
-                    None if view.mode() == ReadingMode::Scrolled => None,
-                    None => {
-                        if let Some((spine, page, px, py)) = view.paged_point(&mut *s, x, y) {
-                            word_at(&mut s, spine, page, px, py).map(|mut word| {
-                                if view.mode() == ReadingMode::Paged && view.area.width() > 900 && page > s.page() {
-                                    let single_w = (view.area.width() as f32 / 2.0).floor();
-                                    word.rect.origin.x += single_w;
-                                }
-                                word
-                            })
+                    // No paragraph under the tap (a margin, an image):
+                    // fall through — the tap's usual work proceeds.
+                }
+
+                if had_selection {
+                    // A proofread tap that landed on no paragraph still
+                    // cleared the old selection; report that as this
+                    // tap's own act, exactly as a plain tap would have.
+                    drop(s);
+                    view.notify_selection();
+                    view.area.queue_draw();
+                    return;
+                }
+
+                // Check if an existing highlight was tapped
+                let band = view.band_at(y);
+                let tapped_highlight = match band {
+                    Some((band, py)) => s.host_highlight_at_page(band.spine, band.page, x, py),
+                    None if view.mode() == ReadingMode::Paged => {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
+                            s.host_highlight_at_page(spine, page, px, py)
                         } else {
                             None
                         }
                     }
+                    None => None,
                 };
-                if let Some(word) = word {
+                if let Some(hl_id) = tapped_highlight {
                     drop(s);
-                    view.area.queue_draw();
-                    if let Some(cb) = &view.inner.callbacks.borrow().word {
-                        cb(&word);
+                    if let Some(cb) = &view.inner.callbacks.borrow().highlight_tap {
+                        cb(hl_id, x as f64, y as f64);
                     }
                     return;
                 }
+
+                // Check if a Word Memory word with dotted underline was tapped (single click opens full dictionary definition)
+                let tapped_word = match band {
+                    Some((band, py)) => s.word_at_page(band.spine, band.page, x, py),
+                    None if view.mode() == ReadingMode::Paged => {
+                        if let Some((spine, page, px, py)) = view.paged_point(&mut s, x, y) {
+                            s.word_at_page(spine, page, px, py)
+                        } else {
+                            None
+                        }
+                    }
+                    None => None,
+                };
+                if let Some((w_start, w_end)) = tapped_word {
+                    let spine = s.spine();
+                    if let Some(text) = s.cached_unit_text(spine) {
+                        if let Some(raw_word) = char_slice(&text, w_start as usize, w_end as usize) {
+                            let clean = raw_word.trim_matches(|c: char| !c.is_alphanumeric());
+                            if s.is_word_in_memory(clean) {
+                                let word_to_lookup = clean.to_string();
+                                drop(s);
+                                if let Some(cb) = &view.inner.callbacks.borrow().word_tap {
+                                    cb(&word_to_lookup, x as f64, y as f64);
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 // Tap zones turn pages in paged mode only; a strip has no
                 // pages to turn, and the wheel is right there.
                 if view.mode() == ReadingMode::Scrolled {
@@ -1971,12 +2559,56 @@ impl ReaderView {
                 let over = view.inner.handles.get().is_some_and(|handles| {
                     handles::handle_at(&handles, x as f32, y as f32).is_some()
                 });
+                if view.inner.last_scroll.get().elapsed() < CURSOR_SCROLL_GRACE {
+                    view.arm_cursor_timer();
+                    return;
+                }
                 view.set_cursor(over.then_some("grab"));
+                // The pointer is moving, so it stays — and starts the
+                // count towards getting out of the way again.
+                view.arm_cursor_timer();
+
+                // Check hover over Word Memory words
+                let (hover_word, hx, hy) = {
+                    let mut s = view.inner.session.borrow_mut();
+                    let band = view.band_at(y as f32);
+                    let word_span = match band {
+                        Some((band, py)) => s.word_at_page(band.spine, band.page, x as f32, py),
+                        None if view.mode() == ReadingMode::Paged => {
+                            if let Some((spine, page, px, py)) = view.paged_point(&mut s, x as f32, y as f32) {
+                                s.word_at_page(spine, page, px, py)
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    };
+                    let word_found = word_span.and_then(|(start, end)| {
+                        let spine = s.spine();
+                        let text = s.cached_unit_text(spine)?;
+                        let raw = char_slice(&text, start as usize, end as usize)?;
+                        let clean = raw.trim_matches(|c: char| !c.is_alphanumeric());
+                        if s.is_word_in_memory(clean) {
+                            return Some(clean.to_string());
+                        }
+                        None
+                    });
+                    (word_found, x, y)
+                };
+                if let Some(cb) = &view.inner.callbacks.borrow().word_hover {
+                    cb(hover_word.as_deref(), hx, hy);
+                }
             });
         }
         {
             let view = self.clone();
-            motion.connect_leave(move |_| view.set_cursor(None));
+            motion.connect_leave(move |_| {
+                view.disarm_cursor_timer();
+                view.set_cursor(None);
+                if let Some(cb) = &view.inner.callbacks.borrow().word_hover {
+                    cb(None, 0.0, 0.0);
+                }
+            });
         }
         self.keep_controller(&motion);
         self.area.add_controller(motion);
@@ -2033,6 +2665,7 @@ impl ReaderView {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NewHighlight {
     pub color: HighlightColor,
+    pub style: String,
     /// The highlighted text — Kalam's `text_excerpt`.
     pub text: String,
     /// Start and end of the highlighted span as durable locators — the
@@ -2047,6 +2680,7 @@ fn host_highlight(id: i64, h: &NewHighlight) -> HostHighlight {
         start: h.start.clone(),
         end: h.end.clone(),
         color: Some(h.color.css().to_string()),
+        style: Some(h.style.clone()),
         text: Some(h.text.clone()),
     }
 }
@@ -2061,63 +2695,6 @@ fn position_of(s: &mut Session) -> ReadingPosition {
     }
 }
 
-/// The word under a page-space point on `spine`'s `page`, with its
-/// sentence and its rectangle *on that page* — `None` off text or on
-/// punctuation. The caller maps the rect to the widget.
-fn word_at(s: &mut Session, spine: usize, page: usize, x: f32, y: f32) -> Option<TappedWord> {
-    let (start, end) = s.word_at_page(spine, page, x, y)?;
-    let speakable = s.speakable_page_of(spine, page)?;
-    let span = speakable
-        .words
-        .iter()
-        .find(|w| w.locator_start == start && w.locator_end == end)?;
-    let text: Vec<char> = speakable.text.chars().collect();
-    let word: String = text
-        .get(span.text_start as usize..span.text_end as usize)?
-        .iter()
-        .collect();
-    let word = readable(&word);
-    if !word.chars().any(|c| c.is_alphanumeric()) {
-        return None;
-    }
-    let sentence = sentence_around(&text, span.text_start as usize, span.text_end as usize);
-    let sentence = readable(&sentence);
-    let rect = union(&s.range_rects_on_page(spine, page, start, end))?;
-    let highlight = s.host_highlight_at_page(spine, page, x, y);
-    Some(TappedWord {
-        word,
-        sentence,
-        rect,
-        highlight,
-    })
-}
-
-/// The sentence containing `[start, end)` of the page text: back to the
-/// previous sentence end, forward to the next. Capped at 600 chars like
-/// Kalam's own `sentenceAroundText`.
-fn sentence_around(text: &[char], start: usize, end: usize) -> String {
-    const CAP: usize = 600;
-    let is_end = |c: char| matches!(c, '.' | '!' | '?' | '…');
-    let mut from = start;
-    while from > 0 && !is_end(text[from - 1]) {
-        from -= 1;
-    }
-    let mut to = end;
-    while to < text.len() && !is_end(text[to]) {
-        to += 1;
-    }
-    // Keep the closing punctuation.
-    if to < text.len() {
-        to += 1;
-    }
-    let sentence: String = text[from..to].iter().collect();
-    let sentence = sentence.split_whitespace().collect::<Vec<_>>().join(" ");
-    if sentence.chars().count() > CAP {
-        sentence.chars().take(CAP).collect()
-    } else {
-        sentence
-    }
-}
 
 /// Text as a person would type it. Publishers' files are full of invisible
 /// layout hints — soft hyphens inside words (`Har\u{ad}ry`), zero-width
@@ -2244,6 +2821,20 @@ fn engine_key(name: &str) -> Option<Key> {
     })
 }
 
+/// Safely extracts a substring from `text` by character indices `[start_char..end_char)`.
+/// Never panics on UTF-8 multi-byte character boundaries (e.g. em dashes, smart quotes, accents).
+fn char_slice(text: &str, start_char: usize, end_char: usize) -> Option<String> {
+    if start_char >= end_char {
+        return None;
+    }
+    let s: String = text.chars().skip(start_char).take(end_char - start_char).collect();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2259,19 +2850,6 @@ mod tests {
         // A joiner is part of the word in scripts that use it.
         assert_eq!(readable("\u{feff}क\u{94d}\u{200d}ष"), "क\u{94d}\u{200d}ष");
         assert_eq!(readable("  "), "");
-    }
-
-    #[test]
-    fn sentence_is_cut_at_punctuation_and_collapsed() {
-        let text: Vec<char> = "First one. The  bank\nwas closed! Third?".chars().collect();
-        let start = text.iter().position(|&c| c == 'b').unwrap();
-        assert_eq!(
-            sentence_around(&text, start, start + 4),
-            "The bank was closed!"
-        );
-        assert_eq!(sentence_around(&text, 0, 5), "First one.");
-        let last = text.len() - 6;
-        assert_eq!(sentence_around(&text, last, last + 5), "Third?");
     }
 
     #[test]
@@ -2334,5 +2912,21 @@ mod tests {
             vec!["Cover", "Chapter 2", "The Riddle House", "Chapter 4"]
         );
         assert!(chapter_titles(&[], 0).is_empty());
+    }
+
+    #[test]
+    fn test_char_slice_utf8_boundaries() {
+        let text = "He had a headache—the distant thunder.";
+        // '—' is at char offset 17..18 (3 bytes: 17, 18, 19).
+        let slice = char_slice(text, 17, 18);
+        assert_eq!(slice.as_deref(), Some("—"));
+
+        let word = char_slice(text, 18, 21);
+        assert_eq!(word.as_deref(), Some("the"));
+
+        // Out of bounds / invalid ranges never panic
+        assert_eq!(char_slice(text, 100, 110), None);
+        assert_eq!(char_slice(text, 5, 5), None);
+        assert_eq!(char_slice(text, 10, 5), None);
     }
 }

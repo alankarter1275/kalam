@@ -14,9 +14,13 @@ cargo build --release -j 2 -p kalam-reader-demo
 Keys in the demo: arrows / PageUp / PageDown / space turn pages, `n`/`p`
 skip chapters, `s` switches between paged and scrolled reading, `t` cycles
 the four themes, `+`/`-` font size, `[`/`]` line height, `{`/`}` column
-width, drag to select, `h` highlights the selection, tap a word to "look
-it up" (printed to the terminal), `q` quits. Everything the widget would
-tell Kalam is printed with a `demo:` prefix.
+width, drag to select, `h` highlights the selection, `q` quits. Everything the
+widget would tell Kalam is printed with a `demo:` prefix.
+
+There is deliberately no tap-a-word handler: Kalam removed
+tap-to-look-up as a feature, and `ReaderView::connect_word` and the
+`TappedWord` type were deleted from the widget with it. A tap on text is a
+tap — the page-turn zones decide what it does.
 
 `--host-fonts` also loads the system's fonts (for CJK, Devanagari, Arabic,
 emoji). Off by default because scanning them is the slow part on a cold

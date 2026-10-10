@@ -3,21 +3,23 @@ use crate::author::{
 };
 use crate::db::{AuthorProfile, AuthorWork, Catalog};
 use crate::models::Book;
-use crate::service::LibraryService;
+use crate::service::{AuthorPageSnapshot, LibraryService};
 use crate::widgets::{
-    book_row::{build_book_card, cover_widget},
+    book_row::{build_book_card, cache_decoded_cover, cover_widget, COVER_H, COVER_W},
     charts::stars_label,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum AuthorPageOut {
     OpenBook { book_id: i64 },
     OpenBookDialog { book_id: i64 },
+    /// A comic series card — chapters are only ever seen on the series page.
+    ComicSeries { series_name: String },
 }
 
 #[derive(Debug)]
@@ -26,11 +28,31 @@ pub enum AuthorPageMsg {
     // Boxed: AuthorProfile is ~376 bytes, so an unboxed variant made every
     // AuthorPageMsg that large -- including the far more frequent Refresh.
     Fetched(Box<Result<AuthorProfile, String>>),
+    /// The page's data arrived from the worker (7.1 step 2c): profile,
+    /// owned books, the series grouping — and the covers the worker
+    /// decoded for the fill. Boxed with `Fetched` for the same size
+    /// reason.
+    Loaded(Box<AuthorPageLoad>),
+}
+
+/// The snapshot plus the covers its worker decoded for the fill — the
+/// book page's `PageLoad` recipe (7.1 step 2a.2).
+///
+/// `fill_author_page` builds its cards with synchronous `cover_widget`
+/// calls, and the heaviest of them — the author photo and the works'
+/// group covers — live in the authors dir, outside the library, so no
+/// thumbnail exists for them: decoding them on the UI thread was the
+/// fill's whole weight (323 ms in field runs #2–#5). The worker decodes
+/// them instead; the handler caches them; the fill then takes its
+/// "already decoded" branch everywhere.
+#[derive(Debug)]
+pub(crate) struct AuthorPageLoad {
+    snap: AuthorPageSnapshot,
+    covers: Vec<crate::preload::DecodedCover>,
 }
 
 pub struct AuthorPageModel {
     catalog: Arc<Catalog>,
-    #[allow(dead_code)]
     service: LibraryService,
     requested_name: String,
     profile: Option<AuthorProfile>,
@@ -38,6 +60,10 @@ pub struct AuthorPageModel {
     series: Vec<SeriesProgress>,
     loading: bool,
     error: Option<String>,
+    /// Whether the first snapshot has landed (7.1 step 2c). The old init
+    /// knew synchronously whether a cached profile existed and only then
+    /// started the network fetch; the recipe learns it here, once.
+    snapshot_seen: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +122,14 @@ impl Component for AuthorPageModel {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
                     set_hexpand: true,
+
+                    // The skeleton's only moving part (7.1 step 2c):
+                    // cleared by the first fill, like Home's sections.
+                    gtk::Label {
+                        set_label: "Loading author…",
+                        add_css_class: "kalam-muted",
+                        set_halign: gtk::Align::Start,
+                    },
                 },
 
                 #[name = "hero_side"]
@@ -118,6 +152,11 @@ impl Component for AuthorPageModel {
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
+                gtk::Label {
+                    set_label: "Loading…",
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
             },
 
             gtk::Label {
@@ -130,6 +169,11 @@ impl Component for AuthorPageModel {
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
+                gtk::Label {
+                    set_label: "Loading your books…",
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
             },
 
             gtk::Label {
@@ -143,6 +187,11 @@ impl Component for AuthorPageModel {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
                 set_margin_bottom: 12,
+                gtk::Label {
+                    set_label: "Loading…",
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
             },
         }
     }
@@ -152,35 +201,24 @@ impl Component for AuthorPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let owned_books = author::owned_books_for_author(&catalog, &author_name);
-        let profile = catalog
-            .get_author_profile_by_name(&author_name)
-            .ok()
-            .flatten();
-        let series = author::series_progress(&owned_books);
-        let loading = profile.is_none();
-
+        // Skeleton only (7.1 step 2c): the hosts paint their loading rows
+        // and both reads — the profile/books/series snapshot and, when the
+        // profile turns out to be uncached, the network fetch — run on
+        // workers.
         let service = LibraryService::new(catalog.clone());
         let model = AuthorPageModel {
             catalog,
             service,
             requested_name: author_name,
-            profile,
-            owned_books,
-            series,
-            loading,
+            profile: None,
+            owned_books: Vec::new(),
+            series: Vec::new(),
+            loading: true,
             error: None,
+            snapshot_seen: false,
         };
-        let mut widgets = view_output!();
-        fill_author_page(&mut widgets, &model, &sender);
-        if model.profile.is_none() {
-            spawn_author_fetch(
-                model.catalog.clone(),
-                model.requested_name.clone(),
-                model.owned_books.clone(),
-                &sender,
-            );
-        }
+        let widgets = view_output!();
+        request_snapshot(&model.service, &model.requested_name, &sender);
         ComponentParts { model, widgets }
     }
 
@@ -213,15 +251,110 @@ impl Component for AuthorPageModel {
                         self.error = Some(err);
                     }
                 }
-                self.owned_books =
-                    author::owned_books_for_author(&self.catalog, &self.requested_name);
-                self.series = author::series_progress(&self.owned_books);
+                // The old path re-read the owned books inline here; the
+                // re-read now rides the worker and the fill happens when
+                // it lands (7.1 step 2c).
+                request_snapshot(&self.service, &self.requested_name, &sender);
+            }
+            AuthorPageMsg::Loaded(load) => {
+                let load = *load;
+                // Cache what the worker decoded before the fill runs, so
+                // every `cover_widget` below takes its "already decoded"
+                // branch instead of decoding on the UI thread.
+                for decoded in &load.covers {
+                    cache_decoded_cover(decoded);
+                }
+                let snap = load.snap;
+                self.profile = snap.profile;
+                self.owned_books = snap.owned_books;
+                self.series = snap.series;
+                if !self.snapshot_seen {
+                    self.snapshot_seen = true;
+                    if self.profile.is_none() && self.error.is_none() {
+                        // No cached profile: fetch one from the network.
+                        // The old init answered this question inline; the
+                        // recipe learns it here, once.
+                        self.loading = true;
+                        spawn_author_fetch(
+                            self.catalog.clone(),
+                            self.requested_name.clone(),
+                            self.owned_books.clone(),
+                            &sender,
+                        );
+                    } else {
+                        self.loading = false;
+                    }
+                }
             }
         }
 
         fill_author_page(widgets, self, &sender);
         self.update_view(widgets, sender);
     }
+}
+
+/// Ask the worker for the page's data (7.1 step 2c): profile, owned books
+/// and the series grouping, in one snapshot. Called at init, and again
+/// after a network fetch lands, so the fill always rebuilds from fresh
+/// owned data the way the old inline re-read did.
+fn request_snapshot(
+    service: &LibraryService,
+    author_name: &str,
+    sender: &ComponentSender<AuthorPageModel>,
+) {
+    let service = LibraryService::new(service.catalog().clone());
+    let name = author_name.to_string();
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Reading author",
+        move |_reporter| {
+            let snap = service.author_page(&name);
+            let covers = warm_author_covers(&snap);
+            AuthorPageLoad { snap, covers }
+        },
+        |_| {},
+        move |load| {
+            let _ = s.send(AuthorPageMsg::Loaded(Box::new(load)));
+        },
+    );
+}
+
+/// Decode, off the UI thread, every cover the fill will show on it.
+///
+/// The sizes are the fill's own card sizes; if a card size changes,
+/// this list must change with it — a drift does not break anything,
+/// it just puts the fill's synchronous decode back on the UI thread,
+/// visible again as a slow `author_fill` line.
+fn warm_author_covers(snap: &AuthorPageSnapshot) -> Vec<crate::preload::DecodedCover> {
+    let mut covers = Vec::new();
+    let mut want = |path: Option<&Path>, w: i32, h: i32| {
+        let Some(path) = path else { return };
+        if let Some(d) = crate::preload::decode_for_cache(path, w, h) {
+            covers.push(d);
+        }
+    };
+    if let Some(profile) = &snap.profile {
+        // The photo (220×220) and the works' group covers (136×204):
+        // authors-dir files, no thumbnails — the fill's old weight.
+        want(profile.photo_path.as_deref(), 220, 220);
+        for work in &profile.works {
+            want(work_cover_path(work).as_deref(), 136, 204);
+        }
+    }
+    // The series strip's first-book covers (72×112) and the owned
+    // books' cards (COVER_W×COVER_H — the deferred path; warmed here,
+    // they paint immediately instead of through the placeholder swap).
+    for entry in &snap.series {
+        want(
+            entry.owned.first().and_then(|b| b.cover_path.as_deref()),
+            72,
+            112,
+        );
+    }
+    for book in &snap.owned_books {
+        want(book.cover_path.as_deref(), COVER_W, COVER_H);
+    }
+    covers
 }
 
 fn spawn_author_fetch(
@@ -237,12 +370,38 @@ fn spawn_author_fetch(
     // the window closes.
     let tx = sender.input_sender().clone();
     crate::tasks::spawn(
-        move |_reporter| author::fetch_and_cache_author(&catalog, &author_name, &owned_books),
+        "Fetching author photo",
+        move |_reporter| {
+            let result = author::fetch_and_cache_author(&catalog, &author_name, &owned_books);
+            // The handler swaps the new profile in and fills the page the
+            // moment this lands — before the re-snapshot it also asks for
+            // can arrive. Warm the new photo here (220×220, the hero's
+            // size) so that fill takes its "already decoded" branch too.
+            let photo = match &result {
+                Ok(profile) => profile
+                    .photo_path
+                    .as_deref()
+                    .and_then(|p| crate::preload::decode_for_cache(p, 220, 220)),
+                Err(_) => None,
+            };
+            AuthorFetchLoad { result, photo }
+        },
         |_update| {},
-        move |result| {
-            let _ = tx.send(AuthorPageMsg::Fetched(Box::new(result)));
+        move |load| {
+            if let Some(photo) = &load.photo {
+                cache_decoded_cover(photo);
+            }
+            let _ = tx.send(AuthorPageMsg::Fetched(Box::new(load.result)));
         },
     );
+}
+
+/// The fetch result plus the photo its worker decoded for the immediate
+/// fill (see `spawn_author_fetch`); the profile itself still rides the
+/// `Fetched` message unchanged.
+struct AuthorFetchLoad {
+    result: Result<AuthorProfile, String>,
+    photo: Option<crate::preload::DecodedCover>,
 }
 
 fn fill_author_page(
@@ -250,6 +409,11 @@ fn fill_author_page(
     model: &AuthorPageModel,
     sender: &ComponentSender<AuthorPageModel>,
 ) {
+    // The same attribution pair the other migrated pages use: a timing
+    // span for KALAM_TIMING=1 and an activity label so a stall during
+    // this build says "while author_fill" (7.1 step 2c).
+    let _t = crate::timing::measure("author_fill");
+    let _a = crate::timing::activity("author_fill");
     rebuild_hero(&widgets.hero_main, &widgets.hero_side, model, sender);
     rebuild_series(&widgets.series_host, model);
     rebuild_owned_books(&widgets.owned_host, &model.owned_books, sender);
@@ -363,11 +527,29 @@ fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender
 
     for book in &books {
         let book_id = book.id;
+        // Comic cards open the series page — the same rule every list obeys.
+        let comic_series = if matches!(
+            book.format,
+            crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+        ) {
+            book.series.clone()
+        } else {
+            None
+        };
         let full_sender = sender.clone();
         let float_sender = sender.clone();
         row.append(&build_book_card(
             book,
+            crate::widgets::book_row::CLICK_HINT_LIBRARY,
             move || {
+                if let Some(ser) = comic_series.as_ref() {
+                    full_sender
+                        .output(AuthorPageOut::ComicSeries {
+                            series_name: ser.clone(),
+                        })
+                        .ok();
+                    return;
+                }
                 full_sender.output(AuthorPageOut::OpenBook { book_id }).ok();
             },
             move || {

@@ -202,6 +202,7 @@ pub fn paginate(
 pub fn collect_images(
     doc: &Document,
     fonts: Option<&FontSystem>,
+    max_edge: Option<u32>,
     mut fetch: impl FnMut(&str) -> Option<Vec<u8>>,
 ) -> ImageStore {
     let mut store = ImageStore::default();
@@ -242,6 +243,11 @@ pub fn collect_images(
 
     type Decoded = Option<(u32, u32, Vec<u8>)>;
     let mut decoded_cache: HashMap<&str, Decoded> = HashMap::new();
+    // What the images cost as decoded against what they cost after being
+    // scaled down to what a page can actually draw. The gap is the entire
+    // point of `max_edge`, and without reporting it there is no way to tell
+    // whether the limit is doing anything for a given book.
+    let (mut decoded_px, mut stored_px) = (0u64, 0u64);
     for (id, src) in img_nodes {
         if let Some(cached) = decoded_cache.get(src) {
             if let Some((w, h, rgba)) = cached {
@@ -261,12 +267,27 @@ pub fn collect_images(
             let (w, h) = (rgba.width(), rgba.height());
             Some((w, h, rgba.into_raw()))
         });
+        let decoded = decoded.map(|(w, h, rgba)| {
+            decoded_px += u64::from(w) * u64::from(h);
+            let (w, h, rgba) = shrink_to_edge(w, h, rgba, max_edge);
+            stored_px += u64::from(w) * u64::from(h);
+            (w, h, rgba)
+        });
         if uses[src] > 1 {
             decoded_cache.insert(src, decoded.clone());
         }
         if let Some((w, h, rgba)) = decoded {
             store.insert(crate::dom::node_tag(id), w, h, rgba);
         }
+    }
+
+    if decoded_px > stored_px {
+        log::info!(
+            "images: {:.1} MB decoded, {:.1} MB kept (max edge {} px)",
+            decoded_px as f64 * 4.0 / 1_048_576.0,
+            stored_px as f64 * 4.0 / 1_048_576.0,
+            max_edge.unwrap_or(0)
+        );
     }
 
     // Inline `<svg>` subtrees, serialized at parse time. Their hrefs are
@@ -287,5 +308,111 @@ fn join_href(src: &str, href: &str) -> String {
     match src.rsplit_once('/') {
         Some((dir, _)) => format!("{dir}/{href}"),
         None => href.to_string(),
+    }
+}
+
+/// Scale raw RGBA down so neither edge exceeds `max_edge`, keeping the aspect
+/// ratio.
+///
+/// Returns the input **untouched** when it already fits, or when `max_edge` is
+/// `None` or `0`. Untouched means literally the same bytes, not "resized to the
+/// same size": a resize that changes nothing still resamples, and a golden
+/// render compared byte for byte would notice.
+///
+/// The point is memory, and it is large. Raw RGBA costs four bytes a pixel, so
+/// a 3000×4000 scan is 48 MB decoded while occupying at most a page of screen —
+/// roughly 1200 px wide on the machine this was written for. Nothing can draw
+/// wider than the content box, so the extra pixels are pure waste, and on a
+/// machine with 4 GB in total the waste is what pushes a single chapter past
+/// the reader's whole cache budget.
+///
+/// Bilinear (`Triangle`) rather than Lanczos: the difference is hard to see at
+/// reading size and Lanczos is meaningfully slower on a weak CPU.
+fn shrink_to_edge(w: u32, h: u32, rgba: Vec<u8>, max_edge: Option<u32>) -> (u32, u32, Vec<u8>) {
+    let Some(max) = max_edge.filter(|m| *m > 0) else {
+        return (w, h, rgba);
+    };
+    let longest = w.max(h);
+    if longest <= max {
+        return (w, h, rgba);
+    }
+    // `from_raw` only fails on a length mismatch, which a buffer this module
+    // produced cannot have. Check anyway so a mismatch returns the image
+    // untouched instead of dropping it.
+    if rgba.len() != w as usize * h as usize * 4 {
+        return (w, h, rgba);
+    }
+    let Some(img) = image::RgbaImage::from_raw(w, h, rgba) else {
+        return (w, h, Vec::new());
+    };
+    let scale = u64::from(max);
+    let longest = u64::from(longest);
+    let nw = (u64::from(w) * scale / longest).max(1) as u32;
+    let nh = (u64::from(h) * scale / longest).max(1) as u32;
+    let out = image::imageops::resize(&img, nw, nh, image::imageops::FilterType::Triangle);
+    let (w, h) = (out.width(), out.height());
+    (w, h, out.into_raw())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shrink_to_edge;
+
+    fn solid(w: u32, h: u32) -> Vec<u8> {
+        vec![120u8; w as usize * h as usize * 4]
+    }
+
+    #[test]
+    fn an_oversized_image_is_scaled_to_the_limit() {
+        let (w, h, rgba) = shrink_to_edge(3000, 4000, solid(3000, 4000), Some(1000));
+        assert_eq!((w, h), (750, 1000), "longest edge lands on the limit");
+        assert_eq!(rgba.len(), 750 * 1000 * 4);
+        // 48 MB of pixels down to 3 MB — the whole reason this exists.
+        assert!(rgba.len() < 4_000_000);
+    }
+
+    #[test]
+    fn an_image_that_already_fits_is_returned_untouched() {
+        let pixels = solid(100, 50);
+        let kept = pixels.clone();
+        let (w, h, rgba) = shrink_to_edge(100, 50, pixels, Some(1000));
+        assert_eq!((w, h), (100, 50));
+        assert_eq!(rgba, kept, "not resampled: the same bytes back");
+    }
+
+    #[test]
+    fn no_limit_means_no_change() {
+        let pixels = solid(3000, 4000);
+        let kept = pixels.clone();
+        for limit in [None, Some(0)] {
+            let (w, h, rgba) = shrink_to_edge(3000, 4000, pixels.clone(), limit);
+            assert_eq!((w, h), (3000, 4000));
+            assert_eq!(rgba, kept);
+        }
+    }
+
+    /// A wide strip must keep its shape. Scaling by the longer edge is what
+    /// makes a 4000×200 image become 1000×50 rather than 1000×200 stretched.
+    #[test]
+    fn the_aspect_ratio_survives() {
+        let (w, h, _) = shrink_to_edge(4000, 200, solid(4000, 200), Some(1000));
+        assert_eq!((w, h), (1000, 50));
+    }
+
+    #[test]
+    fn a_tiny_image_is_never_upscaled() {
+        let (w, h, rgba) = shrink_to_edge(2, 1, solid(2, 1), Some(1000));
+        assert_eq!((w, h), (2, 1));
+        assert_eq!(rgba.len(), 8);
+    }
+
+    /// A buffer that does not match its stated size must not panic in a
+    /// renderer. Unreachable from `collect_images`, which builds both from the
+    /// same decode, but the function is total rather than trusting that.
+    #[test]
+    fn a_mismatched_buffer_is_returned_untouched() {
+        let (w, h, rgba) = shrink_to_edge(100, 100, vec![0u8; 16], Some(10));
+        assert_eq!((w, h), (100, 100));
+        assert_eq!(rgba.len(), 16);
     }
 }

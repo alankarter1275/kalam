@@ -474,6 +474,58 @@ Because nothing can be built locally, scripted edits need their own safety net:
   followed by assigning to `self.<field>` is a borrow conflict — finish reads
   into locals first.
 
+- **Four more API traps, all caught by CI (2026-10-01, PDF async step 1),
+  all from writing new code without a compiler:**
+  `Option::is_some_and` has no `Result` twin — for a `Result`, use
+  `matches!(&x, Ok(t) if ...)` (which also keeps `x` assignable inside the
+  block, unlike `if let Ok(ref t) = x`); building a tuple scrutinee like
+  `if let (Some(p), Some(tx)) = (self.a.clone(), self.b)` moves `self.b`
+  out from behind `&mut self` — write `self.b.as_ref()` and bind `tx`
+  without `ref`; `Option::zip` **consumes** both options, so a value needed
+  afterwards must be compared by reference
+  (`match (&started, &current) { (Some(a), Some(b)) => a == b, _ => false }`);
+  and a struct field declared `PathBuf` needs an owned value — `path.clone()`,
+  not the `&PathBuf` a `ref` binding gives you.
+
+- **A private type cannot appear in a `pub` item (2026-10-01, step 3 of
+  the PDF plan; one failed CI run).** A private enum used as a `pub`
+  model field / `pub` method parameter trips the `private_interfaces`
+  lint, which `-D warnings` turns red. The whole file's convention is
+  `pub` types anyway -- match it (or make the field and method private;
+  same-module callers do not need `pub`). And a second lesson from the
+  same run: **do not report a CI result from `gh run watch`'s exit code
+  alone.** The watch exited 0 while the run had failed, and "step 3 is
+  green" was said on that basis. Always confirm with an explicit
+  `gh run view <id> --json conclusion` (or the run's own ci-logs commit)
+  before calling a run green.
+
+- **Second batch of the same (2026-10-01, step 4 of the PDF plan; one
+  failed CI run):** a `crate::` path written from memory pointed at
+  `crate::pdf_reader::...` — the module lives at
+  `crate::pages::pdf_reader` (and an unresolved path also produces a
+  misleading secondary error about `str` not being `Sized`, which
+  disappears with the path); and in `watch_folder.rs` a `res.title.clone()`
+  was inserted *after* existing code that does `last_title = res.title;`
+  — the move happens on someone else's line, far above the new code.
+  Both are catchable in seconds before pushing: grep every new
+  `crate::foo::` path against `main.rs`'s module tree, and when editing
+  inside an existing function, re-read the whole function for moves of
+  the values the new code touches — the borrow checker sees the whole
+  function, not just the diff.
+
+- **A helper used only by tests is dead code in the bin (2026-10-01,
+  step 4; one failed CI run).** `cargo clippy --all-targets` compiles the
+  test target where the helper is used, but the plain bin target is
+  compiled too and `dead_code` fires there — test-only reachability does
+  not count. Assert through the production API instead (here: draining
+  the queue the way the worker does), or make the production code
+  genuinely call the helper.
+
+- **`255.0 / 255.0` is `eq_op` under `-D warnings` (2026-10-01, step 5;
+  one failed CI run).** Writing a colour channel as `v / 255.0` reads
+  nicely, but when the channel is full-scale the two operands are equal
+  and clippy fails the build. Write `1.0`.
+
 ## 13. A route existing in `app.rs` does not mean the user can reach it
 
 `ReadingList`, `Tags` and `Analytics` had complete pages, `PageSlot` variants
@@ -1088,3 +1140,2135 @@ failure whose cause was unrelated to what it checked, and this is a result that
 outlives the run that produced it. In all three the investigation goes to the
 wrong place, and in all three the fix is to make the signal honest rather than
 to get better at interpreting a dishonest one.
+
+---
+
+## 26. A test helper placed between test functions is invisible to the panic guardrail
+
+The guardrail that keeps production `.unwrap()`/`.expect()` counts from growing
+(`tests/guardrails.rs`) walks brace depth and suppresses everything inside a
+`#[cfg(test)] mod tests`. But the suppression is per *item*, not per module:
+when a `#[test]` function inside the module closes, the module-level
+suppression has already been overwritten by the function's own, and it is not
+restored. The practical effect: **code inside `mod tests` but sitting after the
+first test function's closing brace is counted as production code.**
+
+This repo's test modules have always placed their helpers (like `seed` in
+`db.rs`) *above* the first `#[test]`, so the baseline of 12 never moved. A new
+helper written in the natural reading order — helpers at the bottom, or between
+tests — silently pushes the count over the cap, and the failure names the
+guardrail, not the placement.
+
+Found while adding `scratch_library` to `src/paths.rs`: the count went 12 → 13,
+the debug scan showed the helper's `.expect("scratch dir")` as the only new
+hit, and no amount of reading the helper explains it — the position was the
+whole bug.
+
+### The rule
+
+**In `mod tests`, helpers go above the first `#[test]` function.** If a helper
+must live elsewhere, it must not contain `.unwrap()` or `.expect(` — use
+`match`, `?`, or `unwrap_or` — or the guardrail will count it no matter how
+test-only it is.
+
+## 27. Status claims come from the repo, never from memory
+
+The owner asked "what is P7/P9/P12?" and "isn't the custom renderer done?" —
+and was right to be angry. The reply had cited the **archived** P0–P12 phase
+plan (fiction sources, manga sources, Lua plugins, "renderer research parked")
+as if it were current. ROADMAP.md's first paragraph says it replaced that plan
+on 2026-09-18 and that the old write-ups live in
+`docs/archive/roadmap-phases-p0-p12.md` "for their lessons, not for planning."
+The custom renderer is not research — it shipped with the engine swap and is
+the core of the app.
+
+Two failure modes stacked up:
+
+1. **Condensed session memory carries old vocabulary.** A conversation summary
+   preserves phase numbers from weeks ago but not the sentence that says they
+   are dead. Speaking from that summary without re-reading the roadmap
+   resurrects the old plan.
+2. **The moved-base fault makes git lie.** The sandbox HEAD had silently
+   fallen back to the branch point `29788b4` (documented in the 2026-09-19
+   changelog row, and it recurs). `git ls-files assets/models/` answered
+   "empty" against that old commit, which became a confident "the OCR models
+   are not in git" claim and a proposed fix for a problem that did not exist —
+   the models are committed (`b482d03`).
+
+### The rule
+
+- **Before any claim about what is shipped, what is next, or what a phase
+  number means: read the "What is really shipped" table and the changelog tail
+  of ROADMAP.md in this session.** Never cite a phase number from memory.
+- **After any environment reset or surprising git output, run `git fetch`
+  followed by `git reset --mixed origin/<branch>` before believing `git
+  ls-files`, `grep`, or `git log`** — they all answer for whatever commit HEAD
+  happens to be on, and a fallen-back HEAD makes committed work look missing.
+- The cost of this one was a full session's worth of owner trust in the plan.
+  The fix is cheap: read first, then talk.
+
+## 28. A removal leaves orphans: helpers whose only non-test user was the feature
+
+**The fault (2026-09-30, comic-OCR removal).** Deleting the comic OCR
+feature took its call sites with it, but three survivors looked innocent:
+`compute_comic_page_layout` in the comics reader (pure geometry, "surely
+still used"), the `k-sel-*` CSS classes in `resources/style.css`, and
+`select_rect`/`word_at`/`line_at` on `PdfPageText`. The layout helper had
+in fact lost every non-test caller — clippy runs with `-D warnings`, so the
+first CI run would have failed on a dead-code warning for a function that
+still *looked* alive because a unit test called it. The CSS classes and the
+`PdfPageText` methods were the opposite trap: they looked comic-specific
+but are shared with the PDF reader's selection toolbar, so deleting them
+would have broken live code.
+
+### The rule
+
+- **After any removal, grep every helper the removed code called for
+  non-test users (`grep -rn ... | grep -v "mod tests"` region) before
+  pushing.** A helper kept alive only by its own unit test is dead code
+  under `-D warnings`; a helper that *looks* owned by the removed feature
+  may be shared with a sibling reader.
+- Check CSS classes the same way before deleting them — class names are
+  global, and the PDF reader reuses the comics reader's toolbar styling.
+
+## 29. Runtime warnings are findings, not noise — record and chase every one
+
+**The fault (2026-10-01).** The owner's terminal showed three
+`Pango-WARNING: failed to create cairo scaled font ... the offending font
+is 'Noto Color Emoji 8.8' ... scaled_font status is: out of memory` lines
+while using the app. Nothing crashed, so nothing forced a look — but the
+warning carried a complete diagnosis if read: the `8.8` is a font size,
+and the only labels in the app at 0.88rem are the reader pill counter and
+a handful of small-text classes. Cross-checking which of those can contain
+emoji pinned it in minutes: the comics reader's "Series Completed" pill
+label. Five color-emoji strings across three files (comics end card ×2,
+streak strip, watch-folder checkboxes ×3) were sending Pango to Noto Color
+Emoji, whose CBDT bitmap font cairo cannot scale on the owner's system.
+
+### The rule (owner directive, 2026-10-01)
+
+- **Every runtime warning the owner reports, and every mistake the agent
+  makes, gets a pitfalls entry — every instance, no exceptions.** A warning
+  that is "just cosmetic" is still the app telling us where it is fragile.
+- **Diagnose to the exact line before fixing.** A warning text usually
+  contains its own coordinates (here: a font name and size that matched one
+  CSS class). Guessing produces fixes for the wrong string.
+- **Re-read this file at the start of each phase** (and whenever a similar
+  problem appears), so the same fault is never paid for twice.
+- **Color emoji never go in GTK label strings.** Pango's fallback to a
+  color bitmap font + cairo's inability to scale it equals three warnings
+  and a missing glyph on affected systems. Use plain text, a monochrome
+  dingbat (✓ ✕ ★ — not covered by Noto Color Emoji), or a symbolic icon.
+
+## 30. Check HEAD before committing — the moved-base fault can strike between edits and commit
+
+**The fault (2026-10-01, 5th occurrence of the moved-base fault).** The
+sandbox HEAD fell back to the old base (`29788b4`) at the start of a turn
+— after the previous turn's edits were already committed and pushed, so
+nothing looked wrong. The turn's own edits were then made and committed
+with `git add -A` **while standing on the stale base**, producing a commit
+whose tree was correct but whose parent was a month old. The push failed,
+and the rebase produced conflicts in every file changed since the old
+base, plus a stale `Cargo.lock` (an older transitive-dependency version)
+riding along in the commit.
+
+### The rule
+
+- **Before every `git add -A && git commit`, run `git log --oneline -1`
+  and confirm it is the expected tip, and check `git status --short` lists
+  only the files this turn intentionally touched.** A commit on the wrong
+  base is not a fast-forward away — it is a rebase conflict festival and a
+  vehicle for stale files.
+- **Recover by re-parenting the tree, never by re-editing files:** if a
+  commit with the correct tree has the wrong parent, `git reset --soft
+  origin/<branch>`, restore `ci-logs/` (and any other CI-owned files) from
+  origin, then commit again. The tree was right; only the parent was wrong.
+- Turn-start hygiene (already the rule, now with a reason): fetch +
+  `reset --mixed origin/<branch>` **before editing anything**, because the
+  fallback can happen between turns, not only between sessions.
+- *Sixth occurrence, later the same day:* the pre-commit check above
+  caught it — `git log -1` showed the old base after `git add -A`, before
+  anything was committed. Recovery as described: fetch, `reset --mixed`
+  onto the tip, restore `ci-logs/` from origin, commit the two intended
+  files. The check works; keep running it.
+
+## 31. An async rewrite must re-home every side effect of the sync path it replaces
+
+**Second near-miss of the same family (2026-10-02, 2b, caught before
+commit, never shipped).** Restructuring `dashboard()` to bind snapshot
+fields as locals inserted the new field list into the struct literal
+but left the old `field: take(...)` initializers in place below it —
+duplicate fields, an instant compile error in CI had it shipped. The
+§31 read-through of the whole function after a structural edit is what
+caught it. The rule generalizes: after any edit that restructures a
+literal or a function body, re-read the *entire* construct, not just
+the edited lines — replacement anchors end where the old text ended,
+and everything after it is still the old code.
+
+**The near-miss (2026-10-01, PDF plan step 1; caught before commit, never
+shipped).** Moving the PDF open off the UI thread meant rewriting
+`ensure_page_text`, whose old body did three things: extract the vector
+text, **look up the persistent OCR cache** on a scanned page
+(`load_page_ocr`), and only then trigger background OCR. The rewrite
+initially sent just "extract text" to the worker and fell back to OCR on
+an empty answer — the cache lookup had silently vanished. It would have
+compiled, passed every test, and regressed exactly one behavior: a page
+OCR'd on a previous visit would re-run seconds of neural inference
+instead of loading instantly. Nobody would notice until an owner field
+report.
+
+### What caught it
+
+Not the compiler, not the tests — a **diff read against HEAD before
+committing** (`git show HEAD:file | grep load_page_ocr` showed a
+production call site that no longer existed anywhere in the tree).
+
+### The rule
+
+- Before replacing a synchronous function, **enumerate every effect it
+  has** (returns, caches read, caches written, triggers fired, state
+  set) and tick each one off in the new design — off-thread is not a
+  reason for any behavior to disappear; the DB read just moves into the
+  worker.
+- End every multi-pass edit with a full `git diff` read plus a grep of
+  the old function's callees in the new tree. Compile-clean proves
+  nothing about dropped logic.
+- State the old path's behaviors in the plan before rewriting, so the
+  diff can be checked against a written list, not memory.
+
+## 32. Two gestures on one widget must coordinate — a drag-end can eat a double-click
+
+**The bug (2.18, found by the owner's field test 2026-10-01 after the plan's
+step 3 shipped).** "PDF double/triple-click selection broken" was diagnosed
+in planning as the dead-click-on-unready-page problem — text not extracted
+yet, so the click had nothing to select. That was real but secondary. The
+actual root cause: the PDF reader attached `GestureDrag` and `GestureClick`
+to the same overlay with no coordination, and `SelectionDragEnd`'s
+no-movement path clears the active selection. On the second press of a
+double-click, the click gesture selects the word — and the drag gesture's
+own release then runs `clear_selection()` on it, instantly. The selection
+was made and destroyed within one press/release pair, so it looked like
+double-click "never worked". It never had, since the gestures were written.
+
+**The fix, copied from the EPUB reader's view** (`kalam-reader/src/view.rs`),
+which has worked from day one:
+
+- Attach the click gesture BEFORE the drag gesture — controllers run in
+  addition order, so the click has counted the press by the time the drag
+  decides what to do with it.
+- Share a `multi_click: Rc<Cell<i32>>` between them; `drag-begin` stands
+  down entirely (no message, no drag state) when `multi_click >= 2`.
+- `drag-end`'s no-movement "clear the selection" path only runs when that
+  press actually stored drag state — a stood-down press's release must do
+  nothing.
+
+### The rule
+
+- When two controllers can both react to the same press, write down the
+  full press/release interleaving for every click pattern (single, double,
+  triple, drag, tap-on-selection) before trusting the wiring — the bug
+  lived in the *sequence*, not in either handler alone.
+- A "tap clears the selection" release handler is incompatible with
+  multi-click selection unless something tells it which press it belongs
+  to. The absence of that coordination is invisible until a human
+  double-clicks.
+- Copy the working reader's gesture arrangement rather than inventing a
+  parallel one; the EPUB reader's `multi_click` gate is the reference.
+
+## 33. `Some(ref x)` on a `HashMap::get` result is a reference to a reference
+
+**The mistake (CI run 36831842897, 2026-10-01).** Two new lines in the PDF
+reader's drag handlers wrote `if let Some(ref ov) = self.page_overlays.get(&slot)`
+— but `get` already returns `Option<&Overlay>`, so `ref ov` binds `&&Overlay`,
+and clippy under `-D warnings` rejects it ("this pattern creates a reference
+to a reference") before the build ever runs. The codebase's own idiom, two
+hundred lines above, is `if let Some(ov) = self.page_overlays.get(&slot)`.
+
+### The rule
+
+- Match what the expression already is, not what it was at its definition:
+  `.get()`, `.iter().next()`, and friends hand you a reference — bind it
+  plainly, never with `ref`.
+- Same class as §31's `255.0/255.0`: a one-token slip that only CI can see,
+  because there is no local compiler. Before writing a match pattern on a
+  method's return, say the type out loud.
+
+## 34. A cursor lifecycle must be closed: every release needs a resting state
+
+**The bug (owner field re-test 2026-10-01, one day after the hand cursor
+shipped).** After dropping a dragged selection handle in the PDF reader the
+cursor glitched: the closed hand vanished and the plain arrow sat over the
+grip until the pointer moved. Two mistakes in the new cursor code:
+
+1. The drag-end handler reset the cursor to the default (`None`) -- but no
+   motion event arrives after a drop until the pointer moves, so whatever
+   the release sets is what the user stares at. `None` also clobbered the
+   page's own base cursor.
+2. The PDF page overlay already had a resting cursor, the text I-beam,
+   set once in `wrap_page`. The motion and leave handlers wrote `None`
+   anywhere that was not a grip, so the first mouse move silently replaced
+   the I-beam with the plain arrow page-wide.
+
+**The fix.** Every cursor path lands on an explicit named state: I-beam
+over the page, open hand over a grip, closed hand during a grip drag. The
+drag-end parks the cursor on exactly what the motion controller would
+compute at the release point (`press + offset`, same hit function, same
+coordinate space), so resting and moving can never disagree.
+
+### The rule
+
+- A widget whose cursor you touch has a life beyond your gesture. Find its
+  resting cursor (the one set at creation) before writing `None` anywhere;
+  `None` means "the parent's cursor", not "no cursor", and it overrides
+  whatever the widget set for itself.
+- Events stop when the pointer stops. Any state you compute from motion
+  events (hover, cursor) must be recomputed at gesture end from the
+  gesture's own coordinates, or it goes stale in front of the user.
+- Copying a working handler from another widget (`view.set_cursor(None)`
+  in the EPUB reader, whose area has no base cursor) without asking what
+  the target widget's resting cursor is -- the two `None`s meant different
+  things.
+
+## 35. Port the reference gesture pattern completely -- the multi-click gate belongs on begin, update AND end
+
+**The bug (owner field re-test 2, 2026-10-01).** After the gesture fix
+(pitfalls 32) the PDF reader's triple-click selected a line, but a
+double-click showed the action chip with no selection behind it. Root
+cause: the EPUB reader gates its drag gesture on the live `multi_click`
+count in all three callbacks -- begin, update, and end, each reading the
+count fresh at that moment -- while the PDF port gated only the begin
+("begin stood down, so there is no drag state, so the release is safe").
+That inference is not one GTK makes: a press's release can fail to arrive
+at the drag gesture (sequence claiming by the click gesture), leaving a
+stale drag state behind. The next press's movement then ran a selection
+drag from the stale state -- replacing the word the double-click had just
+selected with an empty one -- and the next release consumed the stale
+state as a tap and cleared it. The chip stayed up because only
+`clear_selection` dismisses it, and the update path's empty-rects branch
+did a bare `replace(None)`. The triple-click survived only because
+release two had already consumed the stale state: the line its third
+press selected had nothing left to destroy it.
+
+**The second half of the same report:** word and line selections stored
+the *click point* as `anchor_pt`/`active_pt`. Grabbing the end handle
+then ran `select_between(click_point, cursor)`, restarting the selection
+from the middle instead of extending it -- "the end handle became the
+starting handle". Selections made by dragging were fine (their anchor is
+the drag start), which is why it only *sometimes* failed.
+
+### The rules
+
+- When porting a proven gesture arrangement, port all of it. Every
+  callback that can act on a press (begin, update, end) gates on the
+  live multi-click count read at that moment; "the begin stood down, so
+  nothing else can happen" assumes a signal ordering GTK does not
+  guarantee.
+- A stored gesture state is a liability across presses: any release that
+  fails to arrive leaves it alive. Consumers must be defensive -- gate on
+  what the press *was* (the count), not on what was stored.
+- A selection's drag anchors are the selection's ends, never the click
+  that made it. Anything that can later drag from a handle reads them.
+- The chip must never outlive its selection: every path that removes a
+  selection dismisses it, including the drag-update empty-rects branch
+  that bypasses `clear_selection`.
+
+## 36. The moved-base fault recurs — check HEAD before every commit
+
+**Third occurrence, 2026-10-02.** Between turns the sandbox's git state
+fell back to the branch point `29788b4` (fresh clone, upstream unset)
+while the working tree kept the full session state. A commit made
+without looking first captured 173 files / 37,500 insertions — the whole
+session re-committed on the base — and only the unset upstream (push
+refused) kept the mess off the remote. Same fault, same recovery as
+2026-09-19: fetch, `git diff FETCH_HEAD` to isolate the genuinely
+intended changes (here: two files), `git reset --hard FETCH_HEAD`,
+re-apply, commit, push.
+
+**Fourth occurrence, 2026-10-02 (afternoon), same day as the third.**
+Again the sandbox's git metadata fell back to the branch point between
+turns — this time without the unset-upstream tell: the push target
+still resolved, so the first symptom was the push being *refused*
+(non-fast-forward: the remote held the session's pushed commits plus
+CI publish commits). The commit had already been made blind on the
+wrong base; the tell was in `git commit`'s own output — `create mode
+100644 plan.md` for a file known to be tracked, and an insertions
+count far too large. Recovery: `git fetch origin`, then
+`git reset --mixed <remote tip>` — mixed, not `--hard`, because the
+working tree held the only copy of the uncommitted changes — then
+`git checkout -- ci-logs/` for the stale generated logs, re-commit the
+two real files, push. Nothing lost; the misplaced commit became
+dangling. The rule below caught it one step later than it should have:
+the status check happens before the commit, and it did not run first.
+
+**Fifth occurrence, 2026-10-02 (evening), same day again.** The same
+rewind to the branch point, and this time the status check was skipped
+entirely — `git add -A && git commit` ran straight after a docs edit,
+sweeping 178 files / 41,211 insertions into one commit. The first
+symptom was the rebase onto the remote tip failing with conflicts in
+files the change never touched. Recovery this time: `git rebase
+--abort`, `git tag` the bad commit as a backup, `git reset --hard` to
+the remote tip (safe here because the intended edits were already
+*inside* the bad commit, recoverable from the tag), `git checkout
+<tag> -- <the two intended files>`, verify `git diff --cached` shows
+exactly the intended edit, commit, push, then check `gh run list`
+to confirm no failed run hides under the CI publish commits'
+names ("publish test failures" is the log-publish job's name even
+when green).
+
+**Eighth occurrence, 2026-10-02 (late), one turn after the rule was
+sharpened.** The HEAD check ran — printed the branch point — and the
+commit ran anyway, because the check and the commit were chained with
+`&&` *again*, in the very next turn after the sixth occurrence wrote
+"the HEAD check and the commit are separate commands, never chained."
+Knowing the rule does not enforce it; only the command boundary does.
+The recovery cost an extra reset (the empty re-trigger commit landed
+on the wrong base; nothing shipped, nothing lost). A cancelled CI run
+cannot be `gh run rerun`-ed ("workflow file may be broken"); the
+re-trigger is an empty commit on the correct base.
+
+**Sixth occurrence, 2026-10-02 (night), one hour after the fifth.** The
+status check ran — printed the branch point `29788b4` and a 170-file
+status — *and the commit ran anyway*, because the check, the add, the
+commit and the push were chained with `&&` in a single command. A check
+whose output nobody acts on between seeing it and committing is not a
+check. Same recovery as the fifth (tag, reset to remote tip, checkout
+the six intended files, verify the staged diff, commit).
+
+### The rule
+
+- **The HEAD check and the commit are separate commands, never chained.**
+  Run `git log --oneline -1` and `git status` first, READ them, and only
+  then — in a fresh command — add, commit and push. If HEAD is the
+  branch point instead of the session's last commit, or hundreds of
+  files show modified with no reason, stop and recover — never commit
+  blind, and never trust a silent push: check that the push actually
+  moved the remote and that a CI run started for the new head.
+- Two more tells of a fallen base: a commit output line saying
+  `create mode` for a file you know is tracked, and a file-count/
+  insertions count that dwarfs the edit you just made. If either
+  appears, stop before pushing — the commit is on the wrong base.
+
+### Eighth occurrence, 2026-10-02 — the reset itself destroyed work
+
+Occurrences four through seven were all caught harmlessly by the HEAD
+check. The eighth introduced a new failure mode: the check ran at
+**commit time, over a dirty tree**, and the remote had moved *during* the
+turn (CI's smoke-report publish job pushed `ca582cd` while the edits were
+being made). The recovery reflex — `git reset --hard FETCH_HEAD` — ran
+over a working tree full of uncommitted edits and **wiped them all**.
+Only the new, untracked `src/stall.rs` survived (reset does not touch
+untracked files), so the commit that followed contained one file out of
+nine and pushed a half-step: an unreferenced `.rs` file that cargo never
+compiles, on a green CI run. The missing eight files were rebuilt from
+the session record and pushed as the follow-up commit.
+
+**The added rule:**
+
+- **Never run `git reset --hard` over a dirty tree.** If a moved base is
+  discovered with uncommitted work, first `git stash` (or commit locally,
+  then rebase), *then* reset/rebase, then restore. The reset-recovery
+  steps in this entry were written for a clean tree; with edits in
+  flight they are a shredder.
+- The HEAD check protects a **commit**; it cannot protect **edits**. On
+  any multi-edit turn, expect the remote to have moved underneath you
+  (the CI publish job commits on its own schedule) — fetch before the
+  final commit, and if it moved, stash-rebase-restore rather than
+  reset-and-lose.
+- A green CI run proves nothing about *completeness*: a half-landed
+  step whose missing files are all unreferenced compiles clean. Read the
+  committed diff stat against the intended file list before calling a
+  push done.
+
+## 37. "No precedent" claims need a repo-wide grep, not a page-local one
+
+**2026-10-02, during 2.21.** The 2.21 plan recorded that the confirm
+dialog would need "a gtk::MessageDialog; no existing dialog precedent
+to copy". There was a precedent: `src/widgets/in_app_dialog.rs` is the
+app's modal-dialog system (its module doc explains exactly why a
+`gtk::Window` dialog is wrong on a tiling compositor, and pitfalls §2
+records the teardown rules), and `src/widgets/remaster_dialog.rs` is a
+complete confirm dialog — Cancel/confirm buttons, CSS classes, and the
+Rc-shared callback pattern GTK's `Fn` handlers need. The planning
+research grepped for dialogs only inside the reader page and concluded
+from the absence there. The shipped dialog uses the in-app system; the
+plan's parenthetical was simply a research miss.
+
+### The rules
+
+- Before writing "the codebase has no X", grep the whole tree for X.
+  `grep -rn "dialog" src/` would have found both files in seconds;
+  check `src/widgets/` first — shared UI machinery lives there.
+- The first PDF write path in the app also settled some mupdf-rs 0.8
+  facts worth keeping (docs.rs re-export pages can 404; the raw source
+  at raw.githubusercontent.com/messense/mupdf-rs/v0.8.0/ is the
+  reliable reference): `PdfDocument::open` takes `&P where P:
+  AsRef<FilePath>` — pass a `&str`, the same convention as
+  `Document::open` in `src/pdf.rs`; saves are
+  `save_with_options(filename: &str, options)` and
+  `write_to_with_options(&mut W, options)` with `PdfWriteOptions` at
+  `mupdf::pdf::PdfWriteOptions`; `shape::TextOptions` has a lifetime
+  (the `fontfile` field), so build it with `..Default::default()`;
+  `Shape::insert_text` maps the insertion point through the inverse
+  page CTM, so points are view coordinates (top-left origin, y down) —
+  the same space the OCR quads already use; and glyphs are emitted
+  along the unrotated axis with the line clip measured against the
+  unrotated media box, which is why pages rotated 90°/270° must be
+  skipped rather than embedded.
+
+**Same feature, first CI round (16 errors, all caught by clippy).**
+Three are general and cost a full CI round trip each:
+
+- With `use gtk::prelude::*` in scope, a bare `writer.flush()` is
+  ambiguous against gdk's `DisplayExt::flush`, and the error is
+  reported as `IsA<gdk::Display>` not implemented for your writer.
+  Use the fully qualified `std::io::Write::flush(&mut w)` in files
+  that import the GTK prelude.
+- `MainContext::default().invoke` requires a `Send` closure, which
+  sinks any non-Send callback parameter the closure carries. When
+  every caller is a main-thread button handler, call
+  `tasks::spawn` directly (it is main-thread-only anyway) instead of
+  wrapping in `invoke`; reserve `invoke` for worker-thread entry
+  points like `pdf_ocr::enqueue_import_scan`.
+- A confirm dialog's callback is an `Fn` closure (GTK's handler
+  kind), so it cannot move its captures into the task starter —
+  exactly what `remaster_dialog.rs` already documents, and what its
+  `Rc` pattern exists for. Rc the moved values and clone them out per
+  invocation. Reading a precedent is not the same as applying it:
+  the handler was written without the Rc and failed with E0507.
+- Renaming an `_`-prefixed parameter (here `_root` → `root`) breaks
+  body references that were legal despite the prefix — grep the old
+  name before renaming.
+
+## 38. Green in CI is not correct in the field — and "done" waits for the field
+
+**2026-10-02, 2.21's whole life cycle: planned, shipped CI-green, and
+withdrawn the same day.** The embed feature's unit tests included a
+full round trip — write the invisible text layer, save, reopen,
+extract, find the word back. It passed; CI was green; the item was
+reported as done. The owner's field test on a real book found the text
+"not embedded correctly" (his words; no further detail — he chose
+removal over debugging, and the feature is parked until the app is
+complete). Three separate "done?" answers had been given while his
+test was still pending.
+
+### The rules
+
+- A round trip through the same library that wrote the file proves
+  self-consistency, nothing more. "Any application can search this
+  file" is an interop claim; it is only tested by a different
+  implementation — pdftotext, pdfium, a real viewer. If this feature
+  returns, the CI test must run the written file through a second
+  renderer, and the field test comes before the item is called done.
+- When a defect report arrives with no detail and the owner chooses
+  removal, record exactly that — the report, the decision, the missing
+  detail — so the retry starts by reproducing the failure instead of
+  re-deriving a design that already failed once.
+- An item's done state includes the owner's visual QA for anything he
+  can see or run. The honest status before that is "awaiting field
+  test", never "done".
+- Scope honesty cuts both ways: when a proposed item is a nice-to-have
+  rather than core reading flow, say so at planning time. The owner's
+  verdict on 2.21 was "we are straying again" — a scope call he should
+  not have had to make after implementation.
+
+**Fourth occurrence, 2026-10-02, later the same day.** The base fell
+back to `29788b4` again between turns; this time the rule was not
+followed — a plan.md commit was made without a HEAD check and landed
+on the branch point ("create mode 100644 plan.md" was the tell: the
+file already existed on the session's tip). The unset upstream again
+kept it off the remote (push refused, non-fast-forward). Same recovery:
+fetch, `git diff FETCH_HEAD <bad-commit>` to isolate the one intended
+file, `git reset --hard FETCH_HEAD`, restore that file from the bad
+commit, commit, push. The tell is worth stating plainly: a commit that
+"creates" a file the session already tracks, or a diff whose size
+suddenly equals the whole session, means the base moved — stop, do not
+force anything, recover.
+
+**Fifth occurrence, 2026-10-02, minutes after the fourth.** The §36
+check was run and *ignored*: `git log --oneline -1` printed the branch
+point `29788b4`, and the commit went ahead anyway — the check had
+become a ritual, not a gate. The tell fired again ("create mode" for
+plan.md, a tracked file). Same recovery. The rule, sharpened: the HEAD
+check is not a step to perform before committing — it is a condition
+for committing. Branch point shown means no commit, full stop, recover
+first.
+
+## 39. A value moved by one arm of a match is moved for the whole match
+
+**2026-10-02, item 2.22's first CI round: two E0382s of the same shape.**
+A `match` produced `(dir, file_part)` in one arm and
+`(other_dir, format!("…{file_part}…"))` in the other — the inline
+`format!` captures borrow, so that arm looked like the safe one, but the
+tuple arm *moved* the value. Every use after the match —
+`dir.join(&file_part)` two lines down — failed with "borrow of moved
+value", even though "the arm that moved it is not the one my code took"
+feels like it should not matter. Move semantics are static: if any arm
+can move it, it is moved.
+
+**Do instead:** when a value is needed after a match that must produce
+it in one arm, `clone()` in that arm (and say why in a comment), or
+have every arm borrow and clone once at the end. And when editing
+without a compiler, read each new `match` arm asking one question:
+*does this arm move anything used below?* — the borrow checker reads
+the whole match, not just the diff.
+
+The stale-log trap from §11 recurred in the same round:
+`test-latest.txt` still ended with the *previous* run's footer, and only
+the commit list showed which publish commit carried the real failure.
+Read the `--- run <id> ---` footer before believing a log is current.
+
+## 40. The disk is the truth — and a collapsed card deletes at its entity's scope
+
+**2026-10-02, item 2.22's first field test on the owner's real library
+found two defects the CI-green suite could not:**
+
+**Defect one: every comic cover stayed behind in the old per-book
+folders while the chapter files moved.** The placement pass moved the
+cover by the row's `cover_name` — resolve the row's name, rename that
+file — and when the row and the disk disagreed (a name that resolved
+nowhere, or a move that failed), the error went through `let _ =` and
+the chapter simply lost its cover, its old folder staying behind with
+the orphan. The exact divergence on the owner's machine was never
+confirmed — no access to his database — which is itself the lesson:
+the fix could not be "correct the row"; it had to stop trusting the
+row. The sweep now lists the old folder and moves what is *there*
+(cover images, `kalam.json`), letting the row catch up; a repair pass
+adopts the same leftovers for chapters already placed; and every file
+operation in the pass logs instead of being discarded.
+
+**Defect two: deleting a comic from All Books removed exactly one
+chapter.** The grid collapses a series to one card backed by one
+representative book row, and the delete flow deleted *that row*. An
+action on a collapsed entity must operate at the entity's scope:
+`delete_book` is now series-scoped for comics, the confirmation counts
+the chapters (`delete_scope_count`), and the toast reports the real
+number.
+
+### The rules
+
+- A migration that moves files must be driven by the directory
+  listing, never by metadata that claims to describe it. The disk is
+  the truth; rows catch up.
+- Never `let _ =` a file operation in a migration. A swallowed error
+  is a stranded file that nobody will see until the owner browses the
+  folder.
+- Unit tests seeded from the same assumptions as the code cannot catch
+  row/disk divergence — the tests built rows whose names matched the
+  files, so the move always worked. A migration test needs at least
+  one case where the row lies (a cover with no name, a name with no
+  cover).
+- When the UI presents a collapsed entity (a series card, a drawer
+  entry), every destructive action on it goes through the entity, not
+  the representative row behind it.
+- A feature that already ran in the field needs a healing path, not
+  just a corrected forward path: the adoption pass repairs libraries
+  already in the broken state, on the next launch, with no user
+  action.
+
+**Sixth occurrence, 2026-10-02, later still.** The base fell back to
+`29788b4` once more between turns — and this time the rule worked as
+intended: the HEAD check ran before any edit, saw the branch point, and
+no commit was made on the wrong base. Recovery was the plain three
+steps (fetch, `reset --hard FETCH_HEAD`, redo the intended change). No
+new lesson; the record stays complete because the fault itself keeps
+recurring even when it is caught.
+
+---
+
+## 41. The guardrail ratchets count your new code — check them before you push
+
+**2026-10-02, 7.1 step 0.** The step added two `.expect("activity lock")`
+calls to `src/timing.rs` — natural-looking, matching the file's existing
+span-lock style. CI failed on `tests/guardrails.rs:
+production_code_panics_do_not_grow`: the repo ratchets production
+`.unwrap()`/`.expect(` at 12 (WORKING.md §1 says zero; the ratchet holds
+the real number and may only go down), and the two pushes had grown it to
+14.
+
+The first wrong response would have been raising `MAX_PROD_PANICS` — that
+is the ratchet running backwards. The second wrong response would have
+been restructuring the code to dodge the string match. The right response
+was asking what the check proves: an unhandled panic on a *diagnostics*
+path (the stall watchdog's activity stack) is strictly worse than a
+poisoned lock carried through — a poisoned lock means another thread
+already panicked, and the diagnostic must not answer with a second panic
+on the UI thread. Both sites now use `.unwrap_or_else(|e| e.into_inner())`
+— the same pattern the watchdog's read paths already used — and the count
+is back to 12 with the documented per-file distribution.
+
+### Recurrence, 2026-10-03 (7.1 step 2c)
+
+The step shipped with an `.expect("build_tab is only called with a
+snapshot in hand")` — an invariant assertion on a path every caller
+guarantees, the most innocent-looking kind. The ratchet counted it
+(13 > 12) and CI failed on the guardrail, not the build. The fix was
+the same shape as the first time: `build_tab` became a `&self` method
+whose missing-snapshot case is a documented `let ... else { return; }`
+— the tab stays on its loading row, a state QA cannot miss, and no new
+panic exists. The lesson did not need relearning so much as *applying
+before pushing*: grep your diff for `.expect(`/`.unwrap(` before the
+push, every time, because "this one is obviously safe" is exactly what
+the 13th call site said too.
+
+### The rules
+
+- `tests/guardrails.rs` is part of the repo's contract, not CI trivia.
+  Before pushing anything that adds `.unwrap()`/`.expect(` to `src/`,
+  `Arc<Catalog>` to `src/pages/`, or literal hex colours to
+  `resources/style.css`, count first — the ratchets are the same three
+  shapes and they never go up.
+- When a ratchet catches your change, the fix is almost never the
+  constant. Ask what the check proves; on a diagnostics path the answer
+  is usually "carry on with `unwrap_or_else(into_inner)`", because
+  instrumentation that can crash the app is worse than no instrumentation.
+- Re-run the count locally (it is a 20-line string match, reproducible in
+  one python snippet) rather than spending a CI cycle on the discovery.
+
+---
+
+## 42. A recurring GTK critical means the mitigations cover only some paths
+
+**2026-10-02, the owner's 7.1 timing run.** Mid-session, during navigation
+away from the EPUB reader:
+
+```text
+(kalam:272759): Gtk-CRITICAL **: gtk_widget_is_ancestor:
+assertion 'GTK_IS_WIDGET (widget)' failed
+```
+
+This is the **third appearance** of this critical, and the first two were
+fixed with in-code mitigations that are still there, each with a comment
+naming this exact message:
+
+- `AppModel::detach_current` (`src/app.rs`): unparent the page *before*
+  dropping the controller — dropping first makes GTK probe a disposed
+  widget.
+- The float-close path (`src/app.rs`, `CloseBookDialog` handler): the
+  rebuild of the page underneath a closing dialog is deferred to an idle
+  callback — rebuilding while GTK unwinds the close signal is what
+  produced the criticals there.
+
+**This instance:** it fired inside a ~250 ms UI block about 8 s after
+`route_open:reader`, at the moment the session navigated reader → home.
+The reader page is not a cacheable route, so Back drops it through the
+mitigated detach path — meaning something *else* still held or touched a
+finalized reader widget (a gesture, an engine view callback, a task
+applying to a dead page). Not reproducible from the log alone.
+
+### The rules
+
+- Every appearance of a runtime warning gets recorded, even when a fix
+  for a previous appearance is already in the tree — the count is the
+  signal that the mitigations do not cover every path.
+- The chase is now owed: whoever next touches reader teardown, float
+  close, or page-cache dropping runs the session again and attributes
+  this critical to its actual call site before calling that work done.
+  Two mitigated paths and a third appearance means the pattern, not the
+  two sites, is the problem.
+
+## 43. Know the edition before you reach for new syntax — let-chains are not in this repo
+
+**Date:** 2026-10-02, 7.1 step 2a (book page + book float migration).
+
+**What happened:** while converting `SetRating` in `src/pages/book.rs`, the
+first draft used a let-chain:
+
+```rust
+if saved && let Some(book) = self.book.as_mut() { ... }  // does not compile here
+```
+
+The workspace is **edition 2021**; let-chains in `if` conditions stabilized
+in edition 2024. The code would not have compiled — and because this
+sandbox has no Rust toolchain, nothing local would have said so. The
+mistake was caught reading the diff, rewritten as a nested `if` inside
+`if saved { ... }`.
+
+**The rules:**
+
+- Check `Cargo.toml`'s `edition` before using any syntax newer than the
+  repo's baseline. Anything stabilized after edition 2021 is suspect
+  here: let-chains, `gen` blocks, `unsafe extern`, if-let temporaries in
+  match guards.
+- With no local compiler, the diff read is the compile pass. Read new
+  code as the compiler would — borrow by borrow, move by move — before
+  pushing, because CI is a round-trip away.
+
+## 44. §31's enumeration must run to the closing brace — a read can hide below the line you are editing
+
+**Date:** 2026-10-02, 7.1 step 2a.
+
+**What happened:** the §31 pass ("an async rewrite must re-home every side
+effect of the sync path") enumerated the book page's reads and believed
+`fill_author_card` performed two: the author profile and the avatar
+photo. After the conversion, a re-read of the function found a third,
+sitting ~70 lines below the signature: the other-books thumbnails row
+called `crate::author::owned_books_for_author(catalog, first_author)` —
+a full books-for-author query inside a fill function, invisible to the
+line-level scan that found the first two.
+
+It was folded into `BookPageSnapshot.author_other_books` (the service
+reads it once; the page filters out the book itself when drawing), but
+the miss proves the process hole: enumeration that stops at the "interesting"
+lines is not enumeration.
+
+**The rules:**
+
+- Enumerate a function's reads **to its closing brace**, sequentially,
+  before declaring it converted. The expensive call is wherever the
+  author last needed data, not near the top.
+- The same is true for any "no more X in this function" claim made from
+  a diff: run the grep against the whole function body, not the changed
+  lines.
+
+## 45. The watchdog can only name what has a span — and an async apply path is a new blind spot
+
+**Date:** 2026-10-02, 7.1 step 2a field test (owner's machine).
+
+**What happened:** the 2a migration worked exactly as built —
+`route_open:book` fell from 96-686 ms to **1 ms**, the float's dialog
+span from 31 ms to **6 ms** — and the owner still reported "seems
+faster, but still not instant", with the window and the information
+appearing at once (no visible skeleton) and 751-1355 ms `[stall]`
+blocks landing right after the spans ended.
+
+Two lessons, one entry:
+
+1. **A skeleton that fills before the first frame draws never exists
+   for the user.** The worker round-trip (~100 ms on his machine) plus
+   the apply handler's work block the main loop through the first
+   paint, so the first frame the user sees already carries the data.
+   That is acceptable — skeleton visibility was never the goal — but
+   it means the *metric* is time to first painted content, and that
+   number did not move enough: the remaining 0.7-1.4 s is the apply
+   plus GTK realize/style/layout/paint of the filled tree, not the
+   reads the migration removed.
+2. **The apply path was born unattributed.** The `Loaded` handlers
+   run outside any route or dialog span, so the watchdog attributed
+   their blocks to whatever span ended last — a guess, and it looked
+   like one ("after route_open:book (took 1 ms)"). The same blindness
+   covers the idle work: `icons::init` at the first idle moment, the
+   thumbnail backfill, the warm-cover swap stream — all main-thread
+   costs with no label, which is why "no route or dialog span was
+   open" appears in the log at all.
+
+**The rules:**
+
+- Every async apply path gets an `activity` guard (and a timing span
+  under `KALAM_TIMING`) from the day it is written — an apply handler
+  is a new place the UI thread can block, and the watchdog cannot
+  name a place it cannot see. This is now part of the screen-open
+  recipe.
+- A migration step is not done when the reads move; it is done when
+  the field log shows where the *remaining* block went. "Seems
+  faster" from the owner is a measurement request, not a pass.
+- Before stamping a recipe on more screens, prove it moves the number
+  the user feels (time to first painted content), not the number the
+  spans report (construction time).
+
+## 46. Copy-ness can be load-bearing — a Copy-to-owned refactor breaks code that looks perfectly general
+
+**Date:** 2026-10-02, 7.1 step 2a.1 (caught by CI, not by review).
+
+**What happened:** widening the activity stack's labels from `&'static
+str` to `String` (so a task's runtime name could ride along) broke
+`last_ended_activity()` with E0507 — *cannot move out of dereference
+of `MutexGuard`*. The getter's shape, `state.last_ended.map(...)`,
+looks perfectly general; it only compiled before because the old tuple
+`(&'static str, Duration, Instant)` was `Copy`, so `.map()` silently
+**copied** the `Option` out through the guard's `Deref`. Make one field
+owned and the copy becomes a move out of a borrow, and the failure
+surfaces in a getter far from the type change. The same refactor broke
+a test that constructed `ActivityGuard { label: "literal" }` — a
+struct-literal site the signature change never touched.
+
+The fixes were mechanical — `.as_ref().map(|(l, took, ended)| (l.clone(),
+*took, ended.elapsed()))` and `.to_string()` on the literal — but both
+were invisible to the diff read, because the broken lines were **not in
+the diff**. Only the field types changed; the compile errors were in
+callers whose text was untouched.
+
+**The rules:**
+
+- When a type change makes a value non-`Copy`, grep for every consumer
+  that binds, moves, or pattern-matches it — especially behind a
+  `Deref` (guards, locks, iterators). "It compiled before" is not
+  evidence it was written to be general; it may have been riding on
+  `Copy`.
+- The diff read is the compile pass only for the lines in the diff.
+  For signature/type changes, the review surface is every use site,
+  and CI compiling `--all-targets` (tests included) is the safety net
+  that catches what the read cannot.
+
+## 47. A flaky test is a distribution with a cause — this one was a real bug that truncated series titles
+
+**Date:** 2026-10-02, 7.1 step 2a.1 CI round two.
+
+**What happened:** the branch's tests failed once in a test untouched by
+the change — `importing_a_comic_lands_it_in_its_series_folder`, which
+passes a uuid-padded series name through the comic import. The series
+came out as "Import Series" instead of "Import Series cd272d85-…": the
+chapter-marker heuristic's `" c"` keyword (for `c12`-style notation)
+matched the space before the uuid, and the number scanner skipped *any*
+characters until it found digits — so `d272d85-…` became "chapter 272"
+and everything after "Import Series" was deleted as a "marker".
+
+The activation probability is what made it look like noise: the random
+uuid must begin `c` + digit for the `" c"` path (about one run in
+sixteen), or end in an all-digit tail group for the trailing-digits path
+(about one in two hundred). Roughly a 6-8 % flake — and a **real,
+user-facing bug** the whole time: a series called "The Chronicles 1950"
+would have its title truncated to "The" with a phantom chapter 1950 on
+import.
+
+**The fix:** the marker parser now requires a complete word — an
+optional short alphabetic prefix ("c12", "vol2", "Ch. 5") followed by
+digits, at most five of them (the app's own ceiling: chapter stems are
+four digits, five only past 9999), with nothing alphanumeric after the
+digits — applied at every keyword and delimiter site in both the series
+sanitizer and the filename parser, plus the same five-digit cap on both
+trailing-digit rules. Regression tests pin the exact uuid shapes and
+every marker form that must keep parsing.
+
+**The rules:**
+
+- A test that fails intermittently is not weather. Compute or bound the
+  probability, find the input that varies (here: a random uuid), and
+  read the code path until the failure is *deterministic in your head*.
+  "Rerun until green" hides exactly the bugs users eventually find.
+- Lenient scanners — skip-any-characters-until-digits — turn every
+  nearby word into a potential false match. A marker (chapter number,
+  volume, issue) is a *word*: parse it as one, and bound it by the
+  domain's real range.
+- The published CI logs carry the panic line but not the assertion's
+  left/right values; `ci-logs/test-full.txt` (the unfiltered log, same
+  publish commit) does. Read the full log before diagnosing.
+
+## 48. A 0 ms callback can still freeze the UI — never swap widgets by container mutation
+
+**Date:** 2026-10-02, 7.1 step 2a.1 field run; fixed in step 2a.2.
+
+**What happened:** after the async migration, every main-thread callback
+measured 0 ms in the timing log — and the owner still saw 250 ms-3.4 s
+freezes, three of six ending exactly on a cover arrival. The deferred
+cover frame filled itself by removing its placeholder child and
+appending a picture (`book_row.rs` `swap_in_cover`): a container
+mutation, which schedules a relayout of the frame's ancestors. One
+arrival is nothing; a home screen streaming two dozen covers is a
+relayout storm — 0 ms of "our" code, seconds of GTK layout, and the
+watchdog could only say "after task_item:Preloading covers".
+
+**The fix:** the deferred frame now has exactly one child, forever — a
+fixed-size picture whose paintable is swapped in place when the cover
+arrives. The placeholder gradient is the frame's own background (no
+class is ever toggled); the paintless picture is transparent over it.
+A paintable swap on a fixed-size picture is a repaint, not a relayout.
+
+**The rules:**
+
+- "My callback is fast" is not the question. The question is what GTK
+  work the callback *schedules*: `remove`/`append` on a realized
+  container relayouts its ancestors, a css-class toggle re-styles the
+  node, and a paintable swap on a fixed-size widget repaints. Pick the
+  cheapest one that can express the change, always.
+- The second half of the fix is ordering: a page that decodes its own
+  covers on its snapshot worker applies them from the cache before any
+  frame is built — the swap path is never even reached. Doing work
+  before the widgets exist beats doing it cheaply after.
+
+## 49. Changing a parameter from borrowed to owned? Grep every call site in the file, not just the ones you edited
+
+**Date:** 2026-10-02, 7.1 step 2b, CI round one.
+
+**What happened:** `build_dashboard` took `&DashboardSnapshot`; its
+replacement `apply_snapshot` takes `Box<DashboardSnapshot>` and
+dereferences to owned. Two call sites the migration never touched
+broke: `goal_card(snap)` now passed an owned snapshot to a function
+still expecting a reference (E0308), and `for item in &feed` became a
+double reference when `feed` changed from an owned `Vec` to
+`&Vec` (E0277). Both were in code the edit anchors never overlapped,
+so the §31 read-through — which catches structural damage — could not
+have seen them; only the compiler can. With no local `cargo`, CI was
+the first compiler, and it did its job.
+
+**The rule:** when a variable or parameter changes from a reference to
+owned (or back), grep the whole file for its uses and check each one's
+expectation — a borrow-change ripples into call sites the diff never
+touches, same family as §46's copy-to-owned refactor. And budget for
+CI round one when there is no local compiler: two or three type errors
+on a big signature change is the norm, not a surprise.
+
+## 50. A channel-drain future swallows a burst whole — and a running dispatch cannot be interrupted
+
+**Date:** 2026-10-02, 7.1 step 2b.1; the ~3 s startup block of three
+consecutive field runs.
+
+**What happened:** every background task delivers through one
+`spawn_future_local` async task looping
+`while let Ok(item) = rx.recv().await { on_item(item) }`. Two
+properties of that shape, neither visible in a profile of "our" code
+(every callback measured 0 ms):
+
+1. **A buffered burst is processed inside a single main-loop
+   dispatch.** When the channel holds N items, one poll of the drain
+   task runs `on_item` N times before returning Pending — and GLib
+   cannot interrupt a running dispatch. Input, the stall watchdog's
+   heartbeat timeout, GTK layout: all wait until the burst is done.
+2. **Default priority ties with input and the heartbeat.** A source
+   at PRIORITY_DEFAULT keeps company with GDK events and timeouts, so
+   a *continuous* stream (one item per dispatch, arriving back to
+   back) can keep the loop busy for seconds without ever letting a
+   50 ms timeout win its turn — the watchdog reported a "block" that
+   no single line of code caused.
+
+The cover preloader supplied the flood: its first 24 covers decoded
+with no pacing (the pacing only started *after* the first batch), so
+startup interleaved a burst of cover swaps with the icon-theme rescan
+and GTK's first layout passes — three seconds of continuously busy
+loop, every individual piece innocent.
+
+**The fix (both halves required):** the drains `yield` to the loop
+after **every** item, so a burst becomes N dispatches with everything
+else interleaved between them; and pace the producer (every cover
+sleeps 4 ms, first batch included).
+
+**Revision, same day, after CI hung three times.** The original fix
+had two halves beyond the producer pacing: moving the drains to
+`PRIORITY_DEFAULT_IDLE`, and a per-item cooperative yield.
+
+- Runs one and two hung with the priority move in: every main-loop
+  source stopped dispatching under the tests' `block_on`, including
+  their timeouts. The first diagnosis pinned it on the priority move —
+  reasoning that the hung test's worker stepped no progress, so the
+  yield had never run — and the priority half was reverted.
+- Run three hung with the priority gone and only the yield left, on a
+  test whose worker steps exactly one progress item: **the yield hung
+  it too.** The first diagnosis had cleared the wrong test — the
+  lock-holding pipeline test was a different one, and it executes a
+  yield. A hand-rolled wake-and-pend `poll_fn` yield, textbook-shaped
+  as it looks, wedges the GLib future source under `block_on` in a way
+  that could not be reproduced locally (no toolchain in the sandbox;
+  each CI round cost 30-50 minutes).
+- Final state: the task drains are byte-for-byte the delivery that ran
+  green for weeks. Fairness is bought on the producer side only (every
+  cover decode sleeps 4 ms, first batch included), which is a worker
+  thread sleeping and physically cannot affect the main loop.
+
+**The lesson, stacked twice in one day:** a scheduling change you
+cannot run locally is a guess with a slow feedback loop, and a
+diagnosis built on "which code did not run" is only as good as the
+test you think was hung — verify WHICH test holds the lock before
+clearing either half. Any future drain-side change reopens only with
+a local reproduction, and the first thing that reproduction must
+show is the tests' `block_on` loop dispatching with the change in.
+
+**The rules:**
+
+- "Every callback is fast" says nothing: ask what a *burst* does, and
+  at what *priority* the drain runs. Drain loops need an explicit
+  yield per item and a priority below anything user-facing.
+- A producer and its consumer must be paced as a pair; pacing only
+  the steady state leaves the burst at the exact moment the app is
+  busiest.
+
+## 51. A statement-count equality budget must seed rows, not prefs
+
+**Date:** 2026-10-03, 7.1 step 2c; the settings snapshot's budget test.
+
+**What happened:** `book_page_statement_count_is_fixed` (step 2a)
+compares a busy book against a bare one and asserts equal statement
+counts. The natural copy for the settings snapshot — "fresh catalog vs
+one with everything set" — is not the same test. Seeding *prefs* changes
+which statements fire, not how many rows come back:
+
+- `watch_folder::load_watch_rules` takes a second look at a legacy
+  pref when no rules are saved, so the fresh catalog runs one statement
+  more than the seeded one.
+- Global prefs (theme, metadata sources, the Google key) are served
+  from `prefs.json` before the database (§19 makes the file inert under
+  tests, but the code path still differs from a DB hit in principle).
+
+Seeding **table rows** (a dictionary, a shelf) is what actually tests
+the property: neither `list_dictionaries` nor `list_shelves` grows with
+the library. The pref-shaped reads are asserted by their defaults
+instead.
+
+**Rule:** an equality budget seeds the things whose *size* varies
+(rows), never the things whose *control flow* varies (prefs, flags,
+feature gates). If a read has a legacy fallback path, seed it the same
+way on both sides or not at all.
+
+**Same lesson, second face (caught by CI the same day):** empty-vs-
+busy is also a control-flow difference, not a size difference. The
+author page's first budget draft compared an unknown author against
+one with three books and failed on CI: `hydrate_books` skips its
+batched tag query entirely when the list is empty, so the empty case
+is structurally one statement cheaper. Compare like shapes — one book
+vs three — and let the empty case be cheaper on its own; "less work
+when there is less data" is the property working, not a budget break.
+
+## 52. An insertion edit needs an exact anchor and a diff read — a "small" edit mangled the line it touched
+
+During the shelf-bug fix (2026-10-03), inserting a helper above
+`collapse_comic_chapters` was attempted with an `old_text`/`new_text`
+pair that differed only by a trailing newline. The fuzzy matcher
+applied it as a line join, producing
+`pub fn collapse_comic_chapters(...) {        if books.is_empty() {`
+on one line — valid-looking, wrong, and it would have sailed into a
+commit unread. Caught by reading `git diff` of the file immediately
+after the edit; the fix took seconds.
+
+**Rule:** when the purpose of an edit is to *insert*, make the anchor
+the exact text around the insertion point and put the insertion
+explicitly in `new_text` — never let the pair differ only in
+whitespace. And read the file's diff after every edit, not just before
+committing; the edit tool's fuzzy matching is a convenience, not a
+contract.
+## 53. Converting a cover call to deferred is half a contract — the page must also warm its size
+
+Step 2b (2026-10-02) migrated the My Library dashboard off the UI
+thread and, in passing, converted its three synchronous
+`cover_widget` calls to `cover_widget_deferred`. The next day the
+owner reported the page's covers gone — on every launch, cold or
+warm.
+
+The mechanism: a deferred cover parks a placeholder and registers a
+pending frame keyed on the **exact** `(path, w, h)` it was built at.
+It fills only when a decoded texture with that key lands in the
+cache — and the only producer of those textures is
+`warm_books`/`warm_covers` at that same size. The dashboard asked
+for 72×104, 120×170 and 48×68; home and the grids warm 128×204, the
+comics hub 150×210, the book page its own sizes. Nobody ever decoded
+the dashboard's keys, so its placeholders stayed for the life of the
+page — the exact failure mode written in `warm_books`' own doc
+("Home originally built deferred cards and never warmed them"). The
+conversion step read as pure mechanics ("the same widget, deferred")
+and hid the second half of the contract.
+
+**Rule:** `cover_widget_deferred` and `warm_books`/`warm_covers` are
+one call split in two. A page that builds deferred cards warms them
+itself, at the exact size it asked for — never assume another
+surface decoded the same book at "basically that" size; the cache
+key makes 128×204 and 120×170 strangers. Enforced since the fix:
+`deferred_covers_are_warmed_by_the_page_that_builds_them` in
+`tests/guardrails.rs` fails on any file that builds deferred covers
+without a warm call.
+## 54. Dialogs are list surfaces too — and a CSS rule that loses by source order was never doing anything
+
+Two lessons from the "+ Add books" picker (owner report, 2026-10-03,
+the third bug of its family in two days):
+
+**First: the no-chapters audit stopped at pages.** The 3.1 sweep went
+page by page — grids, strips, feeds — and never asked what the
+*dialogs* list. The shelf picker filled from raw `list_books`, so a
+700-chapter import meant 700 tick boxes. Any surface that lists
+books is a list surface, whatever widget hosts it: pickers, floats,
+editors' browsers. The audit rule is now: grep for `list_books`,
+not for pages. (The legitimate chapter-level callers are the comics
+hub, the metadata editor and ownership matching — each displays or
+edits a *file*, not a *library row*.)
+
+**Second: `.kalam-in-app-dialog { min-width: 0px }` was dead from
+the day it was written.** Its purpose was to free in-app dialogs
+from the book float's fixed 700×368 shell; but `.kalam-float {
+min-width: 700px }` sits *later* in style.css, and between rules of
+equal specificity the later one wins. Every in-app dialog has been
+forced to at least 700 px wide ever since — invisible on a big
+window, a clip on a small one. The fix is the compound selector
+`.kalam-float.kalam-in-app-dialog`, whose specificity beats source
+order. **Rule: an override that must win needs to be *stronger*, not
+merely *nearer* — and a CSS override nobody ever verified visually
+is a rule that may never have worked.**
+## 55. Ellipsize caps a label's minimum width, not its natural width — and a centred panel sizes itself to the natural one
+
+The picker dialog ran edge to edge across the app window with its
+borders invisible (owner report, 2026-10-03, twice). The first fix
+ellipsized the row labels and went to CI green — and changed
+nothing on his machine, because it fixed the wrong width:
+
+- `set_ellipsize(End)` caps a GtkLabel's **minimum** width. The
+  label stops *forcing* containers to be at least as wide as its
+  text.
+- A label's **natural** width remains its full text, no matter the
+  ellipsize. And `in_app_dialog`'s panel is centre-aligned inside
+  the window overlay — GTK gives a centred child its **natural**
+  size. One long title (a scanlation chapter name before the
+  collapse fix; some long title/author string after it) sized the
+  whole panel past the window, and the borders clipped off both
+  sides.
+
+`set_max_width_chars(N)` is the missing half: it caps the natural
+width, so the row can neither force nor size the panel wide.
+
+**Rule:** when a widget must not drive a container's size, ask
+which of the two widths the container uses — a FILL child cares
+about minimum, a CENTER child sizes to natural. And: a layout fix
+verified only by reasoning is not verified; the green CI run said
+nothing about pixels on his screen, which is where the bug lived.
+## 56. Own the widget you must constrain — and make the thing measure itself
+
+The edge-to-edge picker took three fixes. The second one (§55's
+`max_width_chars`) was set on `CheckButton::with_label`'s internal
+label, found by walking `first_child()` and downcasting. It compiled,
+CI went green — and the owner's log later measured the picker at
+**1906 px on a 1350 px window**: the cap had never taken effect.
+Whether the downcast missed, the internal label is not the widget the
+size machinery asks, or the cap does not bind on that label — it does
+not matter, and that is the lesson: **a property set on a widget you
+reached into is a property you cannot rely on.** Build the child
+yourself (`CheckButton::new()` + `set_child`) and constrain a widget
+you made.
+
+Two companions:
+
+- **Cap at the level that owns the failure.** Rows can lie; the panel
+  is what shows the borders. CSS `max-width: 640px` on the in-app
+  dialog class caps the panel's natural width no matter what any row
+  reports — a backstop that survives future row builders. (GTK ≥ 4.6
+  for max-width; this app's builds require newer anyway.)
+- **When a bug survives a fix, stop reasoning and instrument the
+  bug.** The two log notes that finally convicted the row fix —
+  `picker_window` and `picker_width` — were worth more than any
+  further theory: they turned "still cut off" into a number that
+  named the layer. `picker_natural` now sits beside them so the next
+  failure, if there is one, is diagnosed in one log line.
+
+## 57. gtk-rs `measure()` returns a four-tuple
+
+`widget.measure(orientation, for_size)` does not return
+`(minimum, natural)` — it returns `(minimum, natural,
+minimum_baseline, natural_baseline)`. Destructuring two elements is
+an E0308 that only CI could catch here (the sandbox has no
+toolchain). When a gtk-rs method's shape is unverified and there is
+no codebase precedent, expect the first CI run to be the type
+checker — and destructure with `..` or all four fields rather than
+guessing arity: `let (_, nat, _, _) = r.measure(...)`.
+
+## 58. GTK CSS is not web CSS — and a rejected property fails nothing
+
+§56 was wrong about one layer, and the owner's log caught it:
+
+    (process): Gtk-WARNING **: Theme parser error: <data>:725:5-14:
+    No property named "max-width"
+
+GTK CSS has **no `max-width` property** — not in GTK 4.6, not in any
+GTK4 release up to the 4.22 CI runs against. `min-width`/`min-height`
+exist; `max-width`/`max-height` do not. The "GTK >= 4.6" claim in §56
+was recalled from web CSS and never checked against GTK's own
+property list. The picker got fixed anyway — by the *other* layer,
+the rows' owned labels — and the field log proved which layer worked:
+`picker_natural 520` means the rows themselves now ask for a sane
+width; the CSS "backstop" had been a no-op the whole time.
+
+Three lessons, one per line of that warning:
+
+- **Check property names against docs.gtk.org, not against web-CSS
+  memory.** The two dialects share a syntax and only part of a
+  vocabulary.
+- **A rejected declaration does not fail anything.** The parser
+  drops the one property, keeps the rest of the rule (the load-bearing
+  `min-width: 0px` in that same block still applies), prints one
+  warning at startup, and the app runs fine. Compilation, tests, the
+  smoke test — all green.
+- **Green is not the same as warning-free.** The same theme parser
+  warning was sitting unread in CI's *own* smoke logs of the green
+  run (`ci-logs/tasks-latest.txt:82`, `ci-logs/reader-latest.txt:88`)
+  before the owner ever saw it. After shipping CSS, grep the smoke
+  logs' stderr — CI already collects the evidence; the failure is not
+  looking at it.
+
+The width cap now lives exactly where it can be measured — the rows'
+own labels — and `picker_natural` in the timing log is the tripwire
+if a future row builder regresses.
+
+## 59. The tripwire guards the contract you signed, not the one you should have
+
+The reading list page opened in 322 ms with a 0.7 ms service read. The
+cost was never the query — it was `cover_widget`, the
+decode-on-the-spot cover variant, called per row on a list surface.
+The deferred variant (`cover_widget_deferred` + `warm_books`) has
+existed since A0; its doc comment even says "grids want
+`cover_widget_deferred` instead". The page predates the pattern or
+simply never met it.
+
+The lesson is about the guardrail, not the page: the test
+`deferred_covers_are_warmed_by_the_page_that_builds_them` catches a
+file that uses the deferred variant **without** warming it — it
+cannot catch a file that should have used the deferred variant and
+didn't. A tripwire enforces the contract you signed; the variant
+choice happens before any contract exists. Two consequences:
+
+- **Audit for the wrong half too.** After this, the remaining
+  synchronous per-row users are `author.rs` (group covers, 136×204 —
+  the author page measured 232 ms first open on 2026-10-02, cause
+  never verified) and `comics.rs` (group covers, 120×180 — the comics
+  hub measured 8.3 ms, fine at the owner's scale). Both are
+  same-family suspects for the next field log, not fixes owed today;
+  the 1–2-cover detail dialogs and floats are the variant's
+  legitimate use.
+- **Measurement is the only tripwire for the unwritten contract.**
+  `service_reading_list 0.7 ms` vs `route_open:reading_list 322 ms`
+  named the layer in one line — the same shape as picker_natural.
+  When a span pair disagrees by two orders of magnitude, believe the
+  gap, not the story about the code.
+
+## 60. After a turn gap, read the log BEFORE the diff — the workspace can be re-cloned under you
+
+Between two turns of this session the workspace was **re-cloned from
+scratch**: reflog shows `clone` → `checkout` of the branch — recreated at
+the fork point, not at the branch tip — with the true latest files then
+restored into the working tree. Git looked normal, the files looked
+right, and the branch's whole real history existed only on the remote.
+
+The first commit of the turn then staged everything: `git diff --stat`
+showed **145 files, ~30,000 insertions** — every change since the fork
+point, squashed into one commit parented on the fork. Two signals said
+stop before that commit, and both were ignored:
+
+1. **The standing rule from the error playbook: `git log --oneline -1`
+   after any turn gap.** Not run that turn. HEAD was sitting at the fork
+   point, five commits and one branch-history behind, and one command
+   would have shown it.
+2. **A diff that lists files you did not touch is not noise; it is the
+   finding.** `git diff --stat` said 145 files. The intended change was
+   three. Committing anyway was the mistake — the diff was read as
+   scenery, not as evidence.
+
+What saved the history: **the non-fast-forward rejection.** A squashed
+commit cannot fast-forward over the real branch, so the push failed and
+nothing left the machine. Never force-push past that rejection — it is
+the safety net doing its job.
+
+The recovery recipe that worked, for next time:
+
+1. `git fetch origin` — confirm the real tip (`git log
+   origin/<branch> --oneline -5`); the remote is the source of truth
+   after a re-clone.
+2. `git reset --soft origin/<branch>` — move HEAD to the real tip,
+   keep the working tree. The staged diff becomes exactly
+   (real tip → working tree): your actual changes, plus any files only
+   the remote moved (here: `ci-logs/`), which `git checkout HEAD --
+   ci-logs/` takes from the tip.
+3. Verify the staged diff is only the intended changes, commit, push —
+   fast-forward, no force.
+4. Prove the recovery: `git diff <squash-commit> HEAD -- . ':!ci-logs'`
+   must be empty — the abandoned tree and the recovered tree identical
+   in every source file.
+
+The rule, sharpened: **after any turn gap, the first git command is
+`git log --oneline -3`, and it must name the commit you expect — before
+any `add`, any `commit`, and any diff you are about to trust.**
+
+*Recurred the same day.* The recipe worked again with one refinement:
+after `git reset --soft origin/<branch>`, the **index** still held the
+re-clone's base tree, so `git diff --cached` showed a 180-file,
+46,000-deletion monster — the session's whole work in reverse, because
+the cached diff compared tip-to-base, not tip-to-working-tree. The
+soft reset moves HEAD only; it does not touch the index. Follow it
+with a plain `git reset origin/<branch>` (mixed) so the index matches
+the tip, and only then read the diff: it must list exactly the files
+you actually changed, plus `ci-logs/` (taken from the tip with
+`git checkout HEAD -- ci-logs/`).
+
+*Fifth occurrence, 2026-10-05, new variant:* the re-clone came back as
+a **single-commit history** — `git log --oneline -12` printed one line,
+the fork point `29788b4` — with the branch's whole state in the working
+tree as uncommitted changes (so `plan.md`, `tests/`, `src/stall.rs` and
+friends read as untracked). The log-first rule caught it before any
+staging. The recipe worked unchanged, with the fourth occurrence's
+`Cargo.lock` step included: fetch → mixed reset to
+`origin/<branch>` → `git checkout HEAD -- ci-logs/ Cargo.lock` →
+status completely clean. The lesson holds: the first git command after
+a turn gap is the log, and a file list you do not recognize is the
+finding, not the scenery.
+
+*Sixth occurrence, later the same day:* identical variant (single-commit
+clone at the fork point), caught by the same rule, recovered by the same
+recipe with nothing new to add.
+
+*Seventh occurrence, hours later:* same again. The rule and the recipe
+have now held across five recoveries in two days; nothing new to learn —
+run the log first, run the recipe, move on.
+
+*Eighth occurrence, same day:* the recipe is now reflex — fetch, mixed
+reset, checkout ci-logs + Cargo.lock, verify zero modified files. Still
+nothing new to learn.
+
+*Ninth occurrence, 2026-10-06:* same variant, same reflex, zero damage.
+Nine recoveries in five days; the rule — log first, then anything — has
+held every time, and the recipe has never needed a change.
+
+*Tenth occurrence, later the same day:* the re-clone landed with HEAD
+at the fork point and 181 phantom modifications; the fetch-mixed-reset
+recipe brought it back to the true tip with zero dirty files. Ten for
+ten.
+
+*Eleventh occurrence, next day:* identical variant, identical recovery,
+zero damage. The recipe has now survived eleven rounds; the rule stays
+the same — the log comes before anything else.
+
+*Twelfth occurrence, 2026-10-08 (recorded late — the session's own
+leftover list caught the omission):* mid-Phase-6-step-1, a turn gap
+re-cloned the workspace and the three `src/db.rs` edits had vanished;
+found by reading the log before touching anything, re-applied one at a
+time (one re-anchored — the `·` middle-dot lesson again), zero damage,
+HEAD never moved. Twelve for twelve; nothing new to learn, and the
+discipline that caught it is the same one that files these entries.
+
+## 61. The panic scanner reads item attributes — it cannot see `#![cfg(test)]`
+
+The step-4 budget commit failed its own gate: `production_code_panics_do_not_grow`
+grew from 12 to 14. The two new "production panics" were `.unwrap()`s in a
+`perf.rs` **test helper** — test-only code, inside a file whose entire module
+is `#![cfg(test)]`. But the scanner in `tests/guardrails.rs` recognises only
+**item-level** annotations (`#[cfg(test)]`, `#[test]`, `#[tokio::test]`);
+an inner attribute at the top of the file is invisible to it. Four
+pre-existing helpers (`seed`, `seed_more`, `small_and_larger` ×2 unwraps)
+had been quietly miscounted as production panics the whole time, buying
+the ratchet four units of slack nobody knew about.
+
+Fix in the ratchet's own spirit: the helpers now carry explicit
+`#[cfg(test)]` (semantically redundant, scanner-legible — a comment at
+each site says why), and **MAX_PROD_PANICS dropped 12 → 8**, the true
+production count. Two lessons:
+
+- **A ratchet's number is only meaningful if every unit is accounted
+  for.** Four of the twelve were test code miscounted — slack that a
+  future real regression could have hidden inside. When a tripwire
+  misfires, don't just un-trip it: audit what the number was actually
+  made of.
+- **Checkers that parse source read what they can see.** Item
+  attributes, not file-level ones. Test-only helpers in an
+  `#![cfg(test)]` module still get the item annotation, or they grow a
+  ratchet they never belonged to.
+
+## 62. Suppression that clears instead of restoring — nested regions need a stack
+
+The step-4 dashboard fix failed CI on the panic ratchet: `src/db.rs`
+grew from 0 to 1 "production" panic. The panic was `.expect("insert")`
+inside `fn seed` — a helper *inside* `#[cfg(test)] mod tests`. The
+scanner's suppression was a single level: when `mod tests {` opened,
+`suppress_below = 1`; when the first `#[test]` fn inside opened, the
+slot was **overwritten** with 2; when that fn closed, the check
+`depth < d` **cleared the slot entirely** instead of restoring the
+mod's level — and the unannotated helper sitting after the inner test
+leaked into the production count.
+
+The remarkable part: this bug existed from the scanner's first day and
+never fired, because in every file the helpers happened to sit *before*
+the first inner `#[test]`. The arrangement, not the algorithm, was
+holding it together — until a new test was inserted above one.
+
+The fix: a **stack** of suppression depths. A test item pushes
+`depth + 1`; when `depth` falls below the top, pop — and if an outer
+level remains, it resumes protecting exactly where it left off. The
+scanner's self-test now carries the nested case (helper after an inner
+test, inside a test mod, production code after the mod) so the shape is
+pinned, not incidental.
+
+General shape, worth naming: **any region-based suppression over
+nestable regions must be a stack.** A single level silently works until
+someone nests in an order you did not anticipate.
+
+## 63. A scripted replace that does not assert it fired is a silent no-op
+
+The comic-axis increment's first CI run failed on one line the rewrite
+should have changed: the shelf picker's call site still passed
+`Arc<Catalog>` to a function now taking `LibraryService`. The rewrite
+script used `str.replace()` on four patterns, asserted three of them —
+and the fourth, a multi-line call site whose indentation differed by a
+few spaces from the pattern, matched nothing and said nothing. The
+diff was then reviewed and looked complete, because the unchanged call
+site is invisible in a diff that has no hunk for it.
+
+The rule, sharpening §60's "read the region back": **every** scripted
+replacement asserts it fired — `assert!(old in s)` before, or count the
+replacements and assert the count. A no-op replace is worse than a
+failed one: it fails later, in CI, with a message (a type mismatch
+three files away) that points nowhere near the cause.
+
+*63 in action (2026-10-07):* the run #10 ROADMAP row's replace
+anchored on text recalled from memory — `author_fill` in backticks
+— while the file carried it plain. The assert fired, the commit
+landed without the row, and the mismatch was caught and repaired
+in a follow-up commit the same turn. The sharpened rule: never
+hand-write an anchor from memory; grep the file for the exact
+current text first, then paste that text into the script.
+
+## 64. A message enum's derives and visibility are part of every variant's contract
+
+The author-page warming chunk burned two CI rounds on the same glance
+it skipped — both errors were the enum's own attributes, not the new
+code's logic:
+
+1. **Round one:** `AuthorPageLoad doesn't implement Debug`.
+   `AuthorPageMsg` carries `#[derive(Debug)]`, so any type a new
+   variant holds inherits that requirement — the wrapper struct added
+   for the warmed-covers payload had no derive.
+2. **Round two:** `AuthorPageLoad is more private than the item
+   AuthorPageMsg::Loaded::0`. The enum is reachable at `pub(crate)`,
+   so a private payload struct in its variant is E0446 — the recipe's
+   own source (`book.rs`'s `PageLoad`) is `pub` for exactly this
+   reason, and the copy dropped the visibility while keeping the
+   shape.
+
+The pattern will recur: the `PageLoad` recipe (snapshot + covers
+bundled for the `Loaded` message) is now on two pages, and every future
+page that adopts it will define its own payload struct next to a
+deriving, visible enum. The check is one look at the enum above the new
+variant, not just the struct: **when a variant's payload type changes,
+re-read the derive and the visibility on the enum itself** — the
+compiler error names only the missing trait or the private type, never
+the enum that demanded it. With no local Rust, that one glance is the
+only pre-push chance to catch it.
+
+The fix: `#[derive(Debug)] pub(crate) struct AuthorPageLoad` — both of
+its fields (`AuthorPageSnapshot`, `DecodedCover`) were already `Debug`
+and public; only the wrapper lacked the annotations.
+
+## 65. Deleting a licensed call site must take its allowlist entry with it — in the same commit
+
+The remote-cover chunk's third CI round failed on the boundary
+guardrail's *stale* check, not a new violation: the remote detail
+page's cover decode (`Pixbuf::from_stream_at_scale`) was a licensed
+UI-thread site in `ALLOWED_UI_THREAD_SITES`, and the fix that moved the
+decode into the worker deleted the call — leaving an allowlist entry
+that matched nothing. The guardrail fails on those by design ("the list
+silently rots into decoration", §59's contract), so the fix and its
+allowlist cleanup must land together.
+
+The check when moving or deleting any disk/document/parser call in
+`src/pages/`: **grep the allowlist in `tests/guardrails.rs` for the
+file before pushing.** A moved site needs the entry's needle updated;
+a deleted site needs the entry removed; a new site needs a *reasoned*
+entry or a worker — never silence the guardrail by adding an entry
+without a comment.
+
+The good news buried in this one: the remote detail page's decode was
+an ALLOWED UI-thread site, and the fix removed it — the allowlist got
+strictly smaller, the direction the boundary is supposed to move.
+
+## 66. Without a local toolchain, the codebase's clippy vocabulary is part of the contract
+
+The frame-probe chunk's first CI round died on one clippy error:
+`this map_or can be simplified`. `Option::map_or(true, …)` is now
+`is_none_or(…)` in clippy's eyes (and `map(…).unwrap_or(false)` wants
+to be `is_some_and(…)`) — the lint fires as an error on this repo's CI
+settings, and there is no local Rust to catch it before the push.
+
+The rule: when writing new `Option`/`Result` combinators, match the
+forms the existing code already passes clippy with — grep for the
+combinator in `src/` first and copy the vocabulary that is already
+green (`is_some_and`, `is_none_or`, `map_or_else`), and be suspicious
+of `map_or` specifically: it is the one the linter has been narrowing.
+Ten minutes of CI per round is the price of a wrong guess; the grep is
+seconds.
+
+## 67. A hand-written test fixture can assert on a value that never existed
+
+The frame-probe chunk's second CI round failed on its own new test:
+the pending-cap test asserted `pending[0] == "span_6"`, but its
+hand-written label table only ever produced `span_0`–`span_5` and then
+`"span_later"` for every index from 6 on — so the assert compared
+against a label no code path had ever pushed. The state machine was
+right; the fixture lied. CI caught it because the assert failed — but
+the same fixture shape with a ">= some_index" style assert would have
+passed vacuously and proven nothing (§19's trap wearing a new coat).
+
+The rule: when a test asserts on generated fixture values, generate
+the fixture (`Box::leak(format!(…).into_boxed_str())` for the
+`&'static str` case) instead of enumerating a hand-written table. An
+enumeration that drifts from its own asserts is invisible in review —
+both sides look plausible side by side.
+
+## 68. Verify the foreign signature, not just the foreign name
+
+The render_backend probe's first CI round failed on `the method
+type_ exists for enum Option<Renderer>`: `NativeExt::renderer()` had
+been confirmed to EXIST in the docs search, but its return type was
+recalled from memory as `Renderer` — in this binding version it is
+`Option<Renderer>`. Without a local compiler, a recalled signature is
+a guess wearing a docs citation: the search that proves the method
+exists does not prove what it returns.
+
+Same family as §64 (the enum's derive and visibility) and §66 (the
+clippy vocabulary): every line that calls into gtk-rs gets its exact
+signature read from the docs page — name, parameters, AND return
+type — before it is written. The three CI rounds those two lessons
+cost were each one glance that was skipped.
+
+## 69. An environment-variable experiment can silently not happen
+
+Field run #11 was launched with `GSK_RENDERER=ngl` to test GTK's
+"other" GL renderer. It tested nothing: the log carried a single
+`Gsk-WARNING` — "The new GL renderer has been renamed to gl" —
+buried among 300 timing lines, and the app then ran the same GL
+renderer as every default-mode run. GTK chose a friendly warning
+over an error, so the run "succeeded" while the knob silently did
+nothing. (Verified afterwards in GNOME/gtk's gsk/gskrenderer.c:
+`ngl` warns and returns GSK_TYPE_GL_RENDERER; the old GL renderer
+was removed in GTK 4.18, so only one GL renderer exists there.)
+
+What saved the turn: the `render_backend` probe — one line in
+frames.rs that prints the realized renderer's type name in every
+timing log — turned "I ran an experiment" into "here is which
+renderer actually ran". The rule: whenever a run is supposed to
+flip an environment-controlled mode, the log must print the mode's
+realized value, and the analysis reads that line before touching
+any numbers. Without the probe, run #11's numbers would have been
+recorded as "the ngl renderer is slow" — a false fact with real
+consequences for the upstream report.
+
+*Second instance, same day:* run #12 requested
+`GSK_RENDERER=vulkan`; no usable Vulkan driver was present, GTK
+warned (twice for the toplevel at startup, then once for every
+popup that opened later — each new surface retries the requested
+renderer, so the env var kept costing failed attempts all
+session) and fell back to GskGLRenderer. The probe again made the
+fallback visible in the same log. Two additions to the rule: an
+experimental GSK_RENDERER must not be left set after the test,
+and a fallback that announces itself only in warnings is easy to
+misread as a successful experiment — read `render_backend` first,
+numbers second.
+
+## 70. An upstream release list is not a distro package list
+
+The Mesa downgrade prescription named 25.3.6 because Mesa's own
+release notes listed it as the final point release of the 25.3
+line. The owner opened Arch's package archive and could not find
+it — Arch never packaged 25.3.6; by the time upstream shipped it,
+Arch had already moved to 26.0.0. Two assumption errors in one
+prescription: upstream's newest release of a line does not imply
+the distro packaged it, and Arch filenames embed the epoch prefix
+(`mesa-1:25.3.5-1-x86_64.pkg.tar.zst`, not `mesa-25.3.5-1-...`),
+so a hand-built URL without the epoch 404s even when the version
+exists. Caught by the owner before any command ran; zero damage.
+
+The rule: when prescribing an exact package or file, verify it
+against the distro's own listing (the archive page the owner will
+actually use), or write the step as "pick the newest 25.3.x you
+see there" and let the listing arbitrate. Upstream release notes
+prove what upstream shipped, not what the user can install.
+
+## 71. A driver downgrade on a rolling distro drags its whole toolchain
+
+The corrected downgrade to mesa-1:25.3.5-1 installed cleanly and
+then produced a dead GL stack: glxinfo reported "couldn't find
+RGB GLX visual or fbconfig" and eglinfo "eglInitialize failed" —
+no driver of any kind. Most likely mechanism: Arch's Mesa puts
+every Gallium driver (iris included) in one LLVM-linked shared
+library, built against February's LLVM, which refuses to load
+against October's llvm-libs. pacman reported no conflict because
+package dependencies carry no upper bounds — the failure was
+invisible until something asked for GL.
+
+Two lessons. First, the verify step must expect TOTAL failure,
+not just the llvmpipe substitution it was written for — "no GL
+at all" is a real outcome of a too-old driver on a current
+system, and the procedure should say so. Second, on a rolling
+distro an eight-month-old driver package is not installable in
+isolation; the honest options are a near-in-age version (26.1.8,
+weeks old, same-era libs) or a multi-package time-machine that
+is disproportionate for a diagnostic question. The middle option
+exists precisely because the toolchain moves as one.
+
+*Confirmed and sharpened, same day:* the 26.1.8 middle option
+also produced a dead stack, and the forensics made the mechanism
+a fact: `ldd /usr/lib/libgallium-26.1.8-arch1.1.so` reports
+`libLLVM.so.22.1 => not found` — the system's LLVM is already
+newer than the one that build was welded to. Soname pinning
+means "only weeks old" is no protection on a rolling distro;
+the exact-partner rule (Mesa build ↔ build-day LLVM) is the
+cliff, and the ldd-not-found check is now part of any future
+downgrade procedure — run it BEFORE the tour, alongside the
+version-and-renderer check.
+
+## 72. Parallel edits to one file race — a reported success can vanish or mangle
+
+**Date:** 2026-10-08, Phase 6 step 1 (the patch store).
+
+**What happened.** Several edit calls to the *same file* were issued in one
+parallel batch. Every call reported success, but the file afterwards was
+missing three of the changes entirely, and three regions were corrupted:
+two stray fragments appended at file tails (the leftover tail of a sibling
+edit's replacement text), and one two-lines-joined-into-one inside
+`SavedWord` — the §52 line-join shape, produced by a racing sibling whose
+old/new pair differed only in whitespace. With no local toolchain (§11),
+none of this was visible until the diff was read; a bracket-balance check
+cannot catch a joined line, and compile-clean would have been claimed from
+memory — §27's exact failure mode.
+
+**What caught it.** The §31/§52 discipline: reading the complete `git diff`
+immediately after the edits, then grepping for every expected marker
+(`SCHEMA_VERSION`, the new struct, the new field). Three "successful"
+edits were simply absent from the file; the tails and the joined line were
+repaired one edit at a time, each verified.
+
+**The rules.**
+
+- One edit per file per message. Parallel edits are safe only when each
+  targets a different file.
+- A success report from the edit tool is not evidence the change is in the
+  file. Verify markers with grep, then read the whole diff — corruption
+  lands at file tails and in lines the edit never named.
+- The §52 anchor rules matter double in a batch: a whitespace-only
+  old/new difference does not just risk a line join, it hands a racing
+  sibling a mangle template.
+## 73. Test-only free functions are dead code in the bin — impl-methods are not
+
+**Date:** 2026-10-08, Phase 6 step 2; one failed CI run (37717908065).
+
+**What happened.** Step 1 shipped `pub` methods on `impl Catalog`
+(`insert_patch` and friends) whose only callers were their own tests, and
+CI was green — so step 2 shipped free `pub` functions
+(`resolve_span`, `apply_text_patches`) on the same assumption. Wrong:
+the bin target flagged every one of them (`never used`, `never
+constructed`), because **test-only reachability does not count** (§11's
+rule, now with its precise boundary): methods on a used type passed the
+lint; free functions in a private module did not. The same run also
+caught a genuine test bug the eye had missed — a `PatchRecord` moved
+into one call's array and used again in the next (`E0382`).
+
+**The rules.**
+
+- A new module with no production caller yet needs an explicit interim:
+  `#![allow(dead_code)]` at the top with the reason and the step that
+  removes it (the Annotation-field precedent, module-sized). Wire the
+  real caller or keep the allow — never ship "it should be fine".
+- The §11 boundary, sharpened: *impl-methods* on a type that is itself
+  used can survive test-only callers; *free functions* cannot. Plan for
+  the stricter case and the lenient one takes care of itself.
+- Borrowed-by-array test fixtures are moves: `[&a, &b]` borrows, but
+  `[a, b]` moves — and any later mention of `a` is the compile error.
+  The clone goes in the **earlier** array (prevent the move), not the
+  later one (which would itself be the use-after-move — a second CI
+  cycle, 37718889665, was spent learning this).
+
+## 74. `clippy::type_complexity` fires on newtypes over multi-bound closures
+
+**Date:** 2026-10-08, Phase 6 step 3; one failed CI run (37723814937).
+
+**What happened.** The step-3 seam's `EntryFilter` newtype wrapped
+`Option<Arc<dyn Fn(&str, Vec<u8>) -> Vec<u8> + Send + Sync>>` directly in
+its tuple field — and clippy (`-D warnings`) rejected the field's type as
+"very complex" before anything downstream compiled, so the run also
+verified none of the other new code in the step. The one-line fix: a
+private type alias for the wrapped shape, which is exactly what the
+lint's own message suggests ("factor into type definitions") — aliases
+don't trip the lint, and the struct reads better for it.
+
+**The rule.** A newtype over `Arc<dyn Fn(...) + Send + Sync>` needs the
+closure shape factored into a `type` alias first. And the corollary that
+cost this run its coverage: a compile failure in an early crate
+(`chapbook-epub` compiles before `chapbook-reader`, `kalam-reader` and
+the app) means the rest of the step's code was never checked — read a
+failed run's log as "verified up to the first error, nothing after".
+
+## 75. `pub` in a private module is not exported — the crate root decides
+
+**Date:** 2026-10-08, Phase 6 step 3; one more failed CI run (37724717910).
+
+**What happened.** §74's fix compiled the `chapbook-epub` library clean —
+and its own integration tests then failed to import
+`chapbook_epub::EntryFilter`, because the crate's `mod book;` is private
+and the crate root re-exports its public surface item by item
+(`pub use book::Book;`), a convention stated in that very lib.rs — which
+had never been read. A `pub` item in a private module is visible to the
+crate and to nothing else; external tests, downstream crates and the
+re-export chain all resolve through the root's explicit list.
+
+**The rule.** Adding a public type to one of this repo's crates means
+adding it to the crate root's re-exports in the same change — these
+crates export selectively by design (see the reasoning comment in
+`crates/chapbook-epub/src/lib.rs`), not by glob. And the general form:
+when work touches a crate's public surface, read its `lib.rs` first; it
+is the contract, and it is short.
+
+## 76. `OpenBook`'s other variants are feature-gated — no if-lets, no bare wildcards
+
+**Date:** 2026-10-08, Phase 6 step 3; the third failed run of the step
+(37725602605).
+
+**What happened.** The seam's `set_entry_filter` used
+`if let OpenBook::Epub(..)` and `text_is_filtered` a `_` wildcard arm —
+both fine in a build with the image-book features, both errors under
+`-D warnings` in a build without them, because `OpenBook`'s `Comic` and
+`Pdf` variants are `#[cfg]`-gated and the default workspace build sees a
+single-variant enum: the if-let is irrefutable and the `_` arm
+unreachable. Nothing had ever matched on `OpenBook` before — the enum's
+own `publication()` shows the house pattern: cfg-gate the arms, no
+wildcard.
+
+**The rule.** Matching a feature-gated enum in this repo means gating
+the fallback arm with the same features
+(`#[cfg(any(feature = "_comic", feature = "pdf"))] _ => ...`) or, like
+`publication()`, gating each named arm. Never `if let` on a variant that
+can be the only one. And the meta-lesson of this step's three runs: a
+crate that compiles under one feature set proves nothing about another —
+the workspace clippy and test builds exercise different sets, so new
+enum-touching code has to be right under all of them.
+
+## 77. A payload-carrying variant is not a value — `matches!`, never `!=`
+
+**Date:** 2026-10-08, Phase 6 step 3; fourth failed run (37726510604).
+
+`Resolution::Found` carries a `Range<usize>`, so `x != Resolution::Found`
+does not compare — it hands `!=` a constructor function and the compiler
+says "expected `Resolution`, found enum constructor". The matcher's own
+tests had this right (`matches!(..., Resolution::Found(_))`); the seam's
+caller wrote the bare comparison out of fieldless-variant habit. Rule:
+for any variant with a payload, `matches!(x, Variant(_))` — and the
+broader one, already in §73, that a fix written from habit rather than
+from the error is a guess.
+
+*Thirteenth occurrence, later the same day (caught live, on time this
+time):* the pre-commit status check showed the full signature — HEAD
+quietly back at the fork point, ~140 phantom modifications, this
+session's tracked files untracked. Log first, fetch, `git reset --mixed
+origin/arena/01a0b2ee-kalam`: two dirty files left, exactly the two
+being committed, edits intact, recommit on the correct base. The recipe
+held for the thirteenth time; the check that catches it is the one that
+runs before every commit, no exceptions.
+
+## 78. glib's channel API is not where memory says it is — copy the house pattern, not the docs in your head
+
+**Date:** 2026-10-08, Phase 6 step 4; first failed run (37733497947).
+
+Three errors in one lesson. The inline edit's verdict needed to cross
+from a worker thread to the main loop as plain data. Written from
+memory of gtk-rs docs: `gtk::glib::MainContext::channel::<T>()` plus
+`gtk::glib::Sender<T>`/`Receiver::attach` — none of it exists in the
+workspace's glib 0.22 (`E0599` no `channel` on `MainContext`, `E0425`
+no `Sender` in the crate root). The API moved across glib versions,
+and "it worked in a project once" is not an API check. The same run
+caught the sibling mistake: `EventControllerFocus::connect_leave` was
+written as a zero-argument closure; generated gtk-rs signals pass the
+object, so it takes one (`E0593`).
+
+The fix was already in the tree: `tasks.rs` ships the worker→main-loop
+shape this repo uses — `async_channel::unbounded::<T>()`, the worker
+calling `send_blocking`, and `glib::spawn_future_local` receiving on
+the main loop (no `Send` bound on the receiving future, which is the
+whole point: the relm4 sender stays main-loop-side). Rule: before
+inventing a threading bridge, grep for an existing one in the codebase
+and copy it; a pattern that already compiles here beats an API
+remembered from anywhere else.
+
+*And the retrieval worked as designed:* the Actions log is unreadable
+from this environment (results-receiver host unreachable), so the
+errors came from `ci-logs/clippy-latest.txt` — the workflow commits
+its own failure log to the branch. `git pull --rebase` after a red run
+is step one, before any `gh run view --log`.
+
+## 79. A shared `Rc` across `move` closures needs a clone per closure
+
+**Date:** 2026-10-08, Phase 6 step 4; second failed run (37734781134).
+
+The inline editor's done-flag — one `Rc<Cell<bool>>` consulted by three
+signal closures (Enter, Escape, focus-out) — was written with a bare
+`move` in each closure. The first closure moves the Rc; the second
+`move` of the same binding is a use-after-move (`E0382`, twice). The
+shape is everywhere in this repo (the annotation drawer's `cur_color`
+in the same file): create the Rc once, `let handle = rc.clone();` per
+closure, and each `move` takes its own handle. The tell in the diff
+review that was skipped: three `move` closures, one binding, no
+`clone()` between them. A one-closure-per-variable audit belongs in
+the pre-push review for any multi-handler widget.
+
+## 80. Test expectations live in the space the code under test works in
+
+**Date:** 2026-10-08, Phase 6 step 4; third failed run (37735334310).
+
+The planner's context-anchor test failed on one character: the
+expected `context_after` was written as `"; she smiled.</p>"` — the
+`&` thought of as the span's end — but the planner works in source
+space, where the find string is `"teh word &amp;"` and the span
+covers the entity's semicolon too, so the anchor is
+`" she smiled.</p>"`. The code was right; the expectation was
+computed in DOM space while asserting about source space. §77's rule
+generalizes past constructors: when writing an expected value, state
+which space it is measured in, and derive it from the exact input the
+code sees — an expectation remembered rather than derived is a guess
+with a green-looking face.
+
+## §81 — `set_margin_all` is relm4's, not gtk's (Phase 6 step 5, CI run 1)
+
+`E0599: no method named set_margin_all found for struct gtk4::Box` —
+while the identical call compiled in `metadata_editor.rs`. The working
+file had one import mine didn't: `use relm4::RelmWidgetExt;` — the
+method is a relm4 extension trait, not `gtk::prelude::WidgetExt`. With
+a glob gtk prelude plus per-file trait imports, "same method, same
+call, different file" always means: diff the `use` lines, not the
+calls. (relm4's `view!` macro takes `set_margin_all:` for the same
+reason — it resolves through relm4, not gtk.)
+
+## §82 — a closure must not capture the very widget it is connected to (Phase 6 step 5, CI run 2)
+
+Two borrow errors after run 1's import fix — and both were invisible
+in run 1 because E0599 resolution failures mask borrow-check errors
+(rustc runs typeck first). Expect a second wave after fixing type
+errors; a clean mental compile must include the borrow pass.
+
+- **E0505, the real lesson:** `btn.connect_clicked(move |_| { ...
+  btn ... })` — when the closure body uses the same binding as the
+  method receiver, the receiver is borrowed by the connect call while
+  the `move` closure must move that same value in. Fix: a
+  differently-named clone for the closure's internal use
+  (`let apply_btn = apply.clone();` — refcounted, same widget). This
+  is why earlier panels never hit it: their handlers used *other*
+  widgets than the one they connect to (the history_section toggle's
+  `revealer_ref` was the pattern all along). When writing any
+  `connect_*` handler, check the receiver's name against every name
+  the closure body uses.
+- **E0382:** `for p in pending { ... }` consumes the Vec, and the
+  later `s.pending = pending;` uses it after move. Iterate
+  `&pending`; remember a `&p` loop variable is already a reference
+  (`edit_row(p, ...)` — not `&p`, which would be `&&`).
+
+## §83 — the guardrails suite audits new page code (Phase 6 step 5, CI run 3)
+
+`tests/guardrails.rs` is this project's static-analysis suite, and it
+reads every file in `src/pages/`: disk/database/parsing on the UI
+thread, catalog handle counts in pages, hex colours in stylesheets,
+panic growth, worker suppression. Adding or editing a page means
+re-reading those tests first — `pages_touch_disk_or_documents_only_
+inside_tasks` failed CI on a single `path.is_file()` pre-check that
+was also redundant: the worker's `bake_epub` had the same check with
+a proper error string. If a UI-thread pre-check merely duplicates a
+worker-side error, it is not UX polish — it is an ARCH.md violation.
+
+Rule: when a new file lands under `src/pages/`, grep guardrails.rs
+for every `pages_…` test and walk the new file against each.
+
+## §84 — helper signatures in their narrowest useful form (Phase 6 step 6, CI run 1)
+
+Clippy (`-D warnings`) rejected three spots in one helper: the
+signature said `&mut Vec<ScanNode>` where only indexing happens
+(`&mut [ScanNode]` — `ptr_arg`), and both call sites passed `&mut
+stack` where the parameter is `&[usize]`
+(`unnecessary_mut_passed`). The general lesson for the mental
+compile pass: when adding a private helper, write the parameter
+types from what the BODY does, not from what the caller happens to
+hold — slices over Vecs, `&` over `&mut` — because the compiler
+accepts the wider forms silently and clippy is the only layer that
+objects, one CI run later.
+
+## §85 — python-heredoc rewrites silently eat Rust string continuations (Phase 6 step 7, caught in review)
+
+Every code edit this project makes without a local toolchain is a
+python heredoc `replace`, and one such rewrite rebuilt a `match` of
+multi-line string literals without the trailing-backslash
+continuations (`"...may have \
+             changed..."`). Rust
+accepts a plain newline inside a string literal — the newline and all
+the next line's indentation become content — so the file compiled
+clean and the toast would have shipped reading "it may have
+              changed underneath the edit", a dozen spaces wide.
+No compiler, no clippy, no test would have said a word: the failure
+is only visible to a reader.
+
+The lesson: after any heredoc edit that touches a string literal
+spanning lines, grep the touched region for long space runs inside
+quotes —
+`grep -n '"[^"]*         ' <file>` — and re-check every
+multi-line string kept its `\` at each break. The continuation
+backslash is the difference between a message and a message with a
+railroad track through it, and nothing automated can tell them
+apart.
+
+## §86 — gtk traits live in the prelude, not the crate root (Phase 6 step 7, CI run 1)
+
+`position_inline_editor` was generalized from `&gtk::Entry` to
+`&impl gtk::IsA<gtk::Widget>` — and `gtk::IsA` does not exist:
+E0405, trait not found in crate `gtk`. The gtk-rs traits (`IsA`,
+`Cast`, `WidgetExt`, …) are exported through `gtk::prelude`, not the
+crate root, so the qualified path is `gtk::prelude::IsA<…>` — while
+the bare `IsA<…>` works only in files that `use gtk::prelude::*`
+(or relm4's, which re-exports it; that is why `upcast_ref` resolved
+in types.rs while the same trait family failed as a qualified path
+one file over).
+
+The lesson for the mental compile pass: when a new bound or method
+call involves a gtk-rs trait, check the file's prelude import before
+spelling the trait — a qualified `gtk::` path is right for structs
+(`gtk::TextView`), wrong for traits (`gtk::prelude::IsA`), and a
+bare name silently depends on which prelude the file pulls in.
+
+## §87 — relm4's prelude is not gtk's, and one resolution error hides a layer (Phase 6 step 7, CI runs 1–2)
+
+Run 2 of step 7 surfaced six errors that run 1 never showed, in two
+families. First: `relm4::prelude::*` does not re-export gtk's prelude
+in this project's versions — a file that stores gtk widgets needs
+`use gtk::prelude::*` of its own the moment it CALLS anything on them
+(`Entry::text` is `EditableExt`, `upcast_ref` is `Cast`), and types.rs
+had never called a widget method before this step. Second: the
+message enum's `Debug`/`Clone` derives now reach into `VerifiedEdit`,
+so any type placed in a `ReaderMsg` payload needs the derives too —
+the enum's derive is what demands them, and the compiler's message
+names the payload type, not the enum.
+
+The structural lesson: run 1's single `E0405` (the §86 trait path)
+masked all six — a resolution error in one signature stops the
+compiler before method-resolution elsewhere in the crate reports.
+With no local toolchain, each CI run peels exactly one error layer,
+so the pre-push review should treat every qualified gtk trait path
+AND every new widget method call in a file that never made one as
+the likeliest failures — the layers run 1 cannot see.
+
+## §88 — a pub enum's payload must be as visible as the enum (Phase 6 step 7, CI run 3)
+
+Third layer: `VerifiedEdit` was `pub(crate)` while `ReaderMsg` is a
+`pub` enum, and the variant `InlineEditVerified(Result<VerifiedEdit,
+(String, u64)>)` puts the type where the enum's declared visibility
+reaches — the private-interfaces lint compares DECLARED visibilities
+and rejects `pub(crate)` inside `pub`, even though the enum lives in
+a private module and nothing is reachable outside the crate either
+way. The fix is declaring the payload `pub` — in a private module
+that is still crate-local, and the lint goes quiet.
+
+The rule for the mental compile pass: any type that appears in a
+`ReaderMsg` variant inherits the enum's visibility demand. Types that
+only live in the model's fields can stay `pub(crate)` — the step-4
+`InlineEdit` was exactly that shape and green.
+
+## §89 — a new enum variant is a contract with every exhaustive match (Phase 6 step 8, CI run 1)
+
+Run 1 of step 8 failed three ways, one old and two of a kind. The
+old one first: the commit callback shared by two controllers was
+cloned AFTER the first `move` closure had already taken it —
+E0382, the §82 family; the clone must happen before either
+controller exists.
+
+The pair: adding `ReaderOut::OpenEditor` and `Route::Editor` broke
+two exhaustive matches this branch never touched — the bubble
+windows' own reader forwarding in `bubbles.rs`, and `Route::
+sidebar_item` in `models.rs`. Both compile-fine lists until the
+variant lands, and the compiler names only the first three errors,
+so more can hide behind them. The pre-push sweep that finds them
+all: grep for the enum's LAST variant — every exhaustive match must
+mention it — and check each site for the new one. `ComicSeries`
+and `OpenAuthor` were the probes this time.
+
+## §90 — the sweep must include the enum's own module (Phase 6 step 9, CI run 1)
+
+Step 9 added `Resolution::Stale`. The §89 sweep ran — grep every
+exhaustive match, check each for the new variant — but with a filter
+that excluded `epub_patches.rs`, the enum's own defining module, on
+the theory that in-module matches were safe. They are not: the module
+matched its own enum at `plan_text_patch`, over the result of its own
+`resolve_span` helper, and that helper could never yield the new
+variant — which is exactly why the arm was easy to forget. E0004 at
+`epub_patches.rs:240`, run 1, nothing else behind it.
+
+The corrected rule: the §89 sweep greps the whole workspace, defining
+module included, and there is no "safe" module. When the new variant
+genuinely cannot occur at a site, the arm still must exist — refuse
+along the site's existing failure path with a comment saying why the
+arm is unreachable, never `unreachable!()` (the no-panics rule) and
+never a guessed store.
+
+## §91 — heredoc-written Rust line continuations, and anchors inside doc comments (Phase 6 step 10)
+
+Two scripted-edit traps in one step, both silent.
+
+The first: a Rust string continuation (`\` at end of line, the
+repository's own multi-line `format!` style) written through a python
+heredoc. In python, `\<newline>` inside any string literal is a line
+continuation — it contributes nothing. The tool call's own escaping
+sat between intent and effect: four backslashes in the call became
+one backslash in the file, but two became *none*, and the continuation
+collapsed into a single over-long line with doubled spaces — which
+rustfmt cannot split (it never breaks literals) and so would have
+shipped as-is. The check that caught it was the mechanical one:
+every added line measured against the 100-column limit, every
+continuation inspected with `od -c` (one backslash byte, one newline
+byte — not two, not zero).
+
+The second: an insertion anchored on the first line of a doc comment.
+The anchor text was unique, but the block landed *inside* verify_inline_edit's
+doc — its first three lines now documented the new struct, and the
+function kept the tail. Compiles clean; the documentation is simply
+wrong, and only a context-reading diff review (not a grep for the
+anchor) shows it. The rule that fixes both: after any scripted
+multi-line insert, read the diff *hunk by hunk with context*, and
+never anchor on a doc comment's interior lines — anchor on the
+`pub fn`/`struct` line that owns it.
+
+## §92 — the quick-xml version the app actually compiles (Phase 6 step 10)
+
+The workspace pins quick-xml 0.42 (`[workspace.dependencies]` —
+chapbook-epub and rbook ride it), but the root crate's own
+`[dependencies]` table separately pins 0.37 — one version per table,
+both in the lockfile, both legal. Research read the workspace line
+and verified the 0.42 docs; the new sanitizer code compiles against
+0.37. Nothing broke only because the API surface used
+(`Reader::from_reader`, `read_event_into`, `buffer_position -> u64`,
+the `Event` shapes) is common to both. The rule: before writing
+against a dependency, read the *crate's own* requirement line, not
+the workspace's — grep the package name in Cargo.toml and take the
+last table that owns it.
+
+## §93 — three faces of one compile error, and clippy shows them one at a time (Phase 6 step 10, run 1)
+
+`clippy --workspace --all-targets -- -D warnings` compiles before it
+lints, so a type error arrives as a clippy failure — and the log
+carries every file's errors, not just the first. Step 10's four:
+
+1. A test module inherits nothing from the file's main code: the
+   sanitizer's tests needed `crate::db::PatchRecord` fully qualified
+   because the module above it never imports the type (the existing
+   `bake_patch` helper spelled it out; the new helper copied the
+   short form that doesn't exist there).
+2. A `filter` closure receives its tuple *by reference*, so pattern
+   shapes shift binding modes: `(new, old)` over `(usize, &usize)`
+   binds `(usize, &usize)`; adding `&old` to deref the second
+   instead turns the *first* into `&usize`. `new != *old` holds
+   either way — write the deref, not the pattern gymnastics.
+3. A `connect_clicked` closure is `Fn`: it runs again. Moving a
+   captured `Arc` into a `std::thread::spawn` inside it is a move
+   out of the closure — the thread needs its own clone per click.
+
+And run 2's lesson on top: fix one error class and the next run
+finds the next — budget for a compile-error run or two after any
+large scripted insertion, and re-read the *whole* log, not the first
+diagnostic.
+
+## §94 — clippy's double-ended lints are a family; end it with rev().find (Phase 6 step 10, runs 3–4)
+
+`Iterator::last` on a double-ended iterator wants `.next_back()`;
+fix that and `filter(..).next_back()` is *another* lint of the same
+family, with its own name. Two runs spent on two rungs of one
+ladder. When a clippy lint belongs to a named family (the error
+text says so), skip to the form the family cannot complain about:
+`iter().rev().find(..)` for "last match", written once.
+
+## §95 — the guardrail is not a false positive machine: pages never touch disk, workers included (Phase 6 step 10, run 5)
+
+The pages-touch-disk test scans `src/pages` source text and
+suppresses only `crate::tasks::spawn` bodies. Step 10 put eight
+disk calls there — staging, the jacket update, staged-file
+deletions — every one inside a `std::thread::spawn` worker, every
+one architecturally wrong anyway: the follow-ups of a baked cover
+op *are* the cover service's work, and the panel has no business
+knowing how a jacket gets re-made. The fix was moving them to
+`src/epub.rs` (`stage_cover_image`, `apply_baked_cover`,
+`remove_staged_asset`) beside `replace_cover_bytes` — smaller
+pages, one home for the cover's file lifecycle. The lesson: when
+the guardrail fires on code that runs off-thread, do not reach for
+the allowlist and do not reach for `tasks::spawn` — ask whether the
+code belongs in a page at all. It usually does not. (The scanner
+can be replicated locally in twenty lines of python; run it before
+pushing anything that touches files from UI code.)
+
+## §96 — a new enum variant is every match's business, and the sandbox cannot tell you (Phase 6 follow-up, run 1)
+
+`PageSlot` grew `EditorPicker` and the compiler knew immediately —
+`E0004, non-exhaustive patterns` — but only on CI, because the
+sandbox has no toolchain and a match on the variant list lives in a
+private `impl PageSlot::widget()` thirty lines below the enum, easy
+to read past when the wiring you are thinking about is in
+`build_page`. The fix was one arm. The lesson is the grep: when a
+variant joins an enum, `grep -n "EnumName::"` and account for every
+match before pushing — especially impl blocks near the definition,
+which look like bookkeeping and are exhaustive matches in disguise.
+The cost of skipping it is a full CI round trip (run 1 of the rail
+entry, ~11 minutes for one line).

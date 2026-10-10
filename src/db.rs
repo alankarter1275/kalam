@@ -1,7 +1,7 @@
 //! SQLite catalog access — P1 books + P2 progress + P3 annotations & dictionary.
 
-use crate::models::{Book, BookFormat};
-use crate::paths::{book_dir, catalog_db, ensure_data_dirs};
+use crate::models::{Book, BookFormat, ComicChapter, ComicSeries};
+use crate::paths::{book_dir, catalog_db, ensure_data_dirs, resolve_library_file};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 use std::fs;
@@ -15,6 +15,7 @@ mod dictionaries;
 mod history;
 mod lookup_history;
 mod metadata;
+mod patches;
 mod prefs;
 mod pronunciation;
 mod series;
@@ -25,10 +26,15 @@ mod stats;
 mod tags;
 
 pub use tags::BulkMetadataEdit;
+pub(crate) use series::heuristic_series_key;
 pub use dictionaries::{
-    likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
-    BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
+    likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME,
+    BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
 };
+// Only the engine's tests name `Sense` directly; keep it out of the non-test
+// build so it is not an unused import.
+#[cfg(test)]
+pub use dictionaries::Sense;
 pub use history::{LibrarySession, SessionRow};
 pub use lookup_history::DictLookup;
 #[allow(unused_imports)]
@@ -43,6 +49,10 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("content search: {0}")]
+    ContentSearch(String),
+    #[error("ocr cache: {0}")]
+    OcrCache(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -56,7 +66,12 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v12 = dictionary priority + combined_words merged store
 /// · v13 = saved_words.known (review status for vocabulary tools)
 /// · v14 = dict_lookups (append-only lookup history, Phase 10)
-pub const SCHEMA_VERSION: i64 = 14;
+/// · v15 = book_content_fts (SQLite FTS5 virtual table for library-wide deep search) + book_search_index_status
+/// · v16 = page_ocr_cache (persistent per-page OCR results keyed by file fingerprint)
+/// · v17 = purge comic bubble-OCR rows from page_ocr_cache (feature removed in 2.17;
+///          the table itself stays because scanned-PDF OCR still uses it)
+/// · v18 = patches (Phase 6: non-destructive EPUB edit patches, mirrored into kalam.json)
+pub const SCHEMA_VERSION: i64 = 18;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -73,6 +88,12 @@ pub struct Catalog {
     /// has its freshly-imported cover, so the stash was being overwritten with
     /// the EPUB default before the real cover could be copied back.
     restoring: std::sync::atomic::AtomicBool,
+    /// Rows written by **reading activity** (progress saves, session
+    /// telemetry, mark-book-opened) — the writes that happen because you read
+    /// a book, none of which add, remove or retitle anything. Subtracted from
+    /// `total_changes()` by [`Catalog::page_cache_token`] so a reading session
+    /// does not evict the app's page cache. See that method for the contract.
+    activity_rows: std::sync::atomic::AtomicI64,
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +101,7 @@ pub struct Catalog {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // model mirrors the row; several fields below are not yet surfaced
 pub struct Annotation {
     pub id: i64,
     pub book_id: i64,
@@ -91,12 +112,45 @@ pub struct Annotation {
     pub end_path: String,
     pub end_offset: i64,
     pub color: String,
+    pub style: String,
     pub text_excerpt: String,
     pub note: String,
     pub cfi: Option<String>,
     pub created_at: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // written on update; no edited-at stamp is shown yet
     pub updated_at: String,
+}
+
+/// One EPUB edit patch (Phase 6): a non-destructive replacement rule. It
+/// lives in the database and the book's `kalam.json`; the `.epub` on disk is
+/// untouched until an explicit apply bakes it in.
+#[derive(Debug, Clone)]
+pub struct PatchRecord {
+    pub id: i64,
+    pub book_id: i64,
+    /// `text` today; whole-file (raw mode) and structural kinds are later
+    /// Phase 6 steps — the column is ready so they need no migration.
+    pub kind: String,
+    /// The entry's container path, e.g. `text/chapter3.xhtml`.
+    pub href: String,
+    pub chapter_index: i64,
+    /// What to find, in source space (entity-escaped DOM text).
+    pub find_text: String,
+    pub replace_text: String,
+    /// Anchor text around the find, disambiguating repeated words — the
+    /// same find-again-by-context idea as the locator quote layer.
+    pub context_before: String,
+    pub context_after: String,
+    /// Which surface made the edit: `typo`, `proofread`, `editor`, `raw`.
+    pub source: String,
+    /// The whole-file guard (kind `file`): the entry's SHA-256 when the
+    /// raw-mode edit was made, hex. Empty for the find/replace kinds —
+    /// their find text is their own guard.
+    pub before_hash: String,
+    /// `pending` until an explicit apply bakes it into the `.epub`.
+    pub status: String,
+    pub created_at: String,
+    pub applied_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +167,21 @@ pub struct SavedWord {
     pub known: bool,
 }
 
+/// A saved word queued for spaced-repetition review (roadmap #5).
+pub struct ReviewCard {
+    pub id: i64,
+    pub word: String,
+    pub definition: String,
+}
+
+/// Current unix time in seconds, for the SRS schedule.
+fn now_epoch() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 /// Book identity attached to a saved quote — the library dashboard renders
 /// cover, book and author per quote card.
 #[derive(Debug, Clone)]
@@ -125,12 +194,12 @@ pub struct QuoteRef {
 #[derive(Debug, Clone)]
 pub struct ReadingBookmark {
     pub id: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // bookmarks load per-book, so the id is never read back
     pub book_id: i64,
     pub chapter_index: i64,
     pub fraction: f64,
     pub label: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // kept for future date sorting; not displayed
     pub created_at: String,
 }
 
@@ -157,7 +226,7 @@ pub struct AuthorWork {
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthorProfile {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // authors are keyed by name; the row id is unused
     pub id: i64,
     pub canonical_name: String,
     pub sort_name: String,
@@ -179,23 +248,23 @@ pub struct AuthorProfile {
 
 #[derive(Debug, Clone)]
 pub struct Dictionary {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // lookups go by name; the id is internal
     pub id: i64,
     pub name: String,
     pub lang: Option<String>,
     pub entry_count: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // bookkeeping column; not displayed
     pub added_at: String,
     /// Merged-store priority (schema v12): lower numbers speak first.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the merged store orders by priority in SQL; the field mirrors the column
     pub priority: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct DictEntry {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // entries are addressed by word; the id is internal
     pub id: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the word->dict join happens in SQL; not read in Rust
     pub dict_id: i64,
     pub word: String,
     pub definition: String,
@@ -242,11 +311,11 @@ pub struct Shelf {
     pub description: String,
     /// JSON rule document; empty for manual shelves.
     pub rules: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // shelves render unsorted for now; ordering column retained
     pub position: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // not displayed
     pub created_at: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // not displayed
     pub updated_at: String,
     /// Live count, filled in by `list_shelves`.
     pub book_count: usize,
@@ -276,11 +345,11 @@ impl Shelf {
 #[derive(Debug, Clone)]
 pub struct ReadingListEntry {
     pub book: Book,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // order comes from the query's ORDER BY; field mirrors the column
     pub position: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the list shows titles only; notes not surfaced yet
     pub note: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // not displayed
     pub added_at: String,
 }
 
@@ -333,7 +402,7 @@ impl EventKind {
 /// A history row joined with its book title for display.
 #[derive(Debug, Clone)]
 pub struct ReadingEvent {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // events are displayed, never edited; the id is unused
     pub id: i64,
     pub book_id: i64,
     pub kind: EventKind,
@@ -415,6 +484,59 @@ impl HighlightColor {
         HighlightColor::Orange,
         HighlightColor::Underline,
     ];
+
+    pub const SOFT_FIVE: &'static [HighlightColor] = &[
+        HighlightColor::Yellow,
+        HighlightColor::Green,
+        HighlightColor::Blue,
+        HighlightColor::Pink,
+        HighlightColor::Orange,
+    ];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnnotationStyle {
+    #[default]
+    Solid,
+    Underline,
+    Squiggly,
+    Strikeout,
+}
+
+impl AnnotationStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AnnotationStyle::Solid => "solid",
+            AnnotationStyle::Underline => "underline",
+            AnnotationStyle::Squiggly => "squiggly",
+            AnnotationStyle::Strikeout => "strikeout",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            AnnotationStyle::Solid => "Solid tint",
+            AnnotationStyle::Underline => "Underline",
+            AnnotationStyle::Squiggly => "Squiggly",
+            AnnotationStyle::Strikeout => "Strikeout",
+        }
+    }
+
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "underline" | "straight" => AnnotationStyle::Underline,
+            "squiggly" | "wavy" => AnnotationStyle::Squiggly,
+            "strikeout" | "strike" => AnnotationStyle::Strikeout,
+            _ => AnnotationStyle::Solid,
+        }
+    }
+
+    pub const ALL: &'static [AnnotationStyle] = &[
+        AnnotationStyle::Solid,
+        AnnotationStyle::Underline,
+        AnnotationStyle::Squiggly,
+        AnnotationStyle::Strikeout,
+    ];
 }
 
 // ---------------------------------------------------------------------------
@@ -442,8 +564,6 @@ thread_local! {
 
 #[cfg(test)]
 impl Catalog {
-
-
 
 
 
@@ -515,6 +635,7 @@ impl Catalog {
             conn: Mutex::new(conn),
             stats_cache: Mutex::new(None),
             restoring: std::sync::atomic::AtomicBool::new(false),
+            activity_rows: std::sync::atomic::AtomicI64::new(0),
         };
         cat.migrate()?;
         Ok(cat)
@@ -529,9 +650,20 @@ impl Catalog {
             conn: Mutex::new(conn),
             stats_cache: Mutex::new(None),
             restoring: std::sync::atomic::AtomicBool::new(false),
+            activity_rows: std::sync::atomic::AtomicI64::new(0),
         };
         cat.migrate()?;
         Ok(cat)
+    }
+
+    /// Count `rows` rows as reading activity, not content change. Called by
+    /// exactly the writes named on `activity_rows`; anything else must stay
+    /// un-counted, because a wrongly-counted content write is a stale page.
+    pub(crate) fn note_activity_rows(&self, rows: usize) {
+        if rows > 0 {
+            self.activity_rows
+                .fetch_add(rows as i64, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     fn migrate(&self) -> Result<()> {
@@ -592,6 +724,7 @@ impl Catalog {
                 end_path      TEXT    NOT NULL,
                 end_offset    INTEGER NOT NULL,
                 color         TEXT    NOT NULL DEFAULT 'yellow',
+                style         TEXT    NOT NULL DEFAULT 'solid',
                 text_excerpt  TEXT    NOT NULL DEFAULT '',
                 note          TEXT    NOT NULL DEFAULT '',
                 cfi           TEXT,
@@ -822,6 +955,91 @@ impl Catalog {
                 ON remote_chapters(book_id);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_chapters_book_chapter
                 ON remote_chapters(book_id, chapter_id);
+
+            -- v13: dedicated local comic series & chapters hierarchy
+            CREATE TABLE IF NOT EXISTS comic_series (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                title          TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                sort_title     TEXT NOT NULL,
+                author         TEXT NOT NULL DEFAULT 'Unknown',
+                description    TEXT NOT NULL DEFAULT '',
+                cover_book_id  INTEGER REFERENCES books(id) ON DELETE SET NULL,
+                status         TEXT NOT NULL DEFAULT 'Ongoing',
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT NOT NULL,
+                last_read_at   TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_comic_series_sort_title 
+                ON comic_series(sort_title);
+            CREATE INDEX IF NOT EXISTS idx_comic_series_last_read 
+                ON comic_series(last_read_at);
+
+            CREATE TABLE IF NOT EXISTS comic_chapters (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_id      INTEGER NOT NULL REFERENCES comic_series(id) ON DELETE CASCADE,
+                book_id        INTEGER NOT NULL UNIQUE REFERENCES books(id) ON DELETE CASCADE,
+                chapter_number REAL NOT NULL,
+                volume_number  REAL,
+                chapter_title  TEXT NOT NULL DEFAULT '',
+                created_at     TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_comic_chapters_series 
+                ON comic_chapters(series_id, chapter_number);
+
+            -- v15: Library-wide full-text content search index (SQLite FTS5)
+            CREATE VIRTUAL TABLE IF NOT EXISTS book_content_fts USING fts5(
+                book_id UNINDEXED,
+                chapter_index UNINDEXED,
+                chapter_title UNINDEXED,
+                content,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );
+
+            CREATE TABLE IF NOT EXISTS book_search_index_status (
+                book_id        INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                indexed_at     TEXT NOT NULL,
+                total_chapters INTEGER NOT NULL DEFAULT 0,
+                total_words    INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- v16: Persistent OCR page cache. OCR on a scanned page takes
+            -- seconds and used to be recomputed from scratch every time the
+            -- book was opened; the results are stored here keyed by a
+            -- file fingerprint (size + mtime) so any change to the file -
+            -- a remaster, a re-download - automatically invalidates the
+            -- cached page and forces a fresh OCR.
+            CREATE TABLE IF NOT EXISTS page_ocr_cache (
+                book_id         INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                page_num        INTEGER NOT NULL,
+                file_fingerprint TEXT NOT NULL,
+                payload         TEXT NOT NULL,
+                PRIMARY KEY (book_id, page_num)
+            );
+            CREATE INDEX IF NOT EXISTS idx_book_search_status_indexed
+                ON book_search_index_status(indexed_at);
+
+            -- v18: EPUB edit patches (Phase 6). Every edit from every mode is
+            -- a pending replacement rule stored here and mirrored into the
+            -- book's kalam.json; the .epub on disk is untouched until an
+            -- explicit apply bakes it in. `kind` is 'text' today; whole-file
+            -- and structural kinds arrive in later steps without a migration.
+            CREATE TABLE IF NOT EXISTS patches (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id        INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                kind           TEXT NOT NULL DEFAULT 'text',
+                href           TEXT NOT NULL,
+                chapter_index  INTEGER NOT NULL DEFAULT 0,
+                find_text      TEXT NOT NULL,
+                replace_text   TEXT NOT NULL,
+                context_before TEXT NOT NULL DEFAULT '',
+                context_after  TEXT NOT NULL DEFAULT '',
+                source         TEXT NOT NULL DEFAULT 'typo',
+                status         TEXT NOT NULL DEFAULT 'pending',
+                created_at     TEXT NOT NULL,
+                applied_at     TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_patches_book
+                ON patches(book_id, status);
             "#,
         )?;
 
@@ -829,6 +1047,10 @@ impl Catalog {
         // way to extend an existing table created by v1–v3.
         add_column_if_missing(&conn, "books", "last_opened_at", "TEXT")?;
         add_column_if_missing(&conn, "books", "finished_at", "TEXT")?;
+        // Phase 6.9: the raw mode's whole-file guard — the entry's hash
+        // when the source edit was made. An empty string is the
+        // find/replace patches' "no guard" and stays that way.
+        add_column_if_missing(&conn, "patches", "before_hash", "TEXT NOT NULL DEFAULT ''")?;
         // v5: half-star ratings stored as 0..=10 (i.e. tenths of the 5-star
         // scale x2) so "3.5 stars" is an integer 7 and needs no float compare.
         add_column_if_missing(&conn, "books", "rating", "INTEGER NOT NULL DEFAULT 0")?;
@@ -893,6 +1115,13 @@ impl Catalog {
         // v13: saved_words.known — Phase 7 review status. Existing rows
         // default to 0 (unknown), so nothing needs a backfill.
         add_column_if_missing(&conn, "saved_words", "known", "INTEGER NOT NULL DEFAULT 0")?;
+        // Roadmap #5: spaced-repetition review state for saved words.
+        add_column_if_missing(&conn, "saved_words", "srs_due", "INTEGER NOT NULL DEFAULT 0")?;
+        add_column_if_missing(&conn, "saved_words", "srs_interval", "REAL NOT NULL DEFAULT 0")?;
+        add_column_if_missing(&conn, "saved_words", "srs_ease", "REAL NOT NULL DEFAULT 2.5")?;
+
+        // Unified annotation system: style column (solid, underline, squiggly, strikeout)
+        add_column_if_missing(&conn, "annotations", "style", "TEXT NOT NULL DEFAULT 'solid'")?;
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
@@ -906,12 +1135,89 @@ impl Catalog {
             )?;
         } else if let Some(v) = version {
             if v < SCHEMA_VERSION {
+                // v17: comic bubble OCR was removed entirely (ROADMAP 2.17).
+                // The page_ocr_cache table stays — scanned-PDF OCR still uses
+                // it — but every comic row in it is now dead weight. Comic
+                // fingerprints carry a trailing mode tag ("size:mtime:always"
+                // or "size:mtime:color") that PDF fingerprints ("size:mtime")
+                // never have, so this deletes exactly the comic rows and
+                // keeps every cached PDF page.
+                if v < 17 {
+                    conn.execute(
+                        "DELETE FROM page_ocr_cache WHERE file_fingerprint LIKE '%:%:%'",
+                        [],
+                    )?;
+                }
                 conn.execute(
                     "UPDATE schema_version SET version = ?1",
                     params![SCHEMA_VERSION],
                 )?;
             }
         }
+        drop(conn);
+
+        self.migrate_comic_series_and_chapters()?;
+        Ok(())
+    }
+
+    /// Saved words that are due for spaced-repetition review, soonest first.
+    /// Words never reviewed (`srs_due = 0`) are always due.
+    pub fn due_review_words(&self, limit: i64) -> Result<Vec<ReviewCard>> {
+        let conn = self.conn();
+        let now = now_epoch();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, word, definition FROM saved_words
+             WHERE srs_due <= ?1
+             ORDER BY srs_due ASC, id ASC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![now, limit], |r| {
+            Ok(ReviewCard {
+                id: r.get(0)?,
+                word: r.get(1)?,
+                definition: r.get(2)?,
+            })
+        })?;
+        Ok(rows.flatten().collect())
+    }
+
+    /// How many saved words are currently due, for the header/badge.
+    pub fn due_review_count(&self) -> Result<i64> {
+        let conn = self.conn();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM saved_words WHERE srs_due <= ?1",
+            params![now_epoch()],
+            |r| r.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Record a spaced-repetition answer (0 = again, 1 = good, 2 = easy) with a
+    /// simple SM-2-style schedule and reschedule the word.
+    pub fn record_review(&self, id: i64, quality: i32) -> Result<()> {
+        let conn = self.conn();
+        let (interval, ease): (f64, f64) = conn.query_row(
+            "SELECT srs_interval, srs_ease FROM saved_words WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let (interval, ease) = match quality {
+            0 => (0.0, (ease - 0.2).max(1.3)),
+            1 => (if interval < 1.0 { 1.0 } else { interval * ease }, ease),
+            _ => (
+                if interval < 1.0 { 2.0 } else { interval * ease * 1.3 },
+                ease + 0.15,
+            ),
+        };
+        let due = if quality == 0 {
+            now_epoch() + 600 // "again" resurfaces in ten minutes
+        } else {
+            now_epoch() + (interval * 86_400.0) as i64
+        };
+        conn.execute(
+            "UPDATE saved_words SET srs_interval = ?1, srs_ease = ?2, srs_due = ?3 WHERE id = ?4",
+            params![interval, ease, due, id],
+        )?;
         Ok(())
     }
 
@@ -921,13 +1227,6 @@ impl Catalog {
         let mut stmt = conn.prepare_cached("SELECT uuid FROM books")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
         Ok(rows.flatten().collect())
-    }
-
-    #[allow(dead_code)]
-    pub fn count_books(&self) -> Result<usize> {
-        let conn = self.conn();
-        let n: i64 = conn.query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))?;
-        Ok(n as usize)
     }
 
     /// Just `(uuid, cover_name)` for books that have a cover.
@@ -971,15 +1270,101 @@ impl Catalog {
         Ok(books)
     }
 
+    /// Index a book's full content for library-wide search.
+    pub fn index_book_content(&self, book_id: i64) -> Result<()> {
+        crate::content_index::index_book(self, book_id).map_err(|e| DbError::ContentSearch(e.to_string()))
+    }
+
+    /// Index all unindexed books into the full-text search index.
+    pub fn index_all_unindexed_books(&self) -> Result<usize> {
+        crate::content_index::index_all_unindexed(self).map_err(|e| DbError::ContentSearch(e.to_string()))
+    }
+
+    /// Rebuild the library full-text search index from scratch.
+    pub fn reindex_all_books(&self) -> Result<usize> {
+        crate::content_index::reindex_all(self).map_err(|e| DbError::ContentSearch(e.to_string()))
+    }
+
+    /// Status of the library-wide content search index.
+    pub fn get_content_index_status(&self) -> Result<crate::content_index::ContentIndexStatus> {
+        crate::content_index::get_index_status(self).map_err(|e| DbError::ContentSearch(e.to_string()))
+    }
+
+    /// Search across the full text of all books in the library.
+    pub fn search_book_contents(
+        &self,
+        query: &str,
+    ) -> Result<Vec<crate::content_index::BookContentSearchResult>> {
+        crate::content_index::search_content(self, query).map_err(|e| DbError::ContentSearch(e.to_string()))
+    }
+
     /// Newest books, capped. Pages that show a handful of covers were calling
     /// `list_books` and loading the entire library to display six of them.
+    /// When comic series exist, individual chapters are collapsed into their parent
+    /// series so that a 100-chapter comic import does not flood the recent books strip.
     pub fn recent_books(&self, limit: usize) -> Result<Vec<Book>> {
         let conn = self.conn();
-        let sql = format!("SELECT {BOOK_COLUMNS} FROM books ORDER BY books.added_at DESC LIMIT ?1");
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS}
+             FROM books
+             WHERE books.id IN (
+                 SELECT b.id
+                 FROM books b
+                 LEFT JOIN comic_chapters c ON c.book_id = b.id
+                 WHERE c.id IS NULL
+                 ORDER BY b.added_at DESC
+                 LIMIT ?1
+             )
+             OR books.id IN (
+                 SELECT COALESCE(s.cover_book_id, (
+                     SELECT cc.book_id FROM comic_chapters cc
+                     WHERE cc.series_id = s.id
+                     ORDER BY cc.chapter_number ASC LIMIT 1
+                 ))
+                 FROM comic_series s
+                 ORDER BY s.updated_at DESC
+                 LIMIT ?1
+             )
+             ORDER BY books.added_at DESC
+             LIMIT ?1"
+        );
         let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![limit as i64], row_to_book)?;
         let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         hydrate_books(&conn, &mut books)?;
+
+        if !books.is_empty() {
+            let holders = vec!["?"; books.len()].join(",");
+            let sql = format!(
+                "SELECT c.book_id, s.title, s.author
+                 FROM comic_series s
+                 JOIN comic_chapters c ON c.series_id = s.id
+                 WHERE c.book_id IN ({holders})"
+            );
+            let ids: Vec<i64> = books.iter().map(|b| b.id).collect();
+            let mut by_book: std::collections::HashMap<i64, (String, String)> = std::collections::HashMap::new();
+            {
+                let mut stmt = conn.prepare(&sql)?;
+                let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+                    Ok((r.get::<_, i64>(0)?, (r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+                })?;
+                for row in rows {
+                    let (book_id, meta) = row?;
+                    by_book.insert(book_id, meta);
+                }
+            }
+
+            for b in &mut books {
+                if let Some((s_title, s_author)) = by_book.remove(&b.id) {
+                    b.title = s_title.clone();
+                    if !s_author.is_empty() {
+                        b.authors = s_author;
+                    }
+                    b.series = Some(s_title);
+                }
+            }
+        }
+
         Ok(books)
     }
 
@@ -1054,7 +1439,6 @@ impl Catalog {
         Ok(res)
     }
 
-
     pub fn add_remote_chapters(&self, book_remote_id: &str, source_id: &str, chapters: &[crate::sources::RemoteChapter]) -> anyhow::Result<()> {
         let book_id_str = format!("{}-{}", source_id, book_remote_id);
 
@@ -1086,6 +1470,54 @@ impl Catalog {
         Ok(())
     }
 
+    /// Persist an OCR'd page's text layer so reopening the book does not
+    /// recompute it. Keyed by (book, page) with a file fingerprint (size +
+    /// mtime); any change to the book file invalidates the cached page.
+    pub fn save_page_ocr(
+        &self,
+        book_id: i64,
+        page_num: usize,
+        file_fingerprint: &str,
+        page_text: &crate::pdf::PdfPageText,
+    ) -> Result<()> {
+        let payload = serde_json::to_string(page_text)
+            .map_err(|e| DbError::OcrCache(format!("serialize page: {e}")))?;
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR REPLACE INTO page_ocr_cache (book_id, page_num, file_fingerprint, payload)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![book_id, page_num as i64, file_fingerprint, payload],
+        )?;
+        Ok(())
+    }
+
+    /// Load a previously cached OCR result for a page. Returns `None` when
+    /// nothing is cached for this book/page, or when the file fingerprint
+    /// no longer matches (the file changed since the cache was written).
+    pub fn load_page_ocr(
+        &self,
+        book_id: i64,
+        page_num: usize,
+        file_fingerprint: &str,
+    ) -> Result<Option<crate::pdf::PdfPageText>> {
+        let conn = self.conn();
+        let payload: Option<String> = conn
+            .query_row(
+                "SELECT payload FROM page_ocr_cache
+                 WHERE book_id = ?1 AND page_num = ?2 AND file_fingerprint = ?3",
+                params![book_id, page_num as i64, file_fingerprint],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match payload {
+            Some(json) => {
+                let page = serde_json::from_str(&json)
+                    .map_err(|e| DbError::OcrCache(format!("deserialize page: {e}")))?;
+                Ok(Some(page))
+            }
+            None => Ok(None),
+        }
+    }
 
     pub fn get_book(&self, id: i64) -> Result<Option<Book>> {
         let conn = self.conn();
@@ -1101,8 +1533,8 @@ impl Catalog {
             b.cover_path = b
                 .cover_name
                 .as_ref()
-                .map(|name| book_dir(&b.uuid).join(name));
-            b.file_path = book_dir(&b.uuid).join(&b.file_name);
+                .map(|name| resolve_library_file(&b.uuid, name));
+            b.file_path = resolve_library_file(&b.uuid, &b.file_name);
         }
         Ok(book)
     }
@@ -1140,8 +1572,8 @@ impl Catalog {
                 b.cover_path = b
                     .cover_name
                     .as_ref()
-                    .map(|name| book_dir(&b.uuid).join(name));
-                b.file_path = book_dir(&b.uuid).join(&b.file_name);
+                    .map(|name| resolve_library_file(&b.uuid, name));
+                b.file_path = resolve_library_file(&b.uuid, &b.file_name);
                 out.insert(b.id, b);
             }
         }
@@ -1242,6 +1674,97 @@ impl Catalog {
     }
 
     pub fn delete_book(&self, id: i64) -> Result<()> {
+        // Owner field report, 2026-10-02: every surface shows a comic as
+        // its series — the collapsed card, the drawer, the page — so
+        // "delete this" at one chapter's book row removed one chapter of
+        // seventy and left the rest. A comic chapter is therefore deleted
+        // at its series' scope, everywhere, as one semantic.
+        if let Some(series_id) = self.comic_series_id_for_book(id)? {
+            return self.delete_comic_series(series_id);
+        }
+        self.delete_book_single(id)
+    }
+
+    /// The series a comic chapter belongs to, if the book is one.
+    fn comic_series_id_for_book(&self, book_id: i64) -> Result<Option<i64>> {
+        let conn = self.conn();
+        Ok(conn
+            .query_row(
+                "SELECT series_id FROM comic_chapters WHERE book_id = ?1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Delete a comic series: every chapter through the same single-book
+    /// path (so overrides, thumbnails, files and folders are handled
+    /// identically), then the series row itself. The series folder goes
+    /// with the last chapter's cleanup.
+    pub fn delete_comic_series(&self, series_id: i64) -> Result<()> {
+        let book_ids: Vec<i64> = {
+            let conn = self.conn();
+            let mut stmt = conn.prepare_cached(
+                "SELECT book_id FROM comic_chapters WHERE series_id = ?1
+                 ORDER BY chapter_number ASC",
+            )?;
+            let rows = stmt.query_map(params![series_id], |r| r.get::<_, i64>(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        for id in book_ids {
+            self.delete_book_single(id)?;
+        }
+        let conn = self.conn();
+        conn.execute("DELETE FROM comic_series WHERE id = ?1", params![series_id])?;
+        Ok(())
+    }
+
+    /// How many book rows deleting these ids would remove. Comic
+    /// selections take their whole series with them, so the confirmation
+    /// dialog counts every chapter, not the one card that was clicked.
+    pub fn delete_scope_count(&self, ids: &[i64]) -> usize {
+        let mut unique: Vec<i64> = ids.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        if unique.is_empty() {
+            return 0;
+        }
+        let conn = self.conn();
+        let mut total = 0usize;
+        for chunk in unique.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            // Regular books in the selection…
+            let regular: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM books
+                         WHERE id IN ({holders})
+                           AND id NOT IN (SELECT book_id FROM comic_chapters)"
+                    ),
+                    rusqlite::params_from_iter(chunk.iter()),
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            // …plus every chapter of every series the selection touches.
+            let comic: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM comic_chapters
+                         WHERE series_id IN (
+                             SELECT DISTINCT series_id FROM comic_chapters
+                             WHERE book_id IN ({holders})
+                         )"
+                    ),
+                    rusqlite::params_from_iter(chunk.iter()),
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            total += (regular + comic) as usize;
+        }
+        total
+    }
+
+    fn delete_book_single(&self, id: i64) -> Result<()> {
         let book = match self.get_book(id)? {
             Some(b) => b,
             None => return Ok(()),
@@ -1251,21 +1774,95 @@ impl Catalog {
         let _ = self.remember_overrides(id);
         {
             let conn = self.conn();
+            let _ = conn.execute("DELETE FROM book_content_fts WHERE book_id = ?1", params![id]);
+            let _ = conn.execute("DELETE FROM book_search_index_status WHERE book_id = ?1", params![id]);
+            let _ = conn.execute("DELETE FROM page_ocr_cache WHERE book_id = ?1", params![id]);
             conn.execute("DELETE FROM books WHERE id = ?1", params![id])?;
         }
         let dir = book_dir(&book.uuid);
-        if dir.exists() {
+        // Item 2.22: a comic chapter lives in its series folder, addressed
+        // library-relative, so it has no per-book folder to remove. Delete
+        // the chapter's own files, and take the series folder with them when
+        // this was its last chapter — a folder holding only covers of
+        // deleted chapters is orphans and nothing else. Chapters are copied
+        // to disk before their row is inserted, so any remaining archive
+        // means a live chapter, not a race.
+        if book.file_name.contains('/') {
+            if book.file_path.is_file() {
+                let _ = fs::remove_file(&book.file_path);
+            }
+            if let Some(cover) = &book.cover_path {
+                if cover.is_file() {
+                    let _ = fs::remove_file(cover);
+                }
+            }
+            if let Some(series_dir) = book.file_path.parent() {
+                // A placed chapter may still own a legacy per-book folder —
+                // the field state of 2026-10-02 had covers stranded there.
+                // That folder is entirely this book's, exactly like any
+                // other book folder, so it goes with the book.
+                if dir.exists() && dir != series_dir {
+                    let _ = fs::remove_dir_all(&dir);
+                }
+                let has_archives = fs::read_dir(series_dir)
+                    .map(|entries| {
+                        entries.filter_map(|e| e.ok()).any(|e| {
+                            e.path()
+                                .extension()
+                                .and_then(|x| x.to_str())
+                                .is_some_and(|x| {
+                                    x.eq_ignore_ascii_case("cbz") || x.eq_ignore_ascii_case("cbr")
+                                })
+                        })
+                    })
+                    .unwrap_or(true); // unreadable: assume occupied, leave it be
+                if !has_archives {
+                    let _ = fs::remove_dir_all(series_dir);
+                }
+            }
+        } else if dir.exists() {
             let _ = fs::remove_dir_all(&dir);
         }
         // A0 step 3: drop the cover thumbnail so the cache cannot grow with
-        // deleted books.
-        crate::thumbs::remove_thumbnail(&book.uuid);
+        // deleted books — both the cover-path key and the legacy uuid key a
+        // pre-2026-10-05 import may still carry.
+        crate::thumbs::remove_thumbnail(book.cover_path.as_deref(), &book.uuid);
         // The startup backfill skips itself when the book count matches its
         // last complete run. A delete followed by an import nets to the same
         // count, which would wrongly skip the new book, so forget the marker
         // here — the cost of an unnecessary pass is far lower than the cost of
         // a book permanently without a thumbnail.
         crate::thumbs::invalidate_backfill_marker(self);
+        Ok(())
+    }
+
+    /// Point a book row at new stored file/cover names without touching any
+    /// files. Used by the comic-series migration (item 2.22), which moves a
+    /// chapter's file and updates its row in the same step, so path
+    /// resolution never sees a half-moved book. `None` leaves that column
+    /// exactly as it was.
+    pub fn set_book_file_names(
+        &self,
+        book_id: i64,
+        file_name: Option<&str>,
+        cover_name: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn();
+        match (file_name, cover_name) {
+            (Some(f), Some(c)) => conn.execute(
+                "UPDATE books SET file_name = ?1, cover_name = ?2 WHERE id = ?3",
+                params![f, c, book_id],
+            )?,
+            (Some(f), None) => conn.execute(
+                "UPDATE books SET file_name = ?1 WHERE id = ?2",
+                params![f, book_id],
+            )?,
+            (None, Some(c)) => conn.execute(
+                "UPDATE books SET cover_name = ?1 WHERE id = ?2",
+                params![c, book_id],
+            )?,
+            (None, None) => 0,
+        };
         Ok(())
     }
 
@@ -1282,6 +1879,46 @@ impl Catalog {
         Ok(row)
     }
 
+    /// Reading positions for many books at once — `get_reading_progress`
+    /// batched. The dashboard feed used to call the single-book form once per
+    /// Opened event; the step-4 `service.dashboard()` budget exists to keep
+    /// it batched. Same shape as `books_by_ids`: dedupe, chunk at 500,
+    /// empty input is not an error and issues nothing.
+    pub fn reading_progress_by_ids(
+        &self,
+        ids: &[i64],
+    ) -> Result<HashMap<i64, (usize, f64)>> {
+        let mut out: HashMap<i64, (usize, f64)> = HashMap::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let mut unique: Vec<i64> = ids.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+
+        let conn = self.conn();
+        for chunk in unique.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT book_id, chapter_index, fraction FROM reading_progress \
+                 WHERE book_id IN ({holders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params = rusqlite::params_from_iter(chunk.iter());
+            let rows = stmt.query_map(params, |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    (r.get::<_, i64>(1)? as usize, r.get::<_, f64>(2)?),
+                ))
+            })?;
+            for row in rows {
+                let (id, progress) = row?;
+                out.insert(id, progress);
+            }
+        }
+        Ok(out)
+    }
+
     /// Save position and update the books.progress percent (0–100).
     pub fn set_reading_progress(
         &self,
@@ -1293,7 +1930,7 @@ impl Catalog {
         let conn = self.conn();
         let frac = fraction.clamp(0.0, 1.0);
         let now = chrono_like_now();
-        conn.execute(
+        let saved = conn.execute(
             "INSERT INTO reading_progress (book_id, chapter_index, fraction, updated_at)
              VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(book_id) DO UPDATE SET
@@ -1309,11 +1946,17 @@ impl Catalog {
             ((chapter_index as f64) + frac) / (chapter_count as f64) * 100.0
         };
         let pct = overall.round().clamp(0.0, 100.0) as i64;
-        conn.execute(
-            "UPDATE books SET progress = ?1 WHERE id = ?2",
-            params![pct, book_id],
-        )?;
+        let saved = saved
+            + conn.execute(
+                "UPDATE books SET progress = ?1 WHERE id = ?2",
+                params![pct, book_id],
+            )?;
         drop(conn);
+        // Reading activity, not content: this runs on every page turn, and it
+        // is the write that used to evict the whole page cache mid-session
+        // (the field run measured the cache mostly dead for exactly this
+        // reason).
+        self.note_activity_rows(saved);
 
         // Deliberately NOT refreshing the sidecar here.
         //
@@ -1327,6 +1970,90 @@ impl Catalog {
         // Worth stating rather than leaving as an omission: everything else
         // that changes a book does refresh it, so a reader glancing at those
         // call sites would otherwise read this one as a bug.
+        Ok(())
+    }
+
+    /// Translate a book's spine-keyed rows through a reading-order change
+    /// (Phase 6 step 10). `order` is the *new* spine as old indices —
+    /// `order[j]` is the chapter that now sits at position `j` — so a row on
+    /// old index `i` moves to the `j` where `order[j] == i`.
+    ///
+    /// One `CASE` statement per table, not a pair-by-pair run of updates:
+    /// a swap performed as two `UPDATE`s undoes itself. The annotations'
+    /// stored locator JSON is rewritten field by field — `spine_href` is the
+    /// primary anchor there, so this is belt and braces, but a stale
+    /// `spine_index` beside a true href is a bug factory.
+    ///
+    /// The pending `patches` rows are history, not state — their
+    /// `chapter_index` is where the edit was *made* — and they are keyed by
+    /// href when it matters, so they are not remapped.
+    pub fn remap_spine_indices(&self, book_id: i64, order: &[usize]) -> Result<()> {
+        let conn = self.conn();
+        let moved: Vec<(usize, usize)> = order
+            .iter()
+            .enumerate()
+            .filter_map(|(new, &old)| (old != new).then_some((old, new)))
+            .collect();
+        if moved.is_empty() {
+            return Ok(());
+        }
+        let cases = moved
+            .iter()
+            .map(|(old, new)| format!("WHEN {old} THEN {new}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        for table in ["reading_progress", "annotations", "saved_words", "reading_bookmarks"] {
+            conn.execute(
+                &format!(
+                    "UPDATE {table} SET chapter_index = CASE chapter_index {cases} \
+                     ELSE chapter_index END WHERE book_id = ?1"
+                ),
+                params![book_id],
+            )?;
+        }
+        // The annotations' locator JSON: rewrite `spine_index` in place,
+        // preserving every other field — including fields a future version
+        // might add that this one does not know.
+        let mut stmt = conn.prepare(
+            "SELECT id, cfi FROM annotations WHERE book_id = ?1 AND cfi IS NOT NULL",
+        )?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map(params![book_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        drop(stmt);
+        for (id, cfi) in rows {
+            let Ok(mut locator) = serde_json::from_str::<serde_json::Value>(&cfi) else {
+                continue; // not ours to touch
+            };
+            // The locator shape is `{"start": {...}, "end": {...}}` with the
+            // spine_index inside each endpoint (engine.rs `locator_to_json`).
+            let mut changed = false;
+            for endpoint in ["start", "end"] {
+                let Some(point) = locator.get_mut(endpoint) else {
+                    continue;
+                };
+                let Some(old) = point.get("spine_index").and_then(|v| v.as_u64()) else {
+                    continue;
+                };
+                let Some(new) = order
+                    .iter()
+                    .position(|&o| o as u64 == old)
+                    .filter(|&new| new as u64 != old)
+                else {
+                    continue; // unmoved, or off the end of the new spine
+                };
+                point["spine_index"] = serde_json::json!(new);
+                changed = true;
+            }
+            if changed {
+                if let Ok(text) = serde_json::to_string(&locator) {
+                    conn.execute(
+                        "UPDATE annotations SET cfi = ?1 WHERE id = ?2",
+                        params![text, id],
+                    )?;
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -1383,8 +2110,8 @@ fn hydrate_books(conn: &Connection, books: &mut [Book]) -> Result<()> {
         book.cover_path = book
             .cover_name
             .as_ref()
-            .map(|name| book_dir(&book.uuid).join(name));
-        book.file_path = book_dir(&book.uuid).join(&book.file_name);
+            .map(|name| resolve_library_file(&book.uuid, name));
+        book.file_path = resolve_library_file(&book.uuid, &book.file_name);
     }
     Ok(())
 }
@@ -1664,11 +2391,12 @@ fn row_to_annotation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Annotation> {
         end_path: row.get(6)?,
         end_offset: row.get(7)?,
         color: row.get(8)?,
-        text_excerpt: row.get(9)?,
-        note: row.get(10)?,
-        cfi: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        style: row.get(9)?,
+        text_excerpt: row.get(10)?,
+        note: row.get(11)?,
+        cfi: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 
@@ -1772,6 +2500,100 @@ pub fn hash_file(path: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use crate::shelf_rules::{MatchMode, Rule, RuleField, RuleOp, RuleSet};
+
+    #[test]
+    fn reading_progress_by_ids_batches_and_skips_missing() {
+        let cat = Catalog::open_in_memory().unwrap();
+        // Three books; progress on two of them, repeated ids in the input
+        // like a feed that mentions the same book twice.
+        let a = seed(&cat, "Alpha", "A", &[]);
+        let b = seed(&cat, "Beta", "B", &[]);
+        let c = seed(&cat, "Gamma", "C", &[]);
+        cat.set_reading_progress(a, 2, 0.25, 10).unwrap();
+        cat.set_reading_progress(b, 4, 0.5, 8).unwrap();
+
+        // No ids: not an error, no statements.
+        assert!(cat.reading_progress_by_ids(&[]).unwrap().is_empty());
+
+        let out = cat.reading_progress_by_ids(&[a, b, a, c]).unwrap();
+        assert_eq!(out.len(), 2, "repeats collapse, missing ids are absent");
+        assert_eq!(out[&a], (2usize, 0.25));
+        assert_eq!(out[&b], (4usize, 0.5));
+        assert!(!out.contains_key(&c));
+    }
+
+    #[test]
+    fn remap_spine_indices_moves_every_spine_keyed_row() {
+        // A reading-order change (Phase 6 step 10) must carry position,
+        // highlights, saved words and bookmarks with it — and rewrite the
+        // stored locators' spine_index without disturbing their other
+        // fields. What it must not touch: another book's rows, or a row on
+        // a chapter the order did not move.
+        let cat = Catalog::open_in_memory().unwrap();
+        let book = seed(&cat, "Remap", "R", &[]);
+        let other = seed(&cat, "Other", "O", &[]);
+
+        // Everything sits on old chapter 1; one annotation sits on 2.
+        cat.set_reading_progress(book, 1, 0.5, 4).unwrap();
+        cat.set_reading_progress(other, 1, 0.9, 4).unwrap();
+        let moved = cat
+            .insert_annotation(
+                book, "highlight", 1, "", 0, "", 0, "yellow", "solid", "moved excerpt", "n",
+            )
+            .unwrap();
+        let still = cat
+            .insert_annotation(
+                book, "highlight", 2, "", 0, "", 0, "yellow", "solid", "still excerpt", "n",
+            )
+            .unwrap();
+        cat.update_annotation_cfi(
+            moved,
+            r#"{"kalam_locator":1,"start":{"spine_href":"ch2.xhtml","spine_index":1,"char_offset":10,"locator_version":1,"quote":{"prefix":"","exact":"moved","suffix":""},"spine_fraction":0.1,"book_progression":0.05},"end":{"spine_href":"ch2.xhtml","spine_index":1,"char_offset":20,"locator_version":1,"quote":{"prefix":"","exact":"excerpt","suffix":""},"spine_fraction":0.12,"book_progression":0.06}}"#,
+        )
+        .unwrap();
+        cat.update_annotation_cfi(
+            still,
+            r#"{"kalam_locator":1,"start":{"spine_href":"ch3.xhtml","spine_index":2,"char_offset":1,"locator_version":1},"end":{"spine_href":"ch3.xhtml","spine_index":2,"char_offset":9,"locator_version":1}}"#,
+        )
+        .unwrap();
+        cat.insert_saved_word("word", "def", None, Some(book), Some(1), None)
+            .unwrap();
+        cat.insert_saved_word("otherword", "def", None, Some(other), Some(1), None)
+            .unwrap();
+        cat.insert_reading_bookmark(book, 1, 0.5, "mark").unwrap();
+
+        // New spine as old indices: old 1 reads first now.
+        cat.remap_spine_indices(book, &[1, 0, 2]).unwrap();
+
+        assert_eq!(cat.get_reading_progress(book).unwrap(), Some((0, 0.5)));
+        assert_eq!(cat.get_reading_progress(other).unwrap(), Some((1, 0.9)));
+        let annotations = cat.get_annotations_for_book(book).unwrap();
+        let moved_row = annotations.iter().find(|a| a.id == moved).unwrap();
+        let still_row = annotations.iter().find(|a| a.id == still).unwrap();
+        assert_eq!(moved_row.chapter_index, 0);
+        assert_eq!(still_row.chapter_index, 2, "an unmoved chapter stays put");
+        // The locator's spine_index moved with the row; href and offsets
+        // survive verbatim.
+        let cfi: serde_json::Value =
+            serde_json::from_str(moved_row.cfi.as_deref().unwrap()).unwrap();
+        assert_eq!(cfi["start"]["spine_index"], 0);
+        assert_eq!(cfi["end"]["spine_index"], 0);
+        assert_eq!(cfi["start"]["spine_href"], "ch2.xhtml");
+        assert_eq!(cfi["start"]["char_offset"], 10);
+        let still_cfi: serde_json::Value =
+            serde_json::from_str(still_row.cfi.as_deref().unwrap()).unwrap();
+        assert_eq!(still_cfi["start"]["spine_index"], 2, "unmoved locator untouched");
+        let words = cat.get_saved_words_for_scope(book, "book").unwrap();
+        assert_eq!(words[0].chapter_index, Some(0));
+        let marks = cat.list_reading_bookmarks(book).unwrap();
+        assert_eq!(marks[0].chapter_index, 0);
+        let other_words = cat.get_saved_words_for_scope(other, "book").unwrap();
+        assert_eq!(other_words[0].chapter_index, Some(1), "other books untouched");
+
+        // An identity order is a no-op, not a shuffle.
+        cat.remap_spine_indices(book, &[0, 1, 2]).unwrap();
+        assert_eq!(cat.get_reading_progress(book).unwrap(), Some((0, 0.5)));
+    }
 
     fn seed(cat: &Catalog, title: &str, authors: &str, tags: &[&str]) -> i64 {
         let uuid = format!("uuid-{title}");
@@ -2302,6 +3124,64 @@ mod tests {
     }
 
     #[test]
+    fn page_cache_token_ignores_reading_activity_but_not_content() {
+        // The owner's field run measured the page cache mostly dead: every
+        // progress save bumped the write counter and evicted every cached
+        // page. The page-cache token must ignore a whole reading round trip
+        // (mark-opened, session start/checkpoint/end, progress saves) while
+        // still seeing every content write — and finishing a book counts as
+        // content even when the reader does it itself, because it mutates
+        // the reading list and the finished flag.
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Dune", "Herbert", &[]);
+
+        let page_before = cat.page_cache_token();
+        let stats_before = cat.change_token();
+
+        cat.mark_book_opened(id).unwrap();
+        let sid = cat.start_reading_session(id, 0).unwrap();
+        cat.checkpoint_reading_session(sid, 60, 5).unwrap();
+        cat.set_reading_progress(id, 3, 0.5, 10).unwrap();
+        cat.end_reading_session(sid, 120, 6).unwrap();
+        // A second mark within the hour writes no event row; the stamp
+        // itself is still activity.
+        cat.mark_book_opened(id).unwrap();
+
+        assert_eq!(
+            cat.page_cache_token(),
+            page_before,
+            "a whole reading round trip must not evict the page cache"
+        );
+        assert_ne!(
+            cat.change_token(),
+            stats_before,
+            "but the stats token must see all of it (stats refresh)"
+        );
+
+        // Content writes move it: add to reading list, edit, another book.
+        cat.add_to_reading_list(id).unwrap();
+        assert_ne!(cat.page_cache_token(), page_before);
+        let page_after_list = cat.page_cache_token();
+
+        // Auto-finish at 100% is content, even from inside the reader.
+        cat.set_reading_progress(id, 10, 1.0, 10).unwrap();
+        assert_eq!(
+            cat.page_cache_token(),
+            page_after_list,
+            "the progress save itself is still activity"
+        );
+        assert!(
+            cat.auto_finish_if_complete(id, 100).unwrap(),
+            "seeded progress should cross the finish line"
+        );
+        assert_ne!(
+            cat.page_cache_token(),
+            page_after_list,
+            "finishing mutates the reading list and the finished flag"
+        );
+    }
+
+    #[test]
     fn stats_cache_refreshes_after_a_write() {
         let cat = Catalog::open_in_memory().unwrap();
         seed(&cat, "A", "x", &[]);
@@ -2355,6 +3235,7 @@ mod tests {
             "p",
             9,
             "yellow",
+            "solid",
             "Fear is the mind-killer",
             "",
         )
@@ -2423,6 +3304,29 @@ mod tests {
     }
 
     #[test]
+    fn series_display_sanitizes_polluted_series() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &[]);
+        cat.update_book_metadata(
+            id,
+            "Naruto – Digital Colored Comics - Ch. 2",
+            "Unknown",
+            Some("Naruto – Digital Colored Comics - Ch. 2"),
+            0.0,
+            "",
+            "",
+            "",
+            &[],
+        )
+        .unwrap();
+        let b = cat.get_book(id).unwrap().unwrap();
+        assert_eq!(
+            b.series_display().as_deref(),
+            Some("Naruto - Digital Colored Comics #2")
+        );
+    }
+
+    #[test]
     fn editing_tags_prunes_orphans() {
         let cat = Catalog::open_in_memory().unwrap();
         let id = seed(&cat, "A", "x", &["temporary"]);
@@ -2456,6 +3360,51 @@ mod tests {
         // Not adjacent to today, so current is 0 but the run of 2 is longest.
         let (_, longest) = streaks(&days);
         assert_eq!(longest, 2);
+    }
+
+    #[test]
+    fn ocr_page_cache_round_trips_and_invalidates_on_file_change() {
+        use crate::pdf::{PdfPageText, PdfTextChar, PdfTextLine};
+
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Scanned Book", "Author", &[]);
+
+        let page = PdfPageText {
+            page_num: 3,
+            width_pts: 595.2,
+            height_pts: 841.9,
+            lines: vec![PdfTextLine {
+                text: "Hello scan".to_string(),
+                x0: 57.0,
+                y0: 100.0,
+                x1: 200.0,
+                y1: 118.0,
+                chars: vec![
+                    PdfTextChar { ch: 'H', x0: 57.0, y0: 100.0, x1: 66.0, y1: 118.0 },
+                    PdfTextChar { ch: 'i', x0: 68.0, y0: 100.0, x1: 73.0, y1: 118.0 },
+                ],
+            }],
+        };
+
+        // Nothing cached yet.
+        assert!(cat.load_page_ocr(id, 3, "123:456").unwrap().is_none());
+
+        // Save and read back with the same fingerprint: identical content.
+        cat.save_page_ocr(id, 3, "123:456", &page).unwrap();
+        let loaded = cat.load_page_ocr(id, 3, "123:456").unwrap().unwrap();
+        assert_eq!(loaded, page);
+
+        // A different fingerprint (the file changed) must not match.
+        assert!(cat.load_page_ocr(id, 3, "999:888").unwrap().is_none());
+
+        // Re-saving under a new fingerprint replaces the old row.
+        cat.save_page_ocr(id, 3, "999:888", &page).unwrap();
+        assert!(cat.load_page_ocr(id, 3, "123:456").unwrap().is_none());
+        assert!(cat.load_page_ocr(id, 3, "999:888").unwrap().is_some());
+
+        // Deleting the book clears its cached pages.
+        cat.delete_book(id).unwrap();
+        assert!(cat.load_page_ocr(id, 3, "999:888").unwrap().is_none());
     }
 
     #[test]

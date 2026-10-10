@@ -40,7 +40,7 @@ const RED_RECT_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="40
 fn img_src_svg_is_rasterized_at_intrinsic_size() {
     let doc = styled(r#"<html><body><p><img src="fig.svg"/></p></body></html>"#);
     let fonts = fonts();
-    let images = chapbook_layout::collect_images(&doc, Some(&fonts), |href| {
+    let images = chapbook_layout::collect_images(&doc, Some(&fonts), None, |href| {
         (href == "fig.svg").then(|| RED_RECT_SVG.as_bytes().to_vec())
     });
 
@@ -70,7 +70,7 @@ fn inline_svg_becomes_a_replaced_image() {
         <p>after</p></body></html>"##,
     );
     let mut fonts = fonts();
-    let images = chapbook_layout::collect_images(&doc, Some(&fonts), |_| None);
+    let images = chapbook_layout::collect_images(&doc, Some(&fonts), None, |_| None);
     let (svg_tag, xml) = doc.svg_sources().next().expect("captured inline svg");
     let svg_tag = chapbook_layout::dom::node_tag(svg_tag);
     assert!(xml.contains("<rect"), "subtree serialized: {xml}");
@@ -103,7 +103,7 @@ fn inline_svg_without_rasterizer_output_still_flattens() {
         </body></html>"#,
     );
     let mut fonts = fonts();
-    let images = chapbook_layout::collect_images(&doc, Some(&fonts), |_| None);
+    let images = chapbook_layout::collect_images(&doc, Some(&fonts), None, |_| None);
     let layout = chapbook_layout::paginate(&doc, &[], &page(), &mut fonts, &images);
     let texts: Vec<String> = layout
         .pages
@@ -135,7 +135,7 @@ fn svg_image_href_resolves_through_fetch() {
     );
     let fonts = fonts();
     let mut asked = Vec::new();
-    let images = chapbook_layout::collect_images(&doc, Some(&fonts), |href| {
+    let images = chapbook_layout::collect_images(&doc, Some(&fonts), None, |href| {
         asked.push(href.to_string());
         (href == "cover.svg").then(|| RED_RECT_SVG.as_bytes().to_vec())
     });

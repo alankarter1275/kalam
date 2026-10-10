@@ -18,7 +18,6 @@ members = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.92"
-license = "MIT OR Apache-2.0"
 authors = ["Jeffrey T. Peckham <abic@ophymx.com>"]
 repository = "https://github.com/ophymx/chapbook"
 readme = "README.md"
@@ -102,7 +101,6 @@ name = "kalam"
 version = "0.1.0"
 edition = "2021"
 description = "Kalam — a lightweight personal ebook manager and reader for Linux"
-license = "GPL-3.0-or-later"
 authors = ["Kalam Contributors"]
 repository = "https://github.com/alankarter1275/calibre-alt"
 default-run = "kalam"
@@ -115,11 +113,27 @@ bundled-dictionaries = []
 relm4 = { version = "0.11", features = ["libadwaita", "gnome_45"] }
 libadwaita = { version = "0.9", features = ["v1_4"] }
 gtk = { version = "0.11", package = "gtk4", features = ["v4_12"] }
+# Phase 6.9: the raw source pane's highlighting. Lockstep with gtk4
+# releases — 0.11 pairs with gtk4 0.11.
+sourceview5 = "0.11"
 gdk-pixbuf = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 glib = "0.22"
 gio = { version = "0.22", package = "gio" }
 kalam-reader = { path = "crates/kalam-reader" }
+chapbook-core = { workspace = true }
+chapbook-epub = { workspace = true }
+chapbook-layout = { workspace = true }
+
+# Engine diagnostics. The reading engine reports through the `log` facade,
+# which discards everything unless a logger is installed — see `src/logging.rs`.
+# Nothing is written unless the user sets RUST_LOG, so a normal launch is
+# unchanged.
+env_logger = "0.11"
+log = "0.4"
+# Already in the dependency tree transitively, so this adds nothing to build
+# or binary size. Used only by `paths::home_dir` for `getpwuid_r`.
+libc = "0.2"
 
 # Library / persistence
 rusqlite = { version = "0.32", features = ["bundled", "trace"] }
@@ -141,13 +155,14 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 roxmltree = "0.20"
 quick-xml = "0.37"
 flate2 = "1"
-scraper = "0.27.0"
-toml = "1.1.5"
-urlencoding = "2.1.3"
 epub-builder = "0.8.3"
 
-# PDF
-lopdf = "0.34"
+# PDF (MuPDF safe Rust engine with base14 fonts and system fontconfig support)
+mupdf = { version = "0.8", default-features = false, features = ["base14-fonts", "system-fonts"] }
+
+# Pure-Rust OCR engine and inference runtime
+ocrs = "0.13"
+rten = "0.26"
 
 [profile.dev]
 opt-level = 1

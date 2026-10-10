@@ -63,6 +63,12 @@ fn open_editor_inner(
     book_id: i64,
     on_saved: Rc<dyn Fn()>,
 ) {
+    // Roadmap 7.1 step 0: measured and named for the stall watchdog — the
+    // editor's open path reads the book inline, and dialog opens are one of
+    // the field-reported pauses. (Line 947 re-enters here to edit the next
+    // book in the series; both passes are attributed.)
+    let _span = crate::timing::measure("dialog_open:metadata_editor");
+    let _activity = crate::timing::activity("dialog_open:metadata_editor");
     // Silently returning here meant the editor just never appeared: no
     // dialog, no message, nothing to click. Say which of the two it was.
     let book = match catalog.get_book(book_id) {
@@ -565,6 +571,7 @@ fn open_editor_inner(
                                 let tx2 = tx2.clone();
                                 let cover_ref = cover_ref.clone();
                                 crate::tasks::spawn(
+                                    "Fetching cover",
                                     move |_reporter| match metadata::fetch_cover(&cover_ref) {
                                         Ok(b) => FetchMsg::CoverReady(b),
                                         Err(e) => FetchMsg::CoverFailed(e.to_string()),
@@ -629,6 +636,7 @@ fn open_editor_inner(
             // Through the seam (A0 step 4) so it is cancelled at shutdown
             // rather than left holding an open socket.
             crate::tasks::spawn(
+                "Searching metadata",
                 move |_reporter| {
                     let (list, errors) = metadata::search_all(sources, &query, 10);
                     if list.is_empty() && !errors.is_empty() {
@@ -682,6 +690,7 @@ fn open_editor_inner(
             let tx = tx.clone();
             let sources = metadata::enabled_sources(&catalog_c);
             crate::tasks::spawn(
+                "Searching metadata",
                 move |reporter| {
                     let (list, errors) = metadata::search_all(sources, &query, 12);
                     // Fetch small thumbnails so the grid appears quickly; the
@@ -854,8 +863,8 @@ fn open_editor_inner(
 
             // Push the result into the EPUB so other readers see it too.
             // Failing here is not fatal: the edit is already in the catalog.
-            if crate::epub_write::write_enabled(&catalog) {
-                match crate::epub_write::sync_book_to_file(&catalog, book_id) {
+            if crate::epub_metadata::write_enabled(&catalog) {
+                match crate::epub_metadata::sync_book_to_file(&catalog, book_id) {
                     Ok(report) if report.wrote_metadata || report.wrote_cover => {
                         status.set_label("Saved, and written into the book file.");
                     }
@@ -1046,6 +1055,7 @@ fn rebuild_results(
                     // Was a worker + its own channel + a local future, three
                     // pieces to say "fetch this and set a label". One call now.
                     crate::tasks::spawn(
+                        "Fetching description",
                         move |_reporter| {
                             let source: Box<dyn metadata::MetadataSource> = match id {
                                 metadata::SourceId::OpenLibrary => {
@@ -1073,6 +1083,7 @@ fn rebuild_results(
                 if let Some(cover_ref) = c.cover.clone() {
                     let tx = tx.clone();
                     crate::tasks::spawn(
+                        "Fetching cover",
                         move |_reporter| match metadata::fetch_cover(&cover_ref) {
                             Ok(bytes) => FetchMsg::CoverReady(bytes),
                             Err(err) => FetchMsg::CoverFailed(err.to_string()),

@@ -203,7 +203,8 @@ impl HighlightColor {
 /// What Kalam remembers about how the reader should look. Mirrors the
 /// `reader.*` preferences one-to-one; the ranges are Kalam's own and
 /// [`KalamPrefs::clamped`] enforces them.
-#[derive(Debug, Clone, Copy, PartialEq)]
+// No `Copy`: `font_family` owns a string, so preferences are cloned.
+#[derive(Debug, Clone, PartialEq)]
 pub struct KalamPrefs {
     pub theme: KalamTheme,
     /// `reader.font_px`, 13–24, default 17.
@@ -213,6 +214,15 @@ pub struct KalamPrefs {
     /// `reader.column_px`, 400–860, default 620: the widest a line of text
     /// may run. Wider windows centre the column.
     pub column_px: f32,
+    /// `reader.font_family`: the body typeface the picker chose; `None`
+    /// keeps Kalam's bundled default.
+    pub font_family: Option<String>,
+    /// `reader.justify`: justify body text (default off).
+    pub justify: bool,
+    /// `reader.hyphenate`: allow soft-hyphen breaks (default on).
+    pub hyphenate: bool,
+    /// `reader.publisher_styles`: honor the book's own stylesheet (default on).
+    pub publisher_styles: bool,
 }
 
 impl KalamPrefs {
@@ -221,7 +231,7 @@ impl KalamPrefs {
     pub const COLUMN_PX_RANGE: (f32, f32) = (400.0, 860.0);
 
     /// The preferences brought back inside Kalam's ranges.
-    pub fn clamped(self) -> KalamPrefs {
+    pub fn clamped(&self) -> KalamPrefs {
         KalamPrefs {
             theme: self.theme,
             font_px: self
@@ -233,6 +243,13 @@ impl KalamPrefs {
             column_px: self
                 .column_px
                 .clamp(Self::COLUMN_PX_RANGE.0, Self::COLUMN_PX_RANGE.1),
+            font_family: self
+                .font_family
+                .clone()
+                .filter(|f| !f.trim().is_empty()),
+            justify: self.justify,
+            hyphenate: self.hyphenate,
+            publisher_styles: self.publisher_styles,
         }
     }
 
@@ -251,10 +268,14 @@ impl KalamPrefs {
         ReadingSettings {
             base_font_px: prefs.font_px,
             line_height: prefs.line_height,
-            // The book decides; a publisher's ragged-right poem stays so.
-            justify: false,
-            publisher_styles: true,
-            font_family: Some(BODY_FONT.to_string()),
+            justify: prefs.justify,
+            publisher_styles: prefs.publisher_styles,
+            font_family: Some(
+                prefs
+                    .font_family
+                    .clone()
+                    .unwrap_or_else(|| BODY_FONT.to_string()),
+            ),
             theme: prefs.theme.engine_theme(),
             palette: Some(prefs.theme.palette()),
             user_css: Some(prefs.skin_css()),
@@ -292,7 +313,7 @@ impl KalamPrefs {
         let ink = format!("#{:02x}{:02x}{:02x}", ink.r, ink.g, ink.b);
         let size = prefs.font_px;
         let lh = prefs.line_height;
-        format!(
+        let mut css = format!(
             "* {{ color: {ink} !important; background-color: transparent !important; }}\n\
              html, body {{ font-size: {size}px !important; line-height: {lh} !important; \
              margin: 0 !important; padding: 0 !important; }}\n\
@@ -301,7 +322,18 @@ impl KalamPrefs {
              h1, h2, h3, h4, h5, h6 {{ font-weight: bold !important; \
              line-height: 1.25 !important; margin-top: 1.4em !important; }}\n\
              a {{ text-decoration: none !important; }}\n"
-        )
+        );
+        // Hyphenation has to be asked for, not merely left alone: no real
+        // book ships a `hyphens: auto` rule of its own accord, so a toggle
+        // that only *refrained from unsetting* it showed nothing in either
+        // position (the first field report from 2.4). On = claim it on the
+        // paragraphs; off = force it off even where the publisher asked.
+        if prefs.hyphenate {
+            css.push_str("p { hyphens: auto !important; }\n");
+        } else {
+            css.push_str("* { hyphens: manual !important; }\n");
+        }
+        css
     }
 }
 
@@ -312,6 +344,10 @@ impl Default for KalamPrefs {
             font_px: 17.0,
             line_height: 1.8,
             column_px: 620.0,
+            font_family: None,
+            justify: false,
+            hyphenate: true,
+            publisher_styles: true,
         }
     }
 }
@@ -386,6 +422,7 @@ mod tests {
         let a = KalamPrefs::default();
         let b = KalamPrefs {
             line_height: 1.3,
+            font_family: a.font_family.clone(),
             ..a
         };
         let (sa, sb) = (a.reading_settings(), b.reading_settings());
@@ -401,11 +438,38 @@ mod tests {
             font_px: 99.0,
             line_height: 0.1,
             column_px: 10_000.0,
+            font_family: Some("   ".to_string()),
+            justify: true,
+            hyphenate: false,
+            publisher_styles: false,
         }
         .clamped();
         assert_eq!(wild.font_px, 24.0);
         assert_eq!(wild.line_height, 1.3);
         assert_eq!(wild.column_px, 860.0);
+        // A blank family name is treated as "use the default".
+        assert_eq!(wild.font_family, None);
+    }
+
+    #[test]
+    fn hyphenation_on_claims_hyphens_auto() {
+        // First field report from 2.4: the toggle showed nothing in either
+        // position because the skin only ever forced `manual`. "On" must
+        // set `hyphens: auto` for the layout's insertion to key off.
+        let on = KalamPrefs {
+            hyphenate: true,
+            ..KalamPrefs::default()
+        }
+        .skin_css();
+        assert!(on.contains("hyphens: auto"), "on sets auto: {on}");
+        assert!(!on.contains("manual"), "on never forces manual: {on}");
+        let off = KalamPrefs {
+            hyphenate: false,
+            ..KalamPrefs::default()
+        }
+        .skin_css();
+        assert!(off.contains("hyphens: manual"), "off forces manual: {off}");
+        assert!(!off.contains("hyphens: auto"), "off never sets auto: {off}");
     }
 
     #[test]

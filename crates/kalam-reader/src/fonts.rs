@@ -35,10 +35,15 @@ macro_rules! face {
     };
 }
 
-/// The font source a session opens with. `host_fonts` adds the system's
-/// fonts after the bundled ones, for script fallback only — the bundled
-/// faces still win for every family name they cover.
-pub fn font_source(host_fonts: bool) -> FontSource {
+/// The font source a session opens with.
+///
+/// `fonts_dir` adds every face under one folder of the reader's own —
+/// roadmap 2.8, a typeface without a system-wide install — and
+/// `host_fonts` adds the whole system after that, for script fallback
+/// only. Both come *after* the bundled faces, so a name Literata or Noto
+/// Sans already answers keeps the face that shipped, and anything dropped
+/// in simply joins the picker.
+pub fn font_source(host_fonts: bool, fonts_dir: Option<std::path::PathBuf>) -> FontSource {
     let mut faces = vec![
         face!("Literata-Regular.ttf"),
         face!("Literata-Italic.ttf"),
@@ -49,6 +54,11 @@ pub fn font_source(host_fonts: bool) -> FontSource {
         face!("NotoSans-Bold.ttf"),
         face!("NotoSans-BoldItalic.ttf"),
     ];
+    if let Some(dir) = fonts_dir {
+        // Recursive, and a folder that does not exist is simply no faces:
+        // the reader creates it, and an empty one costs one directory read.
+        faces.push(Faces::Dir(dir));
+    }
     if host_fonts {
         faces.push(Faces::Host);
     }

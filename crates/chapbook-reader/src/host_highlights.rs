@@ -31,6 +31,8 @@ pub struct HostHighlight {
     pub end: LayeredLocator,
     /// `#rrggbb` or `#rrggbbaa`; `None` paints in the theme's colour.
     pub color: Option<String>,
+    /// `solid`, `underline`, `squiggly`, `strikeout`.
+    pub style: Option<String>,
     pub text: Option<String>,
 }
 
@@ -78,10 +80,26 @@ impl Session {
 
     /// Change a shown highlight's colour. `None` returns it to the theme's.
     pub fn recolor_host_highlight(&mut self, id: i64, color: Option<&str>) {
+        self.update_host_highlight(id, color, None);
+    }
+
+    /// Change a shown highlight's colour and style.
+    pub fn update_host_highlight(
+        &mut self,
+        id: i64,
+        color: Option<&str>,
+        style: Option<&str>,
+    ) {
         let range = self.host_highlight_range(id);
         let color = color.map(str::to_string);
+        let style = style.map(str::to_string);
         for highlight in self.host_highlights.iter_mut().filter(|h| h.id == id) {
-            highlight.color = color.clone();
+            if color.is_some() {
+                highlight.color = color.clone();
+            }
+            if style.is_some() {
+                highlight.style = style.clone();
+            }
         }
         for resolved in self
             .units
@@ -89,7 +107,12 @@ impl Session {
             .filter_map(|unit| unit.resolved_host_highlights.as_mut())
         {
             for highlight in resolved.iter_mut().filter(|h| h.id == id) {
-                highlight.color = color.clone();
+                if color.is_some() {
+                    highlight.color = color.clone();
+                }
+                if style.is_some() {
+                    highlight.style = style.clone();
+                }
             }
         }
         self.mark_highlight(range);
@@ -197,12 +220,18 @@ impl Session {
     /// re-imported copy of the same file resolves exactly, and if the file
     /// changed underneath, the offset is bounds-checked and the quote
     /// context is the fallback the way it always was.
+    ///
+    /// A host entry filter counts as "changed underneath" for as long as
+    /// it is installed: the session's text is then a derived view, and a
+    /// href match proves nothing about offsets an edit may have shifted.
+    /// Filtered means untrusted; the quote layer answers.
     fn href_matches(&self, spine: usize, locator: &LayeredLocator) -> bool {
         self.book
             .publication()
             .spine_item(spine)
             .map(|item| item.href == locator.spine_href)
             .unwrap_or(false)
+            && !self.text_is_filtered()
     }
 
     fn resolve_host_highlights(&self, spine: usize, text: &str) -> Vec<Highlight> {
@@ -226,6 +255,7 @@ impl Session {
             end,
             text: h.text.clone(),
             color: h.color.clone(),
+            style: h.style.clone(),
         })
     }
 

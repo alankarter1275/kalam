@@ -287,9 +287,17 @@ impl Session {
             }
         }
         stages.push(("fonts", lap(&mut last)));
-        let mut images = chapbook_layout::collect_images(&doc, Some(&self.fonts), |img_href| {
-            epub.resource(&href, img_href).ok().map(|r| r.data)
-        });
+        // Nothing can be drawn wider than the content box, so decoding an
+        // image to more pixels than that is waste — and on a machine with 4 GB
+        // the waste is what pushes a single illustrated chapter past the
+        // reader's entire cache budget. The painter scales whatever it is
+        // given into `dest`, so fewer pixels costs nothing but sharpness the
+        // screen could not have shown anyway.
+        let max_edge = (metrics.content_width() * metrics.dpi_scale) as u32;
+        let mut images =
+            chapbook_layout::collect_images(&doc, Some(&self.fonts), Some(max_edge), |img_href| {
+                epub.resource(&href, img_href).ok().map(|r| r.data)
+            });
         // kalam: on a dark ground the frames paint paper images inverted
         // (`ImageTreatment::Invert`); storing the negatives now lets the
         // renderer screen them in place instead of copying a full-page

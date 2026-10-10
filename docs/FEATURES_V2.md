@@ -1,5 +1,11 @@
 # Feature Architecture v2.0 (Post-WebKit Parity)
 
+> **Status (2026-09-30): every blueprint in this file has shipped** —
+> highlights and annotations, in-reader search with the matches popover,
+> image zoom, and hyperlinks/footnotes. It is kept as the design record of
+> *how* those features work, not as a list of things to build. The live plan
+> is [`ROADMAP.md`](../ROADMAP.md).
+
 This document outlines the architectural blueprints for replacing the final features lost during the WebKit-to-Kalam-Engine migration. These features will bring the pure-Rust engine to complete functional parity with browser-based readers, while maintaining zero DOM-overhead and sub-millisecond performance.
 
 ---

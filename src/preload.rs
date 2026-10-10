@@ -24,7 +24,7 @@
 //!
 //! **The results arrive one at a time.** A preloader that reported only when
 //! all twenty covers were done would be useless, so this uses
-//! [`crate::tasks::spawn_stream`] and each cover is cached the moment it is
+//! [`crate::tasks::spawn_stream_internal`] and each cover is cached the moment it is
 //! ready.
 //!
 //! # What it deliberately does not do
@@ -58,18 +58,11 @@ fn preload_enabled_for(value: Option<&std::ffi::OsStr>) -> bool {
     }
 }
 
-/// How many covers to decode in the first batch — roughly the first four rows
-/// of a six-column grid, i.e. what the user can actually see.
-///
-/// This is a *batch* size, not a budget. [`warm_covers`] keeps going after the
-/// first batch until the list is exhausted; the split exists so the visible
-/// rows are decoded and swapped in first, rather than the user watching a
-/// whole library decode in book order before the top of the screen fills.
-pub const PRELOAD_AHEAD: usize = 24;
 
 /// A decoded cover on its way back to the main thread.
 ///
 /// Deliberately plain data: `Vec<u8>` crosses threads, `gdk::Texture` does not.
+#[derive(Debug)]
 pub struct DecodedCover {
     /// The *original* cover path — the cache is keyed on it, so that
     /// invalidation on a cover change keeps working.
@@ -104,6 +97,69 @@ pub fn decode_rgba(path: &Path, w: i32, h: i32) -> Option<DecodedCover> {
     })
 }
 
+/// Decode one cover for the cache on a caller's worker thread, exactly
+/// as [`warm_covers`] would: the thumbnail when one exists, keyed on
+/// the original cover path so the lookup the UI performs later is a
+/// real hit. The page and float snapshot workers use this so their
+/// covers are already cached when the snapshot applies — the deferred
+/// frame then takes its "already decoded" branch and no swap happens
+/// at all (7.1 step 2a.2).
+pub fn decode_for_cache(cover: &Path, w: i32, h: i32) -> Option<DecodedCover> {
+    let src = source_for(cover, w, h);
+    let mut decoded = decode_rgba(&src, w, h)?;
+    decoded.cover = cover.to_path_buf();
+    Some(decoded)
+}
+
+/// Decoded pixels for a cover that never had a file — bytes straight
+/// from the network (the comics browser's remote covers).
+///
+/// Same "plain data crosses threads" rule as [`DecodedCover`], minus
+/// the cache key: these are shown once, so there is no stable path to
+/// key on and nothing to invalidate.
+#[derive(Debug)]
+pub struct DecodedPixels {
+    pub width: i32,
+    pub height: i32,
+    /// Tightly packed RGBA, `width * height * 4` bytes.
+    pub rgba: Vec<u8>,
+}
+
+/// Decode in-memory image bytes to raw RGBA that fits inside `w`×`h`
+/// with the aspect ratio kept — `ContentFit::Cover` crops at paint
+/// time, so the picture's look is unchanged; only the decode moved.
+///
+/// Headless, GTK-free, worker-legal: the comics browser's remote-cover
+/// task downloads *and decodes* on the worker this way, and its
+/// done-callback only wraps the pixels in a texture — that wrap is a
+/// pointer copy, not a decode. A `None` here is a placeholder picture,
+/// not a failure worth reporting, matching [`decode_rgba`].
+pub fn decode_rgba_bytes(bytes: &[u8], w: i32, h: i32) -> Option<DecodedPixels> {
+    if w <= 0 || h <= 0 || bytes.is_empty() {
+        return None;
+    }
+    let img = image::load_from_memory(bytes).ok()?;
+    // Fit inside 2× the slot (enough resolution that ContentFit::Cover
+    // stays sharp, small enough that the wrap stays cheap); never
+    // upscale — a tiny source image gains nothing from it.
+    let (max_w, max_h) = (w as u32 * 2, h as u32 * 2);
+    let resized = if img.width() > max_w || img.height() > max_h {
+        img.thumbnail(max_w, max_h)
+    } else {
+        img
+    };
+    let rgba = resized.to_rgba8();
+    let (width, height) = (rgba.width() as i32, rgba.height() as i32);
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    Some(DecodedPixels {
+        width,
+        height,
+        rgba: rgba.into_raw(),
+    })
+}
+
 /// Which file to decode for a cover slot: the thumbnail when it exists and is
 /// big enough, else the original.
 ///
@@ -134,38 +190,99 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
     if covers.is_empty() || !preload_enabled() {
         return;
     }
-    crate::tasks::spawn_stream(
+    crate::tasks::spawn_stream_internal(
+        "Preloading covers",
         move |reporter, emit| {
+            // Covers hunt, probe half 1 (2026-10-05, run #3: 250–951 ms UI
+            // blocks with fresh "Preloading covers" anchors). The decode runs
+            // off the UI thread, so these numbers say how fast items are
+            // PRODUCED — the arrival cadence the main thread sees. The
+            // consumer half (per-item landing cost and the arrival pattern)
+            // is measured in the on_item callback below; together they let a
+            // field run say which side of the stream the block lives on.
+            let mut sent = 0usize;
+            let mut total = std::time::Duration::ZERO;
+            let mut worst = std::time::Duration::ZERO;
+            // Which source each decode read: the tiny thumbnail (the fix
+            // working) or the full cover (the 100–1167 ms decodes of run
+            // #4, when a comic chapter's series-folder cover could never
+            // find its uuid-keyed thumbnail).
+            let mut from_thumb = 0usize;
+            let mut from_full = 0usize;
             for (i, cover) in covers.into_iter().enumerate() {
                 // Cheap to check and worth checking: closing the page should
                 // not leave a thread decoding covers nobody will see.
                 if reporter.cancelled() {
-                    return;
+                    break;
                 }
-                // After the visible batch, yield briefly between covers. The
-                // decode itself is off the UI thread, but each finished cover
-                // swaps a widget *on* it, and a few hundred of those back to
-                // back is its own stutter. Off-screen covers have no deadline,
-                // so spending a little longer on them costs nothing visible.
-                if i >= PRELOAD_AHEAD {
+                // Pace every cover, the first batch included (7.1 step
+                // 2b.1). The old unpaced first 24 was a burst of swaps the
+                // main loop had to absorb while it was already doing GTK's
+                // first layout passes - the ~3 s startup block of three
+                // field runs. The decode itself is off the UI thread, but
+                // each finished cover swaps a widget *on* it. Off-screen
+                // covers have no deadline, so spreading them costs nothing
+                // visible.
+                if i > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(4));
                 }
                 let src = source_for(&cover, w, h);
+                if src != cover {
+                    from_thumb += 1;
+                } else {
+                    from_full += 1;
+                }
+                let decode_started = std::time::Instant::now();
                 let Some(mut decoded) = decode_rgba(&src, w, h) else {
                     continue;
                 };
+                let took = decode_started.elapsed();
                 // Report the *cover* path even when a thumbnail was decoded,
                 // so the cache key matches what the grid will ask for.
                 decoded.cover = cover;
                 // A closed channel means the UI is gone; stop rather than
                 // decode the rest into nothing.
                 if !emit.send(decoded) {
-                    return;
+                    break;
+                }
+                sent += 1;
+                total += took;
+                if took > worst {
+                    worst = took;
                 }
             }
+            crate::timing::note("covers_decoded", sent);
+            crate::timing::note("covers_thumb", from_thumb);
+            crate::timing::note("covers_full", from_full);
+            crate::timing::duration("covers_decode", total);
+            crate::timing::duration("covers_decode_max", worst);
         },
-        |decoded| {
-            crate::widgets::book_row::cache_decoded_cover(&decoded);
+        {
+            // Covers hunt, probe half 2: the consumer side. `covers_land`
+            // is the full synchronous cost of one landing on the main
+            // thread (texture wrap + cache insert + the in-place picture
+            // swap). A `covers_gap` line means two landings were less than
+            // 2 ms of idle apart — back-to-back. The 4 ms producer pacing
+            // cannot prevent that: when the main thread is busy, the
+            // unbounded channel takes everything the worker sends and the
+            // `spawn_future_local` loop drains the backlog without ever
+            // yielding to the frame clock. If the field run shows cheap
+            // landings AND back-to-back gaps under a stall, the block is
+            // the drain (or the paint it bunches); expensive landings say
+            // the swap itself; neither says the worker.
+            let last_end = std::cell::Cell::new(None::<std::time::Instant>);
+            move |decoded| {
+                let started = std::time::Instant::now();
+                if let Some(prev_end) = last_end.get() {
+                    let idle = started - prev_end;
+                    if idle < std::time::Duration::from_millis(2) {
+                        crate::timing::duration("covers_gap", idle);
+                    }
+                }
+                crate::widgets::book_row::cache_decoded_cover(&decoded);
+                crate::timing::duration("covers_land", started.elapsed());
+                last_end.set(Some(std::time::Instant::now()));
+            }
         },
     );
 }
@@ -198,8 +315,8 @@ pub fn ahead_of(
     let start = visible_from.min(books.len());
     // Nearest-first, but *all* of them: every card on the page is showing a
     // placeholder, so anything left out of this list would keep showing one
-    // for ever. `warm_covers` decodes the first `PRELOAD_AHEAD` as one batch
-    // and the remainder after, so the visible rows still come first.
+    // for ever. `warm_covers` paces every cover equally, so the visible
+    // rows still come first by order alone.
     //
     // Deduplicated because a page can show the same book twice -- Home lists
     // one in both "continue reading" and "recently added" -- and decoding a
@@ -322,6 +439,53 @@ mod tests {
         write_png(&real, 20, 20);
         assert!(decode_rgba(&real, 0, 10).is_none(), "zero width");
         assert!(decode_rgba(&real, 10, -1).is_none(), "negative height");
+    }
+
+    #[test]
+    fn network_bytes_decode_to_a_fitting_size() {
+        // The comics/browse covers arrive as raw bytes from the network;
+        // the decode must land inside 2× the slot with the aspect ratio
+        // kept (ContentFit::Cover crops at paint, so a squashed image
+        // here would be a squashed card there).
+        let dir = Scratch::new();
+        let src = dir.join("remote.png");
+        write_png(&src, 600, 900);
+        let bytes = std::fs::read(&src).expect("read the png back");
+
+        let got = decode_rgba_bytes(&bytes, 150, 210).expect("png bytes decode");
+        assert!(
+            got.width <= 300 && got.height <= 420,
+            "fits inside 2x the slot, got {}x{}",
+            got.width,
+            got.height
+        );
+        let ratio = got.width as f64 / got.height as f64;
+        assert!(
+            (ratio - 600.0 / 900.0).abs() < 0.02,
+            "aspect kept: ratio {ratio}"
+        );
+        assert_eq!(got.rgba.len(), got.width as usize * got.height as usize * 4);
+    }
+
+    #[test]
+    fn network_bytes_are_never_upscaled() {
+        let dir = Scratch::new();
+        let src = dir.join("tiny.png");
+        write_png(&src, 60, 84);
+        let bytes = std::fs::read(&src).expect("read the png back");
+
+        let got = decode_rgba_bytes(&bytes, 150, 210).expect("tiny png decodes");
+        assert_eq!((got.width, got.height), (60, 84), "no upscale, no pad");
+    }
+
+    #[test]
+    fn bad_network_bytes_are_skipped_not_fatal() {
+        // A remote source can hand back anything; every one of these
+        // must be a quiet `None`, matching `decode_rgba`.
+        assert!(decode_rgba_bytes(b"not an image", 150, 210).is_none());
+        assert!(decode_rgba_bytes(b"", 150, 210).is_none(), "empty body");
+        assert!(decode_rgba_bytes(b"gif89a", 0, 210).is_none(), "zero width");
+        assert!(decode_rgba_bytes(b"gif89a", 150, -1).is_none(), "negative height");
     }
 
     #[test]

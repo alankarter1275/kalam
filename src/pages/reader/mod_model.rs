@@ -24,9 +24,50 @@ pub struct ReaderModel {
     pub(crate) font_px: u32,
     pub(crate) line_height: f32,
     pub(crate) column_px: u32,
+    /// The body typeface chosen in the font picker; `None` = default.
+    pub(crate) font_family: Option<String>,
+    /// Roadmap 2.4 text-layout toggles.
+    pub(crate) justify: bool,
+    pub(crate) publisher_styles: bool,
+    /// Roadmap 2.7: facing pages when the window is wide enough.
+    pub(crate) dual_page: bool,
+    /// Roadmap 2.9: the reader's keys. Shared with the key controller, so
+    /// a change in settings reaches the handler without rebuilding it.
+    pub(crate) keybinds: std::rc::Rc<
+        std::cell::RefCell<super::keybinds::KeyBindings>,
+    >,
+    /// The buttons that show those keys, so a change can repaint them.
+    pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
+    /// Roadmap 2.7's spread toggle, kept so the shell can grey it while
+    /// the reader is in continuous scroll, where a spread never applies
+    /// (sensitivity only — the pref itself is untouched).
+    pub(crate) dual_page_switch: gtk::Switch,
+    /// The window-global jump-back shortcut (roadmaps 2.6/2.9), swapped in
+    /// place whenever the key is rebound. Keyboard-only on purpose: the
+    /// on-screen undo button read as clutter and went away.
+    pub(crate) jump_back_shortcut:
+        std::rc::Rc<std::cell::RefCell<Option<gtk::ShortcutController>>>,
+    /// Roadmap 2.9: hide the pointer when it sits still.
+    pub(crate) autohide_cursor: bool,
+    /// Roadmap 2.9: CSS px per wheel notch, and the label showing it.
+    pub(crate) wheel_step: i32,
+    pub(crate) wheel_step_label: gtk::Label,
+    /// CSS px per arrow step in continuous scroll, its label and row widget.
+    pub(crate) arrow_step: i32,
+    pub(crate) arrow_step_label: gtk::Label,
+    pub(crate) arrow_step_row: gtk::Box,
     /// The chip over the current selection and the dictionary popover,
     /// so they can be taken down again.
+    /// Roadmap 2.6: the jump-back offer, standing while it is fresh.
+    pub(crate) can_jump_back: bool,
+    /// Last seen depth of the engine's back trail, so a jump shows up as
+    /// the number going up.
+    pub(crate) back_depth: usize,
     pub(crate) selection_chip: Option<gtk::Popover>,
+    pub(crate) word_preview_popover: Option<gtk::Popover>,
+    pub(crate) word_memory_scope: String,
+    /// Roadmap 2.5: the footnote card, while it stands.
+    pub(crate) note_popover: Option<gtk::Popover>,
     pub(crate) dict_popover: Option<gtk::Popover>,
     /// Where the last word tap was, for the popover that follows it.
     pub(crate) dict_anchor: Option<gtk::gdk::Rectangle>,
@@ -51,6 +92,33 @@ pub struct ReaderModel {
     pub(crate) dict_lookup_def: Option<String>,
     pub(crate) dict_context: Option<String>,
     pub(crate) last_selection: Option<String>,
+    /// Phase 6.4: the open inline edit, if any — the editor laid over
+    /// the selection or paragraph, the text it started as, and the
+    /// chapter it belongs to.
+    pub(crate) inline_edit: Option<InlineEdit>,
+    /// Phase 6.7: proofreading mode — a tap on a paragraph opens the
+    /// inline editor over the whole paragraph. View state; nothing
+    /// persists it.
+    pub(crate) proofreading: bool,
+    /// The open book's format — proofreading is an EPUB's mode (the
+    /// others have no XHTML paragraphs to edit), so the chrome's pencil
+    /// shows only for one.
+    pub(crate) book_format: crate::models::BookFormat,
+    /// Serial of the next inline edit: verdicts carry the serial of the
+    /// edit they verified, so a stale verdict cannot close a newer
+    /// editor (phase 6.7 — a quick second tap).
+    pub(crate) next_edit_serial: u64,
+    /// Set while a committed edit swaps the reader's view (phase 6.4):
+    /// the open→reload→restore window must not read as reader input.
+    pub(crate) reader_reloading: bool,
+    /// The reader's persistent overlay (phase 6.4): the view mounts in it
+    /// and the inline editor mounts over it. A reload swaps the view
+    /// with `set_child`; the overlay itself stays, so widgets laid over
+    /// the reader keep their parent across a reload.
+    pub(crate) reader_overlay: Option<gtk::Overlay>,
+    /// The open book's file path, for the edit-verification worker —
+    /// the thread cannot reach the view's own copy.
+    pub(crate) book_path: Option<std::path::PathBuf>,
     pub(crate) session_id: Option<i64>,
     pub(crate) session_start: std::time::Instant,
     pub(crate) session_start_pct: i64,
@@ -95,6 +163,9 @@ pub struct ReaderModel {
     pub(crate) search_query: String,
     pub(crate) search_results: Vec<kalam_reader::SearchResult>,
     pub(crate) search_index: usize,
+    pub(crate) search_popover: Option<gtk::Popover>,
+    pub(crate) search_list_box: Option<gtk::ListBox>,
+    pub(crate) search_popover_badge: Option<gtk::Label>,
     pub(crate) lightbox_active: bool,
     pub(crate) lightbox_popover: Option<gtk::Popover>,
     pub(crate) lightbox_pixbuf: Option<gdk_pixbuf::Pixbuf>,

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 //! The reading engine, wired to the reader page.
 //!
@@ -24,7 +23,7 @@
 
 use super::mod_model::ReaderModel;
 use super::types::*;
-use crate::db::{Annotation, HighlightColor as DbColor};
+use crate::db::{Annotation, HighlightColor as DbColor, AnnotationStyle, PatchRecord};
 use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use kalam_reader::{
@@ -44,19 +43,63 @@ pub(crate) fn engine_theme(theme: ReadingTheme) -> KalamTheme {
     KalamTheme::from_name(theme.as_str()).unwrap_or_default()
 }
 
+// Nine knobs, one purpose: the persisted reading preferences the engine
+// consumes. Grouping them into structs would only scatter what is plainly one
+// call. Same allow as `settings_panel` and `db`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn engine_prefs(
     theme: ReadingTheme,
     font_px: u32,
     line_height: f32,
     column_px: u32,
+    font_family: Option<String>,
+    justify: bool,
+    hyphenate: bool,
+    publisher_styles: bool,
 ) -> KalamPrefs {
     KalamPrefs {
         theme: engine_theme(theme),
         font_px: font_px as f32,
         line_height,
         column_px: column_px as f32,
+        font_family,
+        justify,
+        hyphenate,
+        publisher_styles,
     }
     .clamped()
+}
+
+/// The reading preferences as currently stored. The same reads `init`
+/// makes, in one place, so a mid-session reload reopens the book with
+/// exactly the preferences the reader had: every settings handler
+/// persists its pref before applying it, so the catalog is always the
+/// freshest source. Hyphenation stays retired (round-1 field report).
+pub(crate) fn current_engine_prefs(catalog: &crate::db::Catalog) -> KalamPrefs {
+    let theme = catalog
+        .get_pref("reader.theme")
+        .map(|v| ReadingTheme::from_str_lossy(&v))
+        .unwrap_or(ReadingTheme::Sepia);
+    let font_px = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
+    let line_height = catalog
+        .get_pref("reader.line_height")
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(1.8)
+        .clamp(1.3, 2.5);
+    let column_px = catalog.get_pref_i64("reader.column_px", 620).clamp(400, 860) as u32;
+    let font_family = catalog.get_pref("reader.font_family");
+    let justify = catalog.get_pref_i64("reader.justify", 0) != 0;
+    let publisher_styles = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
+    engine_prefs(
+        theme,
+        font_px,
+        line_height,
+        column_px,
+        font_family,
+        justify,
+        false,
+        publisher_styles,
+    )
 }
 
 /// Kalam's stored colour name → the engine's. Unknown names (and the
@@ -70,14 +113,76 @@ pub(crate) fn engine_color(name: &str) -> HighlightColor {
 /// budget — the settings the engine was tuned with on the target
 /// machine. `Err` for a file the engine cannot read; the caller shows
 /// the "Could not open book" placeholder as before.
+///
+/// `patches` are the book's pending edits (Phase 6). They are applied to
+/// each chapter's bytes as the reader parses them — the book on disk is
+/// untouched — so what the reader sees is the edited text. An empty list
+/// installs no filter at all and reads the file verbatim.
 pub(crate) fn open_engine(
     file_path: &Path,
     prefs: KalamPrefs,
+    patches: Vec<PatchRecord>,
 ) -> Result<ReaderView, kalam_reader::ChapbookError> {
     crate::timing::span("book_open");
-    let view = ReaderView::open(file_path, prefs, &ReaderOptions::default());
+    // Roadmap 2.8: a reader's own typefaces, scanned when the book opens.
+    let options = ReaderOptions {
+        fonts_dir: Some(crate::paths::fonts_dir()),
+        entry_filter: patch_filter(patches),
+        ..ReaderOptions::default()
+    };
+    // Say what the cache ceiling actually is instead of leaving it to be
+    // inferred through two layers of defaults — the engine's own is 192 MB,
+    // but `kalam-reader` overrides it with a 32 MB figure chosen for a 4 GB
+    // machine, and reading the code is not the same as seeing the number.
+    // With RUST_LOG=info this is the line that answers "how much is one
+    // open book allowed to hold".
+    log::info!(
+        "opening {} with a {} MB cache budget",
+        file_path.display(),
+        options
+            .cache_budget
+            .unwrap_or(kalam_reader::DEFAULT_CACHE_BUDGET)
+            / (1024 * 1024)
+    );
+    let view = ReaderView::open(file_path, prefs, &options);
     crate::timing::span_end("book_open");
     view
+}
+
+/// The virtual-edit seam (Phase 6): wrap the book's pending patches in the
+/// engine's entry filter. Every chapter the reader parses goes through
+/// this — the edit exists only in memory, until a review-panel bake
+/// writes it into the file for real.
+///
+/// An empty patch list yields an unset filter: the common book — no
+/// pending edits — is read verbatim and keeps full-exactness locator
+/// resolution, which the session deliberately gives up while a filter is
+/// installed.
+fn patch_filter(patches: Vec<PatchRecord>) -> kalam_reader::EntryFilter {
+    if patches.is_empty() {
+        return kalam_reader::EntryFilter::default();
+    }
+    kalam_reader::EntryFilter::new(move |href, bytes| {
+        let (patched, outcomes) = crate::epub_patches::apply_text_patches(href, &bytes, &patches);
+        // A patch that no longer matches its chapter is flagged, never
+        // silently skipped: the review panel surfaces these (step 5); this
+        // log line is the developer's trace of the same fact, at a level
+        // that stays out of the way of a normal session.
+        for outcome in &outcomes {
+            if !matches!(
+                outcome.resolution,
+                crate::epub_patches::Resolution::Found(_)
+            ) {
+                log::debug!(
+                    "patch {} no longer matches {}: {:?}",
+                    outcome.id,
+                    href,
+                    outcome.resolution
+                );
+            }
+        }
+        patched
+    })
 }
 
 /// The reader's "continuous scroll" preference, kept under the
@@ -112,6 +217,27 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
         ));
     });
 
+    // Phase 6.4: where the selection sits after each draw — the inline
+    // editor follows its text on scroll with this. The view fires it from
+    // an idle after the frame that moved the text is already painted, so
+    // repositioning converges before the next paint and nothing swims.
+    let tx = sender.input_sender().clone();
+    view.connect_selection_moved(move |rect: Option<kalam_reader::Rect>| {
+        let _ = tx.send(ReaderMsg::EngineSelectionMoved(rect.map(gdk_rect)));
+    });
+
+    // Phase 6.7: a proofread tap's paragraph — its editing identity and
+    // the rect its editor opens over, or None when the chapter has no
+    // editable paragraph there. The view fires it after reporting the
+    // tap's own selection, so an open editor commits as its click-away
+    // before this opens the next one.
+    let tx = sender.input_sender().clone();
+    view.connect_paragraph_tap(move |tap: Option<kalam_reader::ParagraphTap>| {
+        let _ = tx.send(ReaderMsg::EngineParagraphTap(tap.map(|tap| {
+            (tap.identity, gdk_rect(tap.rect))
+        })));
+    });
+
     view.connect_external_link(|href: &str| {
         if href.starts_with("http://") || href.starts_with("https://") {
             let launcher = gtk::UriLauncher::new(href);
@@ -119,9 +245,38 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
         }
     });
 
+    // Roadmap 2.5: the engine offers the note behind an internal link
+    // before following it. Kalam always takes the offer — the card carries
+    // a "go to the note" button, so nothing is lost by staying put.
+    let tx = sender.input_sender().clone();
+    view.connect_note(move |href: &str, text: &str, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::ShowNote {
+            href: href.to_string(),
+            text: text.to_string(),
+            x,
+            y,
+        });
+        true
+    });
+
     let tx = sender.input_sender().clone();
     view.connect_image_tap(move |w: u32, h: u32, bytes: &[u8]| {
         let _ = tx.send(ReaderMsg::OpenImageLightbox(w, h, bytes.to_vec()));
+    });
+
+    let tx = sender.input_sender().clone();
+    view.connect_highlight_tap(move |id: i64, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::HighlightTapped(id, x, y));
+    });
+
+    let tx = sender.input_sender().clone();
+    view.connect_word_tap(move |word: &str, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::WordMemoryTapped(word.to_string(), x, y));
+    });
+
+    let tx = sender.input_sender().clone();
+    view.connect_word_hover(move |word_opt: Option<&str>, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::WordMemoryHover(word_opt.map(str::to_string), x, y));
     });
 }
 
@@ -151,6 +306,7 @@ pub(crate) fn highlight_of(annotation: &Annotation) -> Option<NewHighlight> {
     let (start, end) = range_from_json(annotation.cfi.as_deref()?)?;
     Some(NewHighlight {
         color: engine_color(&annotation.color),
+        style: annotation.style.clone(),
         text: annotation.text_excerpt.clone(),
         start,
         end,
@@ -247,7 +403,7 @@ pub(crate) fn range_from_json(text: &str) -> Option<(LayeredLocator, LayeredLoca
 /// can store beside `(chapter_index, fraction)` if you add a column for
 /// it later. Not used in v1; the pair is enough for the engine's
 /// `goto_chapter`.
-#[allow(dead_code)]
+#[allow(dead_code)] // serializes a locator for position persistence, wired later
 pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
     serde_json::json!({ "kalam_locator": 1, "at": locator_to_json(l) }).to_string()
 }
@@ -273,7 +429,6 @@ pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
 ///
 /// Returns a popover already pointed at the selection; the caller keeps it
 /// in the model so `None` (selection cleared) can pop it down.
-
 fn action_button(icon_name: &str, tooltip: &str, accent: bool) -> gtk::Button {
     let btn = gtk::Button::from_icon_name(icon_name);
     btn.add_css_class("k-sel-action");
@@ -287,81 +442,806 @@ fn action_button(icon_name: &str, tooltip: &str, accent: bool) -> gtk::Button {
     btn
 }
 
+pub(crate) fn build_calibre_drawer_box(
+    initial_color: DbColor,
+    initial_style: AnnotationStyle,
+    initial_note: &str,
+    existing_id: Option<i64>,
+    on_save: impl Fn(DbColor, AnnotationStyle, String) + 'static,
+    on_delete: Option<Box<dyn Fn(i64) + 'static>>,
+) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card.add_css_class("k-annotation-drawer");
+
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    header.add_css_class("k-annotation-header");
+
+    let cur_color = std::rc::Rc::new(std::cell::Cell::new(initial_color));
+    let cur_style = std::rc::Rc::new(std::cell::Cell::new(initial_style));
+
+    let colors_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    colors_row.add_css_class("k-color-bar");
+
+    let mut color_dots: Vec<(DbColor, gtk::Button)> = Vec::new();
+
+    for color in DbColor::SOFT_FIVE {
+        let dot = gtk::Button::new();
+        dot.add_css_class("k-color-dot");
+        dot.add_css_class(&format!("k-color-dot-{}", color.as_str()));
+        if *color == initial_color {
+            dot.add_css_class("active");
+        }
+        dot.set_tooltip_text(Some(&format!("Highlight {}", color.as_str())));
+        dot.set_size_request(20, 20);
+        dot.set_valign(gtk::Align::Center);
+        dot.set_halign(gtk::Align::Center);
+        colors_row.append(&dot);
+        color_dots.push((*color, dot));
+    }
+
+    let color_dots_rc = std::rc::Rc::new(color_dots);
+    for (color, dot) in color_dots_rc.iter() {
+        let cur = cur_color.clone();
+        let dots = color_dots_rc.clone();
+        let c = *color;
+        dot.connect_clicked(move |_| {
+            cur.set(c);
+            for (dot_c, btn) in dots.iter() {
+                if *dot_c == c {
+                    btn.add_css_class("active");
+                } else {
+                    btn.remove_css_class("active");
+                }
+            }
+        });
+    }
+    header.append(&colors_row);
+
+    let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    sep.add_css_class("k-sel-divider");
+    header.append(&sep);
+
+    let styles_row = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+    styles_row.add_css_class("k-style-group");
+
+    let mut style_buttons: Vec<(AnnotationStyle, gtk::Button)> = Vec::new();
+
+    for style in AnnotationStyle::ALL {
+        let btn = gtk::Button::with_label(style.label());
+        btn.add_css_class("k-style-btn");
+        if *style == initial_style {
+            btn.add_css_class("active");
+        }
+        btn.set_tooltip_text(Some(style.label()));
+        btn.set_valign(gtk::Align::Center);
+        styles_row.append(&btn);
+        style_buttons.push((*style, btn));
+    }
+
+    let style_buttons_rc = std::rc::Rc::new(style_buttons);
+    for (style, btn) in style_buttons_rc.iter() {
+        let cur = cur_style.clone();
+        let btns = style_buttons_rc.clone();
+        let st = *style;
+        btn.connect_clicked(move |_| {
+            cur.set(st);
+            for (btn_s, b) in btns.iter() {
+                if *btn_s == st {
+                    b.add_css_class("active");
+                } else {
+                    b.remove_css_class("active");
+                }
+            }
+        });
+    }
+    header.append(&styles_row);
+    card.append(&header);
+
+    // Note text view
+    let scrolled = gtk::ScrolledWindow::new();
+    scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    scrolled.set_size_request(280, 56);
+    scrolled.add_css_class("k-annotation-note-scroll");
+
+    let note_view = gtk::TextView::new();
+    note_view.add_css_class("k-annotation-note-area");
+    note_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    let buffer = note_view.buffer();
+    if !initial_note.is_empty() {
+        buffer.set_text(initial_note);
+    }
+    scrolled.set_child(Some(&note_view));
+    card.append(&scrolled);
+
+    // Footer actions
+    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    footer.add_css_class("k-annotation-actions");
+
+    if let (Some(id), Some(del_cb)) = (existing_id, on_delete) {
+        let del_btn = gtk::Button::new();
+        del_btn.set_child(Some(&crate::icons::labelled(
+            "user-trash-symbolic",
+            14,
+            "Delete",
+            4,
+        )));
+        del_btn.add_css_class("k-annotation-del-btn");
+        del_btn.add_css_class("danger");
+        del_btn.set_tooltip_text(Some("Delete this annotation"));
+        del_btn.connect_clicked(move |_| {
+            del_cb(id);
+        });
+        footer.append(&del_btn);
+    }
+
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    footer.append(&spacer);
+
+    let save_btn = gtk::Button::with_label("Save");
+    save_btn.add_css_class("k-annotation-save-btn");
+    save_btn.add_css_class("accent");
+    let buf_clone = buffer.clone();
+    save_btn.connect_clicked(move |_| {
+        let text = buf_clone.text(&buf_clone.start_iter(), &buf_clone.end_iter(), false).to_string();
+        on_save(cur_color.get(), cur_style.get(), text);
+    });
+    footer.append(&save_btn);
+
+    card.append(&footer);
+    card
+}
+
 pub(crate) fn build_selection_chip(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    row.add_css_class("k-sel-toolbar");
+    crate::icons::init();
 
-    let highlight = action_button("kalam-highlight-symbolic", "Highlight", true);
-    row.append(&highlight);
-
-    let colors_box = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    let sep0 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    sep0.add_css_class("k-sel-divider");
-    colors_box.append(&sep0);
-
-    let colors = gtk::Box::new(gtk::Orientation::Horizontal, 3);
-    colors.add_css_class("k-color-bar");
-    for color in [
-        HighlightColor::Yellow,
-        HighlightColor::Green,
-        HighlightColor::Blue,
-        HighlightColor::Pink,
-        HighlightColor::Orange,
-        HighlightColor::Underline,
-    ] {
-        let dot = gtk::Button::new();
-        dot.add_css_class("k-color-dot");
-        dot.add_css_class(&format!("k-color-dot-{}", color.name()));
-        dot.set_tooltip_text(Some(&format!("Highlight {}", color.name())));
-        dot.set_size_request(16, 16);
-        dot.set_valign(gtk::Align::Center);
-        dot.set_halign(gtk::Align::Center);
-        let tx = sender.input_sender().clone();
-        dot.connect_clicked(move |_| {
-            let _ = tx.send(ReaderMsg::HighlightSelection(color.name().to_string()));
-        });
-        colors.append(&dot);
-    }
-    colors_box.append(&colors);
-    row.append(&colors_box);
-
-    for (icon_name, tooltip, msg) in [
-        ("kalam-quote-symbolic", "Quote", ReaderMsg::QuoteSelection),
-        ("accessories-dictionary-symbolic", "Define", ReaderMsg::LookUpSelection),
-        ("edit-copy-symbolic", "Copy", ReaderMsg::CopySelection),
-    ] {
-        let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        sep.add_css_class("k-sel-divider");
-        row.append(&sep);
-
-        let button = action_button(icon_name, tooltip, false);
-        let tx = sender.input_sender().clone();
-        button.connect_clicked(move |_| {
-            let _ = tx.send(msg.clone());
-        });
-        row.append(&button);
-    }
+    let root_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let popover = gtk::Popover::new();
-    popover.set_child(Some(&row));
     popover.set_parent(host);
     popover.set_autohide(false);
     popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Top);
+
     let mut anchor = *rect;
     anchor.set_y(anchor.y() - HANDLE_HEADROOM);
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
     popover.add_css_class("k-sel-toolbar-popover");
 
-    {
+    let pill = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+    pill.add_css_class("k-sel-toolbar");
+
+    // 1. Highlight button
+    let highlight_btn = action_button("kalam-highlight-symbolic", "Highlight", true);
+    let root_ref = root_box.clone();
+    let pill_ref = pill.clone();
+    let pop_ref = popover.clone();
+    let tx_save = sender.input_sender().clone();
+    highlight_btn.connect_clicked(move |_| {
+        pill_ref.set_visible(false);
+        let tx = tx_save.clone();
+        let drawer = build_calibre_drawer_box(
+            DbColor::Yellow,
+            AnnotationStyle::Solid,
+            "",
+            None,
+            move |color, style, note| {
+                let _ = tx.send(ReaderMsg::SaveAnnotationDetails {
+                    color: color.as_str().to_string(),
+                    style: style.as_str().to_string(),
+                    note,
+                });
+            },
+            None,
+        );
+        root_ref.append(&drawer);
+        pop_ref.present();
+    });
+    pill.append(&highlight_btn);
+
+    let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    sep.add_css_class("k-sel-divider");
+    pill.append(&sep);
+
+    // 2. Define button
+    let define_btn = action_button("accessories-dictionary-symbolic", "Define", false);
+    let tx_def = sender.input_sender().clone();
+    define_btn.connect_clicked(move |_| {
+        let _ = tx_def.send(ReaderMsg::LookUpSelection);
+    });
+    pill.append(&define_btn);
+
+    // 3. Fix typo button (phase 6.4): the selection itself becomes
+    // editable — an entry laid exactly over it in the reader's own
+    // typeface. The model opens the editor; the chip stands down for it.
+    let edit_btn = action_button("document-edit-symbolic", "Fix typo", false);
+    let tx_edit = sender.input_sender().clone();
+    edit_btn.connect_clicked(move |_| {
+        let _ = tx_edit.send(ReaderMsg::BeginInlineEdit);
+    });
+    pill.append(&edit_btn);
+
+    root_box.append(&pill);
+    popover.set_child(Some(&root_box));
+    popover
+}
+
+/// The inline editor (phase 6.4): a single-line entry laid exactly over
+/// the selected text, pre-filled with it, set in the reader's own
+/// typeface and size — the correction happens where the text is, not in
+/// a box beside it. Enter commits, Escape abandons, focus leaving
+/// commits; whichever fires first settles the edit (the done flag) and
+/// the model re-checks state on arrival, so a doubled message is benign.
+///
+/// Returns the entry and the CssProvider that typesets it. The entry is
+/// unparented — the model adds it to the reader overlay with margins
+/// for the selection rect; the provider is registered on the display
+/// here (house style: the widget-local StyleContext is the deprecated
+/// API) and the model unregisters it when the editor closes, so a
+/// session does not accumulate one per edit.
+pub(crate) fn build_inline_editor(
+    text: &str,
+    font_family: Option<&str>,
+    font_px: u32,
+    sender: &ComponentSender<ReaderModel>,
+) -> (gtk::Entry, gtk::CssProvider) {
+    let entry = gtk::Entry::new();
+    entry.add_css_class("k-inline-edit");
+    entry.set_text(text);
+    // Positioned by margins against the overlay's start edges — see
+    // `position_inline_editor`.
+    entry.set_halign(gtk::Align::Start);
+    entry.set_valign(gtk::Align::Start);
+
+    // The reader's own type at the selection, so the correction reads as
+    // part of the line it is fixing. A reader-chosen family with a quote
+    // in its name is clipped rather than allowed to break out of the
+    // CSS string.
+    let family = font_family
+        .filter(|f| !f.is_empty())
+        .map(|f| f.replace('\'', ""))
+        .unwrap_or_else(|| kalam_reader::BODY_FONT.to_string());
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(&format!(
+        "entry.k-inline-edit {{ font-family: '{}'; font-size: {}px; }}",
+        family,
+        font_px.max(1)
+    ));
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
     }
 
+    // One flag, three closures: whichever of Enter, Escape, or focus-out
+    // lands first settles the edit; the other two stay quiet. Each
+    // closure owns its own handle on the flag (the drawer's `cur_color`
+    // shape — an Rc is moved once, cloned once per owner).
+    let done = std::rc::Rc::new(std::cell::Cell::new(false));
+
+    let tx = sender.input_sender().clone();
+    let entry_activate = entry.clone();
+    let done_activate = done.clone();
+    entry.connect_activate(move |_| {
+        if done_activate.replace(true) {
+            return;
+        }
+        let _ = tx.send(ReaderMsg::CommitInlineEdit(
+            entry_activate.text().to_string(),
+        ));
+    });
+
+    let tx = sender.input_sender().clone();
+    let key = gtk::EventControllerKey::new();
+    let done_key = done.clone();
+    key.connect_key_pressed(move |_, keyval, _, _| {
+        if keyval == gtk::gdk::Key::Escape {
+            if !done_key.replace(true) {
+                let _ = tx.send(ReaderMsg::CancelInlineEdit);
+            }
+            return gtk::glib::Propagation::Stop;
+        }
+        gtk::glib::Propagation::Proceed
+    });
+    entry.add_controller(key);
+
+    // Clicking away is a commit: the reader is done with the box and
+    // expects the text to have been taken seriously. Leaving by Enter or
+    // Escape already set the flag, so this stays quiet after them.
+    let tx = sender.input_sender().clone();
+    let entry_focus = entry.clone();
+    let done_focus = done.clone();
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_leave(move |_| {
+        if done_focus.replace(true) {
+            return;
+        }
+        let _ = tx.send(ReaderMsg::CommitInlineEdit(
+            entry_focus.text().to_string(),
+        ));
+    });
+    entry.add_controller(focus);
+
+    (entry, provider)
+}
+
+/// Take the provider back off the display when an editor closes — the
+/// counterpart of the registration in [`build_inline_editor`].
+pub(crate) fn remove_inline_edit_provider(provider: &gtk::CssProvider) {
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_remove_provider_for_display(&display, provider);
+    }
+}
+
+/// The paragraph editor (phase 6.7): the inline editor's paragraph
+/// scope. A wrapped, multi-line view rather than an entry — a paragraph
+/// keeps its `<br>` newlines, which an entry cannot hold — with the
+/// same contract as the selection editor: the reader's own typeface,
+/// Enter commits, Escape cancels, clicking away commits, and one flag
+/// settles whichever lands first. Enter commits rather than inserting a
+/// line break (the shared editing feel); the paragraph's existing line
+/// breaks survive in the buffer, and commit serializes them back as
+/// `<br/>`.
+pub(crate) fn build_paragraph_editor(
+    text: &str,
+    font_family: Option<&str>,
+    font_px: u32,
+    on_commit: impl Fn(String) + Clone + 'static,
+    on_cancel: impl Fn() + 'static,
+) -> (gtk::TextView, gtk::CssProvider) {
+    let view = gtk::TextView::new();
+    view.add_css_class("k-inline-edit");
+    view.set_halign(gtk::Align::Start);
+    view.set_valign(gtk::Align::Start);
+    view.set_wrap_mode(gtk::WrapMode::WordChar);
+    // Tab belongs to the reader (focus moves), not the paragraph.
+    view.set_accepts_tab(false);
+    view.buffer().set_text(text);
+
+    // The reader's own type, as the selection editor typesets it.
+    let family = font_family
+        .filter(|f| !f.is_empty())
+        .map(|f| f.replace('\'', ""))
+        .unwrap_or_else(|| kalam_reader::BODY_FONT.to_string());
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(&format!(
+        "textview.k-inline-edit {{ font-family: '{}'; font-size: {}px; }}",
+        family,
+        font_px.max(1)
+    ));
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
+    // One flag, the selection editor's shape. The callers' commits and
+    // cancels arrive as closures (Phase 6.8: the full editor builds
+    // the same box around its own messages), so the two surfaces keep
+    // one editing feel by sharing this one implementation.
+    let done = std::rc::Rc::new(std::cell::Cell::new(false));
+
+    // The focus controller below shares the commit callback with the
+    // key controller, and a `move` closure can only take it once —
+    // the clone happens before either does.
+    let on_commit_focus = on_commit.clone();
+
+    let view_keys = view.clone();
+    let done_keys = done.clone();
+    let key = gtk::EventControllerKey::new();
+    key.connect_key_pressed(move |_, keyval, _, _| {
+        if keyval == gtk::gdk::Key::Return || keyval == gtk::gdk::Key::KP_Enter {
+            if !done_keys.replace(true) {
+                on_commit(textview_text(&view_keys));
+            }
+            return gtk::glib::Propagation::Stop;
+        }
+        if keyval == gtk::gdk::Key::Escape {
+            if !done_keys.replace(true) {
+                on_cancel();
+            }
+            return gtk::glib::Propagation::Stop;
+        }
+        gtk::glib::Propagation::Proceed
+    });
+    view.add_controller(key);
+
+    // Clicking away is a commit, as in the selection editor.
+    let view_focus = view.clone();
+    let done_focus = done.clone();
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_leave(move |_| {
+        if done_focus.replace(true) {
+            return;
+        }
+        on_commit_focus(textview_text(&view_focus));
+    });
+    view.add_controller(focus);
+
+    (view, provider)
+}
+
+/// A text view's whole buffer, as plain text.
+fn textview_text(view: &gtk::TextView) -> String {
+    let buffer = view.buffer();
+    let (start, end) = buffer.bounds();
+    buffer.text(&start, &end, false).to_string()
+}
+
+/// Lay the editor over its selection. Overlay coordinates are the view
+/// widget's own — the same space the selection rect is measured in (the
+/// strip scrollbar is placed the same way) — so start-aligned margins
+/// land the editor exactly on the text. Width has a floor: a one-word
+/// selection still gets a box worth typing into. The same geometry
+/// places the selection editor (an entry) and the paragraph editor (a
+/// text view).
+pub(crate) fn position_inline_editor(
+    widget: &impl gtk::prelude::IsA<gtk::Widget>,
+    rect: &gtk::gdk::Rectangle,
+) {
+    widget.set_margin_start(rect.x());
+    widget.set_margin_top(rect.y());
+    widget.set_size_request(rect.width().max(160), rect.height().max(28));
+}
+
+/// The structural snapshot (Phase 6 step 10): everything the visual TOC
+/// editor and the cover picker need to know about the *files* — which
+/// entry is the package, which is the cover, and what each hashes to
+/// right now. One worker at editor open, so no structural control ever
+/// touches disk on the main thread; the hashes become the ops'
+/// `before_hash` guards, exactly like the raw mode's whole-file edits.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StructureSnapshot {
+    /// The package (OPF) entry's zip path — a spine op's href.
+    pub opf_href: Option<String>,
+    /// The package's current hash — a spine op's guard.
+    pub opf_hash: Option<String>,
+    /// The manifest cover's zip path, when the book names one.
+    pub cover_href: Option<String>,
+    /// The cover entry's current hash — an asset op's guard.
+    pub cover_hash: Option<String>,
+}
+
+/// The snapshot worker: [`StructureSnapshot`] over `snapshot_tx`, the
+/// same worker→main-loop shape as the verify workers. A book that
+/// cannot answer lands with `None`s — the editor keeps its structural
+/// buttons insensitive rather than toasting about a question it asked
+/// in passing at open.
+pub(crate) fn read_structure_snapshot(
+    book_path: std::path::PathBuf,
+    snapshot_tx: async_channel::Sender<StructureSnapshot>,
+) {
+    std::thread::spawn(move || {
+        let _ = snapshot_tx.send_blocking(structure_snapshot_in_thread(&book_path));
+    });
+}
+
+/// The thread body. The cover question needs the parse (`Book::open`);
+/// the package question needs the container (`ZipArchive`). One open of
+/// each answers both, and a failure to answer any part is a `None`
+/// field, never an error — the snapshot is a question asked in passing
+/// at open, not a read the user is waiting on.
+fn structure_snapshot_in_thread(book_path: &Path) -> StructureSnapshot {
+    let mut snapshot = StructureSnapshot::default();
+    let file = match std::fs::File::open(book_path) {
+        Ok(f) => f,
+        Err(_) => return snapshot,
+    };
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(_) => return snapshot,
+    };
+    if let Ok(opf) = crate::epub::find_opf_path_pub(&mut archive) {
+        if let Some(hash) = entry_hash(&mut archive, &opf) {
+            snapshot.opf_href = Some(opf);
+            snapshot.opf_hash = Some(hash);
+        }
+    }
+    if let Ok(book) = chapbook_epub::Book::open(book_path) {
+        if let Some(cover) = book.cover_href() {
+            if let Some(hash) = entry_hash(&mut archive, &cover) {
+                snapshot.cover_href = Some(cover);
+                snapshot.cover_hash = Some(hash);
+            }
+        }
+    }
+    snapshot
+}
+
+/// One entry's hash, or `None` when it cannot be read — the snapshot's
+/// unit of "could not answer".
+fn entry_hash<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    name: &str,
+) -> Option<String> {
+    use std::io::Read as _;
+    let mut entry = archive.by_name(name).ok()?;
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes).ok()?;
+    Some(crate::epub_patches::hash_bytes(&bytes))
+}
+
+/// Verify an inline edit against the book's source, off the UI thread —
+/// opening the book is the same cost as the initial open and never
+/// belongs on the main loop (the `unit_bytes` contract says so too).
+///
+/// `prior` are the book's already-stored patches: the correction is
+/// planned against the chapter as the reader currently shows it, which
+/// is the text it will be matched against at render as well. The
+/// verdict goes back over `verdict_tx` — an `async_channel` carrying
+/// plain data, the tasks manager's worker→main-loop shape, so nothing
+/// GTK-side crosses the thread — and the main loop turns it into
+/// [`ReaderMsg::InlineEditVerified`]: `Ok` carries the entry href and
+/// the ready-to-store patch, `Err` carries the toast text for a
+/// refusal. The editor stays open either way; a refusal is
+/// information, not a lost edit.
+pub(crate) fn verify_inline_edit(
+    book_path: std::path::PathBuf,
+    chapter: usize,
+    prior: Vec<PatchRecord>,
+    original: String,
+    corrected: String,
+    serial: u64,
+    verdict_tx: async_channel::Sender<Result<VerifiedEdit, (String, u64)>>,
+) {
+    std::thread::spawn(move || {
+        let verdict =
+            verify_inline_edit_in_thread(&book_path, chapter, &prior, &original, &corrected)
+                .map(|planned| VerifiedEdit {
+                    href: planned.0,
+                    kind: "text",
+                    chapter,
+                    serial,
+                    planned: planned.1,
+                })
+                .map_err(|toast| (toast, serial));
+        let _ = verdict_tx.send_blocking(verdict);
+    });
+}
+
+/// The thread body, split out so every early return reads as a verdict
+/// rather than a pile of nesting.
+fn verify_inline_edit_in_thread(
+    book_path: &std::path::Path,
+    chapter: usize,
+    prior: &[PatchRecord],
+    original: &str,
+    corrected: &str,
+) -> Result<(String, crate::epub_patches::PlannedPatch), String> {
+    use chapbook_core::Publication;
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to verify the fix.".to_string())?;
+    let href = book
+        .spine()
+        .get(chapter)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| "The chapter being edited is no longer in the book.".to_string())?;
+    let bytes = book.unit_bytes(chapter).map_err(|_| {
+        "The chapter's text could not be read to verify the fix.".to_string()
+    })?;
+    // The chapter as the reader shows it: earlier pending patches
+    // applied. This is exactly what the new patch will run against at
+    // render, so a find that verifies here holds there.
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
+    crate::epub_patches::plan_text_patch(&virtual_bytes, original, corrected)
+        .map(|planned| (href, planned))
+        .map_err(|refusal| refusal_to_toast(&refusal))
+}
+
+/// The paragraph-scope sibling (phase 6.7): verify a proofreading edit
+/// against the chapter's source through the step-6 span mapper. Same
+/// worker-thread shape and the same verdict channel; the identity is
+/// the paragraph's text plus its neighbours', exactly what the tap
+/// carried. `serial` is the editor's, so a verdict landing after its
+/// editor was replaced stores its patch without closing the new one.
+// Nine inputs, one purpose — the same allow as `engine_prefs` and the
+// db inserts.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_paragraph_edit(
+    book_path: std::path::PathBuf,
+    chapter: usize,
+    prior: Vec<PatchRecord>,
+    original: String,
+    prev: Option<String>,
+    next: Option<String>,
+    corrected: String,
+    serial: u64,
+    verdict_tx: async_channel::Sender<Result<VerifiedEdit, (String, u64)>>,
+) {
+    std::thread::spawn(move || {
+        let verdict = verify_paragraph_edit_in_thread(
+            &book_path,
+            chapter,
+            &prior,
+            &original,
+            prev.as_deref(),
+            next.as_deref(),
+            &corrected,
+        )
+        .map(|planned| VerifiedEdit {
+            href: planned.0,
+            kind: "paragraph",
+            chapter,
+            serial,
+            planned: planned.1,
+        })
+        .map_err(|toast| (toast, serial));
+        let _ = verdict_tx.send_blocking(verdict);
+    });
+}
+
+/// The thread body. The book-and-chapter preamble is the selection
+/// editor's; only the planning differs.
+fn verify_paragraph_edit_in_thread(
+    book_path: &std::path::Path,
+    chapter: usize,
+    prior: &[PatchRecord],
+    original: &str,
+    prev: Option<&str>,
+    next: Option<&str>,
+    corrected: &str,
+) -> Result<(String, crate::epub_patches::PlannedPatch), String> {
+    use chapbook_core::Publication;
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to verify the edit.".to_string())?;
+    let href = book
+        .spine()
+        .get(chapter)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| "The chapter being edited is no longer in the book.".to_string())?;
+    let bytes = book.unit_bytes(chapter).map_err(|_| {
+        "The chapter's text could not be read to verify the edit.".to_string()
+    })?;
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
+    crate::epub_spans::plan_paragraph_patch(&virtual_bytes, original, prev, next, corrected)
+        .map(|planned| (href, planned))
+        .map_err(|refusal| paragraph_refusal_to_toast(&refusal))
+}
+
+/// A paragraph refusal as the text the toast shows. Each one names the
+/// way out where there is one.
+fn paragraph_refusal_to_toast(refusal: &crate::epub_spans::ParagraphRefusal) -> String {
+    use crate::epub_spans::ParagraphRefusal;
+    match refusal {
+        ParagraphRefusal::Unchanged => {
+            "No change to save — the paragraph already says that.".to_string()
+        }
+        ParagraphRefusal::NotFound => {
+            "Couldn't locate that paragraph in the chapter's source — it may have \
+             changed underneath the edit."
+                .to_string()
+        }
+        ParagraphRefusal::Ambiguous(n) => format!(
+            "That paragraph cannot be told apart from {n} others — even its \
+             neighbours repeat. Move on past this one; the full editor will \
+             be able to name it."
+        ),
+        ParagraphRefusal::NotMappable => {
+            "This chapter's file is not well-formed enough for paragraph \
+             editing — its typos can still be fixed by selecting them."
+                .to_string()
+        }
+    }
+}
+
+/// A refusal as the text the toast shows. Each one names the way out:
+/// paragraph editing for markup-crossing selections (step 7), a wider
+/// selection for ambiguity.
+fn refusal_to_toast(refusal: &crate::epub_patches::PatchRefusal) -> String {
+    use crate::epub_patches::PatchRefusal;
+    match refusal {
+        PatchRefusal::Unchanged => "No change to save — the text already says that.".to_string(),
+        PatchRefusal::NotFound => {
+            "Couldn't locate that text in the chapter's source — it may cross formatting \
+             (italics and the like), which paragraph editing will handle."
+                .to_string()
+        }
+        PatchRefusal::Ambiguous(n) => format!(
+            "That text appears {n} times — select a wider stretch so the fix lands on the right one."
+        ),
+    }
+}
+
+pub(crate) fn build_annotation_edit_popover(
+    host: &gtk::Widget,
+    rect: &gtk::gdk::Rectangle,
+    anno: &Annotation,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::Popover {
+    crate::icons::init();
+
+    let popover = gtk::Popover::new();
+    popover.set_parent(host);
+    popover.set_autohide(true);
+    popover.set_has_arrow(true);
+    popover.set_position(gtk::PositionType::Top);
+
+    let mut anchor = *rect;
+    anchor.set_y(anchor.y() - HANDLE_HEADROOM);
+    anchor.set_height(anchor.height() + HANDLE_HEADROOM);
+    popover.set_pointing_to(Some(&anchor));
+    popover.add_css_class("k-sel-toolbar-popover");
+
+    let tx_save = sender.input_sender().clone();
+    let tx_del = sender.input_sender().clone();
+    let id = anno.id;
+
+    let initial_color = DbColor::from_str_lossy(&anno.color);
+    let initial_style = AnnotationStyle::from_str_lossy(&anno.style);
+
+    let drawer = build_calibre_drawer_box(
+        initial_color,
+        initial_style,
+        &anno.note,
+        Some(id),
+        move |color, style, note| {
+            let _ = tx_save.send(ReaderMsg::EditAnnotationDetails {
+                id,
+                color: color.as_str().to_string(),
+                style: style.as_str().to_string(),
+                note,
+            });
+        },
+        Some(Box::new(move |del_id| {
+            let _ = tx_del.send(ReaderMsg::DeleteAnnotation(del_id));
+        })),
+    );
+
+    popover.set_child(Some(&drawer));
     popover
+}
+
+pub(crate) fn build_word_preview_tooltip(
+    host: &gtk::Widget,
+    rect: &gtk::gdk::Rectangle,
+    word: &str,
+    catalog: &crate::db::Catalog,
+) -> Option<gtk::Popover> {
+    let clean = word.trim().to_string();
+    if clean.is_empty() {
+        return None;
+    }
+    let data = catalog.lookup_entry(&clean).ok()?;
+    let def = data.senses.first().map(|s| s.def.as_str())?;
+
+    let popover = gtk::Popover::new();
+    popover.set_parent(host);
+    popover.set_autohide(true);
+    popover.set_has_arrow(true);
+    popover.set_position(gtk::PositionType::Top);
+    popover.set_pointing_to(Some(rect));
+    popover.add_css_class("k-word-preview-popover");
+
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    card.add_css_class("k-word-preview-card");
+
+    let head = gtk::Label::new(Some(&clean));
+    head.add_css_class("k-word-preview-head");
+    head.set_xalign(0.0);
+    card.append(&head);
+
+    let preview = if def.len() > 120 {
+        format!("{}…", &def[..118])
+    } else {
+        def.to_string()
+    };
+    let body = gtk::Label::new(Some(&preview));
+    body.add_css_class("k-word-preview-def");
+    body.set_wrap(true);
+    body.set_xalign(0.0);
+    card.append(&body);
+
+    popover.set_child(Some(&card));
+    Some(popover)
 }
 
 const HANDLE_HEADROOM: i32 = 8;
@@ -437,10 +1317,35 @@ impl DictCard {
     }
 }
 
+/// Best-effort text-to-speech for the pronunciation button. Tries the common
+/// Linux speech engines in turn; if none is present, tells the user which to
+/// install. Runs off the UI thread so a missing binary never blocks the popup.
+fn speak_word(word: String) {
+    std::thread::spawn(move || {
+        let attempts: Vec<(String, Vec<String>)> = vec![
+            ("espeak-ng".to_string(), vec!["-v".into(), "en".into(), word.clone()]),
+            ("espeak".to_string(), vec!["-v".into(), "en".into(), word.clone()]),
+            ("spd-say".to_string(), vec!["-w".into(), word.clone()]),
+        ];
+        for (cmd, args) in attempts {
+            if let Ok(status) = std::process::Command::new(&cmd).args(&args).status() {
+                if status.success() {
+                    return;
+                }
+            }
+        }
+        gtk::glib::MainContext::default().invoke(|| {
+            crate::notify::error(
+                "No speech engine",
+                "Install espeak-ng or speech-dispatcher (spd-say) to hear words aloud.",
+            );
+        });
+    });
+}
+
 /// The parts of speech the old popup listed first, in this order. Anything
 /// else keeps its first-seen order; senses with no part of speech land last
 /// and get no divider row at all.
-
 fn dict_header(
     _host: &gtk::Widget,
     card: &DictCard,
@@ -475,6 +1380,19 @@ fn dict_header(
         left.append(&pill);
     }
     header.append(&left);
+
+    // Audio pronunciation — best-effort via a system speech engine.
+    let audio = gtk::Button::new();
+    audio.add_css_class("k-audio-btn");
+    audio.set_child(Some(&gtk::Image::from_icon_name(
+        "audio-volume-high-symbolic",
+    )));
+    audio.set_tooltip_text(Some("Hear it"));
+    {
+        let w = card.word.clone();
+        audio.connect_clicked(move |_| speak_word(w.clone()));
+    }
+    header.append(&audio);
 
     let save = gtk::Button::new();
     save.add_css_class("k-save-btn");
@@ -679,7 +1597,7 @@ pub(crate) fn build_dict_popover(
     let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
     popup.add_css_class("k-popup");
 
-    let width = 240.min((host.width() - 32).max(200));
+    let width = 380.min((host.width() - 32).max(300));
     popup.set_size_request(width, -1);
 
     let header = dict_header(host, card, sender);
@@ -689,7 +1607,8 @@ pub(crate) fn build_dict_popover(
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
         .propagate_natural_height(true)
-        .max_content_height(160)
+        .overlay_scrolling(true)
+        .max_content_height(380)
         .build();
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.add_css_class("k-body");
@@ -719,7 +1638,7 @@ pub(crate) fn build_dict_popover(
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
     popover.add_css_class("kalam-reader-dict-popover");
-    
+
     let tx = sender.input_sender().clone();
     popover.connect_closed(move |_| {
         let _ = tx.send(ReaderMsg::ClearDict);
@@ -729,11 +1648,299 @@ pub(crate) fn build_dict_popover(
 }
 /// Take a popover down and off its parent. A popover with `set_parent`
 /// must be `unparent`ed before it is dropped, or GTK complains.
+/// Roadmap 2.5: a footnote read where the reader already is. The engine
+/// hands over the note's plain text; this is the card that shows it, with
+/// one escape hatch — go to the note itself. Styled by the same classes as
+/// the dictionary card, so the two read as the same kind of thing.
+pub(crate) fn build_note_popover(
+    host: &gtk::Widget,
+    rect: &gtk::gdk::Rectangle,
+    text: &str,
+    href: &str,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::Popover {
+    let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    popup.add_css_class("k-popup");
+    let width = 380.min((host.width() - 32).max(280));
+    popup.set_size_request(width, -1);
+
+    let note = gtk::Label::new(Some(text));
+    note.add_css_class("k-note-text");
+    note.set_wrap(true);
+    note.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    note.set_xalign(0.0);
+    note.set_yalign(0.0);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .propagate_natural_height(true)
+        .overlay_scrolling(true)
+        .max_content_height(260)
+        .build();
+    scroll.set_child(Some(&note));
+
+    let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    fade.add_css_class("k-fade-bottom");
+    fade.set_valign(gtk::Align::End);
+    fade.set_size_request(-1, 16);
+    fade.set_can_target(false);
+
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&scroll));
+    overlay.add_overlay(&fade);
+    popup.append(&overlay);
+
+    let go = gtk::Button::builder().label("Go to the note").build();
+    go.add_css_class("flat");
+    go.add_css_class("k-note-go");
+    let tx = sender.input_sender().clone();
+    let target = href.to_string();
+    go.connect_clicked(move |_| {
+        let _ = tx.send(ReaderMsg::GoToNote(target.clone()));
+    });
+    popup.append(&go);
+
+    let popover = gtk::Popover::new();
+    popover.set_child(Some(&popup));
+    popover.set_parent(host);
+    popover.set_autohide(true);
+    popover.set_has_arrow(false);
+    popover.set_position(gtk::PositionType::Top);
+    popover.set_pointing_to(Some(rect));
+    popover.add_css_class("kalam-reader-dict-popover");
+
+    let tx = sender.input_sender().clone();
+    popover.connect_closed(move |_| {
+        let _ = tx.send(ReaderMsg::ClearNote);
+    });
+
+    popover
+}
+
 pub(crate) fn dismiss(popover: Option<gtk::Popover>) {
     if let Some(p) = popover {
         p.popdown();
         p.unparent();
     }
+}
+
+// ---------------------------------------------------------------------
+// The raw source pane's workers (Phase 6.9)
+// ---------------------------------------------------------------------
+
+/// What the raw pane loaded: the chapter's entry as the reader shows
+/// it — pending patches applied — plus the hash of exactly those bytes.
+/// The hash is the whole-file guard: every save made from this load
+/// carries it, and an entry that no longer hashes to it has changed
+/// underneath the pane.
+#[derive(Debug, Clone)]
+pub(crate) struct SourceEntry {
+    pub(crate) href: String,
+    pub(crate) text: String,
+    pub(crate) hash: String,
+    pub(crate) chapter: usize,
+}
+
+/// Read one chapter's source off the UI thread (the `unit_bytes`
+/// contract again — opening a book never belongs on the main loop).
+/// `prior` are the book's pending patches: the pane edits the chapter
+/// as the reader shows it, so a save re-verified against the same
+/// virtual bytes holds at render too.
+pub(crate) fn load_source_entry(
+    book_path: std::path::PathBuf,
+    chapter: usize,
+    prior: Vec<PatchRecord>,
+    tx: async_channel::Sender<Result<SourceEntry, String>>,
+) {
+    std::thread::spawn(move || {
+        let verdict = load_source_entry_in_thread(&book_path, chapter, &prior);
+        let _ = tx.send_blocking(verdict);
+    });
+}
+
+fn load_source_entry_in_thread(
+    book_path: &std::path::Path,
+    chapter: usize,
+    prior: &[PatchRecord],
+) -> Result<SourceEntry, String> {
+    use chapbook_core::Publication;
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to read the source.".to_string())?;
+    let href = book
+        .spine()
+        .get(chapter)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| "This chapter is no longer in the book.".to_string())?;
+    let bytes = book
+        .unit_bytes(chapter)
+        .map_err(|_| "The chapter's source could not be read.".to_string())?;
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
+    let text = String::from_utf8(virtual_bytes).map_err(|_| {
+        "The chapter's source is not UTF-8 text, so it cannot be edited here.".to_string()
+    })?;
+    Ok(SourceEntry {
+        hash: crate::epub_patches::hash_bytes(text.as_bytes()),
+        text,
+        href,
+        chapter,
+    })
+}
+
+/// A save-time guard's verdict: the entry still hashes to what the pane
+/// loaded, or it does not. `Stale` is a refusal, not an error — nothing
+/// is wrong with the book; the edit was made against a past.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SourceSaveCheck {
+    /// The entry still hashes to the pane's baseline: the save may
+    /// store its whole-entry patch.
+    Fresh,
+    /// The entry changed since the pane loaded it (an inline fix, a
+    /// bake, another window). The caller must not store the patch.
+    Stale,
+}
+
+/// Re-read the chapter and check the pane's baseline hash against the
+/// bytes as they stand now. The insert itself stays on the main thread
+/// with the catalog; this worker only reads.
+pub(crate) fn check_source_save(
+    book_path: std::path::PathBuf,
+    chapter: usize,
+    prior: Vec<PatchRecord>,
+    href: &str,
+    before_hash: &str,
+    tx: async_channel::Sender<Result<SourceSaveCheck, String>>,
+) {
+    let href = href.to_string();
+    let before_hash = before_hash.to_string();
+    std::thread::spawn(move || {
+        let verdict =
+            check_source_save_in_thread(&book_path, chapter, &prior, &href, &before_hash);
+        let _ = tx.send_blocking(verdict);
+    });
+}
+
+fn check_source_save_in_thread(
+    book_path: &std::path::Path,
+    chapter: usize,
+    prior: &[PatchRecord],
+    href: &str,
+    before_hash: &str,
+) -> Result<SourceSaveCheck, String> {
+    use chapbook_core::Publication;
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to verify the source edit.".to_string())?;
+    let current_href = book
+        .spine()
+        .get(chapter)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| "This chapter is no longer in the book.".to_string())?;
+    if current_href != href {
+        return Err(
+            "The chapter this pane edits has moved in the book. Revert the pane and edit it again."
+                .to_string(),
+        );
+    }
+    let bytes = book
+        .unit_bytes(chapter)
+        .map_err(|_| "The chapter's source could not be read.".to_string())?;
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(href, &bytes, prior);
+    let fresh = !before_hash.is_empty()
+        && crate::epub_patches::hash_bytes(&virtual_bytes) == before_hash;
+    Ok(if fresh {
+        SourceSaveCheck::Fresh
+    } else {
+        SourceSaveCheck::Stale
+    })
+}
+
+/// One preview raster, already plain bytes: the pixmap's RGBA taken
+/// out of the worker thread and handed to the main loop, which turns
+/// it into a texture. No GTK type crosses threads — the tasks
+/// manager's worker→main-loop shape.
+#[derive(Debug, Clone)]
+pub(crate) struct PreviewPixels {
+    /// The debounce generation this raster answers; the pane drops
+    /// anything older than its own.
+    pub(crate) generation: u64,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    /// Premultiplied RGBA8888, row-major, stride `width * 4`.
+    pub(crate) rgba: Vec<u8>,
+}
+
+/// Render the pane's edited chapter through a headless session: the
+/// edited bytes substituted for its entry, the pending patches applied
+/// to every other. One debounce tick = one open + a few pages — the
+/// engine has no cache-invalidation API, so the preview simply does
+/// not share a cache with anything.
+// Ten inputs, one purpose — the same allow as the paragraph verifier
+// above; they all travel to the same thread body together.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_source_preview(
+    book_path: std::path::PathBuf,
+    prefs: KalamPrefs,
+    fonts_dir: Option<std::path::PathBuf>,
+    href: String,
+    text: String,
+    prior: Vec<PatchRecord>,
+    spine: usize,
+    generation: u64,
+    page: (u32, u32),
+    tx: async_channel::Sender<Result<PreviewPixels, String>>,
+) {
+    std::thread::spawn(move || {
+        let verdict = render_source_preview_in_thread(
+            &book_path, prefs, fonts_dir, &href, &text, &prior, spine, generation, page,
+        );
+        let _ = tx.send_blocking(verdict);
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_source_preview_in_thread(
+    book_path: &std::path::Path,
+    prefs: KalamPrefs,
+    fonts_dir: Option<std::path::PathBuf>,
+    href: &str,
+    text: &str,
+    prior: &[PatchRecord],
+    spine: usize,
+    generation: u64,
+    page: (u32, u32),
+) -> Result<PreviewPixels, String> {
+    let prior = prior.to_vec();
+    let edited_href = href.to_string();
+    let edited = text.as_bytes().to_vec();
+    let filter = kalam_reader::EntryFilter::new(move |entry_href, bytes| {
+        if entry_href == edited_href {
+            return edited.clone();
+        }
+        let (patched, _) = crate::epub_patches::apply_text_patches(entry_href, &bytes, &prior);
+        patched
+    });
+    let pixmap = kalam_reader::preview::render(
+        book_path,
+        &prefs,
+        fonts_dir,
+        kalam_reader::preview::Preview {
+            filter,
+            spine,
+            start_page: 0,
+            pages: kalam_reader::preview::PREVIEW_PAGES,
+            page_width: page.0,
+            page_height: page.1,
+        },
+    )
+    .map_err(|err| format!("The preview could not be rendered:\n{err:#}"))?;
+    let (width, height) = (pixmap.width(), pixmap.height());
+    let rgba = pixmap.take();
+    Ok(PreviewPixels {
+        generation,
+        width,
+        height,
+        rgba,
+    })
 }
 
 #[cfg(test)]
@@ -769,5 +1976,65 @@ mod tests {
         assert!(range_from_json("").is_none());
         assert!(range_from_json("epubcfi(/6/4!/4/2/1:0)").is_none());
         assert!(range_from_json("{\"kalam_locator\":2}").is_none());
+    }
+
+    fn entry(word: &str) -> crate::db::EntryData {
+        crate::db::EntryData {
+            word: word.to_string(),
+            senses: vec![
+                crate::db::Sense {
+                    number: 1,
+                    pos: Some("noun".into()),
+                    def: "a feeling".into(),
+                    example: Some("an air of it".into()),
+                },
+                crate::db::Sense {
+                    number: 2,
+                    pos: None,
+                    def: "a mood".into(),
+                    example: Some(String::new()),
+                },
+            ],
+            pos: vec!["noun".into(), "adjective".into()],
+            synonyms: vec!["sorrow".into()],
+            antonyms: vec!["joy".into()],
+            idioms: vec![("in a mood".into(), "sad".into())],
+            suggestions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn card_joins_word_level_pos_with_middots() {
+        let card = DictCard::from_entry(&entry("melancholy"), Some("/m/".into()), false, None);
+        assert_eq!(card.word, "melancholy");
+        assert_eq!(card.pos.as_deref(), Some("noun \u{00b7} adjective"));
+        assert_eq!(card.pronunciation.as_deref(), Some("/m/"));
+    }
+
+    #[test]
+    fn card_pos_is_none_when_entry_has_no_pos() {
+        let mut data = entry("x");
+        data.pos.clear();
+        let card = DictCard::from_entry(&data, None, false, None);
+        assert!(card.pos.is_none());
+    }
+
+    #[test]
+    fn card_maps_senses_drops_empty_examples_and_marks_hint() {
+        let card = DictCard::from_entry(&entry("m"), None, false, Some(1));
+        assert_eq!(card.senses.len(), 2);
+        assert_eq!(card.senses[0].example.as_deref(), Some("an air of it"));
+        assert!(!card.senses[0].hinted);
+        assert_eq!(card.senses[1].example, None, "empty example is dropped");
+        assert!(card.senses[1].hinted, "hint index lands on sense 1");
+    }
+
+    #[test]
+    fn card_carries_synonyms_antonyms_idioms_and_saved() {
+        let card = DictCard::from_entry(&entry("m"), None, true, None);
+        assert_eq!(card.synonyms, vec!["sorrow".to_string()]);
+        assert_eq!(card.antonyms, vec!["joy".to_string()]);
+        assert_eq!(card.idioms, vec![("in a mood".into(), "sad".into())]);
+        assert!(card.saved);
     }
 }

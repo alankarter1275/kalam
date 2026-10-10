@@ -698,8 +698,17 @@ button.kalam-author-photo-refresh:hover {
 }
 
 /* In-app dialogs (A1): same shell as a float, but sized by content rather
- * than the fixed 700x368 a book float needs. */
-.kalam-in-app-dialog {
+ * than the fixed 700x368 a book float needs. The compound selector is
+ * deliberate: a plain .kalam-in-app-dialog rule loses to .kalam-float's
+ * min-width by source order (that silently forced every in-app dialog to
+ * at least 700px wide from day one — owner report, 2026-10-03). There is
+ * deliberately NO width cap here: GTK CSS has no max-width property — a
+ * 640px cap added 2026-10-03 was rejected by the theme parser ("No
+ * property named max-width", owner log 2026-10-04) and never applied.
+ * Width is capped where it is measurable: the rows' own labels, built
+ * and owned by the code, ellipsized with max_width_chars (picker_natural
+ * 520 on a 1350px window, field-verified 2026-10-04). */
+.kalam-float.kalam-in-app-dialog {
     min-width: 0px;
     min-height: 0px;
 }
@@ -981,6 +990,12 @@ button.kalam-float-icon-btn.kalam-float-icon-btn-danger:hover {
     background: @kalam_bg;
 }
 
+/* No top padding on the stage: the reading surface runs flush to the
+   top edge exactly as it does left, right and bottom. The 12px of app
+   background this rule used to add showed up as a dark band along the
+   upper edge whenever the reading theme's paper did not match the app
+   background (2026-10-05 field run #2 report). */
+
 button.kalam-reader-dim {
     background: alpha(@kalam_bg, 0.22);
     border: none;
@@ -998,6 +1013,7 @@ button.kalam-reader-dim {
     border-radius: 20px;
     box-shadow: 0 22px 52px alpha(#000, 0.42);
     padding: 0;
+    min-width: 340px;
 }
 
 .kalam-reader-sidebar-left,
@@ -1093,16 +1109,125 @@ button.kalam-reader-back:hover {
     -gtk-icon-size: 16px;
 }
 
-.kalam-reader-bottom-dock {
+/* Phase 6.8: the sidebar pencil beside the cover — the editor's door. */
+button.kalam-reader-edit-book {
     background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 4px;
 }
 
-.kalam-reader-bottom-pill {
+button.kalam-reader-edit-book:hover {
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_accent;
+}
+
+/* Phase 6.8: the full editor — a work surface, so the chrome stays. */
+.kalam-editor-bar {
+    background: @kalam_sidebar;
+    border-bottom: 1px solid @kalam_border;
+    padding: 6px 10px;
+}
+
+.kalam-editor-title {
+    color: @kalam_text;
+    font-size: 15px;
+}
+
+button.kalam-editor-patches-btn {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 999px;
-    padding: 5px 6px;
+    color: @kalam_text;
+    padding: 6px 12px;
+}
+
+button.kalam-editor-patches-btn:checked {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    border-color: alpha(@kalam_accent, 0.5);
+}
+
+.kalam-editor-chapters {
+    background: @kalam_sidebar;
+    border-right: 1px solid @kalam_border;
+}
+
+button.kalam-editor-chapter {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 8px 12px;
+    margin: 1px 6px;
+}
+
+button.kalam-editor-chapter:hover {
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_text;
+}
+
+button.kalam-editor-chapter-current {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+}
+
+/* The reorder rows (Phase 6 step 10): a title button that fills the
+   row and two compact arrows beside it. The row itself is transparent
+   chrome — the chapter button carries the row's look. */
+.kalam-editor-chapter-row {
+    background: transparent;
+}
+
+button.kalam-editor-arrow {
+    padding: 4px;
+    margin: 0;
+    border-radius: 6px;
+    color: @kalam_text_dim;
+}
+
+button.kalam-editor-arrow:hover:not(:disabled) {
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_text;
+}
+
+.kalam-editor-stage {
+    background: @kalam_bg;
+}
+
+.kalam-editor-panel-shell {
+    background: @kalam_surface;
+    border-left: 1px solid @kalam_border;
+    box-shadow: 0 12px 32px alpha(black, 0.35);
+}
+
+.kalam-reader-bottom-dock {
+    background: transparent;
+    /* float the page pill off the bottom edge instead of hugging it */
+    margin: 0 12px 16px 12px;
+}
+
+.kalam-reader-bottom-pill,
+.kalam-reader-floating-pill {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 5px 8px;
     box-shadow: 0 8px 24px alpha(#000, 0.26);
+}
+
+.kalam-reader-pill-counter {
+    padding: 0 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+separator.kalam-reader-pill-sep {
+    background: @kalam_border;
+    min-width: 1px;
+    margin: 6px 4px;
 }
 
 button.kalam-reader-pill-nav {
@@ -1169,6 +1294,20 @@ button.kalam-reader-pill-nav:hover {
     min-height: 36px;
 }
 
+/* Roadmap 2.9: a key a reader can rebind. */
+button.kalam-reader-keycap {
+  min-width: 72px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* Roadmap 2.8: the line under a setting that explains what it costs. */
+.kalam-reader-setting-hint {
+  font-size: 11px;
+  opacity: 0.65;
+  margin: 2px 0 8px;
+}
+
 .kalam-reader-setting-name {
     font-size: 0.84rem;
     color: @kalam_text;
@@ -1215,13 +1354,100 @@ button.kalam-reader-stepper-btn:hover {
     padding-bottom: 2px;
 }
 
-button.kalam-reader-settings-switch {
-    background: transparent;
-    border: 1px solid alpha(@kalam_border, 0.95);
-    border-radius: 999px;
+button.kalam-reader-seg-btn {
+    background: alpha(@kalam_surface_2, 0.5);
+    border: 1px solid alpha(@kalam_border, 0.8);
+    border-radius: 8px;
     color: @kalam_text_dim;
-    padding: 7px 10px;
-    font-size: 0.76rem;
+    padding: 8px 12px;
+    font-size: 0.84rem;
+    font-weight: 500;
+}
+
+button.kalam-reader-seg-btn:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+button.kalam-reader-seg-btn.active {
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+button.kalam-reader-seg-btn image {
+    -gtk-icon-size: 16px;
+    margin-right: 6px;
+}
+
+.kalam-reader-options-group {
+    background: alpha(@kalam_surface_2, 0.45);
+    border: 1px solid alpha(@kalam_border, 0.75);
+    border-radius: 10px;
+    padding: 3px;
+}
+
+button.kalam-reader-option-row {
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 8px 10px;
+    color: @kalam_text_dim;
+    font-size: 0.84rem;
+    font-weight: 500;
+}
+
+button.kalam-reader-option-row:hover {
+    background: alpha(@kalam_surface_2, 0.75);
+    color: @kalam_text;
+}
+
+button.kalam-reader-option-row.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+button.kalam-reader-option-row image {
+    -gtk-icon-size: 16px;
+    margin-right: 8px;
+}
+
+.kalam-reader-segmented {
+    background: alpha(@kalam_surface_2, 0.55);
+    border: 1px solid alpha(@kalam_border, 0.8);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+button.kalam-reader-seg-item {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: @kalam_text_dim;
+    padding: 4px 8px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    min-width: 36px;
+}
+
+button.kalam-reader-seg-item:hover {
+    background: alpha(@kalam_surface_2, 0.9);
+    color: @kalam_text;
+}
+
+button.kalam-reader-seg-item.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+.kalam-reader-spread-gap-box button.kalam-reader-seg-btn {
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 0.8rem;
+    min-width: 44px;
 }
 
 button.kalam-reader-settings-switch:hover {
@@ -2638,6 +2864,36 @@ separator.kalam-section-divider {
     color: @kalam_text_dim;
 }
 
+/* ── Watch folder rule cards ── */
+.kalam-watch-card {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-top: 10px;
+}
+
+.kalam-watch-card-header {
+    padding-bottom: 8px;
+    border-bottom: 1px solid @kalam_border;
+}
+
+.kalam-watch-card-path {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-watch-format-row {
+    padding: 6px 0;
+}
+
+.kalam-watch-format-label {
+    font-size: 0.8rem;
+    color: @kalam_text;
+    min-width: 170px;
+}
+
 /* The app's switch, Material-You style: 40x22 pill, accent when on.
    Margins and borders zeroed per the house rules before sizing. */
 switch.kalam-switch {
@@ -3176,11 +3432,46 @@ button.kalam-journey-more:hover {
  * Kept as separate selectors because each is addressed elsewhere by name. */
 .kalam-annotations-float,
 .kalam-shelves-float,
-.kalam-tags-float {
+.kalam-tags-float,
+.kalam-edits-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;
     box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
+}
+
+/* ── edits review panel (phase 6.5) ───────────────────── */
+/* Before → after reads as a correction: the old text struck and dim, the
+   new text bright below it, the meta line quiet — same hierarchy as the
+   highlights panel's text/meta pair. */
+.k-edit-before {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 0.86rem;
+    line-height: 1.4;
+    color: @kalam_text_dim;
+    text-decoration: line-through;
+}
+
+.k-edit-after {
+    font-family: "Fraunces", serif;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    color: @kalam_text;
+}
+
+.k-edit-meta {
+    font-size: 0.7rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.k-edits-section {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: @kalam_text_dim;
+    margin-top: 10px;
 }
 
 .kalam-series-float-title {
@@ -3876,6 +4167,53 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-sel-divider { min-width: 1px; min-height: 18px; background: rgba(255,255,255,0.12); margin: 0 2px; }
 
+/* ── inline selection editor (phase 6.4) ──────────────── */
+/* The chip's pencil, opened into the page itself: an entry laid exactly
+   over the selected text, set in the reader's own typeface (family and
+   size come from a runtime provider, not from here). The dark chip
+   family, because it floats over any page theme, like the toolbar it
+   came from; outlined and square-ish because it is a text field, not a
+   pill. */
+entry.k-inline-edit {
+  background: rgba(22,24,30,0.96);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: rgba(255,255,255,0.92);
+  caret-color: #61afef;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+entry.k-inline-edit:focus,
+entry.k-inline-edit:focus-within {
+  border-color: rgba(97,175,239,0.8);
+}
+entry.k-inline-edit > text {
+  color: rgba(255,255,255,0.92);
+  caret-color: #61afef;
+}
+
+/* Phase 6.7: the paragraph editor — the same box, sized for a whole
+   paragraph. The text view's internal GtkText paints its own background,
+   so it is told to stay out of the way. */
+textview.k-inline-edit {
+  background: rgba(22,24,30,0.96);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: rgba(255,255,255,0.92);
+  caret-color: #61afef;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+textview.k-inline-edit:focus,
+textview.k-inline-edit:focus-within {
+  border-color: rgba(97,175,239,0.8);
+}
+textview.k-inline-edit text {
+  background: transparent;
+  color: rgba(255,255,255,0.92);
+  caret-color: #61afef;
+}
+
 .k-color-bar { padding: 0 4px; }
 
 .k-color-dot {
@@ -3892,426 +4230,291 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-color-dot-pink   { background: rgba(198,120,221,0.38); }
 .k-color-dot-orange { background: rgba(209,154,102,0.38); }
 
-/* ── dictionary popup ─────────────────────────────────── */
+.k-color-dot.active {
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 2px rgba(97, 175, 239, 0.8);
+}
+
+/* ── Calibre-style annotation drawer ──────────────────── */
+.k-annotation-drawer {
+  background: rgba(22, 24, 30, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.k-annotation-header {
+  padding-bottom: 2px;
+}
+
+.k-style-group {
+  padding: 0 2px;
+}
+
+.k-style-btn {
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.75);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.k-style-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgb(255, 255, 255);
+}
+
+.k-style-btn.active {
+  background: alpha(@kalam_accent, 0.35);
+  border-color: @kalam_accent;
+  color: rgb(255, 255, 255);
+  font-weight: 600;
+}
+
+.k-annotation-note-scroll {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.k-annotation-note-area {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px;
+  padding: 6px;
+}
+
+.k-annotation-actions {
+  padding-top: 2px;
+}
+
+.k-annotation-del-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(235, 87, 87, 0.4);
+  background: rgba(235, 87, 87, 0.15);
+  color: rgb(235, 87, 87);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.k-annotation-del-btn:hover {
+  background: rgba(235, 87, 87, 0.28);
+  color: rgb(255, 255, 255);
+}
+
+.k-annotation-save-btn {
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid alpha(@kalam_accent, 0.6);
+  background: @kalam_accent;
+  color: rgb(255, 255, 255);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.k-annotation-save-btn:hover {
+  background: alpha(@kalam_accent, 0.85);
+}
+
+/* ── Word Memory preview tooltip ──────────────────────── */
+.k-word-preview-popover {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+.k-word-preview-popover > contents {
+  background: transparent;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.k-word-preview-card {
+  background: rgba(24, 27, 34, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.k-word-preview-head {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 13px;
+  color: @kalam_accent;
+}
+
+.k-word-preview-def {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.35;
+}
+
+/* ── dictionary popup (v3 design) ─────────────────────── */
+/* Palette + type from docs/design/kalam_dictionary_popup_v3.html. Fonts fall
+   back to generic families when Fraunces / IBM Plex are not installed. */
+popover.kalam-reader-dict-popover { background: transparent; }
+popover.kalam-reader-dict-popover > contents {
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+}
+
 .k-popup {
-  background: #1b1e24;
+  background-color: #1b1e24;
   border: 1px solid #343842;
   border-radius: 18px;
   box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3);
 }
 
-.kalam-reader-dict-popover {
-  background: transparent;
-  padding: 0;
-  border: none;
-  box-shadow: none;
-}
-.kalam-reader-dict-popover > contents {
-  background: transparent;
-  padding: 0;
-  border: none;
-  box-shadow: none;
-}
-
 .k-header {
-  padding: 20px 20px 16px;
-  background: #1b1e24;
+  background-color: #1b1e24;
   border-bottom: 1px solid #343842;
   box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  padding: 20px 20px 16px;
 }
 
-.k-header-left { }
-
 .k-word {
-  font-family: 'Fraunces', serif;
+  font-family: "Fraunces", Georgia, serif;
   font-size: 26px;
   font-weight: 600;
   color: #e6e9ef;
-  margin-bottom: 5px;
 }
 
 .k-pronunciation {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-size: 11px;
   color: #6b7280;
-  margin-bottom: 7px;
 }
 
 .k-pos {
-  font-size: 10.5px;
-  color: #c678dd;
-  background: rgba(198,120,221,0.14);
-  padding: 2px 9px;
-  border-radius: 999px;
+  font-size: 10px;
   font-style: italic;
+  color: #c678dd;
+  background-color: rgba(198,120,221,0.14);
+  border-radius: 999px;
+  padding: 2px 9px;
 }
 
-.k-save-btn {
-  min-width: 30px; min-height: 30px;
-  border-radius: 50%;
-  background: #282c34;
+.k-save-btn, .k-audio-btn {
+  background-color: #282c34;
   border: 1px solid #343842;
+  border-radius: 999px;
   color: #6b7280;
-  padding: 0;
+  min-width: 30px;
+  min-height: 30px;
 }
-.k-save-btn image { -gtk-icon-size: 15px; }
-.k-save-btn:hover { background: #343842; color: #abb2bf; }
-.k-save-btn.saved { color: #61afef; border-color: #61afef; background: rgba(97,175,239,0.15); }
+.k-save-btn:hover, .k-audio-btn:hover { background-color: #343842; color: #abb2bf; }
+.k-save-btn.saved {
+  color: #61afef;
+  border-color: #61afef;
+  background-color: rgba(97,175,239,0.15);
+}
 
-.k-body {
-  padding: 4px 20px 24px;
-}
+.k-body { padding: 4px 20px 24px; }
 
 .k-section-label {
   font-size: 9px;
-  letter-spacing: .08em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: #6b7280;
-  margin-bottom: 10px;
   margin-top: 20px;
+  margin-bottom: 10px;
 }
-
-.k-defs { }
-
-.k-def-item { }
 
 .k-def-num {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-size: 10px;
   color: #61afef;
-  margin-top: 3px;
-  min-width: 16px;
 }
-
-.k-def-text { font-size: 13px; color: #abb2bf; line-height: 1.6; }
-
+.k-def-text { font-size: 13px; color: #abb2bf; }
 .k-def-example {
-  font-family: 'Fraunces', serif;
+  font-family: "Fraunces", Georgia, serif;
   font-style: italic;
   font-size: 12px;
   color: #6b7280;
-  margin-top: 3px;
 }
-
 .k-def-badge {
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.08em;
-  color: #e5c07b;
-  background: rgba(229,192,123,0.18);
-  padding: 2px 6px;
-  border-radius: 999px;
-  margin-top: 3px;
-  margin-bottom: 2px;
-}
-
-.k-show-more {
-  font-size: 11.5px;
   color: #61afef;
-  background: transparent; border: none; padding: 0; margin-top: 8px;
+  background-color: rgba(97,175,239,0.15);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.k-show-more {
+  font-size: 11px;
+  color: #61afef;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
 }
 .k-show-more:hover { text-decoration: underline; }
 
-.k-extra-defs { }
-
-.k-chips { }
-
 .k-chip {
   font-size: 12px;
-  padding: 4px 12px;
   border-radius: 999px;
   border: 1px solid;
-  font-family: 'IBM Plex Sans', sans-serif;
-  background: transparent;
+  padding: 4px 12px;
+  box-shadow: none;
 }
 .k-chip-syn {
   color: #61afef;
-  background: rgba(97,175,239,0.15);
+  background-color: rgba(97,175,239,0.15);
   border-color: rgba(97,175,239,0.3);
 }
-.k-chip-syn:hover { background: rgba(97,175,239,0.25); border-color: #61afef; }
-
+.k-chip-syn:hover { background-color: rgba(97,175,239,0.25); border-color: #61afef; }
 .k-chip-ant {
   color: #e06c75;
-  background: rgba(224,108,117,0.14);
+  background-color: rgba(224,108,117,0.14);
   border-color: rgba(224,108,117,0.3);
 }
-.k-chip-ant:hover { background: rgba(224,108,117,0.25); border-color: #e06c75; }
-
-.k-idioms { }
+.k-chip-ant:hover { background-color: rgba(224,108,117,0.25); border-color: #e06c75; }
 
 .k-idiom-item {
-  background: #282c34;
+  background-color: #282c34;
   border: 1px solid #343842;
   border-radius: 10px;
   padding: 10px 12px;
 }
-
 .k-idiom-phrase {
-  font-family: 'Fraunces', serif;
+  font-family: "Fraunces", Georgia, serif;
   font-style: italic;
   font-size: 13px;
   color: #e6e9ef;
-  margin-bottom: 4px;
 }
-
-.k-idiom-def {
-  font-size: 12px;
-  color: #abb2bf;
-}
+.k-idiom-def { font-size: 12px; color: #abb2bf; }
 
 .k-fade-bottom {
-  background: linear-gradient(to bottom, transparent, #1b1e24);
+  background-image: linear-gradient(to bottom, transparent, #1b1e24);
   border-radius: 0 0 18px 18px;
 }
-/* ── selection toolbar ────────────────────────────────── */
-.k-sel-toolbar {
-  background: rgba(22,24,30,0.96);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 9999px;
-  padding: 3px 5px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+
+/* Roadmap 2.5: a footnote read in place. No new colours — the note card is
+   the dictionary card, so the two read as the same kind of thing. */
+.k-note-text {
+  font-size: 15px;
+  line-height: 1.55;
+  padding: 14px 20px 2px;
 }
 
-.k-sel-toolbar-popover {
-  background: transparent;
-  padding: 0;
-  border: none;
-  box-shadow: none;
-}
-.k-sel-toolbar-popover > contents {
-  background: transparent;
-  padding: 0;
-  border: none;
-  box-shadow: none;
+.k-note-go {
+  margin: 8px 14px 14px;
 }
 
-.k-sel-action {
-  min-width: 26px;
-  min-height: 26px;
-  padding: 0;
-  margin: 0;
-  border-radius: 9999px;
-  border: none;
-  background: transparent;
-  color: rgba(255,255,255,0.8);
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.k-sel-action image {
-  -gtk-icon-size: 14px;
-}
-.k-sel-action:hover {
-  background: rgba(255,255,255,0.12);
-  color: #fff;
-}
-.k-sel-action.accent {
-  color: #61afef;
-}
-
-.k-sel-divider {
-  min-width: 1px;
-  min-height: 14px;
-  background: rgba(255,255,255,0.15);
-  margin: 0 2px;
-}
-
-.k-color-bar {
-  padding: 0 2px;
-}
-
-.k-color-dot {
-  min-width: 16px;
-  min-height: 16px;
-  padding: 0;
-  margin: 0 2px;
-  border-radius: 9999px;
-  border: 2px solid rgba(255,255,255,0.25);
-  transition: transform 150ms ease, border-color 150ms ease;
-}
-
-.k-color-dot:hover {
-  transform: scale(1.22);
-  border-color: rgba(255,255,255,0.8);
-}
-
-.k-color-dot-yellow { background-color: #e5c07b; background-image: none; }
-.k-color-dot-green  { background-color: #98c379; background-image: none; }
-.k-color-dot-blue   { background-color: #61afef; background-image: none; }
-.k-color-dot-pink   { background-color: #e06c75; background-image: none; }
-.k-color-dot-orange { background-color: #c678dd; background-image: none; }
-.k-color-dot-underline { background-color: #3b82f6; background-image: none; border-bottom: 2px solid #2563eb; }
-
-/* ── dictionary popup ─────────────────────────────────── */
-.k-popup {
-  background: #1b1e24;
-  border: 1px solid #343842;
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.kalam-reader-dict-popover {
-  background: transparent;
-  padding: 0;
-  border: none;
-  box-shadow: none;
-}
-.kalam-reader-dict-popover > contents {
-  background: transparent;
-  padding: 0;
-  border: none;
-  box-shadow: none;
-}
-
-.k-header {
-  padding: 10px 12px 8px;
-  background: #1b1e24;
-  border-bottom: 1px solid #343842;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-}
-
-.k-header-left { }
-
-.k-word {
-  font-family: 'Fraunces', serif;
-  font-size: 17px;
-  font-weight: 600;
-  color: #e6e9ef;
-  margin-bottom: 2px;
-}
-
-.k-pronunciation {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
-  color: #6b7280;
-  margin-bottom: 3px;
-}
-
-.k-pos {
-  font-size: 9px;
-  color: #c678dd;
-  background: rgba(198,120,221,0.14);
-  padding: 1px 6px;
-  border-radius: 9999px;
-  font-style: italic;
-}
-
-.k-save-btn {
-  min-width: 24px;
-  min-height: 24px;
-  border-radius: 9999px;
-  background: #282c34;
-  border: 1px solid #343842;
-  color: #6b7280;
-  padding: 0;
-  margin: 0;
-}
-.k-save-btn image { -gtk-icon-size: 12px; }
-.k-save-btn:hover { background: #343842; color: #abb2bf; }
-.k-save-btn.saved { color: #61afef; border-color: #61afef; background: rgba(97,175,239,0.15); }
-
-.k-body {
-  padding: 2px 14px 14px;
-}
-
-.k-section-label {
-  font-size: 8px;
-  letter-spacing: .08em;
-  color: #6b7280;
-  margin-bottom: 6px;
-  margin-top: 10px;
-}
-
-.k-defs { }
-
-.k-def-item { }
-
-.k-def-num {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 9.5px;
-  color: #61afef;
-  margin-top: 2px;
-  min-width: 14px;
-}
-
-.k-def-text { font-size: 11.5px; color: #abb2bf; line-height: 1.5; }
-
-.k-def-example {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
-  font-size: 11px;
-  color: #6b7280;
-  margin-top: 2px;
-}
-
-.k-def-badge {
-  font-size: 7.5px;
-  letter-spacing: 0.08em;
-  color: #e5c07b;
-  background: rgba(229,192,123,0.18);
-  padding: 1px 5px;
-  border-radius: 9999px;
-  margin-top: 2px;
-  margin-bottom: 1px;
-}
-
-.k-show-more {
-  font-size: 10.5px;
-  color: #61afef;
-  background: transparent; border: none; padding: 0; margin-top: 6px;
-}
-.k-show-more:hover { text-decoration: underline; }
-
-.k-extra-defs { }
-
-.k-chips { }
-
-.k-chip {
-  font-size: 11px;
-  padding: 2px 9px;
-  border-radius: 9999px;
-  border: 1px solid;
-  font-family: 'IBM Plex Sans', sans-serif;
-  background: transparent;
-}
-.k-chip-syn {
-  color: #61afef;
-  background: rgba(97,175,239,0.15);
-  border-color: rgba(97,175,239,0.3);
-}
-.k-chip-syn:hover { background: rgba(97,175,239,0.25); border-color: #61afef; }
-
-.k-chip-ant {
-  color: #e06c75;
-  background: rgba(224,108,117,0.14);
-  border-color: rgba(224,108,117,0.3);
-}
-.k-chip-ant:hover { background: rgba(224,108,117,0.25); border-color: #e06c75; }
-
-.k-idioms { }
-
-.k-idiom-item {
-  background: #282c34;
-  border: 1px solid #343842;
-  border-radius: 8px;
-  padding: 6px 9px;
-}
-
-.k-idiom-phrase {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
-  font-size: 11.5px;
-  color: #e6e9ef;
-  margin-bottom: 2px;
-}
-
-.k-idiom-def {
-  font-size: 11px;
-  color: #abb2bf;
-}
-
-.k-fade-bottom {
-  background: linear-gradient(to bottom, transparent, #1b1e24);
-  border-radius: 0 0 14px 14px;
-}
 .kalam-reader-bottom-right-dock {
     background: transparent;
     margin-right: 18px;
@@ -4328,3 +4531,392 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .kalam-reader-location-text {
     font-size: 0.78rem;
+}
+
+/* PDF Reader styles */
+.kalam-pdf-page,
+.kalam-pdf-page-image,
+.kalam-pdf-two-page {
+    background: #ffffff;
+    box-shadow: 0 8px 30px alpha(#000, 0.28);
+    border-radius: 2px;
+}
+
+.kalam-pdf-spread-row {
+    margin: 0;
+    padding: 0;
+}
+
+.kalam-pdf-placeholder {
+    background: alpha(@kalam_surface, 0.7);
+    border: 1px dashed @kalam_border;
+    border-radius: 4px;
+}
+
+.kalam-reader-back-title {
+    color: @kalam_text_dim;
+    font-size: 13px;
+    margin-left: 6px;
+    padding-right: 12px;
+}
+
+/* VLC-style minimal Zoom OSD in top-right corner */
+.kalam-zoom-osd {
+    background: rgba(20, 20, 24, 0.78);
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 1.05rem;
+    font-weight: 600;
+    font-feature-settings: "tnum";
+    padding: 7px 18px;
+    border-radius: 9999px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.38);
+}
+
+/* ── Bubbles (Multi-Book Floating Chat Heads & Split Reader) ─────── */
+.k-bubble-minimized-host {
+    background: transparent;
+}
+
+.k-bubble-mini-circle {
+    min-width: 56px;
+    min-height: 56px;
+    border-radius: 9999px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.42);
+    background: rgba(30, 30, 36, 0.85);
+}
+
+.k-bubble-cover-disc {
+    min-width: 22px;
+    min-height: 22px;
+    border-radius: 9999px;
+}
+
+.k-bubble-inner-cover {
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 9999px;
+}
+
+.k-bubble-count-badge {
+    background: rgba(53, 132, 228, 0.95);
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 9999px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.k-bubble-mini-close {
+    background: rgba(224, 27, 36, 0.90);
+    color: rgba(255, 255, 255, 1.0);
+    border-radius: 9999px;
+    padding: 2px;
+    margin: 2px;
+    min-height: 18px;
+    min-width: 18px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.k-bubble-mini-close-btn {
+    background: rgba(224, 27, 36, 0.85);
+    color: rgba(255, 255, 255, 1.0);
+    border-radius: 9999px;
+    padding: 2px;
+    min-height: 20px;
+    min-width: 20px;
+}
+
+.k-bubble-mini-close-btn:hover {
+    background: rgba(224, 27, 36, 1.0);
+}
+
+.k-bubble-window-scrim {
+    background: rgba(0, 0, 0, 0.30);
+}
+
+.k-bubble-floating-strip {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin-bottom: 8px;
+}
+
+.k-bubble-window-card {
+    background: @kalam_surface;
+    border: 1px solid alpha(@kalam_border, 0.6);
+    border-radius: 14px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.k-bubble-pill-active {
+    background: alpha(@kalam_surface, 0.95);
+    border: 1px solid alpha(@kalam_accent, 0.65);
+    border-radius: 9999px;
+    padding: 3px 10px 3px 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    transition: all 180ms ease-in-out;
+}
+
+.k-bubble-pill-active:hover {
+    border-color: alpha(@kalam_accent, 0.9);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.k-bubble-pill-title {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: @kalam_text;
+}
+
+.k-bubble-inactive-container {
+    background: transparent;
+    border-radius: 9999px;
+    padding: 2px;
+}
+
+.k-bubble-circle-inactive {
+    border-radius: 9999px;
+    border: 1px solid alpha(@kalam_border, 0.5);
+    background: alpha(@kalam_surface, 0.9);
+    padding: 1px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: transform 150ms ease-in-out;
+}
+
+.k-bubble-circle-inactive:hover {
+    transform: scale(1.06);
+    border-color: alpha(@kalam_accent, 0.7);
+}
+
+.k-bubble-circle-split {
+    border: 1.5px solid rgba(53, 132, 228, 0.95);
+}
+
+.k-bubble-drawer {
+    background: alpha(@kalam_surface, 0.95);
+    border: 1px solid alpha(@kalam_border, 0.6);
+    border-radius: 9999px;
+    padding: 2px 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    margin-left: 4px;
+}
+
+.k-bubble-drawer-btn {
+    background: transparent;
+    border-radius: 9999px;
+    padding: 3px 6px;
+    min-height: 24px;
+    min-width: 24px;
+    color: @kalam_text;
+}
+
+.k-bubble-drawer-btn:hover {
+    background: alpha(@kalam_accent, 0.15);
+    color: @kalam_accent;
+}
+
+.k-bubble-drop-zone {
+    background: rgba(53, 132, 228, 0.22);
+    border: 2px dashed rgba(53, 132, 228, 0.85);
+    border-radius: 10px;
+    margin: 12px;
+    min-width: 240px;
+}
+
+.k-bubble-drop-label {
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 1.05rem;
+    font-weight: 600;
+    padding: 20px;
+}
+
+.k-bubble-split-divider {
+    background: alpha(@kalam_border, 0.6);
+    min-width: 3px;
+}
+
+.k-bubble-pane-focused {
+    border: 1px solid alpha(@kalam_accent, 0.4);
+}
+
+/* ── Whole-Book In-Reader Search Bar & Highlights ─────────────── */
+
+.kalam-reader-search-shell {
+    transition: all 200ms ease;
+}
+
+.kalam-reader-search-bar {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 5px 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+}
+
+.kalam-reader-search-btn {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: @kalam_text;
+    transition: background-color 150ms ease, color 150ms ease;
+}
+
+.kalam-reader-search-btn:hover {
+    background: @kalam_hover;
+    color: @kalam_text_bright;
+}
+
+.kalam-reader-search-count-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 2px 8px;
+    margin: 0 2px;
+    color: @kalam_text_dim;
+    transition: all 150ms ease;
+}
+
+.kalam-reader-search-count-btn:hover {
+    background: @kalam_hover;
+    border-color: @kalam_border;
+    color: @kalam_text_bright;
+}
+
+.kalam-reader-search-count {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: inherit;
+}
+
+.kalam-reader-search-chevron {
+    font-size: 0.7rem;
+    opacity: 0.7;
+    margin-left: 4px;
+}
+
+/* ── "Matches at a Glance" Popover ────────────────────────────── */
+
+.kalam-search-snippet-popover {
+    border-radius: 12px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+    padding: 0;
+}
+
+.kalam-search-snippet-popover contents {
+    padding: 8px;
+    background: @kalam_surface;
+}
+
+.kalam-search-popover-header {
+    padding: 6px 10px 8px 10px;
+    border-bottom: 1px solid @kalam_border;
+    margin-bottom: 4px;
+}
+
+.kalam-search-popover-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: @kalam_text_bright;
+}
+
+.kalam-search-popover-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: @kalam_text_dim;
+    background: @kalam_bg;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.kalam-search-snippet-row {
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    background: transparent;
+    border: 1px solid transparent;
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.kalam-search-snippet-row:hover {
+    background: @kalam_hover;
+    border-color: @kalam_border;
+}
+
+.kalam-search-snippet-row.active {
+    background: rgba(244, 211, 94, 0.12);
+    border-color: rgba(244, 211, 94, 0.35);
+}
+
+.kalam-search-snippet-chapter {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: @kalam_text_dim;
+}
+
+.kalam-search-snippet-index {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: @kalam_text_dim;
+}
+
+.kalam-search-snippet-text {
+    font-size: 0.80rem;
+    line-height: 1.35;
+    color: @kalam_text;
+    margin-top: 2px;
+}
+
+/* Phase 6.9: the raw source pane — GtkSourceView on the left of the
+ * stage, the debounced reading preview beside it. */
+.kalam-editor-source {
+    background: @kalam_bg;
+}
+
+.kalam-editor-source-bar {
+    background: @kalam_sidebar;
+    border-bottom: 1px solid @kalam_border;
+    padding: 6px 10px;
+}
+
+.kalam-source-view {
+    font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
+    font-size: 0.86rem;
+    padding: 8px 6px;
+}
+
+.kalam-source-href {
+    color: @kalam_text_dim;
+    font-size: 0.82rem;
+    font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
+    margin-left: 8px;
+}
+
+.kalam-source-preview {
+    background: @kalam_surface;
+    border-right: 1px solid @kalam_border;
+    min-width: 280px;
+}
+
+.kalam-source-preview-page {
+    border-radius: 6px;
+}
+
+.kalam-source-status {
+    color: @kalam_text_dim;
+    font-size: 0.78rem;
+}
+
+.kalam-source-stale {
+    background: alpha(@kalam_warning, 0.12);
+    color: @kalam_text;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 10px;
+    font-size: 0.86rem;
+}

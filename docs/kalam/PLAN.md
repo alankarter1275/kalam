@@ -10,7 +10,8 @@ it. Do not re-argue it unless the owner asks.*
 > Companion documents: [`WORKING.md`](WORKING.md) — how to work in this
 > repo (for AI agents; technical); [`RESEARCH.md`](RESEARCH.md) — what was
 > investigated and why each decision came out the way it did;
-> [`UPSTREAM.md`](UPSTREAM.md) — keeping up with Chapbook;
+> [`UPSTREAM.md`](UPSTREAM.md) — where the engine came from (tracking ended
+> 2026-09-19);
 > [`INTEGRATION.md`](INTEGRATION.md) — wiring the widget into Kalam.
 
 ## 1. What this is, in three sentences
@@ -44,9 +45,15 @@ that *look* simplifiable but are not. Respect that (see §5).
 
 ## 3. The three-word rule: delete, don't rewrite
 
-We want to keep taking bug fixes from Chapbook after we fork. A fix from
-upstream only applies cleanly if the file it touches still looks the way
-the author left it. So:
+*Written when the plan was to keep taking bug fixes from Chapbook after the
+fork. Upstream tracking ended 2026-09-19 — see `UPSTREAM.md` — so the
+merge-conflict reasoning below is historical. **The rule itself still stands,
+for a different reason:** Kalam-specific code in new files is easier to find,
+easier to delete, and easier to reason about than edits scattered through
+inherited ones.*
+
+A fix from upstream only applies cleanly if the file it touches still looks the
+way the author left it. So:
 
 - **Delete whole crates freely.** A crate that is gone cannot conflict.
 - **Inside crates we keep, change as little as possible.** Every edit to an
@@ -269,7 +276,9 @@ the same day — round H in §7, run and accepted on the target machine on
    closed book would otherwise stay in memory until Kalam quits — and
    `b` is left to Kalam's bookmarks key. Done when the checklist at the
    end of `INTEGRATION.md` passes on the target machine.
-7. **Monthly**: review upstream and bring over fixes ([`UPSTREAM.md`](UPSTREAM.md)).
+7. ~~**Monthly**: review upstream and bring over fixes.~~ **Retired
+   2026-09-19** — Kalam no longer tracks upstream. See
+   [`UPSTREAM.md`](UPSTREAM.md) for why and for the provenance record.
 
 ## 8. The gate
 

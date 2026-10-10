@@ -35,6 +35,29 @@ pub(crate) fn sync_reader_controls(model: &ReaderModel) {
     model
         .column_width_label
         .set_label(&model.column_px.to_string());
+    // A spread is a paged-mode thing: the toggle stays on record but does
+    // nothing under continuous scroll, so the row greys out instead of
+    // pretending (2.7, first field report).
+    model
+        .dual_page_switch
+        .set_sensitive(!model.scrolled);
+    // Arrow scrolling is active only in continuous scroll mode; in paged
+    // mode Up/Down step chapters, so the scroll speed setting greys out.
+    model
+        .arrow_step_row
+        .set_sensitive(model.scrolled);
+    model
+        .wheel_step_label
+        .set_label(&model.wheel_step.to_string());
+    model
+        .arrow_step_label
+        .set_label(&model.arrow_step.to_string());
+
+    let bindings = model.keybinds.borrow();
+    for (action, button) in &model.keybind_buttons {
+        button.set_label(&bindings.binding(*action).label());
+    }
+    drop(bindings);
 
     for (pane, btn) in &model.settings_pane_buttons {
         toggle_active(btn, *pane == model.settings_pane);
@@ -186,7 +209,35 @@ pub(crate) fn overlay_child_box(overlay: &gtk::Overlay, index: usize) -> Option<
     for _ in 0..index {
         child = child.next_sibling()?;
     }
-    child.downcast::<gtk::Box>().ok()
+    if let Ok(b) = child.clone().downcast::<gtk::Box>() {
+        Some(b)
+    } else if let Ok(r) = child.downcast::<gtk::Revealer>() {
+        r.child().and_then(|w| w.downcast::<gtk::Box>().ok())
+    } else {
+        None
+    }
+}
+
+pub(crate) fn find_overlay_by_class(overlay: &gtk::Overlay, class: &str) -> Option<gtk::Box> {
+    let mut child = overlay.first_child();
+    while let Some(c) = child {
+        if c.has_css_class(class) {
+            if let Ok(b) = c.clone().downcast::<gtk::Box>() {
+                return Some(b);
+            }
+        }
+        if let Ok(r) = c.clone().downcast::<gtk::Revealer>() {
+            if let Some(rc) = r.child() {
+                if rc.has_css_class(class) {
+                    if let Ok(b) = rc.downcast::<gtk::Box>() {
+                        return Some(b);
+                    }
+                }
+            }
+        }
+        child = c.next_sibling();
+    }
+    None
 }
 
 pub(crate) fn connect_hover_zone(

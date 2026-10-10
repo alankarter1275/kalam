@@ -9,19 +9,41 @@ pub enum NavItem {
     Shelves,
     Downloads,
     Comics,
+    /// The EPUB editor's front door (Phase 6 follow-up, 2026-10-09): the
+    /// rail entry the owner asked for — open the editor first, pick the
+    /// book from there, like Calibre's e-book editor.
+    Editor,
     RemoteBrowse,
     Fanfiction,
     Settings,
 }
 
 impl NavItem {
+    /// What the sidebar actually shows.
+    ///
+    /// Deliberately missing, and not an oversight:
+    ///
+    /// * `Downloads` — the queue page works, but nothing ever registers a
+    ///   `Source`, so it can only ever read "0 downloads tracked". Online
+    ///   sources are Part 2 (`docs/offline-roadmap.md`); until one exists the
+    ///   button advertises a feature the app cannot perform.
+    /// * `RemoteBrowse` and `Fanfiction` — same reason, removed earlier.
+    ///
+    /// All three stay in the enum, in `label`/`icon`, in `placeholder_copy`
+    /// and in the `KALAM_ROUTE` map, so putting one back is a one-line change
+    /// here and nothing else.
+    ///
+    /// `Editor` sits last in the top group, after the content sections:
+    /// Home/Library/Shelves/Comics are places to read, the editor is a
+    /// tool you reach for on purpose — nearest the Settings end without
+    /// being a setting.
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
         NavItem::Shelves,
-        NavItem::Downloads,
         NavItem::Comics,
-                NavItem::Settings,
+        NavItem::Editor,
+        NavItem::Settings,
     ];
 
     pub fn label(self) -> &'static str {
@@ -31,6 +53,7 @@ impl NavItem {
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",
             NavItem::Comics => "Comics",
+            NavItem::Editor => "Editor",
             NavItem::RemoteBrowse => "Browse",
             NavItem::Fanfiction => "Fanfic",
             NavItem::Settings => "Settings",
@@ -44,6 +67,11 @@ impl NavItem {
             NavItem::Shelves => "view-grid-symbolic",
             NavItem::Downloads => "folder-download-symbolic",
             NavItem::Comics => "image-x-generic-symbolic",
+            // Not `document-edit-symbolic`: that is the reader's little
+            // TOC pencil (and Fanfiction's), a per-book afterthought. The
+            // rail entry is the editor itself, and the pencil-in-a-page
+            // icon for a whole-application tool would sell it short.
+            NavItem::Editor => "text-editor-symbolic",
             NavItem::RemoteBrowse => "network-workgroup-symbolic",
             NavItem::Fanfiction => "document-edit-symbolic",
             NavItem::Settings => "emblem-system-symbolic",
@@ -87,6 +115,12 @@ pub enum Route {
     Reader {
         book_id: i64,
     },
+    /// The full EPUB editor (Phase 6 step 8): its own engine on the
+    /// book's file, paragraph edits as patches, the review panel in
+    /// its chrome. Reached from the reader's sidebar pencil.
+    Editor {
+        book_id: i64,
+    },
     /// Immersive Comics reader (P8).
     ComicsReader {
         book_id: i64,
@@ -99,15 +133,23 @@ pub enum Route {
         source_id: String,
         query: String,
     },
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 impl Route {
     pub fn sidebar_item(&self) -> NavItem {
         match self {
             Route::Module(item) => *item,
+            Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
+            // The editor page lights the rail's Editor entry whichever
+            // door it was reached through — the picker or the reader's
+            // TOC pencil.
+            Route::Editor { .. } => NavItem::Editor,
             Route::BookPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {
@@ -121,7 +163,14 @@ impl Route {
     }
 
     pub fn is_reader(&self) -> bool {
-        matches!(self, Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. })
+        matches!(
+            self,
+            Route::Reader { .. }
+                | Route::Editor { .. }
+                | Route::PdfReader { .. }
+                | Route::ComicsReader { .. }
+                | Route::RemoteReader { .. }
+        )
     }
 }
 
@@ -136,13 +185,17 @@ pub enum LibrarySection {
     LookupHistory,
     Tags,
     Analytics,
+    /// Roadmap 1.14: what is running in the background, and how to stop it.
+    TaskManager,
+    /// Roadmap #5: spaced-repetition review of saved words.
+    Review,
 }
 
 impl LibrarySection {
     /// Kept for the section pickers that will return with the definitive
     /// layout; the dashboard now routes via content sections instead of a
     /// generated tile grid.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the full section list renders once the library gains section tabs
     pub const ALL: &'static [LibrarySection] = &[
         LibrarySection::AllBooks,
         LibrarySection::ReadingList,
@@ -152,9 +205,11 @@ impl LibrarySection {
         LibrarySection::LookupHistory,
         LibrarySection::Tags,
         LibrarySection::Analytics,
+        LibrarySection::TaskManager,
+        LibrarySection::Review,
     ];
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // section icons for those tabs
     pub fn icon(self) -> &'static str {
         match self {
             LibrarySection::AllBooks => "folder-documents-symbolic",
@@ -165,6 +220,8 @@ impl LibrarySection {
             LibrarySection::LookupHistory => "edit-find-symbolic",
             LibrarySection::Tags => "tag-symbolic",
             LibrarySection::Analytics => "view-bar-symbolic",
+            LibrarySection::TaskManager => "system-run-symbolic",
+            LibrarySection::Review => "media-playlist-repeat-symbolic",
         }
     }
 }
@@ -243,14 +300,25 @@ impl Book {
         if series.is_empty() {
             return None;
         }
-        if self.series_index <= 0.0 {
-            return Some(series.to_string());
+        let (clean_series, ch_opt) = crate::comics::sanitize_comic_series(series);
+        let display_series = if !clean_series.is_empty() {
+            clean_series
+        } else {
+            series.to_string()
+        };
+        let idx = if self.series_index > 0.0 {
+            self.series_index
+        } else {
+            ch_opt.unwrap_or(0.0)
+        };
+        if idx <= 0.0 {
+            return Some(display_series);
         }
         // Whole numbers should not render as "3.0".
-        if (self.series_index.fract()).abs() < f32::EPSILON {
-            Some(format!("{series} #{}", self.series_index as i64))
+        if (idx.fract()).abs() < f32::EPSILON {
+            Some(format!("{display_series} #{}", idx as i64))
         } else {
-            Some(format!("{series} #{}", self.series_index))
+            Some(format!("{display_series} #{}", idx))
         }
     }
 
@@ -259,6 +327,51 @@ impl Book {
             "Unknown"
         } else {
             self.authors.as_str()
+        }
+    }
+}
+
+/// A first-class Comic / Manga Series in the library catalog.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ComicSeries {
+    pub id: i64,
+    pub title: String,
+    pub sort_title: String,
+    pub author: String,
+    pub description: String,
+    pub cover_book_id: Option<i64>,
+    pub cover_path: Option<PathBuf>,
+    pub status: String,
+    pub total_chapters: usize,
+    pub completed_chapters: usize,
+    pub unread_chapters: usize,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_read_at: Option<String>,
+}
+
+/// An individual chapter within a `ComicSeries`, joined with its underlying `Book` row.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ComicChapter {
+    pub id: i64,
+    pub series_id: i64,
+    pub book_id: i64,
+    pub chapter_number: f32,
+    pub volume_number: Option<f32>,
+    pub chapter_title: String,
+    pub created_at: String,
+    pub book: Book,
+}
+
+impl ComicChapter {
+    #[allow(dead_code)]
+    pub fn display_number(&self) -> String {
+        if (self.chapter_number.fract()).abs() < f32::EPSILON {
+            format!("Ch. {}", self.chapter_number as i64)
+        } else {
+            format!("Ch. {}", self.chapter_number)
         }
     }
 }

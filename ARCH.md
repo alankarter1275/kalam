@@ -1,215 +1,131 @@
-# Kalam — architecture notes (living doc)
+# Kalam — architecture principles
 
-## Product
+Prescriptive, not descriptive. This document says how the app is built and
+how every change must be built; where it conflicts with the code, the code
+is wrong or this document is stale — fix one of them in the same change.
 
-Personal Linux-only ebook manager + reader. One process. No plugin host, no content server.
+**Every `plan.md` states how the change it proposes complies with this
+document.** That sentence is the enforcement mechanism; the tests in
+`src/perf.rs`, `tests/guardrails.rs` and the stall watchdog (`src/stall.rs`)
+make the loud violations visible in CI instead of waiting for a field
+report.
 
-**Name:** Kalam  
-**Stack:** Rust · GTK4 · Relm4 · (later) WebKitGTK · SQLite · MuPDF for PDF  
+## The one rule
 
-## Navigation (P0)
+> **The UI thread never touches disk, database, or parsing.**
 
-```text
-Sidebar
-  Home
-  Library  → hub tiles → section lists → Book page
-  Shelves  → 2-col grid → Shelf detail → Book page
-  Downloads / Comics / AO3 / Fanfic / Settings  (placeholders)
-```
+The UI thread builds widgets and applies messages. Everything else —
+every read, every write, every file, every parse — runs on a worker, and
+its result arrives as a message. Owner directive, 2026-10-01; the whole
+document is this sentence applied.
 
-Book can open as:
+## Threading model
 
-1. **Page** in the main column (stack + Back), or  
-2. **Float** — separate non-modal window with the same book page.
+Three kinds of thread, and only one of them may hold GTK objects:
 
-## Shelves UX (agreed)
+1. **The main (UI) thread.** Runs the GTK loop, builds widget trees,
+   applies model updates. It may send work out; it may never do the work.
+   `tasks::spawn` / `tasks::spawn_internal` (a hidden housekeeping task)
+   are the standard way out; the readers' doc-service threads are the
+   long-lived variant.
+2. **Task workers** (`src/tasks.rs`). One-shot units of work with a label,
+   progress, cancellation and a result delivered back on the main thread.
+   Page snapshots, imports, deletes, OCR — everything a user waits for or
+   that runs quietly in the background.
+3. **Service threads** (readers). Own a resource for the process's life
+   (an open document, a render queue), answer requests, never touch GTK.
 
-1. Sidebar **Shelves** → grid (2 columns) of all shelves  
-2. Each card: name, book count, smart/manual, rule/description  
-3. Click card → shelf detail (list of books)  
-4. Click book → book page (or Float)
+The **stall watchdog** watches the main loop's heartbeat and logs any
+block over ~100 ms with the route or dialog being built at the time
+(`[stall]` lines, stderr and `kalam.log`). A new `[stall]` line in a
+field run or the CI smoke session is a finding, not noise.
 
-Smart shelf ≈ Calibre virtual library (saved rules).  
-Manual shelf ≈ pinned book ids.  
-Rule engine is **not** implemented in P0 (sample data only).
-
-## EPUB reader (P2 + P3 enhancements)
-
-- WebKitGTK  
-- Reader component split into sub-modules under `src/pages/reader/` (`mod.rs`, `types.rs`, `mod_model.rs`, `chapter.rs`, `session.rs`, `js_bridge.rs`, `ui_prefs.rs`, `settings_panel.rs`, `panels.rs`, `lists.rs`, `chrome.rs`)
-- **Chapter-wise** continuous scroll  
-- Prefetch next chapter near ~85–90% scroll (P2: manual N/›; auto-next disabled for stability)  
-- Keep at most ~3 chapters mounted  
-- Instant CSS (fonts, theme, margins) — reload chapter on theme/font change  
-- Highlights / quotes / dictionary in P3:
-  - Selection → `#kalam-chip` floating inside WebView (colors, quote, dict, copy)
-  - `wrapRangeByPaths` via nodePath (child index path) + offsets for persistence
-  - Reinject via `kalamInjectHighlights` on `LoadEvent::Finished`
-  - JS bridge: `window.webkit.messageHandlers.kalam.postMessage(JSON)` + fallback `kalam://` iframe + title notify; Rust: `UCM::register_script_message_handler("kalam", None)` + `connect_script_message_received` + `decide_policy`
-  - Dictionary: Settings → import StarDict/SQLite/TSV → `dict_entries` → search (exact → prefix → substring) → popup near rect via `kalamShowDict`
-
-## Shelves engine (P4)
-
-Two kinds share one table, separated by `kind`:
-
-- **Manual** — rows in `shelf_books`, hand-ordered by `position`
-- **Smart** — a JSON rule document in `shelves.rules`, compiled at query time
-
-Rule documents are deliberately **flat**: a list of `{field, op, value}` plus a
-single `match: all | any`. `shelf_rules::RuleSet::to_sql()` turns that into a
-parameterised `WHERE` fragment over `books`; tag rules become
-`EXISTS (SELECT 1 FROM book_tags …)`, negations wrap in `NOT`. Unknown fields or
-blank values are skipped rather than failing, and an empty rule set compiles to
-`0 = 1` so a half-built shelf matches nothing instead of the whole library.
-
-Nested boolean groups were considered and deferred — the JSON can gain a
-`groups` key later without a schema migration.
-
-## History & time tracking (P4)
-
-- `reading_events` is append-only: `opened | finished | unfinished | imported`.
-  Repeat opens inside the same hour are collapsed so flipping in and out of the
-  reader doesn't flood the log.
-- `reading_sessions` gets one row per reader mount, closed in `shutdown()`.
-  Durations are clamped to 6h — a suspended laptop must not claim a marathon.
-- Auto-finish fires once at ≥99% progress; `finished_at` guards re-firing.
-
-## Data dirs (actual)
+## Layering
 
 ```text
-~/.local/share/kalam/
-  catalog.db                 # + P4: shelves, shelf_books, reading_list,
-                             #   reading_events, reading_sessions
-  library/<uuid>/            # book.epub + cover.*
-  dictionaries/              # (placeholder dir, actual entries in catalog.db)
-  cache/reader/<uuid>/       # extracted EPUB for WebView
-  cache/thumbs/<uuid>.png    # persistent cover thumbnails (A0 step 3)
-  covers/<file_hash>.<ext>   # stashed covers for metadata restore — survives
-                             #   book deletion, hence not under library/<uuid>/
-  authors/                   # cached author photos
-  series-covers/             # cached series float covers
-~/Quotes.md                  # exported quotes Markdown
-~/SavedWords.csv             # exported vocabulary (RFC-4180)
-~/SavedWords-Anki.txt        # exported vocabulary (Anki TSV)
-~/.config/kalam/config.toml  (future)
+pages/ (widgets + models)      — view and input only
+  └─ LibraryService            — one snapshot method per screen, all reads
+      └─ Catalog (SQLite)      — the only code that knows SQL
 ```
 
-## Service layer (A0 step 2)
+- **Pages ask `LibraryService`; they do not hold `Arc<Catalog>`.** The
+  ratchet in `tests/guardrails.rs` (`MAX_ARC_CATALOG_IN_PAGES`) only goes
+  down. The service is cheap to clone (`Arc` bump), so workers take one
+  along instead of a raw catalog.
+- **A snapshot is the answer to a whole screen's data question** — one
+  call, one owned `Send` struct (`service.rs` asserts `Send` at compile
+  time). Wrapped getters would mean N round trips and N futures; the
+  snapshot means one.
+- **The service never calls `notify`** and never touches GTK; it must be
+  callable from a worker. Errors travel in the snapshot (`errors` rows);
+  the page decides what the user sees.
+- **Filesystem questions stay with the caller's worker** (a file-size
+  stat is not a catalog read), and disk layout truth lives in
+  `comic_folders.rs` / `folders.rs`, never in page code.
 
-Pages do not talk to `Catalog` directly any more (three converted so far —
-Home, Analytics, Tags; the rest migrate incrementally). They hold a
-`LibraryService` and ask it one question:
+## State flow — the screen-open recipe
 
-```rust
-let snap = service.home();   // stats + recent + continue row + reading list
-```
+Every screen follows the same four steps (the book page and book float are
+the reference implementations, roadmap 7.1 step 2a):
 
-Three properties matter, and each is load-bearing:
+1. **`init` builds the skeleton.** Structure, layout, loading states.
+   Zero queries, zero file reads, zero parsing. The user sees the screen
+   instantly.
+2. **A worker produces the snapshot.** `spawn_internal` + the screen's
+   service method. Expensive extras (an EPUB spine walk for chapter
+   titles) are separate workers that arrive when they arrive.
+3. **The snapshot arrives as a message; the page applies it.** A rebuild
+   is then *pure view-from-model* — the fill functions read model state,
+   never the catalog.
+4. **A stale answer never wins.** Each request carries what it was for;
+   an answer is applied only if it is still current (the readers'
+   generation rule; a per-book page checks the id).
 
-1. **One call, one owned snapshot.** Not wrapped getters. A snapshot is a
-   plain `Send` struct, so the same call can later run on a worker thread and
-   be handed back to the UI *without touching the page* — the whole point of
-   the step. `snapshots_are_send()` asserts this at compile time.
-2. **One error policy.** A failed read degrades to the empty value **and**
-   records the reason; the page surfaces it. Previously each page decided for
-   itself, so a broken database looked like an empty library.
-3. **The service never calls `notify`.** Toasts are thread-local to the UI
-   thread; the service has to stay callable from a worker. Reporting belongs
-   to the caller.
+Mutations are tasks too (a delete removes a directory). A small single-row
+write that reports its outcome inline is tolerated while the ratchets
+allow it — the static boundary check (below) decides the end state, not
+this sentence.
 
-Query logic lives in the service, not in widget-building code — Home's
-"continue reading" fallback chain (recently opened → in progress → newest) is
-there, and unit-tested.
+**Timing spans** (`route_open:<name>`, `dialog_open:<name>`) bracket every
+construction, and `service_*` spans every snapshot read, under
+`KALAM_TIMING=1`. A screen's construction cost is a measured number, not
+an opinion. The apply path carries an activity guard and a span from the
+day it is written (pitfalls §45): the watchdog can only name what has a
+label, and an async apply handler is a new place the UI thread can
+block. The same goes for main-thread task callbacks and idle jobs —
+label them, or their blocks report as nameless.
 
-Writes still go straight to `Catalog`. They belong to the task manager
-(A0 step 4), not to this read seam.
+## Memory
 
-## Source seam (A0 step 8 — designed, not yet code)
+- The book grid is windowed (2,000 books: 247 MB peak, not 502).
+- Covers are deferred: placeholders first, background decode via
+  `preload::warm_covers` — a deferral is always paired with its warm-up
+  (pitfalls §16).
+- Caches are bounded by design, not by emptying (`set_cache_budget`, the
+  PDF text/image windows; pitfalls §17).
+- A bubble holds no book (id + thumbnail + position, all database rows);
+  the reading book gets the cache budget, warm books are suspended.
 
-Where books come from that are not the user's disk: AO3, FanFiction.net, Royal
-Road, MangaDex, Komga. Full design in
-[`docs/source-seam.md`](./docs/source-seam.md); the essentials:
+## Enforcement (built in migration order)
 
-- **One `Source` trait for fiction and manga**, not two. They differ only in
-  the final step, which is a two-variant `Content` enum (`Text` / `Images`).
-  Everything else — search, pagination, chapter lists, rate limits, the
-  download queue, the follow scheduler — is shared and must not be duplicated.
-- **Scraped sources are Lua plugins; API-backed ones are built-in Rust.** The
-  split is *does this break when someone else changes their website* — AO3,
-  FFN and scraped manga rot, so they get a fix loop measured in seconds
-  (edit a selector, restart); MangaDex, Open Library and Google Books have
-  documented APIs, so they are compiled in and type-checked. Same for add-on
-  metadata providers: two built in, the long tail in Lua, which is Calibre's
-  model. `docs/source-seam.md` §9a has the reasoning and the evidence.
-- **`SourceFactory` is `Send`; `Source` is not.** The factory crosses to a
-  worker thread and builds the live source there. This is what makes Lua
-  possible at all: `mlua`'s VM is `!Send`, so it is built on the worker and
-  born and dies on one thread, and `mlua`'s `send` feature (a reentrant mutex
-  on every VM access) stays off.
-- **A source is a pure function from a query to structured data.** No
-  filesystem, no catalog, no widgets. The host decides what to store — the
-  same discipline that keeps `LibraryService` worker-callable. For Lua this is
-  *enforced* by the sandbox; a built-in Rust source follows it voluntarily.
-- **Rate limits are declared by the source and enforced by the host**, so one
-  careless source cannot get Kalam's User-Agent blocked.
+1. **Count-shaped budgets** — `src/perf.rs`: statement counts that do not
+   grow with row count, gating CI. Wall-clock flaked ~60 % between
+   runners and was rejected; integers do not flake.
+2. **The stall watchdog** — `src/stall.rs`; the CI smoke report carries
+   its lines.
+3. **Ratchets** — `tests/guardrails.rs`: production panic sites,
+   `Arc<Catalog>` in pages, hex colours in the stylesheet. The numbers
+   only go down.
+4. **The static boundary check** (planned, 7.7 layer 3): a test scanning
+   `src/pages/**` for direct fs/catalog/parser calls outside the task
+   layers, with an allowlist of written reasons — last, once the
+   allowlist is small.
 
-Lands as code with AO3 in P7, its first implementation and first caller — a
-trait with no implementation would fail `-D warnings` in a binary crate.
+Tripwires, not proofs: the document plus plan compliance is the primary
+control; the tests make regressions loud instead of silent.
 
-## Reader WebView (A0)
+---
 
-The reader borrows one long-lived `WebView` from `src/webview_pool.rs` instead
-of constructing one per book open (a WebKit process spawn, ~400 ms measured).
-Only the widget is pooled — not the reader page — so the reading session and
-progress save still happen on every entry and exit.
-
-The catch worth remembering: a recycled view keeps the previous reader's
-signal handlers, each holding a dropped component's `Sender`. So permanent
-setup (sizing, context-menu suppression, `register_script_message_handler`,
-which WebKit refuses twice for one name) lives in the pool, while every
-handler capturing a `ComponentSender` is recorded as a `SignalHandlerId` and
-disconnected in `shutdown()` before the view is parked.
-`KALAM_NO_WEBVIEW_POOL=1` restores the old spawn-per-open behaviour.
-
-## Theming & CSS
-
-- **`src/theme.rs`** owns every colour. One `Theme` struct per palette, 13 dark
-  themes grouped standard/darker per family. Adding one is a single entry.
-- **`src/style.rs`** owns *shape only* — spacing, radii, type scale, borders. It
-  refers to colours by `@kalam_*` name; a literal hex there is a bug unless it
-  is deliberately theme-independent (highlight markers, reader paper swatches,
-  reader stage).
-- `theme::apply()` prepends the `@define-color` block and re-parses, so a theme
-  switch restyles in place with no widget rebuilt.
-- Reader *page* theming (Light/Sepia/Dark paper) is separate from app chrome, on
-  purpose: a sepia page inside a dark app is a legitimate combination.
-
-> ⚠️ **Before editing `style.rs`, read its module header.** It documents five
-> GTK behaviours that are non-obvious and cost about a dozen debugging rounds on
-> a single scrollbar — provider priority vs specificity, why `opacity` below 1
-> triggers pixman errors, how `margin`/`border`/`padding` are subtracted from
-> allocations, what `scrolledwindow:hover` actually matches, and the
-> `KALAM_NO_CSS=1` diagnostic.
-
-## Out of scope
-
-- Z-Library / unauthorized shadow libraries  
-- Calibre-style multi-app suite  
-- Content server, fetch news  
-
-## Phase map
-
-| Phase | Deliverable |
-|-------|-------------|
-| P0 | Shell + nav + sample shelves/books ✅ |
-| P1 | SQLite + EPUB import + covers ✅ |
-| P2 | Reader (chapter scroll, fonts, progress) ✅ |
-| P3 | Highlights, quotes, offline dictionary ✅ |
-| P4 | Shelves engine, lists, history, tags, analytics ✅ |
-| P5 | Metadata edit, cover replace, Open Library fetch ✅ |
-| P5.5 | UI overhaul (colour system, 13 themes, Settings v2, book page) — in progress |
-| A0 | Architecture & performance track ← **you are here** (steps 1–5 done, 6 closed on evidence, 8 designed; 7 open) |
-| P6+ | Downloads, sources (AO3, FF), comics, PDF, tools |
-
-`ROADMAP.md` is the authoritative plan; this table is a summary. See its
-"Current trajectory" section for the locked order.
+Historical architecture notes (the old living document, including the
+stale `lopdf` mention) live in git history; navigation and UX decisions
+are recorded in `ROADMAP.md` and `docs/conversation.md`.

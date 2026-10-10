@@ -2,7 +2,7 @@
 
 use super::chapter::chapter_label;
 use super::chrome::connect_hover_zone;
-use super::js_bridge::truncate_def;
+use super::dictionary_popover::truncate_def;
 use super::mod_model::ReaderModel;
 use super::types::*;
 use crate::db::{Annotation, HighlightColor, SavedWord};
@@ -39,7 +39,17 @@ impl ReaderModel {
 
     pub(crate) fn reload_saved_words(&mut self) {
         match self.service.catalog().list_saved_words("", None) {
-            Ok(rows) => self.saved_words = rows,
+            Ok(rows) => {
+                self.saved_words = rows;
+                if let Some(view) = &self.view {
+                    let wm_words = self
+                        .service
+                        .catalog()
+                        .get_saved_words_for_scope(self.book_id, &self.word_memory_scope)
+                        .unwrap_or_default();
+                    view.set_word_memory(wm_words.into_iter().map(|w| w.word));
+                }
+            }
             Err(err) => crate::notify::error("Could not read your saved words", &err.to_string()),
         }
     }
@@ -168,7 +178,7 @@ impl ReaderModel {
                         anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
                     }
                     HighlightFilter::Underline => {
-                        anno.kind == "highlight" && (anno.color.eq_ignore_ascii_case("underline") || HighlightColor::from_str_lossy(&anno.color) == HighlightColor::Underline)
+                        anno.kind == "highlight" && (anno.color.eq_ignore_ascii_case("underline") || anno.style == "underline" || HighlightColor::from_str_lossy(&anno.color) == HighlightColor::Underline)
                     }
                     HighlightFilter::Quotes => anno.kind == "quote",
                 };
@@ -273,6 +283,8 @@ fn append_toc_heading(list: &gtk::Box, row: &TocRow) {
     label.set_xalign(0.0);
     label.set_wrap(true);
     label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_max_width_chars(24);
     label.set_margin_start(16 + row.depth as i32 * 16);
     label.set_margin_end(16);
     list.append(&label);
@@ -312,8 +324,8 @@ fn append_toc_btn(
     title.set_hexpand(true);
     title.set_wrap(true);
     title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    title.set_lines(2);
+    title.set_lines(-1);
+    title.set_width_chars(1);
     title.set_xalign(0.0);
     btn.set_child(Some(&title));
     let s = sender.clone();
@@ -785,6 +797,51 @@ fn saved_word_meta(model: &ReaderModel, word: &SavedWord) -> String {
         Some(ch) => format!("{} · saved word", chapter_label(model, ch as usize)),
         None => "Saved word".into(),
     }
+}
+
+/// Render a book's highlights/quotes/notes as Markdown, grouped per entry with
+/// the chapter number and any attached note. Kept deliberately plain so the
+/// file is pleasant to read and easy to import elsewhere.
+fn annotations_markdown(annos: &[Annotation], title: &str) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("# {title} — highlights & notes\n\n"));
+    for a in annos {
+        let (kind, color) = match a.kind.as_str() {
+            "quote" => ("Quote", None),
+            "note" => ("Note", None),
+            _ => ("Highlight", Some(a.color.as_str())),
+        };
+        let chapter = a.chapter_index + 1;
+        match color {
+            Some(c) => out.push_str(&format!(
+                "- **{kind}** ({c}, ch. {chapter}): {}\n",
+                a.text_excerpt
+            )),
+            None => out.push_str(&format!("- **{kind}** (ch. {chapter}): {}\n", a.text_excerpt)),
+        }
+        if !a.note.trim().is_empty() {
+            out.push_str(&format!("  - note: {}\n", a.note.trim()));
+        }
+    }
+    out
+}
+
+/// Export the book's highlights/quotes/notes to `~/Highlights.md`, mirroring
+/// the saved-words exporters (fixed home path, count + path for the toast).
+pub(crate) fn export_highlights_markdown(
+    catalog: &crate::db::Catalog,
+    book_id: i64,
+    book_title: &str,
+) -> Result<(usize, std::path::PathBuf), String> {
+    let annos = catalog
+        .get_annotations_for_book(book_id)
+        .map_err(|e| format!("{e}"))?;
+    let md = annotations_markdown(&annos, book_title);
+    let out = crate::paths::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("Highlights.md");
+    std::fs::write(&out, md).map_err(|e| format!("{e}"))?;
+    Ok((annos.len(), out))
 }
 
 #[cfg(test)]

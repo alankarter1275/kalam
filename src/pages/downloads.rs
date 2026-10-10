@@ -163,6 +163,7 @@ fn render_jobs(model: &DownloadsModel, widgets: &mut DownloadsModelWidgets) {
                 }
                 JobStatus::Packaging => ("Packaging EPUB...".to_string(), 0.95, "kalam-badge"),
                 JobStatus::Done => ("✓ Completed".to_string(), 1.0, "kalam-badge"),
+                JobStatus::Cancelled => ("Cancelled".to_string(), 0.0, "kalam-badge"),
                 JobStatus::Failed(err) => (format!("Failed: {err}"), 0.0, "kalam-badge"),
             };
 

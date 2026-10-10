@@ -17,6 +17,7 @@ impl ReadingDirection {
         }
     }
 
+    #[allow(dead_code)]
     pub fn short_label(self) -> &'static str {
         match self {
             ReadingDirection::Ltr => "LTR",
@@ -44,7 +45,7 @@ pub enum PageStyle {
 }
 
 impl PageStyle {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // fit-mode labels render in the reader's settings popover
     pub fn label(self) -> &'static str {
         match self {
             PageStyle::Single => "Single",
@@ -74,6 +75,7 @@ impl FitMode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
             FitMode::Width => "zoom-fit-best-symbolic",
@@ -93,34 +95,65 @@ impl FitMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ComicSidebarTab {
+    Chapters,
+    #[default]
+    Settings,
+    Bookmarks,
+}
+
 #[derive(Debug)]
 pub enum ComicsReaderMsg {
     PageLoaded(usize, Option<gtk::gdk::Texture>),
     SetPage(usize),
-    UpdateScrollPage(usize),
+    UpdateScrollPage(f64),
+    ScrollDelta(f64),
     NextPage,
     PrevPage,
     KeyLeft,
     KeyRight,
-    TapAtRatio(f64),
+    #[allow(dead_code)]
     ToggleDirection,
     SetDirection(ReadingDirection),
     SetPageStyle(PageStyle),
     ToggleFitMode,
     SetFitMode(FitMode),
-    ToggleChrome,
+    SetSpreadGap(i32),
+    ToggleSidebar,
+    CloseSidebar,
+    SetSidebarTab(ComicSidebarTab),
+    ToggleBookmark,
+    DeleteBookmark(i64),
+    SwitchChapter(i64),
+    NextChapter,
+    #[allow(dead_code)]
+    PrevChapter,
+    TopEdgeHover(bool),
+    BottomEdgeHover(bool),
+    LeftEdgeHover(bool),
+    SidebarHover(bool),
+    BackHideTimerTick(u64),
+    BottomHideTimerTick(u64),
+    SidebarCloseTimerTick(u64),
+    UserScrolled,
+    HideOsd(u64),
+    ViewportResized,
+    #[allow(dead_code)]
     ToggleSettings,
+    #[allow(dead_code)]
     CloseSettings,
     Close,
+    MinimizeToBubble,
 }
 
 #[derive(Debug)]
 pub enum ComicsReaderOut {
     Close,
+    MinimizeToBubble { book_id: i64 },
 }
 
-
-#[allow(dead_code)]
+#[allow(dead_code)] // menu/context actions for the comics reader UI
 pub enum ReaderContext {
     Local(i64), // book_id
     Remote { source_id: String, chapter_id: String },
@@ -129,4 +162,7 @@ pub enum ReaderContext {
 pub struct ComicsReaderInit {
     pub title: String,
     pub provider: std::sync::Arc<dyn super::provider::ImageProvider>,
+    pub catalog: Option<std::sync::Arc<crate::db::Catalog>>,
+    pub book_id: Option<i64>,
+    pub cover_path: Option<std::path::PathBuf>,
 }

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 //! Offline pronunciation for the dictionary popup.
 //!

@@ -13,7 +13,6 @@
 // specific items when the dictionary work next lands: a module-level allow
 // also hides anything that becomes dead *later*, which is exactly what it
 // should not do.
-#![allow(dead_code)]
 
 use crate::db::{
     Catalog, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME,
@@ -24,14 +23,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
-
-/// Result of a dictionary search.
-#[derive(Debug, Clone)]
-pub struct DictSearchResult {
-    pub word: String,
-    pub definition: String,
-    pub dict_name: String,
-}
 
 const BUNDLED_WORDNET_PREF: &str = "bundled_dictionary_english_wordnet_2025";
 #[cfg(feature = "bundled-dictionaries")]
@@ -187,22 +178,19 @@ fn install_bundled_tsv(
     Ok(true)
 }
 
-/// Import a dictionary pack into the catalog.
-///
-/// Supports:
-/// - StarDict triple (.ifo + .idx + .dict[.dz]): provide any one file path, we find siblings.
-/// - SQLite file with entries table.
-///
-/// Returns the dictionary name and entry count.
-///
-/// Convenience wrapper for callers with no UI to report to (tests, the
-/// bundled-pack installer). Import progress is discarded; use
-/// [`import_dictionary_with_progress`] to drive a toast.
+/// Test-only convenience wrapper that discards progress; the app drives a
+/// toast through [`import_dictionary_with_progress`].
+#[cfg(test)]
 pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
     import_dictionary_with_progress(catalog, path, &|_| {})
 }
 
-/// As [`import_dictionary`], reporting entries written so far.
+/// Import a dictionary pack into the catalog, reporting entries written so
+/// far.
+///
+/// Supports:
+/// - StarDict triple (.ifo + .idx + .dict[.dz]): provide any one file path, we find siblings.
+/// - SQLite file with entries table.
 ///
 /// `progress` is called once per flushed batch (every [`IMPORT_BATCH`]
 /// entries) with the running total. It runs on whatever thread is doing the
@@ -859,29 +847,6 @@ fn read_dict_file(path: &Path) -> Result<Vec<u8>> {
     } else {
         std::fs::read(path).context("read .dict")
     }
-}
-
-// ---------------------------------------------------------------------------
-// Utility for cleaning definition HTML to plain-ish text for GTK display
-// ---------------------------------------------------------------------------
-
-pub fn strip_dict_html(input: &str) -> String {
-    let mut out = String::new();
-    let mut in_tag = false;
-    for ch in input.chars() {
-        if in_tag {
-            if ch == '>' {
-                in_tag = false;
-            }
-            continue;
-        }
-        if ch == '<' {
-            in_tag = true;
-            continue;
-        }
-        out.push(ch);
-    }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

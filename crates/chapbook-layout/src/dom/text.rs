@@ -32,6 +32,17 @@ pub fn extract_text(doc: &Document) -> String {
     normalize(&raw)
 }
 
+/// Extract the readable text of one subtree.
+///
+/// Same skipping and collapsing rules as [`extract_text`], starting at
+/// `node` instead of the document element. This is what a footnote
+/// popover shows: one note, not the chapter the note sits in.
+pub fn extract_text_at(doc: &Document, node: NodeId) -> String {
+    let mut raw = String::new();
+    walk(doc, node, &mut raw);
+    normalize(&raw)
+}
+
 fn walk(doc: &Document, id: NodeId, out: &mut String) {
     let node = doc.node(id);
     match &node.data {

@@ -21,6 +21,7 @@ fn mark_heading(s: &mut Session, id: i64) -> (HostHighlight, (u32, u32), String)
         start: s.layered_locator_at(start).expect("start captures"),
         end: s.layered_locator_at(end).expect("end captures"),
         color: None,
+        style: None,
         text: Some(text.clone()),
     };
     s.selection_clear();

@@ -107,11 +107,18 @@ thread_local! {
         RefCell::new(CoverCache::default());
 }
 
-/// A cover frame showing a placeholder, waiting for its texture.
+/// A cover picture showing the frame's placeholder, waiting for its
+/// texture.
+///
+/// The frame always has exactly one child — the picture — and the swap
+/// only replaces the picture's paintable. Removing and appending
+/// children (the old shape) relayouts the frame's ancestors on every
+/// cover arrival, which is how a screen full of 0 ms callbacks froze
+/// the UI for seconds (7.1 step 2a.2, pitfalls §48).
 struct PendingFrame {
     key: (String, i32, i32),
     /// Weak: the page can be destroyed before the decode finishes.
-    frame: gtk::glib::WeakRef<gtk::Box>,
+    picture: gtk::glib::WeakRef<gtk::Picture>,
 }
 
 thread_local! {
@@ -201,9 +208,18 @@ const GRID_COLS: i32 = 6;
 const COL_SPACING: u32 = 16;
 const ROW_SPACING: u32 = 20;
 
+/// The tooltip hint every library card carries: its two-gesture contract.
+/// A card built for a picker that only has one action passes its own hint
+/// instead, so the tooltip never promises a gesture the page does not offer.
+pub const CLICK_HINT_LIBRARY: &str = "Click: float · Ctrl+click: full page";
+
 /// One bookshelf card: fixed cover + title + author underneath.
+///
+/// `click_hint` is the last line of the tooltip — the card cannot know what
+/// its two gestures mean on the page that mounted it.
 pub fn build_book_card(
     book: &Book,
+    click_hint: &str,
     on_full: impl Fn() + 'static,
     on_float: impl Fn() + 'static,
 ) -> gtk::Box {
@@ -237,7 +253,7 @@ pub fn build_book_card(
     card.set_cursor_from_name(Some("pointer"));
     // Full title/author available on hover even when ellipsized.
     card.set_tooltip_text(Some(&format!(
-        "{}\n{}\n\nClick: float · Ctrl+click: full page",
+        "{}\n{}\n\n{click_hint}",
         book.title,
         book.authors_display()
     )));
@@ -430,6 +446,7 @@ fn card_position(index: usize) -> (i32, i32) {
 /// user sees today.
 fn build_windowed_grid(
     books: &[Book],
+    click_hint: &'static str,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
 ) -> gtk::Box {
@@ -505,7 +522,7 @@ fn build_windowed_grid(
                 let id = book.id;
                 let f1 = on_full.clone();
                 let f2 = on_float.clone();
-                let card = build_book_card(book, move || f1(id), move || f2(id));
+                let card = build_book_card(book, click_hint, move || f1(id), move || f2(id));
 
                 let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 cell.set_size_request(CARD_W, CARD_H);
@@ -595,11 +612,37 @@ pub fn build_book_grid(
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
 ) -> gtk::Box {
+    build_book_grid_hinted(books, CLICK_HINT_LIBRARY, on_full, on_float)
+}
+
+/// A picker's grid: one gesture, one meaning — plain click and Ctrl+click
+/// both call `on_open`, because a page whose only action is "open this
+/// book" has no float/full-page split to advertise. The card's tooltip
+/// says so instead of the library's two-gesture hint.
+pub fn build_book_grid_open(
+    books: &[Book],
+    on_open: impl Fn(i64) + Clone + 'static,
+) -> gtk::Box {
+    let second = on_open.clone();
+    build_book_grid_hinted(
+        books,
+        "Click: open in the editor",
+        on_open,
+        second,
+    )
+}
+
+fn build_book_grid_hinted(
+    books: &[Book],
+    click_hint: &'static str,
+    on_full: impl Fn(i64) + Clone + 'static,
+    on_float: impl Fn(i64) + Clone + 'static,
+) -> gtk::Box {
     // A0 step 6: build only the rows on screen. Same layout, same scrollbar --
     // see `build_windowed_grid`. `KALAM_NO_WINDOWED_GRID=1` restores the old
     // build-every-card behaviour.
     if windowed_grid_enabled() {
-        return build_windowed_grid(books, on_full, on_float);
+        return build_windowed_grid(books, click_hint, on_full, on_float);
     }
 
     // GtkGrid with homogeneous columns = true grid view.
@@ -630,7 +673,7 @@ pub fn build_book_grid(
         let id = book.id;
         let f1 = on_full.clone();
         let f2 = on_float.clone();
-        let card = build_book_card(book, move || f1(id), move || f2(id));
+        let card = build_book_card(book, click_hint, move || f1(id), move || f2(id));
 
         // Cell wrapper enforces CARD_W so Grid homogeneous cells stay equal.
         let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -669,7 +712,9 @@ pub fn build_book_card_selectable(
     on_full: impl Fn() + 'static,
     on_float: impl Fn() + 'static,
 ) -> gtk::Box {
-    let card = build_book_card(book, on_full, on_float);
+    // Selection mode is the library page's own, so its cards keep the
+    // library's two-gesture hint.
+    let card = build_book_card(book, CLICK_HINT_LIBRARY, on_full, on_float);
     if is_selected {
         card.add_css_class("kalam-card-selected");
         let check = gtk::Label::new(Some("✓ Selected"));
@@ -909,28 +954,34 @@ pub fn cover_widget_deferred(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget
         return cover_widget(path, w, h);
     }
 
-    let frame = new_cover_frame(w, h);
+    // One child, forever: the frame's own background is the placeholder
+    // gradient, and the picture on top is filled in place. The old shape
+    // removed the placeholder child and appended a picture when a cover
+    // arrived — a container mutation that relayouted the frame's
+    // ancestors on every arrival, so a screen full of 0 ms cover swaps
+    // could still freeze the UI for seconds (7.1 step 2a.2, §48).
+    let (frame, picture) = new_deferred_frame(w, h);
 
     if let Some(path) = path {
         if path.is_file() {
             let key = (path.to_string_lossy().to_string(), w, h);
             // Already decoded: use it now, no placeholder flash.
             if let Some(texture) = COVER_CACHE.with(|c| c.borrow_mut().get(&key)) {
-                frame.append(&build_picture(&texture, w, h));
+                picture.set_paintable(Some(&texture));
                 return frame.upcast();
             }
-            frame.append(&placeholder_for(w, h));
             PENDING_FRAMES.with(|p| {
                 p.borrow_mut().push(PendingFrame {
                     key,
-                    frame: frame.downgrade(),
+                    picture: picture.downgrade(),
                 });
             });
             return frame.upcast();
         }
     }
 
-    frame.append(&placeholder_for(w, h));
+    // No cover, or the file is gone: the gradient is the frame's own
+    // background, so there is nothing to add and nothing to swap later.
     frame.upcast()
 }
 
@@ -938,7 +989,7 @@ pub fn cover_widget_deferred(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget
 fn drop_dead_pending_frames() {
     PENDING_FRAMES.with(|p| {
         p.borrow_mut()
-            .retain(|entry| entry.frame.upgrade().is_some());
+            .retain(|entry| entry.picture.upgrade().is_some());
     });
 }
 
@@ -952,6 +1003,27 @@ fn new_cover_frame(w: i32, h: i32) -> gtk::Box {
     frame.set_valign(gtk::Align::Start);
     frame.set_overflow(gtk::Overflow::Hidden);
     frame
+}
+
+/// The frame for the deferred path: its own background is the
+/// placeholder gradient, and its single child is a paintless picture
+/// that covers it completely once a texture arrives — so the swap is a
+/// repaint, never a relayout.
+fn new_deferred_frame(w: i32, h: i32) -> (gtk::Box, gtk::Picture) {
+    let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    frame.add_css_class("kalam-cover-frame");
+    // The placeholder gradient lives on the frame; the picture on top
+    // hides it the moment it has a paintable. No class is ever toggled.
+    frame.add_css_class("kalam-cover-placeholder");
+    frame.set_size_request(w, h);
+    frame.set_hexpand(false);
+    frame.set_vexpand(false);
+    frame.set_halign(gtk::Align::Center);
+    frame.set_valign(gtk::Align::Start);
+    frame.set_overflow(gtk::Overflow::Hidden);
+    let picture = cover_picture(w, h);
+    frame.append(&picture);
+    (frame, picture)
 }
 
 fn placeholder_for(w: i32, h: i32) -> gtk::Box {
@@ -975,16 +1047,16 @@ fn swap_in_cover(key: &(String, i32, i32), texture: &gtk::gdk::Texture) {
     PENDING_FRAMES.with(|p| {
         let mut pending = p.borrow_mut();
         pending.retain(|entry| {
-            let Some(frame) = entry.frame.upgrade() else {
+            let Some(picture) = entry.picture.upgrade() else {
                 return false; // page is gone
             };
             if &entry.key != key {
                 return true; // waiting on a different cover
             }
-            while let Some(child) = frame.first_child() {
-                frame.remove(&child);
-            }
-            frame.append(&build_picture(texture, key.1, key.2));
+            // In place: the picture keeps its fixed size, so this is a
+            // repaint — not a relayout of every ancestor, which is what
+            // the old remove-and-append did once per cover (§48).
+            picture.set_paintable(Some(texture));
             false
         });
     });
@@ -1035,8 +1107,11 @@ fn decode_cover(path: &Path, w: i32, h: i32) -> Option<gtk::gdk::Texture> {
     Some(gtk::gdk::Texture::for_pixbuf(&pixbuf))
 }
 
-fn build_picture(texture: &gtk::gdk::Texture, w: i32, h: i32) -> gtk::Picture {
-    let picture = gtk::Picture::for_paintable(texture);
+/// A fixed-size cover picture with no paintable yet: transparent, so
+/// the frame's placeholder gradient shows through, and cheap to fill
+/// later with `set_paintable` — no child is ever added or removed.
+fn cover_picture(w: i32, h: i32) -> gtk::Picture {
+    let picture = gtk::Picture::new();
     picture.set_content_fit(gtk::ContentFit::Fill);
     picture.set_can_shrink(true);
     picture.set_size_request(w, h);
@@ -1045,6 +1120,12 @@ fn build_picture(texture: &gtk::gdk::Texture, w: i32, h: i32) -> gtk::Picture {
     picture.set_halign(gtk::Align::Fill);
     picture.set_valign(gtk::Align::Fill);
     picture.add_css_class("kalam-cover-img");
+    picture
+}
+
+fn build_picture(texture: &gtk::gdk::Texture, w: i32, h: i32) -> gtk::Picture {
+    let picture = cover_picture(w, h);
+    picture.set_paintable(Some(texture));
     picture
 }
 

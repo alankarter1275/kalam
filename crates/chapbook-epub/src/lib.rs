@@ -11,6 +11,7 @@ mod href;
 mod obfuscation;
 
 pub use book::Book;
+pub use book::EntryFilter;
 pub use href::resolve_href;
 
 // The format-neutral book model (Publication, BookMetadata, SpineItem,

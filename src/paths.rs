@@ -39,7 +39,20 @@ pub fn legacy_data_dir() -> PathBuf {
         .unwrap_or_else(|| {
             home_dir()
                 .map(|h| h.join(".local/share"))
-                .unwrap_or_else(|| PathBuf::from("."))
+                .unwrap_or_else(|| {
+                    // Neither `$HOME` nor the password database produced a
+                    // home. Starting up in the current directory still beats
+                    // refusing to run, but this used to happen silently —
+                    // which is how a library ends up somewhere its owner
+                    // cannot find. Say where it went.
+                    log::error!(
+                        "no home directory found; storing the library in the current directory ({})",
+                        std::env::current_dir()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|_| "unknown".into())
+                    );
+                    PathBuf::from(".")
+                })
         });
     base.join("kalam")
 }
@@ -54,9 +67,300 @@ pub fn library_dir() -> PathBuf {
     data_dir().join("library")
 }
 
-/// `~/.local/share/kalam/library/<uuid>`
+/// How many bytes of a book folder name may come from the author and title.
+///
+/// Linux allows 255 bytes per name. The allowance below (author + title +
+/// separator + the short id suffix) stays far under that even when every
+/// character is three bytes of Bengali or Japanese, so a long translated
+/// title can never produce a folder the file system rejects.
+const FOLDER_PREFIX_MAX_BYTES: usize = 120;
+
+/// Build the human-readable folder name for a book.
+///
+/// Owner decision, 2026-09-29: a folder named only by a uuid tells you
+/// nothing when you browse your library with a file manager. Folders are
+/// now named `Author - Title <short-id>` (or `Title <short-id>` when there
+/// is no author). The uuid stays the book's key inside the database — the
+/// name is a label, and the app never parses it to find anything.
+///
+/// The short id is the first 8 characters of the uuid. It is kept at the
+/// end because author + title alone can collide (two editions, two books
+/// with the same name); eight hex characters make a collision practically
+/// impossible, and on the rare clash the folder gets the full uuid instead
+/// (see [`book_folder_name_full`]).
+pub fn book_folder_name(authors: &str, title: &str, uuid: &str) -> String {
+    folder_name_with_suffix(authors, title, uuid_suffix(uuid))
+}
+
+/// Same as [`book_folder_name`], but ending in the full uuid. Used when the
+/// short form would collide with a folder that already exists.
+pub fn book_folder_name_full(authors: &str, title: &str, uuid: &str) -> String {
+    folder_name_with_suffix(authors, title, uuid)
+}
+
+/// The folder name for a comic series: the series title, sanitized, nothing
+/// else. Owner decision, 2026-10-02 (item 2.22): a series is one folder
+/// under the library root, holding every chapter file and a `covers/`
+/// directory. Unlike book folders there is no id suffix in the common case —
+/// the series *is* the name — so a clash between two series whose titles
+/// sanitize to the same text is resolved by the caller
+/// (`Catalog::ensure_series_folder`) with a `#<id>` suffix.
+///
+/// The byte cap leaves room for that suffix while staying far under the
+/// 255-byte file-system limit, whatever the character widths.
+pub fn series_folder_name(title: &str) -> String {
+    let name = sanitize_folder_text(title, 110);
+    if name.is_empty() {
+        "Untitled Series".to_string()
+    } else {
+        name
+    }
+}
+
+/// Where a stored book file or cover actually lives.
+///
+/// Two shapes exist, and the stored name itself says which:
+///
+/// - A bare name (`book.epub`, `cover.jpg`) is resolved against the book's
+///   own folder — the shape every EPUB and PDF uses, and comics too before
+///   item 2.22 moved them into series folders.
+/// - A name containing `/` (`Naruto – Digital Colored Comics/0003.cbz`,
+///   `Horimiya (Official)/covers/0010.jpg`) is relative to the library
+///   root: a comic chapter inside its series folder.
+///
+/// The separator is a reliable marker because a bare name can never contain
+/// one — and it makes the move atomic per chapter: the file lands in the
+/// series folder and the row's stored names change in the same step, with
+/// no separate series-level bookkeeping to keep in step.
+pub fn resolve_library_file(book_uuid: &str, stored_name: &str) -> PathBuf {
+    if stored_name.contains('/') {
+        library_dir().join(stored_name)
+    } else {
+        book_dir(book_uuid).join(stored_name)
+    }
+}
+
+/// The file stem for one comic chapter: the chapter number, zero-padded to
+/// four digits so the files sort in reading order in any file manager
+/// (`0003.cbz`, `0010.cbz`, `0102.cbz`). A fractional chapter keeps its
+/// fraction after the padded integer (`0010.5.cbz`), which still sorts
+/// correctly against the integers around it. Numbers past 9999 simply grow
+/// a fifth digit; the app itself always sorts by the database's numeric
+/// chapter order, the padding is for the person browsing the folder.
+pub fn comic_chapter_stem(number: f32) -> String {
+    // Render the whole number and split it, rather than computing the
+    // fraction arithmetically: `10.1f32 - 10.0f32` is 0.10000038…, while
+    // the shortest rendering of the value is exactly "10.1".
+    let rendered = format!("{number}");
+    match rendered.split_once('.') {
+        Some((int, frac)) => format!("{int:0>4}.{frac}"),
+        None => format!("{rendered:0>4}"),
+    }
+}
+
+fn folder_name_with_suffix(authors: &str, title: &str, suffix: &str) -> String {
+    // "Unknown" is what the importer writes for PDFs and comics that carry
+    // no author. Treating it as no-author keeps those folders clean
+    // ("Nausicaä 3f2ab91c", not "Unknown - Nausicaä 3f2ab91c") — the owner
+    // picked exactly that shape for authorless books.
+    //
+    // The byte cap is 60 because Bengali and Japanese names are three bytes
+    // per character: 48 bytes cut "রবীন্দ্রনাথ ঠাকুর" (Rabindranath Tagore,
+    // 49 bytes) mid-name — found by a CI test, not by review.
+    let authors = sanitize_folder_text(authors, 60);
+    let has_author = !authors.is_empty() && !authors.eq_ignore_ascii_case("unknown");
+
+    let title = sanitize_folder_text(title, 64);
+    let title = if title.is_empty() { "Untitled" } else { title.as_str() };
+
+    let prefix = if has_author {
+        format!("{authors} - {title}")
+    } else {
+        title.to_string()
+    };
+    // Leave room for " {suffix}" whatever the character widths, then cut on
+    // a character boundary so the name never ends mid-letter.
+    let room = FOLDER_PREFIX_MAX_BYTES.saturating_sub(suffix.len() + 1);
+    let prefix = truncate_bytes(&prefix, room);
+    format!("{prefix} {suffix}")
+}
+
+/// The short id used at the end of a folder name: the first 8 characters of
+/// the uuid, or the whole uuid when it is shorter.
+fn uuid_suffix(uuid: &str) -> &str {
+    uuid.get(0..8).unwrap_or(uuid)
+}
+
+/// Make a piece of metadata safe to use inside one folder name.
+///
+/// Turns whitespace runs, `/` (the one character Linux forbids) and
+/// invisible control characters into single spaces — a separator most
+/// likely stood where they were, and dropping it would glue two words
+/// together ("A/B" becoming "AB"). Drops leading dots (a leading dot would
+/// hide the folder in most file managers) and trailing dots and spaces,
+/// and caps the length in bytes. An empty result is returned as-is;
+/// callers decide their own fallback.
+pub fn sanitize_folder_text(raw: &str, max_bytes: usize) -> String {
+    let mut out = String::with_capacity(raw.len().min(max_bytes + 4));
+    let mut last_was_space = true; // also eats leading spaces
+    for ch in raw.chars() {
+        // Whitespace first, deliberately: a tab *is* a control character,
+        // and checking control first would swallow it whole — turning
+        // "A\tB" into "AB" instead of "A B".
+        if ch.is_whitespace() {
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
+            continue;
+        }
+        if ch.is_control() || ch == '/' {
+            // Same reasoning as above, one step further: the character
+            // goes, the word break it stood for stays.
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
+            continue;
+        }
+        out.push(ch);
+        last_was_space = false;
+    }
+    let trimmed = out.trim_matches(['.', ' ']).to_string();
+    truncate_bytes(&trimmed, max_bytes)
+}
+
+/// Shorten to `max_bytes` without splitting a character. Standard library
+/// byte slicing panics mid-character, and a panic here would take the app
+/// down over a long book title.
+fn truncate_bytes(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.get(0..end).unwrap_or_default().to_string()
+}
+
+/// What the folder scan found: folder names by short id (8 hex characters)
+/// and by full uuid. Two maps because a folder name ends in one or the
+/// other, never both.
+#[derive(Default)]
+struct FolderIndex {
+    by_short_id: std::collections::HashMap<String, String>,
+    by_full_uuid: std::collections::HashMap<String, String>,
+}
+
+/// Folder names discovered so far, shared by every thread. Built once by
+/// the first `book_dir` call that needs it, then kept up to date by
+/// [`note_folder`] as books are imported and folders renamed.
+static FOLDER_INDEX: std::sync::OnceLock<std::sync::Mutex<Option<FolderIndex>>> =
+    std::sync::OnceLock::new();
+
+/// Where one book's files live.
+///
+/// Used to be `library/<uuid>` and nothing else. Now folders carry readable
+/// names (`library/Hayao Miyazaki - Nausicaä 3f2ab91c/`), so this resolves
+/// the uuid to the real folder name through an in-memory index — one scan
+/// of the library directory per app run, no disk access per lookup. That
+/// matters because the library grid asks for every book's file path at
+/// once, and a stat call per book is measurable on a spinning disk.
+///
+/// Resolution order:
+///
+/// 1. The in-memory index (covers readable names, old uuid names alike).
+/// 2. Fall back to `library/<uuid>` — the shape every folder had before
+///    this change, and still what a not-yet-imported uuid resolves to.
+///    Callers get the same "missing file" behaviour they always had.
 pub fn book_dir(uuid: &str) -> PathBuf {
-    library_dir().join(uuid)
+    let lib = library_dir();
+    match resolve_library_folder(uuid) {
+        Some(name) => lib.join(name),
+        None => lib.join(uuid),
+    }
+}
+
+/// Tell the resolver about a folder it should know: a freshly imported
+/// book, or a folder that was just renamed. Cheap and safe to skip — the
+/// next full scan (next app run) finds the folder anyway; this only keeps
+/// the current session from needing that.
+///
+/// Unlike the scan, this knows the uuid the folder belongs to, so it
+/// records the pair directly — no parsing, no ambiguity.
+pub fn note_folder(uuid: &str, folder_name: &str) {
+    let lock = FOLDER_INDEX.get_or_init(|| std::sync::Mutex::new(None));
+    let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(index) = guard.as_mut() {
+        index.by_full_uuid.insert(uuid.to_string(), folder_name.to_string());
+    }
+}
+
+fn resolve_library_folder(uuid: &str) -> Option<String> {
+    let lock = FOLDER_INDEX.get_or_init(|| std::sync::Mutex::new(None));
+    let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if guard.is_none() {
+        *guard = Some(scan_library_folders(&library_dir()));
+    }
+    let index = guard.as_ref()?;
+    if let Some(name) = index.by_full_uuid.get(uuid) {
+        return Some(name.clone());
+    }
+    index.by_short_id.get(uuid_suffix(uuid)).cloned()
+}
+
+/// Read the library directory once and index every folder that ends in an
+/// id we can resolve: either 8 hex characters (the normal short id) or a
+/// full uuid (the collision-avoiding form). Folders that end in neither —
+/// a user's own folders, anything foreign — are ignored, not an error.
+fn scan_library_folders(lib: &Path) -> FolderIndex {
+    let mut index = FolderIndex::default();
+    let Ok(entries) = fs::read_dir(lib) else {
+        return index;
+    };
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let Ok(name) = entry.file_name().into_string() else {
+            continue; // not valid UTF-8: cannot be one of ours
+        };
+        index_insert(&mut index, &name);
+    }
+    index
+}
+
+/// Add one folder name to the index if it ends in a resolvable id. When two
+/// different folders claim the same id, the id becomes ambiguous and is
+/// dropped: guessing between two books is worse than an honest miss.
+fn index_insert(index: &mut FolderIndex, folder_name: &str) {
+    let Some(id) = folder_name.rsplit(' ').next() else {
+        return;
+    };
+    let looks_like_full_uuid = id.len() == 36
+        && id.matches('-').count() == 4
+        && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    let looks_like_short_id = id.len() == 8 && id.chars().all(|c| c.is_ascii_hexdigit());
+
+    let (map, key) = if looks_like_full_uuid {
+        (&mut index.by_full_uuid, id)
+    } else if looks_like_short_id {
+        (&mut index.by_short_id, id)
+    } else {
+        return;
+    };
+    match map.get(key) {
+        Some(existing) if existing == folder_name => {} // already known
+        Some(_) => {
+            // Two folders, one id. Drop it rather than pick a winner.
+            log::debug!("ambiguous folder id {id:?}: {folder_name:?} vs another folder");
+            map.remove(key);
+        }
+        None => {
+            map.insert(key.to_string(), folder_name.to_string());
+        }
+    }
 }
 
 /// Extracted EPUB cache: `cache/reader/<uuid>`, the unzipped copy that
@@ -113,6 +417,16 @@ pub fn dictionaries_dir() -> PathBuf {
     shared_data_dir().join("dictionaries")
 }
 
+/// `~/.local/share/kalam/fonts` — typefaces the reader loads alongside the
+/// bundled ones, with no system-wide install (roadmap 2.8).
+///
+/// Shared rather than per-library for the reason [`dictionaries_dir`] gives:
+/// a typeface belongs to the installation, not to a shelf of books, and a
+/// reader who switches library should not have to copy their fonts.
+pub fn fonts_dir() -> PathBuf {
+    shared_data_dir().join("fonts")
+}
+
 /// The root for things every library shares.
 ///
 /// Always the classic location, never the active library. Kept separate from
@@ -124,6 +438,16 @@ pub fn shared_data_dir() -> PathBuf {
     legacy_data_dir()
 }
 
+/// `~/.local/share/kalam/kalam.log`
+///
+/// In the shared location rather than the active library's folder: a log is
+/// about the program, not about one collection of books, so it stays in the
+/// same place whichever library is open. Only written when `RUST_LOG` is set —
+/// see `crate::logging`.
+pub fn log_file() -> PathBuf {
+    shared_data_dir().join("kalam.log")
+}
+
 /// `~/.local/share/kalam/cache/thumbs` — persistent cover thumbnails (A0 step 3).
 ///
 /// Unlike the in-memory `COVER_CACHE` (which dies at relaunch), these stay on
@@ -133,23 +457,126 @@ pub fn thumbs_dir() -> PathBuf {
     data_dir().join("cache").join("thumbs")
 }
 
-/// Thumbnail path for a book's uuid.
-pub fn thumbnail_path(uuid: &str) -> PathBuf {
-    thumbs_dir().join(format!("{uuid}.png"))
-}
-
-/// Derive the thumbnail path for a *library* cover path.
+/// The thumbnail file for a *library* cover.
 ///
-/// Covers live at `library/<uuid>/cover.ext`, so the parent directory name is
-/// the uuid. Returns `None` for any path that is not a library cover (e.g. a
-/// stashed override or a remote series cover) — those simply decode full.
+/// Keyed by the cover's path relative to the library root and mirrored
+/// under the thumbs dir: a plain book's `library/<uuid>/cover.jpg` maps to
+/// `thumbs/<uuid>/cover.jpg.png`, a comic chapter's
+/// `library/Series/covers/0010.jpg` maps to
+/// `thumbs/Series/covers/0010.jpg.png`. The 2026-10-05 covers hunt proved
+/// why the key cannot be derived from the uuid alone: a comic chapter's
+/// cover lives in the series folder, so no book uuid can be recovered from
+/// the cover's path — and the preloader, the grid's on-demand decode, and
+/// the split bubbles all hold only the cover path. Those callers were
+/// silently decoding full covers (100–1167 ms each on the owner's machine)
+/// for books whose thumbnails existed all along, keyed under a uuid the
+/// path could not name. One path-based rule serves every caller shape.
+///
+/// Returns `None` for any path that is not under the library (a stashed
+/// override, a remote series cover, an author photo) — those simply decode
+/// full.
 pub fn thumbnail_for_cover(cover: &Path) -> Option<PathBuf> {
-    let uuid = cover.parent()?.file_name()?.to_str()?;
-    Some(thumbnail_path(uuid))
+    let rel = cover.strip_prefix(library_dir()).ok()?;
+    if rel == Path::new("") {
+        return None;
+    }
+    let mut dest = thumbs_dir();
+    dest.push(rel);
+    // Append, not replace: `0010.jpg.png` names *the thumbnail of
+    // 0010.jpg*, and two source formats cannot collide on one thumb.
+    let mut name = dest.into_os_string();
+    name.push(".png");
+    Some(PathBuf::from(name))
 }
 
+/// The user's home directory.
+///
+/// Roadmap 1.7. This used to read `$HOME` and nothing else, and every one of
+/// its dozen-odd callers fell back to `"."` — so with `HOME` unset (cron, a
+/// systemd unit, `sudo` without `-E`, a minimal container) Kalam created its
+/// entire library in whatever directory it happened to be started from,
+/// silently. Reading the password database is what every other tool on Linux
+/// does, and it means "no home directory" now describes a machine that
+/// genuinely has none rather than one where an environment variable was
+/// missing.
+///
+/// Split into [`resolve_home`] so the precedence is testable without mutating
+/// the process environment, which is not safe while other tests are running.
 pub(crate) fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    resolve_home(std::env::var_os("HOME").as_deref())
+}
+
+/// `$HOME` when it is set and non-empty, otherwise the password database.
+fn resolve_home(env_home: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    // An empty `$HOME` counts as unset. `PathBuf::from("")` joins to a
+    // relative path, which is the original bug wearing a different hat.
+    if let Some(h) = env_home {
+        if !h.is_empty() {
+            return Some(PathBuf::from(h));
+        }
+    }
+    passwd_home_dir()
+}
+
+/// The home directory from the password database, via `getpwuid_r`.
+///
+/// This is the lookup `$HOME` is supposed to mirror, so going to the source is
+/// what makes the function work when the variable is missing. The `_r` form
+/// is not optional pedantry: plain `getpwuid` fills a static buffer, and
+/// `home_dir` is reachable from worker threads now that pages query on
+/// background tasks — concurrent calls would race over that buffer.
+fn passwd_home_dir() -> Option<PathBuf> {
+    // SAFETY: `getuid` takes no arguments and cannot fail.
+    let uid = unsafe { libc::getuid() };
+
+    // Scratch space libc writes into: `pwd` receives the struct, `buf` the
+    // strings its fields point at. `MaybeUninit` rather than `zeroed` because
+    // a failed lookup leaves `pwd` untouched and reading it would be a lie.
+    let mut buf = vec![0u8; 4096];
+    let mut pwd = std::mem::MaybeUninit::<libc::passwd>::uninit();
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+
+    // SAFETY: `pwd.as_mut_ptr()` is a valid writable `passwd` and `buf` a
+    // valid writable buffer of exactly `buf.len()` bytes; both outlive the
+    // call, which writes only within them. `result` is set to either a pointer
+    // into `pwd` or null. Nothing escapes the function — `pw_dir` is copied
+    // into an owned `PathBuf` below, before `buf` and `pwd` are dropped.
+    let rc = unsafe {
+        libc::getpwuid_r(
+            uid,
+            pwd.as_mut_ptr(),
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+            buf.len(),
+            &mut result,
+        )
+    };
+
+    // `rc != 0` is a lookup error; a null `result` means no entry for this
+    // uid. Either way `pwd` may be uninitialised, so it must not be read.
+    if rc != 0 || result.is_null() {
+        return None;
+    }
+
+    // SAFETY: a non-null `result` means libc initialised `pwd` and pointed
+    // `result` at it, and both are still alive here. `pw_dir` is a
+    // NUL-terminated C string owned by libc — copied, never freed.
+    let dir = unsafe { (*result).pw_dir };
+    if dir.is_null() {
+        return None;
+    }
+    // SAFETY: `dir` is a valid NUL-terminated C string per `passwd`'s contract.
+    //
+    // Taken as raw bytes rather than `to_string_lossy`: a Unix path is bytes
+    // and not necessarily UTF-8, and a lossy conversion would swap an unusual
+    // byte for U+FFFD and hand back a path that does not exist.
+    use std::os::unix::ffi::OsStrExt;
+    let bytes = unsafe { std::ffi::CStr::from_ptr(dir) }.to_bytes();
+    let path = PathBuf::from(std::ffi::OsStr::from_bytes(bytes));
+    if path.as_os_str().is_empty() {
+        None
+    } else {
+        Some(path)
+    }
 }
 
 pub fn ensure_data_dirs() -> std::io::Result<()> {
@@ -164,6 +591,9 @@ pub fn ensure_data_dirs() -> std::io::Result<()> {
 
     // Shared: installed once, used by every library. See `dictionaries_dir`.
     fs::create_dir_all(dictionaries_dir())?;
+    // Created empty and scanned on every open; a reader who never drops a
+    // font in pays one empty directory read.
+    fs::create_dir_all(fonts_dir())?;
     Ok(())
 }
 
@@ -242,4 +672,305 @@ fn dir_size(path: &std::path::Path) -> u64 {
             Err(_) => 0,
         })
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    /// A scratch library directory, unique per test so parallel tests
+    /// cannot see each other's folders.
+    ///
+    /// Placed above the first `#[test]`, like every helper in this repo:
+    /// the guardrail that counts production `.unwrap()`s suppresses the
+    /// whole `mod tests` only down to the first nested test item, so a
+    /// helper with an `.expect()` that sits between test functions would
+    /// be miscounted as production code.
+    fn scratch_library(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kalam-paths-test-{tag}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    // These test `resolve_home` rather than `home_dir` on purpose: the
+    // precedence is the part with logic in it, and driving it through
+    // `std::env::set_var` would race every other test in the binary, since
+    // the environment is process-wide and tests run in parallel.
+
+    #[test]
+    fn resolve_home_prefers_the_environment_value() {
+        let got = resolve_home(Some(OsStr::new("/srv/books")));
+        assert_eq!(got.as_deref(), Some(Path::new("/srv/books")));
+    }
+
+    #[test]
+    fn resolve_home_does_not_second_guess_a_relative_home() {
+        // A relative `$HOME` is almost certainly a mistake, but overriding it
+        // would mean disagreeing with whatever set it. Trust the environment;
+        // the fallback exists for a *missing* value, not a surprising one.
+        let got = resolve_home(Some(OsStr::new("relative/home")));
+        assert_eq!(got.as_deref(), Some(Path::new("relative/home")));
+    }
+
+    #[test]
+    fn resolve_home_treats_an_empty_home_as_unset() {
+        // The case the fix is for: `PathBuf::from("")` joins to a relative
+        // path, so returning it would reproduce the original bug in a
+        // different shape. Empty must fall through to the password database.
+        let got = resolve_home(Some(OsStr::new("")));
+        // `as_ref` so the assertion borrows rather than consumes `got`, which
+        // the failure message below still needs.
+        assert!(
+            got.as_ref().is_some_and(|p| !p.as_os_str().is_empty()),
+            "an empty $HOME should fall through to getpwuid_r, got {got:?}"
+        );
+    }
+
+    #[test]
+    fn resolve_home_falls_back_to_the_password_database() {
+        // The uid running the tests has a passwd entry on the platforms Kalam
+        // targets. This asserts the fallback works at all. It deliberately
+        // does not assert the value, or that it is absolute: both depend on
+        // the machine, and a test that fails only on someone else's laptop
+        // costs more than it checks.
+        assert!(
+            resolve_home(None).is_some(),
+            "getpwuid_r returned no home for the current uid"
+        );
+    }
+
+    #[test]
+    fn folder_scan_resolves_short_ids_and_legacy_uuids() {
+        let lib = scratch_library("scan");
+        let readable = "Hayao Miyazaki - Nausicaä 3f2ab91c";
+        let legacy = "9c8b7a65-4321-4321-8765-ba9876543210";
+        std::fs::create_dir_all(lib.join(readable)).expect("readable");
+        std::fs::create_dir_all(lib.join(legacy)).expect("legacy");
+
+        let index = scan_library_folders(&lib);
+        // The readable folder is found by the short id at its end.
+        assert_eq!(
+            index.by_short_id.get("3f2ab91c").map(String::as_str),
+            Some(readable)
+        );
+        // The old bare-uuid folder is found by its uuid.
+        assert_eq!(
+            index.by_full_uuid.get(legacy).map(String::as_str),
+            Some(legacy)
+        );
+
+        let _ = std::fs::remove_dir_all(&lib);
+    }
+
+    #[test]
+    fn folder_scan_ignores_folders_without_an_id() {
+        let lib = scratch_library("foreign");
+        std::fs::create_dir_all(lib.join("My Reading Notes")).expect("foreign");
+        std::fs::create_dir_all(lib.join("backup 2024")).expect("dated");
+        // A file, not a folder: skipped without being opened.
+        std::fs::write(lib.join("readme.txt"), b"x").expect("file");
+
+        let index = scan_library_folders(&lib);
+        assert!(index.by_short_id.is_empty());
+        assert!(index.by_full_uuid.is_empty());
+
+        let _ = std::fs::remove_dir_all(&lib);
+    }
+
+    #[test]
+    fn folder_scan_drops_ambiguous_ids_rather_than_guessing() {
+        let lib = scratch_library("ambiguous");
+        std::fs::create_dir_all(lib.join("Book One 3f2ab91c")).expect("one");
+        std::fs::create_dir_all(lib.join("Book Two 3f2ab91c")).expect("two");
+
+        let index = scan_library_folders(&lib);
+        // Two folders claim "3f2ab91c". Rather than silently picking one
+        // — which could hand one book another book's files — the id is
+        // dropped and the caller falls back to the plain uuid path.
+        assert!(!index.by_short_id.contains_key("3f2ab91c"));
+
+        let _ = std::fs::remove_dir_all(&lib);
+    }
+
+    #[test]
+    fn note_folder_and_invalidations_keep_the_index_honest() {
+        // index_insert is the whole logic behind note_folder; testing it
+        // directly keeps this test independent of the process-wide cache.
+        let mut index = FolderIndex::default();
+        index_insert(&mut index, "Author - Title 11112222");
+        assert_eq!(
+            index.by_short_id.get("11112222").map(String::as_str),
+            Some("Author - Title 11112222")
+        );
+        // Noting the same folder twice is harmless.
+        index_insert(&mut index, "Author - Title 11112222");
+        assert_eq!(index.by_short_id.len(), 1);
+        // A conflicting folder with the same id makes it ambiguous.
+        index_insert(&mut index, "Other Book 11112222");
+        assert!(!index.by_short_id.contains_key("11112222"));
+        // The full-uuid form is indexed separately and never conflicts
+        // with the short form.
+        index_insert(&mut index, "Author - Title 99998888-7777-4666-8555-444433332211");
+        assert!(index
+            .by_full_uuid
+            .contains_key("99998888-7777-4666-8555-444433332211"));
+    }
+
+    #[test]
+    fn sanitize_truncates_on_a_character_boundary() {
+        // Bengali characters are three bytes each. Cutting at a byte limit
+        // mid-character would panic on byte slicing, so the helper walks
+        // back to a boundary instead.
+        let long = "ঘ".repeat(60); // 180 bytes
+        let cut = sanitize_folder_text(&long, 50);
+        assert!(cut.len() <= 50, "cut is {} bytes", cut.len());
+        assert!(!cut.is_empty());
+        // Every remaining character is whole: re-encoding never panics.
+        assert_eq!(cut.chars().count() * 3, cut.len());
+
+        // Slashes, tabs, control characters and leading dots are cleaned.
+        let messy = sanitize_folder_text("  ../A\tB\u{1}/C  .. ", 100);
+        assert_eq!(messy, "A B C");
+    }
+
+    #[test]
+    fn uuid_short_suffix_handles_short_uuids_without_panicking() {
+        assert_eq!(uuid_suffix("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6"), "3f2ab91c");
+        // Shorter than eight characters (test fixtures use these): the
+        // whole thing is the suffix, and nothing panics.
+        assert_eq!(uuid_suffix("abc-123"), "abc-123");
+        assert_eq!(uuid_suffix(""), "");
+    }
+
+    #[test]
+    fn chapter_stems_pad_and_keep_fractions() {
+        // The owner's real chapters (2026-10-02): 3, 4, 10, 11, 102.
+        assert_eq!(comic_chapter_stem(3.0), "0003");
+        assert_eq!(comic_chapter_stem(10.0), "0010");
+        assert_eq!(comic_chapter_stem(102.0), "0102");
+        // A fractional chapter keeps its fraction after the padded integer,
+        // so "0010.5" still sorts before "0102" the way 10.5 should.
+        assert_eq!(comic_chapter_stem(10.5), "0010.5");
+        assert_eq!(comic_chapter_stem(0.5), "0000.5");
+        // The fraction comes from the shortest rendering of the whole
+        // number, not from subtraction: 10.1 - 10.0 would be 0.10000038…
+        assert_eq!(comic_chapter_stem(10.1), "0010.1");
+        // Past four digits the number simply grows; the padding is a
+        // courtesy for humans, the app sorts by the database.
+        assert_eq!(comic_chapter_stem(12345.0), "12345");
+    }
+
+    #[test]
+    fn series_folder_names_stay_readable() {
+        // Real series from the owner's library: the parenthetical and the
+        // en dash both survive untouched.
+        assert_eq!(series_folder_name("Horimiya (Official)"), "Horimiya (Official)");
+        assert_eq!(
+            series_folder_name("Naruto – Digital Colored Comics"),
+            "Naruto – Digital Colored Comics"
+        );
+        // The one character Linux forbids becomes a word break, like book
+        // folders; control characters and stray dots go too.
+        let messy = series_folder_name("A/B:\tRe: Zero.  ");
+        assert!(!messy.contains('/'), "slash must go: {messy}");
+        assert!(!messy.contains('\t'), "control characters must go: {messy}");
+        assert!(!messy.starts_with('.'), "a leading dot would hide the folder: {messy}");
+        // A very long Bengali title truncates on a character boundary and
+        // leaves room for a collision suffix.
+        let long = "রবীন্দ্রনাথ ঠাকুর".repeat(30);
+        let name = series_folder_name(&long);
+        assert!(name.len() < 130, "too long at {} bytes", name.len());
+        assert!(!name.ends_with(' ') && !name.ends_with('.'));
+        // Nothing usable in: the fallback, not an empty folder name.
+        assert_eq!(series_folder_name("  /// ."), "Untitled Series");
+    }
+
+    #[test]
+    fn resolve_library_file_follows_the_separator_rule() {
+        // A bare name resolves against the book's own folder; a name with a
+        // separator is library-relative (a comic chapter in its series
+        // folder). The contract is which base the name is joined to.
+        assert_eq!(
+            resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "book.epub"),
+            book_dir("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6").join("book.epub")
+        );
+        assert_eq!(
+            resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "Naruto – Digital Colored Comics/0003.cbz"),
+            library_dir().join("Naruto – Digital Colored Comics/0003.cbz")
+        );
+        assert_eq!(
+            resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "Horimiya (Official)/covers/0010.jpg"),
+            library_dir().join("Horimiya (Official)/covers/0010.jpg")
+        );
+    }
+
+    #[test]
+    fn thumbnails_are_keyed_by_the_cover_path_not_the_uuid() {
+        // The 2026-10-05 covers hunt: a comic chapter's cover lives in the
+        // series folder, so the old rule ("the parent folder name is the
+        // uuid") produced thumbs/<nonexistent-uuid>.png for every chapter —
+        // a file that could never exist, so every session decoded the full
+        // scanned cover instead (100–1167 ms each on the owner's machine).
+        // The key now mirrors the cover's library-relative path, which every
+        // caller shape can compute: preloader, on-demand grid decode, split
+        // bubbles.
+        let plain = library_dir()
+            .join("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6")
+            .join("cover.jpg");
+        assert_eq!(
+            thumbnail_for_cover(&plain),
+            Some(
+                thumbs_dir()
+                    .join("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6")
+                    .join("cover.jpg.png")
+            )
+        );
+
+        let comic = library_dir()
+            .join("Horimiya (Official)")
+            .join("covers")
+            .join("0010.jpg");
+        assert_eq!(
+            thumbnail_for_cover(&comic),
+            Some(
+                thumbs_dir()
+                    .join("Horimiya (Official)")
+                    .join("covers")
+                    .join("0010.jpg.png")
+            ),
+            "a series-folder cover must map like any other"
+        );
+
+        // The .png is appended, not substituted: two source formats in one
+        // covers folder cannot collide on one thumbnail.
+        let png_comic = library_dir()
+            .join("Horimiya (Official)")
+            .join("covers")
+            .join("0010.png");
+        assert_ne!(
+            thumbnail_for_cover(&comic),
+            thumbnail_for_cover(&png_comic),
+            "jpg and png sources must be distinct thumbnails"
+        );
+    }
+
+    #[test]
+    fn covers_outside_the_library_have_no_thumbnail() {
+        // Stashed overrides, remote covers, author photos: never under the
+        // library root, so no thumbnail is claimed for them — they decode
+        // full, as before.
+        assert_eq!(
+            thumbnail_for_cover(Path::new("/tmp/override/cover.png")),
+            None
+        );
+        assert_eq!(
+            thumbnail_for_cover(&library_dir()),
+            None,
+            "the library dir itself is not a cover"
+        );
+    }
 }

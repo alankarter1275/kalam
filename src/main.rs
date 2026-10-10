@@ -5,35 +5,48 @@
 
 mod app;
 mod author;
+pub mod bubbles;
+mod comic_folders;
 mod comics;
+pub mod content_index;
 mod db;
 mod dict;
 mod downloads;
 mod epub;
 mod epub_book;
-mod epub_write;
+mod epub_metadata;
+mod epub_patches;
+mod epub_spans;
+pub mod epub_sanitizer;
 mod export;
-// mod plugins;
 mod epub_writer;
+mod folders;
+mod frames;
 mod icons;
 mod libraries;
+mod logging;
 mod metadata;
 mod models;
 mod notify;
+mod ocr;
 mod pages;
 mod paths;
 mod pdf;
+mod pdf_ocr;
 mod perf;
 mod preload;
 mod service;
 mod shelf_rules;
 mod sidecar;
 mod sources;
+mod splash;
+mod stall;
 mod style;
 mod tasks;
 mod theme;
 mod thumbs;
 mod timing;
+pub mod watch_folder;
 mod widgets;
 
 use app::AppModel;
@@ -45,14 +58,61 @@ fn main() {
     timing::start();
 
     // RelmApp::new initializes GTK; only touch Adwaita/GTK after that.
+    timing::span("startup_gtk_init");
     let app = RelmApp::new("app.kalam.Kalam");
+    timing::span_end("startup_gtk_init");
 
-    // Initialize custom symbolic icons (highlights, quotes, dictionary, copy)
-    icons::init();
+    // Roadmap 7.1 step 0: the main-thread stall watchdog. From here on, any
+    // block of the UI loop over ~100 ms is logged with the route or dialog
+    // being constructed at the time. Installed before the first page so it
+    // watches `AppModel::init` too (it only starts judging once the main
+    // loop itself is up — see src/stall.rs).
+    stall::install();
+
+    // Roadmap 1.13: this used to cost 493–505 ms *before the first paint* —
+    // GTK rescanning every icon theme on the system to pick up two SVGs, while
+    // the SVGs themselves write in 0.1 ms. Nothing draws one of them until the
+    // reader is opened, so schedule it for the first idle moment after the
+    // window is up. `icons::init` is idempotent and the reader's toolbar calls
+    // it too, so the worst case is the old cost in the old place rather than
+    // the icons turning into fallback glyphs.
+    gtk::glib::idle_add_local_once(|| {
+        // Named for the stall watchdog (7.1 step 2a.1): this idle measured
+        // ~500 ms of theme rescan and had no label, so a block here showed
+        // up as "no route or dialog span was open".
+        let _t = crate::timing::measure("icons_init");
+        let _a = crate::timing::activity("icons_init");
+        icons::init();
+    });
 
     // Dark baseline via Adwaita (GtkSettings prefer-dark is unsupported with libadwaita).
+    timing::span("startup_style");
     let style = adw::StyleManager::default();
     style.set_color_scheme(adw::ColorScheme::ForceDark);
+    timing::span_end("startup_style");
+
+    // A branded splash before the remaining blocking startup work (catalogue
+    // open, first page), so the user is never left with a blank screen; pump
+    // it so GTK actually paints it before we block.
+    //
+    // 7.1 step 3.0: both halves are now measured and announced (the
+    // icons_init idiom). The warm field runs left ~980 ms of `pre_run`
+    // unaccounted between the named spans, and this region — window
+    // construction, and the pump's first-paint dispatch (one iteration that
+    // can hold the whole first frame draw plus GL's one-time setup) — is
+    // the only unspanned code there. The activity label also lets the stall
+    // watchdog name a block inside the pump "while splash_pump" instead of
+    // "no activity was open".
+    {
+        let _t = crate::timing::measure("startup_splash_show");
+        let _a = crate::timing::activity("startup_splash_show");
+        crate::splash::show();
+    }
+    {
+        let _t = crate::timing::measure("startup_splash_pump");
+        let _a = crate::timing::activity("startup_splash_pump");
+        crate::splash::pump();
+    }
 
     // P6.5: put the pre-existing library into the library list, if it is not
     // there already. Must run before anything calls `paths::data_dir()`, which
@@ -62,6 +122,7 @@ fn main() {
     // in Settings — the app falls back to that folder, so everything works,
     // but Open and Forget would apply to every library except theirs, and
     // adding a second would make the first seem to disappear.
+    timing::span("startup_libraries");
     libraries::adopt_legacy_library_if_needed();
 
     // If the selected library's folder is gone -- unplugged drive, unmounted
@@ -93,6 +154,19 @@ fn main() {
         eprintln!("kalam: failed to create data directories: {err}");
         crate::notify::error("Could not create Kalam's data folders", &err.to_string());
     }
+    timing::span_end("startup_libraries");
+
+    // Give the reading engine somewhere to put its messages. The engine logs
+    // through the `log` facade, which silently discards everything unless a
+    // logger is installed — and none was, so 17 call sites across the reading
+    // crates were writing into nothing. The most useful of them is
+    // `Session::open`, which reports how long a book took to open and how much
+    // of that was the font scan.
+    //
+    // This is a no-op unless the user sets RUST_LOG: no logger, no file, no
+    // output. Placed here rather than at the top of `main()` so the folders it
+    // writes into are known to exist, and because nothing above this line logs.
+    logging::init();
 
     // Open the catalog **once**, here, and hand the same handle to everything
     // that needs it.
@@ -137,11 +211,20 @@ fn main() {
     // KALAM_NO_CSS=1 skips the stylesheet entirely. Kept as a diagnostic: it is
     // how the pixman scrollbar bug was finally pinned on this file rather than
     // on GTK, after several wrong guesses.
+    timing::span("startup_theme");
     if std::env::var_os("KALAM_NO_CSS").is_none() {
         theme::apply(&theme::current(&catalog));
     } else {
         eprintln!("kalam: KALAM_NO_CSS set — running with stock GTK styling");
     }
+    timing::span_end("startup_theme");
+
+    // Roadmap 1.12: `app.run` never returns, so it cannot be spanned. This
+    // marker is the last instant that can be timed, and it splits the gap
+    // between here and `window_shown` into "inside `AppModel::init` and GTK's
+    // first realize" -- which the 1.2a log showed to be most of a nine-second
+    // cold start, with none of it attributed to anything.
+    timing::now("pre_run");
 
     app.run::<AppModel>(catalog);
 }

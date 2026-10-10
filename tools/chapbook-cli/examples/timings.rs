@@ -132,7 +132,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            chapbook_layout::collect_images(&doc, Some(&fonts), |h| {
+            // The same limit the app passes, so this measures the path a
+            // reader actually takes rather than a full-resolution one.
+            let max_edge = (metrics.content_width() * metrics.dpi_scale) as u32;
+            chapbook_layout::collect_images(&doc, Some(&fonts), Some(max_edge), |h| {
                 book.resource(&href, h).ok().map(|r| r.data)
             })
         });

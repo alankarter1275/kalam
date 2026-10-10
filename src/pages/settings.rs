@@ -1,7 +1,7 @@
 use crate::db::Catalog;
 use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
-use crate::service::LibraryService;
+use crate::service::{LibraryService, SettingsSnapshot};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -136,13 +136,40 @@ pub enum SettingsMsg {
     /// Reorder the merged-store priority (Phase 9): id, delta (−1 up / +1 down).
     MoveDict(i64, i64),
     Refresh,
+    /// The DB snapshot arrived from the worker (7.1 step 2c). Boxed because
+    /// it carries the dictionary list; it is sent once at open and again
+    /// after a dict import / delete / move.
+    Loaded(Box<SettingsSnapshot>),
+    /// The disk-flavored reads (sidecar survey, libraries registry, EPUB
+    /// backup listing) arrived from the page's own slower worker.
+    FsLoaded(Box<SettingsFs>),
+}
+
+/// The settings page's disk-flavored reads (7.1 step 2c), gathered by the
+/// page's own worker task because they are slow and only three rows want
+/// them: the per-book sidecar survey, the libraries registry file, and the
+/// EPUB backup listing. The same split `BookPageSnapshot::file_size` made —
+/// `LibraryService` stays DB-pure, the FS question rides with the page.
+#[derive(Debug)]
+pub struct SettingsFs {
+    pub survey: crate::sidecar::SidecarSurvey,
+    pub registry: crate::libraries::LibraryRegistry,
+    pub epub_backups: Vec<(std::path::PathBuf, u64)>,
 }
 
 pub struct SettingsPageModel {
     catalog: Arc<Catalog>,
-    #[allow(dead_code)]
     service: LibraryService,
-    dicts: Vec<crate::db::Dictionary>,
+    /// The DB snapshot (2c): None until the worker's first answer, which is
+    /// also the signal that tabs may build.
+    snapshot: Option<SettingsSnapshot>,
+    /// The slower disk reads, in their own task. Rows that want them show
+    /// "Checking…" until this lands.
+    fs: Option<SettingsFs>,
+    /// Tabs whose widgets are already built. Only the active tab builds at
+    /// `Loaded`; the rest build on first visit from the snapshot in hand —
+    /// the old `init` built all six at open, which is what the ~500 ms was.
+    built_tabs: Vec<SettingsTab>,
     active_tab: SettingsTab,
 }
 
@@ -319,21 +346,19 @@ impl Component for SettingsPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        // A failed read here rendered as "no dictionaries installed", which
-        // is exactly what a user would see after a successful uninstall.
-        let dicts = match catalog.list_dictionaries() {
-            Ok(rows) => rows,
-            Err(err) => {
-                crate::notify::error("Could not list your dictionaries", &err.to_string());
-                Vec::new()
-            }
-        };
+        // Skeleton only (7.1 step 2c). The old init read ten prefs and
+        // tables and built all six tabs' widgets before the page could
+        // appear — the measured 465-522 ms. Now every host paints a
+        // loading row, the reads run on workers, and only the active tab
+        // builds when the snapshot lands.
         let active_tab = SettingsTab::Appearance;
         let service = LibraryService::new(catalog.clone());
         let model = SettingsPageModel {
             catalog,
             service,
-            dicts,
+            snapshot: None,
+            fs: None,
+            built_tabs: Vec::new(),
             active_tab,
         };
         let widgets = view_output!();
@@ -356,14 +381,21 @@ impl Component for SettingsPageModel {
             }
         }
 
-        rebuild_dicts(&widgets.dict_list, &model.dicts, &sender);
-        build_sources(&widgets.source_list, &model.catalog);
-        build_file_write(&widgets.file_write_row, &model.catalog);
-        build_paths(&widgets.paths_host, &model.catalog);
-        build_backup(&widgets.backup_row, &model.catalog);
-        build_export(&widgets.export_row, &model.catalog);
-        build_notifications(&widgets.notify_list, &sender);
-        build_theme_picker(&widgets.theme_grid, &model.catalog);
+        // The skeleton's moving parts: one loading row per host, cleared by
+        // whichever build runs into it first (2b learned this on Home —
+        // without them, unfilled sections paint as if empty).
+        widgets.theme_grid.attach(&loading_label(), 0, 0, 1, 1);
+        widgets.paths_host.append(&loading_label());
+        widgets.dict_list.append(&loading_label());
+        widgets.file_write_row.append(&loading_label());
+        widgets.source_list.append(&loading_label());
+        widgets.notify_list.append(&loading_label());
+
+        // Two workers: the fast DB snapshot fills the page, the
+        // disk-flavored extras follow in their own task so they never delay
+        // the fill.
+        request_snapshot(&model.service, &sender);
+        request_fs(&model.catalog, &sender);
         ComponentParts { model, widgets }
     }
 
@@ -380,8 +412,14 @@ impl Component for SettingsPageModel {
                 widgets.tab_title.set_label(tab.label());
                 widgets.tab_subtitle.set_label(tab.subtitle());
                 update_tab_styles(&widgets.nav_list, tab);
+                // The notifications log is in-memory session state, so it
+                // rebuilds on every visit (its old behavior); every other
+                // tab builds once from the snapshot already in the model.
                 if tab == SettingsTab::Notifications {
                     build_notifications(&widgets.notify_list, &sender);
+                } else if !self.built_tabs.contains(&tab) && self.snapshot.is_some() {
+                    self.build_tab(tab, widgets, &sender);
+                    self.mark_built(tab);
                 }
                 widgets.scroller.vadjustment().set_value(0.0);
             }
@@ -390,9 +428,45 @@ impl Component for SettingsPageModel {
                 build_notifications(&widgets.notify_list, &sender);
             }
             SettingsMsg::Refresh => {
-                self.refresh();
-                rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+                // A dictionary import finished: re-read on the worker (the
+                // old path re-read `list_dictionaries` inline) and refresh
+                // the activity log while we are here, exactly as before.
+                request_snapshot(&self.service, &sender);
                 build_notifications(&widgets.notify_list, &sender);
+            }
+            SettingsMsg::Loaded(snap) => {
+                let snap = *snap;
+                // A failed read used to render as "no dictionaries
+                // installed" — surfaced here now that the read is off-thread.
+                if let Some(err) = &snap.dicts_error {
+                    crate::notify::error("Could not list your dictionaries", err);
+                }
+                self.snapshot = Some(snap);
+                // (Re)build the active tab: the first arrival fills it,
+                // later ones (after a dict import / delete / move) refresh
+                // whatever is on screen. The dict tab also refreshes when
+                // built but hidden, matching the old Refresh behavior.
+                self.build_tab(self.active_tab, widgets, &sender);
+                self.mark_built(self.active_tab);
+                if self.active_tab != SettingsTab::Dictionaries
+                    && self.built_tabs.contains(&SettingsTab::Dictionaries)
+                {
+                    if let Some(snap) = &self.snapshot {
+                        rebuild_dicts(&widgets.dict_list, &snap.dicts, &sender);
+                    }
+                }
+            }
+            SettingsMsg::FsLoaded(fs) => {
+                // The slow disk reads landed. Tabs already built get their
+                // rows refreshed in place; tabs not yet visited will simply
+                // build with real data when they are first opened.
+                self.fs = Some(*fs);
+                if self.built_tabs.contains(&SettingsTab::Storage) {
+                    self.build_tab(SettingsTab::Storage, widgets, &sender);
+                }
+                if self.built_tabs.contains(&SettingsTab::BookFiles) {
+                    self.build_tab(SettingsTab::BookFiles, widgets, &sender);
+                }
             }
             SettingsMsg::ImportDict => {
                 let dialog = gtk::FileDialog::builder()
@@ -417,8 +491,9 @@ impl Component for SettingsPageModel {
                                 // window, with the "Importing…" toast painted
                                 // *before* the freeze so it looked like a hang.
                                 let catalog = catalog_clone.clone();
-                                let done_sender = sender_clone.clone();
+                                let done_sender = sender_clone.input_sender().clone();
                                 crate::tasks::spawn(
+                                    "Importing dictionary",
                                     move |reporter| {
                                         // Worker thread: no GTK, no notify. The
                                         // outcome is returned as plain data and
@@ -446,6 +521,10 @@ impl Component for SettingsPageModel {
                                             },
                                         )
                                         .map_err(|e| format!("{e:#}"))
+                                        // The badge needs to know: the toast
+                                        // this raises on failure is gone in a
+                                        // few seconds.
+                                        .inspect_err(|_| reporter.fail())
                                     },
                                     // A dictionary pack can take a while. The
                                     // worker cannot raise a toast itself, so it
@@ -470,7 +549,7 @@ impl Component for SettingsPageModel {
                                                 &detail,
                                             ),
                                         }
-                                        done_sender.input(SettingsMsg::Refresh);
+                                        let _ = done_sender.send(SettingsMsg::Refresh);
                                     },
                                 );
                             }
@@ -480,9 +559,9 @@ impl Component for SettingsPageModel {
             }
             SettingsMsg::DeleteDict(id) => {
                 let name = self
-                    .dicts
-                    .iter()
-                    .find(|d| d.id == id)
+                    .snapshot
+                    .as_ref()
+                    .and_then(|s| s.dicts.iter().find(|d| d.id == id))
                     .map(|d| d.name.clone())
                     .unwrap_or_default();
                 crate::notify::outcome_info(
@@ -491,28 +570,16 @@ impl Component for SettingsPageModel {
                     &name,
                     "Could not remove the dictionary",
                 );
-                self.refresh();
-                rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+                request_snapshot(&self.service, &sender);
             }
             SettingsMsg::MoveDict(id, delta) => {
                 if let Err(err) = self.catalog.move_dictionary_priority(id, delta) {
                     crate::notify::error("Could not reorder dictionaries", &err.to_string());
                 }
-                self.refresh();
-                rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+                request_snapshot(&self.service, &sender);
             }
         }
         self.update_view(widgets, sender);
-    }
-}
-
-impl SettingsPageModel {
-    fn refresh(&mut self) {
-        match self.catalog.list_dictionaries() {
-            Ok(rows) => self.dicts = rows,
-            // Keep the current list rather than blanking it.
-            Err(err) => crate::notify::error("Could not list your dictionaries", &err.to_string()),
-        }
     }
 }
 
@@ -535,6 +602,136 @@ fn make_tab_button(tab: SettingsTab, active: bool) -> gtk::Button {
     }
     btn.set_focus_on_click(false);
     btn
+}
+
+/// The skeleton's placeholder row, one per host (7.1 step 2c). Whichever
+/// build runs into the host first clears it, so an unfilled section never
+/// paints as if it were an empty library.
+fn loading_label() -> gtk::Label {
+    let label = gtk::Label::new(Some("Loading…"));
+    label.add_css_class("kalam-muted");
+    label.set_halign(gtk::Align::Start);
+    label
+}
+
+/// Ask the worker for the DB snapshot. Called at init and after a dict
+/// import / delete / move — the UI thread never reads the library
+/// (7.1 step 2c).
+fn request_snapshot(service: &LibraryService, sender: &ComponentSender<SettingsPageModel>) {
+    let service = LibraryService::new(service.catalog().clone());
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Reading settings",
+        move |_reporter| service.settings(),
+        |_| {},
+        move |snap| {
+            let _ = s.send(SettingsMsg::Loaded(Box::new(snap)));
+        },
+    );
+}
+
+/// Ask the worker for the disk-flavored reads — the per-book sidecar survey
+/// (one file read per book), the libraries registry file, and the EPUB
+/// backup listing. Slow, only three rows want them, and they must never
+/// delay the page fill, so they ride their own task (the same split the
+/// book page made for the file-size stat).
+fn request_fs(catalog: &Arc<Catalog>, sender: &ComponentSender<SettingsPageModel>) {
+    let catalog = catalog.clone();
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Checking storage",
+        move |_reporter| SettingsFs {
+            survey: crate::sidecar::survey(&catalog),
+            registry: crate::libraries::load_registry(),
+            epub_backups: crate::epub_metadata::list_backups(),
+        },
+        |_| {},
+        move |fs| {
+            let _ = s.send(SettingsMsg::FsLoaded(Box::new(fs)));
+        },
+    );
+}
+
+/// The span/watchdog name for one tab's build. Static per tab because
+/// `timing::measure` takes `&'static str`.
+fn settings_fill_label(tab: SettingsTab) -> &'static str {
+    match tab {
+        SettingsTab::Appearance => "settings_fill:appearance",
+        SettingsTab::Storage => "settings_fill:storage",
+        SettingsTab::Dictionaries => "settings_fill:dictionaries",
+        SettingsTab::BookFiles => "settings_fill:book_files",
+        SettingsTab::Metadata => "settings_fill:metadata",
+        SettingsTab::Notifications => "settings_fill:notifications",
+    }
+}
+
+impl SettingsPageModel {
+    /// Build (or rebuild) one tab's widgets from the snapshot already in
+    /// the model — no reads happen here. Every call is measured and
+    /// announced under its own `settings_fill:<tab>` name so a field run
+    /// shows the per-tab split the old single `route_open:settings` number
+    /// hid.
+    ///
+    /// Every caller guarantees a snapshot is in hand: `SelectTab` checks,
+    /// `Loaded` just set one, and `FsLoaded` only rebuilds tabs that are
+    /// already built — which took a snapshot to build. A missing snapshot
+    /// would be a broken invariant; the panic ratchet forbids adding an
+    /// `expect` for it, so the tab stays on its loading row instead — a
+    /// state impossible to miss in QA, and one that cannot corrupt
+    /// anything on the way.
+    fn build_tab(
+        &self,
+        tab: SettingsTab,
+        widgets: &mut SettingsPageModelWidgets,
+        sender: &ComponentSender<SettingsPageModel>,
+    ) {
+        let Some(snap) = self.snapshot.as_ref() else {
+            return;
+        };
+        let label = settings_fill_label(tab);
+        let _t = crate::timing::measure(label);
+        let _a = crate::timing::activity(label);
+        match tab {
+            SettingsTab::Appearance => {
+                build_theme_picker(&widgets.theme_grid, &self.catalog, &snap.theme_id);
+            }
+            SettingsTab::Storage => {
+                build_paths(
+                    &widgets.paths_host,
+                    &self.catalog,
+                    self.fs.as_ref().map(|fs| &fs.registry),
+                    self.fs.as_ref().map(|fs| &fs.survey),
+                );
+                build_backup(&widgets.backup_row, &self.catalog);
+                build_export(&widgets.export_row, &self.catalog);
+            }
+            SettingsTab::Dictionaries => {
+                rebuild_dicts(&widgets.dict_list, &snap.dicts, sender);
+            }
+            SettingsTab::BookFiles => {
+                build_file_write(
+                    &widgets.file_write_row,
+                    &self.catalog,
+                    snap,
+                    self.fs.as_ref().map(|fs| fs.epub_backups.as_slice()),
+                );
+            }
+            SettingsTab::Metadata => {
+                build_sources(&widgets.source_list, &self.catalog, snap);
+            }
+            SettingsTab::Notifications => {
+                build_notifications(&widgets.notify_list, sender);
+            }
+        }
+    }
+
+    /// Record that `tab`'s widgets exist, so the next visit is instant.
+    /// Kept out of `build_tab` so that method never needs `&mut self`.
+    fn mark_built(&mut self, tab: SettingsTab) {
+        if !self.built_tabs.contains(&tab) {
+            self.built_tabs.push(tab);
+        }
+    }
 }
 
 fn update_tab_styles(container: &gtk::Box, active: SettingsTab) {
@@ -659,11 +856,12 @@ fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
 
 /// Theme families in a 2-column grid; each family is a raised block holding
 /// one card per variant.
-fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>) {
+fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>, active: &str) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let active = crate::theme::current(catalog).id;
+    // `active` arrives from the snapshot (7.1 step 2c); the catalog stays
+    // for the save-and-apply callbacks, which are click-time writes.
     let mut slot = 0;
     for (family_key, name, desc, prefix) in THEME_FAMILIES.iter() {
         let family = themes_for_family(family_key);
@@ -991,12 +1189,17 @@ fn theme_variant_button(
 }
 
 /// Data locations: four label/desc rows with mono path boxes.
-fn build_paths(host: &gtk::Box, catalog: &Arc<Catalog>) {
+fn build_paths(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    registry: Option<&crate::libraries::LibraryRegistry>,
+    survey: Option<&crate::sidecar::SidecarSurvey>,
+) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    build_libraries(host);
-    build_recovery(host, catalog);
+    build_libraries(host, registry);
+    build_recovery(host, catalog, survey);
 
     let body = section_card(
         host,
@@ -1037,8 +1240,19 @@ fn build_paths(host: &gtk::Box, catalog: &Arc<Catalog>) {
 /// re-launches rather than swapping underneath a running UI: pages hold open
 /// database handles and half-drawn covers, so repointing mid-session would
 /// leave them reading one library and writing to another.
-fn build_libraries(host: &gtk::Box) {
-    let reg = crate::libraries::load_registry();
+fn build_libraries(host: &gtk::Box, reg: Option<&crate::libraries::LibraryRegistry>) {
+    // The registry file is read by the page's slow worker (2c); until it
+    // lands this card says so rather than guessing "no libraries".
+    let Some(reg) = reg else {
+        let body = section_card(
+            host,
+            "library-symbolic",
+            "Libraries",
+            Some("A library is a folder holding its own books, covers and database."),
+        );
+        setting_row(&body, "Libraries", "Reading the library list…", &loading_label());
+        return;
+    };
     let body = section_card(
         host,
         "library-symbolic",
@@ -1243,8 +1457,33 @@ fn build_libraries(host: &gtk::Box) {
 /// something if it is checkable — the backups are written on code paths that
 /// could quietly stop running, and nobody would notice until the day they
 /// mattered. So the number is on screen.
-fn build_recovery(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    let survey = crate::sidecar::survey();
+fn build_recovery(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    survey: Option<&crate::sidecar::SidecarSurvey>,
+) {
+    // The survey reads one sidecar file per book — the heaviest read on the
+    // whole page, which is exactly why it runs on the page's slow worker
+    // (2c). Until it lands the row says so instead of claiming "No books".
+    let Some(survey) = survey else {
+        let body = section_card(
+            host,
+            "document-save-symbolic",
+            "Recovery",
+            Some(concat!(
+                "Each book folder keeps a kalam.json copy of its details, tags, ",
+                "highlights and reading position. If the catalog database is ever ",
+                "lost, this is what a rebuild would use."
+            )),
+        );
+        setting_row(
+            &body,
+            "Books with a backup copy",
+            "Checking your books' backup coverage…",
+            &loading_label(),
+        );
+        return;
+    };
     let body = section_card(
         host,
         "document-save-symbolic",
@@ -1332,7 +1571,7 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
                         "Library backed up",
                         &format!(
                             "{} · {}",
-                            crate::epub_write::human_size(size),
+                            crate::epub_metadata::human_size(size),
                             path.display()
                         ),
                     ),
@@ -1353,7 +1592,7 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
     let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     right.set_valign(gtk::Align::Center);
     let size = crate::paths::reader_cache_size();
-    let cache_badge = chip_label(&crate::epub_write::human_size(size), "kalam-chip-neutral");
+    let cache_badge = chip_label(&crate::epub_metadata::human_size(size), "kalam-chip-neutral");
     right.append(&cache_badge);
     let clear = gtk::Button::with_label("Clear cache");
     clear.add_css_class("kalam-btn-danger");
@@ -1362,13 +1601,13 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
         let cache_badge = cache_badge.clone();
         clear.connect_clicked(move |btn| {
             let (files, freed) = crate::paths::clear_reader_cache();
-            cache_badge.set_label(&format!("Freed {}", crate::epub_write::human_size(freed)));
+            cache_badge.set_label(&format!("Freed {}", crate::epub_metadata::human_size(freed)));
             crate::notify::info(
                 "Reader cache cleared",
                 &format!(
                     "Removed {files} file{} · freed {}",
                     if files == 1 { "" } else { "s" },
-                    crate::epub_write::human_size(freed)
+                    crate::epub_metadata::human_size(freed)
                 ),
             );
             btn.set_sensitive(false);
@@ -1396,16 +1635,30 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
     {
         let catalog = catalog.clone();
         export_all_btn.connect_clicked(move |_| {
-            let out_path = crate::paths::home_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("Kalam-Export.md");
-            match catalog.export_reading_data_markdown(&out_path) {
-                Ok(count) => crate::notify::success(
-                    &format!("{count} item{} exported", if count == 1 { "" } else { "s" }),
-                    &out_path.display().to_string(),
-                ),
-                Err(err) => crate::notify::error("Could not export reading data", &err.to_string()),
-            }
+            // Same rule as the quotes export above.
+            crate::tasks::spawn(
+                "Exporting reading data",
+                {
+                    let catalog = catalog.clone();
+                    move |_| {
+                        let out_path = crate::paths::home_dir()
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                            .join("Kalam-Export.md");
+                        catalog
+                            .export_reading_data_markdown(&out_path)
+                            .map(|count| (count, out_path))
+                            .map_err(|e| e.to_string())
+                    }
+                },
+                |_| {},
+                |res| match res {
+                    Ok((count, path)) => crate::notify::success(
+                        &format!("{count} item{} exported", if count == 1 { "" } else { "s" }),
+                        &path.display().to_string(),
+                    ),
+                    Err(err) => crate::notify::error("Could not export reading data", &err),
+                },
+            );
         });
     }
     setting_row(
@@ -1421,16 +1674,27 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
     {
         let catalog = catalog.clone();
         export_btn.connect_clicked(move |_| {
-            match crate::pages::saved_quotes::export_all_quotes_markdown(&catalog) {
-                Ok((count, path)) => crate::notify::success(
-                    &format!(
-                        "{count} quote{} exported",
-                        if count == 1 { "" } else { "s" }
+            // The export reads the catalog and writes a file: on a task,
+            // per ARCH.md. `catalog` is cloned per click because the
+            // handler can fire more than once.
+            crate::tasks::spawn(
+                "Exporting quotes",
+                {
+                    let catalog = catalog.clone();
+                    move |_| crate::pages::saved_quotes::export_all_quotes_markdown(&catalog)
+                },
+                |_| {},
+                |res| match res {
+                    Ok((count, path)) => crate::notify::success(
+                        &format!(
+                            "{count} quote{} exported",
+                            if count == 1 { "" } else { "s" }
+                        ),
+                        &path.display().to_string(),
                     ),
-                    &path.display().to_string(),
-                ),
-                Err(err) => crate::notify::error("Could not export quotes", &err),
-            }
+                    Err(err) => crate::notify::error("Could not export quotes", &err),
+                },
+            );
         });
     }
     setting_row(
@@ -1586,18 +1850,415 @@ fn rebuild_dicts(
     body.append(&footer);
 }
 
+fn build_shelf_dropdown(
+    shelves: &[(Option<i64>, String)],
+    current_shelf_id: Option<i64>,
+    on_change: impl Fn(Option<i64>) + 'static,
+) -> gtk::DropDown {
+    let titles: Vec<&str> = shelves.iter().map(|(_, name)| name.as_str()).collect();
+    let drop = gtk::DropDown::from_strings(&titles);
+    drop.set_valign(gtk::Align::Center);
+
+    let init_idx = shelves
+        .iter()
+        .position(|(id, _)| *id == current_shelf_id)
+        .unwrap_or(0);
+    drop.set_selected(init_idx as u32);
+
+    let shelves_map = shelves.to_vec();
+    drop.connect_selected_notify(move |combo| {
+        let idx = combo.selected() as usize;
+        if let Some((shelf_id, _)) = shelves_map.get(idx) {
+            on_change(*shelf_id);
+        }
+    });
+
+    drop
+}
+
+/// Re-render from live data — the click paths (add / remove a watch folder)
+/// still read inline, as they always did; this wrapper keeps them working.
+fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::Catalog>) {
+    let rules = crate::watch_folder::load_watch_rules(catalog);
+    let shelves = catalog.list_shelves().unwrap_or_default();
+    render_watch_cards_with(container, catalog, &rules, &shelves);
+}
+
+/// Build the watch-folder cards from data the caller already holds: the
+/// page's snapshot on first build (7.1 step 2c — no read happens on the UI
+/// thread there), or a fresh click-time read through the wrapper above.
+fn render_watch_cards_with(
+    container: &gtk::Box,
+    catalog: &std::sync::Arc<crate::db::Catalog>,
+    rules: &[crate::watch_folder::WatchFolderRule],
+    shelves: &[crate::db::Shelf],
+) {
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+
+    let mut shelf_choices: Vec<(Option<i64>, String)> =
+        vec![(None, "Library Default (No shelf)".to_string())];
+    for s in shelves {
+        shelf_choices.push((Some(s.id), s.name.clone()));
+    }
+
+    if rules.is_empty() {
+        let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        placeholder.set_margin_top(12);
+        placeholder.set_margin_bottom(12);
+
+        let empty = gtk::Label::new(Some(
+            "No watch folders configured yet.\nClick “+ Add Watch Folder” to monitor folders and route books to shelves.",
+        ));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_wrap(true);
+        empty.set_justify(gtk::Justification::Center);
+        placeholder.append(&empty);
+        container.append(&placeholder);
+        return;
+    }
+
+    for rule in rules {
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        card.add_css_class("kalam-watch-card");
+
+        // Header: Path + Switch + Remove
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        header.add_css_class("kalam-watch-card-header");
+
+        let folder_icon = gtk::Image::from_icon_name("folder-symbolic");
+        header.append(&folder_icon);
+
+        let path_display = rule.path.to_string_lossy().into_owned();
+        let path_chip = chip_label(&path_display, "kalam-chip-neutral");
+        path_chip.set_tooltip_text(Some(&path_display));
+        header.append(&path_chip);
+
+        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        header.append(&spacer);
+
+        let sw = toggle_switch(rule.enabled, {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            move |active| {
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.enabled = active;
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    crate::watch_folder::request_reload();
+                }
+            }
+        });
+        sw.set_tooltip_text(Some("Enable or pause monitoring for this folder"));
+        header.append(&sw);
+
+        let remove_btn = gtk::Button::from_icon_name("user-trash-symbolic");
+        remove_btn.add_css_class("flat");
+        remove_btn.add_css_class("danger");
+        remove_btn.set_tooltip_text(Some("Remove this watch folder"));
+        {
+            let cat = catalog.clone();
+            let cont = container.clone();
+            let rule_id = rule.id.clone();
+            remove_btn.connect_clicked(move |_| {
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                all_rules.retain(|r| r.id != rule_id);
+                crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                crate::watch_folder::request_reload();
+                render_watch_cards(&cont, &cat);
+            });
+        }
+        header.append(&remove_btn);
+        card.append(&header);
+
+        // Format row 1: EPUB
+        let row_epub = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row_epub.add_css_class("kalam-watch-format-row");
+        row_epub.set_valign(gtk::Align::Center);
+
+        let epub_check = gtk::CheckButton::with_label("Novels & Ebooks (EPUB)");
+        epub_check.set_active(rule.import_epub);
+        epub_check.add_css_class("kalam-watch-format-label");
+        row_epub.append(&epub_check);
+
+        let arrow_epub = gtk::Label::new(Some("Put into:"));
+        arrow_epub.add_css_class("kalam-setting-desc");
+        row_epub.append(&arrow_epub);
+
+        let epub_drop = build_shelf_dropdown(
+            &shelf_choices,
+            rule.epub_shelf_id,
+            {
+                let cat = catalog.clone();
+                let rule_id = rule.id.clone();
+                move |sid| {
+                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                        r.epub_shelf_id = sid;
+                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    }
+                }
+            },
+        );
+        epub_drop.set_sensitive(rule.import_epub);
+        row_epub.append(&epub_drop);
+
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            let drop_ref = epub_drop.clone();
+            epub_check.connect_toggled(move |chk| {
+                let active = chk.is_active();
+                drop_ref.set_sensitive(active);
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.import_epub = active;
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    crate::watch_folder::request_reload();
+                }
+            });
+        }
+        card.append(&row_epub);
+
+        // Format row 2: PDF
+        let row_pdf = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row_pdf.add_css_class("kalam-watch-format-row");
+        row_pdf.set_valign(gtk::Align::Center);
+
+        let pdf_check = gtk::CheckButton::with_label("Documents & Papers (PDF)");
+        pdf_check.set_active(rule.import_pdf);
+        pdf_check.add_css_class("kalam-watch-format-label");
+        row_pdf.append(&pdf_check);
+
+        let arrow_pdf = gtk::Label::new(Some("Put into:"));
+        arrow_pdf.add_css_class("kalam-setting-desc");
+        row_pdf.append(&arrow_pdf);
+
+        let pdf_drop = build_shelf_dropdown(
+            &shelf_choices,
+            rule.pdf_shelf_id,
+            {
+                let cat = catalog.clone();
+                let rule_id = rule.id.clone();
+                move |sid| {
+                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                        r.pdf_shelf_id = sid;
+                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    }
+                }
+            },
+        );
+        pdf_drop.set_sensitive(rule.import_pdf);
+        row_pdf.append(&pdf_drop);
+
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            let drop_ref = pdf_drop.clone();
+            pdf_check.connect_toggled(move |chk| {
+                let active = chk.is_active();
+                drop_ref.set_sensitive(active);
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.import_pdf = active;
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    crate::watch_folder::request_reload();
+                }
+            });
+        }
+        card.append(&row_pdf);
+
+        // Format row 3: Comics (CBZ / CBR)
+        let row_comics = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row_comics.add_css_class("kalam-watch-format-row");
+        row_comics.set_valign(gtk::Align::Center);
+
+        let comics_check = gtk::CheckButton::with_label("Comics & Manga (CBZ/CBR)");
+        comics_check.set_active(rule.import_comics);
+        comics_check.add_css_class("kalam-watch-format-label");
+        row_comics.append(&comics_check);
+
+        let arrow_comics = gtk::Label::new(Some("Put into:"));
+        arrow_comics.add_css_class("kalam-setting-desc");
+        row_comics.append(&arrow_comics);
+
+        let comics_drop = build_shelf_dropdown(
+            &shelf_choices,
+            rule.comics_shelf_id,
+            {
+                let cat = catalog.clone();
+                let rule_id = rule.id.clone();
+                move |sid| {
+                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                        r.comics_shelf_id = sid;
+                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    }
+                }
+            },
+        );
+        comics_drop.set_sensitive(rule.import_comics);
+        row_comics.append(&comics_drop);
+
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            let drop_ref = comics_drop.clone();
+            comics_check.connect_toggled(move |chk| {
+                let active = chk.is_active();
+                drop_ref.set_sensitive(active);
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.import_comics = active;
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                    crate::watch_folder::request_reload();
+                }
+            });
+        }
+        card.append(&row_comics);
+
+        // Options: Subfolder shelves + Clean up
+        let options_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        options_box.set_margin_top(4);
+
+        let subfolder_check = gtk::CheckButton::with_label(
+            "Automatically create shelves from subfolders (e.g. Manga/One Piece ➔ \"One Piece\")",
+        );
+        subfolder_check.set_active(rule.subfolder_shelves);
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            subfolder_check.connect_toggled(move |chk| {
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.subfolder_shelves = chk.is_active();
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                }
+            });
+        }
+        options_box.append(&subfolder_check);
+
+        let cleanup_check = gtk::CheckButton::with_label(
+            "Clean up: delete original file from folder after safe import",
+        );
+        cleanup_check.set_active(rule.cleanup_original);
+        {
+            let cat = catalog.clone();
+            let rule_id = rule.id.clone();
+            cleanup_check.connect_toggled(move |chk| {
+                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
+                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
+                    r.cleanup_original = chk.is_active();
+                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
+                }
+            });
+        }
+        options_box.append(&cleanup_check);
+
+        card.append(&options_box);
+        container.append(&card);
+    }
+}
+
 /// Toggle for writing metadata back into the EPUB itself, and deleting backups.
-fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    use crate::epub_write::{set_write_enabled, write_enabled};
+fn build_file_write(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    snap: &SettingsSnapshot,
+    epub_backups: Option<&[(std::path::PathBuf, u64)]>,
+) {
+    use crate::epub_metadata::set_write_enabled;
 
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
+
+    // 1. EPUB Sanitizer / Polish Engine. Every initial state below comes
+    // from the snapshot (7.1 step 2c); the catalog stays for the
+    // click-time writes.
+    let polish_body = section_card(
+        host,
+        "edit-clear-symbolic",
+        "EPUB polish & sanitizer",
+        Some("Clean, repair, and normalize EPUB files when importing into Kalam."),
+    );
+    {
+        let catalog = catalog.clone();
+        let sw = toggle_switch(snap.clean_on_import, move |on| {
+            crate::epub_sanitizer::set_clean_on_import(&catalog, on);
+        });
+        setting_row(
+            &polish_body,
+            "Sanitize and polish EPUBs on import",
+            "On: automatically removes toxic styles (tiny fonts, forced black/white colors, fixed margins), repairs malformed XML tags, and regenerates missing Table of Contents (toc.ncx) so books look consistent and readable. Off: EPUBs are stored untouched as imported.",
+            &sw,
+        );
+    }
+
+    // 2. Auto-Import Watch Folders (Multi-folder routing)
+    let watch_body = section_card(
+        host,
+        "folder-download-symbolic",
+        "Auto-import watch folders",
+        Some("Automatically import and organize new books and comics added to folders on your computer."),
+    );
+    {
+        let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        top_row.set_valign(gtk::Align::Center);
+
+        let add_btn = gtk::Button::with_label("+ Add Watch Folder");
+        add_btn.add_css_class("kalam-btn-subtle");
+
+        let cards_container = gtk::Box::new(gtk::Orientation::Vertical, 10);
+
+        let catalog_add = catalog.clone();
+        let cc_add = cards_container.clone();
+        add_btn.connect_clicked(move |btn| {
+            let root = btn.root();
+            let window = root.and_then(|r| r.downcast::<gtk::Window>().ok());
+            let dialog = gtk::FileDialog::builder()
+                .title("Select Folder to Watch")
+                .modal(true)
+                .build();
+
+            let cat = catalog_add.clone();
+            let cc = cc_add.clone();
+            dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+                let Ok(folder) = res else { return };
+                let Some(path) = folder.path() else { return };
+                let mut rules = crate::watch_folder::load_watch_rules(&cat);
+                if rules.iter().any(|r| r.path == path) {
+                    crate::notify::info("Watch Folder", "This folder is already in your watch list.");
+                    return;
+                }
+                rules.push(crate::watch_folder::WatchFolderRule::new(path));
+                crate::watch_folder::save_watch_rules(&cat, &rules);
+                crate::watch_folder::request_reload();
+                render_watch_cards(&cc, &cat);
+            });
+        });
+        top_row.append(&add_btn);
+
+        watch_body.append(&top_row);
+
+        render_watch_cards_with(
+            &cards_container,
+            catalog,
+            &snap.watch_rules,
+            &snap.shelves,
+        );
+        watch_body.append(&cards_container);
+    }
+
+    // 3. EPUB writeback & backups
     let body = section_card(host, "text-x-generic-symbolic", "EPUB writeback", None);
 
     {
         let catalog = catalog.clone();
-        let sw = toggle_switch(write_enabled(&catalog), move |on| {
+        let sw = toggle_switch(snap.writeback_enabled, move |on| {
             set_write_enabled(&catalog, on);
         });
         setting_row(
@@ -1610,38 +2271,44 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     right.set_valign(gtk::Align::Center);
-    let backups = crate::epub_write::list_backups();
-    let total: u64 = backups.iter().map(|(_, size)| size).sum();
-    let summary_text = if backups.is_empty() {
-        "No originals kept".to_string()
-    } else {
-        format!(
-            "{} original{} · {}",
-            backups.len(),
-            if backups.len() == 1 { "" } else { "s" },
-            crate::epub_write::human_size(total)
-        )
+    // The backup listing is a directory walk, so it rides the page's slow
+    // worker (2c); until it lands the chip says so and delete stays off.
+    let summary_text = match epub_backups {
+        None => "Checking…".to_string(),
+        Some(backups) => {
+            let total: u64 = backups.iter().map(|(_, size)| size).sum();
+            if backups.is_empty() {
+                "No originals kept".to_string()
+            } else {
+                format!(
+                    "{} original{} · {}",
+                    backups.len(),
+                    if backups.len() == 1 { "" } else { "s" },
+                    crate::epub_metadata::human_size(total)
+                )
+            }
+        }
     };
     let summary = chip_label(&summary_text, "kalam-chip-neutral");
     right.append(&summary);
     let clean = gtk::Button::with_label("Delete backups");
     clean.add_css_class("kalam-btn-danger");
-    clean.set_sensitive(!backups.is_empty());
+    clean.set_sensitive(epub_backups.is_some_and(|b| !b.is_empty()));
     {
         let summary = summary.clone();
         clean.connect_clicked(move |btn| {
-            let (count, freed) = crate::epub_write::delete_backups();
+            let (count, freed) = crate::epub_metadata::delete_backups();
             summary.set_label(&format!(
                 "Deleted {count} backup{}, freed {}.",
                 if count == 1 { "" } else { "s" },
-                crate::epub_write::human_size(freed)
+                crate::epub_metadata::human_size(freed)
             ));
             crate::notify::info(
                 "Original backups deleted",
                 &format!(
                     "Removed {count} backup{} · freed {}",
                     if count == 1 { "" } else { "s" },
-                    crate::epub_write::human_size(freed)
+                    crate::epub_metadata::human_size(freed)
                 ),
             );
             btn.set_sensitive(false);
@@ -1677,8 +2344,8 @@ fn country_hint_label() -> gtk::Label {
 
 /// One section card per metadata provider, each with a real switch and its
 /// own extra rows.
-fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    use crate::metadata::{set_source_enabled, source_enabled, SourceId};
+fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapshot) {
+    use crate::metadata::{set_source_enabled, SourceId};
 
     while let Some(child) = host.first_child() {
         host.remove(&child);
@@ -1692,7 +2359,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
     );
     {
         let catalog = catalog.clone();
-        let sw = toggle_switch(source_enabled(&catalog, SourceId::OpenLibrary), move |on| {
+        let sw = toggle_switch(snap.source_open_library, move |on| {
             set_source_enabled(&catalog, SourceId::OpenLibrary, on);
         });
         setting_row(
@@ -1713,7 +2380,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
     );
     {
         let catalog = catalog.clone();
-        let sw = toggle_switch(source_enabled(&catalog, SourceId::GoogleBooks), move |on| {
+        let sw = toggle_switch(snap.source_google_books, move |on| {
             set_source_enabled(&catalog, SourceId::GoogleBooks, on);
         });
         setting_row(
@@ -1730,7 +2397,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
         right.set_valign(gtk::Align::Center);
         let entry = gtk::Entry::new();
         entry.set_placeholder_text(Some("Optional API key — lifts the shared rate limit"));
-        entry.set_text(&catalog.get_pref("meta.googlebooks.key").unwrap_or_default());
+        entry.set_text(&snap.google_books_key);
         entry.set_hexpand(true);
         entry.add_css_class("kalam-setting-entry");
         right.append(&entry);
@@ -1767,11 +2434,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
         country.set_max_length(2);
         country.set_width_chars(4);
         country.set_placeholder_text(Some("IN"));
-        country.set_text(
-            &catalog
-                .get_pref("meta.googlebooks.country")
-                .unwrap_or_else(crate::metadata::google_books::detect_country),
-        );
+        country.set_text(&snap.google_books_country);
         country.add_css_class("kalam-setting-entry");
         right.append(&country);
         let save = gtk::Button::with_label("Save");

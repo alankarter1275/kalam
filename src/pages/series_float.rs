@@ -57,7 +57,7 @@ enum SeriesState {
 
 pub struct SeriesFloatModel {
     catalog: Arc<Catalog>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // the float queries the service for the series grid
     service: LibraryService,
     series_name: String,
     series_key: String,
@@ -283,6 +283,7 @@ fn start_fetch(
     let cat = catalog.clone();
 
     crate::tasks::spawn(
+        "Fetching series covers",
         move |_reporter| fetch_and_cache(&cat, &name, &key),
         |_update| {},
         move |result| {

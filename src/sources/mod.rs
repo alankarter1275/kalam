@@ -33,7 +33,6 @@ impl SourceManager {
         self.sources.iter().find(|s| s.id() == id).cloned()
     }
 
-    #[allow(dead_code)]
     pub fn all(&self) -> Vec<Arc<dyn Source>> {
         self.sources.clone()
     }

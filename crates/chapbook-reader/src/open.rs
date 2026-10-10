@@ -19,6 +19,7 @@ use crate::frame::PendingDamage;
 #[cfg(feature = "_image-book")]
 use crate::loader::{LoadSource, Loader};
 use crate::ReadingSettings;
+use crate::EntryFilter;
 use crate::{FontSource, Session, SessionConfig, WakerCell, DEFAULT_CACHE_BUDGET};
 #[cfg(feature = "opds")]
 use chapbook_opds::http::HttpClient;
@@ -360,8 +361,53 @@ impl Session {
             char_counts: std::cell::OnceCell::new(),
             unit_text_cache: std::cell::RefCell::new(None),
             host_highlights: Vec::new(),
+            word_memory: std::collections::HashSet::new(),
             layout_generation: 0,
             pinned_units: 0..0,
         })
+    }
+
+    /// Install a host byte filter over the EPUB's entries — the
+    /// virtual-edit seam (Kalam's Phase 6).
+    ///
+    /// While a filter is installed, every unit the session reads is the
+    /// filter's view of the entry, not the file's bytes: layout, text
+    /// extraction, char counts and search all parse the filtered text, and
+    /// the `.epub` on disk is untouched. The filter type and its contract
+    /// are [`chapbook_epub::EntryFilter`]'s.
+    ///
+    /// Call it right after opening, before the first unit is read: units
+    /// already laid out, the session's char counts and its cached unit
+    /// text were all built from the bytes they were first read with, and
+    /// this does not invalidate any of them. Widget-style shells install
+    /// it immediately after `open_with`, before the first layout, exactly
+    /// as they apply settings.
+    ///
+    /// While a filter is installed the session's text is a *derived* view
+    /// of the file, so locator resolution stops trusting exact offsets —
+    /// the quote and fraction layers re-anchor instead, which is how a
+    /// highlight made before an edit still lands on its words after text
+    /// before them shifted. No-op for non-EPUB books.
+    pub fn set_entry_filter(&mut self, filter: EntryFilter) {
+        match &mut self.book {
+            OpenBook::Epub(epub) => epub.set_entry_filter(filter),
+            // Reachable only when an image-book feature built the other
+            // variants; the filter is EPUB-only capability, a no-op there.
+            #[cfg(any(feature = "_comic", feature = "pdf"))]
+            _ => {}
+        }
+    }
+
+    /// Whether the session's unit text is a host-filtered view rather than
+    /// the file's own bytes — true once [`Session::set_entry_filter`]
+    /// installed a transformation. The locator-resolution sites ask this
+    /// before trusting an exact offset: a filter that edits anything
+    /// before a stored offset silently moves the text it pointed at.
+    pub(crate) fn text_is_filtered(&self) -> bool {
+        match &self.book {
+            OpenBook::Epub(epub) => epub.has_entry_filter(),
+            #[cfg(any(feature = "_comic", feature = "pdf"))]
+            _ => false,
+        }
     }
 }

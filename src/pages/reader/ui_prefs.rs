@@ -87,6 +87,7 @@ pub(crate) fn reader_settings_pane_name(pane: ReaderSettingsPane) -> &'static st
     match pane {
         ReaderSettingsPane::Reading => "reading",
         ReaderSettingsPane::Ui => "ui",
+        ReaderSettingsPane::Shortcuts => "shortcuts",
     }
 }
 

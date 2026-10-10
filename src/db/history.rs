@@ -9,12 +9,12 @@ use std::collections::HashSet;
 /// A closed session row, for the book page's timeline.
 #[derive(Debug, Clone)]
 pub struct SessionRow {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // sessions are aggregated for stats; the row id is never shown
     pub id: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // stats group by book title, not id
     pub book_id: i64,
     pub started_at: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // only the duration is displayed, not the end stamp
     pub ended_at: Option<String>,
     pub seconds: i64,
 }
@@ -23,15 +23,15 @@ pub struct SessionRow {
 /// sessions into its history feed.
 #[derive(Debug, Clone)]
 pub struct LibrarySession {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // history rows display title/at; the row id is unused
     pub id: i64,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // joined to the book for display; the id itself is unread
     pub book_id: i64,
     pub started_at: String,
     pub seconds: i64,
     pub end_pct: i64,
     pub book_title: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // author line not rendered on history rows yet
     pub book_authors: String,
 }
 
@@ -55,7 +55,7 @@ impl Catalog {
     pub fn mark_book_opened(&self, book_id: i64) -> Result<()> {
         let conn = self.conn();
         let now = chrono_like_now();
-        conn.execute(
+        let mut activity = conn.execute(
             "UPDATE books SET last_opened_at = ?2 WHERE id = ?1",
             params![book_id, now],
         )?;
@@ -77,11 +77,16 @@ impl Catalog {
             .unwrap_or(false);
 
         if !same_hour {
-            conn.execute(
+            activity += conn.execute(
                 "INSERT INTO reading_events (book_id, kind, at, detail) VALUES (?1, 'opened', ?2, '')",
                 params![book_id, now],
             )?;
         }
+        // Opening a book is reading activity: neither the stamp nor the
+        // hourly event changes what any page shows beyond activity feeds,
+        // and counting it is what lets the page cache survive a reading
+        // round trip.
+        self.note_activity_rows(activity);
         Ok(())
     }
 
@@ -228,6 +233,8 @@ impl Catalog {
     }
 
     /// Books ordered by most recently opened — powers Home → Continue.
+    /// Chapters belonging to the same comic series are collapsed so that reading
+    /// multiple chapters of a comic series only occupies one slot in Continue.
     pub fn recently_opened(&self, limit: usize) -> Result<Vec<Book>> {
         let conn = self.conn();
         let sql = format!(
@@ -235,13 +242,69 @@ impl Catalog {
              FROM books
              WHERE books.last_opened_at IS NOT NULL
                AND IFNULL(books.finished_at, '') = ''
-             ORDER BY books.last_opened_at DESC
+             ORDER BY books.last_opened_at DESC, books.id DESC
              LIMIT ?1"
         );
         let mut stmt = conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params![limit as i64], row_to_book)?;
-        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
-        hydrate_books(&conn, &mut books)?;
+        let rows = stmt.query_map(params![(limit * 4) as i64], row_to_book)?;
+        let mut raw_books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        hydrate_books(&conn, &mut raw_books)?;
+
+        let mut by_book: HashMap<i64, (i64, String, String, f32)> = HashMap::new();
+        if !raw_books.is_empty() {
+            let holders = vec!["?"; raw_books.len()].join(",");
+            let sql = format!(
+                "SELECT c.book_id, s.id, s.title, s.author, c.chapter_number
+                 FROM comic_chapters c
+                 JOIN comic_series s ON s.id = c.series_id
+                 WHERE c.book_id IN ({holders})"
+            );
+            let ids: Vec<i64> = raw_books.iter().map(|b| b.id).collect();
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    (
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, f64>(4)? as f32,
+                    ),
+                ))
+            })?;
+            for row in rows {
+                let (book_id, meta) = row?;
+                by_book.insert(book_id, meta);
+            }
+        }
+
+        let mut seen_series = HashSet::new();
+        let mut books = Vec::new();
+
+        for mut b in raw_books {
+            if let Some((s_id, s_title, s_author, ch_num)) = by_book.remove(&b.id) {
+                if seen_series.contains(&s_id) {
+                    continue;
+                }
+                seen_series.insert(s_id);
+
+                b.series = Some(s_title.clone());
+                if ch_num > 0.0 {
+                    b.title = format!("{s_title} · #{ch_num}");
+                } else {
+                    b.title = s_title;
+                }
+                if !s_author.is_empty() {
+                    b.authors = s_author;
+                }
+            }
+
+            books.push(b);
+            if books.len() >= limit {
+                break;
+            }
+        }
+
         Ok(books)
     }
 
@@ -252,11 +315,12 @@ impl Catalog {
     /// Open a session row when the reader mounts; returns its id.
     pub fn start_reading_session(&self, book_id: i64, start_pct: i64) -> Result<i64> {
         let conn = self.conn();
-        conn.execute(
+        let rows = conn.execute(
             "INSERT INTO reading_sessions (book_id, started_at, ended_at, seconds, start_pct, end_pct)
              VALUES (?1, ?2, NULL, 0, ?3, ?3)",
             params![book_id, chrono_like_now(), start_pct],
         )?;
+        self.note_activity_rows(rows);
         Ok(conn.last_insert_rowid())
     }
 
@@ -308,10 +372,11 @@ impl Catalog {
     ) -> Result<()> {
         let conn = self.conn();
         let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
-        conn.execute(
+        let rows = conn.execute(
             "UPDATE reading_sessions SET seconds = ?2, end_pct = ?3 WHERE id = ?1",
             params![session_id, clamped, pct],
         )?;
+        self.note_activity_rows(rows);
         Ok(())
     }
 
@@ -327,10 +392,11 @@ impl Catalog {
     pub fn end_reading_session(&self, session_id: i64, seconds: i64, end_pct: i64) -> Result<()> {
         let conn = self.conn();
         let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
-        conn.execute(
+        let rows = conn.execute(
             "UPDATE reading_sessions SET ended_at = ?2, seconds = ?3, end_pct = ?4 WHERE id = ?1",
             params![session_id, chrono_like_now(), clamped, end_pct],
         )?;
+        self.note_activity_rows(rows);
         Ok(())
     }
 

@@ -1,15 +1,20 @@
 use crate::db::{Annotation, Catalog};
 use crate::models::Book;
-use crate::service::LibraryService;
+use crate::service::{LibraryService, QuotesSnapshot};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum SavedQuotesOut {
     OpenBook { book_id: i64 },
-    JumpTo { book_id: i64, chapter_index: usize },
+    JumpTo {
+        book_id: i64,
+        // The page reports the chapter the quote came from; scrolling the
+        // reader to it is not wired yet, so nothing reads this for now.
+        #[allow(dead_code)]
+        chapter_index: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -20,6 +25,13 @@ pub enum SavedQuotesMsg {
     ExportAllData,
     Refresh,
     SaveNote { id: i64, note: String },
+    /// A background quotes query finished. Carries the generation it was
+    /// started with so a superseded reply cannot overwrite a newer one.
+    Loaded { gen: u64, snap: QuotesSnapshot },
+    /// An export task finished; `status` is the line for the status label.
+    /// The write itself runs on a task (ARCH.md: the UI thread never
+    /// touches the disk), so the label updates when the file is real.
+    ExportDone(String),
 }
 
 pub struct SavedQuotesModel {
@@ -27,6 +39,9 @@ pub struct SavedQuotesModel {
     query: String,
     quotes: Vec<(Annotation, Option<Book>)>,
     status: String,
+    /// Stamps each query so stale replies can be dropped. See
+    /// [`SavedQuotesMsg::Loaded`].
+    reload_gen: u64,
 }
 
 #[relm4::component(pub)]
@@ -113,16 +128,23 @@ impl Component for SavedQuotesModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let service = LibraryService::new(catalog);
+        // Synchronous first read, as on the other pages: the page is not on
+        // screen yet, so there is nothing visible to freeze and no list to
+        // preserve. Every later read goes through `reload`, which is a worker.
+        let snap = service.quotes("");
+        let status = match snap.errors.first() {
+            Some(e) => format!("DB error: {e}"),
+            None => status_line(snap.quotes.len(), ""),
+        };
         let model = SavedQuotesModel {
-            service: LibraryService::new(catalog),
+            service,
             query: String::new(),
-            quotes: Vec::new(),
-            status: String::new(),
+            quotes: snap.quotes,
+            status,
+            reload_gen: 0,
         };
         let widgets = view_output!();
-        // initial load
-        let mut model = model;
-        model.reload();
         rebuild(&widgets.list_box, &model.quotes, &sender);
         widgets.status_label.set_label(&model.status);
         ComponentParts { model, widgets }
@@ -138,9 +160,9 @@ impl Component for SavedQuotesModel {
         match msg {
             SavedQuotesMsg::SearchChanged(q) => {
                 self.query = q;
-                self.reload();
-                rebuild(&widgets.list_box, &self.quotes, &sender);
-                widgets.status_label.set_label(&self.status);
+                // The rebuild moved into `Loaded`: rebuilding here would draw
+                // the list the query has not replaced yet.
+                self.reload(&sender);
             }
             SavedQuotesMsg::Delete(id) => {
                 crate::notify::outcome_info(
@@ -149,54 +171,88 @@ impl Component for SavedQuotesModel {
                     "",
                     "Could not delete the quote",
                 );
-                self.reload();
-                rebuild(&widgets.list_box, &self.quotes, &sender);
-                widgets.status_label.set_label(&self.status);
+                self.reload(&sender);
             }
             SavedQuotesMsg::Export => {
+                // The export writes a file, so the write runs on a task;
+                // the status line comes back as a message when it is real.
                 let exported = export_quotes_markdown(&self.quotes);
-                let out_path = dirs::home_dir()
+                let out_path = crate::paths::home_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("Quotes.md");
+                let out_path_done = out_path.clone();
                 let count = self.quotes.len();
-                match std::fs::write(&out_path, exported) {
-                    Ok(()) => {
-                        self.status = format!("Exported to {}", out_path.display());
-                        crate::notify::success(
-                            &format!(
-                                "{count} quote{} exported",
-                                if count == 1 { "" } else { "s" }
-                            ),
-                            &out_path.display().to_string(),
-                        );
-                    }
-                    Err(err) => {
-                        self.status = format!("Export failed: {err}");
-                        crate::notify::error("Could not export quotes", &err.to_string());
-                    }
-                }
-                widgets.status_label.set_label(&self.status);
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    "Exporting quotes",
+                    move |_| std::fs::write(&out_path, exported).map_err(|e| e.to_string()),
+                    |_| {},
+                    move |res| {
+                        match res {
+                            Ok(()) => {
+                                crate::notify::success(
+                                    &format!(
+                                        "{count} quote{} exported",
+                                        if count == 1 { "" } else { "s" }
+                                    ),
+                                    &out_path_done.display().to_string(),
+                                );
+                                let _ = s.send(SavedQuotesMsg::ExportDone(format!(
+                                    "Exported to {}",
+                                    out_path_done.display()
+                                )));
+                            }
+                            Err(err) => {
+                                crate::notify::error("Could not export quotes", &err);
+                                let status = format!("Export failed: {err}");
+                                let _ = s.send(SavedQuotesMsg::ExportDone(status));
+                            }
+                        }
+                    },
+                );
             }
             SavedQuotesMsg::ExportAllData => {
+                // Same rule as Export: the file write and the catalog read
+                // both run on a task.
+                let catalog = self.service.catalog().clone();
                 let out_path = crate::paths::home_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("Kalam-Export.md");
-                match self.service.catalog().export_reading_data_markdown(&out_path) {
-                    Ok(count) => {
-                        self.status = format!("Exported all data to {}", out_path.display());
-                        crate::notify::success(
-                            &format!(
-                                "{count} item{} exported",
-                                if count == 1 { "" } else { "s" }
-                            ),
-                            &out_path.display().to_string(),
-                        );
-                    }
-                    Err(err) => {
-                        self.status = format!("Export failed: {err}");
-                        crate::notify::error("Could not export reading data", &err.to_string());
-                    }
-                }
+                let out_path_done = out_path.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    "Exporting reading data",
+                    move |_| catalog.export_reading_data_markdown(&out_path),
+                    |_| {},
+                    move |res| {
+                        match res {
+                            Ok(count) => {
+                                crate::notify::success(
+                                    &format!(
+                                        "{count} item{} exported",
+                                        if count == 1 { "" } else { "s" }
+                                    ),
+                                    &out_path_done.display().to_string(),
+                                );
+                                let _ = s.send(SavedQuotesMsg::ExportDone(format!(
+                                    "Exported all data to {}",
+                                    out_path_done.display()
+                                )));
+                            }
+                            Err(err) => {
+                                crate::notify::error(
+                                    "Could not export reading data",
+                                    &err.to_string(),
+                                );
+                                let status = format!("Export failed: {err}");
+                                let _ = s.send(SavedQuotesMsg::ExportDone(status));
+                            }
+                        }
+                    },
+                );
+            }
+            SavedQuotesMsg::ExportDone(status) => {
+                self.status = status;
                 widgets.status_label.set_label(&self.status);
             }
             SavedQuotesMsg::SaveNote { id, note } => {
@@ -208,10 +264,27 @@ impl Component for SavedQuotesModel {
                     "",
                     "Could not save your note",
                 );
-                self.reload();
+                self.reload(&sender);
             }
-            SavedQuotesMsg::Refresh => {
-                self.reload();
+            SavedQuotesMsg::Refresh => self.reload(&sender),
+            SavedQuotesMsg::Loaded { gen, snap } => {
+                // Drop a reply an older query produced.
+                if gen != self.reload_gen {
+                    return;
+                }
+                // Failures are reported in the status line rather than a
+                // toast, as this page has always done, in the wording it
+                // already used. But a failed read no longer clears the list —
+                // the synchronous version did, which made a read error look
+                // like every quote had been deleted.
+                self.status = match snap.errors.first() {
+                    Some(e) => format!("DB error: {e}"),
+                    None => {
+                        let n = snap.quotes.len();
+                        self.quotes = snap.quotes;
+                        status_line(n, &self.query)
+                    }
+                };
                 rebuild(&widgets.list_box, &self.quotes, &sender);
                 widgets.status_label.set_label(&self.status);
             }
@@ -221,30 +294,43 @@ impl Component for SavedQuotesModel {
 }
 
 impl SavedQuotesModel {
-    fn reload(&mut self) {
-        let snap = self.service.quotes(&self.query);
-        // This page has always reported failures in its status line rather
-        // than a toast; keep that, and keep the wording it already used.
-        if let Some(e) = snap.errors.first() {
-            self.quotes.clear();
-            self.status = format!("DB error: {e}");
-            return;
-        }
-        let n = snap.quotes.len();
-        self.quotes = snap.quotes;
-        if self.query.trim().is_empty() {
-            self.status = if n == 0 {
-                "No saved quotes yet — highlight or save quotes while reading.".into()
-            } else {
-                format!("{n} quote{} saved", if n == 1 { "" } else { "s" })
-            };
+    /// Ask for the saved quotes on a worker thread (roadmap 1.2b).
+    ///
+    /// The list keeps what it is showing and swaps on arrival, so typing in
+    /// the search box never blanks it while the query runs.
+    fn reload(&mut self, sender: &ComponentSender<Self>) {
+        self.reload_gen += 1;
+        let gen = self.reload_gen;
+        let catalog = self.service.catalog().clone();
+        let query = self.query.clone();
+        let done = sender.input_sender().clone();
+        crate::tasks::spawn(
+            "Loading quotes",
+            move |_reporter| LibraryService::new(catalog).quotes(&query),
+            // One query, not a sequence of steps, so nothing to report.
+            |_update| {},
+            move |snap| {
+                let _ = done.send(SavedQuotesMsg::Loaded { gen, snap });
+            },
+        );
+    }
+}
+
+/// The status line for a completed read. Shared by the synchronous first read
+/// in `init` and by the asynchronous ones, so the two cannot drift apart.
+fn status_line(n: usize, query: &str) -> String {
+    if query.trim().is_empty() {
+        if n == 0 {
+            "No saved quotes yet — highlight or save quotes while reading.".into()
         } else {
-            self.status = format!(
-                "{n} result{} for \"{}\"",
-                if n == 1 { "" } else { "s" },
-                self.query
-            );
+            format!("{n} quote{} saved", if n == 1 { "" } else { "s" })
         }
+    } else {
+        format!(
+            "{n} result{} for \"{}\"",
+            if n == 1 { "" } else { "s" },
+            query
+        )
     }
 }
 
@@ -384,7 +470,7 @@ pub fn export_all_quotes_markdown(
         })
         .collect();
     let markdown = export_quotes_markdown(&quotes);
-    let out_path = dirs::home_dir()
+    let out_path = crate::paths::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("Quotes.md");
     std::fs::write(&out_path, markdown).map_err(|e| format!("{e}"))?;
@@ -436,9 +522,4 @@ fn chrono_like_now() -> String {
     format!("{secs}")
 }
 
-mod dirs {
-    use std::path::PathBuf;
-    pub fn home_dir() -> Option<PathBuf> {
-        std::env::var_os("HOME").map(PathBuf::from)
-    }
-}
+

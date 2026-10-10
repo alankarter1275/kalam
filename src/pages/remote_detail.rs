@@ -269,6 +269,7 @@ impl Component for RemoteDetailModel {
                     let r_id = self.remote_id.clone();
 
                     crate::tasks::spawn(
+                        "Loading details",
                         move |_reporter| {
                             let details = source.get_details(&r_id)?;
                             let chapters = source.get_chapters(&r_id)?;
@@ -294,14 +295,29 @@ impl Component for RemoteDetailModel {
                     let u = url.clone();
                     let pic = widgets.cover_pic.clone();
                     crate::tasks::spawn(
-                        move |_| source.fetch_image(&u).ok(),
+                        "Loading cover",
+                        move |_| {
+                            // Decode on the worker (160×230 slot): the old
+                            // version decoded via from_stream_at_scale in
+                            // this callback, which runs on the UI thread.
+                            source.fetch_image(&u).and_then(|bytes| {
+                                crate::preload::decode_rgba_bytes(&bytes, 160, 230)
+                                    .ok_or_else(|| anyhow::anyhow!("undecodable cover"))
+                            })
+                        },
                         |_| {},
-                        move |bytes| {
-                            if let Some(b) = bytes {
-                                let stream = gtk::gio::MemoryInputStream::from_bytes(&gtk::glib::Bytes::from(&b));
-                                if let Ok(pixbuf) = gtk::gdk_pixbuf::Pixbuf::from_stream_at_scale(&stream, 160, 230, true, None::<&gtk::gio::Cancellable>) {
-                                    pic.set_paintable(Some(&gtk::gdk::Texture::for_pixbuf(&pixbuf)));
-                                }
+                        move |pixels| {
+                            if let Ok(pixels) = pixels {
+                                let bytes = gtk::glib::Bytes::from_owned(pixels.rgba);
+                                let texture: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(
+                                    pixels.width,
+                                    pixels.height,
+                                    gtk::gdk::MemoryFormat::R8g8b8a8,
+                                    &bytes,
+                                    pixels.width as usize * 4,
+                                )
+                                .upcast();
+                                pic.set_paintable(Some(&texture));
                             }
                         },
                     );
@@ -442,6 +458,7 @@ impl Component for RemoteDetailModel {
                                                 let book_id = b.id;
 
                                                 crate::tasks::spawn(
+                                                    "Downloading chapter",
                                                     move |_| -> anyhow::Result<i64> {
                                                         let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
                                                         let content = source.get_chapter_content(&chap_id)?;
@@ -497,6 +514,7 @@ impl Component for RemoteDetailModel {
                         let target_idx = chapters.iter().position(|c| c.chapter_id == chap_id).unwrap_or(0);
 
                         crate::tasks::spawn(
+                            "Downloading chapter",
                             move |_| -> anyhow::Result<i64> {
                                 let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
                                 let content = source.get_chapter_content(&chap_id)?;

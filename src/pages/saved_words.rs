@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SavedWordsOut {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // jump-to-book from the saved-words list, wired when it links out
     OpenBook { book_id: i64 },
 }
 
@@ -304,40 +304,64 @@ impl Component for SavedWordsModel {
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
             }
-            SavedWordsMsg::ExportCsv => match export_saved_words_csv(self.service.catalog()) {
-                Ok((n, path)) => {
-                    crate::notify::compact(
-                        &format!("{n} word{} exported", if n == 1 { "" } else { "s" }),
-                        &path.display().to_string(),
-                    );
-                }
-                Err(e) => crate::notify::error("Could not export words", &e),
-            },
-            SavedWordsMsg::ExportAnki => match export_saved_words_anki(self.service.catalog()) {
-                Ok((n, path)) => {
-                    crate::notify::compact(
-                        &format!(
-                            "{n} word{} exported for Anki",
-                            if n == 1 { "" } else { "s" }
+            // All three exports read the catalog and write a file, so they
+            // run on tasks (ARCH.md); the toasts fire from the arrival
+            // callback on the main thread.
+            SavedWordsMsg::ExportCsv => {
+                let catalog = self.service.catalog().clone();
+                crate::tasks::spawn(
+                    "Exporting words",
+                    move |_| export_saved_words_csv(&catalog),
+                    |_| {},
+                    |res| match res {
+                        Ok((n, path)) => crate::notify::compact(
+                            &format!("{n} word{} exported", if n == 1 { "" } else { "s" }),
+                            &path.display().to_string(),
                         ),
-                        &path.display().to_string(),
-                    );
-                }
-                Err(e) => crate::notify::error("Could not export words", &e),
-            },
+                        Err(e) => crate::notify::error("Could not export words", &e),
+                    },
+                );
+            }
+            SavedWordsMsg::ExportAnki => {
+                let catalog = self.service.catalog().clone();
+                crate::tasks::spawn(
+                    "Exporting words",
+                    move |_| export_saved_words_anki(&catalog),
+                    |_| {},
+                    |res| match res {
+                        Ok((n, path)) => crate::notify::compact(
+                            &format!(
+                                "{n} word{} exported for Anki",
+                                if n == 1 { "" } else { "s" }
+                            ),
+                            &path.display().to_string(),
+                        ),
+                        Err(e) => crate::notify::error("Could not export words", &e),
+                    },
+                );
+            }
             SavedWordsMsg::ExportMarkdown => {
-                let out_path = crate::paths::home_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    .join("Kalam-Export.md");
-                match self.service.catalog().export_reading_data_markdown(&out_path) {
-                    Ok(n) => {
-                        crate::notify::success(
+                let catalog = self.service.catalog().clone();
+                crate::tasks::spawn(
+                    "Exporting reading data",
+                    move |_| {
+                        let out_path = crate::paths::home_dir()
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                            .join("Kalam-Export.md");
+                        catalog
+                            .export_reading_data_markdown(&out_path)
+                            .map(|n| (n, out_path))
+                            .map_err(|e| e.to_string())
+                    },
+                    |_| {},
+                    |res| match res {
+                        Ok((n, path)) => crate::notify::success(
                             &format!("{n} item{} exported", if n == 1 { "" } else { "s" }),
-                            &out_path.display().to_string(),
-                        );
-                    }
-                    Err(e) => crate::notify::error("Could not export reading data", &e.to_string()),
-                }
+                            &path.display().to_string(),
+                        ),
+                        Err(e) => crate::notify::error("Could not export reading data", &e),
+                    },
+                );
             }
             SavedWordsMsg::Refresh => {
                 self.reload();
@@ -563,14 +587,7 @@ fn saved_words_anki_tsv(words: &[SavedWord]) -> String {
     out
 }
 
-/// Tiny home-directory helper (same private shim as saved_quotes.rs — the
-/// `dirs` crate is not a dependency of this project).
-mod dirs {
-    use std::path::PathBuf;
-    pub fn home_dir() -> Option<PathBuf> {
-        std::env::var_os("HOME").map(PathBuf::from)
-    }
-}
+
 
 /// Export every saved word to `~/SavedWords.csv`. Shared shape with the
 /// ~/Quotes.md export: fixed home path, count + path returned for a toast.
@@ -579,7 +596,7 @@ pub fn export_saved_words_csv(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf)
         .list_saved_words("", None)
         .map_err(|e| format!("{e}"))?;
     let csv = saved_words_csv(&words);
-    let out_path = dirs::home_dir()
+    let out_path = crate::paths::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("SavedWords.csv");
     std::fs::write(&out_path, csv).map_err(|e| format!("{e}"))?;
@@ -593,7 +610,7 @@ pub fn export_saved_words_anki(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf
         .list_saved_words("", None)
         .map_err(|e| format!("{e}"))?;
     let tsv = saved_words_anki_tsv(&words);
-    let out_path = dirs::home_dir()
+    let out_path = crate::paths::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("SavedWords-Anki.txt");
     std::fs::write(&out_path, tsv).map_err(|e| format!("{e}"))?;

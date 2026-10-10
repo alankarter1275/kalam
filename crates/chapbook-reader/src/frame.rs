@@ -168,11 +168,20 @@ impl Session {
         // its own; an unparseable one falls back rather than vanishing.
         let paint = |h: &Highlight| {
             let color_str = h.color.as_deref().unwrap_or("");
-            let is_underline = color_str == "#3b82f6ff" || color_str == "#2563ebff" || color_str.eq_ignore_ascii_case("underline");
-            let style = if is_underline {
-                chapbook_paint::SelectionStyle::Underline
-            } else {
-                chapbook_paint::SelectionStyle::Band
+            let style_str = h.style.as_deref().unwrap_or("");
+            let style = match style_str.to_ascii_lowercase().as_str() {
+                "underline" | "straight" => chapbook_paint::SelectionStyle::Underline,
+                "squiggly" | "wavy" => chapbook_paint::SelectionStyle::Squiggly,
+                "strikeout" | "strike" => chapbook_paint::SelectionStyle::Strikeout,
+                "dotted" => chapbook_paint::SelectionStyle::Dotted,
+                "solid" | "band" => chapbook_paint::SelectionStyle::Band,
+                _ => {
+                    if color_str == "#3b82f6ff" || color_str == "#2563ebff" || color_str.eq_ignore_ascii_case("underline") {
+                        chapbook_paint::SelectionStyle::Underline
+                    } else {
+                        chapbook_paint::SelectionStyle::Band
+                    }
+                }
             };
             Selection {
                 start: h.start,
@@ -188,6 +197,33 @@ impl Session {
         };
         let mut selections: Vec<Selection> =
             self.host_highlights(spine).iter().map(paint).collect();
+
+        // Word Memory: Subtle dotted underlines for saved vocabulary words
+        if !self.word_memory.is_empty() {
+            if let Some(speakable) = self.speakable_unit_page(spine, page_idx) {
+                let dot_color = Rgba::new(89, 140, 242, 180);
+                let chars: Vec<char> = speakable.text.chars().collect();
+                for w in &speakable.words {
+                    let s = w.text_start as usize;
+                    let e = w.text_end as usize;
+                    if s < chars.len() && e <= chars.len() && s < e {
+                        let word_str: String = chars[s..e].iter().collect();
+                        let clean = word_str
+                            .trim_matches(|c: char| !c.is_alphanumeric())
+                            .to_lowercase();
+                        if !clean.is_empty() && self.word_memory.contains(&clean) {
+                            selections.push(Selection {
+                                start: w.locator_start,
+                                end: w.locator_end,
+                                color: dot_color,
+                                blend: Blend::Normal,
+                                style: chapbook_paint::SelectionStyle::Dotted,
+                            });
+                        }
+                    }
+                }
+            }
+        }
         if let Some((start, end)) = self.selected_range() {
             selections.push(Selection {
                 start,

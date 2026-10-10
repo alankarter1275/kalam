@@ -20,6 +20,9 @@
 //!   `prefs.rs`.
 //! * The bundled fonts (Literata and Noto Sans, compiled in). See
 //!   `fonts.rs`.
+//! * [`preview::render`] — a headless, widget-less raster of one
+//!   chapter's pages through an [`EntryFilter`], for the editor's raw
+//!   source pane. See `preview.rs`.
 //!
 //! What it deliberately does not hold: a database, a dictionary, a menu, a
 //! settings panel. Those are Kalam's; the widget reports and obeys.
@@ -33,7 +36,6 @@
 //!     catalog.save_progress(book_id, pos.chapter, pos.fraction);
 //!     // and pos.locator, serialised, for the durable record
 //! });
-//! view.connect_word(move |w| sender.input(ReaderMsg::DictSearch(w.word.clone())));
 //! // ReaderMsg::NextChapter => view.next_chapter(), and so on.
 //! ```
 
@@ -41,6 +43,7 @@ mod divider;
 mod fonts;
 mod handles;
 mod prefs;
+pub mod preview;
 mod scroll;
 mod view;
 
@@ -48,9 +51,11 @@ pub use chapbook_core::{
     ChapbookError, LayeredLocator, Point, Quote, Rect, Size, TocEntry, LOCATOR_VERSION,
 };
 pub use chapbook_reader::Highlight;
+pub use chapbook_reader::EntryFilter;
+pub use chapbook_reader::ParagraphIdentity;
 pub use fonts::{font_source, SANS_FONT};
 pub use prefs::{HighlightColor, KalamPrefs, KalamTheme, BODY_FONT};
 pub use view::{
-    NewHighlight, ReaderOptions, ReaderView, ReadingMode, ReadingPosition, SearchResult, SelectedText,
-    TappedWord, DEFAULT_CACHE_BUDGET,
+    NewHighlight, ParagraphTap, ReaderOptions, ReaderView, ReadingMode, ReadingPosition,
+    SearchResult, SelectedText, DEFAULT_CACHE_BUDGET,
 };

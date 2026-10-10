@@ -4,7 +4,6 @@ description = "EPUB container/package/spine/TOC reading for chapbook, wrapping r
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
 repository.workspace = true
 authors.workspace = true
 

@@ -194,13 +194,28 @@ started.
 
 ### What Yazi's shape looks like in Kalam
 
-| Yazi | Kalam equivalent | Status |
-|---|---|---|
-| `yazi-core` (pure logic, no UI) | `src/db/` | ✅ done |
-| Event bus | relm4 components | ✅ done |
-| Task system (progress + cancel) | **`src/tasks.rs` TaskManager** | ❌ missing |
-| Preloaders (preview cache) | **cover preloader + chapter preloader** | ❌ missing |
-| Thin UI that only renders state | **pages still do their own DB calls** | ❌ missing |
+| Yazi | Kalam equivalent | Status then | Status now |
+|---|---|---|---|
+| `yazi-core` (pure logic, no UI) | `src/db/` | ✅ done | ✅ done |
+| Event bus | relm4 components | ✅ done | ✅ done |
+| Task system (progress + cancel) | **`src/tasks.rs` TaskManager** | ❌ missing | ✅ **built** |
+| Task manager the user can *see* | **`src/pages/task_manager.rs`** | ❌ missing | ✅ **built (1.14)** |
+| Preloaders (preview cache) | **cover preloader + chapter preloader** | ❌ missing | ✅ **built** |
+| Thin UI that only renders state | **pages still do their own DB calls** | ❌ missing | ✅ **built** |
+
+> **Status column corrected 2026-09-19.** The "Status then" column is what was
+> true when this conversation happened; every one of the three ❌ rows has
+> since been built, and leaving them marked missing was actively misleading.
+> What exists now: `src/tasks.rs` (621 lines, **28** `tasks::spawn` call sites —
+> the figure of 35 quoted here counted doc-comment mentions as well as calls),
+> progress reporting, per-task cancellation and a registry the UI can read;
+> `src/preload.rs` (390 lines, cover
+> preloading), `src/service.rs` (1,278 lines, 18 snapshot methods), and thin
+> pages for every query that grows with library size — roadmap **1.2b**.
+> The honest caveat on that last row: a page's *first* read in `init` is still
+> synchronous by deliberate decision, and the bounded queries (shelves,
+> reading list, analytics, reader, book detail) were left alone because
+> converting them buys nothing. See 1.2b for the reasoning.
 
 The missing pieces:
 
@@ -209,9 +224,13 @@ The missing pieces:
    directly and start *asking*. Moving queries off the UI thread becomes a
    change in one place, not in every page. Most Yazi-like thing we can do;
    makes everything after it easy.
-2. **A task manager.** Import, dictionary rebuild, metadata fetch, EPUB
-   conversion → tasks with progress + cancellation. Metadata fetch already
-   half-does this; extend to everything slow.
+2. ~~**A task manager.**~~ **Done as roadmap 1.14, 2026-09-19.** Import,
+   dictionary rebuild, metadata fetch and downloads are all tasks with
+   progress and cancellation, and there is now a page that lists them and can
+   stop one of them. What this item did not anticipate: the machinery was
+   already complete, and the missing half was that the registry stored only an
+   id and a cancel flag — nothing a panel could display. The work was naming
+   each task and keeping its latest progress somewhere readable.
 3. **Preloaders.** Cover preloader: rows 1–30 visible → worker decodes
    31–60 in background; scroll down and everything's already there.
    Reader: preload the *next chapter* while reading the current one —
@@ -236,7 +255,7 @@ The missing pieces:
   where the verbs are small — and within that, **Lua where the code breaks
   when a website changes** (scrapers), **compiled Rust where it does not**
   (documented APIs, themes, export). See §5 and
-  [`source-seam.md`](./source-seam.md) §9a.
+  [`source-seam.md`](./archive/source-seam.md) §9a.
 - **The "blazing fast" bar itself.** A TUI renders text in microseconds and
   reads a directory listing. We render books. Even with perfect architecture,
   WebKitGTK dominates. That's why the renderer conversation is the other
@@ -262,12 +281,20 @@ The missing pieces:
 
 ### Where we'd start on Monday
 
+> **All five of these are done as of 2026-09-19** — kept as written because it
+> records the order the work was argued for, not because it is still a plan.
+
 1. `LibraryService` behind the existing `Catalog` — pages ask, service
-   answers. (Weeks, mostly mechanical.)
-2. Cover preloader + thumbnail persistence — fastest visible win.
-3. Task manager for import/rebuild/metadata.
-4. Grid virtualization — now *easy*, because the service layer feeds it.
-5. Then the renderer conversation.
+   answers. (Weeks, mostly mechanical.) — **done**, `src/service.rs`.
+2. Cover preloader + thumbnail persistence — fastest visible win. — **done**,
+   `src/preload.rs` plus `paths::thumbs_dir()`.
+3. Task manager for import/rebuild/metadata. — **done**, `src/tasks.rs`;
+   downloads routed through it in **1.3**.
+4. Grid virtualization — now *easy*, because the service layer feeds it. —
+   **done**; the windowed grid holds 2,000 books at 247 MB / 7.1 ms against
+   352 MB / 139.7 ms before.
+5. Then the renderer conversation. — **settled**: `kalam-engine` replaced
+   WebKit. See the reader chapters below.
 
 **Closing thought:** Yazi's real secret isn't speed — it's that **the
 architecture makes speed inevitable**. Every decision pushes work away from
@@ -341,7 +368,7 @@ it requires throwing nothing away.
 
 **Status: ✅ seam designed 2026-09-03; Lua removed, then restored the same day
 on the user's Calibre argument. Final answer: **Lua for the surfaces that rot,
-compiled Rust for the ones that do not** — [`source-seam.md`](./source-seam.md)
+compiled Rust for the ones that do not** — [`source-seam.md`](./archive/source-seam.md)
 §0, §9a, §12a.**
 
 The user settled the audience question, which is what the whole thing turned
@@ -458,7 +485,7 @@ surface — they become a second API you must keep stable forever.
   formats. Lua: AO3, FFN, scraped manga, and add-on metadata providers —
   Calibre's model, and the surfaces that break. Sequenced after AO3 lands
   natively so the API is extracted, not guessed (§5,
-  [`source-seam.md`](./source-seam.md) §9a, §11).
+  [`source-seam.md`](./archive/source-seam.md) §9a, §11).
 - **Scope:** confirmed as a **content platform** — fiction sources
   (AO3/FFN/webnovel, tag search, downloads, auto-updates) + manga sources
   (Suwayomi-class) + a Lua plugin seam for scrapers + fast architecture (§7).
@@ -607,7 +634,7 @@ itself stays on WebKit until replaced.
 > *shape* — one adapter per site, written by us, Tachiyomi-like — was never in
 > doubt. The final split: **scraped sites are Lua, API-backed sites
 > (MangaDex, Komga, Kavita, OPDS) are built-in Rust.** See
-> [`source-seam.md`](./source-seam.md) §9a.
+> [`source-seam.md`](./archive/source-seam.md) §9a.
 
 **User (2026-09-02):** "We could have a similar architecture… plugins which
 we will write. Also, no need for a bridge with the Kotlin extensions —
@@ -697,7 +724,7 @@ it; Poppler/GPL is the alternative if we ever want to avoid AGPL).
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -848,7 +875,7 @@ much time do you reckon it will take you?"
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -961,7 +988,7 @@ suite asserts IST and EST behaviour explicitly and is identical everywhere.
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1095,7 +1122,7 @@ fallback.
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1215,7 +1242,7 @@ exists?
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1318,7 +1345,7 @@ last thing to arrive; nothing before it waits for it.
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1446,7 +1473,7 @@ content ⇒ a box model over clean markup, not "write a browser."
 
 ## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
 
-Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+Came out of the code review in [`review-2026-09-04.md`](./archive/review-2026-09-04.md),
 finding 5. Every reading statistic — the 14-day chart, "days active", the
 reading streak, "finished this year", the per-book day breakdown — bucketed by
 `substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
@@ -1586,6 +1613,898 @@ Implemented local comic archive reading and interactive Relm4 comics viewer comp
 ## Master Roadmap Redux & Architecture (Sept 8)
 - **Two Worlds UI:** Offline Tranquil Library default vs Online Hub.
 - **Bubble Memory:** Single WebKit process SPA for multiple open books. In-app `gtk::Overlay` floating chat head outside reader.
+  *(2026-09-19: expanded into a real design in §23. The WebKit half of this line is dead — there is no shared web process any more.)*
 - **Inline EPUB Editing:** Non-destructive sidecar patches in `kalam.json`.
 - **PDF Engine:** Zathura-style smart-crop default, Reflow toggle.
 - **Scrapers & Metadata:** WebAssembly (Wasm) plugin ecosystem replacing Lua.
+
+---
+
+## 20. Which PDF engine? (2026-09-18)
+
+**Trigger.** `docs/offline-roadmap.md` Module 1 calls for "crisp PDF rendering
+backed by Google's PDFium engine (`pdfium-render`)". Checking that against the
+code found the assumption underneath it was wrong, so the decision was taken
+back up.
+
+### What is actually there
+
+`src/pdf.rs` parses PDFs with `lopdf` and can extract text, but **it has no
+page rasterizer**. `render_page_image_uncropped` walks the page's resources
+for an embedded image XObject and returns it if one exists. That means:
+
+- **Scanned PDFs work.** A scan is one image per page, so page mode shows the
+  real page, and `calculate_ink_box_for_image` + smart crop trim the margins
+  properly. This is the good case and it is genuinely useful.
+- **Text PDFs do not.** With no embedded image, the fallback is
+  `render_text_to_canvas`, which paints a black bar per line of text so the
+  ink-bounds detection has something to measure. Page mode is the default
+  (`reflow_mode: false` in `src/pages/pdf_reader.rs`), so opening an ordinary
+  text PDF shows a page of black rectangles.
+- **Reflow mode does work** — it extracts real text and shows it as
+  paragraphs.
+
+So the first fix is not a library choice at all: default to reflow when the
+page has no embedded image, and label it. Small change, removes a visibly
+broken screen.
+
+### The candidates, for the real-rendering decision
+
+| | Rendering | Cost to Kalam | Licence |
+|---|---|---|---|
+| **Poppler** (`poppler-rs`) | Very good — it is what GNOME Document Viewer uses | One system package (`pacman -S poppler`), already present on most Linux desktops because browsers and Evince pull it in. GLib-based, which Kalam already is. | LGPL — no effect on a personal app |
+| **PDFium** (`pdfium-render`) | Excellent — it is Chrome's engine | **Not bundled.** You must ship or download `libpdfium.so`, a ~10–25 MB prebuilt binary, and manage its version. | Apache-2.0 / BSD |
+| **MuPDF** (`mupdf` crate) | Excellent, often fastest | Builds from C source; slow first build, needs a C toolchain | **AGPL-3.0** — would make Kalam AGPL |
+| **`lopdf` alone** (today) | Parses only; no rasterization | Free | MIT/Apache |
+| Pure-Rust renderers (`pdf`, `printpdf`) | Poor coverage of real-world PDFs | Free | permissive |
+
+Writing our own rasterizer is not an option — it is a multi-year project and
+PDF is a hostile format to do it in.
+
+### Recommendation
+
+> **Superseded by §22, 2026-09-18 — the engine chosen was MuPDF.** This
+> recommendation stood for about a day. What reversed it was rendering
+> *quality* rather than install weight: in the benchmarks compared in §22,
+> MuPDF measured 8.7 ms/page at 81 MB against Poppler's 14.6 ms at 148 MB,
+> with better fidelity on transparency and CJK, and licence was explicitly
+> ruled out of scope for a personal app. The reasoning below is kept because it
+> was sound on the criterion it was given — "lightweight" — and the change was
+> a change of criterion, not a correction. Read §22 for the decision.
+
+**Poppler**, for the stated goals of lightweight, fast and not bloated:
+
+1. Kalam is already GTK4 + GLib, so Poppler adds no new *kind* of dependency.
+2. "Lightweight" is about what the user must install, and Poppler is already
+   installed on nearly every Linux desktop. Bundling a 20 MB PDFium binary to
+   avoid one pacman line is the heavier choice, not the lighter one.
+3. It is what ARCH.md's original stack line implied anyway ("MuPDF for PDF" —
+   a system renderer, just a different one).
+
+PDFium becomes the right answer if Kalam ever needs to run where Poppler is
+not available (Flatpak sandbox without the runtime, or a non-GNOME distro
+image). MuPDF only if AGPL stops being a concern and build time stops
+mattering.
+
+**Not decided here.** This records the analysis and a recommendation; the
+choice is the owner's, and nothing has been changed in `Cargo.toml`.
+
+
+---
+
+## 21. Guidelines for the app half (2026-09-18)
+
+**Trigger.** `kalam-engine` carries `RESTRICTIONS.md` — four hard rules that
+keep it from turning into a browser engine. `src/` has nothing equivalent. The
+question was whether the app needs the same treatment.
+
+### First, an uncomfortable observation about the engine's own rules
+
+`docs/kalam/archive/RESTRICTIONS.md` says, verbatim:
+
+> **NO `stylo` (Firefox CSS Engine):** Do not bring in `stylo` or Gecko C++
+> dependencies.
+
+The root `Cargo.toml` pins **five** stylo crates (`stylo`, `stylo_traits`,
+`stylo_atoms`, `stylo_static_prefs`, `stylo_dom`, all at `=0.20.0`), and
+twelve files under `crates/chapbook-layout/src/` reference stylo. The whole
+cascade is built on it.
+
+Rules 1 and 4 also mandate `lol_html` as the CSS sanitizer. **`lol_html` is
+not a dependency anywhere in the workspace**, and there is no sanitizer in the
+crates at all.
+
+So two of the engine's four guardrails are already false, and nobody noticed.
+That is not a criticism of whoever wrote them — it is the predictable result
+of writing a rule that nothing checks. The document is in `archive/` now,
+which is the right place for it.
+
+**The lesson is the actual answer to the question.** Rules in a markdown file
+do not constrain an AI agent. Rules with a test attached do.
+
+### What already works, and why
+
+The engine has two guardrails that *are* effective, and both are tests rather
+than prose:
+
+- `tools/chapbook-cli/tests/stability.rs` reads `Cargo.toml`'s member list and
+  asserts every member is named in `docs/STABILITY.md`, and that the document
+  names no crate that has left. Add a crate without updating the policy and
+  the build fails.
+- `crates/chapbook-core/tests/fixture_discipline.rs` walks every `.rs` file in
+  `crates/` and `tools/` and fails if any default-running test reads the
+  downloaded corpus.
+
+Those work because they are checkable and because they fail loudly. Copy that
+pattern, not the `RESTRICTIONS.md` pattern.
+
+### The ratchet
+
+Most of the rules worth having are already broken in a few places, and
+fixing all of them first is not realistic. So the pattern is:
+
+1. Count today's violations.
+2. Write a test asserting the count is **no greater than** that number.
+3. Fix some, lower the number in the test.
+
+The count can never go up. That is the whole mechanism, and it is what makes
+this practical for a project where an AI writes most of the code.
+
+### Proposed rules for `src/`, each with its check
+
+| Rule | Check | Broken today |
+|---|---|---|
+| No `unwrap()`/`expect()` outside `#[cfg(test)]` — already in `docs/WORKING.md` §1 | grep test, ratcheted | 6, all in `src/downloads.rs` |
+| Pages ask `LibraryService`, not `Catalog` | count `Arc<Catalog>` fields in `src/pages/`, ratchet | many; ARCH.md tracks which pages are converted |
+| Colours live in `theme.rs`; `style.rs` and `resources/style.css` hold shape only, no literal hex outside an allowlist | scan the CSS for `#[0-9a-fA-F]{3,8}` | unknown, small |
+| Every annotation/progress write refreshes the sidecar — `docs/WORKING.md` §2 | grep test over the mutation methods | **0 — currently honoured** |
+| Every `#[allow(dead_code)]` carries a reason comment | scan for the attribute with no adjacent comment | most of the 90 |
+| No source file over N lines without being a generated view | line-count test, ratchet | 8 files over 1,200 |
+| Every workspace member is named in the README project layout | the `stability.rs` pattern, applied to README | **0 — fixed 2026-09-18** |
+
+### Anti-bloat rules (not checkable, so keep them few)
+
+These have to be prose, because nothing can test for "unnecessary". Keep the
+list short enough that it can actually be read:
+
+- **No new abstraction before there is a second caller.** One caller means
+  write it inline; extract when the second one appears.
+- **No new dependency without saying what it replaces or enables**, in the
+  README's layout section.
+- **No new environment-variable switch without removing one.** There are five;
+  that is the ceiling. One was already dead (`KALAM_NO_WEBVIEW_POOL`) and has
+  been removed from the README.
+- **No new page without a route and a way back out of it.**
+- **Part 2 stays out of Part 1.** `docs/offline-roadmap.md` is the boundary;
+  anything that touches the network belongs on the other side of it.
+
+### Recommendation
+
+Do not write a `RESTRICTIONS.md` for `src/`. Write **three ratchet tests** —
+the `unwrap` one, the `Arc<Catalog>`-in-pages one, and the literal-hex one —
+plus a short prose list of the anti-bloat rules in `docs/WORKING.md`. That is
+less documentation than the engine has and more enforcement.
+
+
+---
+
+## 22. Two decisions locked (2026-09-18)
+
+### PDF engine: MuPDF
+
+Owner's decision, on rendering quality as the deciding criterion and with
+licence explicitly out of scope ("strictly personal, not community"). The
+comparison is in §20; the short version is that MuPDF is fastest in every
+measurement found and won the one serious published fidelity study, with
+PDFium a close second and Poppler clearly behind both.
+
+**Consequences to handle when this is picked up:**
+
+- The `mupdf` crate compiles MuPDF from vendored source — **no system PDF
+  package**, which is what "lightweight" means here. But it needs a C/C++
+  toolchain, `libclang` (for bindgen), and Fontconfig headers on Linux.
+- Its **default features pull in XPS, SVG, EPUB, HTML, Tesseract OCR, Brotli
+  and DOCX output.** Use `default-features = false` and enable only PDF, or
+  the "not bloated" goal dies at build time rather than at install time.
+- This does not remove the need for the small fix first: page mode currently
+  draws black bars for a text PDF (see `docs/offline-roadmap.md`, "The PDF
+  reader is not doing what the roadmap assumes"). That fix stands on its own
+  and should land before the engine swap, because it makes the broken state go
+  away today.
+- `lopdf` stays for now — it is still doing text extraction and the ink-bounds
+  measurement that smart crop depends on.
+
+### Plugin substrate: WebAssembly
+
+**Superseded — the Part 2 conversation chose Lua (2026-10-09).** Part 2
+picked this up (as this section intended) and decided differently once
+*every* source became a plugin rather than a rare, complex-only addition:
+one Lua plugin system (`mlua`), with wasm recorded as the escape hatch
+and concrete triggers. The full reasoning, pros/cons and job-list check
+are in `docs/conversation-part-2.md`, Entries 11–16. The text below
+stands as the record of the 2026-09-18 decision and of wasm's costs —
+which is precisely why it lost. `ARCH.md`'s Source-seam section points
+here; the Lua design there is, ironically, closest to what was finally
+built.
+
+Owner's decision, and it is the one recorded in the most recent discussion. It
+supersedes both earlier answers — `ARCH.md`'s Lua and the "pure Rust + TOML
+selectors" pivot.
+
+It is a defensible choice. Worth being clear about what it costs and what it
+buys, because the cost lands in a specific place:
+
+**What it buys.** Crash isolation — a scraper that panics cannot take the
+reader down. Sandboxing — plugin code cannot reach the filesystem, which
+matters for anything downloaded. Both are real.
+
+**What it costs.** `wasmtime` is a large dependency tree (the archived CI logs
+show `wasmtime`, `wasmtime-cache`, `wasmtime-environ` and
+`wasmtime-wit-bindgen` all compiling), which is build time and binary size on
+a machine described in `docs/kalam/WORKING.md` as 4 GB of RAM and a hard disk.
+Writing or fixing a plugin then needs a wasm toolchain rather than an edit.
+And the sandbox's main value is containing *untrusted* code — in a project
+with no community and one author, it is mostly protecting the author from the
+author.
+
+**So, three conditions that make it work well:**
+
+1. **Put `wasmtime` behind a Cargo feature**, off by default, so the ordinary
+   build and the CI build do not pay for it.
+2. **Do not ship the plugin host until there is a second plugin.** One plugin
+   behind a wasm boundary is all of the cost and none of the benefit.
+3. **Keep the TOML selector config alongside it**, not instead of it.
+   `src/sources/scrapers/mangaball.toml` is already that shape. Most scraper
+   breakage is a changed CSS selector, not changed logic — and a selector fix
+   that needs a wasm rebuild is not the "fix loop measured in seconds" the
+   original design was reaching for. Wasm for sources that need logic, TOML
+   for sources that need a selector. That is a tiered design, not a
+   contradiction, and the existing scaffolding already half-supports it.
+
+
+---
+
+## 23. Bubbles — multiple books open at once (2026-09-19)
+
+**Status: ✅ design accepted, 🔶 not built.** Part 1, Phase 2.
+
+**Asked:** *"you know about android 17 bubble feature? how you can have
+multiple apps kind of floating on the screen all the time? and move them
+around? ... opening multiple books all at once, and then they look like stacked
+bubbles on top of each other on the screen, despite wherever I am, and clicking
+them open them in a floating window, all the books lined up on the top."*
+
+The only prior record was the one line in *Master Roadmap Redux* above. Half of
+it was dead on arrival — it assumed a single WebKit process holding several
+books, and there is no WebKit any more.
+
+### Accepted
+
+- **Android-style stacked bubbles**, over any screen in the app. Tap one to
+  read it in a floating window; the rest line up along the top.
+- **In-app only**, never an OS window. A separate always-on-top window fights a
+  tiling compositor, and Kalam already hit exactly that with dialogs — which is
+  why the in-app float layer exists at all.
+- **Open into a bubble** straight from the library, and **minimize back** into
+  one from the reader.
+- **Bubble face:** the cover with a thin progress ring.
+- **A bubble holds no book.** It is a bookmark — book id, cover thumbnail,
+  position, all already database rows. The book is built on tap. This is the
+  load-bearing rule: opening a book is 100–220 ms, far too slow to do for ten
+  bubbles at startup and far too much memory to hold.
+- **Three states:** bubble (kilobytes) · warm (opened, budget trimmed,
+  suspended — one or two) · reading (full budget — one).
+- **All three readers are bubble-eligible** — EPUB, PDF and comics — and all
+  three also serve online content later: the EPUB reader for fanfiction and
+  AO3, the comics reader for manga. The online half is Part 2; the bubble
+  architecture is Part 1.
+
+### The constraint that keeps it buildable
+
+**Two readers, and the full one loses nothing.**
+
+| | Full reader | Bubble reader |
+|---|---|---|
+| Left sidebar | TOC **and Settings** | TOC only |
+| Right sidebar | **Highlights, Bookmarks, Words** | none |
+| Floating pills | **all** — selection chip, highlight colours, dictionary popup, quote/copy | none |
+| Status | **unchanged; nothing removed** | new, thin |
+
+The full reader is 5,845 lines across 12 files with five sidebar tabs; the
+bubble reader keeps one of the five.
+
+Worth recording *why* that helps, because the obvious reason is not the real
+one. **It is not a memory saving** — memory lives in the engine's book object,
+not in the sidebars, which are ordinary widgets over database rows. The saving
+is complexity: a small floating window cannot fit the full chrome anyway, and a
+bubble reader wanting the full feature set would mean maintaining 5,845 lines
+twice forever. Instead the reading surface becomes one component with two
+shells.
+
+### Not decided
+
+- How strict a background book's budget should be. That number should be picked
+  after the bubbles exist and can be felt, not before.
+
+---
+
+## 24. Reader memory — measured, with two ideas rejected (2026-09-19)
+
+**Trigger:** the owner's hardware — **4 GB RAM, 1 TB HDD, Pentium Silver
+N5030, Intel UHD 605.** Constraints that make the engine's defaults worth
+questioning.
+
+### ✅ Chapter images now decode to the size a page can draw
+
+Every `<img>` was decoded at full native resolution. `collect_images` took no
+page size even though `PageMetrics` was in scope at its one production call
+site. Raw RGBA costs 4 bytes a pixel, so a 3000×4000 scan is 48 MB decoded
+while occupying at most the reading column.
+
+Measured on the owner's machine, *The Dragonet Prophecy*: four chapters went
+from **85,082 KB to 24,361 KB — 83.1 MB to 23.8 MB, 71% less**. The engine
+reports 77.1 MB decoded against 17.9 MB kept.
+
+**The number that matters is not the percentage, it is that the cache now
+fits.** Those chapters were 2.6× over the 32 MB budget before, so an
+image-heavy book sat permanently over budget and re-decoded on scroll at the
+77–120 ms/page the engine measures.
+
+Cost is not zero: the resize added ~50 ms on small-image chapters while
+*reducing* it on large ones (487 → 385 ms), because `ImageStore::insert`
+premultiplies every stored pixel, so fewer pixels is less work there.
+
+### ✅ Which budget is actually in force
+
+Worth pinning down, because reading the code gave the wrong answer once. The
+*engine's* `DEFAULT_CACHE_BUDGET` is **192 MB**. `kalam-reader` overrides it
+with **32 MB**, and the comment beside it says it was chosen *"on a machine
+with 4 GB in total"* — the target machine. Kalam runs at 32 MB, confirmed by
+log rather than by reading.
+
+### ~~Shared font system across sessions~~ — rejected, not needed
+
+**Proposed:** every `Session::open` runs `build_font_system`, which scans the
+whole system font database again, so with several books open the cost is paid
+several times. Sharing one seemed likely to be the centrepiece of the engine
+work for bubbles.
+
+**Rejected on measurement.** Four books, all reporting **8 faces**: the scan is
+**1–5 ms** out of a 32–78 ms open. Sharing it would save milliseconds and cost
+real complexity. The engine already times this split and always has — the
+number was invisible only because no logger was installed.
+
+This is the reason the logger was built before the design was settled: *the
+measurement existed and nobody could see it.*
+
+### ~~Disk-backed page cache~~ — rejected for now, probably unnecessary
+
+**Proposed:** a weak CPU and a 1 TB drive argue for trading decode time for
+disk reads — decode a page once, write it downsampled, read it back rather than
+re-decoding. Genuinely the right trade *on this hardware*.
+
+**Held off rather than refused.** It was justified when a chapter cached 34 MB
+against a 32 MB budget and eviction meant constant re-decoding. The image fix
+put the same chapter at 13 MB, under budget on its own, so the thrash it was
+answering largely stopped. Revisit only if re-decodes show up again.
+
+### ✅ Lazy loading mostly already exists
+
+Asked whether chapters could load and unload on demand. **They already do:**
+`layout_unit` builds a chapter only when asked; `evict_keeping` drops the
+least-recently-read under the budget while pinning the current and visible
+chapters; `prefetch_one` reaches exactly one adjacent chapter; `suspend()`
+drops everything but the page on screen.
+
+Three real gaps: eviction is per *chapter* not per page; there is one budget
+for one book where bubbles need one per state; and the chapter character count
+runs eagerly on open (30–147 ms).
+
+### ✅ Page-level eviction — a tripwire, not a task
+
+Holding a 141-page chapter as one lump was a real problem when it cached 34 MB
+against a 32 MB budget. The same chapter is now **13 MB and fits on its own**.
+**Do not build this until a single chapter again exceeds the budget.** The
+check, so the tripwire is testable rather than a matter of opinion:
+`RUST_LOG=info kalam`, open an illustrated book, look for a
+`laid out unit N (... KB)` line above 32,768.
+
+### The meta-lesson
+
+Three confident claims about this codebase turned out to be wrong in one week,
+all from reading code and reporting it as fact: that the reader had only two
+keyboard shortcuts, that the cache budget was 192 MB, and that the font scan
+might dominate open time. The first two were corrected by reading more
+carefully; the third by measuring. **Where a number decides a design, log the
+number rather than inferring it.** That is why the logger landed before the
+bubble design was settled, and why the image fix reports its own savings.
+
+---
+
+## 7. The Annotation Revision & Word Memory Conversation (2026-09-24)
+
+### Background & Problem
+Readers previously had disjointed highlight and quote concepts, rigid yellow-only highlights, and no vocabulary memory for learning new words while reading.
+
+### Accepted: Unified Model & Two-Tier Interaction
+1. **Unified Schema:** Merged highlights and quotes into a single model with `style` (`solid`, `underline`, `squiggly`, `strikeout`), 5 soft colors, and optional personal notes.
+2. **2-Button Selection Pill:** Text selection reveals a minimal floating pill (`[Highlight]`, `[Define]`). Clicking `[Highlight]` smoothly opens an expandable Calibre-style styling and note drawer.
+3. **Word Memory System:** Saved vocabulary words receive subtle dotted underlines while reading. Hovering reveals a definition preview; clicking opens the full definition card. Configurable scope (Whole Library, Series, Book, Off).
+4. **UTF-8 Character Safety:** Replaced byte-slicing locators with character iterators to avoid panics on multi-byte characters (em-dashes, smart quotes, accented letters).
+
+---
+
+## 8. The Floating Bubbles & Zen Split Screen Conversation (2026-09-26 – 2026-09-28)
+
+### Accepted Decisions & Constraints
+1. **Free-Floating Draggable Bubbles (Zero Snapping):** Minimized bubbles must be draggable anywhere across the screen without snapping to edges. Dropped positions persist.
+2. **Compact Minimized Discs:** Collapsed stack shows compact circular icons with the most recently active book's cover art and Cairo progress ring on top.
+3. **Hover [✕] Button Dismissal:** Dismissing a bubble uses a small left-click `[✕]` button revealed on hover. Drag-to-dismiss was rejected for desktop convenience.
+4. **Permanent Sidebar Untouched:** Left navigation sidebar is permanent and never covered or dimmed by bubbles, scrim, or dialogs.
+5. **80% Content Card & Floating Top Icons:** Expanded reader card occupies 80% of content width and height, centered inside the content area. Action buttons float freely without solid background panels.
+6. **Zen Browser-Style Drag-to-Split:** Dragging an inactive book circle over the reader card reveals a translucent drop zone to snap side-by-side. Fair reading time tracking ensures reading time only accumulates for the focused book pane.
+
+---
+
+## 9. The EPUB Ingestion Sanitizer Conversation (2026-09-28)
+
+### Problem
+Real-world EPUBs from the web often contain toxic CSS (e.g. 7pt/8px hardcoded fonts, fixed 120px margins, forced black text on white backgrounds), unescaped XML ampersands (`&` instead of `&amp;`), unclosed void tags (`<br>`, `<hr>`), and missing Tables of Contents (`toc.ncx`).
+
+### Accepted: Clean In-Place at Ingestion
+1. **Automated Polish on Import:** When enabled in Settings, the sanitizer inspects and repairs CSS and XHTML syntax in-place during import.
+2. **TOC Regeneration:** When `toc.ncx` is missing from the manifest, the sanitizer extracts `<h1>` and `<h2>` headings and generates a clean, valid NCX table of contents.
+3. **Safe Temp-File Repacking:** Repacks EPUB archives preserving uncompressed `mimetype` at byte offset 0.
+4. **Verified Test Fixture:** Added `sample_books/messy_book.epub` and automated tests verifying repair without crashing or UI blocking.
+
+---
+
+## 10. The Multi-Folder Auto-Import & Smart Shelving Conversation (2026-09-29)
+
+### User Question 1: "When I deleted a file from the watched folder, it was not deleted from the app. Is it by design? Why is this needed?"
+
+**Verdict: Yes, strictly by design.**
+- **The Mailbox / Inbox Model:** The watch folder is an inbox, not a synchronized file mirror. Once a book is imported, Kalam makes its own copy in library storage and associates the user's bookmarks, highlights, reading stats, and notes with it.
+- **Data Protection:** If deleting a file from the download folder deleted it from Kalam, clearing the browser's `Downloads` folder would wipe out the user's library and annotations.
+- **Use Cases:** Zero-click browser downloads (downloading an ebook or manga chapter from the web imports it in the background) and cross-device sync (Nextcloud, Dropbox, Syncthing dropping files into the computer).
+
+### User Feature Request: Folder Filters, Format Constraints, and Smart Shelf Routing
+**Proposed by user:**
+- Allow multiple watch folders, each with its own independent configuration.
+- Add format filters so a folder only imports specific types (e.g. only EPUB, only PDF, or only CBZ/CBR).
+- Decide which shelves books go to (e.g. from a certain folder, EPUB goes to Shelf X, PDF goes to Shelf Y).
+- Keep UI modern, clean, and intuitive (avoiding Calibre-style complexity).
+
+### Accepted Architecture & UI Design:
+1. **Multi-Folder Rules Registry:** Replaced single `import.watch_folder_path` string with `WatchFolderRule` JSON registry (`import.watch_folder_rules`), keeping backwards compatibility with legacy configurations.
+2. **Format Selection & Per-Format Shelf Dropdowns:**
+   - `[✓] 📘 Novels & Ebooks (EPUB)` ➔ Target Shelf dropdown (e.g. "Fiction" or "Default").
+   - `[✓] 📄 Documents & Papers (PDF)` ➔ Target Shelf dropdown (e.g. "Study" or "Default").
+   - `[✓] 🎨 Comics & Manga (CBZ/CBR)` ➔ Target Shelf dropdown (e.g. "Manga" or "Default").
+3. **Subfolder Auto-Shelving:**
+   - When enabled, files placed in subdirectories (e.g. `Manga/Naruto/ch1.cbz`) automatically assign books to a shelf named `"Naruto"`, creating the standard shelf dynamically if it does not yet exist.
+4. **Optional Original File Cleanup:**
+   - Optional toggle: *"Clean up: delete original file from folder after safe import"*. When disabled (default), the source file is left untouched. When enabled, original files are safely removed only after confirmed database insertion.
+5. **Calibre-Free Clean GTK4 Settings Cards:**
+   - Each folder is represented by a clean card with an ON/OFF toggle, remove button, format checkboxes, shelf dropdowns, and clear descriptions. An `[+ Add Watch Folder]` button allows adding any directory easily.
+
+*Last updated: 2026-09-29.*
+
+## 11. The OCR Cache, Readable Folders, and the Plan for What Comes Next (2026-09-29)
+
+### The owner's process rule, stated after the OCR cache shipped
+
+The OCR page cache was built on an ambiguous greenlight ("first, let's save the
+ocr results"). The owner's verdict: **"I didn't tell you to ship the ocr cache
+feature did I? we were just talking. whatever, just don't do it again. no code
+yet, just discussion."** The cache itself stays (it is shipped, green, and
+purely beneficial; the owner was offered a revert and did not ask for one),
+but the rule going forward is explicit: **nothing gets built until the owner
+says go.** Every item below was discussion-first, and folder renaming was
+built only after a literal "go".
+
+### What the owner asked about the OCR cache, and the answers
+
+- **Storage size:** ~20–60 KB per page as JSON; a dense 300-page scan is
+  roughly 10–18 MB — nothing on a 1 TB drive.
+- **Highlights and comments:** verified in code — PDF annotations are stored
+  by page number + text excerpt + note, completely independent of the OCR
+  layer, so the cache cannot break them. (Saved annotations still appear in
+  the book's annotation list rather than drawn on the page; on-page overlays
+  remain a separate future feature, which the cache would actually help.)
+- **Search:** the stored text is exactly what a future opt-in "index scanned
+  books" feature will consume. Deferred, as agreed.
+
+### Readable book folders — three owner choices, then built
+
+The question: "won't Author - Title interfere with the uuid?" Answer: no — the
+folder name is a label; the database key stays the uuid, and no code parses
+the name. The owner then made three explicit choices:
+
+1. **Short id, 8 characters** — `Nausicaä 3f2ab91c`, not the full uuid.
+2. **Title-only for authorless books** — no "Unknown - " prefix. The importer
+   writes the literal string "Unknown" for authorless PDFs and comics; that is
+   treated as no author, matching the spirit of the choice.
+3. **Folders rename automatically** when author or title is edited in Kalam.
+
+Design that fell out of the code, recorded for posterity: no schema change was
+needed (no path is ever stored — every path is rebuilt from the uuid through
+`book_dir`); resolution is an in-memory index with one directory scan per app
+run (a stat per lookup would be measurable on the owner's spinning disk); the
+one-time upgrade of existing libraries is a background housekeeping pass, not
+a migration; clashes fall back to the full uuid; renames preserve mtime, so
+the OCR cache fingerprint survives them.
+
+### Remaster: Lanczos3 confirmed, every option stays with the owner
+
+The owner asked whether Lanczos is the best choice. Verdict: for comic line
+art on CPU, yes — Lanczos3. Catmull-Rom/Mitchell are softer (photos), nearest
+and xBRZ are for pixel art, and AI upscalers are not realistic on the owner's
+Pentium N5030 with 4 GB RAM. `remaster_comic_cbz` (Lanczos3, CBZ in/out,
+progress callback) already exists as groundwork. The owner's standing
+instruction: **all options decided by the user** — scale (1.5×/2×/3×), which
+pages (all / below a pixel threshold / a range), replace-with-backup vs
+copy-alongside, JPEG quality vs PNG — presented in a dialog, nothing
+hardcoded. Runs as a background job with progress (~0.5–1 s per page on the
+owner's machine).
+
+### OCR models: research verdict — stay on ocrs/rten
+
+- The shipped models are ocrs's **own first generation**, trained by that
+  project — not PaddleOCR files. So "swap in PP-OCRv4/v5" means converting
+  ONNX models and writing pipeline glue against raw rten: a real experiment
+  with unknowns (operator coverage, charset dicts, detection post-processing),
+  not an afternoon.
+- The one ready-made crate for Paddle models (`oar-ocr`) works but pulls in
+  ONNX Runtime C++ binaries — against the pure-Rust, fully-offline design.
+  Its classic pipeline would run fine on the owner's CPU; its VLM variants
+  (0.6B+ parameters) are impossible on 4 GB RAM.
+- PP-OCR ONNX files are freely available (Apache 2.0) if the experiment is
+  ever wanted. Revisit when ocrs publishes new models — that would be a
+  genuine drop-in.
+
+### The order the owner agreed to
+
+1. Readable folders (built after "go", 2026-09-29).
+2. Remaster with the options dialog.
+3. Bubble-aware comic OCR — the owner's pick for the best comic fix, now
+   roadmap item **2.14**, deliberately sequenced after the two above: the OCR
+   cache means the expensive per-balloon pass runs once per page ever, and
+   remastered pages feed it better input.
+4. Line-box padding (small, slots in anywhere).
+5. Grayscale/contrast: one cheap CI experiment on the fixtures; ship only if
+   it measurably helps.
+
+## 12. The Remaster Ships (2026-09-29)
+
+Built after the owner's explicit "go", comics only, nothing riding along —
+the owner's words: "no needless additions without any benefits."
+
+### What the owner gets
+
+One dialog, identical from the book detail page and the floating reader:
+enlargement (1.5× / 2× / 3×, default 2×), which pages (all / only pages
+narrower than a chosen width, default 1400 px / a first-to-last range bounded
+by the real page count), where the result goes (replace the original keeping
+a `.bak` backup — default — or save a copy beside it as
+`remastered-2x.cbz`), and the page format (JPEG at a chosen quality 60–100,
+default 90, or lossless PNG). The job runs in the background with per-page
+progress and a cancel.
+
+The engine (`comics::remaster_comic_archive`) selects pages in **reading
+order**, not zip storage order — a range 2–3 means the second and third page
+the reader shows, even when the archive stores them as `z10, z1, z2`.
+Untouched pages are copied through byte-for-byte, so `ComicInfo.xml` and
+folder structure survive; a page that fails to decode passes through too — a
+remaster must never lose a page. JPEG output is flattened to RGB (JPEG has no
+alpha channel). Replacing the original backs it up first and restores it if
+the swap fails; the stored file hash is then recomputed and the book record
+re-hashed, the same treatment EPUB metadata writes get, so remembered
+metadata edits, covers, and duplicate detection all survive.
+
+### Deliberately small deviations from the plan-of-record
+
+- The width spin allows 100–8000 px in steps of 50 (plan said 200–4000) —
+  the same control, a wider honest range.
+- The page-range spinners fall back to a 9999-page ceiling when the archive
+  cannot be opened for a count, and the dialog's intro line shows the page
+  count when it can.
+- Passthrough pages are not re-compressed — the engine writes the original
+  bytes, not a re-encode (`EntryOutput::Untouched` vs `Reencoded`).
+
+### What did not ride along, on purpose
+
+No PDF remaster, no EPUB anything, no OCR changes. The OCR-cache fingerprint
+(size + mtime) already invalidates cached text for a remastered file by
+itself — a remaster changes both — so nothing there needed touching.
+
+## 13. Bubble-Aware Comic OCR: the Design Conversation and the Ship (2026-09-29)
+
+Per the roadmap's standing rule, the fixtures and the design conversation
+came before any code. Four synthetic fixture pages were built with exact
+ground truth (`fixtures/ocr/comic/`): a B&W manga page with screentone and
+an outline-less white highlight as decoys, a reading-order page with
+same-height and staggered balloon pairs plus a thought cloud, a color
+manhwa slice, and an aged-scan stress page (yellowed paper, sensor noise,
+wobbly outlines, a grey caption box, an overlapping pair, JPEG quality 82,
+and one balloon clipped flat by the page edge). The detection algorithm was
+prototyped in Python against that ground truth until it found 15/16 balloons
+with zero false positives, IoU 0.89–0.98 — then the owner answered three
+questions and the Rust followed the validated constants.
+
+### The owner's three decisions
+
+1. **Text outside balloons: balloons only.** Sound effects and narration
+   captions are deliberately not recognized — cleaner text, better
+   recognition quality. (The old whole-page pipeline recognized them by
+   accident, garbled.)
+2. **Default OCR mode: Always On.** Black & white pages used to be skipped
+   by the "Color Only" default; bubble detection makes B&W the best case,
+   so every comic page is now recognized and cached. The Color Only and Off
+   options remain in the sidebar.
+3. **Alt+click a balloon selects its whole text.** Included now; this is
+   why the cache payload carries balloon rectangles, not just text lines.
+
+### Two design points settled by measurement, not opinion
+
+- **The ink test had to count HOLES, not pixels.** A balloon's component is
+  by definition all-white; its glyphs are dark pixels *enclosed* by it. The
+  first prototype version computed ink over component pixels and was always
+  zero — every balloon was rejected.
+- **The outline test needs a 1px tolerance.** JPEG ringing paints a light
+  halo directly against a black outline; without the tolerance a quality-82
+  scan lost a third of its outline signal (0.56 measured against a 0.55
+  floor — one bad scan away from failure).
+
+### How the pieces fit
+
+Detection runs at the same ≤1800px working resolution as recognition.
+Balloon rects + per-balloon line ranges are cached in the scanned-PDF
+`page_ocr_cache` table under a fingerprint of archive size + mtime + mode
+tag, so a remaster (which changes both) re-recognizes against the sharper
+pages — the exact interplay the roadmap predicted when it sequenced 2.14
+behind the remaster. The stored payload is direction-independent; the
+flattened reading order (banded LTR/RTL) is rebuilt per direction at load,
+so switching a manga to right-to-left is instant. Pages where no balloon is
+detected fall back to the whole-page pipeline rather than losing selection.
+
+## 14. The Roadmap Truth Pass, Line-Box Padding, and the Contrast Experiment (2026-09-30)
+
+The owner's field report on Round 9 came back "it's alright" — the remaster
+dialog and bubble OCR pass on device. Then the session turned uncomfortable
+and useful: asked to talk about the project, the agent described "P7 fiction
+sources / P9 manga / P12 Lua plugins" and "custom renderer research, parked"
+as current work. The owner's reaction — "this was old roadmap, not the new
+roadmap! we have been working for days and you don't know which roadmap we
+are following?!?" — was correct on every count. Those are the archived
+P0–P12 phases; the custom engine shipped with the 2026-09-18 swap. A full
+truth pass followed (see the 2026-09-30 changelog rows): the shipped table
+re-verified against the code, Phase 3 and Phase 4 Steps 1–2 marked done,
+2.13 marked done, and a new pitfalls entry (§27) recording the rule: status
+claims come from the repo, never from memory, and after any environment
+reset, re-point HEAD with `git reset --mixed origin/<branch>` before
+believing anything git says. The "OCR models not in git" scare from the same
+session was the same fault — HEAD had fallen back to the branch point, so
+`git ls-files` answered for the wrong commit; the models are committed.
+
+With the plan trustworthy again, the two remaining items of the agreed
+comic-OCR order were given their permanent numbers and built:
+
+**2.15 — line-box padding.** ocrs crops each recognized line to the tight
+outline of its word boxes; its `prepare_text_line` adds no margin, so
+ascenders, descenders and edge punctuation can be clipped before recognition.
+Every word box is grown 2 px per side before `find_text_lines` groups them.
+2 px is deliberately small — ocrs joins words into one line at 5 px vertical
+overlap, and a bigger pad could fuse stacked lines of lettering.
+
+**2.16 — the grayscale/contrast experiment.** One new fixture page
+(`comic-page5.png`): tan paper, a crisp-black control balloon and two faded
+grey ones, the worst kept just under the detector's DARK_T so balloon
+detection is unaffected (prototype: 3/3 balloons, zero false positives).
+The treatment: per-crop BT.601 grayscale plus a 2nd–98th percentile
+luminance stretch, skipped when the spread is under 48 (stretching a flat
+crop only amplifies noise). It ships behind `CropPrep` with the default
+`None`; a second CI probe runs every fixture page both ways and prints a
+verdict. The 2026-09-29 decision rule stands: it becomes the default only if
+it finds words the plain pipeline misses without losing any it finds.
+
+Also proposed this session, awaiting the owner's go: Phase 4 Step 3 — comics
+in the content index. The balloon words that 2.14 caches are exactly the
+input `book_content_fts` wants; the work is the bridge.
+
+The experiment's answer arrived the same day: plain crops 110/110 words,
+stretched 110/110. ocrs normalizes its input well enough that even the
+deliberately-faded fixture balloons read cleanly unaided, so the stretch
+does not become the default — exactly the outcome the decision rule was
+written to force. The probe stays and re-measures on every push; it
+becomes interesting again if ocrs publishes new models.
+
+
+## 15. Stability First, and the Day Comic OCR Was Removed (2026-09-30)
+
+The morning after the contrast experiment, the owner set the standing order
+for everything that follows: **stability first**. No new phase begins until
+everything that exists is stable and working, and the agent talks with the
+owner before building anything. In the same breath the owner made it a hard
+rule that all AI work follows `ROADMAP.md`, with every change — built,
+removed, or merely decided in chat — recorded explicitly even when nobody
+asks for the record, and the owner gently reminded that it was.
+
+Then the scope questions the stability conversation forced, all answered the
+same day:
+
+1. **Docs showing false information** — fixed so no future AI repeats the
+   mistakes (`FEATURES_V2.md` had no banner though all four blueprints
+   shipped; `GEMINI.md` had no roadmap rule and a stale example).
+2. **Comic full-text search (Phase 4 Step 3)** — **rejected before any
+   work.** The owner never searches comics. The library is EPUBs first, a
+   few PDFs, comics marginal. Phase 4 is complete for the owner's needs.
+3. **Comic OCR** — **removed completely** (item 2.17). The agent
+   recommended removal, the owner confirmed "remove all": `bubble_ocr.rs`
+   and every trace of it — reader wiring, selection gestures, the settings
+   section, CI probe, fixtures, cache functions, and the comic rows of
+   `page_ocr_cache` (schema v17 purge). What the owner accepted losing:
+   balloon selection, Alt+click, Highlight/Define/copy in comics, and
+   reachability of old comic highlights. Pages now open instantly; code
+   lives in git history.
+4. **Scanned-PDF OCR** — **kept**, cached on disk (each page recognized
+   once, only image-only pages trigger it).
+
+Item 2.17 reverses 2.14, 2.15 and 2.16; their rows stay as history, per the
+append-only rule. The lesson the roadmap now records: a feature can be the
+owner's own pick, ship cleanly, pass its probe — and still be the wrong
+thing to keep if the owner's library never touches it.
+
+
+## 16. The Stability Verdict: PDF Selection, Async Everything, and the Emoji Warning (2026-10-01)
+
+The owner ran the stability pass. EPUB reading: "it's alright I guess."
+Three things came back, all now numbered in the roadmap:
+
+1. **PDF double/triple-click selection is broken.** Diagnosis: the click
+   handler needs the page's text layer; on a scanned page with no cached
+   OCR it fires background OCR and returns silently — the first click does
+   nothing, with no feedback, and by the time recognition lands the reader
+   has given up. The owner also requires the same selection and handles in
+   the EPUB and PDF readers (the PDF reader draws its own thin-bar handles;
+   the EPUB reader uses the engine's teardrops). Item **2.18**, which also
+   closes 2.10.
+2. **"PDF should open instantly, always. Everything runs asynchronously;
+   the UI is just for clicking."** The owner has said this before and wants
+   it as a standing principle. Today the PDF reader opens the document,
+   walks the outline and renders the first pages synchronously on the UI
+   thread; OCR is already a background worker. Item **2.20**, and the owner
+   asked for a talk before any of it is built.
+3. **Pango warnings** — `failed to create cairo scaled font ... 'Noto
+   Color Emoji 8.8'`. The `8.8` matched the reader pill counter's 0.88rem
+   font size, which pinned it to the comics "Series Completed" label and
+   its party emoji. Five color-emoji strings across three files, all
+   replaced with plain text or a monochrome dot the same day. Item **2.19**.
+
+With the report came a new standing rule, now in the working agreement:
+every runtime warning the owner reports and every agent mistake is written
+into `docs/pitfalls.md` — every instance, no exceptions — and the pitfalls
+are re-read at the start of each phase. Entry §29 records the Pango case.
+
+
+## 17. Rules Confirmed: No Emoji, the Async Principle, and plan.md (2026-10-01)
+
+The owner confirmed all three proposals from the async talk:
+
+1. **Icons:** symbolic monochrome SVGs agreed, with a boundary —
+   "professional and restrained only, no funky icons like a flame." No
+   emoji anywhere, ever; Nerd Fonts declined (private-use codepoints,
+   extra megabytes, tofu boxes when the font is missing).
+2. **The async principle, verbatim:** "the UI thread never touches disk,
+   database, or parsing." And a widening field report that sets the next
+   audit's direction: **the whole app feels slow except the readers.**
+3. **The plan.md workflow:** planning → implementation plan →
+   implementation; all research and all owner questions during planning;
+   the file is cleared only after the outcome is recorded in ROADMAP and
+   pitfalls; if implementation proves the plan wrong, work stops and
+   returns to planning.
+
+All three are now in the working agreement and GEMINI.md. The first
+`plan.md` was drafted the same day for 2.18 + the PDF half of 2.20 —
+instant open, one shared OCR queue with import-time warming, forward-biased
+pre-warm, bounded text cache, first-click selection, and EPUB-parity
+teardrop handles — with three open questions for the owner: whole-book vs
+first-pages OCR at import, whether a "recognizing…" signal is wanted, and
+which non-reader flows feel slowest.
+
+
+## 18. Planning Answers, Item 2.21, and the Architecture Question (2026-10-01)
+
+The owner answered the plan's three questions, and the plan for 2.18 +
+2.20 (PDF half) moved to APPROVED:
+
+1. **Whole-book OCR at import** — "whole book obviously" — and the owner's
+   own reasoning confirmed the design: results are stored page by page
+   (each page its own row the moment it finishes), so a book opened right
+   after import already has its first pages selectable. **Priority
+   promotion** made explicit: jump to page 5000 before the scan gets
+   there, and that page moves to the front of the queue.
+2. **The "Recognizing page..." signal: yes** ("yup").
+3. **The slow-app report refined:** the All Books grid is fast (the
+   windowed-grid work did its job) and scrolling is fast everywhere; the
+   pause is when things OPEN — tapping a book, dialogs, most of the UI.
+   That points at synchronous view/dialog construction on the UI thread,
+   and it drives the plan after this one.
+
+**A new idea, recorded as item 2.21 (proposed):** embed the recognized
+text back into the PDF file as an invisible text layer, so other
+applications see selectable text too. The owner framed it exactly right —
+"obviously this will be a conscious decision": an explicit action with a
+warning and an undo story, never automatic. Once embedded, the file
+carries its own text and our OCR cache is never needed for that book
+again. Planned after 2.18/2.20; the how (MuPDF PDF-level editing vs a
+minimal content-stream writer) is researched in its own planning phase.
+
+**The architecture question.** The owner: "we should have a general
+architectural design, like how things should be, not tailor-made for
+everything... currently, we run some tests and if it does show
+improvements over the previous design, we make changes. that can't go on
+right?" The agent's honest answer: agreed — measure-and-patch without a
+target design is whack-a-mole (7.6's unexplained 35x number is the poster
+child). Two warnings given honestly: (a) an architecture doc nobody
+enforces becomes another stale document — the project has been burned by
+exactly that (the README status table, the old P0–P12 plan; ARCH.md still
+says "lopdf" though MuPDF shipped on 2026-09-25); (b) the design should
+not be invented from theory — the readers already embody the right
+architecture (background workers, messages, bounded caches, instant first
+paint), and the owner's own report says the readers are the fast part.
+Proposal: rewrite ARCH.md into a short prescriptive principles document
+(threading model, layering, state flow, budgets, "the UI thread never
+touches disk, database, or parsing"), wire it into the plan workflow
+(every plan states how it complies), and migrate the slow screens to the
+pattern one at a time with timing spans proving each. Sequencing: the
+approved PDF plan ships first as the reference implementation; the
+architecture doc lands alongside it; nothing is rewritten from scratch.
+Decision pending the owner's agreement.
+
+
+## 19. Should the Architecture Have Tests? (2026-10-01)
+
+The owner approved the architecture proposal ("I am fine with it") and
+asked the right follow-up: should the architecture have tests? Do we have
+them now?
+
+**What exists today, verified:** the repo already has one enforcement
+pattern that works — the query-count budgets in `src/perf.rs` (A0 step 7).
+They are ordinary tests that run on every `cargo test` and gate CI; they
+assert that SQL statement counts do not grow with row count, and they have
+teeth: when they landed, 4 of the 6 budgets failed against the then-current
+code — three N+1 regressions the other 270 tests had happily passed. The
+same file records the lesson that shapes everything else: wall-clock
+budgets in CI were rejected because the runner varies ~60% between runs,
+so any time ceiling loose enough to survive cannot catch a real
+regression. Count-shaped assertions are machine-independent and cannot
+flake.
+
+**What does not exist:** nothing enforces the new principle. A screen can
+regress to synchronous database access on the UI thread and all 870 tests
+still pass.
+
+**The proposal (item 7.7), three layers built as screens migrate:**
+
+1. Count-shaped budgets in the proven pattern — screen-open models
+   construct with a bounded, non-growing statement count; async models
+   construct with zero file I/O. Integer assertions, CI-gating.
+2. A main-thread stall watchdog — logs any UI-loop block over ~100 ms;
+   the scripted CI smoke session asserts zero stalls; on the owner's
+   machine it names the culprit whenever something feels slow. This is
+   the measurement half of 2.20's audit, made permanent.
+3. A static boundary check — a unit test scanning `src/pages/**` for
+   direct fs/catalog/parser calls outside the task and worker layers,
+   with an allowlist of written reasons (the 1.16 shape).
+
+**Stated honestly:** these are tripwires, not proofs. The watchdog sees
+stalls, not causes; the static check can be routed around; the document
+plus plan-compliance remains the primary control. What the tests buy is
+loud regressions instead of silent ones — the difference between the
+downloads hub lying "done" for a year and a red CI line on the day it
+happens. And they are built in migration order: instrument first, budget
+each screen as it moves, static check last — writing all three before the
+migration would just produce a wall of red.
+
+*Last updated: 2026-10-01.*

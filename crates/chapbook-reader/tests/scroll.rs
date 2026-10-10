@@ -269,6 +269,7 @@ fn a_selection_lives_on_the_page_it_was_made_on() {
         },
         end: s.layered_locator_at(end).unwrap(),
         color: None,
+        style: None,
         text: Some(text),
     };
     s.show_host_highlight(row);

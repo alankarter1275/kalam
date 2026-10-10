@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:        #1b1e24;
+  --surface:   #21242b;
+  --surface2:  #282c34;
+  --border:    #343842;
+  --text:      #abb2bf;
+  --dim:       #6b7280;
+  --accent:    #61afef;
+  --accent-t:  rgba(97,175,239,0.15);
+  --danger:    #e06c75;
+  --danger-t:  rgba(224,108,117,0.14);
+  --info:      #c678dd;
+  --info-t:    rgba(198,120,221,0.14);
+}
+
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+
+body {
+  background: #13151a;
+  font-family: 'IBM Plex Sans', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+}
+
+.k-popup {
+  width: 380px;
+  height: 520px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── STICKY HEADER ── */
+.k-header {
+  flex-shrink: 0;
+  padding: 20px 20px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  /* subtle shadow so content scrolling under it looks right */
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  z-index: 2;
+}
+
+.k-header-left { flex: 1; }
+
+.k-word {
+  font-family: 'Fraunces', serif;
+  font-size: 26px;
+  font-weight: 600;
+  color: #e6e9ef;
+  line-height: 1.1;
+  margin-bottom: 5px;
+  transition: opacity .12s;
+}
+
+.k-pronunciation {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  margin-bottom: 7px;
+  transition: opacity .12s;
+}
+
+.k-pos {
+  font-size: 10.5px;
+  color: var(--info);
+  background: var(--info-t);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-style: italic;
+  display: inline-block;
+  transition: opacity .12s;
+}
+
+.k-save-btn {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 15px;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.k-save-btn:hover { background: var(--border); color: var(--text); }
+.k-save-btn.saved { color: var(--accent); border-color: var(--accent); background: var(--accent-t); }
+
+/* ── SCROLLABLE BODY ── */
+.k-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 20px 24px;
+  /* hide scrollbar visually */
+  scrollbar-width: none;
+}
+.k-body::-webkit-scrollbar { display: none; }
+
+.k-section-label {
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 10px;
+  margin-top: 20px;
+}
+
+/* definitions */
+.k-defs { display: flex; flex-direction: column; gap: 10px; }
+
+.k-def-item { display: flex; gap: 10px; align-items: flex-start; }
+
+.k-def-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 3px;
+  min-width: 16px;
+}
+
+.k-def-text { font-size: 13px; color: var(--text); line-height: 1.6; }
+
+.k-def-example {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 3px;
+}
+
+.k-show-more {
+  font-size: 11.5px;
+  color: var(--accent);
+  cursor: pointer;
+  margin-top: 8px;
+  display: inline-block;
+}
+.k-show-more:hover { text-decoration: underline; }
+
+.k-extra-defs { display: none; }
+.k-extra-defs.visible { display: contents; }
+
+/* chips */
+.k-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.k-chip {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background .15s, border-color .15s;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+.k-chip-syn {
+  color: var(--accent);
+  background: var(--accent-t);
+  border-color: rgba(97,175,239,0.3);
+}
+.k-chip-syn:hover { background: rgba(97,175,239,0.25); border-color: var(--accent); }
+
+.k-chip-ant {
+  color: var(--danger);
+  background: var(--danger-t);
+  border-color: rgba(224,108,117,0.3);
+}
+.k-chip-ant:hover { background: rgba(224,108,117,0.25); border-color: var(--danger); }
+
+/* idioms */
+.k-idioms { display: flex; flex-direction: column; gap: 10px; }
+
+.k-idiom-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.k-idiom-phrase {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 13px;
+  color: #e6e9ef;
+  margin-bottom: 4px;
+}
+
+.k-idiom-def {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+/* fade edge at bottom to hint scrollability */
+.k-fade-bottom {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 40px;
+  background: linear-gradient(to bottom, transparent, var(--bg));
+  pointer-events: none;
+  border-radius: 0 0 18px 18px;
+  z-index: 1;
+}
+</style>
+</head>
+<body>
+
+<div class="k-popup">
+
+  <!-- STICKY HEADER -->
+  <div class="k-header">
+    <div class="k-header-left">
+      <div class="k-word" id="wordTitle">melancholy</div>
+      <div class="k-pronunciation" id="wordPron">/ˈmɛl.ən.ˌkɒl.i/</div>
+      <span class="k-pos" id="wordPos">noun · adjective</span>
+    </div>
+    <button class="k-save-btn" id="saveBtn" onclick="toggleSave()" title="Save word">
+      <i class="ti ti-bookmark" id="saveIcon" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  <!-- SCROLLABLE BODY -->
+  <div class="k-body">
+
+    <div class="k-section-label">Definitions</div>
+    <div class="k-defs">
+      <div class="k-def-item">
+        <span class="k-def-num">1.</span>
+        <div>
+          <div class="k-def-text">A deep, persistent sadness; a gloomy state of mind, especially when habitual or prolonged.</div>
+          <div class="k-def-example">"an air of melancholy hung over the deserted village"</div>
+        </div>
+      </div>
+      <div class="k-def-item">
+        <span class="k-def-num">2.</span>
+        <div>
+          <div class="k-def-text">Having a feeling of melancholy; sad and pensive.</div>
+          <div class="k-def-example">"she felt a melancholy longing for the past"</div>
+        </div>
+      </div>
+      <div class="k-def-item">
+        <span class="k-def-num">3.</span>
+        <div>
+          <div class="k-def-text">Causing or expressing sadness; depressing.</div>
+          <div class="k-def-example">"the melancholy of parting gave the scene a strange beauty"</div>
+        </div>
+      </div>
+
+      <div class="k-extra-defs" id="extraDefs">
+        <div class="k-def-item">
+          <span class="k-def-num">4.</span>
+          <div>
+            <div class="k-def-text"><em>(historical)</em> One of the four bodily humours, believed to cause depression when present in excess.</div>
+          </div>
+        </div>
+        <div class="k-def-item">
+          <span class="k-def-num">5.</span>
+          <div>
+            <div class="k-def-text">A pensive mood; wistful thoughtfulness, not necessarily unpleasant.</div>
+            <div class="k-def-example">"there is a gentle melancholy in his late compositions"</div>
+          </div>
+        </div>
+      </div>
+
+      <span class="k-show-more" id="showMoreBtn" onclick="toggleDefs()">Show 2 more</span>
+    </div>
+
+    <div class="k-section-label">Synonyms</div>
+    <div class="k-chips">
+      <span class="k-chip k-chip-syn" onclick="lookup('sorrow','noun','/ˈsɒr.oʊ/')">sorrow</span>
+      <span class="k-chip k-chip-syn" onclick="lookup('gloom','noun','/ɡluːm/')">gloom</span>
+      <span class="k-chip k-chip-syn" onclick="lookup('despondency','noun','/dɪˈspɒn.dən.si/')">despondency</span>
+      <span class="k-chip k-chip-syn" onclick="lookup('sadness','noun','/ˈsæd.nəs/')">sadness</span>
+      <span class="k-chip k-chip-syn" onclick="lookup('wistfulness','noun','/ˈwɪst.fəl.nəs/')">wistfulness</span>
+      <span class="k-chip k-chip-syn" onclick="lookup('pensiveness','noun','/ˈpɛn.sɪv.nəs/')">pensiveness</span>
+    </div>
+
+    <div class="k-section-label">Antonyms</div>
+    <div class="k-chips">
+      <span class="k-chip k-chip-ant" onclick="lookup('joy','noun','/dʒɔɪ/')">joy</span>
+      <span class="k-chip k-chip-ant" onclick="lookup('elation','noun','/ɪˈleɪ.ʃən/')">elation</span>
+      <span class="k-chip k-chip-ant" onclick="lookup('happiness','noun','/ˈhæp.i.nəs/')">happiness</span>
+      <span class="k-chip k-chip-ant" onclick="lookup('cheer','noun','/tʃɪər/')">cheer</span>
+      <span class="k-chip k-chip-ant" onclick="lookup('bliss','noun','/blɪs/')">bliss</span>
+    </div>
+
+    <div class="k-section-label">Idioms</div>
+    <div class="k-idioms">
+      <div class="k-idiom-item">
+        <div class="k-idiom-phrase">in a melancholy mood</div>
+        <div class="k-idiom-def">Experiencing a state of sadness and thoughtfulness, often without a clear reason.</div>
+      </div>
+      <div class="k-idiom-item">
+        <div class="k-idiom-phrase">a touch of melancholy</div>
+        <div class="k-idiom-def">A mild, pleasantly nostalgic sadness; a gentle emotional heaviness that does not overwhelm.</div>
+      </div>
+      <div class="k-idiom-item">
+        <div class="k-idiom-phrase">born under a melancholy star</div>
+        <div class="k-idiom-def">Destined, by nature or fate, to be prone to sadness; an old astrological expression for a gloomy temperament.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- fade hint at bottom -->
+  <div class="k-fade-bottom"></div>
+
+</div>
+
+<script>
+var saved = false;
+
+function toggleSave() {
+  saved = !saved;
+  var btn  = document.getElementById('saveBtn');
+  var icon = document.getElementById('saveIcon');
+  if (saved) {
+    btn.classList.add('saved');
+    icon.className = 'ti ti-bookmark-filled';
+  } else {
+    btn.classList.remove('saved');
+    icon.className = 'ti ti-bookmark';
+  }
+}
+
+function toggleDefs() {
+  var extra = document.getElementById('extraDefs');
+  var btn   = document.getElementById('showMoreBtn');
+  var vis   = extra.classList.toggle('visible');
+  btn.textContent = vis ? 'Show less' : 'Show 2 more';
+}
+
+function lookup(word, pos, pron) {
+  var els = ['wordTitle','wordPron','wordPos'];
+  els.forEach(function(id) {
+    document.getElementById(id).style.opacity = '0.2';
+  });
+  setTimeout(function() {
+    document.getElementById('wordTitle').textContent = word;
+    document.getElementById('wordPron').textContent = pron;
+    document.getElementById('wordPos').textContent = pos;
+    els.forEach(function(id) {
+      document.getElementById(id).style.opacity = '1';
+    });
+    saved = false;
+    document.getElementById('saveBtn').classList.remove('saved');
+    document.getElementById('saveIcon').className = 'ti ti-bookmark';
+    document.getElementById('extraDefs').classList.remove('visible');
+    document.getElementById('showMoreBtn').textContent = 'Show 2 more';
+    document.querySelector('.k-body').scrollTop = 0;
+  }, 140);
+}
+</script>
+</body>
+</html>

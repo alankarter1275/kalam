@@ -184,7 +184,14 @@ impl Session {
             .map(|item| item.href == target.spine_href)
             .unwrap_or(false);
         let offset = match self.cached_unit_text(spine) {
-            Some(text) => resolve_in_text(&text, target, same_edition && href_matched).offset(),
+            // `same_edition` is the host's claim about the file; an entry
+            // filter makes even an unchanged file a derived view, so while
+            // one is installed the exact layer is never trusted and the
+            // quote layer re-anchors (Phase 6's virtual edits).
+            Some(text) => {
+                let trusted = same_edition && href_matched && !self.text_is_filtered();
+                resolve_in_text(&text, target, trusted).offset()
+            }
             None => 0,
         };
         self.goto(Locator::new(spine, offset))

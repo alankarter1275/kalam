@@ -1,5 +1,6 @@
 //! Left sidebar Settings panel builder and UI setting stepper rows.
 
+use super::keybinds::{KeyBinding, KeyBindings, ReaderAction};
 use super::mod_model::ReaderModel;
 use super::types::*;
 use super::ui_prefs::{
@@ -24,7 +25,16 @@ pub(crate) fn build_reader_settings_panel(
     ui_prefs: ReaderUiPrefs,
     dict_sense_hint: bool,
     dict_history_enabled: bool,
-
+    font_family: Option<String>,
+    families: Vec<String>,
+    justify: bool,
+    publisher_styles: bool,
+    dual_page: bool,
+    autohide_cursor: bool,
+    wheel_step: i32,
+    arrow_step: i32,
+    keybinds: &Rc<RefCell<KeyBindings>>,
+    word_memory_scope: &str,
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -36,6 +46,7 @@ pub(crate) fn build_reader_settings_panel(
     for (label, pane) in [
         ("Reading", ReaderSettingsPane::Reading),
         ("UI", ReaderSettingsPane::Ui),
+        ("Shortcuts", ReaderSettingsPane::Shortcuts),
     ] {
         let btn = gtk::Button::with_label(label);
         btn.add_css_class("kalam-reader-settings-switch");
@@ -54,7 +65,9 @@ pub(crate) fn build_reader_settings_panel(
     stack.set_transition_type(gtk::StackTransitionType::Crossfade);
 
     let reading_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let theme_section = reader_settings_section("Reading theme");
+
+    // 1. Reading theme palette
+    let theme_section = reader_settings_section("Theme");
     let dots_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let mut dots = Vec::new();
     for (label, value, class_name) in [
@@ -78,7 +91,78 @@ pub(crate) fn build_reader_settings_panel(
     reading_page.append(&theme_section);
     reading_page.append(&reader_panel_divider());
 
-    let type_section = reader_settings_section("Type");
+    // 2. Typography: font choice, sizing, spacing, alignment, styles
+    let type_section = reader_settings_section("Typography");
+    if !families.is_empty() {
+        let default_label = "Default";
+        let current = font_family.clone().unwrap_or_default();
+        let mut display: Vec<String> = vec![default_label.to_string()];
+        display.extend(families.iter().cloned());
+        let selected = display.iter().position(|f| *f == current).unwrap_or(0) as u32;
+
+        let strings: Vec<&str> = display.iter().map(|s| s.as_str()).collect();
+        let drop = gtk::DropDown::builder()
+            .model(&gtk::StringList::new(&strings))
+            .build();
+        drop.set_valign(gtk::Align::Center);
+
+        let ready = Rc::new(std::cell::Cell::new(false));
+        let tx = sender.input_sender().clone();
+        let choices = display.clone();
+        let ready_for_cb = ready.clone();
+        drop.connect_selected_item_notify(move |d| {
+            if !ready_for_cb.get() {
+                return;
+            }
+            let chosen = choices
+                .get(d.selected() as usize)
+                .cloned()
+                .unwrap_or_default();
+            let value = if chosen == default_label {
+                String::new()
+            } else {
+                chosen
+            };
+            let _ = tx.send(ReaderMsg::SetFontFamily(value));
+        });
+        drop.set_selected(selected);
+        ready.set(true);
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        row.add_css_class("kalam-reader-setting-row");
+        let label = gtk::Label::new(Some("Typeface"));
+        label.add_css_class("kalam-reader-setting-name");
+        label.set_hexpand(true);
+        label.set_halign(gtk::Align::Start);
+        row.append(&label);
+        row.append(&drop);
+        type_section.append(&row);
+    }
+
+    let fonts_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    fonts_row.add_css_class("kalam-reader-setting-row");
+    let fonts_label = gtk::Label::new(Some("Fonts folder"));
+    fonts_label.add_css_class("kalam-reader-setting-name");
+    fonts_label.set_hexpand(true);
+    fonts_label.set_halign(gtk::Align::Start);
+    fonts_row.append(&fonts_label);
+    let fonts_tx = sender.input_sender().clone();
+    let fonts_open = gtk::Button::with_label("Open");
+    fonts_open.add_css_class("flat");
+    fonts_open.set_tooltip_text(Some("Drop .ttf or .otf files in here"));
+    fonts_open.connect_clicked(move |_| {
+        let _ = fonts_tx.send(ReaderMsg::OpenFontsFolder);
+    });
+    fonts_row.append(&fonts_open);
+    type_section.append(&fonts_row);
+
+    let fonts_hint =
+        gtk::Label::new(Some("New faces join the picker the next time you open the book."));
+    fonts_hint.add_css_class("kalam-reader-setting-hint");
+    fonts_hint.set_wrap(true);
+    fonts_hint.set_xalign(0.0);
+    type_section.append(&fonts_hint);
+
     let font_size_label = gtk::Label::new(Some(&font_px.to_string()));
     font_size_label.add_css_class("kalam-reader-stepper-value");
     type_section.append(&reader_stepper_row(
@@ -88,6 +172,7 @@ pub(crate) fn build_reader_settings_panel(
         ReaderMsg::FontDelta(-1),
         ReaderMsg::FontDelta(1),
     ));
+
     let line_height_label = gtk::Label::new(Some(&format!("{line_height:.1}")));
     line_height_label.add_css_class("kalam-reader-stepper-value");
     type_section.append(&reader_stepper_row(
@@ -97,25 +182,31 @@ pub(crate) fn build_reader_settings_panel(
         ReaderMsg::LineHeightDelta(-1),
         ReaderMsg::LineHeightDelta(1),
     ));
+
+    let input_tx = sender.input_sender();
+    setting_toggle(&type_section, "Justify", justify, input_tx, ReaderMsg::SetJustify);
+    setting_toggle(
+        &type_section,
+        "Publisher styles",
+        publisher_styles,
+        input_tx,
+        ReaderMsg::SetPublisherStyles,
+    );
     reading_page.append(&type_section);
     reading_page.append(&reader_panel_divider());
 
-    let width_section = reader_settings_section("Column width");
+    // 3. Layout: column width, continuous strip vs paged spread
+    let layout_section = reader_settings_section("Layout");
     let column_width_label = gtk::Label::new(Some(&column_px.to_string()));
     column_width_label.add_css_class("kalam-reader-stepper-value");
-    width_section.append(&reader_stepper_row(
-        "Width",
+    layout_section.append(&reader_stepper_row(
+        "Column width",
         &column_width_label,
         sender,
         ReaderMsg::ColumnWidthDelta(-20),
         ReaderMsg::ColumnWidthDelta(20),
     ));
-    reading_page.append(&width_section);
-    reading_page.append(&reader_panel_divider());
 
-    // "Layout": one page at a time, or one long strip. Same control the
-    // `reader.scrolled` preference holds, so the key and the switch agree.
-    let mode_section = reader_settings_section("Layout");
     let mode_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     mode_row.add_css_class("kalam-reader-setting-row");
     let mode_label = gtk::Label::new(Some("Continuous scroll"));
@@ -128,43 +219,169 @@ pub(crate) fn build_reader_settings_panel(
         let _ = mode_tx.send(ReaderMsg::SetScrolled(on));
     });
     mode_row.append(&mode_switch);
-    mode_section.append(&mode_row);
-    reading_page.append(&mode_section);
+    layout_section.append(&mode_row);
+
+    let dual_page_switch = setting_toggle(
+        &layout_section,
+        "Two pages side by side",
+        dual_page,
+        input_tx,
+        ReaderMsg::SetDualPage,
+    );
+    dual_page_switch.set_sensitive(!scrolled);
+    reading_page.append(&layout_section);
     reading_page.append(&reader_panel_divider());
 
+    // 4. Navigation & Scrolling: speeds, pointer behaviour
+    let nav_section = reader_settings_section("Navigation & Scrolling");
+
+    let wheel_step_label = gtk::Label::new(Some(&wheel_step.to_string()));
+    wheel_step_label.add_css_class("kalam-reader-stepper-value");
+    nav_section.append(&reader_stepper_row(
+        "Wheel scroll speed",
+        &wheel_step_label,
+        sender,
+        ReaderMsg::WheelStepDelta(-8),
+        ReaderMsg::WheelStepDelta(8),
+    ));
+
+    let arrow_step_label = gtk::Label::new(Some(&arrow_step.to_string()));
+    arrow_step_label.add_css_class("kalam-reader-stepper-value");
+    let arrow_step_row = reader_stepper_row(
+        "Arrow scroll speed",
+        &arrow_step_label,
+        sender,
+        ReaderMsg::ArrowStepDelta(-5),
+        ReaderMsg::ArrowStepDelta(5),
+    );
+    arrow_step_row.set_sensitive(scrolled);
+    nav_section.append(&arrow_step_row);
+
+    setting_toggle(
+        &nav_section,
+        "Hide pointer while reading",
+        autohide_cursor,
+        input_tx,
+        ReaderMsg::SetAutohideCursor,
+    );
+    let pointer_hint = gtk::Label::new(Some(
+        "The pointer gets out of the way after two seconds still; move it to bring it back.",
+    ));
+    pointer_hint.add_css_class("kalam-reader-setting-hint");
+    pointer_hint.set_wrap(true);
+    pointer_hint.set_xalign(0.0);
+    nav_section.append(&pointer_hint);
+
+    reading_page.append(&nav_section);
+    reading_page.append(&reader_panel_divider());
+
+    // 5. Dictionary
     let dict_section = reader_settings_section("Dictionary");
+    setting_toggle(
+        &dict_section,
+        "Sense hint",
+        dict_sense_hint,
+        input_tx,
+        ReaderMsg::SetDictSenseHint,
+    );
+    setting_toggle(
+        &dict_section,
+        "Lookup history",
+        dict_history_enabled,
+        input_tx,
+        ReaderMsg::SetDictHistory,
+    );
 
-    let hint_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    hint_row.add_css_class("kalam-reader-setting-row");
-    let hint_label = gtk::Label::new(Some("Sense hint"));
-    hint_label.add_css_class("kalam-reader-setting-name");
-    hint_label.set_hexpand(true);
-    hint_label.set_halign(gtk::Align::Start);
-    hint_row.append(&hint_label);
-    let hint_tx = sender.input_sender().clone();
-    let hint_switch = crate::pages::settings::toggle_switch(dict_sense_hint, move |on| {
-        let _ = hint_tx.send(ReaderMsg::SetDictSenseHint(on));
-    });
-    hint_row.append(&hint_switch);
-    dict_section.append(&hint_row);
+    // Word Memory Scope setting
+    let wm_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    wm_box.set_margin_start(16);
+    wm_box.set_margin_end(16);
+    wm_box.set_margin_top(8);
+    wm_box.set_margin_bottom(8);
 
-    let history_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    history_row.add_css_class("kalam-reader-setting-row");
-    let history_label = gtk::Label::new(Some("Lookup history"));
-    history_label.add_css_class("kalam-reader-setting-name");
-    history_label.set_hexpand(true);
-    history_label.set_halign(gtk::Align::Start);
-    history_row.append(&history_label);
-    let history_tx = sender.input_sender().clone();
-    let history_switch = crate::pages::settings::toggle_switch(dict_history_enabled, move |on| {
-        let _ = history_tx.send(ReaderMsg::SetDictHistory(on));
-    });
-    history_row.append(&history_switch);
-    dict_section.append(&history_row);
+    let wm_label = gtk::Label::new(Some("Word memory (vocabulary dotted underline)"));
+    wm_label.set_xalign(0.0);
+    wm_label.add_css_class("kalam-reader-setting-title");
+    wm_box.append(&wm_label);
+
+    let wm_seg = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    wm_seg.set_homogeneous(true);
+
+    let scopes = [
+        ("library", "Library"),
+        ("series", "Series"),
+        ("book", "Book"),
+        ("off", "Off"),
+    ];
+    let mut wm_buttons = Vec::new();
+
+    for (scope_val, scope_label) in scopes {
+        let btn = gtk::Button::with_label(scope_label);
+        btn.add_css_class("kalam-reader-seg-btn");
+        if word_memory_scope == scope_val {
+            btn.add_css_class("active");
+        }
+        wm_seg.append(&btn);
+        wm_buttons.push((scope_val, btn));
+    }
+
+    let wm_buttons_rc = std::rc::Rc::new(wm_buttons);
+    for (scope_val, btn) in wm_buttons_rc.iter() {
+        let tx = input_tx.clone();
+        let val = scope_val.to_string();
+        let all_btns = wm_buttons_rc.clone();
+        btn.connect_clicked(move |_| {
+            for (s_val, b) in all_btns.iter() {
+                if *s_val == val {
+                    b.add_css_class("active");
+                } else {
+                    b.remove_css_class("active");
+                }
+            }
+            let _ = tx.send(ReaderMsg::SetWordMemoryScope(val.clone()));
+        });
+    }
+    wm_box.append(&wm_seg);
+    dict_section.append(&wm_box);
+
     reading_page.append(&dict_section);
     stack.add_named(
         &reading_page,
         Some(reader_settings_pane_name(ReaderSettingsPane::Reading)),
+    );
+
+    // Roadmap 2.9, third cut: the reader's own keys, in a tab of their
+    // own — twelve rows deep they were burying the reading settings, and
+    // the tab layout is how the panel already says "a different kind of
+    // setting".
+    let shortcuts_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let key_section = reader_settings_section("Keyboard");
+    let mut keybind_buttons = Vec::new();
+    for action in ReaderAction::ALL {
+        let binding = keybinds.borrow().binding(action);
+        let button = keybind_row(&key_section, action, binding, sender);
+        keybind_buttons.push((action, button));
+    }
+    let key_hint = gtk::Label::new(Some(
+        "Click a key, then press the one you want; Escape cancels. A key does one \
+         thing, so binding it elsewhere moves it.",
+    ));
+    key_hint.add_css_class("kalam-reader-setting-hint");
+    key_hint.set_wrap(true);
+    key_hint.set_xalign(0.0);
+    key_section.append(&key_hint);
+
+    let reset_keys = gtk::Button::with_label("Reset to defaults");
+    reset_keys.add_css_class("flat");
+    let reset_tx = sender.input_sender().clone();
+    reset_keys.connect_clicked(move |_| {
+        let _ = reset_tx.send(ReaderMsg::ResetKeyBindings);
+    });
+    key_section.append(&reset_keys);
+    shortcuts_page.append(&key_section);
+    stack.add_named(
+        &shortcuts_page,
+        Some(reader_settings_pane_name(ReaderSettingsPane::Shortcuts)),
     );
 
     let ui_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -233,9 +450,89 @@ pub(crate) fn build_reader_settings_panel(
         font_size_label,
         line_height_label,
         column_width_label,
+        wheel_step_label,
+        arrow_step_label,
+        arrow_step_row,
+        keybind_buttons,
+        dual_page_switch,
         theme_dots: dots,
         ui_controls,
     }
+}
+
+/// One editable key: its name, and a button that shows the key and takes a
+/// new one when clicked.
+///
+/// The capture is a key controller on the button itself, armed by the click
+/// and disarmed by whatever key arrives — so there is no modal to dismiss
+/// and no way to leave the panel listening.
+fn keybind_row(
+    section: &gtk::Box,
+    action: ReaderAction,
+    binding: KeyBinding,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::Button {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.add_css_class("kalam-reader-setting-row");
+    let label = gtk::Label::new(Some(action.label()));
+    label.add_css_class("kalam-reader-setting-name");
+    label.set_hexpand(true);
+    label.set_halign(gtk::Align::Start);
+    row.append(&label);
+
+    let button = gtk::Button::with_label(&binding.label());
+    button.add_css_class("kalam-reader-keycap");
+    button.set_tooltip_text(Some("Click, then press the key you want"));
+    row.append(&button);
+    section.append(&row);
+
+    // What the button showed before capture, so Escape can put it back.
+    let shown = Rc::new(RefCell::new(binding.label()));
+    let armed = Rc::new(std::cell::Cell::new(false));
+
+    let keys = gtk::EventControllerKey::new();
+    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    {
+        let armed = armed.clone();
+        let shown = shown.clone();
+        let button = button.clone();
+        let tx = sender.input_sender().clone();
+        keys.connect_key_pressed(move |_, keyval, _, state| {
+            use gtk::glib::Propagation;
+            if !armed.get() {
+                return Propagation::Proceed;
+            }
+            armed.set(false);
+            if keyval == gtk::gdk::Key::Escape {
+                let back = shown.borrow().clone();
+                button.set_label(&back);
+                return Propagation::Stop;
+            }
+            let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            let Some(binding) = KeyBinding::capture(keyval, ctrl) else {
+                return Propagation::Stop;
+            };
+            *shown.borrow_mut() = binding.label();
+            button.set_label(&shown.borrow());
+            let _ = tx.send(ReaderMsg::SetKeyBinding(action, keyval, ctrl));
+            Propagation::Stop
+        });
+    }
+    button.add_controller(keys);
+
+    {
+        // A name of its own: the closure cannot move the button it is
+        // being attached to.
+        let armed = armed.clone();
+        let target = button.clone();
+        button.connect_clicked(move |_| {
+            armed.set(true);
+            target.set_label("Press a key…");
+            target.grab_focus();
+        });
+    }
+
+    button
 }
 
 pub(crate) fn reader_ui_setting_block(
@@ -442,4 +739,27 @@ pub(crate) fn reader_panel_divider() -> gtk::Separator {
     let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
     sep.add_css_class("kalam-reader-panel-divider");
     sep
+}
+
+fn setting_toggle(
+    section: &gtk::Box,
+    label: &str,
+    on: bool,
+    tx: &relm4::Sender<ReaderMsg>,
+    make_msg: fn(bool) -> ReaderMsg,
+) -> gtk::Switch {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.add_css_class("kalam-reader-setting-row");
+    let name = gtk::Label::new(Some(label));
+    name.add_css_class("kalam-reader-setting-name");
+    name.set_hexpand(true);
+    name.set_halign(gtk::Align::Start);
+    row.append(&name);
+    let tx = tx.clone();
+    let switch = crate::pages::settings::toggle_switch(on, move |v| {
+        let _ = tx.send(make_msg(v));
+    });
+    row.append(&switch);
+    section.append(&row);
+    switch
 }

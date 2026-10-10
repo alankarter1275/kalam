@@ -1,0 +1,1019 @@
+# Phase 2 test plan
+
+## Round 9 — Comic Remaster Dialog & Bubble-Aware Comic OCR (2026-09-29)
+
+**Result (2026-09-30):** owner ran it on device — "it's alright." No copy
+artifacts, stray lines or timing complaints reported; round closed.
+
+**Historical note (2026-09-30, later the same day):** the bubble-OCR half of
+this round (T31) tests a feature that no longer exists — ROADMAP item 2.17
+removed comic OCR entirely at the owner's decision. The round is kept as a
+record of what was verified while the feature lived; the remaster-dialog half
+remains valid.
+
+- **Comic Remaster Dialog (every option yours):**
+  - From a comic's detail page (or the floating reader), press **Remaster**.
+  **Re-test:**
+  1. The dialog shows the page count and rows for Scale / Which pages / Where the result goes / Page format. Defaults: 2x, All pages, Replace keeping a `.bak`, JPEG 90.
+  2. "Only small pages" reveals a pixel-width spin (default 1400); "A page range" reveals from/to spins bounded by the page count.
+  3. Choosing PNG hides the JPEG-quality spin; choosing JPEG shows it.
+  4. Run a small job (a range of 2-3 pages at 2x, JPEG 90). Expect a background task with per-page progress; the success toast says how many pages were upscaled.
+  5. **Replace mode:** the original file is backed up as `book.cbz.bak` (or `.cbr.bak`) next to the book; the book still opens and reads; remembered metadata edits and covers are still there.
+  6. **Copy mode:** a `remastered-2x.cbz` appears next to the original; the original is untouched.
+  7. Cancel mid-job: nothing changes, no leftover temp file.
+
+- **Bubble-Aware Comic OCR (balloons only, always on by default):**
+  - Open any comic. Pages are recognized in the background on first view (seconds per page on slow hardware), then cached forever.
+  **Re-test:**
+  1. **Drag** across a speech balloon: the selection snaps to the dialogue lines, and the copy reads in correct balloon order (side-by-side balloons must NOT interleave).
+  2. **Alt+click** inside a balloon: the entire balloon's text is selected in one tap; the chip (Highlight / Define) and Ctrl+C work on it.
+  3. **Reading direction:** switch the reader to Right-to-Left (Manga) — the copied text order flips to right-to-left per band, instantly (no re-recognition).
+  4. **Persistence:** close and reopen the same book - text selection works immediately on previously visited pages (no second-long wait per page).
+  5. **Remaster interplay:** remaster a comic (replace mode) and reopen it - the OCR cache is invalidated by the file change and the pages are re-recognized against the sharper pages.
+  6. **Settings:** the Speech Bubble OCR section still offers Color Only / Always On / Off; the default for fresh installs is Always On. Sound effects outside balloons (e.g. "KRAKOOM") are deliberately NOT recognized.
+  7. **Webtoon/long-strip and B&W pages** work the same as color singles.
+
+## Round 8 — View Modes & Naming from Reference Image, Rotation Removal, and Bookmarks Integration
+
+- **Exact View Modes & Naming (Scrolling & Spreads):**
+  - Settings panel re-arranged into exact layout groups:
+    - **Scrolling**: `Page Scrolling`, `Vertical Scrolling`, `Horizontal Scrolling`, `Wrapped Scrolling`.
+    - **Spreads**: `No Spreads`, `Odd Spreads` (cover alone), `Even Spreads` (paired facing).
+    - **Spread Gap**: `0px (Seamless)`, `4px`, `8px`, `12px`, `16px` (visible when `Odd Spreads` or `Even Spreads` is chosen).
+  **Re-test:**
+  1. Open a PDF document and open the left sidebar → Settings tab.
+  2. Verify the **Scrolling** section shows:
+     - `Page Scrolling` (discrete page-by-page or spread-by-spread).
+     - `Vertical Scrolling` (continuous vertical stream).
+     - `Horizontal Scrolling` (continuous horizontal stream with horizontal panning).
+     - `Wrapped Scrolling` (multi-page responsive flow grid).
+  3. Verify the **Spreads** section shows:
+     - `No Spreads` (single page display).
+     - `Odd Spreads` (first page alone, followed by facing spreads).
+     - `Even Spreads` (pages 1 & 2 together, facing spreads throughout).
+  4. Verify that selecting `Odd Spreads` or `Even Spreads` reveals the **Spread Gap** selector (`0px`, `4px`, `8px`, `12px`, `16px`), and selecting `0px` removes the gap completely for seamless spreads.
+  5. Verify that selecting `No Spreads` hides the Spread Gap selector.
+
+- **Rotation Removal:**
+  - Rotation feature and all associated buttons/shortcuts completely removed per user request.
+  **Re-test:**
+  1. Verify there are no rotation controls in the Settings panel or bottom dock.
+  2. Pressing `r` or `R` has no effect.
+
+- **Bookmarks System in Sidebar and Bottom Dock:**
+  - Full bookmarks integration wired to catalog database (`reading_bookmarks`).
+  - Added dedicated **Bookmarks** tab to sidebar between **TOC** and **Settings**.
+  - Added bookmark toggle button (`bookmark-new-symbolic`) to floating bottom pill.
+  - Added keyboard shortcut `b` / `B` to toggle bookmark for current page.
+  **Re-test:**
+  1. Open a PDF document.
+  2. On any page (e.g. Page 5), press `b` or click the bookmark button on the floating bottom pill.
+  3. Verify compact notification appears ("Bookmark saved - Page 5") and the bottom pill bookmark icon highlights active.
+  4. Open the left sidebar and click the **Bookmarks** tab.
+  5. Verify "Page 5" appears in the bookmarks list.
+  6. Navigate to another page (e.g. Page 12) and click the "Page 5" entry in the Bookmarks list: verify it immediately jumps to Page 5.
+  7. Click the delete icon (trash can) next to the bookmark or press `b` again while on Page 5: verify the bookmark is removed.
+
+## Round 7 — Top Font Cut-Off Fix, Per-Book Settings Persistence, Firefox-Style Settings & Rotation
+
+- **Top Font Cut-Off Fix (Vertical Alignment & Viewport Fitting):**
+  - Eliminated the root cause of the top font clipping / ascender slicing where `valign: Align::Center` centered tall pages around the viewport midpoint, pushing headers and font tops into negative Y coordinates.
+  - Converted all containers, spread boxes, and pictures to `valign: Align::Start` with a generous 28px top margin.
+  - Allowed `gtk::Picture` with `ContentFit::Contain` to fit naturally in discrete mode.
+  **Re-test:**
+  1. Open a PDF document (such as "The Origin of Species").
+  2. In Single or Two-Page Discrete mode, inspect the top line of text and running headers (e.g., `ON THE ORIGIN OF SPECIES` and quotation marks/ascenders).
+  3. Verify that the running headers and the top line of text are 100% visible, crisp, with no horizontal slicing or clipping.
+  4. Verify that in Two-Page mode, both the left and right pages display their top margins and headers cleanly.
+
+- **Per-Book Settings Persistence (Remembering Two-Page Continuous Mode):**
+  - Settings are now saved with strict per-book priority (`book.{id}.pdf.*`) and global defaults (`reader.pdf.*`).
+  - Layout (`single` vs `two_page`), Scroll Flow (`continuous` vs `discrete`), Zoom level, Rotation, and Cover Alone are remembered per-document.
+  **Re-test:**
+  1. Open a PDF book.
+  2. Set **Two-Page Spread** layout and **Continuous Stream** scroll flow.
+  3. Exit to Library or Home by pressing Esc or clicking the Library back button.
+  4. Re-open the same PDF book.
+  5. Verify that it immediately re-opens in **Two-Page Continuous** mode, exactly as left!
+
+- **Firefox-Style Settings Panel & Document Rotation:**
+  - Added Firefox PDF viewer-style categorized settings in the left sidebar:
+    - **Layout & Spreads**: Single Page (`No Spreads`), Two-Page Spread, `Odd Spreads (Cover alone)`, and Facing Page Gap (`0px`, `4px`, `8px`, `12px`, `16px`).
+    - **Scroll Flow**: `Continuous Stream (Vertical)` vs `Page-by-Page (Discrete)`.
+    - **Zoom & View Sizing**: `Fit Page` (auto-fits page height without cut-off), `Fit Width`, `100%`, and Stepper.
+    - **Orientation & Rotation**: `90° ↻` (Clockwise) and `90° ↺` (Counter-Clockwise), persisted per document.
+    - **Document Navigation**: `First Page` (1) and `Last Page` (N).
+    - **Margins & Enhancements**: `Smart Crop (Trim Margins)`.
+    - **Document Properties**: Title, Author, Total Pages, MuPDF v0.8.0 engine info.
+  **Re-test:**
+  1. Open the left sidebar → Settings tab.
+  2. Click **Rotate 90° ↻**: verify the document rotates 90 degrees clockwise cleanly.
+  3. Click **Fit Page**: verify the page height scales to fit comfortably within the viewport.
+  4. Click **Fit Width**: verify the page scales to fit the viewport width.
+  5. Test **First Page** and **Last Page** navigation buttons.
+
+## Round 6 — Decoupled PDF Layout & Flow, Spread Gap, Continue Reading, and Crash-Free Zoom
+
+- **Decoupled Page Layout and Scroll Flow (All 4 Combinations):**
+  - **Single Page + Continuous Stream**: Single pages flowing vertically in continuous scroll.
+  - **Single Page + Discrete (Paged)**: Single page at a time with Left/Right page flips.
+  - **Two-Page Spread + Discrete (Paged)**: Facing pages displayed side by side as spreads with Left/Right flips.
+  - **Two-Page Spread + Continuous Stream**: Facing pages side by side flowing in a vertical continuous scroll stream.
+  **Re-test:** Open a PDF, open the left sidebar → Settings tab under **Layout & Flow**:
+  1. Toggle between **Single Page** and **Two-Page Spread**.
+  2. Toggle between **Continuous Stream** and **Discrete (Paged)**.
+  3. Verify that all 4 combinations render cleanly, smoothly, and without any glitches or jumps.
+- **Customizable Spread Gap (0px Seamless Spreads):**
+  - Added spread gap selector under Two-Page mode: **0px**, **4px**, **8px**, **12px**, **16px** (persisted in `reader.pdf.two_page_gap`).
+  - **0px gap**: Left and right pages touch seamlessly without any separation line, designed specifically for double-page spreads, comics, manga, and diagrams.
+  **Re-test:** Select Two-Page Spread in Settings:
+  1. Select **0px**: verify the two pages join seamlessly in the center.
+  2. Select **4px**, **8px**, **12px**, **16px**: verify the facing page spacing changes accordingly.
+  3. Verify gap works in both Two-Page Discrete and Two-Page Continuous modes.
+- **Home Page "Continue Reading" for PDFs:**
+  - PDF reading now stamps `books.last_opened_at` via `mark_book_opened` and tracks reading sessions (`start_reading_session`, `checkpoint_reading_session`, `end_reading_session`).
+  **Re-test:**
+  1. Open any PDF from Library or import. Read a few pages.
+  2. Press Esc or click Library back button to return to the Home page.
+  3. Verify the PDF book card appears under the **Continue Reading** section on the Home page with its cover/title and progress bar.
+  4. Click the book card: verify it re-opens immediately to the exact saved page.
+- **Bottom Bar Zoom Crash Resolution (SIGSEGV):**
+  - Eliminated viewport widget destruction/reparenting during zoom. Page pictures are updated in-place via `apply_zoom_change`.
+  - MuPDF rasterization hardened with bounds checking, tightly packed 32-bit RGBA buffers, and safe stride handling.
+  **Re-test:**
+  1. In any view mode (Single/Two-Page, Discrete/Continuous), repeatedly click the **+** (Zoom In) and **-** (Zoom Out) buttons on the floating bottom pill.
+  2. Click the **100%** reset button.
+  3. Try Ctrl + mouse scroll wheel or touchpad pinch-to-zoom.
+  4. Verify that zoom smoothly resizes the document without any crashes or SIGSEGV errors.
+- **GTK CSS Theme Parser Warnings:**
+  - Removed unsupported `width` and `max-width` properties in `resources/style.css`.
+  **Re-test:** Launch Kalam from a terminal: verify there are zero `Theme parser error: No property named "width"` or `"max-width"` warnings in stdout/stderr.
+
+- **Arrow scroll speed (continuous mode):**
+  - Added an **Arrow scroll speed** stepper in the left sidebar Settings panel
+    under **Navigation & Scrolling** (persisted in `reader.arrow_step`).
+  - Scales both single-tap arrow step and the 20 ms hold glide speed
+    proportionally (default 45 = 15 px/tick, ~750 px/s).
+  - Dynamically active in continuous scroll mode, and automatically greyed
+    out in paged mode (where vertical arrows step chapters instead).
+  **Re-test:** continuous mode — increase/decrease Arrow scroll speed in Settings;
+  verify ↑/↓ single-tap and hold-glide speed changes to your preference. Switch
+  to paged mode: verify the stepper greys out.
+- **Left sidebar settings reorganized & properly sorted:**
+  - Consolidated the previous 7 fragmented sections into 5 clean, coherent
+    groups in the **Reading** pane:
+    1. **Theme**: Sepia, Light, Dark, Ink palette dots.
+    2. **Typography**: Typeface dropdown, Fonts folder + hint, Font size stepper,
+       Line height stepper, Justify toggle, Publisher styles toggle.
+    3. **Layout**: Column width stepper, Continuous scroll toggle, Two pages
+       side by side toggle (greyed in continuous scroll).
+    4. **Navigation & Scrolling**: Wheel scroll speed stepper, Arrow scroll speed
+       stepper (greyed in paged mode), Hide pointer while reading toggle + hint.
+    5. **Dictionary**: Sense hint toggle, Lookup history toggle.
+  **Re-test:** open Settings (left sidebar), check all 5 sections and the UI
+  flow.
+
+---
+
+## Round 3 — typeface list, fourth attempt (the correct one), and arrow keys
+
+- **T1 Typeface picker (again):** the real root cause, finally. The panel
+  holding the Typeface dropdown lives in the **left** sidebar — all three
+  earlier fixes guarded the **right** sidebar's close timer, which was
+  never the one that fired. The left sidebar now holds exactly like the
+  right one while a dropdown list is open. **Re-test:** open Typeface,
+  move onto the list, pick Default or any face. If it still closes
+  mid-pick, say so immediately.
+- **Arrow keys — new behaviour, your spec:**
+  - **Scrolled mode:** Up/Down scroll — tap for a step, *hold* to glide
+    smoothly until you let go. Left/Right step chapters.
+  - **Paged mode:** Left/Right turn pages as before; Up/Down now step
+    chapters.
+  - **Chapter stepping:** forward always lands at the next chapter's
+    start. Backward from the middle of a chapter first rewinds to *that*
+    chapter's start; only the next press crosses into the previous one.
+  - **Opposite arrow = undo:** right after a chapter step, pressing the
+    opposite arrow takes you back to where you were (and vice versa).
+    Scrolling, Home/End or any other key in between drops that notion, so
+    later opposite presses just step chapters again.
+  **Re-test:** scrolled mode — hold Down a few seconds (smooth glide?),
+  Left from mid-chapter (chapter start?), Right immediately after (back
+  where you were?). Same pass in paged mode with Up/Down.
+
+Both built and CI-green (all tests) before this reached you. Report as
+usual: "T1" for the dropdown, "arrows" for the key cases.
+
+---
+
+## Round 2 — what changed from your first report
+
+- **T1 Typeface picker:** fixed. Moving the pointer onto a dropdown list
+  fired the settings sidebar's leave-timer and killed list and sidebar
+  together. The sidebar now holds while a popup owns the session and
+  re-judges when focus comes home. **Re-test:** open Typeface, pick Default
+  or any face — the list should stay up until you choose.
+- **T2 Hyphenation:** fixed for real this time. The toggle only ever
+  *turned hyphenation off at the publisher's request*; it never asked for
+  it, so ordinary books showed nothing in either position. "On" now claims
+  hyphenation on paragraphs and the engine's dictionary hyphenator runs.
+  **Re-test:** narrow window, narrow column — long words should break with
+  a visible hyphen at line ends. Heads up: English words only (the bundled
+  dictionary is en-US), and broken words appear where the line needs them,
+  not at every opportunity.
+- **T3 Two pages:** your reading was right and so was the build — with the
+  setting **on** and a wide window, a turn *should* move two pages (1–2 →
+  3–4). The mismatched case was the setting **off** moving two anyway. What
+  changed: in **continuous scroll** the toggle is now greyed out, because
+  a spread can never apply there. You asked for exactly that — done.
+- **T6 Jump back:** the on-screen button is gone for good — keyboard only.
+  Backspace is now wired the same way Ctrl+F always was (window-global,
+  with a typing guard), which is the route your run proved missing.
+  **Re-test:** TOC jump → Backspace, with and without clicking into the
+  page first.
+- **T7 Pointer:** now also hides while scrolling; only mouse *movement*
+  brings it back. You asked for exactly that — done.
+- **T8 Scroll speed:** root cause found — a touchpad reports smooth pixel
+  deltas and took them 1:1, ignoring the slider entirely. Both wheel and
+  pad now honour it, with the default pad feel unchanged. **Re-test:**
+  slider low vs high, two-finger scroll.
+- **T9 Shortcuts:** keyboard bindings moved to their own **Shortcuts** tab
+  next to Reading and UI. You asked for exactly that — done (re-test the
+  keys there; behaviour is otherwise identical).
+- **T10 Fonts folder:** on your setup (no desktop file manager) the launch
+  fails silently; now the folder's path is copied to your clipboard with a
+  toast saying so, and you can open it in yazi. **Re-test.**
+- **T11/T12/T13 PDF:** root cause found — the importer never accepted
+  `.pdf` at all, even though the reader it feeds has existed for months.
+  Import now works; the file name is the title and page one becomes the
+  cover. **Re-test:** import your text PDF and a scanned one, then the
+  timing lines.
+
+Everything built and CI-verified since the dictionary work, in one session.
+Each test has an ID — report by ID ("T7 failed: …") and I'll know exactly
+where to look.
+
+---
+
+## Before you start
+
+**Build and run**
+
+    cargo run --release
+
+**Run it with logging and timings on** — worth doing for the whole session,
+it costs nothing and it's what turns "felt slow" into a number:
+
+    RUST_LOG=info KALAM_TIMING=1 cargo run --release
+
+On startup it prints one line saying where the log went. The log file is
+`~/.local/share/kalam/kalam.log`, and `[timing]` lines appear in the
+terminal you launched from.
+
+**What you'll need to hand**
+
+- An EPUB **with footnotes** (a non-fiction or classics edition usually has
+  them). If you don't have one, skip T6 and T7 and tell me.
+- An EPUB with a table of contents.
+- One **text** PDF (a novel or an academic paper — text you can select).
+- One **scanned** PDF (pictures of pages).
+- Any `.ttf` or `.otf` font file you don't mind copying.
+- A word worth looking up in the dictionary.
+
+**How to report**
+
+For each test: the ID, then one of —
+
+- **ok** — it did what's written
+- **wrong** — what you saw instead, in your words
+- **crash / froze** — please paste the last ~20 lines of `kalam.log`
+
+A screenshot beats a description wherever something *looks* off. And if a
+test can't be run at all (no footnote book, no scanned PDF), say "skipped,
+no file" rather than leaving it blank.
+
+---
+
+## Part A — the page itself
+
+### T1 · Typeface picker (2.3)
+
+**Do:** open a book → Settings → Reading → **Typeface**. Pick a few faces.
+Then pick **Default**. Close the app, reopen the book.
+
+**Look for:** the body text changes as you pick; "Default" brings back the
+bundled face; your last choice is still there after restart.
+
+**Report if:** the list is empty, a face is picked but nothing changes, or
+the choice is forgotten after restart.
+
+### T2 · Text layout switches (2.4)
+
+**Do:** Settings → Reading → **Text**. Try all three: **Justify**,
+**Hyphenation**, **Publisher styles**. For hyphenation, make the window
+narrow (or drop Column width) so lines break often.
+
+**Look for:**
+- Justify on → both edges of the text are flush.
+- Hyphenation off → the little dashes at line ends disappear.
+- Publisher styles off → the page loses the book's own fonts and spacing and
+  looks like plain Kalam text.
+- All three apply instantly, and survive restart.
+
+**Report if:** nothing changes, the text becomes unreadable, or a switch
+resets itself.
+
+### T3 · Two pages side by side (2.7)
+
+**Do:** make the window wide — you should get facing pages, as always. Now
+Settings → Reading → Layout → turn **"Two pages side by side"** off. Turn a
+page. Restart. Then turn the setting back on and narrow the window.
+
+**Look for:** with it off, one page at full width at any window size, and a
+page turn moves **one** page. With it on and a narrow window, the spread
+gives way to a single page.
+
+**Report if:** with it off you still see two pages, or a page turn jumps two.
+
+---
+
+## Part B — notes and getting back
+
+### T4 · Footnotes in place (2.5)
+
+*What's a footnote?* A tiny aside at the bottom of a page or the end of a
+chapter that the main text points at with a small raised number or `[1]`,
+so the author can comment or cite without interrupting the sentence.
+Non-fiction and classic novels digested by Standard Ebooks are full of
+them; most modern fiction has none. If your book has none, skip this test
+and say so.
+
+**Do:** find a footnote marker in the text (a `[1]` or similar) and tap it.
+Then tap **Go to the note**. Then tap outside the card.
+
+**Look for:** the note appears **in a card, right where you are** — your page
+does not move. "Go to the note" jumps to it properly. Tapping outside closes
+the card.
+
+**Report if:** the card is empty or shows the wrong note; the page jumps
+anyway; the card won't close.
+
+### T5 · Chapter links still navigate (2.5, the regression check)
+
+**Do:** tap a link that goes to **another chapter**, or a table-of-contents
+entry inside the page text.
+
+**Look for:** it just navigates. **No card.**
+
+**Report if:** a card pops up instead of navigating — this is the one I most
+want checked, because it's the behaviour the footnote work could have
+broken.
+
+### T6 · Jump back (2.6)
+
+**Do:** jump somewhere (a TOC entry, a search result, a link in the page).
+Then press **Backspace**. Try it again after a second jump.
+
+**Look for:** you land back exactly where you were. Jump twice and back
+twice should retrace both.
+
+**Note:** there is no on-screen button for this — Backspace only, and it
+should work wherever the pointer and focus happen to be. Turning a page
+normally should quietly expire the jump (Backspace then does nothing).
+
+**Report if:** Backspace does nothing, or takes you somewhere other than
+where you were.
+
+---
+
+## Part C — pointer, wheel, keys
+
+### T7 · The pointer hides (2.9)
+
+**Do:** leave the mouse still over the page for about two seconds. Then move
+it. Then Settings → Reading → Pointer → turn **Hide the mouse pointer** off
+and try again.
+
+**Look for:** it vanishes after ~2s and comes back the instant you move.
+With the switch off, it never vanishes. Survives restart.
+
+**Report if:** it flickers, never comes back, or hides while you're clicking.
+
+### T8 · Scroll speed (2.9)
+
+**Do:** turn on **continuous scroll** (Settings → Reading → Layout). Change
+**Scroll speed** a few notches each way and scroll with the wheel.
+
+**Look for:** noticeably more or less travel per notch. Survives restart.
+
+**Note:** in ordinary paged mode the wheel does nothing — that's how it has
+always been, not a bug.
+
+**Report if:** the setting changes nothing, or scrolling becomes jumpy.
+
+### T9 · Editable keys (2.9)
+
+**Do:** Settings → Reading → **Keyboard**. Click a key button, then press
+the key you want. Try Escape mid-capture. Then give one action a key another
+action already has. Finally hit **Reset to defaults**.
+
+**Look for:**
+- The button shows the new key and it works immediately.
+- Escape cancels without changing anything.
+- The action that lost its key shows **"None"** — it stops working, it does
+  not keep the key.
+- Reset puts everything back.
+- Survives restart.
+
+**Note:** `m` no longer adds a bookmark; `b` does. That's deliberate.
+
+**Report if:** a capture never finishes, two actions fire on one key, or
+Reset doesn't restore.
+
+---
+
+## Part D — your own fonts
+
+### T10 · Fonts folder (2.8)
+
+**Do:** Settings → Reading → Type → **Fonts folder → Open**. Copy a `.ttf`
+or `.otf` into the folder that opens. **Close the book and reopen it.** Then
+look in the Typeface picker.
+
+**Look for:** the folder opens in your file manager; after reopening the
+book, the new face is in the picker and renders correctly.
+
+**Note:** fonts are read when a book opens, not per page turn — reopening is
+required, and the settings panel says so.
+
+**Report if:** the folder doesn't open, the face never appears, or it appears
+but renders as boxes.
+
+---
+
+## Part E — PDFs (Rebuilt with MuPDF & Unified Chrome)
+
+### T11 · True MuPDF PDF Rasterization & Visual Fidelity
+**Do:** open a text PDF (e.g. *Tell Me Why #66*, an academic paper, or book) and a scanned PDF.
+**Look for:** crisp, high-fidelity native page rendering (sharp vector fonts, diagrams, tables, figures, artwork) rendered via MuPDF. No synthetic ink lines or grey bars.
+**Report if:** page is blank, distorted, text characters are missing or overlapping, or rasterization fails.
+
+### T12 · Unified Reader Chrome & Edge Hover Autohiding
+**Do:** 
+- Hover near the top edge (< 50px from top) or the back button.
+- Hover near the bottom edge (< 60px from bottom) or the bottom dock.
+- Hover within 20px of the left edge of the screen (Zen Browser style).
+- Click the middle of the reading viewport.
+- Move mouse back into the reading area or scroll.
+- Test in both PDF and EPUB readers.
+**Look for:**
+- Top edge hover reveals floating back button pill ("Library") without title text (prevents overlaps). Autohides smoothly after 2.5s when leaving with a clean SlideDown / SlideUp transition.
+- Bottom edge hover reveals floating bottom pill with navigation, zoom controls, mode toggle, and smart crop toggle. Autohides consistently after 2.5s when leaving with a clean SlideUp / SlideDown transition.
+- Clicking the middle of the reading viewport toggles controls on/off cleanly without getting stuck.
+- Left edge hover smoothly slides open the left TOC outlines sidebar (`SlideRight`). Moving cursor away from sidebar closes it with 350ms debounce.
+- Scrolling the document immediately hides unhovered controls.
+- EPUB reader also uses smooth SlideDown and SlideUp transitions for its top back chip and bottom pill.
+**Report if:** controls fail to reveal on edge hover, fail to autohide, bottom bar gets stuck, or transitions are missing.
+
+### T13 · Table of Contents & Settings Left Sidebar (PDF & EPUB)
+**Do:** hover the left edge or press `T`.
+**Look for:**
+- Fixed 340px width sidebar (`width: 340px`, `size_request: (340, -1)`) that never blows out to fill the screen even on books with long titles or chapters.
+- Book title wraps at 24 chars with ellipsis (`End`).
+- 2-tab switcher at the bottom of the left sidebar: **TOC** (`view-list-bullet-symbolic`) and **Settings** (`preferences-system-symbolic`).
+- In **TOC** tab: document outlines listed cleanly; clicking any entry jumps to that page.
+- In **Settings** tab:
+  - View Mode switcher: **Continuous**, **Single**, and **Two-Page**.
+  - Dual Page Spread option: "First page as single cover" switch (active in Two-Page mode; greys out in Continuous/Single modes).
+  - Display option: "Smart Crop (Zathura style)" switch with explanatory hint.
+  - Magnification / Zoom controls: `-`, percentage display, `+`, and `100%` reset.
+- Pressing `Esc` or clicking the dim backdrop immediately closes the sidebar.
+**Report if:** sidebar expands wider than 340px, tabs do not switch content, or settings do not update the document.
+
+### T14 · Paged Mode, Continuous Vertical Scroll, & Two-Page Spread Mode (PDF)
+**Do:**
+- Open any PDF document in Kalam.
+- Verify that the first page displays immediately upon open with NO blank dashed placeholder.
+- In Settings tab (or press `M` to cycle modes), switch between **Continuous**, **Single (Paged)**, and **Two-Page**.
+- In **Two-Page** mode:
+  - Verify facing pages are displayed side-by-side with centered alignment.
+  - With "First page as single cover" ON: page 1 shows centered alone; navigating Next shows pages 2-3 together, 4-5 together, etc.
+  - With "First page as single cover" OFF: pages 1-2 show together, 3-4 together, etc.
+  - Verify bottom pill displays spread notation (e.g., `2-3/120 (3%)`).
+- Verify top font ascenders are NOT clipped in either PDF or EPUB readers (EPUB band blit bleed allowance + PDF top margins).
+- In Continuous mode, use `Up` / `Down` arrows or mouse wheel to scroll vertically.
+**Look for:**
+- Page appears immediately upon opening without needing to scroll first.
+- In Two-Page mode: two pages side-by-side with clear spine separation, or single centered cover when cover-alone is enabled.
+- No top line ascender clipping (d, h, k, l, t, accents, capital letters have full breathing room).
+- Bottom pill is streamlined: contains Prev/Next page navigation, page info indicator, and zoom controls only.
+**Report if:** continuous mode is not default, two-page mode shows misalignment, top font is cut off, or spread navigation skips pages.
+
+### T15 · Touchpad Pinch-to-Zoom, Ctrl+Wheel, & Zoom Stabilization
+**Do:**
+- On a trackpad, use two fingers to pinch in and pinch out.
+- Alternatively, hold `Ctrl` and scroll with the mouse wheel or touchpad.
+- In Settings tab, click `+` and `-` zoom buttons, or `Fit Page` and `Fit Width`.
+- Observe the document during and immediately after zooming in both continuous and paged modes.
+- Toggle Smart Crop (`C` or via Settings tab). Verify that fonts and page numbers are never clipped (background luminance detection + 5.5% / 44px breathing margin).
+- Verify all fonts across diverse PDFs render cleanly with full glyph coverage (MuPDF `system-fonts` enabled).
+- Close and reopen that document: verify Smart Crop state was saved for that specific book.
+- Open a different PDF: verify Smart Crop is OFF by default.
+**Look for:**
+- Fluid touchpad pinch-to-zoom and Ctrl+Scroll zoom with deadband filtering to prevent event flooding.
+- No grey/blank placeholder flashing when stepping zoom levels: prior generation textures remain visible and scale smoothly until fresh renders finish.
+- Zero visual snapping or size pops when background high-DPI renders complete: container point sizes match target dimensions continuously.
+- Center-anchored scroll compensation: zooming maintains the current reading viewport center rather than drifting to the top or bottom edge.
+- Smart Crop removes margins without cutting off any text, accents, headers, or numbers.
+- Smart Crop state is document-specific and survives app restart.
+**Report if:** pinch-to-zoom doesn't react, fonts are cut off, or persistence fails.
+
+### T16 · Native Digital Vector Text Selection & Floating Action Popover (PDF)
+**Do:**
+- Open any digital vector PDF in Kalam (Page Scrolling, Vertical Scrolling, Horizontal Scrolling, or Two-Page Spreads).
+- Click and drag across lines of text with the mouse or touchpad.
+- Double-click on any individual word.
+- Triple-click on any line or sentence.
+- Observe the blue selection highlight (`rgba(53, 132, 228, 0.35)`) and start/end handles.
+- Observe the floating toolbar popover anchored directly above the selected text.
+- Click **Copy** (or press `Ctrl+C`). Paste into another text editor (or terminal) to verify exact text was copied.
+- Click **Define** (Dictionary lookup): verify definition notification appears and lookup is logged in history.
+- Click **Quote** (Save Quote): verify "Quote saved" notification appears and the quote is saved to the book's annotations in the database.
+- Press `Escape` (or click outside the selection): verify the selection and toolbar popover dismiss cleanly without closing the reader.
+- Zoom in/out or flip pages while text is selected: verify selection clears cleanly without leaving orphan highlights or detached popovers.
+**Look for:**
+- Accurate character quad bounding box mapping matching the visual text glyphs at any zoom level.
+- Clean floating toolbar containing Copy, Define, and Quote actions.
+- `Ctrl+C` keyboard shortcut copies the active text selection to clipboard immediately.
+- `Escape` key dismisses active selection before closing sidebar or reader.
+**Report if:** selection doesn't highlight, handles are misplaced, floating toolbar doesn't show, or Copy/Define/Quote fails.
+
+### T17 · PDF Spread Centering, Multi-Line TOC Alignment, Scroll Autohiding Chrome & VLC Zoom HUD
+**Do:**
+- Open any PDF in Kalam. Set view mode to **Two-Page Spreads** (Odd Spreads) with **Vertical Scrolling**.
+- Scroll vertically through the document from Page 1 (single cover) through subsequent two-page spreads.
+- Open the left sidebar and select the **Contents (TOC)** tab. Observe entries with long titles that wrap onto two or three lines (e.g. peer chapter headings).
+- Hover over the top-left area to reveal the top dock, and bottom-center area to reveal the bottom navigation pill. Begin scrolling the viewport via mouse wheel or touchpad.
+- Zoom in and out using `Ctrl + Mouse Wheel`, touchpad pinch-to-zoom, or `+` / `-` in settings.
+**Look for:**
+- Consistent viewport horizontal centering: both single-page covers and two-page spreads stay anchored along the central vertical axis of the reading window without jumping left or right during scroll.
+- Zero horizontal jitter or unintentional horizontal drift during vertical scrolling: horizontal scrollbar policy stays locked to `Never` when content width fits within the window.
+- Clean TOC indentation & alignment: multi-line wrapped TOC chapter entries start at the exact same left margin as single-line entries, with left-aligned text (`xalign: 0.0`) and top-aligned page numbers.
+- Instant chrome autohiding on scroll: floating top dock and bottom pill dismiss immediately as soon as vertical or horizontal scrolling begins.
+- Sleek VLC-style Zoom HUD: zooming triggers a translucent capsule indicator in the top-right corner showing current zoom level (e.g. `125%`), which smoothly crossfades away after exactly 1 second of inactivity.
+**Report if:** spreads hop horizontally during scroll, TOC entries wrap with uneven indentation, chrome stays visible while scrolling, or zoom indicator fails to appear/fade.
+
+### T18 · Pure-Rust Offline OCR Text Selection on Scanned / Image-Based PDFs
+**Do:**
+- Open any scanned or image-based PDF document (a document containing images of printed book pages where MuPDF digital vector text layer returns 0 characters).
+- Observe that the page renders normally in any view mode (Page Scrolling, Vertical Scrolling, Two-Page Spreads).
+- In the background, the dedicated pure-Rust neural OCR worker (`kalam-pdf-ocr-worker`) automatically detects that the page has 0 vector text and runs neural character recognition (DBNet + CRNN) offline.
+- Click and drag across lines of scanned text on the page with mouse or touchpad.
+- Double-click on any recognized word in the scan.
+- Triple-click on any recognized line in the scan.
+- Observe the blue selection highlight (`rgba(53, 132, 228, 0.35)`) and handles snapping to the recognized text lines and words.
+- In the floating action popover:
+  - Click **Copy** (or press `Ctrl+C`). Paste into a text editor to verify the OCR recognized characters match the page text.
+  - Click **Define**: verify dictionary definition popover opens for the OCR-recognized word.
+  - Click **Quote**: verify the OCR text is saved as a quote annotation in the book's notes.
+- Press `Escape` (or click outside) to dismiss the selection cleanly.
+**Look for:**
+- Completely transparent automatic detection: scanned pages gain text selection without any manual "Run OCR" button or modal dialogs.
+- 100% offline operation: zero external network requests or internet access required.
+- Accurate character bounding boxes mapped from 144 DPI neural inference back to PDF document coordinates.
+- Full selection parity with vector PDFs: drag selection, word/line expansion, `Ctrl+C` copying, dictionary definitions, and quote creation all work identically on scanned books.
+**Report if:** scanned text cannot be selected after rendering, selection quads are wildly misaligned, or Copy/Define/Quote fails on scanned pages.
+
+---
+
+## Part F — dictionary and annotations (earlier work, unverified on device)
+
+### T14 · The dictionary card
+
+**Do:** select a word and look it up.
+
+**Look for:** dark rounded card; the word in serif; pronunciation in mono;
+a purple part-of-speech pill; numbered definitions with italic examples;
+blue synonym chips and red antonym chips; idiom cards; a fade at the bottom.
+
+**Report if:** it looks nothing like that, or sections are missing.
+
+### T15 · Chips, more senses, saving
+
+**Do:** tap a synonym chip. Tap **"Show N more"**. Tap the bookmark/save
+button and look at it again.
+
+**Look for:** the chip re-looks-up that word; more definitions expand; the
+save button shows its saved state.
+
+### T16 · Pronunciation audio
+
+**Do:** tap the 🔊 button.
+
+**Look for:** the word is spoken. Needs `espeak-ng` or `spd-say` installed —
+if neither is, it should tell you which to install rather than doing nothing.
+
+### T17 · The bottom pill floats
+
+**Do:** look at the reader's bottom navigation pill (← 10 / 140 title →).
+
+**Look for:** a visible gap between it and the bottom edge — it floats, it
+doesn't hug the edge.
+
+### T18 · Export highlights
+
+**Do:** make a few highlights and notes → Highlights panel → **Export**.
+
+**Look for:** a success toast with a count and a path; `~/Highlights.md`
+exists and lists highlights, quotes and notes with their chapter and your
+note text.
+
+### T19 · Review page
+
+**Do:** Library → **Review**. Save a few words first if you haven't.
+
+**Look for:** a word shows; *Show definition* reveals it; **Again / Good /
+Easy** move to the next card; "Again" brings a word back in ~10 minutes while
+Good and Easy push it out by days. With nothing due: *"All caught up —
+nothing due right now."* With no saved words at all: a hint to save some.
+
+---
+
+## Part G — carried over (re-check only if you haven't)
+
+### T20 · Cold start
+
+The splash shows the brand — no blank window. Home appears first; the heavy
+chores happen after the first paint.
+
+### T21 · Bulk import and delete
+
+A bulk import expands to show **every** imported book name. Each delete
+shows up as its own task in the task manager.
+
+---
+
+## Part H — PDF Reader Verifications (2.11)
+
+### T22 · PDF Memory Sliding Window & Exit RAM Release
+
+**Do:** open a large multi-page PDF in Continuous Vertical Scrolling mode. Scroll down through 40–50 pages continuously, observing system RAM (e.g. via `top`, `htop`, or system monitor). Then click "Library" or press `Escape` to close the reader back to the main library view.
+
+**Look for:**
+1. Memory usage during scrolling is capped to a tight sliding window (~100–120 MB total) rather than shooting up towards 1 GB.
+2. Pages scrolled out of view have their raster textures unbound from GTK pictures without altering the scroll stream geometry.
+3. Upon exiting the reader, all page textures and caches are cleared and `malloc_trim` releases resident memory back to the Linux kernel, returning app RAM to baseline.
+
+### T23 · Column-Aware Selection & Alt+Drag Block Selection
+
+**Do:**
+1. Open a multi-column PDF or a textbook page containing parallel text columns, sidebars, or callout boxes at the same vertical height.
+2. Drag select multiple lines down one column.
+3. Next, hold `Alt` and drag-select a rectangular marquee box over a specific callout box, table column, or question.
+
+**Look for:**
+1. Normal drag selection stays strictly within the column/block being selected — it does NOT grab or highlight adjacent sidebars, callouts, or parallel columns sharing the same vertical space.
+2. Holding `Alt` activates 2D rectangular block selection, displaying a clean marquee outline and selecting only the exact text characters inside the dragged rectangle.
+3. Selected text can be copied (`Ctrl+C`) or saved as a quote, maintaining clean line breaks.
+
+### T24 · Two-Page Spread Pair Loading & Eviction Integrity
+
+**Do:**
+1. Open a multi-page PDF document.
+2. Open Settings in the left sidebar and switch Scrolling to "Vertical Scrolling" (continuous) and Spreads to "Odd Spreads" or "Even Spreads".
+3. Scroll forward to an interior spread (e.g. pages 14–15 or 20–21).
+4. Scroll backwards slowly or quickly past previous spreads (e.g. spreads 12–13, 10–11).
+5. Flip pages using `Next` / `Prev` buttons on the bottom navigation pill or arrow keys.
+
+**Look for:**
+1. Facing pages in a two-page spread load, render, and display strictly as a complete pair — at no point does one page of a spread render while its partner shows an empty grey placeholder box.
+2. When scrolling up or down continuously, adjacent spreads arrive and leave in full pairs without half-spread cutoffs.
+3. `Next` and `Prev` advance and backtrack by entire spreads rather than splitting a spread down the middle.
+
+---
+
+## Part I — Comic & Manga Reader Verifications (2.12)
+
+### T25 · Comic Reader Chrome Autohide, Navigation Hide & Dock Hover Recovery
+
+**Do:**
+1. Open a comic book (CBZ/CBR) or remote manga chapter in Kalam.
+2. Observe the initial state of the floating chrome. Wait 3.5 seconds without moving the cursor.
+3. Move cursor directly over the top-left area where the "Library" and "Bookmark" buttons live (`x < 240, y < 75`).
+4. Move cursor directly over the bottom-center area where the page navigation pill lives (`y > h - 75, |x - w/2| < 180`).
+5. Click anywhere on the viewport image.
+6. Press Left / Right arrow keys, or scroll with two-finger touchpad / mouse wheel in Single and Double page modes.
+7. Press Up / Down arrow keys (or j / k).
+
+**Look for:**
+1. Chrome starts visible, then automatically slides out of view after 3.5s of inactivity.
+2. Hovering over the top-left dock zone recovers the Library and Bookmark buttons even after autohide.
+3. Hovering over the bottom-center dock zone recovers `[Prev]`, `Page X of Y`, and `[Next]` even after autohide.
+4. Clicking anywhere on the screen grabs focus for keyboard navigation but does NOT toggle chrome or change pages (matching PDF/EPUB reader behavior).
+5. Scrolling or turning pages via keyboard immediately autohides both the top dock and bottom pill unless the cursor is actively hovering directly over them.
+6. Two-finger touchpad or mouse wheel scrolling in Single and Double page modes smoothly pans the viewport and NEVER triggers page navigation (page navigation on scroll is exclusive to continuous Webtoon mode).
+7. Up / Down arrow keys smoothly scroll the viewport vertically by 80px without turning pages; Left / Right arrow keys turn pages.
+
+### T26 · Comic Reader Zen-Style Left Sidebar, Bottom Tabs & Fit Mode Engine
+
+**Do:**
+1. Move the cursor to the left edge (within 24px of the left border, or click the left edge strip, or press `t` / `s`) to reveal the Zen sidebar.
+2. Move the cursor into the sidebar and interact with controls across tabs.
+3. Observe the cover thumbnail, title, author, and reading progress bar in the header.
+4. Observe the bottom tab bar pinned to the bottom of the sidebar with Settings and Bookmarks (Settings active by default).
+5. In Settings, change Page Style between Single, Double, and Webtoon (Continuous vertical strip).
+6. In Double mode, change Spread Gap between 0px (seamless), 4px, 8px, 12px, and 16px.
+7. Toggle Reading Direction between Left → Right and Right → Left (Manga).
+8. Change Fit Mode between Width, Height, Screen, and 1:1 Original.
+
+**Look for:**
+1. Sidebar smoothly slides in from the left edge over a subtle dim backdrop. Moving cursor into the sidebar keeps it open stably without premature close timer expiration. Moving cursor away slides it out after 700ms; clicking the dim backdrop or pressing `Esc` / `t` / `s` dismisses it immediately.
+2. Settings is open by default. The bottom tab bar allows quick switching between Settings and Bookmarks. Header has no extraneous close buttons.
+3. Double mode shows facing pages side by side with the selected spread gap (0px joins pages seamlessly without border gap). Spread gap selector is enabled in Double mode and disabled in Single/Webtoon mode.
+4. Right → Left mode flips page placement and arrow key orientation so Left arrow advances and Right arrow steps backward.
+5. In Fit Mode:
+   - "Fit Width" scales the page to the full width of the reader viewport with vertical scrolling enabled.
+   - "Fit Height" fits within viewport height with no vertical scrolling.
+   - "Fit Screen" fits the entire page within the window dimensions.
+   - "1:1" displays native unscaled pixels with 2D scrolling.
+   - Fit mode changes display an instant VLC-style crossfading HUD indicator in the top-right corner showing the active mode.
+
+### T27 · Comic Reader Bookmarks & Reading Progress Persistence
+
+**Do:**
+1. In the comic reader, navigate to page 5 and press `b` (or click the bookmark button in the top dock).
+2. Open the sidebar and switch to the Bookmarks tab.
+3. Navigate to page 12 and close the reader using `Escape` or the "Library" button.
+4. Reopen the comic book from the library.
+
+**Look for:**
+1. Pressing `b` shows a compact notification ("Bookmark saved") and turns the top dock bookmark icon active.
+2. The Bookmarks tab lists Page 5. Clicking it jumps to page 5. Clicking the trash can icon deletes the bookmark and removes the active icon state if on that page.
+3. Reopening the comic book resumes exactly at Page 12, preserving reading progress and session statistics.
+4. Exiting the reader completely unbinds cached textures and triggers `malloc_trim(0)` to return memory to the operating system.
+
+### T28 · Comic & Manga Series Hub, Quick Resume & Chapter Drawer
+
+**Do:**
+1. Import multiple comic files belonging to a series either by selecting files via "+ Import Files" or choosing an entire folder via "+ Import Folder" (e.g. `Naruto 01.cbz`, `Naruto 02.cbz`, `Naruto – Digital Colored Comics - Ch. 1.cbz`, `Naruto – Digital Colored Comics - Ch. 2.cbz`, `Naruto Vol. 1.cbz`, `One Piece - c001.cbz`, or archives containing `ComicInfo.xml` with embedded chapter suffixes).
+2. Open the Comics & Manga hub page.
+3. Observe the Comics hub view: verify it is grouped by Series by default with series cards showing cover, title, total chapter count, and unread count. All chapters of a series (e.g. 5 chapters of Naruto) collapse cleanly into a single series card.
+4. Click the "View: Series" button in the header bar to toggle between "Grouped by Series" and "All Files" flat view.
+5. In Series view, click "Start Ch. 1" / "Resume Ch. X" on the series card to jump directly into reading.
+6. Return to the Comics hub and click on the series card cover/title to open the Series Chapter Drawer.
+7. Observe the drawer banner (cover, title, author, completion progress bar, Resume button) and chapter list. Click a chapter row to read that chapter, or click the details icon to view metadata.
+8. Click "← Back to Series" to return to the series grid.
+
+**Look for:**
+1. Files and folders are automatically grouped into Series based on ComicInfo.xml metadata or filename/folder heuristics (including folder names, space-delimited numbers like `Naruto 01`, `Naruto 1`, multi-segment hyphenated titles like `Naruto – Digital Colored Comics - Ch. 2`, `Naruto Vol. 1`, `Naruto v01`, dot/dash/underscore separators, and bracketed tag patterns).
+2. All chapters of the same comic show under one unified series card rather than cluttering the hub with separate standalone cards.
+3. Clicking Resume opens the current or next unread chapter directly.
+4. The chapter drawer lists all chapters sorted in sequential numerical order with read/reading/unread status badges.
+5. Toggling to "All Files" presents the flat grid of all comic archives.
+
+### T29 · Comic Reader Chapter Transition & End-of-Chapter Card
+
+**Do:**
+1. Open a multi-chapter comic series in Single or Double page mode.
+2. Turn pages until reaching the final page of Chapter 1.
+3. Advance one more page past the end (press `Right` arrow, `PageDown`, or `Space`).
+4. On the End-of-Chapter Card, press `Return` / `KP_Enter` or click the "Read Next Chapter" button.
+5. Open the Zen left sidebar and switch to the "Chapters" tab at the bottom.
+6. Select another chapter from the sidebar list.
+7. Switch page style to Webtoon / Long Strip mode and scroll to the bottom of the chapter.
+
+**Look for:**
+1. In paged Single/Double mode, reaching the end does not suddenly quit or jump unexpectedly; it presents a clean End-of-Chapter Card showing current chapter completion, reading stats, and options to proceed to the next chapter or return to the library.
+2. Pressing `Return` or clicking "Read Next Chapter" smoothly loads Chapter 2 starting at page 1.
+3. The Chapters tab in the sidebar lists all chapters in the series with an active indicator on the current chapter. Clicking a chapter jumps directly to it.
+4. In Webtoon continuous mode, reaching the end immediately flows into the next chapter without interruption.
+
+### T30 · Comics Drawer Visibility & Homepage Comic Series Deduplication
+
+**Do:**
+1. Navigate to the Comics & Manga hub.
+2. Click on a series card (e.g. "Horimiya" or "Naruto") to enter the chapter drawer.
+3. Verify that the chapter drawer opens with hero card, title, author, total chapters, unread chapters, reading progress bar, "Resume / Start" button, and all chapters listed in order.
+4. Verify the "← All Series" back button is visible at the top-left of the view. Click it to return to all series cards.
+5. Navigate to the Home page (house icon in left sidebar).
+6. Inspect the "RECENTLY ADDED" section and "CONTINUE" section.
+7. Click on the comic series card in "RECENTLY ADDED".
+
+**Look for:**
+1. Entering the series drawer never produces a blank or empty screen; all chapters and the "← All Series" back button are immediately visible and clickable.
+2. On the Home page, recently imported comic series are collapsed into a single card per series with the series title (e.g. "Horimiya", not "Horimiya - c142"), series author, and series cover, rather than flooding the section with dozens of discrete chapter cards.
+3. Clicking a comic series card on the Home page immediately routes to the Comics hub with that series' chapter drawer open.
+4. In the Home counts strip, "Books" counts comic series as a single item rather than treating every chapter archive as a discrete book.
+
+### T31 · Comic & Manga Speech Bubble OCR & Dialogue Selection
+
+*(Feature removed 2026-09-30 by ROADMAP 2.17 — kept for history.)*
+
+**Do:**
+1. Open any comic or manga book in the Comic Reader (Single, Double, or Webtoon mode).
+2. Hover the cursor over dialogue inside a speech bubble; notice text cursor.
+3. Click and drag across dialogue text, or hold Alt and drag to select an entire rectangular dialogue bubble.
+4. Release the mouse button; observe the highlighted text and floating action chip popover.
+5. Double-click a single word in a speech bubble, then click `[Define]` in the floating popover.
+6. Press `Ctrl+C` or click `[Copy]` to copy selected dialogue to the system clipboard.
+7. Click `[Save Quote]` to save dialogue as an annotation quote.
+8. Press `Escape` or scroll the view; observe that the active selection and toolbar chip dismiss immediately.
+9. Open the left Zen sidebar -> Settings -> "Speech Bubble OCR" -> click "Enabled" to toggle detection off/on.
+
+**Look for:**
+1. Background OCR runs asynchronously without stuttering, freezing, or blocking UI page turns or scroll gestures.
+2. Drag-selecting dialogue draws a smooth blue highlight (`rgba(53, 132, 228, 0.35)`) and handle indicators matching PDF reader selection.
+3. Alt+drag draws a clean rectangular marquee box around the speech bubble.
+4. Floating popover chip (`.k-sel-toolbar`) appears right above the selection offering `[Copy]`, `[Define]`, and `[Save Quote]`.
+5. `[Define]` looks up the term in the dictionary and displays the definition card without navigating away from the page.
+6. `[Save Quote]` saves the quote under Annotations.
+7. Pressing `Escape` clears the active selection before triggering reader close.
+8. Toggling Speech Bubble OCR in Settings successfully disables or re-enables dialogue detection with an instant OSD notification.
+
+### T32 · Unified Annotation Revision & Word Memory System
+
+**Do:**
+1. Open an EPUB, PDF, or Comic in the reader and select a passage of text.
+2. Observe the 2-button floating pill: `[Highlight]` and `[Define]`.
+3. Click `[Highlight]`; observe the smooth slide-open of the Calibre-style drawer card.
+4. Test picking from the 5 soft colors (Yellow, Green, Blue, Pink, Orange) and 4 styles (Solid tint, Straight Underline, Squiggly Underline, Strikeout).
+5. Type an optional note in the "Add a note..." area and click `[Save]`.
+6. Single-click directly on the newly created highlight on the page.
+7. Observe that the Calibre drawer opens pointing at the highlight with its color, style, and note pre-filled, and displaying a `[Delete]` button.
+8. Edit the style or color and click `[Save]`, or click `[Delete]` to remove the highlight.
+9. Save any word into vocabulary (via Dictionary lookup `[Save Word]`).
+10. Return to the book where that word appears; observe the subtle dotted underline beneath the word (Word Memory).
+11. Hover cursor over the dotted word; observe the instant quick definition preview tooltip.
+12. Single-click the dotted word; observe that the full dictionary definition card opens immediately (zero friction).
+13. Open Settings -> Dictionary -> "Word memory" and toggle between "Whole Library", "Series", "Book Only", and "Off"; verify the scope filtering behaves as configured.
+
+**Look for:**
+1. The floating selection pill starts compact with only `[Highlight]` and `[Define]`.
+2. Clicking `[Highlight]` expands the Calibre drawer with 5 color swatches, 4 styles, note text area, and Save button.
+3. Highlights render on the page according to chosen style (Solid band, Straight underline, Squiggly wavy line, Strikeout central line).
+4. Clicking an existing highlight re-opens the card for editing and deleting.
+5. Saved vocabulary words display subtle dotted underlines matching the configured preference scope.
+6. Hovering displays quick definition preview; clicking opens full dictionary card directly.
+
+### T33 · Bubbles & Zen-Style Side-by-Side Split Reading
+
+**Do:**
+1. Open any book in EPUB, PDF, or Comic reader.
+2. In the top-left dock, observe the new `[Bubble]` minimize button (`window-minimize-symbolic`) next to Bookmark.
+3. Click `[Bubble]`; observe the reader smoothly closes and minimizes into a circular floating bubble in the bottom-right of the Kalam window.
+4. From the Library or Home page, click any other book card to open its detail float, and click `[Open in Bubble]`.
+5. Observe the bubble expands into the Android-style inset reading window with a thin margin around the edges.
+6. Look at the top switcher bar: observe that the active book expands into a fixed-size pill displaying its title and a `[✕]` close button, while the other book appears as a compact circle with its cover and progress ring.
+7. Hover over the inactive circular bubble; observe the preview card showing Title, Author, Reading Progress, and Format.
+8. Left-click the inactive circular bubble; verify it smoothly switches to active (morphing into the pill while the previous book becomes a circle).
+9. Click `[–] Minimize` in the top-right of the window; observe the window collapses back into the draggable floating bubble stack.
+10. Click and drag the bubble anywhere across the screen (middle, left, bottom, top); verify it moves freely with zero edge snapping and stays exactly where dropped.
+11. Hover over the minimized bubble; observe the small `[✕]` close button appear.
+12. Click the minimized bubble to re-expand the window.
+13. Drag an inactive circular bubble from the top strip downwards into the reading area; observe the translucent blue drop-zone indicator appear (Zen Browser style).
+14. Release the drop; observe the screen splits side-by-side into two independent reading panes!
+15. Alternatively, right-click an inactive circle in the top strip and select "Split Side-by-Side".
+16. Verify each pane has its own independent scrolling and page navigation.
+    17. Click the `[✕]` unsplit button or toggle split to return to single-book view.
+
+**Look for:**
+1. Minimized bubbles float freely and can be dragged anywhere on the screen with zero snapping.
+2. The active book in the top switcher bar is a fixed-size horizontal pill showing title only; inactive books are circular discs.
+3. Hovering over inactive circles displays title, author, progress %, and format.
+4. Dragging an inactive circle into the reader shows the translucent blue drop zone and snaps into side-by-side split view.
+5. In split mode, both books read side-by-side independently.
+
+---
+
+### T34 · EPUB Ingestion Sanitizer & Polish
+
+**Goal:** Messy real-world EPUBs arrive clean, readable, and properly formatted without user intervention.
+
+**Do:**
+1. Navigate to Settings -> Book Files tab.
+2. Verify the "EPUB polish & sanitizer" section exists with the "Sanitize and polish EPUBs on import" switch (default ON).
+3. Import an EPUB file that has toxic styling (e.g. forced tiny 8px fonts, wide fixed margins, forced black background / white text) or missing Table of Contents.
+4. Open the imported book in the Kalam EPUB Reader.
+5. Check chapter headings and text rendering: verify text renders with clean, theme-respecting fonts, readable sizing, normal line height, and responsive margins.
+6. Open the left sidebar and inspect the Table of Contents: verify chapters and sections appear properly even if the original EPUB lacked a TOC.
+7. Check the book directory under `~/.local/share/kalam/library/<uuid>/`: verify the original untouched file was preserved as `book.epub.orig` if writeback backup is enabled, while `book.epub` contains the clean, repacked archive with uncompressed `mimetype`.
+
+**Look for:**
+1. Toxic styling is stripped cleanly without altering body text content.
+2. Malformed XML entities (bare `&`) and unclosed void tags are repaired.
+3. Missing Table of Contents is generated from chapter headings (`<h1>`/`<h2>`).
+4. Original book backup `.orig` is safely preserved.
+
+---
+
+### T35 · Auto-Import Watch Folder
+
+**Goal:** Dropping ebook and comic files into a designated folder automatically imports them into Kalam without blocking or freezing the application.
+
+**Do:**
+1. Navigate to Settings -> Book Files tab.
+2. In the "Auto-import watch folder" card, click `[Choose folder]`.
+3. Select a folder on your computer (e.g. `~/Downloads/Books` or a test folder).
+4. Verify the folder path chip updates with the selected path, and toggle the switch to ON.
+5. Drop an EPUB, PDF, or Comic (`.cbz`/`.cbr`) file into the watched folder.
+6. If the file is being downloaded (e.g. accompanied by `.crdownload` or `.part`), observe that Kalam waits until the download completes and the file size stabilizes.
+7. Observe a toast notification appear in Kalam: `"Watch Folder: Imported <book title>"`.
+8. Verify that the current library view (Home or All Books) automatically refreshes to display the newly imported book.
+9. Verify that dropping a file that is already in the library is safely recognized as a duplicate and does not duplicate entries or spam notifications.
+10. In Settings -> Book Files, click `[Clear]`; verify the path is cleared and auto-import is cleanly disabled.
+
+**Look for:**
+1. Smooth non-blocking background import using `gio::FileMonitor`.
+2. Debounce correctly waits for file size stabilization before importing.
+3. Automatic toast notification upon successful import.
+4. Live library refresh without needing manual reload.
+5. Duplicate files are ignored cleanly.
+
+---
+
+### T35b · Multi-Folder Auto-Import, Format Filtering & Smart Shelves
+
+**Goal:** Verify multiple watch folders can be added with independent format filters, target shelves, and subfolder auto-shelving.
+
+**Do:**
+1. Open Settings -> Book Files tab.
+2. In the "Auto-import watch folders" card, click `[+ Add Watch Folder]` and pick a test folder `Folder A`.
+3. In `Folder A`'s card:
+   - Check `[✓] Novels (EPUB)` and set its target shelf to "Fiction".
+   - Uncheck `[ ] Documents (PDF)`.
+   - Check `[✓] Comics (CBZ/CBR)` and set its target shelf to "Manga".
+   - Check `[✓] Automatically create shelves from subfolders`.
+4. Click `[+ Add Watch Folder]` again and pick a second test folder `Folder B` (e.g. for study notes).
+   - In `Folder B`'s card, enable only `[✓] Documents (PDF)` and set target shelf to "Study".
+5. Drop an EPUB file into `Folder A`: verify it imports and is automatically assigned to the "Fiction" shelf.
+6. Drop a PDF file into `Folder A`: verify it is ignored (since PDF is unchecked for `Folder A`).
+7. Drop a PDF file into `Folder B`: verify it imports and is placed into the "Study" shelf.
+8. Inside `Folder A`, create a subfolder `Naruto` and drop a comic `.cbz` file into `Folder A/Naruto/`:
+   - Verify Kalam automatically creates the shelf "Naruto" and adds the comic to both "Manga" and "Naruto".
+9. Delete a file from `Folder A` using your system file manager: verify the book remains intact in Kalam with its highlights and reading history.
+10. Toggle the `[ ON / OFF ]` switch on `Folder B`: verify monitoring is paused for `Folder B` without affecting `Folder A`.
+11. Click the trash `[ ✕ ]` button on `Folder B`: verify `Folder B` is removed cleanly from the watch list.
+
+**Look for:**
+1. Multiple cards render cleanly with zero clutter or GTK warnings.
+2. Per-format filtering strictly honors user checkmarks.
+3. Shelf dropdowns correctly route imported books to designated shelves.
+4. Subfolder names automatically generate matching shelves.
+5. Deleting files externally never touches or damages the user's library.
+
+---
+
+### T52 — Whole-Book In-Reader Search & "Matches at a Glance" Popover (EPUB & PDF)
+
+**What to test:**
+Find-in-book whole-book search, live match counts, soft golden glow highlight, Next/Previous jumping, and the "Matches at a Glance" snippet dropdown popover in both EPUB and PDF readers.
+
+**Do (EPUB Reader):**
+1. Open any EPUB book in Kalam.
+2. Press `Ctrl+F` (or click the search magnifying glass icon in the top-left floating dock).
+3. Verify the floating search bar smoothly reveals in the top-right corner and automatically focuses the search entry.
+4. Type a query (e.g. "Alice" or a common word):
+   - Notice the live match count badge (e.g. `1 of 24 ▾`).
+   - Notice the current match in the text is highlighted with a soft golden glow.
+5. Press `Enter` (or click the Down arrow button): verify it navigates to match 2, 3, etc., smoothly turning chapters as needed.
+6. Press `Shift+Enter` (or click the Up arrow button): verify it navigates back to previous matches.
+7. Click the match count chip (e.g. `1 of 24 ▾`):
+   - Verify the "Matches at a Glance" popover opens below the bar.
+   - Verify it shows chapter headers, match numbers (`#1`, `#2`), and excerpt snippets with the search query highlighted.
+8. Click any snippet row in the popover:
+   - Verify the reader immediately jumps to that match and centers it.
+   - Verify the popover closes cleanly.
+9. Press `Esc`: verify the search bar closes and the golden search highlight is cleared.
+
+**Do (PDF Reader):**
+1. Open any PDF document in Kalam.
+2. Press `Ctrl+F` (or click the search magnifying glass icon in the top-left floating dock).
+3. Verify the search bar smoothly slides down in the top-right corner.
+4. Type a query matching text in the PDF:
+   - Verify live match count updates (e.g. `1 of 8 ▾`).
+   - Verify the PDF jumps to the matching page, and the text is highlighted in soft golden glow with a fine border.
+5. Press `Enter` to cycle through matches across multiple pages.
+6. Click the match count chip: verify the "Matches at a Glance" popover lists snippets with `Page X · Section Title`.
+7. Click a snippet row: verify the PDF jumps directly to that page and highlights the text.
+8. Press `Esc`: verify the search bar closes and search highlights disappear.
+
+**Look for:**
+1. Zero lag during live typing; match count updates instantly.
+2. Next/Prev cycles smoothly across all chapters and pages.
+3. Soft golden glow is distinct from blue selection and does not disrupt reading.
+4. "Matches at a Glance" snippets display readable context with clear bold/amber query terms.
+5. `Esc` key cleanly closes search without exiting the reader.
+
+---
+
+## At the end
+
+Send me whatever you have, in this shape:
+
+    T1 ok
+    T2 ok, but justify looks odd in the indented quotes
+    T5 wrong — tapping a chapter link opened a card
+    T13 [timing] pdf_open  412.7 ms
+        [timing] pdf_page_reflow  3.1 ms
+        [timing] pdf_page_image  188.4 ms
+
+Plus `~/.local/share/kalam/kalam.log` if anything crashed or froze.

@@ -51,9 +51,11 @@
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
 use crate::db::{
-    Annotation, Catalog, DictLookup, EventKind, LibrarySession, LibraryStats, QuoteRef,
-    ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
+    Annotation, AuthorProfile, Catalog, Dictionary, DictLookup, EventKind, LibrarySession,
+    LibraryStats, QuoteRef, ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord,
+    SessionRow, Shelf, SortKey,
 };
+use crate::watch_folder::WatchFolderRule;
 use crate::models::Book;
 use std::sync::Arc;
 
@@ -149,6 +151,82 @@ pub struct BookDetailSnapshot {
     pub errors: Errors,
 }
 
+/// Everything the book page draws, in one call (roadmap 7.1 step 2a).
+///
+/// The page builds its skeleton on the UI thread and a worker fills it
+/// when this snapshot arrives, so opening a book never touches the
+/// database, the filesystem or the EPUB parser on the UI thread. It
+/// composes the two existing per-card snapshots and adds the three reads
+/// the fill functions used to do inline: reading position (one read
+/// shared by the hero bar and the journey card), the highlights list,
+/// and the author profile. The file-size stat stays with the page's
+/// worker — it is a filesystem question, not a catalog one.
+#[derive(Debug, Default)]
+pub struct BookPageSnapshot {
+    pub detail: BookDetailSnapshot,
+    /// Current chapter + scroll fraction; `None` until the book is opened.
+    pub progress: Option<(usize, f64)>,
+    pub stats: BookStatsSnapshot,
+    pub annotations: Vec<Annotation>,
+    /// Why the highlights list is empty when that read failed — reported
+    /// with the highlights wording, not a generic database error.
+    pub annotations_error: Option<String>,
+    /// Pending EPUB edits (Phase 6), for the action row's badge. A failed
+    /// read shows zero — the same degrade-to-empty the rest of the
+    /// snapshot practices — rather than blocking the page.
+    pub pending_edits: usize,
+    pub author_profile: Option<AuthorProfile>,
+    /// Other books by the same (first) author, for the author card's
+    /// thumbnails. Read once here instead of in the fill function.
+    pub author_other_books: Vec<Book>,
+    /// Not read by the service (it is DB-pure): the page's worker fills
+    /// this with the file's `fs::metadata` size on its way back, so the
+    /// stat also stays off the UI thread.
+    pub file_size: Option<u64>,
+}
+
+/// The settings page, first half (7.1 step 2c): every pref- and table-shaped
+/// read its six tabs need, in one DB-pure pass. Fast by design — a handful of
+/// single-row reads — so the page can fill almost immediately.
+///
+/// The disk-flavored reads (the per-book sidecar survey, the libraries
+/// registry file, the EPUB backup listing) are deliberately NOT here: they
+/// are slow, only three rows want them, and the page reads them in its own
+/// worker task (`SettingsFs`) so they never delay the fill — the same split
+/// `BookPageSnapshot::file_size` made.
+#[derive(Debug, Default)]
+pub struct SettingsSnapshot {
+    /// Installed dictionary packs, for the Dictionaries tab.
+    pub dicts: Vec<Dictionary>,
+    /// Why `dicts` is empty when its read failed — the old page notified
+    /// with this wording inline; the apply now does, off the read.
+    pub dicts_error: Option<String>,
+    /// The active theme's id, for the Appearance picker's badges.
+    pub theme_id: String,
+    /// Watch-folder rules and the shelf list they route into (Book Files).
+    pub watch_rules: Vec<WatchFolderRule>,
+    pub shelves: Vec<Shelf>,
+    /// Metadata source toggles and the Google Books key/country prefs
+    /// (Metadata Sources).
+    pub source_open_library: bool,
+    pub source_google_books: bool,
+    pub google_books_key: String,
+    pub google_books_country: String,
+    /// EPUB polish-on-import and metadata writeback toggles (Book Files).
+    pub clean_on_import: bool,
+    pub writeback_enabled: bool,
+}
+
+/// The author page: profile, the owned-books list, and the series grouping
+/// computed from it (7.1 step 2c). The grouping used to run on the UI thread
+/// in `init`; it is pure work over the books, so the worker runs it here.
+#[derive(Debug, Default)]
+pub struct AuthorPageSnapshot {
+    pub profile: Option<AuthorProfile>,
+    pub owned_books: Vec<Book>,
+    pub series: Vec<crate::author::SeriesProgress>,
+}
+
 /// The vocabulary page: the visible word list plus its header counts.
 ///
 /// The counts used to come from two extra `list_saved_words` calls whose
@@ -173,6 +251,34 @@ pub struct QuotesSnapshot {
     pub errors: Errors,
 }
 
+/// Everything the dashboard's "Now reading" card needs, resolved off the
+/// UI thread (7.1 step 2b): the EPUB spine is a file open + parse — a
+/// 2.20 violation the old inline card carried — and the chapter index is
+/// a database read.
+#[derive(Debug)]
+pub struct NowReading {
+    pub book: Book,
+    /// Spine entry titles, in order. Empty for non-EPUB books (and for
+    /// EPUBs that fail to open — the card falls back to a bare percent).
+    pub spine_titles: Vec<String>,
+    /// 0-based index of the current chapter, already read on the worker.
+    pub chapter_index: usize,
+}
+
+/// One merged history-feed row, fully resolved: the per-event progress and
+/// format lookups the page used to do **while building its widgets** are
+/// baked into `sub` here (7.1 step 2b).
+#[derive(Debug, Default)]
+pub struct DashboardFeedRow {
+    pub at: String,
+    pub title: String,
+    pub sub: String,
+    pub icon: &'static str,
+    pub tint: &'static str,
+    pub icon_tint: &'static str,
+    pub book_id: i64,
+}
+
 /// The My Library dashboard. One read of everything the page shows, so a
 /// broken database cannot render as a cheerful empty dashboard.
 ///
@@ -183,13 +289,16 @@ pub struct DashboardSnapshot {
     pub stats: LibraryStats,
     /// Most recently opened books; the page picks "now reading" from these.
     pub recently_opened: Vec<Book>,
+    /// The resolved "Now reading" card data (None when nothing qualifies).
+    pub now_reading: Option<NowReading>,
+    /// The merged, lookups-already-done history feed, truncated to the
+    /// caller's limit.
+    pub feed: Vec<DashboardFeedRow>,
     /// Fallback for the continue strip when nothing has been opened yet.
     pub recent: Vec<Book>,
     pub quotes: Vec<(Annotation, QuoteRef)>,
     pub words: Vec<SavedWord>,
     pub lookups: Vec<DictLookup>,
-    pub events: Vec<ReadingEvent>,
-    pub sessions: Vec<LibrarySession>,
     pub goal: i64,
     pub finished_this_year: i64,
     pub errors: Errors,
@@ -230,6 +339,17 @@ pub struct ReadingListSnapshot {
     pub errors: Errors,
 }
 
+/// One row of a book picker (reading list, shelf): everything the row's
+/// CheckButton needs, assembled in one service read. Plain data so it can
+/// cross the worker boundary like any snapshot.
+#[derive(Debug, Default)]
+pub struct PickerRow {
+    pub id: i64,
+    pub title: String,
+    pub line: String,
+    pub ticked: bool,
+}
+
 /// The tag cloud: every tag with how many books carry it.
 #[derive(Debug, Default)]
 pub struct TagsSnapshot {
@@ -241,6 +361,24 @@ pub struct TagsSnapshot {
 #[derive(Debug, Default)]
 pub struct TagBooksSnapshot {
     pub books: Vec<Book>,
+    pub errors: Errors,
+}
+
+/// Library-wide full-text content search snapshot.
+#[derive(Debug, Default)]
+pub struct ContentSearchSnapshot {
+    pub results: Vec<crate::content_index::BookContentSearchResult>,
+    pub total_matches: usize,
+    pub total_books: usize,
+    pub duration_ms: u128,
+    pub errors: Errors,
+}
+
+/// Library content search index status snapshot.
+#[derive(Debug, Default)]
+pub struct ContentIndexStatusSnapshot {
+    pub status: crate::content_index::ContentIndexStatus,
+    #[allow(dead_code)]
     pub errors: Errors,
 }
 
@@ -260,6 +398,7 @@ impl LibraryService {
 
     /// Home: counts strip, continue row, reading-list peek, recently added.
     pub fn home(&self) -> HomeSnapshot {
+        let _t = crate::timing::measure("service_home");
         let mut errors = Errors::new();
         let stats = take(self.catalog.library_stats(), "library stats", &mut errors);
         // Bounded on purpose: Home shows a dozen covers, not the whole library.
@@ -286,6 +425,7 @@ impl LibraryService {
 
     /// Analytics: totals, streaks, goal progress, this week's activity.
     pub fn analytics(&self) -> AnalyticsSnapshot {
+        let _t = crate::timing::measure("service_analytics");
         let mut errors = Errors::new();
         AnalyticsSnapshot {
             stats: take(self.catalog.library_stats(), "library stats", &mut errors),
@@ -301,6 +441,7 @@ impl LibraryService {
     /// The tag cloud.
     /// Everything the reader loads when a book opens.
     pub fn reader(&self, book_id: i64) -> ReaderSnapshot {
+        let _t = crate::timing::measure("service_reader");
         let mut errors = Errors::new();
         let cat = &self.catalog;
         ReaderSnapshot {
@@ -322,6 +463,7 @@ impl LibraryService {
 
     /// The book page's stats strip and timeline, in one call.
     pub fn book_stats(&self, book_id: i64, days: i64, session_limit: usize) -> BookStatsSnapshot {
+        let _t = crate::timing::measure("service_book_stats");
         let mut errors = Errors::new();
         let cat = &self.catalog;
         let progress: Option<(usize, f64)> = take(
@@ -366,9 +508,10 @@ impl LibraryService {
     /// The books read is skipped when the shelf itself is missing, so a
     /// deleted shelf produces one clear outcome instead of two vague ones.
     pub fn shelf_detail(&self, shelf_id: i64, sort: SortKey, query: &str) -> ShelfDetailSnapshot {
+        let _t = crate::timing::measure("service_shelf_detail");
         let mut errors = Errors::new();
         let shelf: Option<Shelf> = take(self.catalog.get_shelf(shelf_id), "shelf", &mut errors);
-        let books = match &shelf {
+        let mut books = match &shelf {
             Some(s) => take(
                 self.catalog.shelf_books(s, sort, query),
                 "books on this shelf",
@@ -376,6 +519,8 @@ impl LibraryService {
             ),
             None => Vec::new(),
         };
+        // A shelf shows one card per comic series — never individual chapters.
+        self.catalog.collapse_comic_chapters(&mut books);
         ShelfDetailSnapshot {
             shelf,
             books,
@@ -385,6 +530,7 @@ impl LibraryService {
 
     /// Everything the book float panel shows, in one call.
     pub fn book_detail(&self, book_id: i64) -> BookDetailSnapshot {
+        let _t = crate::timing::measure("service_book_detail");
         let mut errors = Errors::new();
         BookDetailSnapshot {
             book: take(self.catalog.get_book(book_id), "book", &mut errors),
@@ -403,11 +549,121 @@ impl LibraryService {
         }
     }
 
+    /// The whole book page in one call. See `BookPageSnapshot`.
+    ///
+    /// Every sub-read degrades exactly as it did when the page did it
+    /// inline: a failed read yields the empty value plus an error row
+    /// (or `annotations_error` with the highlights wording), never a
+    /// panic and never a silent wrong screen.
+    pub fn book_page(&self, book_id: i64) -> BookPageSnapshot {
+        let _t = crate::timing::measure("service_book_page");
+        let detail = self.book_detail(book_id);
+        // One read for both consumers of the reading position: the hero
+        // progress bar and the journey card queried it separately.
+        let progress = self.catalog.get_reading_progress(book_id).ok().flatten();
+        let stats = self.book_stats(book_id, 7, 3);
+        let (annotations, annotations_error) =
+            match self.catalog.get_annotations_for_book(book_id) {
+                Ok(rows) => (rows, None),
+                Err(err) => (Vec::new(), Some(err.to_string())),
+            };
+        let pending_edits = self
+            .catalog
+            .get_pending_patches_for_book(book_id)
+            .map(|rows| rows.len())
+            .unwrap_or(0);
+        let first_author = detail
+            .book
+            .as_ref()
+            .map(|b| b.authors.split(',').next().unwrap_or("").trim().to_string())
+            .unwrap_or_default();
+        let author_profile = if first_author.is_empty() {
+            None
+        } else {
+            self.catalog
+                .get_author_profile_by_name(&first_author)
+                .ok()
+                .flatten()
+        };
+        let author_other_books = if first_author.is_empty() {
+            Vec::new()
+        } else {
+            crate::author::owned_books_for_author(&self.catalog, &first_author)
+        };
+        BookPageSnapshot {
+            detail,
+            progress,
+            stats,
+            annotations,
+            annotations_error,
+            pending_edits,
+            author_profile,
+            author_other_books,
+            // The service is DB-pure; the page's worker fills this.
+            file_size: None,
+        }
+    }
+
+    /// The settings page's DB-pure reads, one pass (7.1 step 2c). See
+    /// `SettingsSnapshot` for why the disk-flavored reads are the page's.
+    pub fn settings(&self) -> SettingsSnapshot {
+        let _t = crate::timing::measure("service_settings");
+        let (dicts, dicts_error) = match self.catalog.list_dictionaries() {
+            Ok(rows) => (rows, None),
+            Err(err) => (Vec::new(), Some(err.to_string())),
+        };
+        let (source_open_library, source_google_books) = (
+            crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::OpenLibrary),
+            crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::GoogleBooks),
+        );
+        SettingsSnapshot {
+            dicts,
+            dicts_error,
+            theme_id: crate::theme::current(&self.catalog).id.to_string(),
+            watch_rules: crate::watch_folder::load_watch_rules(&self.catalog),
+            shelves: self.catalog.list_shelves().unwrap_or_default(),
+            source_open_library,
+            source_google_books,
+            google_books_key: self
+                .catalog
+                .get_pref("meta.googlebooks.key")
+                .unwrap_or_default(),
+            google_books_country: self
+                .catalog
+                .get_pref("meta.googlebooks.country")
+                .unwrap_or_else(crate::metadata::google_books::detect_country),
+            clean_on_import: crate::epub_sanitizer::clean_on_import_enabled(&self.catalog),
+            writeback_enabled: crate::epub_metadata::write_enabled(&self.catalog),
+        }
+    }
+
+    /// The author page's whole data question in one call (7.1 step 2c):
+    /// the profile if cached, the owned books, and their series grouping.
+    pub fn author_page(&self, author_name: &str) -> AuthorPageSnapshot {
+        let _t = crate::timing::measure("service_author");
+        let mut owned_books = crate::author::owned_books_for_author(&self.catalog, author_name);
+        // One card per comic series, never per chapter — the author's shelf
+        // obeys the same rule as every other list.
+        self.catalog.collapse_comic_chapters(&mut owned_books);
+        let profile = self
+            .catalog
+            .get_author_profile_by_name(author_name)
+            .ok()
+            .flatten();
+        let series = crate::author::series_progress(&owned_books);
+        AuthorPageSnapshot {
+            profile,
+            owned_books,
+            series,
+        }
+    }
+
     /// Vocabulary matching `query` and `known`, plus the header counts.
     ///
     /// The counts deliberately cover the whole table, not just the page's
     /// 500-row display cap, so the header stays true for large vocabularies.
     pub fn words(&self, query: &str, known: Option<bool>) -> WordsSnapshot {
+        let _t = crate::timing::measure("service_words");
         let mut errors = Errors::new();
         let words = take(
             self.catalog.list_saved_words(query, known),
@@ -433,6 +689,7 @@ impl LibraryService {
     /// that is a missing book, not a failed read, and the page already has
     /// wording for it.
     pub fn quotes(&self, query: &str) -> QuotesSnapshot {
+        let _t = crate::timing::measure("service_quotes");
         let mut errors = Errors::new();
         let annos: Vec<Annotation> = take(
             self.catalog.list_all_quotes(query),
@@ -456,25 +713,64 @@ impl LibraryService {
     /// `feed_limit` is doubled internally the way the page does it: the feed
     /// merges events with sessions and then trims, so both sides need slack.
     pub fn dashboard(&self, feed_limit: usize) -> DashboardSnapshot {
+        let _t = crate::timing::measure("service_dashboard");
         let mut errors = Errors::new();
         let cat = &self.catalog;
+        let stats = take(cat.library_stats(), "library stats", &mut errors);
+        let recently_opened = take(cat.recently_opened(6), "recently opened", &mut errors);
+        // "Now reading": the most recently opened book that isn't finished.
+        // Resolved here — on the worker — so the page never opens an EPUB
+        // or reads progress while building widgets (7.1 step 2b).
+        let now_reading = recently_opened
+            .iter()
+            .find(|b| b.progress < 100)
+            .map(|book| {
+                let spine_titles = if book.format == crate::models::BookFormat::Epub {
+                    crate::epub_book::OpenBook::open(
+                        &book.file_path,
+                        &crate::paths::reader_cache_dir(&book.uuid),
+                    )
+                    .map(|ob| ob.spine.iter().map(|sp| sp.title.clone()).collect())
+                    .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                let chapter_index = cat
+                    .get_reading_progress(book.id)
+                    .ok()
+                    .flatten()
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0);
+                NowReading {
+                    book: book.clone(),
+                    spine_titles,
+                    chapter_index,
+                }
+            });
+        let recent = take(cat.recent_books(60), "recent books", &mut errors);
+        let quotes = take(cat.recent_quotes(2), "recent quotes", &mut errors);
+        let words = take(cat.list_saved_words("", None), "saved words", &mut errors);
+        let lookups = take(cat.list_dict_lookups("", 3), "recent lookups", &mut errors);
+        let events = take(
+            cat.list_events(None, "", feed_limit * 2),
+            "reading history",
+            &mut errors,
+        );
+        let sessions = take(
+            cat.recent_sessions(feed_limit * 2),
+            "reading sessions",
+            &mut errors,
+        );
+        let feed = dashboard_feed(cat, &events, &sessions, feed_limit);
         DashboardSnapshot {
-            stats: take(cat.library_stats(), "library stats", &mut errors),
-            recently_opened: take(cat.recently_opened(6), "recently opened", &mut errors),
-            recent: take(cat.recent_books(60), "recent books", &mut errors),
-            quotes: take(cat.recent_quotes(2), "recent quotes", &mut errors),
-            words: take(cat.list_saved_words("", None), "saved words", &mut errors),
-            lookups: take(cat.list_dict_lookups("", 3), "recent lookups", &mut errors),
-            events: take(
-                cat.list_events(None, "", feed_limit * 2),
-                "reading history",
-                &mut errors,
-            ),
-            sessions: take(
-                cat.recent_sessions(feed_limit * 2),
-                "reading sessions",
-                &mut errors,
-            ),
+            stats,
+            recently_opened,
+            now_reading,
+            feed,
+            recent,
+            quotes,
+            words,
+            lookups,
             // Infallible by construction (they fall back to a default inside
             // the catalog), so they contribute no error rows.
             goal: cat.reading_goal(),
@@ -485,6 +781,7 @@ impl LibraryService {
 
     /// History page: reading events, optionally filtered by kind and text.
     pub fn history(&self, kind: Option<EventKind>, query: &str, limit: usize) -> HistorySnapshot {
+        let _t = crate::timing::measure("service_history");
         let mut errors = Errors::new();
         HistorySnapshot {
             events: take(
@@ -498,6 +795,7 @@ impl LibraryService {
 
     /// Lookup History page: the dictionary lookup log.
     pub fn lookup_history(&self, query: &str, limit: usize) -> LookupHistorySnapshot {
+        let _t = crate::timing::measure("service_lookup_history");
         let mut errors = Errors::new();
         LookupHistorySnapshot {
             lookups: take(
@@ -510,16 +808,69 @@ impl LibraryService {
     }
 
     /// All books page: the whole library, filtered by `query` and sorted.
+    /// When comic series exist, individual chapters are collapsed into their parent
+    /// series so that every comic is displayed as one item.
     pub fn all_books(&self, sort: SortKey, query: &str) -> AllBooksSnapshot {
+        let _t = crate::timing::measure("service_all_books");
         let mut errors = Errors::new();
+        let mut books = take(self.catalog.list_books(sort, query), "books", &mut errors);
+        self.catalog.collapse_comic_chapters(&mut books);
         AllBooksSnapshot {
-            books: take(self.catalog.list_books(sort, query), "books", &mut errors),
+            books,
             errors,
         }
     }
 
+    /// Deep content search across full book text in the library.
+    pub fn search_content(&self, query: &str) -> ContentSearchSnapshot {
+        let _t = crate::timing::measure("service_search_content");
+        let start = std::time::Instant::now();
+        let mut errors = Errors::new();
+        let results = take(
+            self.catalog.search_book_contents(query),
+            "search_content",
+            &mut errors,
+        );
+        let total_matches: usize = results.iter().map(|r| r.total_matches).sum();
+        let total_books = results.len();
+        let duration_ms = start.elapsed().as_millis();
+        ContentSearchSnapshot {
+            results,
+            total_matches,
+            total_books,
+            duration_ms,
+            errors,
+        }
+    }
+
+    /// Read the library content index status.
+    pub fn index_status(&self) -> ContentIndexStatusSnapshot {
+        let mut errors = Errors::new();
+        let status = take(
+            self.catalog.get_content_index_status(),
+            "index_status",
+            &mut errors,
+        );
+        ContentIndexStatusSnapshot { status, errors }
+    }
+
+    /// Index all unindexed books into the full-text search index.
+    pub fn index_unindexed_books(&self) -> Result<usize, String> {
+        self.catalog
+            .index_all_unindexed_books()
+            .map_err(|e| e.to_string())
+    }
+
+    /// Rebuild the library full-text search index from scratch.
+    pub fn reindex_all_books(&self) -> Result<usize, String> {
+        self.catalog
+            .reindex_all_books()
+            .map_err(|e| e.to_string())
+    }
+
     /// Shelves page: every shelf, ordered as stored.
     pub fn shelves(&self) -> ShelvesSnapshot {
+        let _t = crate::timing::measure("service_shelves");
         let mut errors = Errors::new();
         ShelvesSnapshot {
             shelves: take(self.catalog.list_shelves(), "shelves", &mut errors),
@@ -529,18 +880,116 @@ impl LibraryService {
 
     /// Reading list page: the ordered queue.
     pub fn reading_list(&self) -> ReadingListSnapshot {
+        let _t = crate::timing::measure("service_reading_list");
         let mut errors = Errors::new();
+        let mut entries = take(
+            self.catalog.list_reading_list(),
+            "reading list",
+            &mut errors,
+        );
+        // One row per comic series, never per chapter: collapse the books,
+        // then keep exactly the entries whose book survived. The surviving
+        // entry keeps its own position and note; its book is the retitled
+        // representative.
+        {
+            let mut books: Vec<Book> = entries.iter().map(|e| e.book.clone()).collect();
+            self.catalog.collapse_comic_chapters(&mut books);
+            let mut survived: std::collections::HashMap<i64, Book> =
+                books.into_iter().map(|b| (b.id, b)).collect();
+            entries.retain_mut(|e| match survived.remove(&e.book.id) {
+                Some(b) => {
+                    e.book = b;
+                    true
+                }
+                None => false,
+            });
+        }
         ReadingListSnapshot {
-            entries: take(
-                self.catalog.list_reading_list(),
-                "reading list",
-                &mut errors,
-            ),
+            entries,
             errors,
         }
     }
 
+    /// The "Add to reading list" picker's rows: every book in the library
+    /// (matching `query`), comics collapsed to one row per series — the
+    /// owner's rule holds in pickers too — each pre-checked when any of its
+    /// chapters is already queued. Formerly assembled inline by the page,
+    /// one peers lookup and one membership query per row; now it is a
+    /// service read with a step-4 budget on it.
+    pub fn reading_list_picker(&self, query: &str) -> Vec<PickerRow> {
+        let _t = crate::timing::measure("picker_read");
+        let membership: std::collections::HashSet<i64> = self
+            .catalog
+            .reading_list_book_ids()
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        self.picker_rows(query, membership)
+    }
+
+    /// The shelf's "Add books" picker: the same rows, ticked when any of
+    /// the book's (or series') chapters is already on the shelf.
+    pub fn shelf_picker(&self, shelf_id: i64, query: &str) -> Vec<PickerRow> {
+        let _t = crate::timing::measure("picker_read");
+        let membership: std::collections::HashSet<i64> = self
+            .catalog
+            .shelf_book_ids(shelf_id)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        self.picker_rows(query, membership)
+    }
+
+    /// The shared half of both pickers: list, collapse comics to one row
+    /// per series, then resolve ticked state from one batched peers map and
+    /// the membership set — nothing per row. A row whose peers cannot be
+    /// resolved (an unknown book) degrades to itself, exactly what the
+    /// pages' `unwrap_or_else(|_| vec![book.id])` did.
+    fn picker_rows(
+        &self,
+        query: &str,
+        membership: std::collections::HashSet<i64>,
+    ) -> Vec<PickerRow> {
+        let mut books = self
+            .catalog
+            .list_books(SortKey::Title, query)
+            .unwrap_or_default();
+        // One row per comic series, never per chapter.
+        self.catalog.collapse_comic_chapters(&mut books);
+        let comic_ids: Vec<i64> = books
+            .iter()
+            .filter(|b| {
+                matches!(
+                    b.format,
+                    crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                )
+            })
+            .map(|b| b.id)
+            .collect();
+        let peers = self
+            .catalog
+            .comic_series_peers_by_ids(&comic_ids)
+            .unwrap_or_default();
+        books
+            .into_iter()
+            .map(|book| {
+                let own = std::iter::once(book.id);
+                let row_peers: &[i64] = peers.get(&book.id).map_or(&[], Vec::as_slice);
+                let ticked = own
+                    .chain(row_peers.iter().copied())
+                    .any(|id| membership.contains(&id));
+                PickerRow {
+                    id: book.id,
+                    title: book.title.clone(),
+                    line: format!("{} — {}", book.title, book.authors_display()),
+                    ticked,
+                }
+            })
+            .collect()
+    }
+
     pub fn tags(&self) -> TagsSnapshot {
+        let _t = crate::timing::measure("service_tags");
         let mut errors = Errors::new();
         TagsSnapshot {
             tags: take(self.catalog.list_tags_with_counts(), "tags", &mut errors),
@@ -550,13 +999,17 @@ impl LibraryService {
 
     /// Books carrying `tag`, in `sort` order.
     pub fn tag_books(&self, tag: &str, sort: SortKey) -> TagBooksSnapshot {
+        let _t = crate::timing::measure("service_tag_books");
         let mut errors = Errors::new();
+        let mut books = take(
+            self.catalog.books_with_tag(tag, sort),
+            "books for tag",
+            &mut errors,
+        );
+        // One card per comic series, never per chapter.
+        self.catalog.collapse_comic_chapters(&mut books);
         TagBooksSnapshot {
-            books: take(
-                self.catalog.books_with_tag(tag, sort),
-                "books for tag",
-                &mut errors,
-            ),
+            books,
             errors,
         }
     }
@@ -595,6 +1048,115 @@ fn continue_row(recently_opened: Vec<Book>, recent: &[Book]) -> Vec<Book> {
     recent.first().cloned().into_iter().collect()
 }
 
+/// The merged history feed (events + reading sessions), fully resolved on
+/// the worker: the per-event progress and format lookups the page used to
+/// do while building are baked into `sub` here (7.1 step 2b).
+fn dashboard_feed(
+    cat: &Catalog,
+    events: &[ReadingEvent],
+    sessions: &[LibrarySession],
+    feed_limit: usize,
+) -> Vec<DashboardFeedRow> {
+    // Batched up front. The feed used to call `get_reading_progress` once
+    // per Opened event and `get_book` once per Imported event — bounded by
+    // the feed limit, but "small × one-query-per-row" is exactly the shape
+    // the step-4 perf budgets exist to catch, and the dashboard budget
+    // caught this on its first run (2026-10-04).
+    let progress_by_id: std::collections::HashMap<i64, (usize, f64)> = cat
+        .reading_progress_by_ids(
+            &events
+                .iter()
+                .filter(|e| e.kind == EventKind::Opened)
+                .map(|e| e.book_id)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+    let books_by_id = cat
+        .books_by_ids(
+            &events
+                .iter()
+                .filter(|e| e.kind == EventKind::Imported)
+                .map(|e| e.book_id)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+
+    let mut items: Vec<DashboardFeedRow> = Vec::new();
+
+    for e in events {
+        let sub = match e.kind {
+            // Opened events carry no detail -- show where the book
+            // currently sits instead.
+            EventKind::Opened => progress_by_id
+                .get(&e.book_id)
+                .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
+                .unwrap_or_default(),
+            EventKind::Finished => {
+                if e.detail == "auto" {
+                    format!("{} · auto-finished", e.book_authors)
+                } else {
+                    e.book_authors.clone()
+                }
+            }
+            EventKind::Unfinished => e.book_authors.clone(),
+            EventKind::Imported => {
+                let format_label = books_by_id
+                    .get(&e.book_id)
+                    .map(|b| b.format.as_str().to_string())
+                    .unwrap_or_default();
+                if format_label.is_empty() {
+                    e.book_authors.clone()
+                } else {
+                    format!("{} · {}", e.book_authors, format_label)
+                }
+            }
+        };
+        items.push(DashboardFeedRow {
+            at: e.at.clone(),
+            title: format!("{} {}", e.kind.label(), e.book_title),
+            sub,
+            icon: e.kind.icon(),
+            tint: match e.kind {
+                EventKind::Finished => "kalam-hist-tint-success",
+                EventKind::Imported => "kalam-hist-tint-warning",
+                _ => "kalam-hist-tint-accent",
+            },
+            icon_tint: match e.kind {
+                EventKind::Finished => "kalam-event-finished",
+                EventKind::Imported => "kalam-event-imported",
+                _ => "kalam-event-opened",
+            },
+            book_id: e.book_id,
+        });
+    }
+
+    for s in sessions {
+        if s.seconds < 30 {
+            continue; // ignore flip-in-and-out sessions
+        }
+        let mins = (s.seconds / 60).max(1);
+        let sub = if (1..100).contains(&s.end_pct) {
+            format!("{mins} min session · reached {}%", s.end_pct)
+        } else {
+            format!("{mins} min session")
+        };
+        items.push(DashboardFeedRow {
+            at: s.started_at.clone(),
+            title: format!("Read {}", s.book_title),
+            sub,
+            icon: "media-playback-start-symbolic",
+            tint: "kalam-hist-tint-accent",
+            icon_tint: "kalam-event-opened",
+            book_id: s.book_id,
+        });
+    }
+
+    // ISO-8601 UTC strings compare chronologically.
+    items.sort_by(|a, b| b.at.cmp(&a.at));
+    items.truncate(feed_limit);
+    items
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,10 +1180,166 @@ mod tests {
         assert_send::<BookDetailSnapshot>();
         assert_send::<ShelfDetailSnapshot>();
         assert_send::<BookStatsSnapshot>();
+        // The book page snapshot crosses a worker boundary (7.1 step 2a).
+        assert_send::<BookPageSnapshot>();
+        // Settings and the author page join it in 7.1 step 2c.
+        assert_send::<SettingsSnapshot>();
+        assert_send::<AuthorPageSnapshot>();
         assert_send::<ReaderSnapshot>();
+        // Added when `all_books` became the 1.2b pilot: it now crosses a
+        // thread boundary, so the property has to be compile-checked rather
+        // than assumed.
+        assert_send::<AllBooksSnapshot>();
+        assert_send::<ContentSearchSnapshot>();
+        assert_send::<ContentIndexStatusSnapshot>();
+        // History joins them in the same 1.2b pass. Deliberately *not* the
+        // snapshots for pages that stay synchronous (shelves, reading list,
+        // analytics, reader, book detail) — asserting `Send` on a type that
+        // never crosses a thread proves nothing and reads as coverage it
+        // isn't.
+        assert_send::<HistorySnapshot>();
+        // Picker rows cross the worker boundary with the picker's read
+        // (step 4, the comic-axis increment).
+        assert_send::<PickerRow>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
+    }
+
+    /// Roadmap 7.1 step 2a: the book page snapshot is one fixed set of
+    /// statements. A book with progress, highlights and same-author
+    /// siblings must cost exactly the same as a bare one — the
+    /// count-shaped budget in the proven `perf.rs` pattern (an integer,
+    /// identical on every machine, cannot flake).
+    #[test]
+    fn book_page_statement_count_is_fixed() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let bare = seed(svc.catalog(), "Bare", &[]);
+        let busy = seed(svc.catalog(), "Busy", &[]);
+        // Same author as `bare` (seed always uses "An Author"), plus
+        // progress and highlights: everything the snapshot reads, present
+        // for one book and absent for the other.
+        svc.catalog()
+            .set_reading_progress(busy, 3, 0.5, 10)
+            .expect("seed progress");
+        for i in 0..5 {
+            svc.catalog()
+                .insert_annotation(
+                    busy,
+                    "highlight",
+                    i,
+                    "p",
+                    0,
+                    "p",
+                    9,
+                    "amber",
+                    "solid",
+                    &format!("excerpt {i}"),
+                    "",
+                )
+                .expect("seed annotation");
+        }
+
+        let n_bare = svc.catalog().count_queries(|| svc.book_page(bare));
+        let n_busy = svc.catalog().count_queries(|| svc.book_page(busy));
+        assert_eq!(
+            n_bare, n_busy,
+            "book_page must be a fixed set of statements: {n_bare} for a bare book vs {n_busy} for one with progress and highlights"
+        );
+
+        // And the snapshot carries the seeded state.
+        let snap = svc.book_page(busy);
+        assert_eq!(
+            snap.detail.book.as_ref().map(|b| b.title.as_str()),
+            Some("Busy")
+        );
+        assert_eq!(snap.progress.map(|(c, _)| c), Some(3));
+        assert_eq!(snap.annotations.len(), 5);
+        // Both books share an author, so the list has both — the author
+        // card filters out the book itself when it draws.
+        assert_eq!(snap.author_other_books.len(), 2);
+        assert!(snap.author_other_books.iter().any(|b| b.title == "Bare"));
+    }
+
+    /// 7.1 step 2c: the settings snapshot is one fixed set of statements.
+    /// A settings page with dictionaries and shelves installed must cost
+    /// exactly what a factory-fresh one does — same count-shaped budget as
+    /// `book_page_statement_count_is_fixed`, and the reason is the same: the
+    /// number is identical on every machine and cannot flake.
+    ///
+    /// Only the table-shaped reads are seeded. The pref-shaped ones are
+    /// deliberately left at their defaults: setting them changes *which*
+    /// statements fire, not how many rows they return — the watch-rules
+    /// reader takes a second legacy-pref look when no rules are saved, and
+    /// global prefs (theme, sources, the Google key) fall through the
+    /// prefs.json file first. Seeding rows is what tests the property:
+    /// neither list grows with the library.
+    #[test]
+    fn settings_statement_count_is_fixed() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let n_fresh = svc.catalog().count_queries(|| svc.settings());
+        assert!(n_fresh > 0);
+
+        let cat = svc.catalog();
+        cat.insert_dictionary("Test Dict", Some("en"), 100)
+            .expect("seed dictionary");
+        cat.create_shelf("A shelf", ShelfKind::Manual, "", "")
+            .expect("seed shelf");
+
+        let n_full = svc.catalog().count_queries(|| svc.settings());
+        assert_eq!(
+            n_fresh, n_full,
+            "settings must be a fixed set of statements: {n_fresh} fresh vs {n_full} with a dictionary and a shelf installed"
+        );
+
+        // And the snapshot carries the seeded rows plus the pref defaults.
+        let snap = svc.settings();
+        assert_eq!(snap.dicts.len(), 1);
+        assert_eq!(snap.dicts[0].name, "Test Dict");
+        assert_eq!(snap.shelves.len(), 1);
+        assert_eq!(snap.shelves[0].name, "A shelf");
+        assert_eq!(snap.theme_id, crate::theme::DEFAULT.id);
+        assert!(snap.source_open_library);
+        assert!(snap.source_google_books);
+        assert!(snap.clean_on_import);
+        assert!(snap.writeback_enabled);
+        assert_eq!(snap.google_books_key, "");
+        assert!(snap.watch_rules.is_empty());
+    }
+
+    /// 7.1 step 2c: the author page snapshot's cost does not grow with the
+    /// library — one book by an author costs exactly what three do.
+    ///
+    /// Deliberately not empty-vs-busy (pitfalls §51's second face): an
+    /// author with no books skips `hydrate_books`' batched tag query
+    /// entirely, so the empty case is *structurally* cheaper — one batched
+    /// statement fewer, the good direction. The property worth pinning is
+    /// that the count is flat in the number of books.
+    #[test]
+    fn author_page_statement_count_is_fixed() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+
+        seed(svc.catalog(), "First", &[]);
+        let n_one = svc.catalog().count_queries(|| svc.author_page("An Author"));
+
+        seed(svc.catalog(), "Second", &[]);
+        seed(svc.catalog(), "Third", &[]);
+        let n_three = svc.catalog().count_queries(|| svc.author_page("An Author"));
+
+        assert_eq!(
+            n_one, n_three,
+            "author_page must not grow with the book count: {n_one} statements for one book vs {n_three} for three"
+        );
+
+        // And the snapshot carries the books.
+        let snap = svc.author_page("An Author");
+        assert_eq!(snap.owned_books.len(), 3);
+        // AuthorProfile is not PartialEq, so the emptiness is asked, not
+        // compared.
+        assert!(snap.profile.is_none());
     }
 
     fn seed(cat: &Catalog, title: &str, tags: &[&str]) -> i64 {
@@ -639,6 +1357,76 @@ mod tests {
             &tags,
         )
         .expect("seed book")
+    }
+
+    /// The pickers' one rule, pinned in the service layer: comics appear as
+    /// one row per series — never one per chapter — and a series row is
+    /// ticked when any of its chapters is on the list/shelf. Covers both
+    /// registration kinds (relational chapters and the heuristic fallback).
+    #[test]
+    fn pickers_collapse_comics_and_tick_through_any_chapter() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let epub = seed(&cat, "Plain", &[]);
+        // Registered series: two chapters filed under one comic_series.
+        let c1 = seed(&cat, "Horimiya - c001", &[]);
+        let c2 = seed(&cat, "Horimiya - c002", &[]);
+        // Mark them as comics in place (the seed helper files epubs).
+        set_comic_format(&cat, c1, Some("Horimiya"));
+        set_comic_format(&cat, c2, Some("Horimiya"));
+        let series_id = cat
+            .get_or_create_comic_series("Horimiya", Some("HERO"), None)
+            .unwrap();
+        cat.add_comic_chapter(series_id, c1, 1.0, None, "Page 1").unwrap();
+        cat.add_comic_chapter(series_id, c2, 2.0, None, "Page 2").unwrap();
+        // Unregistered pair: heuristic peers via the series column.
+        let h1 = seed(&cat, "Naruto - c001", &[]);
+        let h2 = seed(&cat, "Naruto - c002", &[]);
+        set_comic_format(&cat, h1, Some("Naruto"));
+        set_comic_format(&cat, h2, Some("Naruto"));
+
+        let svc = LibraryService::new(Arc::new(cat));
+
+        // One chapter queued is enough to tick the whole series row.
+        svc.catalog().add_to_reading_list(c2).unwrap();
+        let rows = svc.reading_list_picker("");
+        assert_eq!(
+            rows.len(),
+            3,
+            "epub + one row per comic series, never per chapter: {rows:?}"
+        );
+        let horimiya = rows.iter().find(|r| r.title == "Horimiya").unwrap();
+        assert!(horimiya.ticked, "a queued chapter ticks the series row");
+        assert!(
+            !rows.iter().any(|r| r.title.contains("c00")),
+            "no chapter titles may appear as rows"
+        );
+        assert!(!rows.iter().find(|r| r.id == epub).unwrap().ticked);
+
+        // The same rule on shelves, through the other picker.
+        let shelf_id = cat_shelf(&svc);
+        svc.catalog().add_book_to_shelf(shelf_id, c1).unwrap();
+        let rows = svc.shelf_picker(shelf_id, "");
+        assert_eq!(rows.len(), 3);
+        assert!(
+            rows.iter().find(|r| r.title == "Horimiya").unwrap().ticked,
+            "a chapter on the shelf ticks the series row"
+        );
+    }
+
+    /// `seed` files epubs; a comic needs the format and series columns set.
+    fn set_comic_format(cat: &Catalog, id: i64, series: Option<&str>) {
+        let conn = cat.conn();
+        conn.execute(
+            "UPDATE books SET format = 'CBZ', series = ?2 WHERE id = ?1",
+            rusqlite::params![id, series],
+        )
+        .expect("set comic format");
+    }
+
+    fn cat_shelf(svc: &LibraryService) -> i64 {
+        svc.catalog()
+            .create_shelf("Picker", ShelfKind::Manual, "", "")
+            .expect("create shelf")
     }
 
     /// A `Book` with only the fields the continue-row rule reads. Building one
@@ -711,7 +1499,7 @@ mod tests {
         let svc = LibraryService::new(Arc::new(cat));
         let id = seed(svc.catalog(), "Dune", &[]);
         svc.catalog()
-            .insert_annotation(id, "highlight", 0, "/1", 0, "/1", 9, "", "the spice", "")
+            .insert_annotation(id, "highlight", 0, "/1", 0, "/1", 9, "", "solid", "the spice", "")
             .expect("insert annotation");
         svc.catalog()
             .insert_saved_word("melange", "a spice", None, Some(id), None, None)
@@ -912,7 +1700,7 @@ mod tests {
         let id = seed(svc.catalog(), "Dune", &["scifi"]);
         for excerpt in ["the spice must flow", "fear is the mind-killer"] {
             svc.catalog()
-                .insert_annotation(id, "quote", 0, "/1", 0, "/1", 5, "", excerpt, "")
+                .insert_annotation(id, "quote", 0, "/1", 0, "/1", 5, "", "solid", excerpt, "")
                 .expect("insert annotation");
         }
 
@@ -965,7 +1753,9 @@ mod tests {
             snap.errors
         );
         assert_eq!(snap.stats.total_books, 1);
-        assert_eq!(snap.events.len(), 1);
+        // The raw events/sessions left the snapshot when the feed moved
+        // in (2b): the dashboard's contract is the merged feed itself.
+        assert_eq!(snap.feed.len(), 1);
         // The goal counters are infallible, so they always have a value.
         assert!(snap.goal >= 0);
         assert!(snap.finished_this_year >= 0);
@@ -979,8 +1769,7 @@ mod tests {
         assert!(snap.errors.is_empty(), "{:?}", snap.errors);
         assert_eq!(snap.stats.total_books, 0);
         assert!(snap.recently_opened.is_empty());
-        assert!(snap.events.is_empty());
-        assert!(snap.sessions.is_empty());
+        assert!(snap.feed.is_empty());
     }
 
     #[test]
@@ -1103,6 +1892,61 @@ mod tests {
         assert_eq!(snap.shelves.len(), 1);
         assert_eq!(snap.shelves[0].name, "To read");
         assert!(snap.errors.is_empty());
+    }
+
+    #[test]
+    fn shelf_detail_shows_a_comic_series_as_one_card() {
+        // The owner's shelf report (2026-10-03): shelves show comics as
+        // series, never individual chapters. The snapshot is what the page
+        // renders, so the collapse is asserted here.
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+
+        let reg = svc
+            .catalog()
+            .insert_book(
+                "reg-1", "Dune", "Frank Herbert", None, "", BookFormat::Epub,
+                "dune.epub", "h-dune", None, &[],
+            )
+            .unwrap();
+        let c1 = svc
+            .catalog()
+            .insert_book(
+                "c-1", "Horimiya - c001", "HERO", None, "", BookFormat::Cbz,
+                "horimiya_01.cbz", "h-c1", None, &[],
+            )
+            .unwrap();
+        let c2 = svc
+            .catalog()
+            .insert_book(
+                "c-2", "Horimiya - c002", "HERO", None, "", BookFormat::Cbz,
+                "horimiya_02.cbz", "h-c2", None, &[],
+            )
+            .unwrap();
+        let s_id = svc
+            .catalog()
+            .get_or_create_comic_series("Horimiya", Some("HERO"), None)
+            .unwrap();
+        svc.catalog().add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
+        svc.catalog().add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+
+        let shelf_id = svc
+            .catalog()
+            .create_shelf("Comics", ShelfKind::Manual, "", "")
+            .unwrap();
+        svc.catalog().add_book_to_shelf(shelf_id, reg).unwrap();
+        svc.catalog().add_book_to_shelf(shelf_id, c1).unwrap();
+        svc.catalog().add_book_to_shelf(shelf_id, c2).unwrap();
+
+        let snap = svc.shelf_detail(shelf_id, SortKey::Added, "");
+        assert!(snap.errors.is_empty());
+        assert_eq!(snap.books.len(), 2, "one epub card + one series card");
+        let comic = snap
+            .books
+            .iter()
+            .find(|b| b.series.as_deref() == Some("Horimiya"))
+            .expect("the series card is present");
+        assert_eq!(comic.title, "Horimiya");
     }
 
     #[test]

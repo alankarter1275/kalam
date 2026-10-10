@@ -1163,3 +1163,75 @@ deferred 🔶).
    question menu itself is the next design step.
 5. Remote identity, Save-vs-Download boundary, downloads migration,
    follows scheduler — still to be designed.
+
+---
+
+## Entry 17 — 2026-10-09 — the login question reopened: opinion given
+
+**The owner's question, verbatim:**
+
+> "hey, about the login system.....I think we should have them, for a few.
+> what do you think? I mean how else are we going to 'subscribe' to a
+> story or author? I just wanted to know your opinion."
+
+### The premise corrected first: subscribing needs no account
+
+Kalam-native follows are account-free by design and were already planned
+(P7f): tap Follow on a story or author → kalam remembers it locally →
+the app's scheduler periodically asks the plug "any new chapters since
+X?" through the gate → a badge/notification appears. This works on every
+source uniformly, including sites the owner would never join; the follows
+live in one list inside kalam instead of five scattered site-side lists;
+nothing to log in, nothing to expire, nothing to leak. The archive put it
+plainly: kalam's own follows "are a better feature than the site-side
+list it would replace." So the owner's stated reason for logins is fully
+served without them.
+
+### What logins would genuinely add (the honest, short list)
+
+- **AO3 registered-only works** — the strongest real reason: a growing
+  slice of AO3 is visible only to logged-in users; without a session
+  those works are invisible to kalam.
+- **Literotica account sync** — raised long ago, never decided (still an
+  open stub line in ROADMAP).
+- **MangaDex** — authenticated API use / personal-client perks; minor.
+- Site-side private bookmarks/history import — marginal for this owner.
+- For subscribing specifically: **nothing** — site-side follow lists are
+  strictly worse than kalam-native follows for this use.
+
+### The standing rulings on *how*, re-affirmed (they remain sound)
+
+No passwords ever (kalam never sees one; a kalam bug can never burn an
+account it never held; AO3 itself warns that third-party apps taking
+logins are "at your own risk"); the login happens on the site's own real
+page in a browser window — the password goes to the site, kalam keeps
+only the session cookie afterward; the cookie lives in config, never in
+a library folder (so it cannot travel with copied books); logout actually
+deletes it; read-only forever — even a stolen cookie cannot be used
+*through* kalam to change anything on any account.
+
+**New cost since the rulings were written (Entry 4):** the "real browser
+window" requires the browser piece (WebKitGTK) that the engine swap
+removed from the binary in September. Re-adding it is possible and
+contained (one window, one dependency), but it is a real cost to pay —
+only worth it if logins actually happen. The clunky zero-dependency
+alternative (log in via the system browser, then hand-copy the cookie
+into kalam) works but is poor ergonomics for a non-technical owner.
+
+### Opinion given (the owner's direct question)
+
+1. **Subscriptions/follows: build them account-free, first.** They ship
+   naturally with the follow scheduler anyway, and they cover the stated
+   need completely.
+2. **Logins: worth having for a few sites — mainly AO3, for locked
+   works — but keep them last** (the P7e position), so the decision lands
+   with evidence: once the account-free world is running, the owner will
+   *feel* exactly what is missing (most likely: hitting a locked AO3
+   work) and can then say "yes, logins" with certainty rather than
+   guesswork.
+3. The how stays as ruled; the WebKit cost is the one open engineering
+   item if/when the time comes.
+
+**🔶 Open:** the owner's reply on whether logins go into the plan now
+(for AO3 etc., sequenced last) or get decided when the account-free
+follows are running.

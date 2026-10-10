@@ -1109,3 +1109,57 @@ the twisty-logic layer — deciding, not lifting — and that is exactly the
 shape of work scripting languages are best at. The duty list doubles as
 confirmation that the wall/gate/binder design was right: plugins come out
 thin on purpose.
+
+---
+
+## Entry 16 — 2026-10-09 — DECISION: Lua. The substrate question is closed.
+
+**The owner's decision, verbatim:**
+
+> "ok. lua it is"
+
+**✅ DECISION: one plugin system — Lua (`mlua`, Lua 5.4).** Closes Entry
+14's 🔶 and formally supersedes the §22 WebAssembly decision of
+2026-09-18. The complete substrate settlement, in one place:
+
+- **Every source is a plugin** (Entry 11) — AO3 and MangaDex included;
+  one uniform system.
+- **Hot-reload without app rebuilds** — the owner's core requirement:
+  fixing a source means dropping a new file in the plugins folder.
+- **One substrate** (Entry 13's correction) — no TOML tier, no
+  three-system menagerie. Simple sites are short Lua scripts that are
+  mostly a selector table; the text-file idea's easy fix survives inside
+  the one system.
+- **"Lua points, Rust carries"** (Entry 15) — plugins decide (URLs,
+  selectors, shapes); the app lifts (bytes, parsing trees, CBZ/EPUB
+  packing, rendering, scheduling).
+- **Safety, hand-built and adequate to the threat model** (no untrusted
+  authors exist): strip `io`/`os`, `pcall` at every entry point,
+  instruction-count watchdogs, `set_memory_limit`.
+- **wasm = recorded escape hatch**, with triggers:** untrusted or
+  third-party plugins ever appear; a plugin ever needs real compute;
+  the Lua sandbox proves leaky in practice.
+- **TOML dead as a plugin format**; `scrapers/mangaball.toml` is a
+  historical artifact.
+- **The wall, the gate and the question menu are untouched** — they were
+  designed substrate-agnostic on purpose, and that is why this decision
+  was cheap to make and would be cheap to revisit.
+
+**Docs updated in the same commit:** the ROADMAP Part 2 stub's substrate
+bullet rewritten (was: WebAssembly with three conditions); a superseded
+banner added to `docs/conversation.md` §22 pointing here (the same
+pattern as ARCH.md's banner pointing to §22). The stub's source list is
+deliberately untouched — the roster is not closed (comics pick still
+deferred 🔶).
+
+### Question map after this entry
+
+1. Roster — AO3, MangaDex, Royal Road, Literotica, FFN + comics pick
+   deferred 🔶.
+2. P7 rulings — presented across Entries 4–6, no objection; explicit
+   re-confirmation never directly asked.
+3. Substrate — **SETTLED: Lua** ✅.
+4. Socket shape — direction settled (one rich wall, Entry 8); the
+   question menu itself is the next design step.
+5. Remote identity, Save-vs-Download boundary, downloads migration,
+   follows scheduler — still to be designed.

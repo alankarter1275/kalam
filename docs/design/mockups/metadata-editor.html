@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="terracotta" data-mode="light">
+<head>
+  <meta charset="UTF-8">
+  <title>Kalam — Metadata Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,300,0,0">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    :root[data-theme="terracotta"][data-mode="light"] { --bg: #F7F3EC; --text: #1C1917; --text-2: #78716C; --text-3: #A8A29E; --accent: #C1440E; --border: rgba(28,25,23,0.12); --surface: #FFFFFF; --surface-hover: #FAFAF9; }
+    :root[data-theme="terracotta"][data-mode="dark"] { --bg: #1A1512; --text: #E8DDD5; --text-2: #B3A8A0; --text-3: #807670; --accent: #D4552A; --border: rgba(232,221,213,0.1); --surface: #241D19; --surface-hover: #2E2520; }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    
+    /* Fake library background to show it's a dialog */
+    .app-bg { position: fixed; inset: 0; background: var(--bg); z-index: 0; display: flex; padding: 40px; opacity: 0.4; filter: blur(4px); pointer-events: none; }
+    .fake-card { width: 140px; height: 210px; background: var(--surface); margin-right: 20px; border-radius: 4px; border: 1px solid var(--border); }
+    
+    /* DIALOG OVERLAY */
+    .dialog-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10; display: flex; align-items: center; justify-content: center; padding: 40px; }
+    .dialog { width: 100%; max-width: 960px; height: 85vh; background: var(--bg); border-radius: 12px; box-shadow: 0 24px 64px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    
+    /* HEADER */
+    .dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 32px; border-bottom: 1px solid var(--border); background: var(--bg); z-index: 2; }
+    .dialog-title { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 600; color: var(--text); }
+    .header-actions { display: flex; gap: 12px; }
+    .btn { padding: 8px 16px; border-radius: 6px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; background: transparent; color: var(--text); }
+    .btn-outline { border-color: var(--border); background: var(--surface); color: var(--text); }
+    .btn-outline:hover { background: var(--surface-hover); }
+    .btn-primary { background: var(--text); color: var(--bg); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .btn-accent { background: var(--accent); color: #FFF; }
+    .btn-accent:hover { opacity: 0.9; }
+
+    /* CONTENT AREAS */
+    .view-panel { display: none; flex: 1; overflow: hidden; }
+    .view-panel.active { display: flex; }
+    
+    /* ── STATE 1: EDITOR ── */
+    .editor-layout { display: flex; width: 100%; height: 100%; }
+    .form-col { flex: 1; padding: 32px; overflow-y: auto; }
+    .cover-col { width: 280px; padding: 32px; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+    
+    /* Form Inputs */
+    .input-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; }
+    .input-row { display: flex; gap: 24px; margin-bottom: 24px; }
+    .input-row > .input-group { flex: 1; margin-bottom: 0; }
+    
+    .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); }
+    .input { background: transparent; border: none; border-bottom: 1px solid var(--border); font-family: 'DM Sans', sans-serif; font-size: 14.5px; color: var(--text); padding: 8px 0; outline: none; transition: border-color 0.2s; }
+    .input:focus { border-bottom-color: var(--accent); }
+    .input-title { font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 500; }
+    .input-author { font-size: 18px; font-weight: 500; }
+    .textarea { resize: vertical; min-height: 120px; line-height: 1.6; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); margin-top: 4px; }
+    .textarea:focus { border-color: var(--accent); }
+
+    /* Sort Toggle & Fields */
+    .sort-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--text-3); cursor: pointer; user-select: none; margin-bottom: 24px; width: fit-content; transition: color 0.2s; }
+    .sort-toggle:hover { color: var(--accent); }
+    .sort-toggle .material-symbols-rounded { font-size: 16px; transition: transform 0.2s; }
+    .sort-fields { display: none; gap: 24px; margin-bottom: 32px; padding: 16px; background: var(--surface); border-radius: 6px; border: 1px dashed var(--border); }
+    .sort-fields.open { display: flex; }
+    .sort-fields .input-group { margin-bottom: 0; flex: 1; }
+    .sort-toggle.open .material-symbols-rounded { transform: rotate(180deg); }
+
+    /* Chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 500; color: var(--text-2); }
+    .chip .remove { font-size: 14px; cursor: pointer; color: var(--text-3); }
+    .chip .remove:hover { color: var(--accent); }
+    .chip-add { border-style: dashed; cursor: pointer; background: transparent; }
+    .chip-add:hover { border-color: var(--text-3); color: var(--text); }
+
+    /* Cover Column */
+    .cover-img { width: 100%; aspect-ratio: 2/3; background: #1C2D42; border-radius: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); object-fit: cover; margin-bottom: 8px; }
+    .cover-actions { display: flex; flex-direction: column; gap: 8px; }
+    .btn-full { width: 100%; justify-content: center; display: flex; align-items: center; gap: 8px; }
+    .fetch-box { padding: 16px; background: rgba(193, 68, 14, 0.05); border: 1px solid rgba(193, 68, 14, 0.15); border-radius: 8px; margin-top: auto; }
+    .fetch-title { font-weight: 600; font-size: 13px; color: var(--accent); margin-bottom: 6px; }
+    .fetch-desc { font-size: 12px; color: var(--text-2); margin-bottom: 12px; line-height: 1.4; }
+
+    /* ── STATE 2: FETCH COMPARISON ── */
+    .fetch-layout { display: flex; flex-direction: column; width: 100%; height: 100%; }
+    .compare-grid { display: flex; flex: 1; overflow: hidden; }
+    .compare-col { flex: 1; display: flex; flex-direction: column; padding: 32px; overflow-y: auto; }
+    .compare-col.current { background: var(--bg); }
+    .compare-col.new { background: var(--surface); border-left: 1px solid var(--border); }
+    
+    .col-header { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .col-title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 600; color: var(--text); }
+    .col-badge { padding: 4px 8px; background: rgba(193, 68, 14, 0.1); color: var(--accent); font-size: 10px; font-weight: 700; text-transform: uppercase; border-radius: 4px; letter-spacing: 0.1em; }
+    
+    .compare-block { display: flex; gap: 24px; margin-bottom: 32px; }
+    .c-cover { width: 120px; flex-shrink: 0; aspect-ratio: 2/3; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .c-details { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+    .c-title { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 600; line-height: 1.1; }
+    .c-author { font-size: 15px; color: var(--text-2); }
+    .c-desc { font-size: 13.5px; line-height: 1.6; color: var(--text); }
+    
+    /* Custom Checkbox for selection */
+    .select-card { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 2px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s; margin-bottom: 16px; }
+    .select-card:hover { border-color: var(--text-3); }
+    .select-card.selected { border-color: var(--accent); background: rgba(193, 68, 14, 0.03); }
+    .select-radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--text-3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+    .select-card.selected .select-radio { border-color: var(--accent); }
+    .select-card.selected .select-radio::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+
+  </style>
+</head>
+<body>
+
+  <div class="app-bg">
+    <div class="fake-card"></div>
+    <div class="fake-card"></div>
+    <div class="fake-card"></div>
+    <div class="fake-card"></div>
+    <div class="fake-card"></div>
+  </div>
+
+  <div class="dialog-backdrop">
+    <div class="dialog">
+      
+      <!-- HEADER -->
+      <div class="dialog-header">
+        <div class="dialog-title" id="dialogTitle">Edit Metadata</div>
+        <div class="header-actions" id="editorActions">
+          <button class="btn">Cancel</button>
+          <button class="btn btn-primary">Save Changes</button>
+        </div>
+        <div class="header-actions" id="fetchActions" style="display: none;">
+          <button class="btn" onclick="toggleView('editor')">Back to Editor</button>
+          <button class="btn btn-accent" onclick="toggleView('editor')">Accept Selected</button>
+        </div>
+      </div>
+
+      <!-- STATE 1: EDITOR -->
+      <div id="view-editor" class="view-panel active">
+        <div class="editor-layout">
+          <div class="form-col">
+            
+            <div class="input-group">
+              <div class="label">Title</div>
+              <input type="text" class="input input-title" value="The Memory Police">
+            </div>
+            
+            <div class="input-group">
+              <div class="label">Author</div>
+              <input type="text" class="input input-author" value="Yōko Ogawa">
+            </div>
+
+            <!-- The Sort Toggle -->
+            <div class="sort-toggle" id="sortBtn" onclick="toggleSort()">
+              <span class="material-symbols-rounded">tune</span> Edit Sort Options
+            </div>
+            <div class="sort-fields" id="sortFields">
+              <div class="input-group">
+                <div class="label">Title Sort</div>
+                <input type="text" class="input" value="Memory Police, The">
+              </div>
+              <div class="input-group">
+                <div class="label">Author Sort</div>
+                <input type="text" class="input" value="Ogawa, Yōko">
+              </div>
+            </div>
+
+            <div class="input-row">
+              <div class="input-group" style="flex: 2;">
+                <div class="label">Series</div>
+                <input type="text" class="input" placeholder="e.g. The Expanse">
+              </div>
+              <div class="input-group" style="flex: 1;">
+                <div class="label">Number</div>
+                <input type="text" class="input" placeholder="e.g. 1">
+              </div>
+            </div>
+
+            <div class="input-group">
+              <div class="label">Tags</div>
+              <div class="chips">
+                <div class="chip">Dystopian <span class="material-symbols-rounded remove">close</span></div>
+                <div class="chip">Science Fiction <span class="material-symbols-rounded remove">close</span></div>
+                <div class="chip">Japanese Literature <span class="material-symbols-rounded remove">close</span></div>
+                <div class="chip chip-add"><span class="material-symbols-rounded" style="font-size: 16px">add</span> Add Tag</div>
+              </div>
+            </div>
+
+            <div class="input-row">
+              <div class="input-group">
+                <div class="label">Publisher</div>
+                <input type="text" class="input" value="Pantheon Books">
+              </div>
+              <div class="input-group">
+                <div class="label">Published Date</div>
+                <input type="text" class="input" value="1994-01-01">
+              </div>
+            </div>
+
+            <div class="input-group">
+              <div class="label">Identifiers (ISBN, Goodreads, etc.)</div>
+              <input type="text" class="input" value="isbn:9781101911815, goodreads:37004370" placeholder="e.g. isbn:123, goodreads:456">
+            </div>
+
+            <div class="input-group">
+              <div class="label">Description</div>
+              <textarea class="input textarea">On an unnamed island off an unnamed coast, objects are disappearing: first hats, then ribbons, birds, roses—until things become much more serious. Most of the island's inhabitants are oblivious to these changes, while those few permitted to remember the lost objects live in fear of the draconian Memory Police.</textarea>
+            </div>
+            
+          </div>
+          
+          <div class="cover-col">
+            <div class="label">Cover Image</div>
+            <div class="cover-img" style="background: linear-gradient(160deg, #2C3D55, #0F1C2E);"></div>
+            <div class="cover-actions">
+              <button class="btn btn-outline btn-full"><span class="material-symbols-rounded" style="font-size: 18px">folder_open</span> Browse Files</button>
+              <button class="btn btn-outline btn-full" style="color: var(--text-3)"><span class="material-symbols-rounded" style="font-size: 18px">delete</span> Remove Cover</button>
+            </div>
+
+            <div class="fetch-box">
+              <div class="fetch-title">Fetch Metadata</div>
+              <div class="fetch-desc">Download cover, tags, and summary from OpenLibrary and Google Books.</div>
+              <button class="btn btn-accent btn-full" onclick="toggleView('fetch')"><span class="material-symbols-rounded" style="font-size: 18px">cloud_download</span> Find Info Online</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATE 2: FETCH COMPARISON -->
+      <div id="view-fetch" class="view-panel">
+        <div class="fetch-layout">
+          <div class="compare-grid">
+            
+            <!-- Current Metadata -->
+            <div class="compare-col current">
+              <div class="col-header">
+                <div class="col-title">Your Current Book</div>
+              </div>
+              
+              <div class="select-card selected" onclick="toggleCard(this)">
+                <div class="select-radio"></div>
+                <div class="c-details">
+                  <div class="label">Current Cover</div>
+                  <div class="c-cover" style="background: linear-gradient(160deg, #2C3D55, #0F1C2E);"></div>
+                </div>
+              </div>
+
+              <div class="select-card" onclick="toggleCard(this)">
+                <div class="select-radio"></div>
+                <div class="c-details">
+                  <div class="label">Current Details</div>
+                  <div class="c-title">The Memory Police</div>
+                  <div class="c-author">Yōko Ogawa</div>
+                  <div class="c-desc">On an unnamed island off an unnamed coast, objects are disappearing: first hats, then ribbons...</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Found Metadata -->
+            <div class="compare-col new">
+              <div class="col-header">
+                <div class="col-title">Found on Web</div>
+                <div class="col-badge">Google Books</div>
+              </div>
+              
+              <div class="select-card" onclick="toggleCard(this)">
+                <div class="select-radio"></div>
+                <div class="c-details">
+                  <div class="label">Downloaded Cover</div>
+                  <!-- Simulating a new cover -->
+                  <div class="c-cover" style="background: linear-gradient(160deg, #C1440E, #5A1B00);"></div>
+                </div>
+              </div>
+
+              <div class="select-card selected" onclick="toggleCard(this)">
+                <div class="select-radio"></div>
+                <div class="c-details">
+                  <div class="label">Downloaded Details</div>
+                  <div class="c-title">The Memory Police: A Novel</div>
+                  <div class="c-author">Yōko Ogawa (Translated by Stephen Snyder)</div>
+                  <div class="c-desc">A finalist for the National Book Award, this Orwellian novel about the terrors of state surveillance... <br><br><b>Tags:</b> Science Fiction, Dystopian, Translation</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    function toggleSort() {
+      const btn = document.getElementById('sortBtn');
+      const fields = document.getElementById('sortFields');
+      btn.classList.toggle('open');
+      fields.classList.toggle('open');
+    }
+
+    function toggleView(viewId) {
+      document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+      document.getElementById('view-' + viewId).classList.add('active');
+      
+      const title = document.getElementById('dialogTitle');
+      const editorActions = document.getElementById('editorActions');
+      const fetchActions = document.getElementById('fetchActions');
+      
+      if (viewId === 'fetch') {
+        title.innerText = 'Compare Metadata';
+        editorActions.style.display = 'none';
+        fetchActions.style.display = 'flex';
+      } else {
+        title.innerText = 'Edit Metadata';
+        editorActions.style.display = 'flex';
+        fetchActions.style.display = 'none';
+      }
+    }
+
+    // Toggle custom radio selection for comparison cards
+    function toggleCard(card) {
+      // Find the sibling cards (we want mutually exclusive selection per row/type if we were fully coding it, 
+      // but for mockup we just toggle the state of the clicked one vs its counterpart)
+      const label = card.querySelector('.label').innerText;
+      
+      // Basic mock logic: deselect the counterpart
+      if (label.includes('Cover')) {
+        document.querySelectorAll('.select-card').forEach(c => {
+          if(c.querySelector('.label').innerText.includes('Cover')) c.classList.remove('selected');
+        });
+      } else {
+        document.querySelectorAll('.select-card').forEach(c => {
+          if(c.querySelector('.label').innerText.includes('Details')) c.classList.remove('selected');
+        });
+      }
+      card.classList.add('selected');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Kalam — EPUB Reader (Floating Sidebars)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Literata:ital,opsz,wght@0,7..72,300;0,7..72,400;0,7..72,500;0,7..72,600;1,7..72,400;1,7..72,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..24,300..400,0..1,0">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #F7F3EC;
+      --text: #1C1917;
+      --text-2: #78716C;
+      --text-3: #A8A29E;
+      --accent: #C1440E;
+      --accent-pale: rgba(193, 68, 14, 0.10);
+      
+      --sidebar-bg: #FFFFFF;
+      --border: rgba(28, 25, 23, 0.08);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+      --shadow-lg: 0 12px 32px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.04);
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      font-size: 14px;
+    }
+
+    .app-shell {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ── 1. PURE READING CANVAS ── */
+    .prose-stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: center;
+      padding: 0 64px;
+      z-index: 10;
+    }
+
+    .prose-column {
+      width: 100%;
+      max-width: 720px;
+      height: 100%;
+      padding: 96px 0;
+      overflow: hidden;
+    }
+
+    .chapter-subtitle {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .chapter-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 32px;
+      font-weight: 600;
+      line-height: 1.25;
+      color: var(--text);
+      margin-bottom: 32px;
+      letter-spacing: -0.01em;
+    }
+
+    .book-prose {
+      font-family: 'Literata', serif;
+      font-size: 17px;
+      line-height: 1.86;
+      color: var(--text);
+      text-align: justify;
+      hyphens: auto;
+    }
+    .book-prose p { margin-bottom: 1.4em; text-indent: 1.8em; }
+    .book-prose p:first-of-type { text-indent: 0; }
+    .book-prose p:first-of-type::first-letter {
+      font-family: 'Playfair Display', serif; float: left;
+      font-size: 52px; line-height: 0.85; padding-top: 6px; padding-right: 8px; padding-bottom: 2px;
+      color: var(--accent); font-weight: 700;
+    }
+
+    /* ── 2. ALWAYS VISIBLE ELEMENTS (No pills) ── */
+    .static-bookmark {
+      position: absolute; top: 32px; right: 48px; z-index: 20;
+      color: var(--text-3); cursor: pointer; transition: color 0.15s, transform 0.15s;
+    }
+    .static-bookmark:hover { color: var(--text-2); }
+    .static-bookmark.active { color: var(--accent); }
+    .static-bookmark .material-symbols-rounded { font-size: 24px; font-variation-settings: 'FILL' 0; }
+    .static-bookmark.active .material-symbols-rounded { font-variation-settings: 'FILL' 1; }
+
+    .static-location {
+      position: absolute; bottom: 32px; right: 48px; z-index: 20;
+      font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 500; color: var(--text-3);
+    }
+    .static-location strong { color: var(--text-2); }
+
+
+    /* ── 3. HOVER BACK PILL WITH SLIDE-OUT MINIMIZE ── */
+    .back-hover-zone {
+      position: absolute; top: 0; left: 0; width: 220px; height: 120px; z-index: 40;
+    }
+    
+    .back-pill-wrapper {
+      position: absolute;
+      top: 32px;
+      left: 48px;
+      display: inline-flex;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-10px);
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .back-hover-zone:hover .back-pill-wrapper,
+    .back-pill-wrapper:hover {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
+    }
+
+    .back-pill {
+      position: relative;
+      z-index: 2; /* Sit in front of minimize btn */
+      display: flex; align-items: center; gap: 8px;
+      background: var(--sidebar-bg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      border-radius: 999px;
+      padding: 8px 16px;
+      cursor: pointer;
+      color: var(--text-2);
+      font-weight: 500; font-size: 13px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .back-pill:hover { color: var(--text); background: var(--bg); }
+    .back-pill .material-symbols-rounded { font-size: 18px; }
+
+    .minimize-btn {
+      position: absolute;
+      right: 12px; /* Hidden underneath the right edge of back-pill */
+      z-index: 1; /* Behind back-pill */
+      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px;
+      background: var(--sidebar-bg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      border-radius: 999px;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+                  background 0.15s, color 0.15s;
+    }
+    .back-pill-wrapper:hover .minimize-btn {
+      /* Slide out from behind! */
+      transform: translateX(calc(100% + 4px));
+    }
+    .minimize-btn:hover { color: var(--text); background: var(--bg); }
+    .minimize-btn .material-symbols-rounded { font-size: 18px; }
+
+
+    /* ── 4. HOVER BOTTOM PILL (Timeline) ── */
+    .bottom-hover-zone {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 80px; z-index: 40;
+      display: flex; align-items: flex-end; justify-content: center; padding-bottom: 24px;
+    }
+    .bottom-pill {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--sidebar-bg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      border-radius: 999px;
+      padding: 6px 16px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(10px);
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .bottom-hover-zone:hover .bottom-pill,
+    .bottom-pill:hover {
+      opacity: 1; pointer-events: auto; transform: translateY(0);
+    }
+    
+    .timeline-arrow {
+      background: none; border: none; color: var(--text-3); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: color 0.15s;
+    }
+    .timeline-arrow:hover { color: var(--text); }
+    .timeline-arrow .material-symbols-rounded { font-size: 18px; }
+    
+    .timeline-line {
+      width: 200px; height: 3px; background: rgba(28,25,23,0.1);
+      border-radius: 999px; cursor: pointer;
+    }
+    .timeline-fill { width: 68%; height: 100%; background: var(--accent); border-radius: 999px; }
+    .timeline-ch-text { font-size: 11px; color: var(--text-2); font-weight: 500; }
+
+
+    /* ── 5. EDGE TRIGGERS FOR SIDEBARS ── */
+    .edge-trigger { position: absolute; top: 0; bottom: 0; width: 24px; z-index: 80; }
+    .edge-trigger-left { left: 0; }
+    .edge-trigger-right { right: 0; }
+
+    /* ── 6. FLOATING OVERLAY SIDEBARS (Arc Style) ── */
+    .floating-sidebar {
+      position: absolute; top: 16px; bottom: 16px; width: 330px;
+      background: var(--sidebar-bg); border-radius: 14px;
+      box-shadow: var(--shadow-lg); border: 1px solid var(--border);
+      display: flex; flex-direction: column; z-index: 100;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+                  transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .sidebar-left { left: 16px; transform: translateX(-16px); }
+    .sidebar-left.open { opacity: 1; pointer-events: auto; transform: translateX(0); }
+
+    .sidebar-right { right: 16px; transform: translateX(16px); }
+    .sidebar-right.open { opacity: 1; pointer-events: auto; transform: translateX(0); }
+
+    .sb-header { padding: 20px 20px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+    .sb-title { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 600; color: var(--text); }
+    .sb-close {
+      background: none; border: none; color: var(--text-3); cursor: pointer;
+      padding: 4px; border-radius: 6px; display: flex; transition: background 0.15s, color 0.15s;
+    }
+    .sb-close:hover { background: rgba(28, 25, 23, 0.05); color: var(--text); }
+    .sb-close .material-symbols-rounded { font-size: 20px; }
+
+    .sb-body { flex: 1; position: relative; overflow: hidden; }
+    .sb-track { display: flex; width: 100%; height: 100%; transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+    .sb-panel { min-width: 100%; width: 100%; height: 100%; overflow-y: auto; padding: 16px 20px 24px; scrollbar-width: none; }
+
+    /* Settings UI */
+    .setting-group { margin-bottom: 24px; }
+    .setting-label { font-size: 12px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+    
+    .stepper-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .stepper-name { font-size: 14px; color: var(--text); font-weight: 500; }
+    .stepper-controls { display: flex; align-items: center; gap: 12px; background: rgba(28,25,23,0.03); padding: 4px; border-radius: 8px; }
+    .st-btn {
+      width: 28px; height: 28px; border-radius: 6px; border: none; background: white;
+      box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-2);
+    }
+    .st-btn:hover { color: var(--text); }
+    .st-val { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; width: 36px; text-align: center; }
+
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-name { font-size: 14px; color: var(--text); font-weight: 500; }
+    .toggle-switch { width: 36px; height: 20px; background: rgba(28,25,23,0.15); border-radius: 999px; position: relative; transition: background 0.2s; }
+    .toggle-switch.on { background: var(--accent); }
+    .toggle-thumb {
+      width: 16px; height: 16px; background: white; border-radius: 50%;
+      position: absolute; top: 2px; left: 2px; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .toggle-switch.on .toggle-thumb { transform: translateX(16px); }
+
+    /* Zen Action Dock */
+    .zen-dock {
+      padding: 12px 16px 14px; border-top: 1px solid var(--border); background: var(--sidebar-bg);
+      display: flex; align-items: center; justify-content: space-around; gap: 6px; border-radius: 0 0 14px 14px;
+    }
+    .dock-btn {
+      flex: 1; height: 38px; border: none; background: transparent; border-radius: 8px;
+      color: var(--text-3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.15s, color 0.15s;
+    }
+    .dock-btn:hover { background: rgba(28, 25, 23, 0.04); color: var(--text-2); }
+    .dock-btn.active { background: var(--accent-pale); color: var(--accent); }
+    .dock-btn .material-symbols-rounded { font-size: 20px; }
+
+    .swipe-hint {
+      font-size: 10px; color: var(--text-3); text-align: center; padding: 0 0 4px;
+      display: flex; align-items: center; justify-content: center; gap: 4px; background: var(--sidebar-bg);
+    }
+    
+    .toc-row {
+      display: flex; align-items: center; justify-content: space-between; padding: 10px 12px;
+      border-radius: 8px; cursor: pointer; font-size: 13.5px; color: var(--text); transition: background 0.15s; margin-bottom: 2px;
+    }
+    .toc-row:hover { background: rgba(28,25,23,0.04); }
+    .toc-row.active { background: var(--accent-pale); color: var(--accent); font-weight: 600; }
+    .toc-pg { font-size: 11.5px; color: var(--text-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+
+    <!-- 1. TEXT -->
+    <main class="prose-stage">
+      <div class="prose-column">
+        <div class="chapter-subtitle">Chapter 14</div>
+        <h1 class="chapter-title">The Disappearance of the Perfumes</h1>
+        <div class="book-prose">
+          <p>On an unnamed island off an unnamed coast, objects are disappearing: first ribbons, then emeralds, birds, roses—until things become much more serious. Most of the island’s inhabitants are entirely oblivious to these changes, while those few permitted to remember live in constant fear of the draconian Memory Police.</p>
+          <p>When the morning arrived, the breeze carrying over the bay had lost its familiar scent. It was subtle at first—like walking into an old apothecary shop where the amber glass vials had been washed clean with river water and set upon wooden shelves to dry.</p>
+          <p>I reached into the cedar drawer where my mother had kept the crystal atomizer. The glass remained cool and heavy against my palm, yet the fragrance had dissolved into sheer air, leaving behind only the faint sensation of a memory trying to remember itself.</p>
+          <p>“They are gone now, aren’t they?” the old man whispered from the doorway, holding a bundle of freshly gathered firewood in his crooked arms. His voice was steady, bearing the quiet resignation of someone who had survived twelve prior disappearances.</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- 2. STATIC INFO -->
+    <div class="static-bookmark" id="mainBookmark" onclick="toggleBookmark()" title="Bookmark Page">
+      <span class="material-symbols-rounded">bookmark</span>
+    </div>
+    <div class="static-location">
+      <strong>p. 188</strong> of 276 &nbsp;&middot;&nbsp; 68%
+    </div>
+
+    <!-- 3. TOP BACK PILL -->
+    <div class="back-hover-zone">
+      <div class="back-pill-wrapper">
+        <div class="minimize-btn" onclick="alert('Minimized to Bubble')" title="Minimize to Bubble">
+          <span class="material-symbols-rounded">minimize</span>
+        </div>
+        <div class="back-pill" onclick="alert('Returned to Library')">
+          <span class="material-symbols-rounded">arrow_back</span>
+          <span>Library</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. BOTTOM TIMELINE PILL -->
+    <div class="bottom-hover-zone">
+      <div class="bottom-pill">
+        <button class="timeline-arrow"><span class="material-symbols-rounded">chevron_left</span></button>
+        <div class="timeline-line"><div class="timeline-fill"></div></div>
+        <button class="timeline-arrow"><span class="material-symbols-rounded">chevron_right</span></button>
+        <span class="timeline-ch-text">Ch. 14</span>
+      </div>
+    </div>
+
+    <!-- 5. SIDEBAR EDGE TRIGGERS -->
+    <div class="edge-trigger edge-trigger-left" onmouseenter="openLeft()"></div>
+    <div class="edge-trigger edge-trigger-right" onmouseenter="openRight()"></div>
+
+    <!-- 6. SIDEBARS -->
+    <aside class="floating-sidebar sidebar-left" id="sbLeft">
+      <div class="sb-header">
+        <span class="sb-title" id="sbLeftTitle">Table of Contents</span>
+        <button class="sb-close" onclick="closeSidebars()"><span class="material-symbols-rounded">close</span></button>
+      </div>
+      <div class="sb-body" id="sbLeftCarousel">
+        <div class="sb-track" id="sbLeftTrack">
+          <div class="sb-panel">
+            <div class="toc-row"><span class="toc-name">1. The Ribbon Factory</span><span class="toc-pg">p. 1</span></div>
+            <div class="toc-row"><span class="toc-name">2. Birds over the Bay</span><span class="toc-pg">p. 18</span></div>
+            <div class="toc-row active"><span class="toc-name">14. The Disappearance of Perfumes</span><span class="toc-pg">p. 188</span></div>
+          </div>
+          <div class="sb-panel"><div style="font-size:13px;color:var(--text-3);text-align:center;margin-top:40px;">No highlights.</div></div>
+          <div class="sb-panel"><div style="font-size:13px;color:var(--text-3);text-align:center;margin-top:40px;">No words.</div></div>
+        </div>
+      </div>
+      <div class="swipe-hint"><span class="material-symbols-rounded" style="font-size: 11px;">swipe</span> 2-finger swipe</div>
+      <div class="zen-dock">
+        <button class="dock-btn active" onclick="switchLeft(0)"><span class="material-symbols-rounded">format_list_bulleted</span></button>
+        <button class="dock-btn" onclick="switchLeft(1)"><span class="material-symbols-rounded">stylus</span></button>
+        <button class="dock-btn" onclick="switchLeft(2)"><span class="material-symbols-rounded">spellcheck</span></button>
+      </div>
+    </aside>
+
+    <aside class="floating-sidebar sidebar-right" id="sbRight">
+      <div class="sb-header">
+        <span class="sb-title" id="sbRightTitle">Typography &amp; Layout</span>
+        <button class="sb-close" onclick="closeSidebars()"><span class="material-symbols-rounded">close</span></button>
+      </div>
+      <div class="sb-body" id="sbRightCarousel">
+        <div class="sb-track" id="sbRightTrack">
+          <div class="sb-panel">
+            <div class="setting-group">
+              <div class="setting-label">Typography</div>
+              <div class="stepper-row"><span class="stepper-name">Font Size</span><div class="stepper-controls"><button class="st-btn"><span class="material-symbols-rounded" style="font-size:16px;">remove</span></button><span class="st-val">17px</span><button class="st-btn"><span class="material-symbols-rounded" style="font-size:16px;">add</span></button></div></div>
+              <div class="stepper-row"><span class="stepper-name">Line Height</span><div class="stepper-controls"><button class="st-btn"><span class="material-symbols-rounded" style="font-size:16px;">remove</span></button><span class="st-val">1.8</span><button class="st-btn"><span class="material-symbols-rounded" style="font-size:16px;">add</span></button></div></div>
+            </div>
+            <div class="setting-group">
+              <div class="setting-label">Layout</div>
+              <div class="stepper-row"><span class="stepper-name">Column Width</span><div class="stepper-controls"><button class="st-btn"><span class="material-symbols-rounded" style="font-size:16px;">remove</span></button><span class="st-val">720</span><button class="st-btn"><span class="material-symbols-rounded" style="font-size:16px;">add</span></button></div></div>
+              <div class="toggle-row" onclick="this.querySelector('.toggle-switch').classList.toggle('on')"><span class="toggle-name">Justify Text</span><div class="toggle-switch on"><div class="toggle-thumb"></div></div></div>
+              <div class="toggle-row" onclick="this.querySelector('.toggle-switch').classList.toggle('on')"><span class="toggle-name">Dual Page Mode</span><div class="toggle-switch"><div class="toggle-thumb"></div></div></div>
+              <div class="toggle-row" onclick="this.querySelector('.toggle-switch').classList.toggle('on')"><span class="toggle-name">Publisher Styles</span><div class="toggle-switch on"><div class="toggle-thumb"></div></div></div>
+            </div>
+          </div>
+          <div class="sb-panel">
+            <div class="setting-group">
+              <div class="setting-label">App Interface</div>
+              <div class="toggle-row" onclick="this.querySelector('.toggle-switch').classList.toggle('on')"><span class="toggle-name">Continuous Scrolling</span><div class="toggle-switch"><div class="toggle-thumb"></div></div></div>
+              <div class="toggle-row" onclick="this.querySelector('.toggle-switch').classList.toggle('on')"><span class="toggle-name">Autohide Cursor</span><div class="toggle-switch on"><div class="toggle-thumb"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="swipe-hint"><span class="material-symbols-rounded" style="font-size: 11px;">swipe</span> 2-finger swipe</div>
+      <div class="zen-dock">
+        <button class="dock-btn active" onclick="switchRight(0)"><span class="material-symbols-rounded">format_size</span></button>
+        <button class="dock-btn" onclick="switchRight(1)"><span class="material-symbols-rounded">toggle_on</span></button>
+      </div>
+    </aside>
+
+  </div>
+
+  <script>
+    function toggleBookmark() { document.getElementById('mainBookmark').classList.toggle('active'); }
+
+    const sbLeft = document.getElementById('sbLeft');
+    const sbRight = document.getElementById('sbRight');
+    let sbTimeout;
+
+    function openLeft() {
+      clearTimeout(sbTimeout);
+      sbRight.classList.remove('open');
+      sbLeft.classList.add('open');
+    }
+    function openRight() {
+      clearTimeout(sbTimeout);
+      sbLeft.classList.remove('open');
+      sbRight.classList.add('open');
+    }
+    function closeSidebars() {
+      sbLeft.classList.remove('open');
+      sbRight.classList.remove('open');
+    }
+
+    // Close sidebars when mouse leaves them naturally
+    sbLeft.addEventListener('mouseleave', () => { sbTimeout = setTimeout(() => sbLeft.classList.remove('open'), 300); });
+    sbLeft.addEventListener('mouseenter', () => clearTimeout(sbTimeout));
+    sbRight.addEventListener('mouseleave', () => { sbTimeout = setTimeout(() => sbRight.classList.remove('open'), 300); });
+    sbRight.addEventListener('mouseenter', () => clearTimeout(sbTimeout));
+
+
+    // Touchpad Swipe Logic
+    function setupSwipe(containerId, maxTabs, switchFn, getTabIdx) {
+      const el = document.getElementById(containerId);
+      let accX = 0, cooling = false;
+      el.addEventListener('wheel', (e) => {
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+          accX += e.deltaX;
+          if (!cooling) {
+            if (accX > 35) { switchFn(Math.min(maxTabs, getTabIdx() + 1)); cooling = true; accX = 0; setTimeout(() => cooling = false, 300); } 
+            else if (accX < -35) { switchFn(Math.max(0, getTabIdx() - 1)); cooling = true; accX = 0; setTimeout(() => cooling = false, 300); }
+          }
+        }
+      }, { passive: true });
+    }
+
+    const leftTitles = ["Table of Contents", "Highlights & Notes", "Looked-up Words"];
+    let leftTab = 0;
+    function switchLeft(idx) {
+      leftTab = idx;
+      document.getElementById('sbLeftTrack').style.transform = `translateX(-${idx * 100}%)`;
+      document.getElementById('sbLeftTitle').innerText = leftTitles[idx];
+      const btns = sbLeft.querySelectorAll('.dock-btn');
+      btns.forEach((b, i) => b.classList.toggle('active', i === idx));
+    }
+    setupSwipe('sbLeftCarousel', 2, switchLeft, () => leftTab);
+
+    const rightTitles = ["Typography & Layout", "App Interface"];
+    let rightTab = 0;
+    function switchRight(idx) {
+      rightTab = idx;
+      document.getElementById('sbRightTrack').style.transform = `translateX(-${idx * 100}%)`;
+      document.getElementById('sbRightTitle').innerText = rightTitles[idx];
+      const btns = sbRight.querySelectorAll('.dock-btn');
+      btns.forEach((b, i) => b.classList.toggle('active', i === idx));
+    }
+    setupSwipe('sbRightCarousel', 1, switchRight, () => rightTab);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'b') toggleBookmark();
+      if (e.key.toLowerCase() === 't') openLeft();
+      if (e.key.toLowerCase() === 's') openRight();
+      if (e.key === 'Escape') closeSidebars();
+    });
+  </script>
+</body>
+</html>

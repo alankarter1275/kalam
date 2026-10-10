@@ -1282,3 +1282,45 @@ this login decision (Literotica sync folds into it).
    design step**.
 6. Remote identity, Save-vs-Download boundary, downloads migration,
    follows scheduler — still to be designed.
+
+---
+
+## Entry 19 — 2026-10-10 — Part 1 status check (asked mid-Part-2)
+
+**The owner's question, verbatim:**
+
+> "well, is everything in part 1 complete, except for the redesign?"
+
+**The honest answer, verified from ROADMAP + code + CI logs, not memory:**
+
+*Shipped:* Phases 1–6 in full — foundations (1.1–1.19), reading quality
+(2.2–2.23: dictionary tests, font picker, layout toggles, footnotes,
+jump-back, dual-page, custom fonts, PDF rebuild on MuPDF, bubbles,
+selection toolbar), ingestion (sanitizer, watch folders), search
+(in-reader + library-wide FTS5), library management (metadata editor +
+fetchers, shelves, analytics), and the Phase 6 EPUB editor (built to the
+2026-10-08 design; green run `37901417687`).
+
+*Remaining in Part 1:*
+
+1. **Phase 7 — performance.** 7.1's *measurement* half shipped
+   2026-10-02 (`src/stall.rs` watchdog, route attribution); the *fix*
+   half is deliberately waiting on a timing run on the owner's machine
+   (their field report: "the whole app kind of feels slow except for the
+   readers"). 7.2 (floating window host), 7.3, 7.4, 7.5, 7.6 open;
+   7.7 (ARCH.md rewrite + enforcement tests) has the document
+   owner-approved but the test layers still await their ok.
+2. **KAL-5 — the editor overhaul.** The editor shipped, and the owner's
+   first-use verdict was harsh ("completely useless"); the overhaul sits
+   in the Linear Backlog, entry point = the owner's complaints in words.
+   The editor is "complete" only on paper until this lands.
+3. **Phase 8 — the Material 3 redesign**, deliberately last.
+
+Beyond Part 1's list: KAL-6 (PDF tools) also waits in the Backlog.
+
+**Two stale rows found and fixed in the same commit:** the "What is
+really shipped" table still said the EPUB editor was "not started"
+(pre-dated the work; last full verification was 2026-09-30) and carried
+the September test baseline (870). Now: editor row marked shipped with
+KAL-5 noted; baseline updated to `37901417687` — 602 + 8 + 27 passed,
+3 ignored, delta from 870 unaudited and marked as such.

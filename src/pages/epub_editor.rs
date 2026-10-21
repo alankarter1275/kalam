@@ -1163,6 +1163,153 @@ impl EpubEditorModel {
     }
 
 
+
+    fn close_inline_edit(&mut self) {
+        if let Some(edit) = self.inline_edit.take() {
+            engine::remove_inline_edit_provider(&edit.provider);
+            if let Some(overlay) = &self.overlay {
+                overlay.remove_overlay(edit.editor.widget());
+            }
+            if let Some(view) = &self.view {
+                view.widget().grab_focus();
+            }
+        }
+    }
+
+    /// The way back, shared by Back and the last rung of Escape.
+    fn close_editor(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(view) = &self.view {
+            view.close();
+        }
+        sender.output(EpubEditorOut::Close).ok();
+    }
+
+    /// Load the current chapter's source into the pane, off the UI
+    /// thread. One flight at a time (`loading`); the verdict installs
+    /// the text, the baseline hash, and the language.
+    fn load_source(&mut self, sender: &ComponentSender<Self>) {
+        let Some(pane) = &self.source else { return };
+        if pane.loading.get() || pane.saving.get() {
+            return;
+        }
+        let Some(path) = self.book_path.clone() else { return };
+        pane.loading.set(true);
+        pane.stale.set(false);
+        pane.stale_label.set_visible(false);
+        pane.save_btn.set_sensitive(false);
+        pane.status_label.set_text("Loading the chapter's source…");
+        let chapter = self.chapter;
+        let prior = self.pending_patches();
+        let (tx, rx) = async_channel::unbounded::<Result<engine::SourceEntry, String>>();
+        let itx = sender.input_sender().clone();
+        gtk::glib::spawn_future_local(async move {
+            if let Ok(verdict) = rx.recv().await {
+                let _ = itx.send(EpubEditorMsg::SourceLoad(verdict));
+            }
+        });
+        engine::load_source_entry(path, chapter, prior, tx);
+    }
+
+    /// Render the buffer's chapter through the headless preview, with
+    /// the debounce generation stamped on the flight. Called by the
+    /// toggle (immediately) and by the debounce timer (after quiet).
+    fn kick_preview(&mut self, sender: &ComponentSender<Self>) {
+        let Some(pane) = &self.source else { return };
+        if pane.loading.get() || !self.preview_open || !self.source_open {
+            return;
+        }
+        let Some(path) = self.book_path.clone() else { return };
+        let prefs = engine::current_engine_prefs(self.service.catalog());
+        let fonts_dir = Some(crate::paths::fonts_dir());
+        let href = pane.href.borrow().clone();
+        let text = source_text(&pane.buffer);
+        let spine = pane.chapter.get();
+        let gen = pane.preview_gen.get();
+        let prior = self.pending_patches();
+        let page = preview_page_size(&prefs);
+        let (tx, rx) = async_channel::unbounded::<Result<engine::PreviewPixels, String>>();
+        let itx = sender.input_sender().clone();
+        gtk::glib::spawn_future_local(async move {
+            if let Ok(verdict) = rx.recv().await {
+                let _ = itx.send(EpubEditorMsg::SourcePreview(verdict));
+            }
+        });
+        engine::render_source_preview(
+            path, prefs, fonts_dir, href, text, prior, spine, gen, page, tx,
+        );
+        pane.status_label.set_text("Rendering preview…");
+    }
+
+    /// Reopen the book the editor is editing — after a commit, or
+    /// after the review panel changed what should be showing. The
+    /// reader's reload shape: open before touching the old view, swap
+    /// the view inside the overlay (never a container mutation of a
+    /// list, §48), restore the chapter, and time it (§45).
+    fn reload(&mut self, sender: &ComponentSender<Self>) {
+        if self.reloading {
+            return;
+        }
+        self.reloading = true;
+        let _timing = crate::timing::measure("editor_reload");
+        let _activity = crate::timing::activity("editor_reload");
+
+        self.close_inline_edit();
+
+        let Some(path) = self.book_path.clone() else {
+            self.reloading = false;
+            return;
+        };
+        let prefs = engine::current_engine_prefs(self.service.catalog());
+        let patches = self
+            .service
+            .catalog()
+            .get_pending_patches_for_book(self.book_id)
+            .unwrap_or_else(|err| {
+                log::warn!(
+                    "patches for book {} unreadable: {err:#} — reloading unpatched",
+                    self.book_id
+                );
+                Vec::new()
+            });
+        let new_view = match engine::open_engine(&path, prefs, patches) {
+            Ok(view) => view,
+            Err(err) => {
+                self.reloading = false;
+                crate::notify::error(
+                    "Could not reopen the book",
+                    &format!("{err:#}\nThe fix is saved and will show next time you open it."),
+                );
+                return;
+            }
+        };
+
+        // Where the editor was, said as the old view would say it —
+        // by href, because a bake may have reordered the spine
+        // underneath (a chapter index would land somewhere else; the
+        // locator's href survived the move). The locator re-anchors by
+        // quote when the text differs; the index is only the fallback
+        // when there was no position at all.
+        let locator = self.view.as_ref().and_then(|v| v.locator());
+        if let Some(old) = self.view.take() {
+            old.close();
+        }
+        self.view = Some(new_view.clone());
+        if let Some(overlay) = &self.overlay {
+            overlay.set_child(Some(new_view.widget()));
+        }
+        wire(&new_view, sender);
+        new_view.set_proofreading(true);
+        new_view.set_autohide_cursor(false);
+        let restored = locator
+            .as_ref()
+            .is_some_and(|loc| new_view.goto_locator(loc, false));
+        if !restored {
+            new_view.goto_chapter(self.chapter.min(self.chapter_count.saturating_sub(1)), 0.0);
+        }
+        new_view.widget().grab_focus();
+
+        self.reloading = false;
+    }
 }
 
 /// The editor's engine wiring: the paragraph-editing callbacks and the

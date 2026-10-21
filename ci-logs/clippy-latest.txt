@@ -1,12 +1,7 @@
-src/epub_sanitizer.rs:208:59: [1m[91merror[E0425][0m: cannot find type `ManifestInfo` in this scope: not found in this scope
-src/epub_sanitizer.rs:213:20: [1m[91merror[E0422][0m: cannot find struct, variant or union type `ManifestInfo` in this scope: not found in this scope
-src/epub_sanitizer.rs:262:5: [1m[91merror[E0422][0m: cannot find struct, variant or union type `ManifestInfo` in this scope: not found in this scope
-src/pages/reader/types.rs:5:5: [1m[91merror[0m: unused import: `gtk::prelude::*`
-src/epub_sanitizer.rs:83:43: [1m[91merror[E0308][0m: mismatched types: expected `String`, found `&str`
-src/epub_sanitizer.rs:106:43: [1m[91merror[E0308][0m: mismatched types: expected `String`, found `&str`
-src/content_index.rs:106:9: [1m[91merror[0m: variable does not need to be mutable
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
+src/pages/reader/engine.rs:78:15: [1m[91merror[0m: function `current_engine_prefs` is never used
+src/widgets/book_row.rs:622:8: [1m[91merror[0m: function `build_book_grid_open` is never used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -30,14 +25,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/epub_sanitizer.rs:208:59: [1m[91merror[E0425][0m: cannot find type `ManifestInfo` in this scope: not found in this scope
-src/epub_sanitizer.rs:213:20: [1m[91merror[E0422][0m: cannot find struct, variant or union type `ManifestInfo` in this scope: not found in this scope
-src/epub_sanitizer.rs:262:5: [1m[91merror[E0422][0m: cannot find struct, variant or union type `ManifestInfo` in this scope: not found in this scope
-src/pages/reader/types.rs:5:5: [1m[91merror[0m: unused import: `gtk::prelude::*`
-src/epub_sanitizer.rs:83:43: [1m[91merror[E0308][0m: mismatched types: expected `String`, found `&str`
-src/epub_sanitizer.rs:106:43: [1m[91merror[E0308][0m: mismatched types: expected `String`, found `&str`
-src/content_index.rs:106:9: [1m[91merror[0m: variable does not need to be mutable
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+src/pages/reader/engine.rs:78:15: [1m[91merror[0m: function `current_engine_prefs` is never used
+src/widgets/book_row.rs:622:8: [1m[91merror[0m: function `build_book_grid_open` is never used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
---- run 39694460289 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+--- run 39694742965 ---

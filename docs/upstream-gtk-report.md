@@ -1,6 +1,10 @@
-# Upstream report draft for GTK (gitlab.gnome.org/GNOME/gtk)
+# GTK upstream report — filed copy
 
-Status: FILED 2026-10-08 as GNOME/gtk issue #8450:
+> **Archive notice:** This is the submitted report text, not current Kalam
+> behavior or an active work item. Check the linked GTK issue for its latest
+> status.
+
+Status: filed 2026-10-08 as GNOME/gtk issue #8450:
 https://gitlab.gnome.org/GNOME/gtk/-/work_items/8450
 This file is now the archival copy of what was filed. All placeholders
 were filled by the owner (kernel and compositor versions, 2026-10-08);

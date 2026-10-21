@@ -975,7 +975,7 @@ button.kalam-float-icon-btn.kalam-float-icon-btn-danger:hover {
     color: @kalam_danger;
 }
 
-/* ── reader (mockup shell) ───────────────────────────── */
+/* ── reader surfaces ─────────────────────────────────── */
 .kalam-content.kalam-content-reader,
 .kalam-content.kalam-content-flush {
     padding: 0;
@@ -2233,7 +2233,7 @@ entry.kalam-reader-search > text {
     background: @kalam_accent;
 }
 
-/* ── toasts (docs/design/notifications.png) ─────────── */
+/* ── toasts ───────────────────────────────────────────── */
 .kalam-toast-host {
     margin: 0 18px 18px 0;
 }
@@ -2291,10 +2291,8 @@ entry.kalam-reader-search > text {
     -gtk-icon-size: 17px;
 }
 
-/* The accent stripe carries the severity. Colours sampled straight out of
-   docs/design/notifications.png: the reference uses muted, desaturated tones,
-   not the bright mint/salmon this first shipped with. A rounded pill inset
-   from the card edge, not a full-height bar. */
+/* The accent stripe carries the severity as a small rounded bar inset from
+   the card edge. */
 .kalam-toast-accent {
     border-radius: 999px;
     /* Tucked in close to the card's left edge, but never touching it. */
@@ -3611,7 +3609,7 @@ button.kalam-journey-more:hover {
 }
 
 /* ── end P5.5 ──────────────────────────────────────────── */
-/* ── My Library v5 (docs/files/kalam_my_library_v5.html) ─────── */
+/* ── My Library dashboard ─────────────────────────────── */
 
 /* Top row: now reading card. */
 .kalam-now-reading {
@@ -4361,9 +4359,9 @@ textview.k-inline-edit text {
   line-height: 1.35;
 }
 
-/* ── dictionary popup (v3 design) ─────────────────────── */
-/* Palette + type from docs/design/kalam_dictionary_popup_v3.html. Fonts fall
-   back to generic families when Fraunces / IBM Plex are not installed. */
+/* ── dictionary popup ─────────────────────────────────── */
+/* Fonts fall back to generic families when Fraunces / IBM Plex are not
+   installed. */
 popover.kalam-reader-dict-popover { background: transparent; }
 popover.kalam-reader-dict-popover > contents {
   background-color: transparent;

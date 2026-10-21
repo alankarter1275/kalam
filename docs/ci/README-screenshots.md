@@ -1,152 +1,92 @@
-# Screenshots in CI — what they prove, and what they don't
+# GUI smoke checks
 
-## Why this exists
+The GUI smoke job checks that Kalam launches and can construct selected pages
+under a headless Wayland session. It is diagnostic, not a visual acceptance
+test and not a required CI gate.
 
-CI compiles the code. It has now been green through two bugs that were obvious
-to a human in about ten seconds:
+## Routes exercised
 
-- Home's book covers never loaded at all — not slowly, never.
-- Only the first two rows of the All-books grid ever filled in.
+The job runs `docs/ci/screenshot.sh` with 139 synthetic books for each route:
 
-Both were pure "look at the screen" failures. No compiler, linter or unit test
-can see a grey rectangle that should have been a book cover. This job takes
-photographs so somebody (or the agent) can look.
-
-## What runs
-
-| Job | Blocks the build? | What it does |
-|---|---|---|
-| `build` | **Yes** | fmt, clippy `-D warnings`, tests, debug + release build |
-| `screenshots` (labelled *smoke test*) | No | one 139-book run on the `read-1` route, headless sway; publishes a text report |
-
-The smoke test is `continue-on-error: true` **on purpose**. It is a diagnostic,
-not a gate. A flaky compositor must never block a correct code change. `build`
-remains the only thing that can fail the run.
-
-### Slimmed on 2026-09-18 — two things were removed, and why
-
-This page used to describe three jobs. The other two pieces are gone:
-
-- **The `scale` job.** Its question — does the app survive 2,000 books — was
-  answered on 2026-09-04 and the answer is committed in
-  `ci-logs/scale-2000-comparison.txt`: the windowed grid at 247 MB / 7.1 ms
-  against the old build-every-card grid at 352 MB / 139.7 ms. Re-measuring a
-  settled number on every push bought nothing. **Bring it back deliberately if
-  the grid ever changes**, by copying the job out of git history.
-- **The PNG artifact upload, and the second (all-books) screenshot pass.** The
-  artifacts went to nobody: the Arena sandbox cannot download them, and the
-  text report carries the same facts. The all-books pass was redundant with
-  the `read-1` run for the one thing this job is still worth — proof that the
-  app launches and a book opens without panicking.
-
-`ci-logs/screenshots-latest.txt` and the `ci-logs/scale-2000-*.txt` files are
-**frozen records of their last runs**, not current output. Nothing writes them
-now. Only `ci-logs/reader-latest.txt` is live.
-
-## The pieces
-
-- `docs/ci/seed-library.py` — writes a synthetic library straight to the
-  catalog schema under `XDG_DATA_HOME`. It refuses to run without that variable
-  set, so it can never scribble on a real `~/.local/share/kalam`.
-- `docs/ci/screenshot.sh` — starts headless sway, launches the release binary,
-  waits, grabs PNGs with `grim`, samples the app's peak memory, and writes
-  `report.txt`.
-- `docs/ci/check-shot.py` — reads the PNGs and reports what fraction of pixels
-  are strongly coloured. The seeded covers are saturated colours and the
-  placeholder is grey, so this answers "did the covers load?" as a number
-  rather than needing someone to squint at an image. It reports numbers and
-  never fails: a threshold invented before we have seen real runs would be a
-  guess, and a wrong threshold that fails good builds is worse than none.
-
-## How the agent reads the results
-
-The Arena sandbox **cannot download Actions artifacts** — the blob host is
-unreachable from it, the same limitation that makes clippy failures get
-committed to `ci-logs/`. So the smoke test copies its `report.txt` into
-`ci-logs/reader-latest.txt` and commits it back to the branch, on success *and*
-failure.
-
-The PNGs are for you. The committed text report is for the agent. It contains
-the `[timing]` lines, the cover-colour percentages, peak memory, and any fatal
-error with the sway or app log attached.
-
-## Caveats — read these before believing a screenshot
-
-**1. The renderer is not your renderer.** There is no GPU on a runner, so this
-uses `GSK_RENDERER=cairo`. GTK's own maintainers describe the Cairo renderer as
-a last-resort fallback that is missing features and is not tested daily.
-Ordinary layout, text and CSS should be faithful. Anything involving non-affine
-transforms or shaders may not be. **A screenshot here is evidence, not proof.**
-
-**2. Fonts differ.** The runner gets `fonts-dejavu-core`, which is almost
-certainly not what you have. Font metrics change line wrapping, so "does this
-long title wrap to two lines?" can pass here and fail on your machine, or the
-reverse. Layout questions that hinge on exact text width still need your eyes.
-
-**3. Headless sway is not your sway.** One virtual 1600x1000 output, no tiling
-session, no real input devices. It is much closer to your setup than Xvfb would
-be — which matters, because the whole A1 dialog effort was about Sway
-mistreating separate windows — but it is not the same thing.
-
-**4. The reader may not render.** WebKit under software rendering is
-unreliable. If the reader screenshot is blank, suspect the harness before the
-app.
-
-**5. Navigation is requested, not guessed** *(fixed 2026-09-04)*. The script
-used to send Tab/Tab/Return because the app had no way to be told where to go.
-That guessed the focus order, and the first real run guessed wrong: three
-byte-identical screenshots of Home, and the job reported success. A visual
-check that cannot distinguish "I navigated" from "I did nothing" is worth
-nothing — the same rule as `pitfalls.md` §19.
-
-The app now accepts `KALAM_ROUTE=<name>` (`all-books`, `settings`, `shelves`,
-`analytics`, … — an unknown name prints the full list and is ignored rather
-than fatal). Pages that need a book take its id after the name: `book-<id>`
-opens the book page and `read-<id>` opens the engine reader, which is how the
-reader gets exercised without the owner's desk. Set `ROUTE=` to change which
-page is photographed; it defaults to `all-books`.
-
-Three independent checks now have to agree before the report says navigation
-was OK, because each catches a different failure:
-
-| Check | Catches |
+| Route | What it opens |
 |---|---|
-| `KALAM_ROUTE=… — navigating` in the log | binary predates the flag, or the name was rejected |
-| `grid_build` emitted | the route was accepted but the page never rendered |
-| `01-home.png` and `03-after-nav-settled.png` differ | everything else lied |
+| `read-1` | The EPUB reader with the first seeded EPUB. |
+| `tasks` | The task manager's current empty/idle state. |
+| `editor` | The EPUB editor picker with seeded books. |
 
-The third would have caught the original bug on its own. The evidence was
-already in the report — three identical `md5sum`s — and was read past.
+The seeder writes real EPUBs and covers under readable author/title folders
+with short-id suffixes. It creates a minimal schema-version-1 catalog; Kalam
+runs migrations when it opens the library.
 
-**6. Timing numbers from CI are worthless.** Shared, throttled VMs. The peak
-memory number is trustworthy; the milliseconds are not. Real timings come from
-running on your own machine with `KALAM_TIMING=1`.
+For each route, the script captures the requested page, waits, captures it
+again, and then launches Home for comparison. The repeated captures should be
+identical when the page has settled. The route and Home captures should differ.
+A difference proves navigation changed the screen; it does not prove every
+control or piece of content is correct.
 
-## The honest limitation
+For `read-*` routes, the report also fails navigation if Kalam logs
+`open epub failed`. Check the report and app log, not only the line saying the
+route was accepted. The checked-in report reflects the last workflow run and
+is refreshed by CI, not by local edits to the harness.
 
-If the same agent writes the code, writes the test, and judges the photograph,
-that is marking its own homework. These images are strongest as a **regression**
-check — compare against an image already agreed to be good — and weakest as an
-approval of something new. They reduce how often a human has to look. They do
-not remove the need.
+## Reading the reports
 
-## Reading the artifacts
+The job commits text reports to:
 
-Download the `screenshots` artifact from the run. Files:
+- `ci-logs/reader-latest.txt`
+- `ci-logs/tasks-latest.txt`
+- `ci-logs/editor-latest.txt`
 
-- `01-home.png` — Home. Both strips must show real covers, not grey boxes.
-- `02-after-nav.png` — just after navigating; some covers still filling is fine.
-- `03-after-nav-settled.png` — **the important one.** Anything still grey here
-  is a cover that is never coming.
-- `sway.log`, `tree.json` — for when nothing appeared at all.
-- `peak-rss.txt` — peak memory, in KB and MB.
+The report includes route checks, timing spans, main-loop stalls, pixel
+samples, screenshot fingerprints, app output and peak RSS. PNG images and
+compositor logs stay in the temporary Actions workspace; the workflow does not
+upload them as artifacts. The only uploaded artifact is the release binary
+used by the smoke job.
 
-`peak_rss_kb=0` means the app never started. In that case the screenshots are
-meaningless and the log is the only useful artifact.
+A passing route check is not a visual verdict. Compare the app's logs and
+fingerprints with what the selected route is expected to display. A reader
+open error, identical route/Home images, missing screenshots or an early app
+exit means the route is not proven.
 
-## Cost
+## Pixel samples
 
-The repository is private, so Actions minutes are metered. These jobs add
-roughly 4-6 minutes per run, mostly rebuilding the release binary in a fresh
-job. If that becomes annoying, the cheapest fix is to gate them on a label or
-run them only on `workflow_dispatch`.
+`docs/ci/check-shot.py` reports the percentage of strongly coloured pixels and
+non-black pixels. The seeded covers are saturated and their placeholders are
+grey, so colour is a rough cover-loading proxy **only for a library-grid
+screenshot**. Reader, tasks and editor pages can legitimately contain little
+colour; a low colour percentage on those routes does not mean covers failed.
+The script reports measurements and does not set a pass threshold.
+
+## Limits
+
+- **Software rendering:** CI uses Cairo for GTK and Pixman for headless Sway.
+  This is not the same rendering path as a desktop with hardware acceleration.
+  It is useful for launch and broad layout smoke checks, not pixel-perfect
+  approval.
+- **Fonts:** the runner has DejaVu fonts; a user's installed fonts and bundled
+  font configuration can change line wrapping.
+- **Input:** synthetic pointer taps are not part of the required workflow.
+  Headless input delivery has not been reliable enough to treat it as proof of
+  reader gestures.
+- **Timing:** shared-runner milliseconds are not a performance benchmark.
+  Use `KALAM_TIMING=1` on the target desktop for timing decisions. Peak memory
+  is reported as a diagnostic.
+- **Screenshots:** because PNGs are not uploaded, the committed report is what
+  an agent can inspect from the repository. It contains fingerprints and
+  metrics, not the image itself.
+
+## Run locally
+
+Build Kalam first, then set a disposable data directory and select one route:
+
+```bash
+cargo build --release
+XDG_DATA_HOME=/tmp/kalam-ci-data \
+  BOOKS=20 OUT=/tmp/kalam-ci-reader ROUTE=read-1 \
+  docs/ci/screenshot.sh
+```
+
+The script seeds `<XDG_DATA_HOME>/kalam` and requires a working Wayland
+compositor plus `sway`, `grim`, `wtype` and Python 3. It writes screenshots,
+logs and `report.txt` under `OUT`. Do not point `XDG_DATA_HOME` at a real
+library.

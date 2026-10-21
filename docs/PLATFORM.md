@@ -1,4 +1,9 @@
-# chapbook as an ereader platform
+# Chapbook platform design notes
+
+> **Status:** architectural target, not a platform-support list. This document
+> describes future host and format seams, including platforms and crates that
+> are not in the current workspace. Verify support in the root `Cargo.toml`
+> and source before relying on a capability.
 
 Chapbook started as an ereader and turned into the engine an ereader is
 built on. This document takes that seriously: what "platform" has to mean

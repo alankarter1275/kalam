@@ -1,3 +1,14 @@
+# Archived reader-engine implementation plan
+
+> This dated plan records the development and integration of the Chapbook
+> reading widget. Its sequencing, status claims and unfinished-item list are
+> historical; it is not the current Kalam roadmap or the current EPUB editor
+> plan. For current product status, see [`ROADMAP.md`](../../ROADMAP.md); for
+> KAL-5, see the repository-root [`plan.md`](../../plan.md); for the current
+> widget API, see [`crates/kalam-reader/README.md`](../../crates/kalam-reader/README.md).
+
+---
+
 # kalam-engine: the plan
 
 *Written in plain language on purpose. The owner of this project is not a

@@ -1,65 +1,143 @@
-# Plan — KAL-5: EPUB Editor Overhaul
+# KAL-5 — EPUB editor usability overhaul
 
-**Status: IMPLEMENTING — plan approved; ready to begin coding.**
+**Status: Backlog; design in progress.** The owner has clarified the product
+vision; no editor implementation is authorized yet. The technical details below
+are the agent's proposal for turning that vision into a safe, responsive
+workflow.
 
-## The Problem
-The Phase 6 EPUB editor (shipped 2026-10-09) leaned entirely into a WYSIWYG proofreader layout that was deemed "completely useless" and "horrendous" on first use. It lacked the file-tree structure and powerful capabilities of standard EPUB editors (like Calibre), and its virtual "Patch & Bake" system was too clunky for deep editing.
+## Current editor behavior
 
-## The KAL-5 Design (Settled 2026-10-10)
+The shipped editor stages guarded paragraph and chapter-source changes as
+patches; it also stages chapter ordering and cover replacement. Pending text
+patches can appear in the reader. Applying selected patches rewrites the EPUB,
+preserves the first `.orig` backup, updates the book hash and reindexes search.
+The editor has no general archive file tree or arbitrary-file editor.
 
-The overarching goal is to achieve **Calibre-level power with a clean, modern GTK4 UI**, prioritizing direct file edits in a dedicated IDE interface, while preserving zero-lag quick fixes inside the reader.
+The entry points are the **Editor** sidebar picker and the per-book pencil in
+the reader sidebar. The picker uses a title-sorted EPUB cover grid and searches
+title/author text. The current Source pane's Save stages a guarded whole-entry
+patch; it does not write the EPUB directly. The current side-by-side source
+preview is a debounced raster from Kalam's native renderer, not WebKit.
 
-### 1. The Full Editor Layout (IDE-style)
-- **Left Sidebar:** A complete File Tree (HTML, CSS, images, etc.).
-- **Right/Main Area:** The content editing pane, featuring a toggle between two visual modes.
-- **Entry Point:** The editor picker page (polished) and the reader's TOC pencil.
+## Owner's direction — 2026-10-21
 
-### 2. The Two Editing Modes
-1. **Light Mode (Obsidian-style Live Preview):** A clean rich-text view that renders HTML styling (bold, headers) but explicitly shows the underlying Markdown syntax (e.g. `**bold**`). Edits map safely back to HTML tags.
-2. **Deep Mode (Raw Code):** A raw HTML/CSS code editor with a live preview (side-by-side or toggleable) for deep structural formatting.
+The owner wants a modern, Calibre-capable editor and a book-like editing
+experience, with implementation details delegated to the agent.
 
-### 3. Save Mechanism: Direct `.epub` Saves
-- **Full Editor:** We are dropping the complex "Patch & Bake" system for the full editor. Edits hit Save and directly update/repack the `.epub` file, maintaining an automatic `.orig` backup (Calibre style).
-- **Reader Quick Fixes:** In-reader fixes (the pencil tool) will *continue* to use the "Patch" system. Saving directly to an HDD from the reader causes lag, so quick fixes save instantly as patches.
-- **Patch Review:** The full editor will detect pending reader patches and show a clear indicator, allowing the user to review and "Bake" them before deep editing.
+- **In-reader editing is for small fixes.** Select text, choose Edit, and get a
+  caret at that text. Keep the reader page and its layout as-is. Save makes the
+  edit permanent in the EPUB; do not create new pending patches for this flow.
+- **Deep editor layout.** A toggleable file tree on the left, editor in the
+  middle, and a toggleable preview on the right.
+- **Markdown-style editing.** The Light mode should feel like Obsidian Live
+  Preview. Deep mode edits XHTML/CSS source and can show the rendered result in
+  the same right-hand preview.
+- **Advanced tools.** Aim for most of Calibre's useful EPUB tools, delivered in
+  phases rather than blocking the usable core editor.
+- The user is comfortable with the EPUB being permanently changed. Their
+  performance concern is UI responsiveness, delay and flicker—not retaining a
+  patch queue.
 
-### 4. Advanced Features (Calibre Parity)
-KAL-5 must include these powerful tools:
-- **File Manager:** Add, delete, rename, merge, and split HTML/CSS files directly from the file tree.
-- **Visual TOC Editor:** A dedicated tool to build, edit, and nest the Table of Contents.
-- **Check Book:** An automated validation tool that finds errors like broken links, invalid CSS, and missing files.
-- **Automated Tools:** Smarten punctuation, subset/embed fonts, format HTML, etc.
-- **Saved Searches:** Save complex regex find/replace queries for later reuse.
+This supersedes the earlier hybrid proposal that kept new in-reader fixes as
+patches. Existing pending patches from the shipped editor still need a safe
+one-time review/apply/discard path; they must not be silently dropped.
 
-## Implementation Plan
+## Recommended behavior
 
-1. **Step 1: Direct Save Worker & Backup Safety**
-   - Create a background worker that takes a file path (e.g., `OEBPS/chapter1.xhtml`) and new bytes, writes a `.orig` backup of the EPUB if one doesn't exist, and repacks the ZIP directly. This completely replaces the "virtual patch" logic for the full editor.
+### In-reader quick edits
 
-2. **Step 2: The Pending Patch Guard**
-   - Modify the editor entry logic (`epub_editor.rs` init). If the book has pending reader patches, the editor opens a blocking "Review Patches" view (`edits_panel.rs`) first. The user must Bake or Discard these patches before accessing the IDE, preventing raw HTML edits from breaking pending text patches.
+1. Select text and choose **Edit** from the existing selection controls.
+2. Put a text-editing layer exactly over the selected words, styled to match
+   the book. The reader remains visible and does not turn into a separate
+   editor page.
+3. Show a compact floating formatting toolbar only while editing, anchored
+   near the selection/caret and moved above or below it to avoid covering the
+   text. Provide common actions such as bold, italic, underline, link, Save and
+   Cancel; keyboard shortcuts can supplement it. The toolbar should not change
+   the page layout.
+4. Save once on the user's command, not on each keystroke. The edit writes
+   directly into the EPUB and then refreshes the visible passage at the same
+   reading position. On failure, leave the edit open and the text intact.
 
-3. **Step 3: IDE Shell & File Tree**
-   - Strip out the reader engine from `epub_editor.rs`. Build a new GTK4 layout: a resizable `gtk::Paned` with a file tree on the left and a content stage on the right.
-   - The file tree (`gtk::TreeView` or `ListView`) reads `content.opf` to categorize files (Text, Styles, Images, Fonts, Misc) just like Calibre.
+The reader is painted by Kalam's reading widget rather than being a normal text
+field. The caret and toolbar therefore need to be a carefully aligned overlay;
+they can look in-place, but are not literally part of the page-painting canvas.
 
-4. **Step 4: File Manager Operations**
-   - Add context menus to the file tree: Rename, Delete, Add Blank HTML/CSS.
-   - Implement the repack logic for these operations (updating the ZIP archive, the `content.opf` manifest, and the spine).
+### Deep editor and Markdown-style Light mode
 
-5. **Step 5: Deep Mode (Raw Code IDE)**
-   - Wire the file tree to open files into a `GtkSourceView` pane (reusing Phase 6.9's `sourceview5` setup) in the main content area.
-   - Keep the headless WebKit renderer for the live side-by-side preview.
+- Keep the file tree and preview independently collapsible/resizable. Show a
+  clear book name, selected resource, editing mode, dirty/saved state, and
+  Save action so it is always obvious where an edit will go.
+- In **Light mode**, use a Markdown-like editing surface: common prose markup
+  is formatted as the user types, with Obsidian-style markers visible near the
+  cursor. The right pane shows the actual EPUB rendering through Kalam's native
+  renderer. This is a Markdown-like control surface, not a `.md` file stored in
+  the book.
+- Do not convert an entire chapter through a generic Markdown converter.
+  Preserve the original XHTML and update only edited supported content. Start
+  with a safe subset (paragraphs, headings, emphasis, simple lists and links);
+  show unsupported XHTML as raw markup and keep it untouched unless the user
+  explicitly edits that raw part.
+- In **Deep mode**, use a syntax-highlighted XHTML/CSS editor. The same
+  right-hand Preview toggle shows a rendered chapter. When a stylesheet is
+  selected, let the user pick which chapter to preview.
+- Refresh preview after a short quiet period, discard older renders when a
+  newer edit is underway, and show when the preview is stale or failed.
 
-6. **Step 6: Light Mode (Obsidian-Style Live Preview)**
-   - Build a custom `GtkTextView` that parses basic HTML (`<b>`, `<i>`, `<h1>`) into Markdown syntax tags (`**`, `*`, `#`) and applies CSS styles to those spans so they appear formatted while exposing the punctuation.
-   - Create a bi-directional mapper that converts this markdown-styled text back to valid XHTML on save.
+### Direct saves, backups and validation
 
-7. **Step 7: Advanced Tools**
-   - Add a toolbar for the Visual TOC Editor (parsing `toc.ncx` / `nav.xhtml`), Check Book (validating EPUB structure), and automated formatting tools.
+- Both the in-reader editor and deep editor write directly to the EPUB; new
+  edits do not enter the pending-patch queue.
+- Preserve the previously selected safety rules: validate the touched
+  XHTML/CSS and the repacked ZIP/OPF, and refuse stale or invalid writes while
+  keeping the user's buffer. Offer reload or save-a-copy for a conflict; no
+  silent force-save.
+- Back up before direct writes. The earlier choice was a timestamped backup
+  for every direct Save. Applying that to every one-line in-reader edit would
+  copy the whole EPUB each time and can consume substantial storage. Agent
+  recommendation: keep timestamped backups per deep-editor Save, but make one
+  pristine backup before the first in-reader edit and reuse it for subsequent
+  quick fixes. Use this as the initial policy; revisit only if measurements or
+  recovery testing show a concrete reason to change it.
+- Write to a temporary archive and replace the EPUB only after validation.
+  Update the catalog hash and search index after success. Archive work,
+  backups, validation and indexing run off the GTK thread.
+- The shipped patch review remains only as a migration path for legacy pending
+  edits. Resolve those before starting direct editing; do not apply or discard
+  them automatically.
 
-## Open Questions for the Owner
+## Performance assessment
 
-~~**1. Light Mode Complexity:**~~ **Resolved (2026-10-10):** If the Light Mode encounters complex HTML/CSS it cannot safely represent as Markdown, it will fall back to showing raw HTML tags for those specific elements alongside the markdown. This is the safest approach to prevent data loss.
+The archive write can take noticeable wall-clock time for a large book or slow
+drive, especially when a full backup is made. It does not have to freeze the
+UI: backup, archive rewrite, validation and reindexing can run on a worker while
+the current page stays visible with a small **Saving…** status. Kalam's current
+baker raw-copies untouched ZIP entries, so it need not decompress and
+recompress every asset, but it still reads/writes the archive and the edited
+entry.
 
-~~**2. Check Book tool:**~~ **Resolved (2026-10-10):** The validation tool will run automatically in the background on every save, and inform the user if any structural errors (broken links, missing images, invalid HTML) are detected.
+There is a separate refresh risk. `ReaderView::open` synchronously opens the
+ZIP/package and loads fonts, and the current reader reload path calls it on the
+GTK thread. Reusing that path unchanged after every small save could cause a
+brief pause or flicker. The editor must not clear the page while saving; the
+post-save refresh should preserve the locator and swap in the updated passage
+only when it is ready. Measure this on real books before promising a timing.
+
+## Phased scope
+
+**Core first:** reader-like in-place quick edits, clearer picker, file tree,
+Light/Deep modes, native preview, direct saving, backup/validation, and safe
+legacy-patch handling.
+
+**Follow-up tools:** add/delete/rename/merge/split archive files; visual TOC;
+full Check Book with cross-file/link/resource checks; saved searches; and
+formatting, punctuation and font tools. Keep the advanced list in scope for the
+program, but schedule it after the core editor is usable.
+
+## Product-level confirmation still needed
+
+The key remaining product check is whether this describes the intended feel:
+reader stays a book during small edits; deep work uses the three-pane IDE; the
+Light mode is Markdown-like but saves losslessly to XHTML. The agent will own
+the implementation details and report any trade-offs that would change that
+experience.

@@ -1,5 +1,10 @@
 # Locator rationale
 
+> This file explains the design choices; it is not the API specification.
+> The current definition is in `crates/chapbook-core/src/locator.rs`. Notes about
+> synchronization and interchange formats are future-facing and do not mean
+> those integrations are implemented.
+
 Positions and annotations are keyed on `Locator { spine_index, char_offset }`.
 The char_map makes offsets survive **relayout** — but relayout is not the only
 thing they must survive. Two more axes, and both are cheap to handle now and

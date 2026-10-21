@@ -1,38 +1,26 @@
-# Agent Workflow Rules
+# Agent workflow
 
-- **Plan First, Then Build (owner directive 2026-10-01)**: every piece of
-  work — any change, however small — starts as a plan in [`plan.md`](./plan.md)
-  at the repo root. Workflow: **planning → implementation plan →
-  implementation.** During planning, do all the research there (read the
-  code, cite files and lines, consult `docs/pitfalls.md`), keep updating the
-  file as the plan sharpens, and ask the owner every open question THERE —
-  never during implementation. Implementation follows the approved plan
-  exactly; if implementation reveals something that changes the plan, STOP
-  coding, return to `plan.md`, update it, and ask again. When work moves on,
-  the plan's outcome is recorded in ROADMAP.md (item + changelog) and
-  pitfalls first — THEN plan.md's content is deleted and the next plan
-  written. plan.md holds only the current work; history lives in the
-  roadmap and in git.
-
-- **No Emoji, Ever (owner directive 2026-10-01)**: no emoji in any UI
-  string, comment, or document. Use plain text, or symbolic monochrome SVG
-  icons where a glyph is truly needed — professional and restrained only
-  (no novelty icons). Color emoji in GTK labels crash Pango into Noto Color
-  Emoji, which cairo cannot scale on the owner's system (pitfalls §29).
-
-- **The Roadmap Is The Plan**: read [`ROADMAP.md`](./ROADMAP.md) first, every
-  session — especially "What is really shipped" and the changelog tail. All
-  work follows it: nothing is built, removed or changed outside its items.
-  When a decision is made in conversation, record it in the roadmap (item +
-  changelog row) even if the owner does not ask, then say that it was
-  recorded. Never quote phase numbers or status from memory — the old P0–P12
-  plan in `docs/archive/` is history, not the plan.
-
-- **Commit Before Testing**: ALWAYS commit and push your changes to the git repository after finishing a major implementation step, and specifically **before** asking the user to test or review the code. Do not leave uncommitted changes in the workspace when asking the user to run the application.
-
-- **Continuous Documentation (Workspace Docs Folder)**: ALWAYS write and update plans, architectural discussions, roadmaps, and pitfalls as persistent markdown files directly in the repository's `docs/` directory (e.g., `docs/conversation.md`, `docs/pitfalls.md`, etc.). 
-  - Do NOT use temporary `.gemini/antigravity/brain/` artifacts for permanent project documentation. 
-  - Document ongoing steps, dead-ends, and failures directly into the respective files in `docs/` before pivoting to new strategies.
-
-- **Strict Developer Invariants**: ALWAYS follow strict developer invariants specified in [`docs/WORKING.md`](./docs/WORKING.md) (zero `unwrap()` in production, sidecar backup sync on DB updates, no root scratch files).
-
+- Read [`ROADMAP.md`](ROADMAP.md), the relevant source files and tests before
+  making product or architecture changes. The app source is authoritative;
+  correct stale documentation rather than repeating a claim that the code no
+  longer supports.
+- For substantial or user-visible work, write a focused plan, identify the
+  affected code and tests, and resolve important behavior questions before
+  implementation. In particular, do not implement the KAL-5 EPUB editor
+  overhaul until its behavior has been discussed and approved.
+- Keep active guidance in current documents. Clearly label archived research,
+  issue logs and conversation records as historical; do not present them as
+  current implementation status.
+- Keep GTK objects on the GTK thread and use the task/message pattern for
+  blocking filesystem, database, parsing and OCR work. Follow the current
+  constraints in [`ARCH.md`](ARCH.md) and [`docs/WORKING.md`](docs/WORKING.md).
+- Avoid production `unwrap()` and `expect()`. The current guardrail is a
+  regression ratchet, not a claim that production code has none.
+- When Rust is available, run focused tests first, then the workspace checks:
+  `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace --all-targets`.
+- Do not add temporary artifacts to the repository root. Keep generated
+  screenshots and build outputs in their established output directories.
+- Use plain, concise language in code comments and documentation. Keep UI
+  wording consistent with the app's existing terminology.

@@ -348,7 +348,7 @@ fn count_children(host: &gtk::Box) -> usize {
     n
 }
 
-/// One toast: accent bar, icon, title, detail — as in docs/design.
+/// Build one toast with an accent bar, icon, title and detail.
 fn build_card(entry: &Entry) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     card.add_css_class("kalam-toast");

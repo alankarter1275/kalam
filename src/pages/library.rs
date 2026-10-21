@@ -1,15 +1,4 @@
-//! My Library — a single at-a-glance dashboard (v5 mockup:
-//! `docs/files/kalam_my_library_v5.html`).
-//!
-//! Top row: the book currently being read (cover, Read button, progress and
-//! a four-chapter timeline centered on the current chapter) beside a 2×2
-//! stats grid — sparklines for the headline figures and the yearly goal.
-//! Below: continue reading (with hover play buttons), saved quotes, a
-//! merged history feed (events + sessions) and a vocabulary strip.
-//! Section headers double as the way in — click a header to drill down.
-//! Sections only render when they have content, though, so the pages that
-//! have no section here (or whose section is empty) are reached from the
-//! quick-links row under the title instead.
+//! My Library dashboard for recent reading, library statistics and quick links.
 
 use crate::db::Catalog;
 use crate::models::{Book, LibrarySection};
@@ -595,7 +584,7 @@ fn now_reading_card(
     card
 }
 
-/// Headline figure with an inline sparkline (mockup's 2×2 stats grid).
+/// Headline figure with an inline sparkline.
 fn stat_card(label: &str, value: &str, unit: &str, series: &[i64], spark_class: &str) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
     card.add_css_class("kalam-lib-stat-card");

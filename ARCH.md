@@ -1,131 +1,87 @@
-# Kalam — architecture principles
+# Kalam architecture
 
-Prescriptive, not descriptive. This document says how the app is built and
-how every change must be built; where it conflicts with the code, the code
-is wrong or this document is stale — fix one of them in the same change.
+This document describes the architecture in the current source tree. Where a
+prose rule and the code disagree, verify the behavior and update the rule or
+code in the same change. The application source and tests are authoritative.
 
-**Every `plan.md` states how the change it proposes complies with this
-document.** That sentence is the enforcement mechanism; the tests in
-`src/perf.rs`, `tests/guardrails.rs` and the stall watchdog (`src/stall.rs`)
-make the loud violations visible in CI instead of waiting for a field
-report.
-
-## The one rule
-
-> **The UI thread never touches disk, database, or parsing.**
-
-The UI thread builds widgets and applies messages. Everything else —
-every read, every write, every file, every parse — runs on a worker, and
-its result arrives as a message. Owner directive, 2026-10-01; the whole
-document is this sentence applied.
-
-## Threading model
-
-Three kinds of thread, and only one of them may hold GTK objects:
-
-1. **The main (UI) thread.** Runs the GTK loop, builds widget trees,
-   applies model updates. It may send work out; it may never do the work.
-   `tasks::spawn` / `tasks::spawn_internal` (a hidden housekeeping task)
-   are the standard way out; the readers' doc-service threads are the
-   long-lived variant.
-2. **Task workers** (`src/tasks.rs`). One-shot units of work with a label,
-   progress, cancellation and a result delivered back on the main thread.
-   Page snapshots, imports, deletes, OCR — everything a user waits for or
-   that runs quietly in the background.
-3. **Service threads** (readers). Own a resource for the process's life
-   (an open document, a render queue), answer requests, never touch GTK.
-
-The **stall watchdog** watches the main loop's heartbeat and logs any
-block over ~100 ms with the route or dialog being built at the time
-(`[stall]` lines, stderr and `kalam.log`). A new `[stall]` line in a
-field run or the CI smoke session is a finding, not noise.
-
-## Layering
+## Application layers
 
 ```text
-pages/ (widgets + models)      — view and input only
-  └─ LibraryService            — one snapshot method per screen, all reads
-      └─ Catalog (SQLite)      — the only code that knows SQL
+GTK / Relm4 application (`src/app.rs`, `src/pages/`)
+        │ messages, owned snapshots
+        ▼
+Library service (`src/service.rs`) ── background tasks (`src/tasks.rs`)
+        │ catalog queries and updates       │ filesystem / parsing / OCR
+        ▼                                    ▼
+SQLite catalog (`src/db.rs`, `src/db/`)   EPUB, PDF, image and metadata code
 ```
 
-- **Pages ask `LibraryService`; they do not hold `Arc<Catalog>`.** The
-  ratchet in `tests/guardrails.rs` (`MAX_ARC_CATALOG_IN_PAGES`) only goes
-  down. The service is cheap to clone (`Arc` bump), so workers take one
-  along instead of a raw catalog.
-- **A snapshot is the answer to a whole screen's data question** — one
-  call, one owned `Send` struct (`service.rs` asserts `Send` at compile
-  time). Wrapped getters would mean N round trips and N futures; the
-  snapshot means one.
-- **The service never calls `notify`** and never touches GTK; it must be
-  callable from a worker. Errors travel in the snapshot (`errors` rows);
-  the page decides what the user sees.
-- **Filesystem questions stay with the caller's worker** (a file-size
-  stat is not a catalog read), and disk layout truth lives in
-  `comic_folders.rs` / `folders.rs`, never in page code.
+- `AppModel` owns navigation and connects page events to application
+  operations. Page modules contain GTK widgets, page models and view logic.
+- `LibraryService` groups catalog reads into owned, screen-sized snapshots.
+  Pages should use those snapshots rather than holding `Arc<Catalog>`; the
+  current code has exceptions, tracked by a regression ratchet.
+- `Catalog` owns SQLite access and migrations. The database is the source of
+  truth for books, metadata, annotations, bookmarks, Word Memory entries and
+  reading progress.
+- `tasks.rs` runs blocking or potentially expensive work away from the GTK
+  thread and delivers owned results back as application messages. Workers must
+  not manipulate GTK objects.
 
-## State flow — the screen-open recipe
+The separation is an active direction, not a claim that every page operation
+is already asynchronous. Consult the page and service implementation before
+changing the threading model.
 
-Every screen follows the same four steps (the book page and book float are
-the reference implementations, roadmap 7.1 step 2a):
+## Reading engines
 
-1. **`init` builds the skeleton.** Structure, layout, loading states.
-   Zero queries, zero file reads, zero parsing. The user sees the screen
-   instantly.
-2. **A worker produces the snapshot.** `spawn_internal` + the screen's
-   service method. Expensive extras (an EPUB spine walk for chapter
-   titles) are separate workers that arrive when they arrive.
-3. **The snapshot arrives as a message; the page applies it.** A rebuild
-   is then *pure view-from-model* — the fill functions read model state,
-   never the catalog.
-4. **A stale answer never wins.** Each request carries what it was for;
-   an answer is applied only if it is still current (the readers'
-   generation rule; a per-book page checks the id).
+- Reflowable EPUB reading uses the `kalam-reader` GTK widget, backed by the
+  local Chapbook crates in the workspace. Fixed-layout EPUBs are not supported.
+- The widget exposes whole-book `search()` and reader interaction callbacks.
+  Kalam uses explicit selection and Dictionary actions for ordinary lookup;
+  tap callbacks are connected to Word Memory terms.
+- PDF reading is implemented in `src/pdf.rs` and `src/pages/pdf_reader.rs`
+  using MuPDF. OCR support lives in `src/ocr.rs` and `src/pdf_ocr.rs`.
+- CBZ/CBR import, ordering and page display are implemented in the comics
+  modules and `src/pages/comics_reader/`.
 
-Mutations are tasks too (a delete removes a directory). A small single-row
-write that reports its outcome inline is tolerated while the ratchets
-allow it — the static boundary check (below) decides the end state, not
-this sentence.
+The workspace's `crates/chapbook-*` libraries and `crates/kalam-reader` are
+local workspace members; see the root `Cargo.toml` for the current member list.
 
-**Timing spans** (`route_open:<name>`, `dialog_open:<name>`) bracket every
-construction, and `service_*` spans every snapshot read, under
-`KALAM_TIMING=1`. A screen's construction cost is a measured number, not
-an opinion. The apply path carries an activity guard and a span from the
-day it is written (pitfalls §45): the watchdog can only name what has a
-label, and an async apply handler is a new place the UI thread can
-block. The same goes for main-thread task callbacks and idle jobs —
-label them, or their blocks report as nameless.
+## EPUB editing
 
-## Memory
+The editor in `src/pages/epub_editor.rs` stages guarded text and cover patches.
+Applying selected patches is background work: it bakes the changes, keeps a
+pristine `.orig` backup, updates the EPUB content hash and reindexes the book.
+This is distinct from arbitrary-file editing or a full EPUB archive IDE. The
+KAL-5 editor overhaul remains in the backlog; consult `plan.md` before changing
+its proposed behavior.
 
-- The book grid is windowed (2,000 books: 247 MB peak, not 502).
-- Covers are deferred: placeholders first, background decode via
-  `preload::warm_covers` — a deferral is always paired with its warm-up
-  (pitfalls §16).
-- Caches are bounded by design, not by emptying (`set_cache_budget`, the
-  PDF text/image windows; pitfalls §17).
-- A bubble holds no book (id + thumbnail + position, all database rows);
-  the reading book gets the cache budget, warm books are suspended.
+## Library storage
 
-## Enforcement (built in migration order)
+- The SQLite catalog is authoritative. The default library is under
+  `~/.local/share/kalam`; users can configure other library folders.
+- Book folders use readable author/title names with a short identifier.
+  Database ids identify books; the folder name may change when metadata does.
+- `kalam.json` is a per-book backup snapshot for metadata, tags, annotations,
+  reading position and edit patches. It is refreshed after metadata,
+  annotation, bookmark and patch changes, but not on every reader progress
+  update.
+- Covers, author images, series covers and rebuildable caches are separate
+  library resources. See `src/paths.rs`, `src/folders.rs` and `src/sidecar.rs`
+  for exact path and sidecar behavior.
 
-1. **Count-shaped budgets** — `src/perf.rs`: statement counts that do not
-   grow with row count, gating CI. Wall-clock flaked ~60 % between
-   runners and was rejected; integers do not flake.
-2. **The stall watchdog** — `src/stall.rs`; the CI smoke report carries
-   its lines.
-3. **Ratchets** — `tests/guardrails.rs`: production panic sites,
-   `Arc<Catalog>` in pages, hex colours in the stylesheet. The numbers
-   only go down.
-4. **The static boundary check** (planned, 7.7 layer 3): a test scanning
-   `src/pages/**` for direct fs/catalog/parser calls outside the task
-   layers, with an allowlist of written reasons — last, once the
-   allowlist is small.
+## Current boundaries
 
-Tripwires, not proofs: the document plus plan compliance is the primary
-control; the tests make regressions loud instead of silent.
+- Keep GTK objects on the GTK thread. Use tasks for work that may block it.
+- Keep SQL in the catalog layer and prefer `LibraryService` snapshots in
+  pages. `tests/guardrails.rs` tracks current exceptions; it is a ratchet, not
+  a claim that the boundary is complete.
+- Add tests when changing catalog migrations, reader event handling, sidecar
+  contents, EPUB patches or file operations.
+- There are no registered implementations of the content-source interface in
+  `src/sources/`; the interface and manager are scaffolding, not working online
+  browsing or download support.
 
----
-
-Historical architecture notes (the old living document, including the
-stale `lopdf` mention) live in git history; navigation and UX decisions
-are recorded in `ROADMAP.md` and `docs/conversation.md`.
+See [`docs/WORKING.md`](docs/WORKING.md) for repository rules,
+[`ROADMAP.md`](ROADMAP.md) for current project status, and
+[`docs/ci/README.md`](docs/ci/README.md) for CI coverage.

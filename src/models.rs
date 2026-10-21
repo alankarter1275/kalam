@@ -25,7 +25,7 @@ impl NavItem {
     ///
     /// * `Downloads` — the queue page works, but nothing ever registers a
     ///   `Source`, so it can only ever read "0 downloads tracked". Online
-    ///   sources are Part 2 (`docs/offline-roadmap.md`); until one exists the
+    ///   sources are a future track in `ROADMAP.md`; until one exists the
     ///   button advertises a feature the app cannot perform.
     /// * `RemoteBrowse` and `Fanfiction` — same reason, removed earlier.
     ///

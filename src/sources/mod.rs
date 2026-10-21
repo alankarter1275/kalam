@@ -24,7 +24,7 @@ impl SourceManager {
     }
 
     #[allow(dead_code)]
-    // This will be used in Phase 4 when registering dynamic Wasm plugins.
+    // No online source implementation is registered yet.
     pub fn register(&mut self, source: Arc<dyn Source>) {
         self.sources.push(source);
     }

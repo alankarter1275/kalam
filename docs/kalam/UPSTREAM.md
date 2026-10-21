@@ -1,3 +1,12 @@
+# Archived Chapbook provenance record
+
+> This file preserves the Chapbook import history and the earlier upstream
+> review process. The engine crates are local workspace members under
+> `crates/chapbook-*`; this file is not a merge or update procedure. Use the
+> current source, manifests and tests.
+
+---
+
 # Chapbook: where the engine came from
 
 **We no longer track upstream.** Decided 2026-09-19.

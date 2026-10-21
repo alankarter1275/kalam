@@ -1,18 +1,17 @@
-# Offline-first roadmap — merged into `ROADMAP.md`
+# Roadmap pointer
 
-> **Moved 2026-09-18. This file is now a pointer.**
->
-> The offline plan that lived here is now **Part 1** of
-> [`ROADMAP.md`](../ROADMAP.md), which is the only roadmap for this project.
-> Nothing was dropped, but it is no longer organised as six modules: it is now
-> **eight phases in a queue**, because a shopping list does not tell you what to
-> do next. Every module's contents are inside one of the phases.
+[`ROADMAP.md`](../ROADMAP.md) is the canonical, consolidated project roadmap.
+Its opening sections state current app behavior, reconcile the older P0–P12
+phase names with the current code, and list the active work order. The later
+sections preserve the dated planning history; treat their old status marks as
+historical, not as another active plan. Do not plan from a separate roadmap in
+this file.
 
-**Read [`ROADMAP.md`](../ROADMAP.md).**
+Kalam's core library, EPUB/PDF/comics reading, annotations and dictionaries are
+usable without online content sources. Optional metadata lookup can query Open
+Library and Google Books. Remote browsing, source plugins and downloads remain
+unimplemented and are kept separate from core reading and library features.
 
-It also covers what the old file did not: an evidence-cited list of what is
-actually shipped (the downloads hub is marked done there and is not), what the
-WebKit replacement broke, the engine-restriction corrections, and the CI setup.
-
-The older P0–P12 phase plan lives in
-[`docs/archive/roadmap-phases-p0-p12.md`](./archive/roadmap-phases-p0-p12.md).
+For tracked issue status, see [`Issues.md`](../Issues.md). The current KAL-5
+EPUB editor proposal is in the repository-root [`plan.md`](../plan.md) and is
+not implementation authorization.

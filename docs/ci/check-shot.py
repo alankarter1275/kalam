@@ -5,9 +5,10 @@ The bug that keeps getting through is a cover that never loads: the card draws
 a grey placeholder and simply stays that way. A human sees it instantly. CI
 sees a green build.
 
-This closes that gap without needing eyes. The seeded covers are deliberately
-saturated colours (see seed-library.py) and the placeholder is grey, so
-counting *strongly coloured* pixels is a decent proxy for "covers rendered".
+For a library-grid screenshot, the seeded covers are deliberately saturated
+colours (see seed-library.py) and placeholders are grey, so counting strongly
+coloured pixels is a rough proxy for "covers rendered". The same number is not
+a useful check for reader pages, task lists or other routes.
 
 No Pillow, no numpy: adding a pip install to CI for this is not worth the
 minute or the supply-chain surface. PNG decoding here is stdlib zlib plus a
@@ -130,7 +131,7 @@ def main(argv):
         if pct_lit < 1.0:
             note = "  <-- essentially black; the window probably never drew"
         elif pct_colour < 0.5:
-            note = "  <-- almost no colour; covers likely did NOT load"
+            note = "  <-- low colour; interpret as a cover warning only on a library grid"
         print(
             f"  {name}: {w}x{h}  coloured={pct_colour:.1f}%  lit={pct_lit:.1f}%{note}"
         )

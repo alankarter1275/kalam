@@ -32,28 +32,39 @@ Same day, on the rail's new picker page:
 
 > "it looks horrendous"
 
-**Context.** Phase 6 shipped all 10 steps, each CI-green (602 tests,
-screenshot passes): inline selection editing in the reader, the patch
-matcher/serializer, review panel + bake, proofreading mode, the full
-editor page + the reader's TOC pencil, raw source mode, structural ops
-(spine reorder, staged cover replacement), and the rail Editor entry +
-picker page. Every piece is verified by tests and CI screenshots — and
-the whole is still a mess to use. **The gap is UX, not machinery.**
+**Current editor behavior.** The shipped editor stages guarded paragraph and
+chapter-source patches, supports chapter ordering and staged cover replacement,
+and lets the user review and apply selected changes. Applying patches rewrites
+the EPUB in the background, preserves a pristine `.orig` backup, updates the
+content hash and reindexes the book. The editor has no general archive file
+tree or arbitrary-file editing.
 
-**First step: gather the owner's concrete complaints.** The
-assessment is total but not yet itemized. Before touching code, walk
-the flows screen-by-screen with the owner and write the list: entry
-points and discoverability, the edit → review → bake loop, the editor
-page's chrome, the picker page's look, performance feel, and trust
-(what the bake does to the file, `.orig` backup). Note: the agent
-cannot view screenshots in its environment — complaints need to
-arrive as words.
+**Owner's direction (2026-10-21).** Both in-reader quick edits and deep-editor
+changes should save directly into the EPUB; do not create new pending patches.
+In-reader edits should remain book-like, with an inline caret and a small
+contextual formatting toolbar. The deep editor should have a toggleable file
+tree, a central editor, and a toggleable native-render preview. Light mode
+should feel like Obsidian Live Preview while preserving XHTML safely; Deep mode
+edits XHTML/CSS source. Build the core first, then schedule most advanced
+Calibre-like tools (file operations, visual TOC, Check Book, saved searches and
+formatting tools).
+
+**Safety direction:** Review legacy pending patches before direct editing;
+validate touched XHTML/CSS and the repacked ZIP/OPF; refuse stale or invalid
+writes while preserving the user's buffer. The owner previously selected
+per-save timestamped backups for direct saves. The agent recommends keeping
+those for deep-editor saves, but making one pristine backup before the first
+in-reader edit and reusing it for quick fixes, to avoid copying the whole EPUB
+for every small correction. The post-save renderer refresh also needs
+engineering work to avoid a GTK-thread pause or visible flicker. See `plan.md` for the
+working behavior proposal. No editor implementation is authorized yet.
 
 **Pointers.**
 
-- `plan.md` — Phase 6 step log (settled design + per-step outcomes)
-- `docs/pitfalls.md` §72–§96 — the phase's lessons
-- `src/pages/epub_editor.rs` (~1.9k lines), `src/pages/editor_picker.rs`,
+- `plan.md` — current KAL-5 proposal and open decisions
+- `docs/pitfalls.md` §72–§96 — implementation lessons
+- `docs/manual-test-checklist.md` — current editor checks
+- `src/pages/epub_editor.rs`, `src/pages/editor_picker.rs`,
   `src/pages/edits_panel.rs`
 - `resources/style.css` (`kalam-*` classes)
 - Standing: the §38 field check (baked EPUB opens correctly in
@@ -108,13 +119,12 @@ Not possible / off-character:
   the page is possible (`src/shape/` in the crate).
 
 **Architecture decision needed.** Browsers write annotations
-directly into the file. kalam today keeps PDF highlights DB-side
-(overlay, file untouched). Recommended: the Phase 6 pattern — stage
-edits DB-side for instant display and undo, then a
-review-and-**bake-into-the-file** step (`.orig` backup, same as the
-EPUB editor).
+directly into the file. Kalam keeps PDF highlights in the database and
+paints them over the page; it does not write them into the PDF. One option
+is to stage edits for review, then offer an explicit background bake with a
+pristine `.orig` backup, following the current EPUB patch workflow.
 
-**Sizing — a phase, not a step.** Suggested order:
+**Suggested implementation order:**
 
 1. Highlights + notes written into the file (selection UI and drawer
    already exist)
@@ -130,5 +140,5 @@ EPUB editor).
   (`save` / `insert_pdf` / `move_page` / `delete_pages` /
   `select_pages`), `src/shape/` (draw-onto-page), forms via
   `PdfWidget`
-- Precedent for staged edits + bake: the EPUB editor (`plan.md`
-  Phase 6, `src/epub_patches.rs`, `src/epub.rs`)
+- EPUB patch and bake implementation: `src/epub_patches.rs`,
+  `src/epub_sanitizer.rs`, `src/epub.rs`

@@ -37,9 +37,8 @@ const SIDECAR_VERSION: u32 = 2;
 pub struct SidecarHighlight {
     pub kind: String,
     pub chapter_index: i64,
-    /// The highlighted words. The load-bearing field: positions break when a
-    /// file changes, text does not — this is what lets a highlight be found
-    /// again. Same reasoning as the P7 re-anchoring plan.
+    /// A text excerpt describing the highlighted words. It is kept in the
+    /// sidecar snapshot alongside the saved chapter position.
     pub text_excerpt: String,
     pub note: String,
     pub color: String,

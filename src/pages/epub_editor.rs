@@ -58,10 +58,18 @@ pub enum EpubEditorMsg {
     /// The raw source pane's open state, the same plain-desired-state
     /// contract as the review panel's.
     SetSourceOpen(bool),
-    /// The source pane's right-hand native preview.
-    SetPreviewOpen(bool),
-    /// The background ZIP scan found the editor's supported text files.
-    SourceResourcesLoaded(Result<Vec<engine::EditableResource>, String>),
+    /// Which part of the source workspace is visible.
+    SetSourceLayout(SourceLayout),
+    /// The preview mode: publisher-default appearance or current Kalam settings.
+    SetPreviewAsShipped(bool),
+    /// Expand or collapse the image/font asset group in the file rail.
+    ToggleAssets,
+    /// Close one tab without discarding a dirty buffer.
+    CloseSourceTab(String),
+    /// Restore the most recent saved text snapshot into the buffer.
+    RestorePreviousSavedVersion,
+    /// The background ZIP scan found safe editor-relevant EPUB resources.
+    SourceResourcesLoaded(Result<Vec<engine::EditorResource>, String>),
     /// Open one file from the source-mode resource tree.
     SelectSourceResource(String),
     /// The source buffer changed by hand (not the pane's own loads —
@@ -91,6 +99,13 @@ pub enum EpubEditorMsg {
     Close,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceLayout {
+    Code,
+    Split,
+    Preview,
+}
+
 #[derive(Debug)]
 pub enum EpubEditorOut {
     Close,
@@ -102,6 +117,7 @@ pub struct EpubEditorModel {
     book_path: Option<PathBuf>,
     book_hash: String,
     book_title: String,
+    book_subtitle: String,
     view: Option<ReaderView>,
     /// The overlay the view lives in; a committed edit swaps the view
     /// inside it, and the inline editor stays its child (the reader's
@@ -126,15 +142,18 @@ pub struct EpubEditorModel {
     /// The deep source workspace: `source` is built once, when a book
     /// actually opened, and its widgets live for the page's life.
     source_open: bool,
-    /// Whether the source pane's right-hand preview is on. Kept
-    /// separate from `source_open` so reopening the pane restores it.
+    /// Source-workspace layout and preview fidelity survive source-pane closes.
+    source_layout: SourceLayout,
     preview_open: bool,
+    preview_as_shipped: bool,
+    assets_expanded: bool,
+    open_source_tabs: Vec<String>,
     source: Option<SourcePane>,
     /// Display order for the chapter list. Existing legacy spine patches
     /// remain visible in their proposed order; new chapter-order edits are
     /// deferred until they can write directly to the EPUB.
     chapter_order: Vec<usize>,
-    editable_resources: Vec<engine::EditableResource>,
+    editor_resources: Vec<engine::EditorResource>,
     selected_resource_href: String,
     resource_list_loaded: bool,
     resource_list_error: Option<String>,
@@ -150,18 +169,31 @@ pub struct EpubEditorModel {
 struct SourcePane {
     buffer: sourceview5::Buffer,
     source_view: sourceview5::View,
-    /// The preview's pages, stacked into one tall texture.
+    /// Native preview, outline, problems and live-CSS panels.
+    preview_box: gtk::Notebook,
+    editor_column: gtk::Box,
     picture: gtk::Picture,
-    /// The preview column: hidden until the Preview toggle says, and
-    /// only meaningful while the source pane is open.
-    preview_box: gtk::Box,
     status_label: gtk::Label,
-    /// The stale banner: the selected file changed under the pane; saves are
-    /// refused until it is reverted.
     stale_label: gtk::Label,
     chapter_label: gtk::Label,
     save_btn: gtk::Button,
     revert_btn: gtk::Button,
+    tabs_box: gtk::Box,
+    cursor_label: gtk::Label,
+    footer_status: gtk::Label,
+    syntax_label: gtk::Label,
+    validation_label: gtk::Label,
+    problems_label: gtk::Label,
+    outline_list: gtk::Box,
+    code_btn: gtk::Button,
+    split_btn: gtk::Button,
+    preview_btn: gtk::Button,
+    format_buttons: Vec<gtk::Button>,
+    history_button: gtk::MenuButton,
+    history_restore_btn: gtk::Button,
+    history_note: gtk::Label,
+    history: RefCell<Option<(String, String)>>,
+    editable: Cell<bool>,
     /// True while the pane is putting its own text into the buffer —
     /// the changed signal must not read that as an edit.
     suppress: Rc<Cell<bool>>,
@@ -204,9 +236,7 @@ impl Component for EpubEditorModel {
                 set_hexpand: true,
                 set_vexpand: true,
 
-                // The chrome: back, the book, and the review panel's
-                // door with its count. Persistent, not auto-hiding —
-                // this is a work surface, not a reading surface.
+                // Persistent editor chrome, following the deep-editor design.
                 gtk::Box {
                     add_css_class: "kalam-editor-bar",
                     set_orientation: gtk::Orientation::Horizontal,
@@ -223,40 +253,33 @@ impl Component for EpubEditorModel {
                         connect_clicked => EpubEditorMsg::Close,
                     },
 
-                    #[name = "title_label"]
-                    gtk::Label {
-                        add_css_class: "kalam-editor-title",
-                        add_css_class: "kalam-title-serif",
-                        set_label: &model.book_title,
-                        set_halign: gtk::Align::Start,
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
                         set_hexpand: true,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        set_single_line_mode: true,
-                        set_margin_start: 8,
+                        set_halign: gtk::Align::Start,
+                        set_margin_start: 10,
+                        set_valign: gtk::Align::Center,
+
+                        gtk::Label {
+                            add_css_class: "kalam-editor-title",
+                            add_css_class: "kalam-title-serif",
+                            set_label: &model.book_title,
+                            set_halign: gtk::Align::Start,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
+                            set_single_line_mode: true,
+                        },
+                        gtk::Label {
+                            add_css_class: "kalam-editor-subtitle",
+                            set_label: &model.book_subtitle,
+                            set_halign: gtk::Align::Start,
+                        },
                     },
 
-                    #[name = "patches_btn"]
-                    gtk::ToggleButton {
-                        add_css_class: "kalam-editor-patches-btn",
-                        set_tooltip_text: Some("This book's pending edits and the bake"),
-                        #[watch]
-                        set_label: &if model.patches_count == 0 {
-                            "Patches".to_string()
-                        } else {
-                            format!("Patches · {}", model.patches_count)
-                        },
-                        connect_toggled[sender] => move |btn| {
-                            sender.input(EpubEditorMsg::SetPatchesOpen(btn.is_active()));
-                        },
-                    },
-
-                    // The deep-editor source mode: browse EPUB text
-                    // resources and edit one file at a time.
                     #[name = "source_btn"]
                     gtk::ToggleButton {
-                        add_css_class: "kalam-editor-patches-btn",
-                        set_label: "Source",
-                        set_tooltip_text: Some("Browse and edit EPUB XHTML, HTML, and CSS files"),
+                        add_css_class: "kalam-editor-top-button",
+                        set_label: "Deep editor",
+                        set_tooltip_text: Some("Open the EPUB file workspace"),
                         #[watch]
                         set_sensitive: model.view.is_some(),
                         connect_toggled[sender] => move |btn| {
@@ -264,29 +287,31 @@ impl Component for EpubEditorModel {
                         },
                     },
 
-                    #[name = "preview_btn"]
-                    gtk::ToggleButton {
-                        add_css_class: "kalam-editor-patches-btn",
-                        set_label: "Preview",
-                        set_tooltip_text: Some("Preview the current chapter with the selected resource where used"),
-                        #[watch]
-                        set_visible: model.source_open,
-                        connect_toggled[sender] => move |btn| {
-                            sender.input(EpubEditorMsg::SetPreviewOpen(btn.is_active()));
-                        },
+                    #[name = "tools_btn"]
+                    gtk::MenuButton {
+                        add_css_class: "kalam-editor-top-button",
+                        set_label: "Tools",
+                        set_tooltip_text: Some("Review pending edits and editor tools"),
                     },
 
-                    // Cover replacement is temporarily unavailable until
-                    // it has a direct-write path rather than staging a patch.
-                    #[name = "cover_btn"]
+                    #[name = "history_btn"]
+                    gtk::MenuButton {
+                        add_css_class: "kalam-editor-top-button",
+                        set_label: "History",
+                        set_tooltip_text: Some("Restore a previous saved source version"),
+                        #[watch]
+                        set_visible: model.source_open,
+                    },
+
+                    #[name = "save_btn"]
                     gtk::Button {
-                        set_child: Some(&crate::icons::symbolic(
-                            "image-x-generic-symbolic",
-                            16,
-                        )),
-                        add_css_class: "kalam-icon-btn",
-                        set_tooltip_text: Some("Direct cover saving will follow the core editor update"),
+                        add_css_class: "kalam-editor-save-button",
+                        set_label: "Save",
+                        set_tooltip_text: Some("Save this file directly into the EPUB"),
                         set_sensitive: false,
+                        #[watch]
+                        set_visible: model.source_open,
+                        connect_clicked => EpubEditorMsg::SaveSource,
                     },
                 },
 
@@ -300,7 +325,7 @@ impl Component for EpubEditorModel {
                     #[name = "chapter_scroller"]
                     gtk::ScrolledWindow {
                         add_css_class: "kalam-editor-chapters",
-                        set_width_request: 220,
+                        set_width_request: 250,
                         set_hscrollbar_policy: gtk::PolicyType::Never,
                         set_vscrollbar_policy: gtk::PolicyType::Automatic,
 
@@ -334,7 +359,7 @@ impl Component for EpubEditorModel {
                                 set_visible: model.source_open,
 
                                 gtk::Label {
-                                    set_label: "EPUB files",
+                                    set_label: "BOOK FILES",
                                     set_halign: gtk::Align::Start,
                                     set_margin_start: 12,
                                     set_margin_bottom: 6,
@@ -487,6 +512,17 @@ impl Component for EpubEditorModel {
             book_path: path,
             book_hash,
             book_title: title,
+            book_subtitle: book
+                .as_ref()
+                .map(|book| {
+                    if !book.authors.trim().is_empty() {
+                        book.authors.trim().to_string()
+                    } else {
+                        book.series_display()
+                            .unwrap_or_else(|| "EPUB DEEP EDITOR".to_string())
+                    }
+                })
+                .unwrap_or_else(|| "EPUB DEEP EDITOR".to_string()),
             view,
             overlay: None,
             chapter_titles,
@@ -501,10 +537,14 @@ impl Component for EpubEditorModel {
             font_family: None,
             font_px: 17,
             source_open: false,
-            preview_open: false,
+            source_layout: SourceLayout::Split,
+            preview_open: true,
+            preview_as_shipped: true,
+            assets_expanded: false,
+            open_source_tabs: Vec::new(),
             source: None,
             chapter_order: Vec::new(),
-            editable_resources: Vec::new(),
+            editor_resources: Vec::new(),
             selected_resource_href: String::new(),
             resource_list_loaded: false,
             resource_list_error: None,
@@ -514,6 +554,8 @@ impl Component for EpubEditorModel {
         model.sync_chapter_order();
 
         let widgets = view_output!();
+        let tools_popover = build_tools_popover(&model, &sender);
+        widgets.tools_btn.set_popover(Some(&tools_popover));
         if let Some((family, px)) = font_bits {
             model.font_family = family;
             model.font_px = px;
@@ -530,7 +572,14 @@ impl Component for EpubEditorModel {
             // The raw pane is built with the page, once: it is hidden
             // until the Source toggle says, and building it per-open
             // would throw away the buffer's undo stack every time.
-            let pane = build_source_pane(&widgets.source_host, &sender);
+            let pane = build_source_pane(
+                &widgets.source_host,
+                &widgets.save_btn,
+                &widgets.history_btn,
+                model.source_layout,
+                model.preview_as_shipped,
+                &sender,
+            );
             model.source = Some(pane);
 
             wire(view, &sender);
@@ -559,9 +608,12 @@ impl Component for EpubEditorModel {
 
         rebuild_chapter_list(&widgets.chapter_list, &model, &sender);
         rebuild_source_resource_list(&widgets.resource_list, &model, &sender);
+        if let Some(pane) = &model.source {
+            rebuild_source_tabs(&pane.tabs_box, &model, pane, None, &sender);
+        }
         if let Some(path) = model.book_path.clone() {
             let (tx, rx) = async_channel::unbounded::<
-                Result<Vec<engine::EditableResource>, String>,
+                Result<Vec<engine::EditorResource>, String>,
             >();
             let itx = sender.input_sender().clone();
             gtk::glib::spawn_future_local(async move {
@@ -569,7 +621,7 @@ impl Component for EpubEditorModel {
                     let _ = itx.send(EpubEditorMsg::SourceResourcesLoaded(verdict));
                 }
             });
-            engine::load_editable_resources(path, tx);
+            engine::load_editor_resources(path, tx);
         }
         refresh_patches_panel(&model, &widgets.patches_host, &sender);
         // Escape's ladder: a dirty source buffer reverts, a clean
@@ -595,7 +647,7 @@ impl Component for EpubEditorModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
             EpubEditorMsg::Close => {
@@ -627,6 +679,7 @@ impl Component for EpubEditorModel {
                         self.load_source(&sender);
                     } else {
                         self.source_open = false;
+                        root.remove_css_class("kalam-editor-deep");
                         widgets.source_btn.set_active(false);
                     }
                 } else {
@@ -903,7 +956,10 @@ impl Component for EpubEditorModel {
                 }
                 self.source_open = open;
                 if open {
+                    root.add_css_class("kalam-editor-deep");
                     self.load_source(&sender);
+                } else {
+                    root.remove_css_class("kalam-editor-deep");
                 }
             }
             EpubEditorMsg::SourceResourcesLoaded(verdict) => {
@@ -914,16 +970,18 @@ impl Component for EpubEditorModel {
                         if self.selected_resource_href.is_empty() {
                             self.selected_resource_href = resources
                                 .iter()
-                                .find(|resource| resource.spine_index == Some(self.chapter))
-                                .or_else(|| resources.first())
+                                .find(|resource| {
+                                    resource.editable && resource.spine_index == Some(self.chapter)
+                                })
+                                .or_else(|| resources.iter().find(|resource| resource.editable))
                                 .map(|resource| resource.href.clone())
                                 .unwrap_or_default();
                         }
-                        self.editable_resources = resources;
+                        self.editor_resources = resources;
                     }
                     Err(message) => {
                         self.resource_list_error = Some(message.clone());
-                        self.editable_resources.clear();
+                        self.editor_resources.clear();
                         crate::notify::error("Could not list EPUB files", &message);
                     }
                 }
@@ -934,7 +992,7 @@ impl Component for EpubEditorModel {
             }
             EpubEditorMsg::SelectSourceResource(href) => {
                 if href == self.selected_resource_href
-                    || !self.editable_resources.iter().any(|resource| resource.href == href)
+                    || !self.editor_resources.iter().any(|resource| resource.href == href)
                 {
                     return;
                 }
@@ -955,7 +1013,7 @@ impl Component for EpubEditorModel {
                     }
                 }
                 let spine_index = self
-                    .editable_resources
+                    .editor_resources
                     .iter()
                     .find(|resource| resource.href == href)
                     .and_then(|resource| resource.spine_index);
@@ -976,32 +1034,157 @@ impl Component for EpubEditorModel {
                     self.load_source(&sender);
                 }
             }
-            EpubEditorMsg::SetPreviewOpen(open) => {
-                if open == self.preview_open {
+            EpubEditorMsg::SetSourceLayout(layout) => {
+                if self.source_layout == layout {
                     return;
                 }
-                self.preview_open = open;
+                self.source_layout = layout;
+                self.preview_open = layout != SourceLayout::Code;
                 if let Some(pane) = &self.source {
-                    let gen = pane.preview_gen.get() + 1;
-                    pane.preview_gen.set(gen);
-                    pane.preview_box.set_visible(open);
-                    if open && self.source_open && !pane.loading.get() {
+                    apply_source_layout(pane, layout);
+                    let generation = pane.preview_gen.get() + 1;
+                    pane.preview_gen.set(generation);
+                    if self.preview_open && self.source_open && !pane.loading.get() {
                         self.kick_preview(&sender);
                     }
                 }
+            }
+            EpubEditorMsg::SetPreviewAsShipped(as_shipped) => {
+                if self.preview_as_shipped == as_shipped {
+                    return;
+                }
+                self.preview_as_shipped = as_shipped;
+                if let Some(pane) = &self.source {
+                    pane.preview_gen.set(pane.preview_gen.get() + 1);
+                    if self.source_open && self.preview_open {
+                        self.kick_preview(&sender);
+                    }
+                }
+            }
+            EpubEditorMsg::ToggleAssets => {
+                self.assets_expanded = !self.assets_expanded;
+                rebuild_source_resource_list(&widgets.resource_list, self, &sender);
+            }
+            EpubEditorMsg::CloseSourceTab(href) => {
+                let Some(pane) = &self.source else { return };
+                if pane.loading.get() || pane.saving.get() {
+                    crate::notify::info(
+                        "File is busy",
+                        "Wait for the current load or save to finish before closing a file tab.",
+                    );
+                    return;
+                }
+                if href == self.selected_resource_href && source_buffer_is_dirty(pane) {
+                    crate::notify::info(
+                        "Unsaved source",
+                        "Save or revert this file before closing its tab.",
+                    );
+                    return;
+                }
+                let Some(index) = self.open_source_tabs.iter().position(|open| open == &href) else {
+                    return;
+                };
+                self.open_source_tabs.remove(index);
+                if href == self.selected_resource_href {
+                    if let Some(next_href) = self
+                        .open_source_tabs
+                        .get(index.min(self.open_source_tabs.len().saturating_sub(1)))
+                        .cloned()
+                    {
+                        self.selected_resource_href = next_href;
+                        self.load_source(&sender);
+                    } else {
+                        self.selected_resource_href.clear();
+                        pane.suppress.set(true);
+                        pane.buffer.set_text("");
+                        pane.suppress.set(false);
+                        pane.href.borrow_mut().clear();
+                        pane.loaded_text.borrow_mut().clear();
+                        pane.editable.set(false);
+                        update_history_controls(pane);
+                        pane.source_view.set_editable(false);
+                        pane.save_btn.set_sensitive(false);
+                        pane.revert_btn.set_sensitive(false);
+                        pane.chapter_label.set_text("No file open");
+                        pane.syntax_label.set_text("—");
+                        pane.validation_label.set_text("No file open");
+                        pane.footer_status.set_text("Choose an EPUB resource from the file rail");
+                        pane.picture.set_paintable(None::<&gtk::gdk::Paintable>);
+                    }
+                }
+                rebuild_source_tabs(&pane.tabs_box, self, pane, None, &sender);
+                rebuild_source_resource_list(&widgets.resource_list, self, &sender);
+            }
+            EpubEditorMsg::RestorePreviousSavedVersion => {
+                let Some(pane) = &self.source else { return };
+                if pane.loading.get() || pane.saving.get() || pane.stale.get() || !pane.editable.get() {
+                    return;
+                }
+                if source_buffer_is_dirty(pane) {
+                    crate::notify::info(
+                        "Unsaved source",
+                        "Save or revert the current buffer before restoring a saved version.",
+                    );
+                    return;
+                }
+                let current_href = pane.href.borrow().clone();
+                let Some(previous) = pane
+                    .history
+                    .borrow()
+                    .as_ref()
+                    .filter(|(history_href, _)| history_href == &current_href)
+                    .map(|(_, text)| text.clone())
+                else {
+                    return;
+                };
+                pane.suppress.set(true);
+                pane.buffer.set_text(&previous);
+                pane.suppress.set(false);
+                pane.dirty.set(previous != *pane.loaded_text.borrow());
+                pane.save_btn.set_sensitive(pane.dirty.get());
+                pane.revert_btn.set_sensitive(pane.dirty.get());
+                pane.footer_status.set_text("Previous version restored · unsaved");
+                pane.validation_label.set_text("Checks run on Save");
+                rebuild_source_tabs(&pane.tabs_box, self, pane, None, &sender);
+                sender.input(EpubEditorMsg::SourceEdited);
             }
             EpubEditorMsg::SourceEdited => {
                 let Some(pane) = &self.source else { return };
                 if pane.suppress.get() || pane.loading.get() {
                     return;
                 }
-                let dirty = source_text(&pane.buffer) != *pane.loaded_text.borrow();
+                let current_text = source_text(&pane.buffer);
+                let dirty = pane.editable.get() && current_text != *pane.loaded_text.borrow();
+                let dirty_changed = dirty != pane.dirty.get();
                 pane.dirty.set(dirty);
                 pane.save_btn.set_sensitive(dirty && !pane.stale.get());
                 pane.revert_btn.set_sensitive(dirty || pane.stale.get());
+                pane.footer_status.set_text(if dirty {
+                    "Unsaved changes"
+                } else if pane.editable.get() {
+                    "Saved to the EPUB"
+                } else {
+                    "Read-only EPUB resource"
+                });
+                pane.validation_label.set_text(if dirty {
+                    "Checks run on Save"
+                } else {
+                    "Ready"
+                });
+                if dirty {
+                    pane.problems_label.set_text(
+                        "Unsaved edits have not been checked yet. Save validates the resource before writing; a refusal leaves this buffer intact.",
+                    );
+                }
+                update_cursor_status(&pane.buffer, &pane.cursor_label);
+                // The dirty marker changes only once per edit session; don't
+                // rebuild tab widgets on every keystroke.
+                if dirty_changed {
+                    rebuild_source_tabs(&pane.tabs_box, self, pane, Some(dirty), &sender);
+                }
                 let gen = pane.preview_gen.get() + 1;
                 pane.preview_gen.set(gen);
-                if self.preview_open {
+                if self.preview_open && pane.editable.get() {
                     let tx = sender.input_sender().clone();
                     gtk::glib::timeout_add_local_once(
                         std::time::Duration::from_millis(700),
@@ -1023,20 +1206,56 @@ impl Component for EpubEditorModel {
                             self.load_source(&sender);
                             return;
                         }
-                        pane.source_view.set_editable(true);
+                        pane.source_view.set_editable(entry.editable);
+                        pane.editable.set(entry.editable);
+                        let is_css = entry.href.to_ascii_lowercase().ends_with(".css");
+                        for button in &pane.format_buttons {
+                            button.set_sensitive(entry.editable && !is_css);
+                        }
                         pane.suppress.set(true);
                         pane.buffer.set_text(&entry.text);
                         pane.suppress.set(false);
                         *pane.href.borrow_mut() = entry.href.clone();
+                        update_history_controls(pane);
                         *pane.baseline_hash.borrow_mut() = entry.hash.clone();
                         *pane.loaded_text.borrow_mut() = entry.text.clone();
                         pane.preview_chapter.set(entry.preview_chapter);
                         pane.dirty.set(false);
+                        update_cursor_status(&pane.buffer, &pane.cursor_label);
                         pane.stale.set(false);
                         pane.stale_label.set_visible(false);
                         pane.save_btn.set_sensitive(false);
                         pane.revert_btn.set_sensitive(false);
                         pane.chapter_label.set_text(&entry.href);
+                        pane.syntax_label.set_text(resource_syntax(&entry.href));
+                        pane.validation_label.set_text(if entry.editable {
+                            "Ready"
+                        } else {
+                            "Read-only"
+                        });
+                        pane.problems_label.set_text(
+                            "XHTML and CSS safety checks run before a direct write. A refused save keeps the editor buffer open.",
+                        );
+                        pane.footer_status.set_text(if entry.editable {
+                            "Saved to the EPUB"
+                        } else {
+                            "Read-only EPUB resource"
+                        });
+                        if !self.open_source_tabs.contains(&entry.href) {
+                            self.open_source_tabs.push(entry.href.clone());
+                        }
+                        rebuild_source_tabs(&pane.tabs_box, self, pane, Some(false), &sender);
+                        if entry.text.len() <= 1024 * 1024 {
+                            rebuild_outline(&pane.outline_list, &entry.text);
+                        } else {
+                            while let Some(child) = pane.outline_list.first_child() {
+                                pane.outline_list.remove(&child);
+                            }
+                            append_empty_group_message(
+                                &pane.outline_list,
+                                "Outline is paused for resources larger than 1 MiB.",
+                            );
+                        }
                         // Choose source highlighting by the file type.
                         let lower_href = entry.href.to_ascii_lowercase();
                         let lang_id = if lower_href.ends_with(".css") {
@@ -1049,8 +1268,13 @@ impl Component for EpubEditorModel {
                         if let Some(lang) = sourceview5::LanguageManager::new().language(lang_id) {
                             pane.buffer.set_language(Some(&lang));
                         }
-                        if self.preview_open {
+                        if self.preview_open && entry.editable {
                             self.kick_preview(&sender);
+                        } else {
+                            pane.picture.set_paintable(None::<&gtk::gdk::Paintable>);
+                            pane.status_label.set_text(
+                                "Preview is available for XHTML, HTML, and CSS resources.",
+                            );
                         }
                     }
                     Err(toast) => {
@@ -1060,9 +1284,17 @@ impl Component for EpubEditorModel {
                         // the open pane so the user can choose another file.
                         crate::notify::error("Could not open the EPUB file", &toast);
                         let previous_href = pane.href.borrow().clone();
-                        pane.source_view.set_editable(!previous_href.is_empty());
+                        pane.source_view.set_editable(pane.editable.get());
+                        let is_css = previous_href.to_ascii_lowercase().ends_with(".css");
+                        for button in &pane.format_buttons {
+                            button.set_sensitive(pane.editable.get() && !is_css);
+                        }
                         if !previous_href.is_empty() {
-                            self.selected_resource_href = previous_href;
+                            self.selected_resource_href = previous_href.clone();
+                            if !self.open_source_tabs.contains(&previous_href) {
+                                self.open_source_tabs.push(previous_href);
+                            }
+                            rebuild_source_tabs(&pane.tabs_box, self, pane, None, &sender);
                             rebuild_source_resource_list(
                                 &widgets.resource_list,
                                 self,
@@ -1078,6 +1310,13 @@ impl Component for EpubEditorModel {
                 if pane.loading.get() || pane.saving.get() || pane.stale.get() {
                     return;
                 }
+                if !pane.editable.get() {
+                    crate::notify::info(
+                        "Read-only resource",
+                        "Only XHTML, HTML, and CSS files can be saved from the deep editor.",
+                    );
+                    return;
+                }
                 let text = source_text(&pane.buffer);
                 if text == *pane.loaded_text.borrow() {
                     crate::notify::info("Nothing to fix", "The source already says that.");
@@ -1087,6 +1326,7 @@ impl Component for EpubEditorModel {
                 pane.saving.set(true);
                 pane.save_btn.set_sensitive(false);
                 pane.revert_btn.set_sensitive(false);
+                pane.footer_status.set_text("Saving directly to the EPUB…");
                 let href = pane.href.borrow().clone();
                 let baseline = pane.baseline_hash.borrow().clone();
                 *pane.save_attempt.borrow_mut() =
@@ -1130,6 +1370,14 @@ impl Component for EpubEditorModel {
                         else {
                             return;
                         };
+                        // Keep one bounded in-memory restore point; the full,
+                        // timestamped EPUB backup remains the durable history.
+                        let previous = pane.loaded_text.borrow().clone();
+                        let current_href = pane.href.borrow().clone();
+                        *pane.history.borrow_mut() =
+                            (previous.len() <= 8 * 1024 * 1024 && !previous.is_empty())
+                                .then_some((current_href, previous));
+                        update_history_controls(pane);
                         // The worker saved this snapshot of the buffer.
                         // Any typing that raced the write stays dirty.
                         *pane.loaded_text.borrow_mut() = text;
@@ -1137,8 +1385,26 @@ impl Component for EpubEditorModel {
                         self.book_hash = book_hash;
                         let still_dirty = source_text(&pane.buffer) != *pane.loaded_text.borrow();
                         pane.dirty.set(still_dirty);
-                        pane.save_btn.set_sensitive(still_dirty);
+                        pane.save_btn.set_sensitive(still_dirty && pane.editable.get());
                         pane.revert_btn.set_sensitive(still_dirty);
+                        pane.footer_status.set_text(if still_dirty {
+                            "Saved · newer edits remain unsaved"
+                        } else {
+                            "Saved to the EPUB"
+                        });
+                        pane.validation_label.set_text(if still_dirty {
+                            "New edits not checked"
+                        } else {
+                            "Saved"
+                        });
+                        pane.problems_label.set_text(
+                            "The latest direct save completed. Timestamped backup and stale-write checks were applied.",
+                        );
+                        rebuild_source_tabs(&pane.tabs_box, self, pane, Some(still_dirty), &sender);
+                        let visible_text = source_text(&pane.buffer);
+                        if visible_text.len() <= 1024 * 1024 {
+                            rebuild_outline(&pane.outline_list, &visible_text);
+                        }
                         pane.stale.set(false);
                         pane.stale_label.set_visible(false);
                         self.reload(&sender);
@@ -1163,6 +1429,11 @@ impl Component for EpubEditorModel {
                         *pane.save_attempt.borrow_mut() = None;
                         pane.stale.set(true);
                         pane.save_btn.set_sensitive(false);
+                        pane.footer_status.set_text("Stale file · reload before saving");
+                        pane.validation_label.set_text("Stale source");
+                        pane.problems_label.set_text(
+                            "The EPUB changed after this resource loaded. No write was made; revert to reload the current text, then reapply your edit.",
+                        );
                         pane.stale_label.set_visible(true);
                         crate::notify::info(
                             "The EPUB file changed",
@@ -1172,8 +1443,11 @@ impl Component for EpubEditorModel {
                     Err(message) => {
                         *pane.save_attempt.borrow_mut() = None;
                         let dirty = source_buffer_is_dirty(pane);
-                        pane.save_btn.set_sensitive(dirty && !pane.stale.get());
+                        pane.save_btn.set_sensitive(dirty && !pane.stale.get() && pane.editable.get());
                         pane.revert_btn.set_sensitive(dirty || pane.stale.get());
+                        pane.footer_status.set_text("Save refused · your buffer is preserved");
+                        pane.validation_label.set_text("Save refused");
+                        pane.problems_label.set_text(&message);
                         crate::notify::error("Could not save the source edit", &message);
                     }
                 }
@@ -1328,14 +1602,14 @@ impl EpubEditorModel {
         }
         let Some(path) = self.book_path.clone() else { return };
         let Some(resource) = self
-            .editable_resources
+            .editor_resources
             .iter()
             .find(|resource| resource.href == self.selected_resource_href)
         else {
             if let Some(error) = self.resource_list_error.as_deref() {
                 pane.status_label.set_text(error);
             } else if !self.resource_list_loaded {
-                pane.status_label.set_text("Finding editable XHTML, HTML, and CSS files…");
+                pane.status_label.set_text("Finding text, styles, assets, and contents…");
             } else {
                 pane.status_label
                     .set_text("Choose an editable EPUB file from the left-hand list.");
@@ -1347,6 +1621,9 @@ impl EpubEditorModel {
         pane.preview_gen.set(pane.preview_gen.get() + 1);
         pane.picture.set_paintable(None::<&gtk::gdk::Paintable>);
         pane.source_view.set_editable(false);
+        for button in &pane.format_buttons {
+            button.set_sensitive(false);
+        }
         pane.loading.set(true);
         pane.stale.set(false);
         pane.stale_label.set_visible(false);
@@ -1368,11 +1645,18 @@ impl EpubEditorModel {
     /// toggle (immediately) and by the debounce timer (after quiet).
     fn kick_preview(&mut self, sender: &ComponentSender<Self>) {
         let Some(pane) = &self.source else { return };
-        if pane.loading.get() || !self.preview_open || !self.source_open {
+        if pane.loading.get()
+            || !pane.editable.get()
+            || !self.preview_open
+            || !self.source_open
+        {
             return;
         }
         let Some(path) = self.book_path.clone() else { return };
-        let prefs = engine::current_engine_prefs(self.service.catalog());
+        let mut prefs = engine::current_engine_prefs(self.service.catalog());
+        if self.preview_as_shipped {
+            prefs.publisher_styles = true;
+        }
         let fonts_dir = Some(crate::paths::fonts_dir());
         let href = pane.href.borrow().clone();
         let text = source_text(&pane.buffer);
@@ -1531,9 +1815,9 @@ fn rebuild_chapter_list(
     }
 }
 
-/// Rebuild the source-mode file list. Directory labels make the flat,
-/// searchable-by-eye list read like an EPUB tree without hiding files behind
-/// a nested expander. Only editable XHTML/HTML/CSS entries are listed.
+/// Rebuild the source-mode rail as grouped EPUB resources. It deliberately
+/// never exposes Markdown or unknown file types; binary assets are labels,
+/// while the only files that can be saved are XHTML/HTML/CSS.
 fn rebuild_source_resource_list(
     list: &gtk::Box,
     model: &EpubEditorModel,
@@ -1542,13 +1826,13 @@ fn rebuild_source_resource_list(
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
-    if model.editable_resources.is_empty() {
+    if model.editor_resources.is_empty() {
         let message = if let Some(error) = &model.resource_list_error {
             error.as_str()
         } else if model.resource_list_loaded {
-            "This EPUB has no editable XHTML, HTML, or CSS files."
+            "No supported EPUB resources were found."
         } else {
-            "Finding editable EPUB files…"
+            "Scanning EPUB resources…"
         };
         let label = gtk::Label::new(Some(message));
         label.set_wrap(true);
@@ -1562,37 +1846,103 @@ fn rebuild_source_resource_list(
         return;
     }
 
-    let mut last_directory: Option<String> = None;
-    for resource in &model.editable_resources {
-        let (directory, file_name) = resource
-            .href
-            .rsplit_once('/')
-            .unwrap_or(("", resource.href.as_str()));
-        if last_directory.as_deref() != Some(directory) {
-            let label = gtk::Label::new(Some(if directory.is_empty() {
-                "Book root"
-            } else {
-                directory
-            }));
+    append_resource_group(list, model, sender, engine::ResourceGroup::Text, "TEXT");
+    append_resource_group(list, model, sender, engine::ResourceGroup::Styles, "STYLES");
+
+    let asset_count = model
+        .editor_resources
+        .iter()
+        .filter(|resource| resource.group == engine::ResourceGroup::Assets)
+        .count();
+    let assets_button = gtk::Button::with_label(&format!(
+        "IMAGES · FONTS   {}   {}",
+        asset_count,
+        if model.assets_expanded { "⌄" } else { "›" }
+    ));
+    assets_button.add_css_class("kalam-editor-tree-heading-button");
+    assets_button.set_halign(gtk::Align::Fill);
+    assets_button.set_hexpand(true);
+    let tx = sender.input_sender().clone();
+    assets_button.connect_clicked(move |_| {
+        let _ = tx.send(EpubEditorMsg::ToggleAssets);
+    });
+    list.append(&assets_button);
+    if model.assets_expanded {
+        for resource in model
+            .editor_resources
+            .iter()
+            .filter(|resource| resource.group == engine::ResourceGroup::Assets)
+        {
+            let label = gtk::Label::new(Some(&format!("  {}", resource_file_name(&resource.href))));
             label.set_halign(gtk::Align::Start);
             label.set_xalign(0.0);
-            label.set_margin_start(12);
-            label.set_margin_top(10);
-            label.set_margin_bottom(2);
             label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-            label.set_tooltip_text(Some(directory));
-            label.add_css_class("kalam-editor-tree-directory");
+            label.set_tooltip_text(Some(&resource.href));
+            label.add_css_class("kalam-editor-asset");
             list.append(&label);
-            last_directory = Some(directory.to_string());
         }
+        if asset_count == 0 {
+            append_empty_group_message(list, "No image or font assets.");
+        }
+    }
 
-        let button = gtk::Button::with_label(file_name);
+    append_resource_group(
+        list,
+        model,
+        sender,
+        engine::ResourceGroup::Contents,
+        "CONTENTS",
+    );
+}
+
+fn append_resource_group(
+    list: &gtk::Box,
+    model: &EpubEditorModel,
+    sender: &ComponentSender<EpubEditorModel>,
+    group: engine::ResourceGroup,
+    title: &str,
+) {
+    let resources: Vec<_> = model
+        .editor_resources
+        .iter()
+        .filter(|resource| resource.group == group)
+        .collect();
+    let heading = gtk::Label::new(Some(&format!("{title}   {}", resources.len())));
+    heading.set_halign(gtk::Align::Start);
+    heading.set_margin_start(12);
+    heading.set_margin_top(13);
+    heading.set_margin_bottom(4);
+    heading.add_css_class("kalam-editor-tree-heading");
+    list.append(&heading);
+
+    if resources.is_empty() {
+        append_empty_group_message(
+            list,
+            match group {
+                engine::ResourceGroup::Text => "No XHTML or HTML text files.",
+                engine::ResourceGroup::Styles => "No CSS stylesheets.",
+                engine::ResourceGroup::Assets => "No assets.",
+                engine::ResourceGroup::Contents => "No navigation or package files.",
+            },
+        );
+        return;
+    }
+
+    for resource in resources {
+        let mut title = resource_file_name(&resource.href).to_string();
+        if !resource.editable {
+            title.push_str("  ·  read-only");
+        }
+        let button = gtk::Button::with_label(&title);
         button.add_css_class("kalam-editor-resource");
         button.set_halign(gtk::Align::Fill);
         button.set_hexpand(true);
         button.set_tooltip_text(Some(&resource.href));
         if resource.href == model.selected_resource_href {
             button.add_css_class("kalam-editor-resource-selected");
+        }
+        if !resource.editable {
+            button.add_css_class("kalam-editor-resource-readonly");
         }
         let href = resource.href.clone();
         let tx = sender.input_sender().clone();
@@ -1601,6 +1951,20 @@ fn rebuild_source_resource_list(
         });
         list.append(&button);
     }
+}
+
+fn append_empty_group_message(list: &gtk::Box, message: &str) {
+    let label = gtk::Label::new(Some(message));
+    label.set_halign(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_margin_start(14);
+    label.set_margin_top(3);
+    label.add_css_class("kalam-editor-tree-empty");
+    list.append(&label);
+}
+
+fn resource_file_name(href: &str) -> &str {
+    href.rsplit('/').next().unwrap_or(href)
 }
 
 /// Rebuild the review panel inside its host. The panel is the step-5
@@ -1625,16 +1989,16 @@ fn refresh_patches_panel(
     host.append(&panel);
 }
 
-/// Build the raw source pane into its host, once per page. Everything
-/// is imperative: `sourceview5::View` is a subclass of `TextView`,
-/// but the relm4 macro knows the gtk types by name, so the pane is
-/// assembled the way the reader's overlay is — by hand, in init.
-///
-/// The pane starts empty and hidden; `load_source` fills it when the
-/// Source toggle first opens it.
-fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>) -> SourcePane {
-    // The editor: GtkSourceView's buffer and view, XML by default (a
-    // chapter is XHTML; CSS re-targets the language at load).
+/// Build the deep-editor workspace once per page so the GtkSourceView undo
+/// stack and native preview survive source-mode toggles.
+fn build_source_pane(
+    host: &gtk::Box,
+    save_btn: &gtk::Button,
+    history_button: &gtk::MenuButton,
+    layout: SourceLayout,
+    preview_as_shipped: bool,
+    sender: &ComponentSender<EpubEditorModel>,
+) -> SourcePane {
     let buffer = sourceview5::Buffer::new(None);
     if let Some(lang) = sourceview5::LanguageManager::new().language("xml") {
         buffer.set_language(Some(&lang));
@@ -1642,65 +2006,60 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
     let view = sourceview5::View::with_buffer(&buffer);
     view.set_editable(false);
     view.set_show_line_numbers(true);
+    view.set_highlight_current_line(true);
     view.set_monospace(true);
     view.set_tab_width(4);
-    view.set_wrap_mode(gtk::WrapMode::Word);
+    view.set_wrap_mode(gtk::WrapMode::None);
     view.add_css_class("kalam-source-view");
+
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_hexpand(true);
     scroller.set_vexpand(true);
     scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     scroller.set_child(Some(&view));
 
-    // The right-hand native preview: a tall picture of the current
-    // reading-order chapter, scrolled like paper.
-    let picture = gtk::Picture::new();
-    picture.set_can_shrink(true);
-    picture.set_hexpand(true);
-    picture.set_vexpand(true);
-    picture.add_css_class("kalam-source-preview-page");
-    let preview_scroll = gtk::ScrolledWindow::new();
-    preview_scroll.set_hexpand(true);
-    preview_scroll.set_vexpand(true);
-    preview_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-    preview_scroll.set_child(Some(&picture));
-    let status_label = gtk::Label::new(Some(
-        "Native preview of the current chapter; the selected text file is applied where referenced.",
-    ));
-    status_label.set_wrap(true);
-    status_label.set_halign(gtk::Align::Start);
-    status_label.set_xalign(0.0);
-    status_label.add_css_class("kalam-source-status");
-    let preview_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    preview_box.add_css_class("kalam-source-preview");
-    preview_box.set_margin_top(8);
-    preview_box.set_margin_bottom(8);
-    preview_box.set_margin_start(8);
-    preview_box.set_margin_end(8);
-    preview_box.set_size_request(320, -1);
-    preview_box.append(&status_label);
-    preview_box.append(&preview_scroll);
-    preview_box.set_visible(false);
+    let editor_column = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    editor_column.set_hexpand(true);
+    editor_column.set_vexpand(true);
+    editor_column.set_size_request(460, -1);
+    editor_column.add_css_class("kalam-source-editor-column");
 
-    let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    content.set_hexpand(true);
-    content.set_vexpand(true);
-    content.append(&scroller);
-    content.append(&preview_box);
-
-    // The toolbar: Save, Revert, and which entry is open.
-    let save_btn = gtk::Button::with_label("Save");
-    save_btn.add_css_class("suggested-action");
-    save_btn.set_tooltip_text(Some("Store this source as a whole-file edit"));
-    save_btn.set_sensitive(false);
-    {
-        let tx = sender.input_sender().clone();
-        save_btn.connect_clicked(move |_| {
-            let _ = tx.send(EpubEditorMsg::SaveSource);
-        });
+    // Source formatting helpers operate on selected XHTML/HTML text; CSS
+    // remains plain CSS and disables these controls when it is active.
+    let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 5);
+    toolbar.add_css_class("kalam-editor-source-bar");
+    let format_buttons = vec![
+        format_button(&buffer, "B", "<strong>", "</strong>", "Bold / strong"),
+        format_button(&buffer, "I", "<em>", "</em>", "Emphasis"),
+        format_button(&buffer, "↗", "<a href=\"\">", "</a>", "Link"),
+        format_button(&buffer, "H₂", "<h2>", "</h2>", "Heading level 2"),
+        format_button(&buffer, "❝", "<blockquote>", "</blockquote>", "Block quote"),
+    ];
+    for button in &format_buttons {
+        button.set_sensitive(false);
+        toolbar.append(button);
     }
+    let divider = gtk::Separator::new(gtk::Orientation::Vertical);
+    divider.add_css_class("kalam-source-toolbar-divider");
+    toolbar.append(&divider);
+
+    let chapter_label = gtk::Label::new(Some("No file open"));
+    chapter_label.set_halign(gtk::Align::Start);
+    chapter_label.set_xalign(0.0);
+    chapter_label.set_hexpand(true);
+    chapter_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+    chapter_label.set_tooltip_text(Some("Current EPUB resource"));
+    chapter_label.add_css_class("kalam-source-href");
+    toolbar.append(&chapter_label);
+
+    let find_button = gtk::Button::with_label("Find & replace");
+    find_button.add_css_class("kalam-source-toolbar-button");
+    find_button.set_tooltip_text(Some("Search or replace text in the open EPUB file"));
+    toolbar.append(&find_button);
+
     let revert_btn = gtk::Button::with_label("Revert");
-    revert_btn.set_tooltip_text(Some("Throw the edits away and reload this EPUB file"));
+    revert_btn.add_css_class("kalam-source-toolbar-button");
+    revert_btn.set_tooltip_text(Some("Reload the saved EPUB resource"));
     revert_btn.set_sensitive(false);
     {
         let tx = sender.input_sender().clone();
@@ -1708,21 +2067,247 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
             let _ = tx.send(EpubEditorMsg::RevertSource);
         });
     }
-    let chapter_label = gtk::Label::new(None);
-    chapter_label.set_halign(gtk::Align::Start);
-    chapter_label.set_xalign(0.0);
-    chapter_label.set_hexpand(true);
-    chapter_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    chapter_label.add_css_class("kalam-source-href");
-    let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    toolbar.add_css_class("kalam-editor-source-bar");
-    toolbar.append(&save_btn);
     toolbar.append(&revert_btn);
-    toolbar.append(&chapter_label);
 
-    // The stale banner: saves are refused until the pane is reverted.
+    let find_entry = gtk::Entry::new();
+    find_entry.set_hexpand(true);
+    find_entry.set_placeholder_text(Some("Find"));
+    find_entry.set_tooltip_text(Some("Text to find in the open resource"));
+    let replace_entry = gtk::Entry::new();
+    replace_entry.set_hexpand(true);
+    replace_entry.set_placeholder_text(Some("Replace with"));
+    replace_entry.set_tooltip_text(Some("Replacement text"));
+    let find_next_button = gtk::Button::with_label("Find next");
+    let replace_button = gtk::Button::with_label("Replace");
+    let replace_all_button = gtk::Button::with_label("Replace all");
+    let close_find_button = gtk::Button::with_label("×");
+    close_find_button.set_tooltip_text(Some("Close Find & replace"));
+    let find_revealer = gtk::Revealer::new();
+    find_revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
+    find_revealer.set_reveal_child(false);
+    find_revealer.add_css_class("kalam-source-find-revealer");
+    let find_row = gtk::Box::new(gtk::Orientation::Horizontal, 7);
+    find_row.add_css_class("kalam-source-find-row");
+    find_row.append(&find_entry);
+    find_row.append(&replace_entry);
+    find_row.append(&find_next_button);
+    find_row.append(&replace_button);
+    find_row.append(&replace_all_button);
+    find_row.append(&close_find_button);
+    find_revealer.set_child(Some(&find_row));
+    {
+        let revealer = find_revealer.clone();
+        find_button.connect_clicked(move |_| {
+            revealer.set_reveal_child(!revealer.reveals_child());
+        });
+    }
+    {
+        let revealer = find_revealer.clone();
+        close_find_button.connect_clicked(move |_| revealer.set_reveal_child(false));
+    }
+    {
+        let buffer = buffer.clone();
+        let view = view.clone();
+        let entry = find_entry.clone();
+        find_next_button.connect_clicked(move |_| {
+            if !find_source_text(&buffer, &view, entry.text().as_str()) {
+                entry.add_css_class("kalam-source-find-miss");
+            } else {
+                entry.remove_css_class("kalam-source-find-miss");
+            }
+        });
+    }
+    {
+        let buffer = buffer.clone();
+        let view = view.clone();
+        let entry = find_entry.clone();
+        find_entry.connect_activate(move |_| {
+            let _ = find_source_text(&buffer, &view, entry.text().as_str());
+        });
+    }
+    {
+        let buffer = buffer.clone();
+        let find = find_entry.clone();
+        let replace = replace_entry.clone();
+        replace_button.connect_clicked(move |_| {
+            replace_selected_source_text(
+                &buffer,
+                find.text().as_str(),
+                replace.text().as_str(),
+            );
+        });
+    }
+    {
+        let buffer = buffer.clone();
+        let find = find_entry.clone();
+        let replace = replace_entry.clone();
+        replace_all_button.connect_clicked(move |_| {
+            replace_all_source_text(
+                &buffer,
+                find.text().as_str(),
+                replace.text().as_str(),
+            );
+        });
+    }
+
+    let tabs_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    tabs_box.add_css_class("kalam-source-tabs");
+    let tabs_scroll = gtk::ScrolledWindow::new();
+    tabs_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+    tabs_scroll.set_hexpand(true);
+    tabs_scroll.set_child(Some(&tabs_box));
+    editor_column.append(&toolbar);
+    editor_column.append(&find_revealer);
+    editor_column.append(&tabs_scroll);
+    editor_column.append(&scroller);
+
+    // The renderer is Kalam's own engine, never a browser/WebKit view.
+    let picture = gtk::Picture::new();
+    picture.set_can_shrink(true);
+    picture.set_content_fit(gtk::ContentFit::Contain);
+    picture.set_hexpand(true);
+    picture.set_vexpand(true);
+    picture.add_css_class("kalam-source-preview-page");
+    let preview_scroll = gtk::ScrolledWindow::new();
+    preview_scroll.set_hexpand(true);
+    preview_scroll.set_vexpand(true);
+    preview_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    preview_scroll.set_child(Some(&picture));
+    let status_label = gtk::Label::new(Some(
+        "Native Kalam preview of the selected chapter with this resource applied where referenced.",
+    ));
+    status_label.set_wrap(true);
+    status_label.set_halign(gtk::Align::Start);
+    status_label.set_xalign(0.0);
+    status_label.add_css_class("kalam-source-status");
+    let preview_page = gtk::Box::new(gtk::Orientation::Vertical, 7);
+    preview_page.set_hexpand(true);
+    preview_page.set_vexpand(true);
+    preview_page.add_css_class("kalam-source-preview-page-host");
+    let preview_toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    preview_toolbar.add_css_class("kalam-source-preview-toolbar");
+    let preview_mode_label = gtk::Label::new(Some("Appearance"));
+    preview_mode_label.add_css_class("kalam-source-preview-mode-label");
+    let preview_mode = gtk::DropDown::from_strings(&["As the book ships", "As in Kalam"]);
+    preview_mode.set_selected(if preview_as_shipped { 0 } else { 1 });
+    preview_mode.set_tooltip_text(Some(
+        "Compare the publisher's stylesheet settings with Kalam's saved reader settings",
+    ));
+    {
+        let tx = sender.input_sender().clone();
+        preview_mode.connect_selected_notify(move |dropdown| {
+            let _ = tx.send(EpubEditorMsg::SetPreviewAsShipped(dropdown.selected() == 0));
+        });
+    }
+    preview_toolbar.append(&preview_mode_label);
+    preview_toolbar.append(&preview_mode);
+    preview_page.append(&preview_toolbar);
+    preview_page.append(&status_label);
+    preview_page.append(&preview_scroll);
+
+    let preview_box = gtk::Notebook::new();
+    preview_box.set_hexpand(true);
+    preview_box.set_vexpand(true);
+    preview_box.set_size_request(360, -1);
+    preview_box.set_scrollable(true);
+    preview_box.set_show_border(false);
+    preview_box.add_css_class("kalam-source-panels");
+    preview_box.append_page(&preview_page, Some(&gtk::Label::new(Some("Preview"))));
+
+    let outline_list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    outline_list.set_margin_top(12);
+    outline_list.set_margin_bottom(12);
+    outline_list.set_margin_start(12);
+    outline_list.set_margin_end(12);
+    let outline_scroll = gtk::ScrolledWindow::new();
+    outline_scroll.set_hexpand(true);
+    outline_scroll.set_vexpand(true);
+    outline_scroll.set_child(Some(&outline_list));
+    preview_box.append_page(&outline_scroll, Some(&gtk::Label::new(Some("Outline"))));
+
+    let problems_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    problems_page.set_margin_top(18);
+    problems_page.set_margin_start(18);
+    problems_page.set_margin_end(18);
+    let problems_label = gtk::Label::new(Some(
+        "Save validates the resource before replacing anything in the EPUB. If validation or a stale-file check fails, your current buffer stays open.",
+    ));
+    problems_label.set_wrap(true);
+    problems_label.set_halign(gtk::Align::Start);
+    problems_label.set_xalign(0.0);
+    problems_label.add_css_class("kalam-source-panel-copy");
+    problems_page.append(&problems_label);
+    preview_box.append_page(&problems_page, Some(&gtk::Label::new(Some("Problems"))));
+
+    let live_css_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    live_css_page.set_margin_top(18);
+    live_css_page.set_margin_start(18);
+    live_css_page.set_margin_end(18);
+    let live_css_label = gtk::Label::new(Some(
+        "Edit a stylesheet from the Styles group. The native preview applies the selected CSS without writing it until you Save.",
+    ));
+    live_css_label.set_wrap(true);
+    live_css_label.set_halign(gtk::Align::Start);
+    live_css_label.set_xalign(0.0);
+    live_css_label.add_css_class("kalam-source-panel-copy");
+    live_css_page.append(&live_css_label);
+    preview_box.append_page(&live_css_page, Some(&gtk::Label::new(Some("Live CSS"))));
+
+    // A status/footer row keeps cursor position, encoding and view controls
+    // visible without taking editor space.
+    let cursor_label = gtk::Label::new(Some("Ln 1, Col 1"));
+    cursor_label.set_halign(gtk::Align::Start);
+    cursor_label.add_css_class("kalam-source-cursor-status");
+    let syntax_label = gtk::Label::new(Some("—"));
+    syntax_label.add_css_class("kalam-source-encoding");
+    let encoding_label = gtk::Label::new(Some("UTF-8"));
+    encoding_label.add_css_class("kalam-source-encoding");
+    let validation_label = gtk::Label::new(Some("Ready"));
+    validation_label.add_css_class("kalam-source-encoding");
+    validation_label.set_tooltip_text(Some("Structural validation runs before Save"));
+    let footer_status = gtk::Label::new(Some("Choose a file from the EPUB rail"));
+    footer_status.set_halign(gtk::Align::Start);
+    footer_status.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    footer_status.set_hexpand(true);
+    footer_status.add_css_class("kalam-source-footer-status");
+
+    let code_btn = gtk::Button::with_label("Code");
+    let split_btn = gtk::Button::with_label("Split");
+    let preview_btn = gtk::Button::with_label("Preview");
+    for button in [&code_btn, &split_btn, &preview_btn] {
+        button.add_css_class("kalam-source-layout-button");
+    }
+    {
+        let tx = sender.input_sender().clone();
+        code_btn.connect_clicked(move |_| {
+            let _ = tx.send(EpubEditorMsg::SetSourceLayout(SourceLayout::Code));
+        });
+    }
+    {
+        let tx = sender.input_sender().clone();
+        split_btn.connect_clicked(move |_| {
+            let _ = tx.send(EpubEditorMsg::SetSourceLayout(SourceLayout::Split));
+        });
+    }
+    {
+        let tx = sender.input_sender().clone();
+        preview_btn.connect_clicked(move |_| {
+            let _ = tx.send(EpubEditorMsg::SetSourceLayout(SourceLayout::Preview));
+        });
+    }
+    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 9);
+    footer.add_css_class("kalam-source-footer");
+    footer.append(&cursor_label);
+    footer.append(&syntax_label);
+    footer.append(&encoding_label);
+    footer.append(&validation_label);
+    footer.append(&footer_status);
+    footer.append(&code_btn);
+    footer.append(&split_btn);
+    footer.append(&preview_btn);
+
     let stale_label = gtk::Label::new(Some(
-        "This EPUB file changed after the pane loaded it. Revert to load the current text, then make the edit again.",
+        "This EPUB file changed after it loaded. Revert to read the current version, then reapply your edit.",
     ));
     stale_label.set_wrap(true);
     stale_label.set_halign(gtk::Align::Start);
@@ -1730,12 +2315,51 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
     stale_label.add_css_class("kalam-source-stale");
     stale_label.set_visible(false);
 
-    host.append(&toolbar);
-    host.append(&stale_label);
-    host.append(&content);
+    let workspace = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    workspace.set_hexpand(true);
+    workspace.set_vexpand(true);
+    workspace.add_css_class("kalam-source-workspace");
+    workspace.append(&editor_column);
+    workspace.append(&preview_box);
 
-    // The buffer's own loads are suppressed; a hand edit is the only
-    // thing that reads as one.
+    host.append(&stale_label);
+    host.append(&workspace);
+    host.append(&footer);
+
+    let history_popover = gtk::Popover::new();
+    history_popover.add_css_class("kalam-source-history-popover");
+    let history_body = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    history_body.set_margin_top(12);
+    history_body.set_margin_bottom(12);
+    history_body.set_margin_start(12);
+    history_body.set_margin_end(12);
+    let history_title = gtk::Label::new(Some("Saved versions"));
+    history_title.set_halign(gtk::Align::Start);
+    history_title.add_css_class("kalam-source-history-title");
+    let history_note = gtk::Label::new(Some(
+        "Save a file to keep a restore point here. Each save also creates a timestamped EPUB backup beside the book.",
+    ));
+    history_note.set_wrap(true);
+    history_note.set_halign(gtk::Align::Start);
+    history_note.set_xalign(0.0);
+    history_note.add_css_class("kalam-source-panel-copy");
+    let history_restore_btn = gtk::Button::with_label("Restore previous saved text");
+    history_restore_btn.set_sensitive(false);
+    history_body.append(&history_title);
+    history_body.append(&history_note);
+    history_body.append(&history_restore_btn);
+    history_popover.set_child(Some(&history_body));
+    history_button.set_popover(Some(&history_popover));
+    history_button.set_sensitive(false);
+    {
+        let tx = sender.input_sender().clone();
+        let popover = history_popover.clone();
+        history_restore_btn.connect_clicked(move |_| {
+            let _ = tx.send(EpubEditorMsg::RestorePreviousSavedVersion);
+            popover.popdown();
+        });
+    }
+
     let suppress = Rc::new(Cell::new(false));
     {
         let sup = suppress.clone();
@@ -1746,17 +2370,40 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
             }
         });
     }
+    {
+        let cursor_label = cursor_label.clone();
+        buffer.connect_cursor_position_notify(move |buffer| {
+            update_cursor_status(buffer, &cursor_label);
+        });
+    }
 
-    SourcePane {
+    let pane = SourcePane {
         buffer,
         source_view: view,
-        picture,
         preview_box,
+        editor_column,
+        picture,
         status_label,
         stale_label,
         chapter_label,
-        save_btn,
+        save_btn: save_btn.clone(),
         revert_btn,
+        tabs_box,
+        cursor_label,
+        footer_status,
+        syntax_label,
+        validation_label,
+        problems_label,
+        outline_list,
+        code_btn,
+        split_btn,
+        preview_btn,
+        format_buttons,
+        history_button: history_button.clone(),
+        history_restore_btn,
+        history_note,
+        history: RefCell::new(None),
+        editable: Cell::new(false),
         suppress,
         loading: Cell::new(false),
         saving: Cell::new(false),
@@ -1768,7 +2415,290 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
         loaded_text: RefCell::new(String::new()),
         preview_chapter: Cell::new(0),
         save_attempt: RefCell::new(None),
+    };
+    apply_source_layout(&pane, layout);
+    update_cursor_status(&pane.buffer, &pane.cursor_label);
+    pane
+}
+
+fn format_button(
+    buffer: &sourceview5::Buffer,
+    title: &str,
+    opening: &'static str,
+    closing: &'static str,
+    tooltip: &str,
+) -> gtk::Button {
+    let button = gtk::Button::with_label(title);
+    button.add_css_class("kalam-source-format-button");
+    button.set_tooltip_text(Some(tooltip));
+    let buffer = buffer.clone();
+    button.connect_clicked(move |_| wrap_source_selection(&buffer, opening, closing));
+    button
+}
+
+fn wrap_source_selection(buffer: &sourceview5::Buffer, opening: &str, closing: &str) {
+    let Some((mut start, mut end)) = buffer.selection_bounds() else {
+        return;
+    };
+    let selected = buffer.text(&start, &end, false).to_string();
+    buffer.begin_user_action();
+    buffer.delete(&mut start, &mut end);
+    buffer.insert(&mut start, &format!("{opening}{selected}{closing}"));
+    buffer.end_user_action();
+}
+
+fn find_source_text(buffer: &sourceview5::Buffer, view: &sourceview5::View, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
     }
+    let flags = gtk::TextSearchFlags::TEXT_ONLY;
+    let cursor = buffer.iter_at_offset(buffer.cursor_position());
+    let found = cursor
+        .forward_search(needle, flags, None)
+        .or_else(|| buffer.start_iter().forward_search(needle, flags, None));
+    let Some((start, end)) = found else {
+        return false;
+    };
+    buffer.select_range(&end, &start);
+    let mut scroll_to = start;
+    view.scroll_to_iter(&mut scroll_to, 0.15, false, 0.0, 0.0);
+    true
+}
+
+fn replace_selected_source_text(buffer: &sourceview5::Buffer, needle: &str, replacement: &str) {
+    if needle.is_empty() {
+        return;
+    }
+    let Some((mut start, mut end)) = buffer.selection_bounds() else {
+        return;
+    };
+    if buffer.text(&start, &end, false).as_str() != needle {
+        return;
+    }
+    buffer.begin_user_action();
+    buffer.delete(&mut start, &mut end);
+    buffer.insert(&mut start, replacement);
+    buffer.end_user_action();
+}
+
+fn replace_all_source_text(buffer: &sourceview5::Buffer, needle: &str, replacement: &str) {
+    if needle.is_empty() {
+        return;
+    }
+    let mut scan_offset = 0;
+    let mut replaced = 0;
+    buffer.begin_user_action();
+    loop {
+        let search_from = buffer.iter_at_offset(scan_offset);
+        let Some((mut start, mut end)) =
+            search_from.forward_search(needle, gtk::TextSearchFlags::TEXT_ONLY, None)
+        else {
+            break;
+        };
+        let match_offset = start.offset();
+        buffer.delete(&mut start, &mut end);
+        buffer.insert(&mut start, replacement);
+        scan_offset = match_offset + replacement.chars().count() as i32;
+        replaced += 1;
+        if scan_offset > buffer.char_count() {
+            break;
+        }
+    }
+    buffer.end_user_action();
+    if replaced > 0 {
+        log::debug!("replaced {replaced} source occurrences");
+    }
+}
+
+fn apply_source_layout(pane: &SourcePane, layout: SourceLayout) {
+    pane.editor_column.set_visible(layout != SourceLayout::Preview);
+    pane.preview_box.set_visible(layout != SourceLayout::Code);
+    set_layout_button_active(&pane.code_btn, layout == SourceLayout::Code);
+    set_layout_button_active(&pane.split_btn, layout == SourceLayout::Split);
+    set_layout_button_active(&pane.preview_btn, layout == SourceLayout::Preview);
+}
+
+fn set_layout_button_active(button: &gtk::Button, active: bool) {
+    if active {
+        button.add_css_class("kalam-source-layout-active");
+    } else {
+        button.remove_css_class("kalam-source-layout-active");
+    }
+}
+
+fn resource_syntax(href: &str) -> &'static str {
+    let lower = href.to_ascii_lowercase();
+    if lower.ends_with(".css") {
+        "CSS"
+    } else if lower.ends_with(".html") || lower.ends_with(".htm") {
+        "HTML"
+    } else if lower.ends_with(".xhtml") {
+        "XHTML"
+    } else {
+        "XML"
+    }
+}
+
+fn update_cursor_status(buffer: &sourceview5::Buffer, label: &gtk::Label) {
+    let iter = buffer.iter_at_offset(buffer.cursor_position());
+    label.set_text(&format!("Ln {}, Col {}", iter.line() + 1, iter.line_offset() + 1));
+}
+
+fn rebuild_source_tabs(
+    tabs: &gtk::Box,
+    model: &EpubEditorModel,
+    pane: &SourcePane,
+    current_dirty: Option<bool>,
+    sender: &ComponentSender<EpubEditorModel>,
+) {
+    while let Some(child) = tabs.first_child() {
+        tabs.remove(&child);
+    }
+    for href in &model.open_source_tabs {
+        let active = href == &model.selected_resource_href;
+        let dirty = active
+            && current_dirty.unwrap_or_else(|| source_buffer_is_dirty(pane));
+        let mut title = resource_file_name(href).to_string();
+        if dirty {
+            title.insert_str(0, "● ");
+        }
+        let button = gtk::Button::with_label(&title);
+        button.add_css_class("kalam-source-file-tab");
+        if active {
+            button.add_css_class("kalam-source-file-tab-active");
+        }
+        if dirty {
+            button.add_css_class("kalam-source-file-tab-dirty");
+        }
+        button.set_tooltip_text(Some(href));
+        let select_href = href.clone();
+        let tx = sender.input_sender().clone();
+        button.connect_clicked(move |_| {
+            let _ = tx.send(EpubEditorMsg::SelectSourceResource(select_href.clone()));
+        });
+        let close = gtk::Button::with_label("×");
+        close.add_css_class("kalam-source-file-tab-close");
+        close.set_tooltip_text(Some("Close file tab"));
+        let close_href = href.clone();
+        let tx = sender.input_sender().clone();
+        close.connect_clicked(move |_| {
+            let _ = tx.send(EpubEditorMsg::CloseSourceTab(close_href.clone()));
+        });
+        let tab = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        tab.add_css_class("kalam-source-file-tab-row");
+        tab.append(&button);
+        tab.append(&close);
+        tabs.append(&tab);
+    }
+}
+
+fn rebuild_outline(list: &gtk::Box, text: &str) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+    let mut headings = Vec::new();
+    for line in text.lines() {
+        let lower = line.to_ascii_lowercase();
+        let Some(start) = lower.find("<h") else { continue };
+        let Some(level) = lower[start + 2..]
+            .chars()
+            .next()
+            .and_then(|digit| digit.to_digit(10))
+            .filter(|level| (1..=6).contains(level))
+        else {
+            continue;
+        };
+        let Some(open_end) = line[start..].find('>') else { continue };
+        let content_start = start + open_end + 1;
+        let closing = format!("</h{level}");
+        let content_end = lower[content_start..]
+            .find(&closing)
+            .map(|offset| content_start + offset)
+            .unwrap_or(line.len());
+        let heading = strip_markup(&line[content_start..content_end]);
+        if !heading.trim().is_empty() {
+            headings.push((level, heading.trim().to_string()));
+        }
+    }
+    if headings.is_empty() {
+        append_empty_group_message(list, "No headings in the current resource.");
+        return;
+    }
+    for (level, title) in headings {
+        let label = gtk::Label::new(Some(&format!("{}{}", "  ".repeat(level as usize - 1), title)));
+        label.set_halign(gtk::Align::Start);
+        label.set_xalign(0.0);
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        label.add_css_class("kalam-source-outline-item");
+        list.append(&label);
+    }
+}
+
+fn strip_markup(text: &str) -> String {
+    let mut output = String::new();
+    let mut inside_tag = false;
+    for ch in text.chars() {
+        match ch {
+            '<' => inside_tag = true,
+            '>' => inside_tag = false,
+            _ if !inside_tag => output.push(ch),
+            _ => {}
+        }
+    }
+    output
+}
+
+fn update_history_controls(pane: &SourcePane) {
+    let current_href = pane.href.borrow().clone();
+    let available = pane.editable.get()
+        && pane
+            .history
+            .borrow()
+            .as_ref()
+            .is_some_and(|(history_href, _)| history_href == &current_href);
+    pane.history_button.set_sensitive(available);
+    pane.history_restore_btn.set_sensitive(available);
+    if available {
+        pane.history_note.set_text(
+            "Restore the previous saved source text. The timestamped EPUB backup is also kept beside the book.",
+        );
+    } else {
+        pane.history_note.set_text(
+            "No in-app restore point is available for this file. Timestamped EPUB backups are kept beside the book after saves.",
+        );
+    }
+}
+
+fn build_tools_popover(
+    model: &EpubEditorModel,
+    sender: &ComponentSender<EpubEditorModel>,
+) -> gtk::Popover {
+    let popover = gtk::Popover::new();
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 5);
+    body.set_margin_top(8);
+    body.set_margin_bottom(8);
+    body.set_margin_start(8);
+    body.set_margin_end(8);
+    let patches = gtk::Button::with_label(&format!(
+        "Review pending patches · {}",
+        model.patches_count
+    ));
+    patches.set_halign(gtk::Align::Fill);
+    let tx = sender.input_sender().clone();
+    let pop = popover.clone();
+    patches.connect_clicked(move |_| {
+        let _ = tx.send(EpubEditorMsg::SetPatchesOpen(true));
+        pop.popdown();
+    });
+    let cover = gtk::Button::with_label("Replace cover");
+    cover.set_tooltip_text(Some(
+        "Cover writes are disabled until the direct-save safety path supports them",
+    ));
+    cover.set_sensitive(false);
+    body.append(&patches);
+    body.append(&cover);
+    popover.set_child(Some(&body));
+    popover
 }
 
 /// The buffer's whole text. `TextBuffer::text` wants bounds, and a

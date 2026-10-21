@@ -20,8 +20,7 @@ it receives. The full app integration is in
 `DrawingArea` wrapper. Opening is synchronous and performs archive/package
 loading; call it on the GTK thread because it constructs GTK objects. Chapter
 layout and image loading continue as the widget draws the book. `ReaderOptions`
-controls host-font scanning, additional font files, the cache budget and
-Kalam's virtual EPUB-entry filter.
+controls host-font scanning, additional font files and the cache budget.
 
 ```rust,ignore
 let prefs = kalam_reader::KalamPrefs::default();
@@ -58,7 +57,6 @@ application database.
   characters return no results; results are capped at 500.
 - Internal links and footnotes through `connect_note`; external links through
   `connect_external_link`; image taps through `connect_image_tap`.
-- Proofreading mode and paragraph-tap notifications for a host editor.
 - Reader preferences for theme, font, line height, column width, justification,
   hyphenation and publisher styles.
 - Bundled reader fonts, optional host-font scanning, and optional extra fonts
@@ -75,17 +73,12 @@ underline; `connect_word_tap()` and `connect_word_hover()` report interactions
 with those marked terms. Kalam uses selection and an explicit Dictionary action
 for ordinary word and phrase lookup.
 
-## Persistence and patch filters
+## Persistence
 
 The widget does not persist progress, highlights, bookmarks or preferences.
 The host saves the `chapter` and `fraction` from `connect_position()` and may
 also store a locator for more durable text-based restoration. The host owns all
 highlight ids and rows.
-
-`ReaderOptions::entry_filter` lets a host transform EPUB entry bytes in memory
-before the reader parses them. Kalam uses it to render pending text patches
-without changing the EPUB file. Applying patches to disk is a separate host
-operation.
 
 ## Dependencies
 

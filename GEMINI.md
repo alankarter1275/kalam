@@ -6,8 +6,8 @@
   longer supports.
 - For substantial or user-visible work, write a focused plan, identify the
   affected code and tests, and resolve important behavior questions before
-  implementation. In particular, do not implement the KAL-5 EPUB editor
-  overhaul until its behavior has been discussed and approved.
+  implementation. KAL-5's EPUB content editor is deferred and removed; do not
+  implement or mock up a replacement unless the owner explicitly reopens it.
 - Keep active guidance in current documents. Clearly label archived research,
   issue logs and conversation records as historical; do not present them as
   current implementation status.

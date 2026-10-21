@@ -12,6 +12,6 @@ usable without online content sources. Optional metadata lookup can query Open
 Library and Google Books. Remote browsing, source plugins and downloads remain
 unimplemented and are kept separate from core reading and library features.
 
-For tracked issue status, see [`Issues.md`](../Issues.md). The current KAL-5
-EPUB editor proposal is in the repository-root [`plan.md`](../plan.md) and is
-not implementation authorization.
+For tracked issue status, see [`Issues.md`](../Issues.md). KAL-5's EPUB content
+editor is currently removed and deferred; [`plan.md`](../plan.md) records that
+scope decision rather than authorizing implementation.

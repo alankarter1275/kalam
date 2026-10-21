@@ -47,14 +47,16 @@ changing the threading model.
 The workspace's `crates/chapbook-*` libraries and `crates/kalam-reader` are
 local workspace members; see the root `Cargo.toml` for the current member list.
 
-## EPUB editing
+## EPUB content editing
 
-The editor in `src/pages/epub_editor.rs` stages guarded text and cover patches.
-Applying selected patches is background work: it bakes the changes, keeps a
-pristine `.orig` backup, updates the EPUB content hash and reindexes the book.
-This is distinct from arbitrary-file editing or a full EPUB archive IDE. The
-KAL-5 editor overhaul remains in the backlog; consult `plan.md` before changing
-its proposed behavior.
+The EPUB content editor has been removed and deferred. There are no reader
+inline-edit controls, Deep Editor/source entry point, standalone editor,
+picker/navigation route or pending-edit review UI. Do not resume implementation
+or mockups unless the owner explicitly reopens the work. If reopened, edit
+HTML/XHTML and CSS directly; Markdown support and conversion are out of scope.
+Book metadata editing and annotations are unrelated and remain available.
+Legacy patch data is retained only for compatibility with older databases and
+sidecars; the app does not create, apply, render or review it.
 
 ## Library storage
 

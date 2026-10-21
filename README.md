@@ -15,15 +15,13 @@ GTK4 and Relm4.
   Word Memory term opens its word card; ordinary words are looked up by
   selecting them or using the reader's Dictionary action.
 - Manage tags, shelves, reading lists, ratings, metadata and library folders.
-- Review and edit EPUB paragraphs, edit chapter source, and manage pending
-  edits. Edits are stored as patches and can be applied to the EPUB.
 - Use Open Library and Google Books when fetching metadata. Reading and library
   features do not require those services.
 
-The EPUB editor is patch-based, not a full Calibre-style IDE. Applying
-selected patches bakes the EPUB and keeps a pristine `.orig` backup. A full
-archive file manager, arbitrary-file editing, a visual TOC editor and saved
-searches are not implemented. The KAL-5 editor overhaul is in the backlog.
+EPUB content editing is currently removed. The reader, library and navigation
+no longer expose the editor or pending-edit review workflow. If content editing
+is revisited later, its scope is XHTML/HTML and CSS edited directly; Markdown
+support and Markdown conversion are out of scope.
 
 Online browsing and downloads have placeholder UI and queue code, but there is
 no registered content source. Those routes do not provide working source
@@ -32,12 +30,12 @@ browsing or downloads.
 ## Build and run
 
 Kalam requires Linux, Rust, GTK 4.16 or newer, libadwaita 0.9, Relm4 0.11,
-GtkSourceView 5, and the native libraries needed by MuPDF and OCR.
+the native libraries needed by MuPDF and OCR.
 
 On Arch Linux:
 
 ```bash
-sudo pacman -S --needed rust gtk4 libadwaita gtksourceview5 base-devel pkgconf
+sudo pacman -S --needed rust gtk4 libadwaita base-devel pkgconf
 ```
 
 Build and run the app:
@@ -85,9 +83,10 @@ not the folder name, identifies each book. Kalam renames a folder when its
 book's title or author changes.
 
 `kalam.json` is a per-book backup snapshot containing metadata, tags, reading
-position, annotations and EPUB edit patches. Reader progress is saved to the
-database; page turns do not rewrite the sidecar. Metadata, annotation,
-bookmark and patch changes refresh it.
+position, annotations and any legacy EPUB edit history from older versions.
+Reader progress is saved to the database; page turns do not rewrite the sidecar.
+Metadata, annotation and bookmark changes refresh it. The current app no longer
+creates or applies EPUB edit patches.
 
 A library folder can be copied to another machine and opened from **Settings →
 Storage → Libraries**. The cache can be rebuilt and does not need to be copied.
@@ -101,23 +100,17 @@ visually marked and can be tapped to open their saved word card.
 `Ctrl+F` opens whole-book search in the EPUB reader. The dictionary card's
 magnifier highlights occurrences of its word in the current chapter.
 
-The EPUB editor supports paragraph proofreading, raw chapter-source editing,
-chapter ordering and staged cover replacement. Its edits remain pending until
-they are applied. It does not edit arbitrary files in an EPUB archive.
-
 ## Workspace map
 
 ```text
 src/                         Kalam app
   pages/reader/              EPUB reader and reader UI
   pages/pdf_reader.rs        PDF reader UI
-  pages/epub_editor.rs       patch-based EPUB editor
-  pages/editor_picker.rs     editor entry page
   db.rs, db/                 SQLite catalog and migrations
   service.rs                 screen data snapshots
   tasks.rs                   background tasks
-  epub_patches.rs            guarded EPUB edit patches
   sidecar.rs                 per-book JSON snapshots
+  epub_sanitizer.rs          general EPUB import sanitization
   paths.rs, folders.rs       library and readable book paths
 
 crates/kalam-reader/         GTK widget embedded by Kalam

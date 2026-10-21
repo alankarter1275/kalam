@@ -12,7 +12,6 @@ The job runs `docs/ci/screenshot.sh` with 139 synthetic books for each route:
 |---|---|
 | `read-1` | The EPUB reader with the first seeded EPUB. |
 | `tasks` | The task manager's current empty/idle state. |
-| `editor` | The EPUB editor picker with seeded books. |
 
 The seeder writes real EPUBs and covers under readable author/title folders
 with short-id suffixes. It creates a minimal schema-version-1 catalog; Kalam
@@ -35,7 +34,6 @@ The job commits text reports to:
 
 - `ci-logs/reader-latest.txt`
 - `ci-logs/tasks-latest.txt`
-- `ci-logs/editor-latest.txt`
 
 The report includes route checks, timing spans, main-loop stalls, pixel
 samples, screenshot fingerprints, app output and peak RSS. PNG images and
@@ -53,7 +51,7 @@ exit means the route is not proven.
 `docs/ci/check-shot.py` reports the percentage of strongly coloured pixels and
 non-black pixels. The seeded covers are saturated and their placeholders are
 grey, so colour is a rough cover-loading proxy **only for a library-grid
-screenshot**. Reader, tasks and editor pages can legitimately contain little
+screenshot**. Reader and task-manager pages can legitimately contain little
 colour; a low colour percentage on those routes does not mean covers failed.
 The script reports measurements and does not set a pass threshold.
 

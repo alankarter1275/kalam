@@ -460,7 +460,7 @@ fi
 say ""
 say "=== screenshot pixel sample ==="
 # Strong colour is a rough cover-loading proxy only for a library-grid route.
-# On reader, tasks or editor routes the percentage is descriptive, not a pass
+# On reader or tasks routes the percentage is descriptive, not a pass
 # or failure signal.
 say "  low colour is a cover warning only on a seeded library-grid route."
 python3 docs/ci/check-shot.py "$OUT"/0*.png 2>&1 | tee -a "$REPORT" \

@@ -16,8 +16,6 @@ Useful paths:
 - `src/pages/pdf_reader.rs`, `src/pdf.rs` — PDF UI and MuPDF adapter.
 - `src/pages/comics_reader/`, `src/comics.rs` — CBZ/CBR reader and archive
   handling.
-- `src/pages/epub_editor.rs`, `src/epub_patches.rs`, `src/epub_writer.rs` —
-  patch-based EPUB editor and file operations.
 - `src/db.rs`, `src/db/`, `src/service.rs` — catalog, migrations and page
   snapshots.
 - `crates/kalam-reader/` — GTK EPUB reader widget.
@@ -44,9 +42,9 @@ chrome, database writes, dictionary cards, highlights and bookmarks.
 - Highlight positions use the reader's locator data when available. Older
   annotation rows can remain visible in the annotations list without being
   placeable on the current page.
-- Pending EPUB patches are supplied through the reader's entry filter. Applying
-  selected patches is a separate background bake that keeps a pristine `.orig`
-  backup, updates the content hash and reindexes the book.
+- EPUB content editing and its pending-edit review workflow are removed. Old
+  patch records remain only as compatibility data in the database and sidecar;
+  current code does not apply or render them.
 
 See [`INTEGRATION.md`](INTEGRATION.md) for callback and persistence details.
 
@@ -73,10 +71,10 @@ The CI workflow is `.github/workflows/ci.yml`; its actual checks and smoke-test
 limits are described in [`docs/ci/README.md`](../ci/README.md). Local build
 availability depends on the machine's Rust toolchain and GTK dependencies.
 
-## Planning KAL-5
+## EPUB content editing
 
-The existing EPUB editor is usable as a patch-based feature surface, but the
-KAL-5 redesign is still in Backlog. Its interaction and save behavior require
-discussion before implementation. The active proposal is in the repository
-root [`plan.md`](../../plan.md); do not use the archived engine plan as current
-KAL-5 requirements.
+The former EPUB editor has been removed from the reader, library and app
+navigation. Do not implement or mock up an editor unless the owner reopens the
+work. If reopened, edit HTML/XHTML and CSS directly; do not add Markdown
+support or Markdown conversion. Book metadata editing and annotations are
+separate features and remain in scope.

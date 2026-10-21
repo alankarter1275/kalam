@@ -9,7 +9,8 @@ when they change.
 - SQLite is the source of truth for catalog and reading state.
 - A book's `kalam.json` is a portable backup snapshot, not a live database.
   Reader progress is written to SQLite; page turns do not refresh the sidecar.
-  Metadata, annotation, bookmark and EPUB-patch changes refresh it.
+  Metadata, annotation and bookmark changes refresh it. Legacy EPUB patch
+  fields are preserved for older data but are not active edit state.
 - Keep database migrations and persistence changes covered by tests. Do not
   describe the sidecar as synchronizing after every database update.
 
@@ -34,7 +35,7 @@ when they change.
   code has not yet reached zero.
 - Do not weaken or raise a guardrail budget to accommodate new violations.
   When removing violations, lower the corresponding limit.
-- Add focused tests for changed persistence, parsing and patch behavior. Use
+- Add focused tests for changed persistence, parsing and compatibility behavior. Use
   `cargo test --workspace --all-targets` for workspace coverage and
   `cargo clippy --workspace --all-targets -- -D warnings` for linting when a
   Rust toolchain is available.

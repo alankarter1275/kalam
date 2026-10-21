@@ -3,13 +3,14 @@
 Kalam embeds `kalam-reader::ReaderView` for reflowable EPUB reading. Fixed-layout
 EPUBs are rejected by the current reader. The widget handles layout, rendering,
 pagination, selection and reader-level events. The app owns navigation chrome,
-catalog persistence, dictionary UI, annotations, bookmarks and editing flows.
+catalog persistence, dictionary UI, annotations and bookmarks. EPUB content
+editing is currently removed.
 
 ## Main integration points
 
 | Concern | Current implementation |
 |---|---|
-| Open an EPUB | `src/pages/reader/engine.rs::open_engine` builds preferences and `ReaderOptions`, installs the pending-patch entry filter when needed, then calls `ReaderView::open`. |
+| Open an EPUB | `src/pages/reader/engine.rs::open_engine` builds preferences and `ReaderOptions`, then calls `ReaderView::open`. |
 | Connect events | `src/pages/reader/engine.rs::wire` forwards reader callbacks as `ReaderMsg` values. |
 | Host widget | `src/pages/reader/mod.rs` embeds `view.widget()` in the reader overlay and owns app chrome. |
 | Close a book | The reader page calls `ReaderView::close()` when replacing or shutting down the reader view. |
@@ -28,10 +29,9 @@ rendering use its own reader machinery.
 |---|---|
 | `connect_position` | Stores the current chapter index and fraction in the SQLite reading-progress row. |
 | `connect_selection` | Drives the selection chip and actions. Ordinary dictionary lookup starts from an explicit Dictionary action, not a generic word tap. |
-| `connect_selection_moved` | Keeps the selection chip and paragraph editor anchored as layout or scrolling moves the selection. |
+| `connect_selection_moved` | Keeps the host's selection-action anchor current as layout and scrolling move the selected text. |
 | `connect_word_tap` / `connect_word_hover` | Handles terms previously supplied through `set_word_memory`; these are Word Memory interactions. |
 | `connect_highlight_tap` | Opens the app's actions for an existing annotation. |
-| `connect_paragraph_tap` | Opens the inline paragraph editor while proofreading is enabled. |
 | `connect_note` | Shows an in-place footnote/note card and lets the reader follow the link from that card. |
 | `connect_external_link` | Launches supported HTTP and HTTPS links through GTK. |
 | `connect_image_tap` | Opens the image lightbox. |
@@ -47,8 +47,9 @@ callback.
 Reading position is stored as `(chapter_index, fraction)` in SQLite. The engine
 can also produce a layered text locator for durable position restoration, but
 page-turn progress writes do not refresh `kalam.json` on every turn. The
-sidecar is a backup snapshot refreshed by supported metadata, annotation,
-bookmark and patch changes.
+sidecar is a backup snapshot refreshed by supported metadata, annotation and
+bookmark changes. Legacy edit-patch records are preserved only for compatibility
+with data written by older versions; they are not applied or reviewed.
 
 Kalam stores annotations in its database. `LibraryService::reader(book_id)`
 loads every annotation for the book into the reader snapshot. New engine
@@ -63,14 +64,13 @@ The bubble strip can retain lightweight entries for several books. It mounts one
 primary reader and, when split mode is active, one second reader side by side.
 Only those two reader widgets are active at once.
 
-## EPUB edit patches
+## EPUB content editing
 
-Pending patches are passed to the reader through `ReaderOptions::entry_filter`.
-The filter applies them in memory when the EPUB entries are parsed; it does not
-write to the archive. Applying selected patches is a separate background task
-that bakes the EPUB, keeps a pristine `.orig` backup, updates its content hash
-and reindexes the book. Source edits are guarded patches, not direct
-arbitrary-file saves.
+The reader's inline-edit controls, Deep Editor/source entry point, standalone
+editor, picker/navigation entry and pending-edit review UI have been removed.
+There is no in-app route to edit EPUB content. If editing is reopened later, the
+scope is HTML/XHTML and CSS edited directly; Markdown support or conversion is
+out of scope.
 
 ## Scope boundary
 

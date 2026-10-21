@@ -1,8 +1,8 @@
 # Manual test checklist
 
 Use this checklist for the current app. It covers the main user flows; it is not
-a substitute for automated tests. Use copies of books when testing editor changes, because applying patches
-can change the EPUB file on disk.
+a substitute for automated tests. Use copies when testing workflows that write
+book files, such as import sanitization or metadata and cover replacement.
 
 ## Test data
 
@@ -64,22 +64,12 @@ Prepare a small library containing:
 - [ ] Open a fixed-layout EPUB, if one is available. Confirm the current reader
   rejects it rather than treating it as a reflowable book.
 
-## EPUB editor
+## EPUB content editing (removed)
 
-Use a copy of the EPUB for this section.
-
-- [ ] Open the editor from the sidebar's **Editor** entry and choose an EPUB
-  in the picker. Also open that book directly from its reader sidebar pencil.
-- [ ] Stage a paragraph correction and a chapter-source edit. Confirm edits are
-  shown as pending and the reader can display pending text patches.
-- [ ] Review the pending patches, discard one, and apply the remaining change.
-- [ ] Confirm the applied text is present after reopening the book, the book's
-  text search reflects it, and the first-bake `.orig` backup preserves the
-  original file.
-- [ ] Confirm a no-op apply does not rewrite the archive.
-- [ ] Confirm the editor does not present a full archive file manager or allow
-  arbitrary EPUB-file editing; those features are not part of the current
-  editor.
+- [ ] Confirm the reader, book details page and app navigation expose no EPUB
+  content editor, source-edit entry point or pending-edits review action.
+- [ ] Confirm ordinary text selection, including triple-click paragraph
+  selection, remains available and does not open an inline editing box.
 
 ## PDF reader
 

@@ -1,12 +1,12 @@
 # Kalam roadmap
 
-**Last consolidated:** 2026-10-21
+**Last consolidated:** 2026-10-22
 
 ## Contents
 
 - [How to read this roadmap](#how-to-read-this-roadmap)
 - [Product goal](#product-goal)
-- [Current app status](#current-app-status-checked-against-the-source-on-2026-10-21)
+- [Current app status](#current-app-status-checked-against-the-source-on-2026-10-22)
 - [Crosswalk from earlier phase names](#crosswalk-from-earlier-phase-names-to-current-status)
 - [Current decisions and boundaries](#current-decisions-and-boundaries)
 - [Current work order](#current-work-order)
@@ -24,7 +24,7 @@ offline-library roadmap and decision log.
 
 - **The current status, phase crosswalk, and work order in the first part of
   this file are authoritative.** They were checked against the current app and
-  issue status on 2026-10-21.
+  issue status on 2026-10-22.
 - **The project history below preserves earlier plans and decision changes.**
   Historical checkmarks and labels such as “done” describe what a plan claimed
   at that date; they are not proof that the feature shipped or remains in the
@@ -32,8 +32,8 @@ offline-library roadmap and decision log.
 - When an old phase note disagrees with the current crosswalk, use the
   crosswalk. The code and current integration docs define what the app does.
 - Keep new accepted work and decisions in this file. Do not create another
-  parallel roadmap. Use `plan.md` for the detailed KAL-5 proposal, and update
-  this roadmap when its status or the agreed work order changes.
+  parallel roadmap. `plan.md` records KAL-5's current deferral; update this
+  roadmap if the owner reopens that work or changes the active work order.
 - Repository workflow rules live in [`docs/WORKING.md`](docs/WORKING.md);
   architecture constraints live in [`ARCH.md`](ARCH.md).
 
@@ -45,7 +45,7 @@ reflowable EPUB, PDF, and local CBZ/CBR reading, with optional network access
 for metadata lookup. Online content sources are a separate future track and
 must not be required for the offline library or readers to work.
 
-## Current app status (checked against the source on 2026-10-21)
+## Current app status (checked against the source on 2026-10-22)
 
 ### Library and organization
 
@@ -76,17 +76,15 @@ must not be required for the offline library or readers to work.
 
 ### EPUB editing
 
-Before KAL-5, the editor staged guarded paragraph/source edits, chapter order,
-and cover changes as patches; the reader can display pending text patches and
-the review panel can apply or discard them. KAL-5 is authorized and in progress.
-The direct-save foundation is implemented for reader selection/paragraph fixes,
-deep-editor paragraph edits, and raw-source Save. CI run `39654866950` passed
-formatting, clippy, 610 tests (3 ignored), release build, OCR diagnostic, and
-headless UI smoke checks. Chapter-order and cover actions remain unavailable
-rather than creating new patches. Legacy patches retain their review/apply/
-discard path. The approved file-tree/IDE layout and Light-mode experience are
-still outstanding, as are real-book owner validation and refresh-performance
-measurement.
+The EPUB content editor has been removed and deferred on 2026-10-21. Reader
+inline editing, the reader's Deep Editor/source entry point, the standalone
+editor, its picker/navigation route and the pending-edit review UI are not
+available through the reader, library or another app route. Do not continue
+editor implementation or mockups unless the owner explicitly reopens the work.
+If reopened, the content scope is HTML/XHTML and CSS edited directly, with no
+Markdown support or conversion. Book metadata editing and annotations remain.
+Legacy patch rows and sidecar fields are preserved only for compatibility;
+the current app does not create, render, apply or review them.
 
 ### Current limitations
 
@@ -95,9 +93,10 @@ measurement.
   Existing UI or queue scaffolding does not provide working online sources.
 - The Lua plugin substrate is selected, but neither the plugin runtime nor a
   source implementation is registered.
-- KAL-5 is authorized and in progress. Its direct-save foundation passes CI;
-  the approved editor layout, performance measurement, and real-book owner
-  validation remain. Current details are in `plan.md`.
+- The EPUB content editor (KAL-5) was removed and deferred on 2026-10-21.
+  Its prior designs and CI results are historical, not authorization for new
+  implementation. If the owner reopens it, use HTML/XHTML and CSS directly,
+  with no Markdown support or conversion; see `plan.md`.
 
 ## Crosswalk from earlier phase names to current status
 
@@ -121,12 +120,12 @@ that a feature shipped or remains in the app.
 | **P8 — Local comics** | Shipped: local CBZ/CBR import and the comics reader remain. A later comic-OCR experiment was removed on 2026-09-29. |
 | **P9 — Manga sources** | MangaDex and scraper adapters briefly existed, then were removed in the 2026-09-08 offline pivot. No manga source implementation is registered now. |
 | **P10 — PDF** | PDF reading shipped and was rebuilt on MuPDF. Text selection can save annotation records, but EPUB-style persistent page-positioned marks are only partial. |
-| **P11 — Tools** | Partial: bulk tags/metadata editing shipped. External conversion, generic EPUB polish, batch cover refresh, and Calibre `metadata.db` import did not. The later guarded EPUB editor is a separate feature. |
+| **P11 — Tools** | Partial: bulk tags/metadata editing shipped. External conversion, generic EPUB polish, batch cover refresh, and Calibre `metadata.db` import did not. The later EPUB content editor was removed and deferred on 2026-10-21. |
 | **P12 — Plugins** | No app-integrated plugin runtime or online source is registered. The Wasm host scaffold was archived; the final design decision is Lua (`mlua`, Lua 5.4), not yet implemented. |
 | **A0 — Architecture and performance** | Steps 1–7 shipped: measurement, `LibraryService`, thumbnails, tasks, preloaders, windowed grid, and query-count CI budgets. Step 8 has `Source`/empty-manager scaffolding and design notes, but no plugin host or registered source. |
 | **A1 — In-app dialogs** | Shipped: in-app dialogs use the overlay helper and focus handling; portal-backed file pickers remain native. |
 | **Dictionary overhaul, steps 1–10** | Most data, lookup, vocabulary, pronunciation, priority, and history work remains. The old Phase 6 tap-to-look-up interaction was later removed, so the old “all steps complete” label is not a current feature checklist. |
-| **Later offline roadmap, phases 1–6** | Shipped work is reflected in the current app status above. The initial EPUB editor shipped; the KAL-5 usability overhaul is authorized and in progress. |
+| **Later offline roadmap, phases 1–6** | Shipped work is reflected in the current app status above. The initial EPUB editor shipped and was removed/deferred on 2026-10-21; KAL-5 is not active implementation work. |
 | **Later offline roadmap, phases 7–8** | Query-count performance checks exist. Further optimization is last; the separate Material 3 redesign remains planned. |
 
 ## Current decisions and boundaries
@@ -135,17 +134,11 @@ that a feature shipped or remains in the app.
   track.
 - Lua (`mlua`, Lua 5.4) is the selected future plugin substrate. No plugin
   runtime or source implementation is in the app.
-- **KAL-5 is authorized and in progress.** Both in-reader quick edits and
-  deep-editor changes must write directly to the EPUB; no new edits should enter
-  the pending-patch queue. Resolve legacy pending patches through the review
-  gate. Core IDE work comes before advanced tools; use the native renderer and
-  a lossless, safe-subset Markdown-like Light mode. Strict validation and
-  stale-write refusal remain required. Follow the backup policy in `plan.md`:
-  one pristine backup before the first in-reader fix, timestamped backups for
-  deep-editor saves. The direct-save foundation passes CI; the post-save view
-  refresh still needs engineering work and measurement. The approved file-tree,
-  Light-mode, and inline-toolbar experience, plus owner field validation, remain.
-  See [`plan.md`](plan.md).
+- **KAL-5 is deferred.** The EPUB content editor and its current routes/UI have
+  been removed. Do not implement or mock up a replacement unless the owner
+  explicitly reopens the work. Future scope, if reopened: HTML/XHTML and CSS
+  edited directly, with no Markdown support or conversion. Preserve unrelated
+  book metadata editing and annotations; see [`plan.md`](plan.md).
 - Performance optimization is scheduled after the heavy feature work and the
   Material 3 redesign. Measure before choosing optimizations.
 - The earlier roadmap listed unauthorized shadow-library support, a Calibre
@@ -155,11 +148,10 @@ that a feature shipped or remains in the app.
 
 ## Current work order
 
-1. **Continue KAL-5.** The reader/deep-editor text direct-save foundation is
-   implemented and CI-validated; preserve the legacy-patch review gate. Next
-   build the approved reader-like quick-edit and file-tree/editor/native-preview
-   layout, then measure archive-write and refresh responsiveness and validate on
-   real books with the owner. Detailed scope is in [`plan.md`](plan.md).
+1. **No active KAL-5 implementation.** The editor has been removed and the
+   work is deferred until the owner explicitly reopens it. The future scope
+   boundary is recorded in [`plan.md`](plan.md).
+
 2. **Schedule other approved feature work and the Material 3 redesign.** The
    old phase plans are historical input, not automatic authorization to build
    every item they listed.
@@ -189,7 +181,8 @@ with audited outcomes and a date-ordered implementation/retirement timeline.
 | **Before 2026-09-08** | An initial six-step, from-scratch `kalam-engine` plan used `lol_html`, `cosmic-text`, and `tiny-skia`. It was abandoned before completion in favor of integrating Chapbook; its purpose and the decision are summarized below and detailed in `docs/kalam/PLAN.md` and `docs/kalam/RESEARCH.md`. |
 | **2026-07 to 2026-09-08** | The original P0–P12 plan was the active phase map. The phase-by-phase record below preserves its useful scope and decisions, and reconciles each status against current code and Git history instead of carrying forward old checkboxes as proof. |
 | **2026-09-18 onward** | The project moved to a detailed offline-library roadmap and a native Chapbook-based reading engine. The new plan tracked what actually shipped and kept online sources separate. Its detailed phase plan and decision log are retained below. |
-| **2026-10-21** | Current app behavior, the phase crosswalk, and the approved work order were checked against the repository and issue status. They are the authoritative status for this roadmap. |
+| **2026-10-21** | Current app behavior, the phase crosswalk, and the approved work order were checked against the repository and issue status. |
+| **2026-10-21** | KAL-5 was superseded by the owner's direction to remove and defer EPUB content editing. The current app status and work order above record that decision; earlier editor designs remain historical. |
 
 ## Working references
 
@@ -202,7 +195,7 @@ with audited outcomes and a date-ordered implementation/retirement timeline.
 - [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md) — current
   manual smoke and regression checks.
 - [`docs/ci/README.md`](docs/ci/README.md) — CI checks and report locations.
-- [`plan.md`](plan.md) — KAL-5 approved scope, implementation state, and remaining work.
+- [`plan.md`](plan.md) — KAL-5 deferral and future scope boundary.
 - [`docs/conversation.md`](docs/conversation.md) and
   [`docs/conversation-part-2.md`](docs/conversation-part-2.md) — design
   discussion records, with their final decisions called out in this roadmap.
@@ -641,7 +634,7 @@ a year. The 2026-09-30 pass corrected a table that had last been verified
 | **PDF reader & engine** | **shipped** | Rebuilt from scratch with MuPDF (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`). Crisp 8.7ms rasterization, unified EPUB-matching chrome (floating back chip, bottom pill with page jump and zoom, autohiding controls, slide-in TOC sidebar), continuous vertical scroll and paged modes, bounded memory cache (<80 MB). Replaced heuristic `lopdf` viewer. |
 | **Wasm plugins** | **NOT shipped** | `// mod plugins;` is commented out in `src/main.rs`; `wasmtime` is in neither `Cargo.toml` nor `Cargo.lock`. **Part 2.** |
 | Full-text library search | shipped | `book_content_fts` FTS5 table (`src/db.rs` schema v15), `src/content_index.rs`, background indexing + Reindex control; changelog 2026-09-29 |
-| EPUB editor | shipped 2026-10-09; **KAL-5 implementation in progress** | Phase 6: `src/pages/epub_editor.rs` + `editor_picker.rs` + `edits_panel.rs`, routed as `PageSlot::Editor`/`EditorPicker` (`src/app.rs:145`); baseline run `37901417687`. Direct-save foundation passed CI run `39654866950`; the approved file-tree/Light-mode/inline-toolbar experience, performance measurement, and owner field validation remain. See `plan.md`. |
+| EPUB content editor | shipped 2026-10-09; **removed and deferred 2026-10-21** | Reader inline edit, Deep Editor/source entry, standalone editor, picker/navigation route and pending-edits review UI are removed. Historical designs and CI results do not authorize further work. Legacy patch data is preserved for compatibility only. Future scope if reopened: direct HTML/XHTML and CSS editing, no Markdown or conversion; see `plan.md`. |
 | OCR page cache (scanned PDFs) | shipped | `page_ocr_cache` table, schema v16, `src/db.rs`; loaded in `ensure_page_text`, saved in the `PageOcrResult` handler, `src/pages/pdf_reader.rs` |
 | Readable book folders | shipped | `book_folder_name` + folder index in `src/paths.rs`, rename pass in `src/folders.rs`, import wiring in `src/epub.rs`, edit hook in `src/db/metadata.rs` |
 | In-reader search (EPUB & PDF) | shipped | Phase 4 Step 1: Ctrl+F bar, live match count, "Matches at a Glance" popover — `src/pages/reader/mod.rs:2918`, `src/pages/pdf_reader.rs:4188`; field-tested in checklist Round 8 |
@@ -2126,9 +2119,13 @@ leaving the app or editing files by hand.
 
 ---
 
-##### Phase 6 — The EPUB editor
+##### Phase 6 — The EPUB editor (historical; removed and deferred 2026-10-21)
 
-> The biggest item in Part 1, and the reason everything above comes first.
+> **Superseded.** The following section records the earlier plan only. The
+> current app has no EPUB content editor and no further design/implementation
+> is authorized unless the owner reopens the work. If reopened, the scope is
+> HTML/XHTML and CSS edited directly; Markdown support and conversion are out
+> of scope.
 
 **Goal:** edit EPUBs without another application.
 

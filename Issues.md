@@ -114,5 +114,3 @@ pristine `.orig` backup, following the current EPUB patch workflow.
   (`save` / `insert_pdf` / `move_page` / `delete_pages` /
   `select_pages`), `src/shape/` (draw-onto-page), forms via
   `PdfWidget`
-- EPUB patch and bake implementation: `src/epub_patches.rs`,
-  `src/epub_sanitizer.rs`, `src/epub.rs`

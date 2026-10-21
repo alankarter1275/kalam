@@ -4960,24 +4960,24 @@ button.kalam-editor-resource-selected {
 
 /* Dark, warm source-editor workspace from the deep-editor design. */
 .kalam-editor-deep {
-    background: #15120f;
-    color: #e6ddd3;
+    background: @kalam_bg;
+    color: @kalam_text;
 }
 
 .kalam-editor-deep .kalam-editor-bar {
     min-height: 58px;
     padding: 7px 14px;
-    background: #211c18;
-    border-bottom: 1px solid #3a302a;
+    background: @kalam_surface;
+    border-bottom: 1px solid @kalam_border;
 }
 
 .kalam-editor-deep .kalam-editor-title {
-    color: #f1e9df;
+    color: @kalam_text;
     font-size: 1.02rem;
 }
 
 .kalam-editor-deep .kalam-editor-subtitle {
-    color: #a99b8f;
+    color: @kalam_text_dim;
     font-size: 0.66rem;
     font-weight: 700;
     letter-spacing: 0.11em;
@@ -4987,38 +4987,38 @@ button.kalam-editor-resource-selected {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 7px;
-    color: #d6cbc0;
+    color: @kalam_text;
     padding: 7px 11px;
 }
 
 .kalam-editor-deep button.kalam-editor-top-button:hover {
-    background: #302923;
-    border-color: #493b31;
-    color: #fff5eb;
+    background: @kalam_surface_2;
+    border-color: @kalam_border;
+    color: @kalam_text;
 }
 
 .kalam-editor-deep button.kalam-editor-save-button {
-    background: #d95e2d;
-    border: 1px solid #e87742;
+    background: @kalam_accent;
+    border: 1px solid @kalam_accent;
     border-radius: 7px;
-    color: #fff8f2;
+    color: @kalam_bg;
     font-weight: 700;
     padding: 7px 20px;
 }
 
 .kalam-editor-deep button.kalam-editor-save-button:disabled {
-    background: #49372d;
-    border-color: #564238;
-    color: #a79a90;
+    background: @kalam_surface_2;
+    border-color: @kalam_border;
+    color: @kalam_text_dim;
 }
 
 .kalam-editor-deep .kalam-editor-chapters {
-    background: #1d1916;
-    border-right: 1px solid #3a302a;
+    background: @kalam_sidebar;
+    border-right: 1px solid @kalam_border;
 }
 
 .kalam-editor-deep .kalam-editor-tree-heading {
-    color: #a69688;
+    color: @kalam_text_dim;
     font-size: 0.68rem;
     font-weight: 700;
     letter-spacing: 0.12em;
@@ -5028,7 +5028,7 @@ button.kalam-editor-tree-heading-button {
     background: transparent;
     border: none;
     border-radius: 0;
-    color: #a69688;
+    color: @kalam_text_dim;
     font-size: 0.68rem;
     font-weight: 700;
     letter-spacing: 0.1em;
@@ -5037,38 +5037,38 @@ button.kalam-editor-tree-heading-button {
 }
 
 button.kalam-editor-tree-heading-button:hover {
-    background: #29231e;
-    color: #eddfd2;
+    background: @kalam_surface_2;
+    color: @kalam_text;
 }
 
 button.kalam-editor-resource {
     background: transparent;
     border: none;
     border-radius: 5px;
-    color: #cfc3b7;
+    color: @kalam_text;
     font-size: 0.8rem;
     margin: 1px 7px;
     padding: 6px 10px;
 }
 
 button.kalam-editor-resource:hover {
-    background: #2b241f;
-    color: #fff6ec;
+    background: @kalam_surface_2;
+    color: @kalam_text;
 }
 
 button.kalam-editor-resource-selected {
-    background: #3a2920;
-    color: #f0804d;
-    box-shadow: inset 2px 0 #e16a37;
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    box-shadow: inset 2px 0 @kalam_accent;
 }
 
 button.kalam-editor-resource-readonly {
-    color: #998c81;
+    color: @kalam_text_dim;
 }
 
 .kalam-editor-deep .kalam-editor-tree-empty,
 .kalam-editor-deep .kalam-editor-asset {
-    color: #93867b;
+    color: @kalam_text_dim;
     font-size: 0.76rem;
     padding: 3px 11px;
 }
@@ -5076,17 +5076,17 @@ button.kalam-editor-resource-readonly {
 .kalam-editor-deep .kalam-editor-stage,
 .kalam-editor-deep .kalam-editor-source,
 .kalam-editor-deep .kalam-source-workspace {
-    background: #15120f;
+    background: @kalam_bg;
 }
 
 .kalam-editor-deep .kalam-source-editor-column {
-    background: #191613;
-    border-right: 1px solid #3a302a;
+    background: @kalam_bg;
+    border-right: 1px solid @kalam_border;
 }
 
 .kalam-editor-deep .kalam-editor-source-bar {
-    background: #201b17;
-    border-bottom: 1px solid #3a302a;
+    background: @kalam_surface;
+    border-bottom: 1px solid @kalam_border;
     padding: 7px 9px;
 }
 
@@ -5095,32 +5095,32 @@ button.kalam-source-toolbar-button {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 5px;
-    color: #d3c8bc;
+    color: @kalam_text;
     min-width: 31px;
     padding: 4px 7px;
 }
 
 button.kalam-source-format-button:hover,
 button.kalam-source-toolbar-button:hover {
-    background: #342b24;
-    border-color: #4d4035;
-    color: #fff6ed;
+    background: @kalam_surface_2;
+    border-color: @kalam_border;
+    color: @kalam_text;
 }
 
 .kalam-source-toolbar-divider {
-    background: #494038;
+    background: @kalam_border;
     margin: 2px 4px;
 }
 
 .kalam-editor-deep .kalam-source-href {
-    color: #a99c90;
+    color: @kalam_text_dim;
     font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
     font-size: 0.76rem;
 }
 
 .kalam-source-find-revealer {
-    background: #231e19;
-    border-bottom: 1px solid #3a302a;
+    background: @kalam_surface;
+    border-bottom: 1px solid @kalam_border;
 }
 
 .kalam-source-find-row {
@@ -5128,87 +5128,87 @@ button.kalam-source-toolbar-button:hover {
 }
 
 .kalam-editor-deep entry {
-    background: #171411;
-    border-color: #493d34;
-    color: #eee4d9;
-    caret-color: #eb7442;
+    background: @kalam_bg;
+    border-color: @kalam_border;
+    color: @kalam_text;
+    caret-color: @kalam_accent;
 }
 
 .kalam-source-find-miss {
-    border-color: #d35c42;
+    border-color: @kalam_warning;
 }
 
 .kalam-source-tabs {
-    background: #211c18;
-    border-bottom: 1px solid #40352d;
+    background: @kalam_surface;
+    border-bottom: 1px solid @kalam_border;
 }
 
 .kalam-source-file-tab-row {
-    border-right: 1px solid #3a302a;
+    border-right: 1px solid @kalam_border;
 }
 
 button.kalam-source-file-tab {
     background: transparent;
     border: none;
     border-radius: 0;
-    color: #ac9e91;
+    color: @kalam_text_dim;
     padding: 8px 11px;
 }
 
 button.kalam-source-file-tab-active {
-    background: #191613;
-    box-shadow: inset 0 -2px #e06a38;
-    color: #f0e5da;
+    background: @kalam_bg;
+    box-shadow: inset 0 -2px @kalam_accent;
+    color: @kalam_text;
 }
 
 button.kalam-source-file-tab-dirty {
-    color: #ee8856;
+    color: @kalam_accent;
 }
 
 button.kalam-source-file-tab-close {
     background: transparent;
     border: none;
     border-radius: 0;
-    color: #82766c;
+    color: @kalam_text_dim;
     padding: 7px 8px 7px 2px;
 }
 
 button.kalam-source-file-tab-close:hover {
-    color: #fff2e8;
+    color: @kalam_text;
 }
 
 .kalam-editor-deep .kalam-source-view {
-    background: #191613;
-    color: #e5dcd2;
+    background: @kalam_bg;
+    color: @kalam_text;
     font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
     font-size: 0.86rem;
     padding: 12px 9px;
-    caret-color: #f07a48;
-    selection-background-color: #58311f;
+    caret-color: @kalam_accent;
+    selection-background-color: @kalam_accent_dim;
 }
 
 .kalam-source-panels {
-    background: #211c18;
-    border-left: 1px solid #3a302a;
+    background: @kalam_surface;
+    border-left: 1px solid @kalam_border;
 }
 
 .kalam-source-panels > header {
-    background: #211c18;
-    border-bottom: 1px solid #3a302a;
+    background: @kalam_surface;
+    border-bottom: 1px solid @kalam_border;
 }
 
 .kalam-source-panels > header tab {
-    color: #a99b8f;
+    color: @kalam_text_dim;
     padding: 9px 12px;
 }
 
 .kalam-source-panels > header tab:checked {
-    color: #f1814c;
-    box-shadow: inset 0 -2px #e16b39;
+    color: @kalam_accent;
+    box-shadow: inset 0 -2px @kalam_accent;
 }
 
 .kalam-source-preview-page-host {
-    background: #29231e;
+    background: @kalam_surface_2;
     padding: 9px;
 }
 
@@ -5218,28 +5218,28 @@ button.kalam-source-file-tab-close:hover {
 
 .kalam-source-preview-mode-label,
 .kalam-source-panel-copy {
-    color: #c6b9ac;
+    color: @kalam_text;
     font-size: 0.78rem;
 }
 
 .kalam-source-preview-page {
-    background: #eee8df;
+    background: @kalam_surface;
 }
 
 .kalam-source-status {
-    color: #a99c90;
+    color: @kalam_text_dim;
     font-size: 0.72rem;
 }
 
 .kalam-source-outline-item {
-    color: #d9cdc1;
+    color: @kalam_text;
     font-size: 0.82rem;
     padding: 5px 4px;
 }
 
 .kalam-source-footer {
-    background: #211c18;
-    border-top: 1px solid #3a302a;
+    background: @kalam_surface;
+    border-top: 1px solid @kalam_border;
     min-height: 36px;
     padding: 4px 10px;
 }
@@ -5247,7 +5247,7 @@ button.kalam-source-file-tab-close:hover {
 .kalam-source-cursor-status,
 .kalam-source-encoding,
 .kalam-source-footer-status {
-    color: #a99c90;
+    color: @kalam_text_dim;
     font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
     font-size: 0.7rem;
 }
@@ -5256,25 +5256,25 @@ button.kalam-source-layout-button {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 5px;
-    color: #a99c90;
+    color: @kalam_text_dim;
     font-size: 0.72rem;
     padding: 4px 9px;
 }
 
 button.kalam-source-layout-button:hover,
 button.kalam-source-layout-active {
-    background: #382b22;
-    border-color: #70442f;
-    color: #f18752;
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
 }
 
 .kalam-source-history-popover {
-    background: #28221d;
-    border: 1px solid #4a3d33;
-    color: #e6ddd3;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    color: @kalam_text;
 }
 
 .kalam-source-history-title {
-    color: #f2e7dc;
+    color: @kalam_text;
     font-weight: 700;
 }

@@ -996,16 +996,16 @@ fn save_inline_edit_in_thread(
     let replacement = crate::epub_patches::apply_planned_patch(&bytes, &planned)
         .map_err(|refusal| refusal_to_toast(&refusal))?;
     let expected_hash = crate::epub_patches::hash_bytes(&bytes);
-    let outcome = write_editor_resource(
+    let outcome = write_editor_resource(DirectResourceWrite {
         catalog,
         book_id,
         book_path,
-        &href,
+        href: &href,
         expected_book_hash,
-        &expected_hash,
-        &replacement,
+        before_hash: &expected_hash,
+        replacement: &replacement,
         backup,
-    )?;
+    })?;
     let (book_hash, warning) = match outcome {
         DirectWriteOutcome::Saved {
             book_hash, warning, ..
@@ -1040,30 +1040,42 @@ pub(crate) fn save_source_entry_direct(
     tx: async_channel::Sender<Result<DirectWriteOutcome, String>>,
 ) {
     std::thread::spawn(move || {
-        let result = write_editor_resource(
-            &catalog,
+        let result = write_editor_resource(DirectResourceWrite {
+            catalog: &catalog,
             book_id,
-            &book_path,
-            &href,
-            &expected_book_hash,
-            &before_hash,
-            text.as_bytes(),
+            book_path: &book_path,
+            href: &href,
+            expected_book_hash: &expected_book_hash,
+            before_hash: &before_hash,
+            replacement: text.as_bytes(),
             backup,
-        );
+        });
         let _ = tx.send_blocking(result);
     });
 }
 
-fn write_editor_resource(
-    catalog: &Catalog,
+struct DirectResourceWrite<'a> {
+    catalog: &'a Catalog,
     book_id: i64,
-    book_path: &Path,
-    href: &str,
-    expected_book_hash: &str,
-    before_hash: &str,
-    replacement: &[u8],
+    book_path: &'a Path,
+    href: &'a str,
+    expected_book_hash: &'a str,
+    before_hash: &'a str,
+    replacement: &'a [u8],
     backup: crate::epub_sanitizer::DirectSaveBackup,
-) -> Result<DirectWriteOutcome, String> {
+}
+
+fn write_editor_resource(write: DirectResourceWrite<'_>) -> Result<DirectWriteOutcome, String> {
+    let DirectResourceWrite {
+        catalog,
+        book_id,
+        book_path,
+        href,
+        expected_book_hash,
+        before_hash,
+        replacement,
+        backup,
+    } = write;
     let _timing = crate::timing::measure("direct_epub_save");
     let _save = crate::epub_sanitizer::EPUB_WRITE_LOCK
         .lock()

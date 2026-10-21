@@ -52,9 +52,6 @@ pub enum EpubEditorMsg {
     /// A chapter was chosen in the list — the row's position in the
     /// *displayed* order, which the pending spine op may have shuffled.
     TocSelect(usize),
-    /// A disabled chapter-order action. Retained as a message only for
-    /// the list's disabled arrows; the handler never creates a patch.
-    MoveChapter(usize, bool),
     /// The review panel's open state — a plain desired state, not a
     /// toggle, so the button's own toggled signal and the panel's Done
     /// agree without a feedback loop.
@@ -783,15 +780,6 @@ impl Component for EpubEditorModel {
                     }
                 }
             }
-            EpubEditorMsg::MoveChapter(_, _) => {
-                // Reordering is a structural edit, not a text save. Keep it
-                // unavailable until its direct-write path is implemented so
-                // the new workflow never creates another pending patch.
-                crate::notify::info(
-                    "Chapter reordering is not ready",
-                    "Direct chapter-order saving is scheduled after the core editor update. No edit was staged.",
-                );
-            }
             EpubEditorMsg::SetPatchesOpen(open) => {
                 if open == self.patches_open {
                     // The button's toggled signal fires for programmatic
@@ -1341,10 +1329,9 @@ fn wire(view: &ReaderView, sender: &ComponentSender<EpubEditorModel>) {
     });
 }
 
-/// The chapter list: a flat column of title rows, with the current
+/// The chapter list: a flat column of navigation rows, with the current
 /// chapter marked. Existing legacy spine patches can still define the
-/// displayed order. New reorder actions remain disabled until they can
-/// write directly into the EPUB.
+/// displayed order; new structural editing is deferred to a later phase.
 fn rebuild_chapter_list(
     list: &gtk::Box,
     model: &EpubEditorModel,
@@ -1353,9 +1340,6 @@ fn rebuild_chapter_list(
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
-    // Until chapter ordering writes directly, keep the legacy patch action
-    // disabled rather than creating a new pending edit.
-    let can_reorder = false;
     for (pos, &real) in model.chapter_order.iter().enumerate() {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         row.add_css_class("kalam-editor-chapter-row");
@@ -1377,45 +1361,8 @@ fn rebuild_chapter_list(
         });
         row.append(&btn);
 
-        let up = arrow_button(
-            "go-up-symbolic",
-            "Direct chapter reordering will be enabled in a later editor phase",
-            pos > 0 && can_reorder,
-        );
-        {
-            let tx = sender.input_sender().clone();
-            up.connect_clicked(move |_| {
-                let _ = tx.send(EpubEditorMsg::MoveChapter(pos, true));
-            });
-        }
-        row.append(&up);
-        let down = arrow_button(
-            "go-down-symbolic",
-            "Direct chapter reordering will be enabled in a later editor phase",
-            pos + 1 < model.chapter_order.len() && can_reorder,
-        );
-        {
-            let tx = sender.input_sender().clone();
-            down.connect_clicked(move |_| {
-                let _ = tx.send(EpubEditorMsg::MoveChapter(pos, false));
-            });
-        }
-        row.append(&down);
         list.append(&row);
     }
-}
-
-/// One reorder arrow: the icon-button shape the panel's discard button
-/// uses, sized for a list row.
-fn arrow_button(icon: &str, tooltip: &str, sensitive: bool) -> gtk::Button {
-    let btn = gtk::Button::new();
-    btn.add_css_class("kalam-icon-btn");
-    btn.add_css_class("kalam-editor-arrow");
-    btn.set_focus_on_click(false);
-    btn.set_tooltip_text(Some(tooltip));
-    btn.set_sensitive(sensitive);
-    btn.set_child(Some(&crate::icons::symbolic(icon, 13)));
-    btn
 }
 
 /// Rebuild the review panel inside its host. The panel is the step-5

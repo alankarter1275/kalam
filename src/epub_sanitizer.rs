@@ -501,9 +501,10 @@ fn css_structure_is_valid(css: &str) -> bool {
         }
         match ch {
             '{' | '(' | '[' => stack.push(ch),
-            '}' => if stack.pop() != Some('{') { return false; },
-            ')' => if stack.pop() != Some('(') { return false; },
-            ']' => if stack.pop() != Some('[') { return false; },
+            '}' if stack.pop() != Some('{') => return false,
+            ')' if stack.pop() != Some('(') => return false,
+            ']' if stack.pop() != Some('[') => return false,
+            '}' | ')' | ']' => {}
             _ => {}
         }
     }
@@ -570,7 +571,7 @@ fn verify_direct_epub(
     use std::io::Read as _;
     let file = fs::File::open(path).context("open rewritten EPUB for validation")?;
     let mut archive = ZipArchive::new(file).context("rewritten EPUB is not a valid ZIP archive")?;
-    if archive.len() == 0 || archive.by_index(0)?.name() != "mimetype" {
+    if archive.is_empty() || archive.by_index(0)?.name() != "mimetype" {
         return Err(anyhow!("rewritten EPUB does not put mimetype first"));
     }
     let mut opf = String::new();

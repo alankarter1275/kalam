@@ -1745,64 +1745,186 @@ pub(crate) fn dismiss(popover: Option<gtk::Popover>) {
 }
 
 // ---------------------------------------------------------------------
-// The raw source pane's workers (Phase 6.9)
+// The deep editor's resource browser and raw-source workers
 // ---------------------------------------------------------------------
 
-/// What the raw pane loaded: the chapter's entry as the reader shows
-/// it — pending patches applied — plus the hash of exactly those bytes.
-/// The hash is the whole-file guard: every save made from this load
-/// carries it, and an entry that no longer hashes to it has changed
-/// underneath the pane.
+/// One safe text resource that the deep editor can open. `spine_index` is
+/// present for chapters, absent for supporting XHTML/CSS such as a nav file
+/// or stylesheet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EditableResource {
+    pub(crate) href: String,
+    pub(crate) spine_index: Option<usize>,
+}
+
+/// A raw-pane load: the selected resource as the reader shows it (pending
+/// legacy text patches included where applicable), the hash of those bytes,
+/// and the chapter the native preview should render.
 #[derive(Debug, Clone)]
 pub(crate) struct SourceEntry {
     pub(crate) href: String,
     pub(crate) text: String,
     pub(crate) hash: String,
-    pub(crate) chapter: usize,
+    pub(crate) preview_chapter: usize,
 }
 
-/// Read one chapter's source off the UI thread (the `unit_bytes`
-/// contract again — opening a book never belongs on the main loop).
-/// `prior` are the book's pending patches: the pane edits the chapter
-/// as the reader shows it, so a save re-verified against the same
-/// virtual bytes holds at render too.
-pub(crate) fn load_source_entry(
+fn safe_editable_href(href: &str) -> bool {
+    let safe_relative_path = |path: &str| {
+        !path.is_empty()
+            && !path.starts_with('/')
+            && !path.contains('\\')
+            && !path
+                .split('/')
+                .any(|part| part == ".." || part.is_empty())
+    };
+    safe_relative_path(href)
+        && safe_relative_path(&crate::epub_sanitizer::percent_decode_path(href))
+}
+
+/// Enumerate editable EPUB text resources away from the GTK thread. Paths
+/// come from the ZIP directory, are constrained to safe relative names, and
+/// only XHTML/HTML/CSS are exposed in this first file-tree slice.
+pub(crate) fn load_editable_resources(
     book_path: std::path::PathBuf,
-    chapter: usize,
-    prior: Vec<PatchRecord>,
-    tx: async_channel::Sender<Result<SourceEntry, String>>,
+    tx: async_channel::Sender<Result<Vec<EditableResource>, String>>,
 ) {
     std::thread::spawn(move || {
-        let verdict = load_source_entry_in_thread(&book_path, chapter, &prior);
+        let verdict = load_editable_resources_in_thread(&book_path);
         let _ = tx.send_blocking(verdict);
     });
 }
 
-fn load_source_entry_in_thread(
+fn load_editable_resources_in_thread(
     book_path: &std::path::Path,
-    chapter: usize,
+) -> Result<Vec<EditableResource>, String> {
+    use chapbook_core::Publication;
+
+    let book = chapbook_epub::Book::open(book_path)
+        .map_err(|_| "The book could not be opened to list its editable files.".to_string())?;
+    let file = std::fs::File::open(book_path)
+        .map_err(|e| format!("Could not open the EPUB file list: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Could not read the EPUB file list: {e}"))?;
+    let mut resources = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|e| format!("Could not inspect an EPUB file: {e}"))?;
+        let href = entry.name().to_string();
+        let lower = href.to_ascii_lowercase();
+        let text_resource = lower.ends_with(".xhtml")
+            || lower.ends_with(".html")
+            || lower.ends_with(".htm")
+            || lower.ends_with(".css");
+        let safe_path = safe_editable_href(&href);
+        let is_file = !entry.is_dir() && entry.enclosed_name().is_some();
+        drop(entry);
+        if !text_resource || !safe_path || !is_file || !seen.insert(href.clone()) {
+            continue;
+        }
+        let spine_index = book.spine().iter().position(|item| {
+            item.href == href
+                || crate::epub_sanitizer::percent_decode_path(&item.href) == href
+                || item.href == crate::epub_sanitizer::percent_decode_path(&href)
+        });
+        resources.push(EditableResource { href, spine_index });
+    }
+    resources.sort_by(|a, b| a.href.to_lowercase().cmp(&b.href.to_lowercase()));
+    Ok(resources)
+}
+
+/// Load one editable resource and its baseline off the UI thread. For spine
+/// documents legacy text patches are reflected in the buffer; new writes are
+/// still blocked until those old patches are reviewed.
+pub(crate) fn load_source_resource(
+    book_path: std::path::PathBuf,
+    href: String,
+    preview_chapter: usize,
+    prior: Vec<PatchRecord>,
+    tx: async_channel::Sender<Result<SourceEntry, String>>,
+) {
+    std::thread::spawn(move || {
+        let verdict = load_source_resource_in_thread(
+            &book_path,
+            &href,
+            preview_chapter,
+            &prior,
+        );
+        let _ = tx.send_blocking(verdict);
+    });
+}
+
+fn load_source_resource_in_thread(
+    book_path: &std::path::Path,
+    href: &str,
+    preview_chapter: usize,
     prior: &[PatchRecord],
 ) -> Result<SourceEntry, String> {
     use chapbook_core::Publication;
+    use std::io::Read as _;
+
+    const MAX_EDITABLE_RESOURCE_BYTES: u64 = 32 * 1024 * 1024;
+    if !safe_editable_href(href) {
+        return Err("This EPUB file has an unsafe path and cannot be edited.".into());
+    }
     let book = chapbook_epub::Book::open(book_path)
-        .map_err(|_| "The book could not be opened to read the source.".to_string())?;
-    let href = book
-        .spine()
-        .get(chapter)
-        .map(|item| item.href.clone())
-        .ok_or_else(|| "This chapter is no longer in the book.".to_string())?;
-    let bytes = book
-        .unit_bytes(chapter)
-        .map_err(|_| "The chapter's source could not be read.".to_string())?;
-    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
+        .map_err(|_| "The book could not be opened to read this file.".to_string())?;
+    let spine_item = book.spine().iter().find(|item| {
+        item.href == href
+            || crate::epub_sanitizer::percent_decode_path(&item.href) == href
+            || item.href == crate::epub_sanitizer::percent_decode_path(href)
+    });
+    let patch_href = spine_item.map(|item| item.href.as_str()).unwrap_or(href);
+
+    let file = std::fs::File::open(book_path)
+        .map_err(|e| format!("Could not open the EPUB to read this file: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("The EPUB archive could not be read: {e}"))?;
+    let mut matches = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|e| format!("Could not inspect this EPUB file: {e}"))?;
+        if entry.name() == href {
+            matches.push(index);
+        }
+    }
+    if matches.len() != 1 {
+        return Err(if matches.is_empty() {
+            format!("{href} is no longer present in the EPUB.")
+        } else {
+            format!("{href} appears more than once in the EPUB and cannot be edited safely.")
+        });
+    }
+    let mut entry = archive
+        .by_index(matches[0])
+        .map_err(|e| format!("Could not read {href}: {e}"))?;
+    if entry.size() > MAX_EDITABLE_RESOURCE_BYTES {
+        return Err(format!(
+            "{href} is too large to edit here (limit {} MiB).",
+            MAX_EDITABLE_RESOURCE_BYTES / (1024 * 1024)
+        ));
+    }
+    let mut bytes = Vec::with_capacity(entry.size() as usize);
+    entry
+        .by_ref()
+        .take(MAX_EDITABLE_RESOURCE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Could not read {href}: {e}"))?;
+    if bytes.len() as u64 > MAX_EDITABLE_RESOURCE_BYTES {
+        return Err(format!("{href} is too large to edit safely."));
+    }
+    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(patch_href, &bytes, prior);
     let text = String::from_utf8(virtual_bytes).map_err(|_| {
-        "The chapter's source is not UTF-8 text, so it cannot be edited here.".to_string()
+        format!("{href} is not UTF-8 text, so it cannot be edited in the source pane.")
     })?;
     Ok(SourceEntry {
         hash: crate::epub_patches::hash_bytes(text.as_bytes()),
         text,
-        href,
-        chapter,
+        href: href.to_string(),
+        preview_chapter,
     })
 }
 
@@ -1821,11 +1943,11 @@ pub(crate) struct PreviewPixels {
     pub(crate) rgba: Vec<u8>,
 }
 
-/// Render the pane's edited chapter through a headless session: the
-/// edited bytes substituted for its entry, the pending patches applied
-/// to every other. One debounce tick = one open + a few pages — the
-/// engine has no cache-invalidation API, so the preview simply does
-/// not share a cache with anything.
+/// Render the selected XHTML/HTML/CSS resource through a headless
+/// session: edited bytes are substituted when that entry is read (including
+/// external stylesheets), with pending patches applied to other entries.
+/// One debounce tick = one open + a few pages — the engine has no
+/// cache-invalidation API, so the preview simply does not share a cache.
 // Ten inputs, one purpose — the same allow as the paragraph verifier
 // above; they all travel to the same thread body together.
 #[allow(clippy::too_many_arguments)]
@@ -1839,12 +1961,13 @@ pub(crate) fn render_source_preview(
     spine: usize,
     generation: u64,
     page: (u32, u32),
-    tx: async_channel::Sender<Result<PreviewPixels, String>>,
+    tx: async_channel::Sender<Result<PreviewPixels, (u64, String)>>,
 ) {
     std::thread::spawn(move || {
         let verdict = render_source_preview_in_thread(
             &book_path, prefs, fonts_dir, &href, &text, &prior, spine, generation, page,
-        );
+        )
+        .map_err(|message| (generation, message));
         let _ = tx.send_blocking(verdict);
     });
 }
@@ -1863,9 +1986,15 @@ fn render_source_preview_in_thread(
 ) -> Result<PreviewPixels, String> {
     let prior = prior.to_vec();
     let edited_href = href.to_string();
+    let decoded_edited_href = crate::epub_sanitizer::percent_decode_path(&edited_href);
     let edited = text.as_bytes().to_vec();
     let filter = kalam_reader::EntryFilter::new(move |entry_href, bytes| {
-        if entry_href == edited_href {
+        let decoded_entry_href = crate::epub_sanitizer::percent_decode_path(entry_href);
+        if entry_href == edited_href
+            || entry_href == decoded_edited_href
+            || decoded_entry_href == edited_href
+            || decoded_entry_href == decoded_edited_href
+        {
             return edited.clone();
         }
         let (patched, _) = crate::epub_patches::apply_text_patches(entry_href, &bytes, &prior);
@@ -1928,6 +2057,122 @@ mod tests {
         assert!(range_from_json("").is_none());
         assert!(range_from_json("epubcfi(/6/4!/4/2/1:0)").is_none());
         assert!(range_from_json("{\"kalam_locator\":2}").is_none());
+    }
+
+    fn editor_test_epub(path: &std::path::Path) {
+        use std::io::Write as _;
+        use zip::write::SimpleFileOptions;
+        use zip::{CompressionMethod, ZipWriter};
+
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file("mimetype", stored).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+        let compressed =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        zip.start_file("META-INF/container.xml", compressed).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#,
+        )
+        .unwrap();
+        zip.start_file("OEBPS/content.opf", compressed).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">editor-test</dc:identifier><dc:title>Editor Test</dc:title>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="chapter" href="text/chapter.xhtml" media-type="application/xhtml+xml"/>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="style" href="styles/main.css" media-type="text/css"/>
+    <item id="cover" href="images/cover.png" media-type="image/png"/>
+  </manifest>
+  <spine><itemref idref="chapter"/></spine>
+</package>"#,
+        )
+        .unwrap();
+        zip.start_file("OEBPS/text/chapter.xhtml", compressed)
+            .unwrap();
+        zip.write_all(b"<html><body><p>Chapter text.</p></body></html>")
+            .unwrap();
+        zip.start_file("OEBPS/nav.xhtml", compressed).unwrap();
+        zip.write_all(
+            br#"<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <head><title>Navigation</title></head>
+  <body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>
+    <li><a href="text/chapter.xhtml">Chapter</a></li>
+  </ol></nav></body>
+</html>"#,
+        )
+            .unwrap();
+        zip.start_file("OEBPS/styles/main.css", compressed).unwrap();
+        zip.write_all(b"body { color: navy; }").unwrap();
+        zip.start_file("OEBPS/images/cover.png", compressed)
+            .unwrap();
+        zip.write_all(b"not-a-real-image").unwrap();
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn editable_resource_paths_reject_encoded_traversal() {
+        assert!(safe_editable_href("OEBPS/text/chapter.xhtml"));
+        assert!(safe_editable_href("OEBPS/styles/main%20book.css"));
+        assert!(!safe_editable_href("../outside.xhtml"));
+        assert!(!safe_editable_href("OEBPS/%2e%2e/outside.xhtml"));
+        assert!(!safe_editable_href("OEBPS%2f..%2foutside.css"));
+    }
+
+    #[test]
+    fn editable_resource_tree_lists_xhtml_and_css_and_marks_spine_files() {
+        let path = std::env::temp_dir().join(format!(
+            "kalam-editor-resources-{}.epub",
+            uuid::Uuid::new_v4()
+        ));
+        editor_test_epub(&path);
+        let resources = load_editable_resources_in_thread(&path).unwrap();
+        let by_href: std::collections::HashMap<_, _> = resources
+            .iter()
+            .map(|resource| (resource.href.as_str(), resource.spine_index))
+            .collect();
+        assert_eq!(by_href.get("OEBPS/text/chapter.xhtml"), Some(&Some(0)));
+        assert_eq!(by_href.get("OEBPS/nav.xhtml"), Some(&None));
+        assert_eq!(by_href.get("OEBPS/styles/main.css"), Some(&None));
+        assert!(!by_href.contains_key("OEBPS/images/cover.png"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn source_loader_reads_a_spine_document_and_a_stylesheet() {
+        let path = std::env::temp_dir().join(format!(
+            "kalam-editor-source-{}.epub",
+            uuid::Uuid::new_v4()
+        ));
+        editor_test_epub(&path);
+        let chapter = load_source_resource_in_thread(
+            &path,
+            "OEBPS/text/chapter.xhtml",
+            0,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(chapter.preview_chapter, 0);
+        assert!(chapter.text.contains("Chapter text."));
+        let css = load_source_resource_in_thread(
+            &path,
+            "OEBPS/styles/main.css",
+            0,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(css.text, "body { color: navy; }");
+        assert_eq!(css.href, "OEBPS/styles/main.css");
+        let _ = std::fs::remove_file(path);
     }
 
     fn entry(word: &str) -> crate::db::EntryData {

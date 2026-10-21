@@ -38,15 +38,15 @@ pub struct Book {
 /// would otherwise have to parse again.
 type EntryTransform = std::sync::Arc<dyn Fn(&str, Vec<u8>) -> Vec<u8> + Send + Sync>;
 
-/// A host-installed byte filter over spine entries — the virtual-edit seam.
+/// A host-installed byte filter over EPUB content — the virtual-edit seam.
 ///
 /// The host hands the book a transformation from (entry href, raw bytes) to
-/// the bytes the reader should actually parse. The book applies it inside
-/// [`Publication::unit_bytes`], so every consumer — layout, navigation,
-/// text extraction, search — sees the filtered view without knowing it
-/// exists, while the `.epub` on disk stays untouched. Kalam's Phase 6 uses
-/// this to apply pending text patches at render time; a permanent bake
-/// later writes them into the file for real.
+/// the bytes the reader should actually use. It applies to spine units and
+/// textual manifest resources before layout or rendering, so a native
+/// preview can include in-memory XHTML and stylesheet edits while the
+/// `.epub` on disk stays untouched. Kalam also uses it to apply pending text
+/// patches at render time; a permanent bake later writes them into the file
+/// for real.
 ///
 /// A newtype rather than a bare `Arc<dyn Fn>` so the options and configs
 /// that carry one can stay `Debug + PartialEq`, which closures are neither.
@@ -271,7 +271,10 @@ impl Book {
     }
 
     /// Resolve `href` relative to the container-root path `base` (the
-    /// referencing document) and read the resource it points to.
+    /// referencing document) and read the resource it points to. The host
+    /// entry filter runs on textual resources as well as spine units, so a
+    /// native preview can show in-memory stylesheet edits without rewriting
+    /// the EPUB first; image and font payloads stay on the unfiltered path.
     pub fn resource(&self, base: &str, href: &str) -> Result<Resource> {
         let path = resolve_href(base, href);
         let entry = self
@@ -279,6 +282,11 @@ impl Book {
             .ok_or_else(|| ChapbookError::ResourceNotFound(path.clone()))?;
         let mut resource = entry_resource(&entry)?;
         self.maybe_deobfuscate(&path, &mut resource.data);
+        if resource.media_type.starts_with("text/")
+            || resource.media_type == "application/xhtml+xml"
+        {
+            resource.data = self.entry_filter.apply(&path, resource.data);
+        }
         Ok(resource)
     }
 

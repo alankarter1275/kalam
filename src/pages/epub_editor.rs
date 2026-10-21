@@ -1,9 +1,8 @@
 //! The full EPUB editor: chapters use Kalam's native reader renderer, with
-//! paragraph editing and a deep raw-source pane. New text edits write
-//! directly into the EPUB; the Patches panel remains for legacy pending edits.
-//! The approved KAL-5 file-tree/IDE layout and richer quick-edit flow are
-//! follow-up work. Structural chapter-order and cover actions stay disabled
-//! until they can write directly instead of creating patches.
+//! paragraph editing and a deep raw-source workspace for XHTML, HTML, and
+//! CSS. Text edits write directly into the EPUB; the Patches panel remains
+//! for legacy pending edits. Structural chapter-order and cover actions stay
+//! disabled until they can write directly instead of creating patches.
 //!
 //! Paragraph editing reuses the reader's editor widget and planning machinery.
 
@@ -26,8 +25,8 @@ use crate::pages::reader::{
 
 /// The editor's messages. A slice of the reader's — paragraph taps,
 /// selection reports (the click-away commit), the commit/verdict pair
-/// — plus the chrome: chapter jumps, the review panel, the raw source
-/// pane (Phase 6.9), and the way back.
+/// — plus the chrome: chapter jumps, the review panel, the resource
+/// browser/source pane, and the way back.
 #[derive(Debug, Clone)]
 pub enum EpubEditorMsg {
     /// A drag or tap changed the selection. No chip, no popovers here
@@ -59,28 +58,31 @@ pub enum EpubEditorMsg {
     /// The raw source pane's open state, the same plain-desired-state
     /// contract as the review panel's.
     SetSourceOpen(bool),
-    /// The source pane's side-by-side preview.
+    /// The source pane's right-hand native preview.
     SetPreviewOpen(bool),
+    /// The background ZIP scan found the editor's supported text files.
+    SourceResourcesLoaded(Result<Vec<engine::EditableResource>, String>),
+    /// Open one file from the source-mode resource tree.
+    SelectSourceResource(String),
     /// The source buffer changed by hand (not the pane's own loads —
     /// those are suppressed): dirty tracking and the preview's
     /// debounce start here.
     SourceEdited,
-    /// The load of a chapter's source finished: the entry as the
-    /// reader shows it, or the refusal's toast.
+    /// Loading the selected editable file finished: source text or a refusal.
     SourceLoad(Result<engine::SourceEntry, String>),
     /// The direct source save finished: saved, stale, or an error. The
     /// source buffer remains available on failure.
     SourceSave(Result<engine::DirectWriteOutcome, String>),
     /// The Save button.
     SaveSource,
-    /// The Revert button: throw the buffer away, reload the chapter's
-    /// current source. Also the stale banner's way out.
+    /// The Revert button: throw the buffer away and reload the selected
+    /// resource. Also the stale banner's way out.
     RevertSource,
     /// The preview debounce timer fired for this generation — only the
     /// last-scheduled generation is still wanted.
     SourceDebounce(u64),
-    /// A preview raster finished.
-    SourcePreview(Result<engine::PreviewPixels, String>),
+    /// A preview raster or its failure finished for this generation.
+    SourcePreview(Result<engine::PreviewPixels, (u64, String)>),
     /// Escape, from the page's key controller: dirty source reverts,
     /// clean source closes the pane, otherwise this leaves the page.
     Escape,
@@ -121,17 +123,21 @@ pub struct EpubEditorModel {
     patches_count: usize,
     font_family: Option<String>,
     font_px: u32,
-    /// The raw source pane (Phase 6.9): `source` is built once, when a
-    /// book actually opened, and its widgets live for the page's life.
+    /// The deep source workspace: `source` is built once, when a book
+    /// actually opened, and its widgets live for the page's life.
     source_open: bool,
-    /// Whether the source pane's side-by-side preview is on. Kept
+    /// Whether the source pane's right-hand preview is on. Kept
     /// separate from `source_open` so reopening the pane restores it.
     preview_open: bool,
     source: Option<SourcePane>,
     /// Display order for the chapter list. Existing legacy spine patches
     /// remain visible in their proposed order; new chapter-order edits are
-    /// disabled until they can write directly to the EPUB.
+    /// deferred until they can write directly to the EPUB.
     chapter_order: Vec<usize>,
+    editable_resources: Vec<engine::EditableResource>,
+    selected_resource_href: String,
+    resource_list_loaded: bool,
+    resource_list_error: Option<String>,
 }
 
 /// The raw source pane: the widgets and the state they carry. Held in
@@ -143,13 +149,14 @@ pub struct EpubEditorModel {
 /// the model; everything runs on the main loop, so there is no racing.
 struct SourcePane {
     buffer: sourceview5::Buffer,
+    source_view: sourceview5::View,
     /// The preview's pages, stacked into one tall texture.
     picture: gtk::Picture,
     /// The preview column: hidden until the Preview toggle says, and
     /// only meaningful while the source pane is open.
     preview_box: gtk::Box,
     status_label: gtk::Label,
-    /// The stale banner: the chapter changed under the pane, saves are
+    /// The stale banner: the selected file changed under the pane; saves are
     /// refused until it is reverted.
     stale_label: gtk::Label,
     chapter_label: gtk::Label,
@@ -170,7 +177,7 @@ struct SourcePane {
     baseline_hash: RefCell<String>,
     /// The entry as loaded, the dirty check's other half.
     loaded_text: RefCell<String>,
-    chapter: Cell<usize>,
+    preview_chapter: Cell<usize>,
     /// The (href, guard, text) triple a Fresh verdict stores — kept
     /// here because the worker only checks; the insert is the main
     /// loop's, with the catalog.
@@ -243,14 +250,13 @@ impl Component for EpubEditorModel {
                         },
                     },
 
-                    // The raw door (Phase 6.9): the chapter's own
-                    // source, edited whole. No count on this one — a
-                    // source pane is one edit at a time, not a pile.
+                    // The deep-editor source mode: browse EPUB text
+                    // resources and edit one file at a time.
                     #[name = "source_btn"]
                     gtk::ToggleButton {
                         add_css_class: "kalam-editor-patches-btn",
                         set_label: "Source",
-                        set_tooltip_text: Some("Edit this chapter's raw source"),
+                        set_tooltip_text: Some("Browse and edit EPUB XHTML, HTML, and CSS files"),
                         #[watch]
                         set_sensitive: model.view.is_some(),
                         connect_toggled[sender] => move |btn| {
@@ -262,7 +268,7 @@ impl Component for EpubEditorModel {
                     gtk::ToggleButton {
                         add_css_class: "kalam-editor-patches-btn",
                         set_label: "Preview",
-                        set_tooltip_text: Some("Show the edited chapter as it will read"),
+                        set_tooltip_text: Some("Preview the current chapter with the selected resource where used"),
                         #[watch]
                         set_visible: model.source_open,
                         connect_toggled[sender] => move |btn| {
@@ -289,13 +295,12 @@ impl Component for EpubEditorModel {
                     set_hexpand: true,
                     set_vexpand: true,
 
-                    // The chapter list — flat, not the reader's TOC
-                    // tree: editing moves chapter by chapter, and a
-                    // flat list is one glance for that.
+                    // One left rail, two useful views: book contents while
+                    // proofreading; the EPUB's editable files while in Source.
                     #[name = "chapter_scroller"]
                     gtk::ScrolledWindow {
                         add_css_class: "kalam-editor-chapters",
-                        set_width_request: 200,
+                        set_width_request: 220,
                         set_hscrollbar_policy: gtk::PolicyType::Never,
                         set_vscrollbar_policy: gtk::PolicyType::Automatic,
 
@@ -304,10 +309,42 @@ impl Component for EpubEditorModel {
                             set_margin_top: 8,
                             set_margin_bottom: 8,
 
-                            #[name = "chapter_list"]
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
-                                set_hexpand: true,
+                                #[watch]
+                                set_visible: !model.source_open,
+
+                                gtk::Label {
+                                    set_label: "Contents",
+                                    set_halign: gtk::Align::Start,
+                                    set_margin_start: 12,
+                                    set_margin_bottom: 6,
+                                    add_css_class: "kalam-editor-tree-heading",
+                                },
+                                #[name = "chapter_list"]
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_hexpand: true,
+                                },
+                            },
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                #[watch]
+                                set_visible: model.source_open,
+
+                                gtk::Label {
+                                    set_label: "EPUB files",
+                                    set_halign: gtk::Align::Start,
+                                    set_margin_start: 12,
+                                    set_margin_bottom: 6,
+                                    add_css_class: "kalam-editor-tree-heading",
+                                },
+                                #[name = "resource_list"]
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_hexpand: true,
+                                },
                             },
                         },
                     },
@@ -467,6 +504,10 @@ impl Component for EpubEditorModel {
             preview_open: false,
             source: None,
             chapter_order: Vec::new(),
+            editable_resources: Vec::new(),
+            selected_resource_href: String::new(),
+            resource_list_loaded: false,
+            resource_list_error: None,
         };
         // A spine op left pending from an earlier session still owns
         // the list's order; the identity otherwise.
@@ -517,6 +558,19 @@ impl Component for EpubEditorModel {
         }
 
         rebuild_chapter_list(&widgets.chapter_list, &model, &sender);
+        rebuild_source_resource_list(&widgets.resource_list, &model, &sender);
+        if let Some(path) = model.book_path.clone() {
+            let (tx, rx) = async_channel::unbounded::<
+                Result<Vec<engine::EditableResource>, String>,
+            >();
+            let itx = sender.input_sender().clone();
+            gtk::glib::spawn_future_local(async move {
+                if let Ok(verdict) = rx.recv().await {
+                    let _ = itx.send(EpubEditorMsg::SourceResourcesLoaded(verdict));
+                }
+            });
+            engine::load_editable_resources(path, tx);
+        }
         refresh_patches_panel(&model, &widgets.patches_host, &sender);
         // Escape's ladder: a dirty source buffer reverts, a clean
         // source pane closes, and only then does Escape leave the
@@ -548,8 +602,10 @@ impl Component for EpubEditorModel {
                 // Back is the whole way out; a dirty source buffer is
                 // the one thing that can hold it — leaving would
                 // silently drop the edit.
-                if self.source_open
-                    && self.source.as_ref().is_some_and(|pane| pane.dirty.get())
+                if self
+                    .source
+                    .as_ref()
+                    .is_some_and(source_buffer_is_dirty)
                 {
                     crate::notify::info(
                         "Unsaved source",
@@ -565,7 +621,7 @@ impl Component for EpubEditorModel {
                         self.close_editor(&sender);
                         return;
                     };
-                    if pane.dirty.get() || pane.stale.get() {
+                    if source_buffer_is_dirty(pane) || pane.stale.get() {
                         // First Esc: back to the loaded text. A
                         // second Esc (clean now) closes the pane.
                         self.load_source(&sender);
@@ -585,10 +641,7 @@ impl Component for EpubEditorModel {
                 };
                 if let Some(view) = &self.view {
                     if real != self.chapter {
-                        let dirty = self
-                            .source
-                            .as_ref()
-                            .is_some_and(|pane| pane.dirty.get());
+                        let dirty = self.source.as_ref().is_some_and(source_buffer_is_dirty);
                         if self.source_open && dirty {
                             crate::notify::info(
                                 "Unsaved source",
@@ -755,7 +808,9 @@ impl Component for EpubEditorModel {
                         if self.inline_edit.is_none() {
                             self.reload(&sender);
                             if self.source_open
-                                && self.source.as_ref().is_some_and(|pane| !pane.dirty.get())
+                                && self.source.as_ref().is_some_and(|pane| {
+                                    !source_buffer_is_dirty(pane)
+                                })
                             {
                                 self.load_source(&sender);
                             }
@@ -807,7 +862,7 @@ impl Component for EpubEditorModel {
                             && self
                                 .source
                                 .as_ref()
-                                .is_some_and(|pane| !pane.dirty.get())
+                                .is_some_and(|pane| !source_buffer_is_dirty(pane))
                         {
                             self.load_source(&sender);
                         }
@@ -833,7 +888,7 @@ impl Component for EpubEditorModel {
                     if self
                         .source
                         .as_ref()
-                        .is_some_and(|pane| pane.dirty.get())
+                        .is_some_and(source_buffer_is_dirty)
                     {
                         crate::notify::info(
                             "Unsaved source",
@@ -851,12 +906,84 @@ impl Component for EpubEditorModel {
                     self.load_source(&sender);
                 }
             }
+            EpubEditorMsg::SourceResourcesLoaded(verdict) => {
+                self.resource_list_loaded = true;
+                match verdict {
+                    Ok(resources) => {
+                        self.resource_list_error = None;
+                        if self.selected_resource_href.is_empty() {
+                            self.selected_resource_href = resources
+                                .iter()
+                                .find(|resource| resource.spine_index == Some(self.chapter))
+                                .or_else(|| resources.first())
+                                .map(|resource| resource.href.clone())
+                                .unwrap_or_default();
+                        }
+                        self.editable_resources = resources;
+                    }
+                    Err(message) => {
+                        self.resource_list_error = Some(message.clone());
+                        self.editable_resources.clear();
+                        crate::notify::error("Could not list EPUB files", &message);
+                    }
+                }
+                rebuild_source_resource_list(&widgets.resource_list, self, &sender);
+                if self.source_open && !self.selected_resource_href.is_empty() {
+                    self.load_source(&sender);
+                }
+            }
+            EpubEditorMsg::SelectSourceResource(href) => {
+                if href == self.selected_resource_href
+                    || !self.editable_resources.iter().any(|resource| resource.href == href)
+                {
+                    return;
+                }
+                if let Some(pane) = &self.source {
+                    if source_buffer_is_dirty(pane) || pane.saving.get() {
+                        crate::notify::info(
+                            "Unsaved source",
+                            "Save or revert the open file before switching to another EPUB file.",
+                        );
+                        return;
+                    }
+                    if pane.loading.get() {
+                        crate::notify::info(
+                            "File is still loading",
+                            "Wait for the current EPUB file to finish loading before switching.",
+                        );
+                        return;
+                    }
+                }
+                let spine_index = self
+                    .editable_resources
+                    .iter()
+                    .find(|resource| resource.href == href)
+                    .and_then(|resource| resource.spine_index);
+                self.selected_resource_href = href;
+                if let Some(chapter) = spine_index {
+                    self.chapter = chapter;
+                    if let Some(view) = &self.view {
+                        view.goto_chapter(chapter, 0.0);
+                    }
+                    rebuild_chapter_list(&widgets.chapter_list, self, &sender);
+                }
+                if let Some(pane) = &self.source {
+                    pane.picture.set_paintable(None::<&gtk::gdk::Paintable>);
+                    pane.status_label.set_text("Loading selected EPUB file…");
+                }
+                rebuild_source_resource_list(&widgets.resource_list, self, &sender);
+                if self.source_open {
+                    self.load_source(&sender);
+                }
+            }
             EpubEditorMsg::SetPreviewOpen(open) => {
                 if open == self.preview_open {
                     return;
                 }
                 self.preview_open = open;
                 if let Some(pane) = &self.source {
+                    let gen = pane.preview_gen.get() + 1;
+                    pane.preview_gen.set(gen);
                     pane.preview_box.set_visible(open);
                     if open && self.source_open && !pane.loading.get() {
                         self.kick_preview(&sender);
@@ -872,9 +999,9 @@ impl Component for EpubEditorModel {
                 pane.dirty.set(dirty);
                 pane.save_btn.set_sensitive(dirty && !pane.stale.get());
                 pane.revert_btn.set_sensitive(dirty || pane.stale.get());
-                if dirty && self.preview_open {
-                    let gen = pane.preview_gen.get() + 1;
-                    pane.preview_gen.set(gen);
+                let gen = pane.preview_gen.get() + 1;
+                pane.preview_gen.set(gen);
+                if self.preview_open {
                     let tx = sender.input_sender().clone();
                     gtk::glib::timeout_add_local_once(
                         std::time::Duration::from_millis(700),
@@ -889,31 +1016,33 @@ impl Component for EpubEditorModel {
                 pane.loading.set(false);
                 match verdict {
                     Ok(entry) => {
-                        if entry.chapter != self.chapter {
-                            // The chapter moved under the load (a
-                            // chapter click raced it). The verdict is
-                            // for somewhere else; re-read where we
-                            // actually are.
+                        if entry.href != self.selected_resource_href {
+                            // A different file was chosen while this read
+                            // was in flight. Discard the old verdict and
+                            // load the currently selected resource.
                             self.load_source(&sender);
                             return;
                         }
+                        pane.source_view.set_editable(true);
                         pane.suppress.set(true);
                         pane.buffer.set_text(&entry.text);
                         pane.suppress.set(false);
                         *pane.href.borrow_mut() = entry.href.clone();
                         *pane.baseline_hash.borrow_mut() = entry.hash.clone();
                         *pane.loaded_text.borrow_mut() = entry.text.clone();
-                        pane.chapter.set(entry.chapter);
+                        pane.preview_chapter.set(entry.preview_chapter);
                         pane.dirty.set(false);
                         pane.stale.set(false);
                         pane.stale_label.set_visible(false);
                         pane.save_btn.set_sensitive(false);
                         pane.revert_btn.set_sensitive(false);
                         pane.chapter_label.set_text(&entry.href);
-                        // The language by extension: XHTML chapters are
-                        // the v1 scope, CSS rides the same machinery.
-                        let lang_id = if entry.href.ends_with(".css") {
+                        // Choose source highlighting by the file type.
+                        let lower_href = entry.href.to_ascii_lowercase();
+                        let lang_id = if lower_href.ends_with(".css") {
                             "css"
+                        } else if lower_href.ends_with(".html") || lower_href.ends_with(".htm") {
+                            "html"
                         } else {
                             "xml"
                         };
@@ -925,11 +1054,22 @@ impl Component for EpubEditorModel {
                         }
                     }
                     Err(toast) => {
-                        // No source, no pane. The book itself is fine —
-                        // the proofreading surface still stands.
-                        crate::notify::error("Could not open the source", &toast);
-                        self.source_open = false;
-                        widgets.source_btn.set_active(false);
+                        // A bad resource must not close the editor or replace
+                        // the previous buffer. Restore its tree selection when
+                        // one was already loaded; otherwise keep the error in
+                        // the open pane so the user can choose another file.
+                        crate::notify::error("Could not open the EPUB file", &toast);
+                        let previous_href = pane.href.borrow().clone();
+                        pane.source_view.set_editable(!previous_href.is_empty());
+                        if !previous_href.is_empty() {
+                            self.selected_resource_href = previous_href;
+                            rebuild_source_resource_list(
+                                &widgets.resource_list,
+                                self,
+                                &sender,
+                            );
+                        }
+                        pane.status_label.set_text(&toast);
                     }
                 }
             }
@@ -1004,7 +1144,8 @@ impl Component for EpubEditorModel {
                         self.reload(&sender);
                         if self.source_open
                             && self.source.as_ref().is_some_and(|pane| {
-                                !pane.dirty.get() && pane.chapter.get() != self.chapter
+                                !source_buffer_is_dirty(pane)
+                                    && pane.preview_chapter.get() != self.chapter
                             })
                         {
                             self.load_source(&sender);
@@ -1024,14 +1165,15 @@ impl Component for EpubEditorModel {
                         pane.save_btn.set_sensitive(false);
                         pane.stale_label.set_visible(true);
                         crate::notify::info(
-                            "The chapter changed",
-                            "The chapter changed after this pane loaded it. Revert to load the current text, then make the edit again.",
+                            "The EPUB file changed",
+                            "This EPUB file changed after the pane loaded it. Revert to load the current text, then make the edit again.",
                         );
                     }
                     Err(message) => {
                         *pane.save_attempt.borrow_mut() = None;
-                        pane.save_btn.set_sensitive(pane.dirty.get());
-                        pane.revert_btn.set_sensitive(pane.dirty.get());
+                        let dirty = source_buffer_is_dirty(pane);
+                        pane.save_btn.set_sensitive(dirty && !pane.stale.get());
+                        pane.revert_btn.set_sensitive(dirty || pane.stale.get());
                         crate::notify::error("Could not save the source edit", &message);
                     }
                 }
@@ -1067,9 +1209,13 @@ impl Component for EpubEditorModel {
                             pixels.width as usize * 4,
                         );
                         pane.picture.set_paintable(Some(&texture));
-                        pane.status_label.set_text("");
+                        pane.status_label
+                            .set_text("Native preview of the current chapter.");
                     }
-                    Err(toast) => {
+                    Err((generation, toast)) => {
+                        if generation != pane.preview_gen.get() {
+                            return;
+                        }
                         pane.picture.set_paintable(None::<&gtk::gdk::Paintable>);
                         pane.status_label.set_text(&toast);
                     }
@@ -1100,8 +1246,8 @@ impl EpubEditorModel {
     }
 
     /// The book's pending patches, logged-not-fatal when unreadable —
-    /// the reload's own rule. Every source worker takes them: the
-    /// pane edits the chapter as the reader shows it.
+    /// the reload's own rule. Every source worker takes them so spine
+    /// resources are loaded and previewed as the reader currently shows them.
     fn pending_patches(&self) -> Vec<crate::db::PatchRecord> {
         self.service
             .catalog()
@@ -1172,21 +1318,40 @@ impl EpubEditorModel {
         sender.output(EpubEditorOut::Close).ok();
     }
 
-    /// Load the current chapter's source into the pane, off the UI
-    /// thread. One flight at a time (`loading`); the verdict installs
-    /// the text, the baseline hash, and the language.
+    /// Load the selected XHTML/HTML/CSS resource off the UI thread. One
+    /// flight at a time (`loading`); a resource selected during a read is
+    /// picked up when that earlier verdict arrives.
     fn load_source(&mut self, sender: &ComponentSender<Self>) {
         let Some(pane) = &self.source else { return };
         if pane.loading.get() || pane.saving.get() {
             return;
         }
         let Some(path) = self.book_path.clone() else { return };
+        let Some(resource) = self
+            .editable_resources
+            .iter()
+            .find(|resource| resource.href == self.selected_resource_href)
+        else {
+            if let Some(error) = self.resource_list_error.as_deref() {
+                pane.status_label.set_text(error);
+            } else if !self.resource_list_loaded {
+                pane.status_label.set_text("Finding editable XHTML, HTML, and CSS files…");
+            } else {
+                pane.status_label
+                    .set_text("Choose an editable EPUB file from the left-hand list.");
+            }
+            return;
+        };
+        let href = resource.href.clone();
+        let preview_chapter = resource.spine_index.unwrap_or(self.chapter);
+        pane.preview_gen.set(pane.preview_gen.get() + 1);
+        pane.picture.set_paintable(None::<&gtk::gdk::Paintable>);
+        pane.source_view.set_editable(false);
         pane.loading.set(true);
         pane.stale.set(false);
         pane.stale_label.set_visible(false);
         pane.save_btn.set_sensitive(false);
-        pane.status_label.set_text("Loading the chapter's source…");
-        let chapter = self.chapter;
+        pane.status_label.set_text("Loading selected EPUB file…");
         let prior = self.pending_patches();
         let (tx, rx) = async_channel::unbounded::<Result<engine::SourceEntry, String>>();
         let itx = sender.input_sender().clone();
@@ -1195,10 +1360,10 @@ impl EpubEditorModel {
                 let _ = itx.send(EpubEditorMsg::SourceLoad(verdict));
             }
         });
-        engine::load_source_entry(path, chapter, prior, tx);
+        engine::load_source_resource(path, href, preview_chapter, prior, tx);
     }
 
-    /// Render the buffer's chapter through the headless preview, with
+    /// Render the selected resource through the headless preview, with
     /// the debounce generation stamped on the flight. Called by the
     /// toggle (immediately) and by the debounce timer (after quiet).
     fn kick_preview(&mut self, sender: &ComponentSender<Self>) {
@@ -1211,11 +1376,12 @@ impl EpubEditorModel {
         let fonts_dir = Some(crate::paths::fonts_dir());
         let href = pane.href.borrow().clone();
         let text = source_text(&pane.buffer);
-        let spine = pane.chapter.get();
+        let spine = pane.preview_chapter.get();
         let gen = pane.preview_gen.get();
         let prior = self.pending_patches();
         let page = preview_page_size(&prefs);
-        let (tx, rx) = async_channel::unbounded::<Result<engine::PreviewPixels, String>>();
+        let (tx, rx) =
+            async_channel::unbounded::<Result<engine::PreviewPixels, (u64, String)>>();
         let itx = sender.input_sender().clone();
         gtk::glib::spawn_future_local(async move {
             if let Ok(verdict) = rx.recv().await {
@@ -1365,6 +1531,79 @@ fn rebuild_chapter_list(
     }
 }
 
+/// Rebuild the source-mode file list. Directory labels make the flat,
+/// searchable-by-eye list read like an EPUB tree without hiding files behind
+/// a nested expander. Only editable XHTML/HTML/CSS entries are listed.
+fn rebuild_source_resource_list(
+    list: &gtk::Box,
+    model: &EpubEditorModel,
+    sender: &ComponentSender<EpubEditorModel>,
+) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+    if model.editable_resources.is_empty() {
+        let message = if let Some(error) = &model.resource_list_error {
+            error.as_str()
+        } else if model.resource_list_loaded {
+            "This EPUB has no editable XHTML, HTML, or CSS files."
+        } else {
+            "Finding editable EPUB files…"
+        };
+        let label = gtk::Label::new(Some(message));
+        label.set_wrap(true);
+        label.set_halign(gtk::Align::Start);
+        label.set_xalign(0.0);
+        label.set_margin_start(12);
+        label.set_margin_end(12);
+        label.set_margin_top(8);
+        label.add_css_class("kalam-editor-tree-empty");
+        list.append(&label);
+        return;
+    }
+
+    let mut last_directory: Option<String> = None;
+    for resource in &model.editable_resources {
+        let (directory, file_name) = resource
+            .href
+            .rsplit_once('/')
+            .map(|(directory, file_name)| (directory, file_name))
+            .unwrap_or(("", resource.href.as_str()));
+        if last_directory.as_deref() != Some(directory) {
+            let label = gtk::Label::new(Some(if directory.is_empty() {
+                "Book root"
+            } else {
+                directory
+            }));
+            label.set_halign(gtk::Align::Start);
+            label.set_xalign(0.0);
+            label.set_margin_start(12);
+            label.set_margin_top(10);
+            label.set_margin_bottom(2);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+            label.set_tooltip_text(Some(directory));
+            label.add_css_class("kalam-editor-tree-directory");
+            list.append(&label);
+            last_directory = Some(directory.to_string());
+        }
+
+        let button = gtk::Button::with_label(file_name);
+        button.add_css_class("kalam-editor-resource");
+        button.set_halign(gtk::Align::Fill);
+        button.set_hexpand(true);
+        button.set_tooltip_text(Some(&resource.href));
+        if resource.href == model.selected_resource_href {
+            button.add_css_class("kalam-editor-resource-selected");
+        }
+        let href = resource.href.clone();
+        let tx = sender.input_sender().clone();
+        button.connect_clicked(move |_| {
+            let _ = tx.send(EpubEditorMsg::SelectSourceResource(href.clone()));
+        });
+        list.append(&button);
+    }
+}
+
 /// Rebuild the review panel inside its host. The panel is the step-5
 /// one, unchanged; its Done collapses the revealer, and anything it
 /// did (bake, accept, reject) is caught by the count at close.
@@ -1402,6 +1641,7 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
         buffer.set_language(Some(&lang));
     }
     let view = sourceview5::View::with_buffer(&buffer);
+    view.set_editable(false);
     view.set_show_line_numbers(true);
     view.set_monospace(true);
     view.set_tab_width(4);
@@ -1413,8 +1653,8 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
     scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     scroller.set_child(Some(&view));
 
-    // The side-by-side preview: a tall picture of the chapter's first
-    // pages, scrolled like paper.
+    // The right-hand native preview: a tall picture of the current
+    // reading-order chapter, scrolled like paper.
     let picture = gtk::Picture::new();
     picture.set_can_shrink(true);
     picture.set_hexpand(true);
@@ -1426,7 +1666,7 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
     preview_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     preview_scroll.set_child(Some(&picture));
     let status_label = gtk::Label::new(Some(
-        "The edited chapter, as it will read — re-rendered as you type.",
+        "Native preview of the current chapter; the selected text file is applied where referenced.",
     ));
     status_label.set_wrap(true);
     status_label.set_halign(gtk::Align::Start);
@@ -1438,6 +1678,7 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
     preview_box.set_margin_bottom(8);
     preview_box.set_margin_start(8);
     preview_box.set_margin_end(8);
+    preview_box.set_size_request(320, -1);
     preview_box.append(&status_label);
     preview_box.append(&preview_scroll);
     preview_box.set_visible(false);
@@ -1445,8 +1686,8 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     content.set_hexpand(true);
     content.set_vexpand(true);
-    content.append(&preview_box);
     content.append(&scroller);
+    content.append(&preview_box);
 
     // The toolbar: Save, Revert, and which entry is open.
     let save_btn = gtk::Button::with_label("Save");
@@ -1460,7 +1701,7 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
         });
     }
     let revert_btn = gtk::Button::with_label("Revert");
-    revert_btn.set_tooltip_text(Some("Throw the edits away and reload the chapter's source"));
+    revert_btn.set_tooltip_text(Some("Throw the edits away and reload this EPUB file"));
     revert_btn.set_sensitive(false);
     {
         let tx = sender.input_sender().clone();
@@ -1482,7 +1723,7 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
 
     // The stale banner: saves are refused until the pane is reverted.
     let stale_label = gtk::Label::new(Some(
-        "This chapter changed after the pane loaded it. Revert to load the current text, then make the edit again.",
+        "This EPUB file changed after the pane loaded it. Revert to load the current text, then make the edit again.",
     ));
     stale_label.set_wrap(true);
     stale_label.set_halign(gtk::Align::Start);
@@ -1509,6 +1750,7 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
 
     SourcePane {
         buffer,
+        source_view: view,
         picture,
         preview_box,
         status_label,
@@ -1525,7 +1767,7 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
         href: RefCell::new(String::new()),
         baseline_hash: RefCell::new(String::new()),
         loaded_text: RefCell::new(String::new()),
-        chapter: Cell::new(0),
+        preview_chapter: Cell::new(0),
         save_attempt: RefCell::new(None),
     }
 }
@@ -1535,6 +1777,13 @@ fn build_source_pane(host: &gtk::Box, sender: &ComponentSender<EpubEditorModel>)
 fn source_text(buffer: &sourceview5::Buffer) -> String {
     let (start, end) = buffer.bounds();
     buffer.text(&start, &end, false).to_string()
+}
+
+/// Read live buffer contents as well as the asynchronous dirty bit. A key
+/// press can be followed by a file switch before the changed-message callback
+/// has been handled; this guard must still protect those just-typed bytes.
+fn source_buffer_is_dirty(pane: &SourcePane) -> bool {
+    pane.dirty.get() || source_text(&pane.buffer) != *pane.loaded_text.borrow()
 }
 
 /// The preview's page size from the reading prefs: the reader's own

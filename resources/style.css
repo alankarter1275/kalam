@@ -4870,8 +4870,7 @@ popover.kalam-reader-dict-popover > contents {
     margin-top: 2px;
 }
 
-/* Phase 6.9: the raw source pane — GtkSourceView on the left of the
- * stage, the debounced reading preview beside it. */
+/* Deep editor source mode: file rail, central GtkSourceView, native preview. */
 .kalam-editor-source {
     background: @kalam_bg;
 }
@@ -4897,8 +4896,48 @@ popover.kalam-reader-dict-popover > contents {
 
 .kalam-source-preview {
     background: @kalam_surface;
-    border-right: 1px solid @kalam_border;
+    border-left: 1px solid @kalam_border;
     min-width: 280px;
+}
+
+.kalam-editor-tree-heading {
+    color: @kalam_text_dim;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 6px 0;
+}
+
+.kalam-editor-tree-directory {
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+    font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
+    padding: 3px 0;
+}
+
+button.kalam-editor-resource {
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    color: @kalam_text_dim;
+    font-size: 0.83rem;
+    padding: 6px 10px;
+    margin: 1px 6px;
+}
+
+button.kalam-editor-resource:hover {
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_text;
+}
+
+button.kalam-editor-resource-selected {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+}
+
+.kalam-editor-tree-empty {
+    color: @kalam_text_dim;
+    font-size: 0.82rem;
 }
 
 .kalam-source-preview-page {

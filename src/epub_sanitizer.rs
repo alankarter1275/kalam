@@ -291,12 +291,17 @@ pub(crate) fn save_epub_entry_direct_locked(
     if expected_book_hash.is_some_and(|expected| expected.is_empty()) {
         return Err(anyhow!("the editor has no saved EPUB version to compare against"));
     }
-    if href.is_empty()
-        || href.starts_with('/')
-        || href.contains('\\')
-        || href.split('/').any(|part| part == "..")
-        || href == "mimetype"
-    {
+    let decoded_href = percent_decode_path(href);
+    let safe_path = |value: &str| {
+        !value.is_empty()
+            && !value.starts_with('/')
+            && !value.contains('\\')
+            && value != "mimetype"
+            && !value
+                .split('/')
+                .any(|part| part == ".." || part.is_empty())
+    };
+    if !safe_path(href) || !safe_path(&decoded_href) {
         return Err(anyhow!("unsafe EPUB resource path: {href}"));
     }
     if expected_entry_hash.is_empty() {
@@ -314,11 +319,10 @@ pub(crate) fn save_epub_entry_direct_locked(
         let file = fs::File::open(path).context("open EPUB before direct save")?;
         let mut archive = ZipArchive::new(file).context("open EPUB archive")?;
         let opf_path = crate::epub::find_opf_path_pub(&mut archive)?;
-        let decoded = percent_decode_path(href);
         let entry_name = if archive.by_name(href).is_ok() {
             href.to_string()
-        } else if decoded != href && archive.by_name(&decoded).is_ok() {
-            decoded
+        } else if decoded_href != href && archive.by_name(&decoded_href).is_ok() {
+            decoded_href
         } else {
             return Err(anyhow!("{href} is no longer present in the EPUB"));
         };
@@ -1030,7 +1034,7 @@ fn rewrite_spine_order(opf: &[u8], order_text: &str) -> Result<Vec<u8>, String> 
 /// Percent-decode a container path — the tolerance chapbook-epub's
 /// manifest lookup applies. A package may list a href encoded while the
 /// zip member is decoded; baking has to find the member either way.
-fn percent_decode_path(s: &str) -> String {
+pub(crate) fn percent_decode_path(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

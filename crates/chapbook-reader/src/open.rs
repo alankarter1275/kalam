@@ -370,11 +370,11 @@ impl Session {
     /// Install a host byte filter over the EPUB's entries — the
     /// virtual-edit seam (Kalam's Phase 6).
     ///
-    /// While a filter is installed, every unit the session reads is the
-    /// filter's view of the entry, not the file's bytes: layout, text
-    /// extraction, char counts and search all parse the filtered text, and
-    /// the `.epub` on disk is untouched. The filter type and its contract
-    /// are [`chapbook_epub::EntryFilter`]'s.
+    /// While a filter is installed, spine units and textual manifest
+    /// resources are the filter's view of their entries, not the file's
+    /// bytes: layout, external stylesheets, text extraction, char counts and
+    /// search use the filtered content, and the `.epub` on disk is untouched.
+    /// The filter type and its contract are [`chapbook_epub::EntryFilter`]'s.
     ///
     /// Call it right after opening, before the first unit is read: units
     /// already laid out, the session's char counts and its cached unit

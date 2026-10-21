@@ -24,6 +24,7 @@
 use super::mod_model::ReaderModel;
 use super::types::*;
 use crate::db::{Annotation, Catalog, HighlightColor as DbColor, AnnotationStyle, PatchRecord};
+use crate::service::LibraryService;
 use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use kalam_reader::{
@@ -32,7 +33,6 @@ use kalam_reader::{
 };
 use relm4::ComponentSender;
 use std::path::Path;
-use std::sync::Arc;
 
 // ---------------------------------------------------------------------
 // Preferences: Kalam's stored values → the engine's
@@ -910,7 +910,7 @@ pub(crate) enum DirectWriteOutcome {
 /// the legacy panel first so a direct write cannot silently bake or lose them.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn save_inline_edit(
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     book_id: i64,
     book_path: std::path::PathBuf,
     expected_book_hash: String,
@@ -924,7 +924,7 @@ pub(crate) fn save_inline_edit(
 ) {
     std::thread::spawn(move || {
         let verdict = save_inline_edit_in_thread(
-            &catalog,
+            service.catalog().as_ref(),
             book_id,
             &book_path,
             &expected_book_hash,
@@ -1029,7 +1029,7 @@ fn save_inline_edit_in_thread(
 /// index after the atomic archive replacement succeeds.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn save_source_entry_direct(
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     book_id: i64,
     book_path: std::path::PathBuf,
     expected_book_hash: String,
@@ -1041,7 +1041,7 @@ pub(crate) fn save_source_entry_direct(
 ) {
     std::thread::spawn(move || {
         let result = write_editor_resource(DirectResourceWrite {
-            catalog: &catalog,
+            catalog: service.catalog().as_ref(),
             book_id,
             book_path: &book_path,
             href: &href,

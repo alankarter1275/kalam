@@ -2092,7 +2092,7 @@ impl Component for ReaderModel {
                     EditScope::Selection => None,
                     EditScope::Paragraph { prev, next } => Some((prev.clone(), next.clone())),
                 };
-                let catalog = self.service.catalog().clone();
+                let service = self.service.clone();
                 let (verdict_tx, verdict_rx) =
                     async_channel::unbounded::<Result<DirectEditSaved, (String, u64)>>();
                 let tx = sender.input_sender().clone();
@@ -2102,7 +2102,7 @@ impl Component for ReaderModel {
                     }
                 });
                 engine::save_inline_edit(
-                    catalog,
+                    service,
                     self.book_id,
                     path,
                     self.book_hash.clone(),

@@ -19,4 +19,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 12.91s
+src/pages/reader/engine.rs:1834:5: [1m[91merror[0m: consider using `sort_by_key`
+src/pages/epub_editor.rs:1569:30: [1m[91merror[0m: unnecessary map of the identity function: help: remove the call to `map`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors

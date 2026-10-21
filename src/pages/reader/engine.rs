@@ -1831,7 +1831,7 @@ fn load_editable_resources_in_thread(
         });
         resources.push(EditableResource { href, spine_index });
     }
-    resources.sort_by(|a, b| a.href.to_lowercase().cmp(&b.href.to_lowercase()));
+    resources.sort_by_key(|resource| resource.href.to_lowercase());
     Ok(resources)
 }
 

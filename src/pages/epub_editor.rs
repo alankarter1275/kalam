@@ -1567,7 +1567,6 @@ fn rebuild_source_resource_list(
         let (directory, file_name) = resource
             .href
             .rsplit_once('/')
-            .map(|(directory, file_name)| (directory, file_name))
             .unwrap_or(("", resource.href.as_str()));
         if last_directory.as_deref() != Some(directory) {
             let label = gtk::Label::new(Some(if directory.is_empty() {

@@ -78,13 +78,15 @@ must not be required for the offline library or readers to work.
 
 Before KAL-5, the editor staged guarded paragraph/source edits, chapter order,
 and cover changes as patches; the reader can display pending text patches and
-the review panel can apply or discard them. KAL-5 is now authorized and in
-progress. The first direct-save slice is drafted but uncompiled/untested:
-reader selection/paragraph fixes, deep-editor paragraph edits, and raw-source
-Save write into the EPUB. Chapter-order and cover actions are temporarily
-disabled rather than allowed to create new patches. Legacy patches retain their
-review/apply/discard path. The editor still lacks the approved file-tree/IDE
-layout and arbitrary-file editing.
+the review panel can apply or discard them. KAL-5 is authorized and in progress.
+The direct-save foundation is implemented for reader selection/paragraph fixes,
+deep-editor paragraph edits, and raw-source Save. CI run `39654866950` passed
+formatting, clippy, 610 tests (3 ignored), release build, OCR diagnostic, and
+headless UI smoke checks. Chapter-order and cover actions remain unavailable
+rather than creating new patches. Legacy patches retain their review/apply/
+discard path. The approved file-tree/IDE layout and Light-mode experience are
+still outstanding, as are real-book owner validation and refresh-performance
+measurement.
 
 ### Current limitations
 
@@ -93,8 +95,9 @@ layout and arbitrary-file editing.
   Existing UI or queue scaffolding does not provide working online sources.
 - The Lua plugin substrate is selected, but neither the plugin runtime nor a
   source implementation is registered.
-- KAL-5 is authorized and in progress. Its first direct-save slice is drafted
-  but not yet built or tested; remaining scope and status are in `plan.md`.
+- KAL-5 is authorized and in progress. Its direct-save foundation passes CI;
+  the approved editor layout, performance measurement, and real-book owner
+  validation remain. Current details are in `plan.md`.
 
 ## Crosswalk from earlier phase names to current status
 
@@ -123,7 +126,7 @@ that a feature shipped or remains in the app.
 | **A0 — Architecture and performance** | Steps 1–7 shipped: measurement, `LibraryService`, thumbnails, tasks, preloaders, windowed grid, and query-count CI budgets. Step 8 has `Source`/empty-manager scaffolding and design notes, but no plugin host or registered source. |
 | **A1 — In-app dialogs** | Shipped: in-app dialogs use the overlay helper and focus handling; portal-backed file pickers remain native. |
 | **Dictionary overhaul, steps 1–10** | Most data, lookup, vocabulary, pronunciation, priority, and history work remains. The old Phase 6 tap-to-look-up interaction was later removed, so the old “all steps complete” label is not a current feature checklist. |
-| **Later offline roadmap, phases 1–6** | Shipped work is reflected in the current app status above. The initial EPUB editor shipped; the KAL-5 usability overhaul remains unapproved. |
+| **Later offline roadmap, phases 1–6** | Shipped work is reflected in the current app status above. The initial EPUB editor shipped; the KAL-5 usability overhaul is authorized and in progress. |
 | **Later offline roadmap, phases 7–8** | Query-count performance checks exist. Further optimization is last; the separate Material 3 redesign remains planned. |
 
 ## Current decisions and boundaries
@@ -139,9 +142,10 @@ that a feature shipped or remains in the app.
   a lossless, safe-subset Markdown-like Light mode. Strict validation and
   stale-write refusal remain required. Follow the backup policy in `plan.md`:
   one pristine backup before the first in-reader fix, timestamped backups for
-  deep-editor saves. The first direct-save slice is drafted but not yet built or
-  tested. The post-save view refresh still needs engineering work and
-  measurement. See [`plan.md`](plan.md).
+  deep-editor saves. The direct-save foundation passes CI; the post-save view
+  refresh still needs engineering work and measurement. The approved file-tree,
+  Light-mode, and inline-toolbar experience, plus owner field validation, remain.
+  See [`plan.md`](plan.md).
 - Performance optimization is scheduled after the heavy feature work and the
   Material 3 redesign. Measure before choosing optimizations.
 - The earlier roadmap listed unauthorized shadow-library support, a Calibre
@@ -151,11 +155,11 @@ that a feature shipped or remains in the app.
 
 ## Current work order
 
-1. **Continue KAL-5.** Finish and validate direct saves for reader and deep
-   editor text paths; preserve the legacy-patch review gate; then build the
-   approved reader-like quick-edit and deep-editor layout. Measure archive-write
-   and refresh responsiveness on large books before making timing promises.
-   Detailed scope and current status are in [`plan.md`](plan.md).
+1. **Continue KAL-5.** The reader/deep-editor text direct-save foundation is
+   implemented and CI-validated; preserve the legacy-patch review gate. Next
+   build the approved reader-like quick-edit and file-tree/editor/native-preview
+   layout, then measure archive-write and refresh responsiveness and validate on
+   real books with the owner. Detailed scope is in [`plan.md`](plan.md).
 2. **Schedule other approved feature work and the Material 3 redesign.** The
    old phase plans are historical input, not automatic authorization to build
    every item they listed.
@@ -637,7 +641,7 @@ a year. The 2026-09-30 pass corrected a table that had last been verified
 | **PDF reader & engine** | **shipped** | Rebuilt from scratch with MuPDF (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`). Crisp 8.7ms rasterization, unified EPUB-matching chrome (floating back chip, bottom pill with page jump and zoom, autohiding controls, slide-in TOC sidebar), continuous vertical scroll and paged modes, bounded memory cache (<80 MB). Replaced heuristic `lopdf` viewer. |
 | **Wasm plugins** | **NOT shipped** | `// mod plugins;` is commented out in `src/main.rs`; `wasmtime` is in neither `Cargo.toml` nor `Cargo.lock`. **Part 2.** |
 | Full-text library search | shipped | `book_content_fts` FTS5 table (`src/db.rs` schema v15), `src/content_index.rs`, background indexing + Reindex control; changelog 2026-09-29 |
-| EPUB editor | shipped 2026-10-09; **KAL-5 implementation in progress** | Phase 6: `src/pages/epub_editor.rs` + `editor_picker.rs` + `edits_panel.rs`, routed as `PageSlot::Editor`/`EditorPicker` (`src/app.rs:145`); baseline run `37901417687`. The KAL-5 first direct-save slice is drafted in the working tree but not yet built/tested; see `plan.md`. |
+| EPUB editor | shipped 2026-10-09; **KAL-5 implementation in progress** | Phase 6: `src/pages/epub_editor.rs` + `editor_picker.rs` + `edits_panel.rs`, routed as `PageSlot::Editor`/`EditorPicker` (`src/app.rs:145`); baseline run `37901417687`. Direct-save foundation passed CI run `39654866950`; the approved file-tree/Light-mode/inline-toolbar experience, performance measurement, and owner field validation remain. See `plan.md`. |
 | OCR page cache (scanned PDFs) | shipped | `page_ocr_cache` table, schema v16, `src/db.rs`; loaded in `ensure_page_text`, saved in the `PageOcrResult` handler, `src/pages/pdf_reader.rs` |
 | Readable book folders | shipped | `book_folder_name` + folder index in `src/paths.rs`, rename pass in `src/folders.rs`, import wiring in `src/epub.rs`, edit hook in `src/db/metadata.rs` |
 | In-reader search (EPUB & PDF) | shipped | Phase 4 Step 1: Ctrl+F bar, live match count, "Matches at a Glance" popover — `src/pages/reader/mod.rs:2918`, `src/pages/pdf_reader.rs:4188`; field-tested in checklist Round 8 |

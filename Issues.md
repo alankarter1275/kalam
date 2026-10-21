@@ -35,13 +35,15 @@ Same day, on the rail's new picker page:
 **Baseline and implementation status.** Before KAL-5, paragraph and
 chapter-source edits, chapter ordering, and cover replacement could create
 pending patches. The patch panel applies selected legacy edits by rewriting the
-EPUB and refreshing its hash/index. The first direct-save slice is now drafted
-in the working tree: reader selection/paragraph fixes, deep-editor paragraph
-edits, and raw-source Save write into the EPUB rather than creating patches.
-It has not yet been compiled or tested. Chapter ordering and cover replacement
-are temporarily unavailable rather than creating new patches; the legacy panel
-remains the safe review/apply/discard path for existing pending edits. The
-editor still lacks a general archive file tree.
+EPUB and refreshing its hash/index. The first direct-save slice is implemented:
+reader selection/paragraph fixes, deep-editor paragraph edits, and raw-source
+Save write into the EPUB rather than creating patches. CI run `39654866950`
+passed formatting, clippy, 610 tests (3 ignored), release build, OCR diagnostic,
+and headless UI smoke checks. Chapter ordering and cover replacement remain
+unavailable rather than creating new patches; the legacy panel remains the safe
+review/apply/discard path for existing pending edits. The approved file-tree,
+Light-mode, and inline-toolbar experience still needs implementation; real-book
+owner validation and refresh-performance measurement remain open.
 
 **Owner's direction (2026-10-21).** Both in-reader quick edits and deep-editor
 changes should save directly into the EPUB; do not create new pending patches.

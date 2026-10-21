@@ -1,9 +1,12 @@
 # KAL-5 — EPUB editor usability overhaul
 
 **Status: Implementation in progress; authorized 2026-10-21.** The first
-permanent-save slice is drafted in the working tree and has not yet been built
-or tested. The approved product direction is no longer awaiting authorization;
-the remaining work is to finish, validate, measure, and phase the experience.
+direct-save slice is implemented and pushed on `arena/7c5b89dd-kalam`. CI run
+`39654866950` passed formatting, clippy, workspace tests (610 passed; 3
+ignored), release build, OCR diagnostic, and headless UI smoke checks. The
+approved product direction is no longer awaiting authorization; the remaining
+work is the approved editor experience, responsiveness measurement, and
+owner-led real-book validation.
 
 ## Current editor behavior
 
@@ -14,16 +17,17 @@ rewrites the EPUB, preserves the first `.orig` backup, updates the book hash,
 and reindexes search. The editor has no general archive file tree or
 arbitrary-file editor.
 
-**Implementation in progress:** in-reader selection/paragraph fixes, full-editor
-paragraph edits, and raw-source Save now target direct EPUB writes in the local
-worktree. The writer uses entry and archive hash guards, validates the changed
-resource and repacked package, makes backups, atomically replaces the archive,
-and refreshes catalog/search/sidecar state. This code is not yet compiled or
-tested. Chapter ordering and cover replacement are temporarily unavailable
-rather than allowed to create new patches; the legacy patch panel remains for
-review/apply/discard of existing pending edits. The picker still uses its
-existing title-sorted cover grid, and the editor still lacks a general archive
-file tree.
+**Implemented and CI-validated:** in-reader selection/paragraph fixes,
+full-editor paragraph edits, and raw-source Save write directly to the EPUB.
+The writer uses entry and whole-archive hash guards, validates edited XHTML/CSS
+and the repacked package, makes the selected backup, atomically replaces the
+archive, and refreshes catalog/search/sidecar state. The CI run above includes
+610 passing tests and the direct-save regression tests. Chapter ordering and
+cover replacement remain unavailable rather than creating new patches; the
+legacy patch panel remains the review/apply/discard path for existing pending
+edits. The approved inline formatting toolbar, Light-mode editing, and general
+archive file tree remain future implementation work; the picker keeps its
+existing title-sorted cover grid.
 
 The entry points are the **Editor** sidebar picker and the per-book pencil in
 the reader sidebar. The current side-by-side source preview is a debounced

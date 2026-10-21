@@ -615,23 +615,6 @@ pub fn build_book_grid(
     build_book_grid_hinted(books, CLICK_HINT_LIBRARY, on_full, on_float)
 }
 
-/// A picker's grid: one gesture, one meaning — plain click and Ctrl+click
-/// both call `on_open`, because a page whose only action is "open this
-/// book" has no float/full-page split to advertise. The card's tooltip
-/// says so instead of the library's two-gesture hint.
-pub fn build_book_grid_open(
-    books: &[Book],
-    on_open: impl Fn(i64) + Clone + 'static,
-) -> gtk::Box {
-    let second = on_open.clone();
-    build_book_grid_hinted(
-        books,
-        "Click: open in the editor",
-        on_open,
-        second,
-    )
-}
-
 fn build_book_grid_hinted(
     books: &[Book],
     click_hint: &'static str,

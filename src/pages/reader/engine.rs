@@ -70,38 +70,6 @@ pub(crate) fn engine_prefs(
     .clamped()
 }
 
-/// The reading preferences as currently stored. The same reads `init`
-/// makes, in one place, so a mid-session reload reopens the book with
-/// exactly the preferences the reader had: every settings handler
-/// persists its pref before applying it, so the catalog is always the
-/// freshest source. Hyphenation stays retired (round-1 field report).
-pub(crate) fn current_engine_prefs(catalog: &crate::db::Catalog) -> KalamPrefs {
-    let theme = catalog
-        .get_pref("reader.theme")
-        .map(|v| ReadingTheme::from_str_lossy(&v))
-        .unwrap_or(ReadingTheme::Sepia);
-    let font_px = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
-    let line_height = catalog
-        .get_pref("reader.line_height")
-        .and_then(|v| v.parse::<f32>().ok())
-        .unwrap_or(1.8)
-        .clamp(1.3, 2.5);
-    let column_px = catalog.get_pref_i64("reader.column_px", 620).clamp(400, 860) as u32;
-    let font_family = catalog.get_pref("reader.font_family");
-    let justify = catalog.get_pref_i64("reader.justify", 0) != 0;
-    let publisher_styles = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
-    engine_prefs(
-        theme,
-        font_px,
-        line_height,
-        column_px,
-        font_family,
-        justify,
-        false,
-        publisher_styles,
-    )
-}
-
 /// Kalam's stored colour name → the engine's. Unknown names (and the
 /// legacy "rose") fall back the same way `HighlightColor::from_str_lossy`
 /// does: through Kalam's own parser first.

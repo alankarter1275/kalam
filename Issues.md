@@ -20,68 +20,35 @@ The record's rules:
 
 ## KAL-5 — EPUB editor usability overhaul
 
-**In Progress · priority High · filed 2026-10-09**
+**Backlog · priority High · filed 2026-10-09**
 <https://linear.app/kalam-alan/issue/KAL-5/epub-editor-usability-overhaul-completely-useless-everything-about-it>
 
-Owner's verdict, verbatim:
+Owner's original verdict, verbatim:
 
 > "making epub editor...usable. currently it's completely useless,
 > everything about it is kind of a mess"
 
-Same day, on the rail's new picker page:
+The earlier KAL-5 design and implementation are superseded by the owner's
+2026-10-21 direction: remove the EPUB content editor for now rather than
+continue its redesign. Reader inline editing, its Deep Editor/source entry
+point, the standalone editor, picker/navigation entry, and pending-edit review
+UI have been removed. There is no editor route through the reader, library or
+app navigation. Do not continue implementation or mockups unless the owner
+reopens the work.
 
-> "it looks horrendous"
+If reopened later, editing is limited to HTML/XHTML and CSS edited directly.
+Markdown support and Markdown conversion are out of scope. This decision does
+not affect book metadata editing or annotations.
 
-**Baseline and implementation status.** Before KAL-5, paragraph and
-chapter-source edits, chapter ordering, and cover replacement could create
-pending patches. The patch panel applies selected legacy edits by rewriting the
-EPUB and refreshing its hash/index. The first direct-save slice is implemented:
-reader selection/paragraph fixes, deep-editor paragraph edits, and raw-source
-Save write into the EPUB rather than creating patches. CI run `39654866950`
-passed formatting, clippy, 610 tests (3 ignored), release build, OCR diagnostic,
-and headless UI smoke checks. Chapter ordering and cover replacement remain
-unavailable rather than creating new patches; the legacy panel remains the safe
-review/apply/discard path for existing pending edits. The approved file-tree,
-Light-mode, and inline-toolbar experience still needs implementation; real-book
-owner validation and refresh-performance measurement remain open.
-
-**Owner's direction (2026-10-21).** Both in-reader quick edits and deep-editor
-changes should save directly into the EPUB; do not create new pending patches.
-In-reader edits should remain book-like, with an inline caret and a small
-contextual formatting toolbar. The deep editor should have a toggleable file
-tree, a central editor, and a toggleable native-render preview. Light mode
-should feel like Obsidian Live Preview while preserving XHTML safely; Deep mode
-edits XHTML/CSS source. Build the core first, then schedule most advanced
-Calibre-like tools (file operations, visual TOC, Check Book, saved searches and
-formatting tools).
-
-**Safety direction:** Review legacy pending patches before direct editing;
-validate touched XHTML/CSS and the repacked ZIP/OPF; refuse stale or invalid
-writes while preserving the user's buffer. The owner previously selected
-per-save timestamped backups for direct saves. The agent recommends keeping
-those for deep-editor saves, but making one pristine backup before the first
-in-reader edit and reusing it for quick fixes, to avoid copying the whole EPUB
-for every small correction. Archive writes run off the GTK thread, but the
-reader refresh still opens the view synchronously; its delay/flicker needs
-engineering work and measurement. The implementation is authorized and in
-progress; see `plan.md` for the full behavior and remaining phases.
+Legacy patch rows and sidecar fields remain only so older saved data is not
+silently erased; the current app does not create, render, apply, or review these
+patches.
 
 **Pointers.**
 
-- `plan.md` — current KAL-5 plan, implementation state, and remaining work
-- `docs/pitfalls.md` §72–§96 — implementation lessons
-- `docs/manual-test-checklist.md` — current editor checks
-- `src/pages/epub_editor.rs`, `src/pages/editor_picker.rs`,
-  `src/pages/edits_panel.rs`
-- `resources/style.css` (`kalam-*` classes)
-- Standing: the §38 field check (baked EPUB opens correctly in
-  another reader) is still open on the owner's side
-
-**Definition of done.** The owner uses the editor on a real book
-end-to-end without calling it useless — and can say what it does in
-one sentence.
-
----
+- `plan.md` — the current deferral and future scope boundary
+- `docs/kalam/INTEGRATION.md` — current reader integration and removed editor
+- `src/pages/metadata_editor.rs` — unrelated book metadata editor, retained
 
 ## KAL-6 — PDF tools: annotations, ink, page surgery — browser-parity (Zen/Edge) and beyond
 

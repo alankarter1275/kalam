@@ -70,7 +70,7 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v16 = page_ocr_cache (persistent per-page OCR results keyed by file fingerprint)
 /// · v17 = purge comic bubble-OCR rows from page_ocr_cache (feature removed in 2.17;
 ///          the table itself stays because scanned-PDF OCR still uses it)
-/// · v18 = patches (Phase 6: non-destructive EPUB edit patches, mirrored into kalam.json)
+/// · v18 = legacy EPUB edit-patch rows (retained for sidecar compatibility)
 pub const SCHEMA_VERSION: i64 = 18;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
@@ -121,9 +121,9 @@ pub struct Annotation {
     pub updated_at: String,
 }
 
-/// One EPUB edit patch (Phase 6): a non-destructive replacement rule. It
-/// lives in the database and the book's `kalam.json`; the `.epub` on disk is
-/// untouched until an explicit apply bakes it in.
+/// A legacy EPUB edit record retained so old database rows can continue to
+/// round-trip through sidecars. The EPUB editor and all apply/render paths
+/// have been removed; this record is not acted on by the current app.
 #[derive(Debug, Clone)]
 pub struct PatchRecord {
     pub id: i64,
@@ -141,13 +141,13 @@ pub struct PatchRecord {
     /// same find-again-by-context idea as the locator quote layer.
     pub context_before: String,
     pub context_after: String,
-    /// Which surface made the edit: `typo`, `proofread`, `editor`, `raw`.
+    /// Legacy source label from the removed editor.
     pub source: String,
     /// The whole-file guard (kind `file`): the entry's SHA-256 when the
     /// raw-mode edit was made, hex. Empty for the find/replace kinds —
     /// their find text is their own guard.
     pub before_hash: String,
-    /// `pending` until an explicit apply bakes it into the `.epub`.
+    /// The historical status stored by the removed editor.
     pub status: String,
     pub created_at: String,
     pub applied_at: Option<String>,
@@ -1018,11 +1018,9 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_book_search_status_indexed
                 ON book_search_index_status(indexed_at);
 
-            -- v18: EPUB edit patches (Phase 6). Every edit from every mode is
-            -- a pending replacement rule stored here and mirrored into the
-            -- book's kalam.json; the .epub on disk is untouched until an
-            -- explicit apply bakes it in. `kind` is 'text' today; whole-file
-            -- and structural kinds arrive in later steps without a migration.
+            -- v18: legacy EPUB editor history. The editor is removed, but
+            -- keep this table so existing patch rows and sidecars survive
+            -- upgrades and can still be copied during sidecar refreshes.
             CREATE TABLE IF NOT EXISTS patches (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
                 book_id        INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -1047,9 +1045,8 @@ impl Catalog {
         // way to extend an existing table created by v1–v3.
         add_column_if_missing(&conn, "books", "last_opened_at", "TEXT")?;
         add_column_if_missing(&conn, "books", "finished_at", "TEXT")?;
-        // Phase 6.9: the raw mode's whole-file guard — the entry's hash
-        // when the source edit was made. An empty string is the
-        // find/replace patches' "no guard" and stays that way.
+        // Legacy whole-file guard from the removed EPUB editor. Preserve the
+        // column so old patch rows remain readable.
         add_column_if_missing(&conn, "patches", "before_hash", "TEXT NOT NULL DEFAULT ''")?;
         // v5: half-star ratings stored as 0..=10 (i.e. tenths of the 5-star
         // scale x2) so "3.5 stars" is an integer 7 and needs no float compare.

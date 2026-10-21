@@ -9,10 +9,6 @@ pub enum NavItem {
     Shelves,
     Downloads,
     Comics,
-    /// The EPUB editor's front door (Phase 6 follow-up, 2026-10-09): the
-    /// rail entry the owner asked for — open the editor first, pick the
-    /// book from there, like Calibre's e-book editor.
-    Editor,
     RemoteBrowse,
     Fanfiction,
     Settings,
@@ -33,16 +29,11 @@ impl NavItem {
     /// and in the `KALAM_ROUTE` map, so putting one back is a one-line change
     /// here and nothing else.
     ///
-    /// `Editor` sits last in the top group, after the content sections:
-    /// Home/Library/Shelves/Comics are places to read, the editor is a
-    /// tool you reach for on purpose — nearest the Settings end without
-    /// being a setting.
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
         NavItem::Shelves,
         NavItem::Comics,
-        NavItem::Editor,
         NavItem::Settings,
     ];
 
@@ -53,7 +44,6 @@ impl NavItem {
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",
             NavItem::Comics => "Comics",
-            NavItem::Editor => "Editor",
             NavItem::RemoteBrowse => "Browse",
             NavItem::Fanfiction => "Fanfic",
             NavItem::Settings => "Settings",
@@ -67,11 +57,6 @@ impl NavItem {
             NavItem::Shelves => "view-grid-symbolic",
             NavItem::Downloads => "folder-download-symbolic",
             NavItem::Comics => "image-x-generic-symbolic",
-            // Not `document-edit-symbolic`: that is the reader's little
-            // TOC pencil (and Fanfiction's), a per-book afterthought. The
-            // rail entry is the editor itself, and the pencil-in-a-page
-            // icon for a whole-application tool would sell it short.
-            NavItem::Editor => "text-editor-symbolic",
             NavItem::RemoteBrowse => "network-workgroup-symbolic",
             NavItem::Fanfiction => "document-edit-symbolic",
             NavItem::Settings => "emblem-system-symbolic",
@@ -115,12 +100,6 @@ pub enum Route {
     Reader {
         book_id: i64,
     },
-    /// The full EPUB editor (Phase 6 step 8): its own engine on the
-    /// book's file, paragraph edits as patches, the review panel in
-    /// its chrome. Reached from the reader's sidebar pencil.
-    Editor {
-        book_id: i64,
-    },
     /// Immersive Comics reader (P8).
     ComicsReader {
         book_id: i64,
@@ -146,10 +125,6 @@ impl Route {
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
-            // The editor page lights the rail's Editor entry whichever
-            // door it was reached through — the picker or the reader's
-            // TOC pencil.
-            Route::Editor { .. } => NavItem::Editor,
             Route::BookPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {
@@ -166,7 +141,6 @@ impl Route {
         matches!(
             self,
             Route::Reader { .. }
-                | Route::Editor { .. }
                 | Route::PdfReader { .. }
                 | Route::ComicsReader { .. }
                 | Route::RemoteReader { .. }

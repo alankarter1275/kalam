@@ -51,10 +51,9 @@ fn default_annotation_style() -> String {
     "solid".into()
 }
 
-/// One EPUB edit patch (Phase 6). A non-destructive replacement rule: it
-/// lives in this file and in the database, and the `.epub` on disk stays
-/// untouched until an explicit apply. Fields mirror `db::PatchRecord`; the
-/// id is the database row's, so the two stores stay joinable.
+/// One legacy EPUB edit record. Retained only to round-trip old sidecars;
+/// the current app no longer creates, applies, or renders these records.
+/// Fields mirror `db::PatchRecord` so previous history is not discarded.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SidecarPatch {
     pub id: i64,
@@ -69,9 +68,7 @@ pub struct SidecarPatch {
     pub status: String,
     pub created_at: String,
     pub applied_at: Option<String>,
-    /// The whole-file guard (kind `file`, Phase 6.9). `#[serde(default)]`
-    /// so sidecars written before the raw mode still read — their
-    /// patches predate it and carry no guard.
+    /// Historical whole-file guard. Default keeps earlier sidecars readable.
     #[serde(default)]
     pub before_hash: String,
 }
@@ -100,8 +97,8 @@ pub struct Sidecar {
     /// Chapter and fraction, so reading position survives a rebuild.
     pub reading_position: Option<(usize, f64)>,
     pub highlights: Vec<SidecarHighlight>,
-    /// EPUB edit patches (Phase 6), mirroring the database rows. Added in
-    /// sidecar v2; `default` keeps files written by v1 readable.
+    /// Legacy EPUB edit history, kept so refreshing a sidecar does not
+    /// discard records written by older app versions.
     #[serde(default)]
     pub patches: Vec<SidecarPatch>,
 }
@@ -192,8 +189,8 @@ fn sidecar_file_for(book: &Book) -> std::path::PathBuf {
 ///
 /// Best-effort by design: the caller ignores the result. A failure here means
 /// the *backup* is stale, which is worth a log line and nothing more — failing
-/// a user's edit because a redundant copy could not be written would be
-/// strictly worse than the problem it prevents.
+/// a user's metadata, annotation or bookmark change because a redundant copy
+/// could not be written would be strictly worse than the problem it prevents.
 ///
 /// Temp-file-then-rename, so an interrupted write cannot leave a truncated
 /// sidecar that a future rebuild would read as authoritative-but-wrong.
@@ -552,9 +549,8 @@ mod tests {
 
     #[test]
     fn a_v1_sidecar_without_patches_still_reads() {
-        // Written before patches existed (sidecar v1). The serde default
-        // makes the new field optional on read, so no backup turns
-        // "damaged" the day this feature ships.
+        // Written before legacy patches were recorded (sidecar v1). The
+        // serde default keeps it readable without marking the backup damaged.
         let side = Sidecar::from_parts(&a_book(), None, &[], &[a_patch()]);
         let mut value = serde_json::to_value(&side).unwrap();
         let obj = value.as_object_mut().expect("sidecar is a JSON object");
@@ -575,9 +571,8 @@ mod tests {
 
     #[test]
     fn patches_survive_a_round_trip_through_a_file() {
-        // A rebuild after losing catalog.db must recover the edit rules
-        // exactly — the find text, the anchors and the status are what the
-        // matcher and the review panel run on.
+        // Existing sidecar history must survive an ordinary serialization
+        // round trip even though the current app no longer acts on it.
         let side = Sidecar::from_parts(&a_book(), None, &[], &[a_patch()]);
         let dir = std::env::temp_dir().join(format!("kalam-sidecar-patch-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

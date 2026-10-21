@@ -148,18 +148,6 @@ pub struct SelectedText {
     pub end_rect: Rect,
 }
 
-/// A paragraph tapped while proofreading is on (Phase 6.7): the
-/// paragraph's editing identity — its extraction text and its
-/// neighbours' — and the union rect of its visible lines in widget
-/// coordinates, where the editor opens. Fired only in proofreading
-/// mode; the paragraph is also selected, so the selection's moved-rect
-/// stream carries the editor's anchor from the next frame on.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParagraphTap {
-    pub identity: chapbook_reader::ParagraphIdentity,
-    pub rect: Rect,
-}
-
 /// A match result from searching text across the book.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchResult {
@@ -190,13 +178,6 @@ pub struct ReaderOptions {
     /// Faces are read when a book opens, so a file dropped in shows up in
     /// the typeface picker on the next open, not the next page turn.
     pub fonts_dir: Option<std::path::PathBuf>,
-    /// A host byte filter over the EPUB's entries — Kalam's pending-edit
-    /// seam (Phase 6). Unset — the default — reads the book exactly as it
-    /// sits on disk. When set, every chapter the widget lays out is the
-    /// filter's view of the entry, and locator resolution re-anchors over
-    /// the edits instead of trusting stored offsets. See
-    /// [`chapbook_reader::EntryFilter`].
-    pub entry_filter: chapbook_reader::EntryFilter,
 }
 
 /// How the book is shown: one page at a time, or as one long strip.
@@ -213,19 +194,13 @@ pub enum ReadingMode {
 
 type PositionCallback = dyn Fn(&ReadingPosition);
 type SelectionCallback = dyn Fn(Option<&SelectedText>);
+type SelectionMovedCallback = dyn Fn(Option<Rect>);
 type LinkCallback = dyn Fn(&str);
 type NoteCallback = dyn Fn(&str, &str, f64, f64) -> bool;
 type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
 type HighlightTapCallback = dyn Fn(i64, f64, f64);
 type WordTapCallback = dyn Fn(&str, f64, f64);
-/// A proofread paragraph tap: the identity when the tapped paragraph is
-/// editable, `None` when the chapter will not yield one (image books, a
-/// chapter that will not parse).
-type ParagraphTapCallback = dyn Fn(Option<ParagraphTap>);
 type WordHoverCallback = dyn Fn(Option<&str>, f64, f64);
-/// Told where the selection ended up after a layout: its union rect in
-/// widget coordinates, or `None` when it is not on screen.
-type SelectionMovedCallback = dyn Fn(Option<Rect>);
 
 /// Callbacks a shell installs. All run on the GTK main thread, from inside
 /// the widget's own handlers — keep them quick, or defer to an idle. A
@@ -236,14 +211,13 @@ type SelectionMovedCallback = dyn Fn(Option<Rect>);
 struct Callbacks {
     position: Option<Box<PositionCallback>>,
     selection: Option<Box<SelectionCallback>>,
+    selection_moved: Option<Box<SelectionMovedCallback>>,
     link: Option<Box<LinkCallback>>,
     note: Option<Box<NoteCallback>>,
     image_tap: Option<Box<ImageTapCallback>>,
     highlight_tap: Option<Box<HighlightTapCallback>>,
     word_tap: Option<Box<WordTapCallback>>,
-    paragraph_tap: Option<Box<ParagraphTapCallback>>,
     word_hover: Option<Box<WordHoverCallback>>,
-    selection_moved: Option<Box<SelectionMovedCallback>>,
 }
 
 struct Inner {
@@ -253,6 +227,12 @@ struct Inner {
     /// Last position reported, so a repaint that moved nothing says
     /// nothing.
     last_reported: RefCell<Option<(usize, usize, usize)>>,
+    /// The selection's union rect after the last layout, for host actions
+    /// anchored to the text (None when it is absent or off screen).
+    selection_rect: Cell<Option<Rect>>,
+    /// The most recent rectangle sent to the host, so an unchanged repaint
+    /// does not repeat the callback.
+    selection_rect_reported: Cell<Option<Rect>>,
     /// Last size drawn at (width, height, scale factor), so a change —
     /// each one is a full relayout — is logged once.
     last_size: Cell<(i32, i32, i32)>,
@@ -295,20 +275,9 @@ struct Inner {
     /// in one chapter's text and moving the session out of that chapter
     /// would drop it.
     dragging: Cell<bool>,
-    /// Proofreading mode (Phase 6.7): a tap on text asks to edit the
-    /// paragraph under it rather than doing the tap's usual work.
-    proofreading: Cell<bool>,
     /// The handles as last painted, widget coordinates — what the next
     /// press is tested against. `None` without a selection on screen.
     handles: Cell<Option<[Handle; 2]>>,
-    /// The selection's union rect as last laid out, widget coordinates:
-    /// what the chip anchors to and the inline editor follows. `None`
-    /// without a selection on screen. Set by [`Self::place_handles`],
-    /// told to the shell by [`Self::report_selection_moved`].
-    selection_rect: Cell<Option<Rect>>,
-    /// The last rect the shell was told about, so a repaint that moved
-    /// nothing says nothing — same shape as `last_reported`.
-    selection_rect_reported: Cell<Option<Rect>>,
     /// The named cursor the area shows, so motion events set it only
     /// when it changes. `None` is the default arrow.
     cursor: Cell<Option<&'static str>>,
@@ -367,13 +336,6 @@ impl ReaderView {
         ))
             .with_cache_budget(budget);
         let mut session = Session::open_with(path.as_ref(), config)?;
-        // The host's virtual-edit seam, if it brought one (Phase 6). Set
-        // before anything is read — the same rule as the settings below —
-        // so the first layout parses the filtered view, never the raw
-        // bytes, and never lays anything out twice.
-        if options.entry_filter.is_set() {
-            session.set_entry_filter(options.entry_filter.clone());
-        }
         // Kalam's settings, before the first layout, so nothing is laid
         // out twice. The scope is a formality now that the engine keeps
         // no records of its own.
@@ -420,6 +382,8 @@ impl ReaderView {
                 prefs: RefCell::new(prefs.clamped()),
                 callbacks: RefCell::new(Callbacks::default()),
                 last_reported: RefCell::new(None),
+                selection_rect: Cell::new(None),
+                selection_rect_reported: Cell::new(None),
                 last_size: Cell::new((0, 0, 0)),
                 keys,
                 zones,
@@ -436,10 +400,7 @@ impl ReaderView {
                 strip: RefCell::new(None),
                 pending_jump: Cell::new(false),
                 dragging: Cell::new(false),
-                proofreading: Cell::new(false),
                 handles: Cell::new(None),
-                selection_rect: Cell::new(None),
-                selection_rect_reported: Cell::new(None),
                 cursor: Cell::new(None),
                 reading_offset: Cell::new(None),
                 vadjustment: gtk::Adjustment::new(0.0, 0.0, 0.0, ARROW_STEP as f64, 0.0, 0.0),
@@ -653,12 +614,9 @@ impl ReaderView {
         self.inner.callbacks.borrow_mut().selection = Some(Box::new(f));
     }
 
-    /// Called after every draw that moved the selection's rect: where the
-    /// selected text now sits in widget coordinates (`None` when the
-    /// selection is gone or scrolled off screen). What the selection chip
-    /// anchors to, and what the inline editor (phase 6.4) follows as the
-    /// reader scrolls mid-edit. Fired from an idle after the draw, and
-    /// only on change — a repaint that moved nothing says nothing.
+    /// Called after layout when the selected text's visible rectangle
+    /// changes. Hosts can use it to keep selection actions anchored to the
+    /// text; `None` means the selection is absent or off screen.
     pub fn connect_selection_moved(&self, f: impl Fn(Option<Rect>) + 'static) {
         self.inner.callbacks.borrow_mut().selection_moved = Some(Box::new(f));
     }
@@ -702,27 +660,6 @@ impl ReaderView {
     /// Called when the pointer hovers over a Word Memory word (Some(word)) or moves away (None).
     pub fn connect_word_hover(&self, f: impl Fn(Option<&str>, f64, f64) + 'static) {
         self.inner.callbacks.borrow_mut().word_hover = Some(Box::new(f));
-    }
-
-    /// Called when a proofread tap lands on — or fails to yield — an
-    /// editable paragraph (Phase 6.7). `Some` carries the identity and
-    /// the rect the editor opens over; `None` means the chapter has no
-    /// paragraph there to edit. Only fires while
-    /// [`ReaderView::set_proofreading`] is on.
-    pub fn connect_paragraph_tap(&self, f: impl Fn(Option<ParagraphTap>) + 'static) {
-        self.inner.callbacks.borrow_mut().paragraph_tap = Some(Box::new(f));
-    }
-
-    /// Proofreading mode (Phase 6.7): on, a tap on text asks to edit the
-    /// paragraph under it. The flag is view state, nothing persists it.
-    pub fn set_proofreading(&self, on: bool) {
-        self.inner.proofreading.replace(on);
-    }
-
-    /// Whether proofreading mode is on — for shells that sync their
-    /// chrome toggle against it.
-    pub fn proofreading(&self) -> bool {
-        self.inner.proofreading.get()
     }
 
     /// Set the vocabulary words list for Word Memory dotted underlines.
@@ -1485,10 +1422,10 @@ impl ReaderView {
         }
     }
 
-    /// After a draw, off the draw vfunc: the scrollbar, the position
-    /// callback, and the next chapter's layout queued for a quiet moment.
-    /// The first two may call back into the widget, so neither runs
-    /// while the draw holds the session.
+    /// After a draw, off the draw vfunc: the scrollbar, position and
+    /// selection callbacks, and the next chapter's layout queued for a
+    /// quiet moment. The callbacks may call back into the widget, so none
+    /// runs while the draw holds the session.
     fn after_draw(&self) {
         self.sync_adjustment();
         self.report_position();
@@ -1497,11 +1434,9 @@ impl ReaderView {
         self.schedule_prefetch();
     }
 
-    /// Tell the shell when the selection's rect moved — the chip and the
-    /// inline editor both anchor to it. Runs from the same idle as the
-    /// position report, after the frame that moved it is on screen: by
-    /// the time the shell repositions anything, the text it is anchoring
-    /// to is already where it belongs, so nothing visibly swims.
+    /// Report the selection's new geometry after the frame that moved it
+    /// has been painted. The host can update popover/action anchors without
+    /// doing work from inside the draw callback.
     fn report_selection_moved(&self) {
         let rect = self.inner.selection_rect.get();
         if self.inner.selection_rect_reported.replace(rect) == rect {
@@ -1677,16 +1612,13 @@ impl ReaderView {
             let rect = union(&rects)?;
             Some((Handle::pair(first, last), rect))
         });
-        self.inner.handles.set(placed.as_ref().map(|(h, _)| *h));
-        // Where the selection sits this frame — the chip's anchor, and
-        // what the inline editor follows on scroll. Not told to the shell
-        // here (a callback fired mid-draw could queue another draw and
-        // the two would chase); `report_selection_moved`, from the idle
-        // after this frame, picks it up.
+        self.inner
+            .handles
+            .set(placed.as_ref().map(|(handles, _)| *handles));
         self.inner
             .selection_rect
-            .set(placed.as_ref().map(|(_, r)| *r));
-        placed.map(|(h, _)| h)
+            .set(placed.as_ref().map(|(_, rect)| *rect));
+        placed.map(|(handles, _)| handles)
     }
 
     /// Report the position if it moved since last time. Called from an
@@ -2407,68 +2339,7 @@ impl ReaderView {
                 // The press anchored an empty selection; drop it before
                 // anything else, so the anchor does not outlive the page.
                 s.selection_clear();
-                if had_selection && !view.inner.proofreading.get() {
-                    drop(s);
-                    view.notify_selection();
-                    view.area.queue_draw();
-                    return;
-                }
-
-                // Proofreading (Phase 6.7): a tap on text asks to edit
-                // the paragraph under it. The paragraph is also
-                // selected — the selection's own rect stream anchors
-                // the editor from the next frame — and the selection is
-                // reported BEFORE the paragraph callback, so an editor
-                // still open commits as the click-away it is before the
-                // new one opens. A tap that lands on no paragraph falls
-                // through to the tap's usual work, after reporting the
-                // selection this tap cleared.
-                if view.inner.proofreading.get() {
-                    let band = view.band_at(y);
-                    let hit = match band {
-                        Some((band, py)) => s
-                            .paragraph_tag_at_page(band.spine, band.page, x, py)
-                            .map(|(start, end, tag)| (band.spine, band.page, start, end, tag)),
-                        None if view.mode() == ReadingMode::Paged => view
-                            .paged_point(&mut s, x, y)
-                            .and_then(|(spine, page, px, py)| {
-                                s.paragraph_tag_at_page(spine, page, px, py)
-                                    .map(|(start, end, tag)| (spine, page, start, end, tag))
-                            }),
-                        None => None,
-                    };
-                    if let Some((spine, page, start, end, tag)) = hit {
-                        s.set_position(spine, page);
-                        s.select_range(start, end);
-                        let identity = s.paragraph_identity(spine, tag);
-                        // Where the editor opens: the paragraph's visible
-                        // lines, the same geometry the selection's
-                        // handles are placed from.
-                        let rects = view.widget_rects(&mut s, spine, start, end);
-                        let rect = union(&rects);
-                        drop(s);
-                        view.notify_selection();
-                        if let Some(cb) = &view.inner.callbacks.borrow().paragraph_tap {
-                            let tap = match (&identity, rect) {
-                                (Some(identity), Some(rect)) => Some(ParagraphTap {
-                                    identity: identity.clone(),
-                                    rect,
-                                }),
-                                _ => None,
-                            };
-                            cb(tap);
-                        }
-                        view.area.queue_draw();
-                        return;
-                    }
-                    // No paragraph under the tap (a margin, an image):
-                    // fall through — the tap's usual work proceeds.
-                }
-
                 if had_selection {
-                    // A proofread tap that landed on no paragraph still
-                    // cleared the old selection; report that as this
-                    // tap's own act, exactly as a plain tap would have.
                     drop(s);
                     view.notify_selection();
                     view.area.queue_draw();

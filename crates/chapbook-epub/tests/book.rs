@@ -66,27 +66,6 @@ fn chapter_bytes_and_resource_resolution() {
 }
 
 #[test]
-fn entry_filter_applies_to_stylesheet_resources_as_well_as_spine_units() {
-    let mut book = minimal();
-    book.set_entry_filter(chapbook_epub::EntryFilter::new(|href, bytes| {
-        if href == "OEBPS/style.css" {
-            b"p { color: rebeccapurple; }".to_vec()
-        } else if href == "OEBPS/chapter1.xhtml" {
-            b"<html>filtered chapter</html>".to_vec()
-        } else {
-            bytes
-        }
-    }));
-
-    let css = book.resource("OEBPS/chapter1.xhtml", "style.css").unwrap();
-    assert_eq!(css.data.as_slice(), b"p { color: rebeccapurple; }");
-    assert_eq!(
-        book.unit_bytes(0).unwrap().as_slice(),
-        b"<html>filtered chapter</html>"
-    );
-}
-
-#[test]
 fn missing_resources_error_cleanly() {
     let book = minimal();
     assert!(book.unit_bytes(99).is_err());

@@ -1067,6 +1067,7 @@ impl Component for EpubEditorModel {
             }
             EpubEditorMsg::CloseSourceTab(href) => {
                 let Some(pane) = &self.source else { return };
+                let mut load_next = false;
                 if pane.loading.get() || pane.saving.get() {
                     crate::notify::info(
                         "File is busy",
@@ -1092,7 +1093,7 @@ impl Component for EpubEditorModel {
                         .cloned()
                     {
                         self.selected_resource_href = next_href;
-                        self.load_source(&sender);
+                        load_next = true;
                     } else {
                         self.selected_resource_href.clear();
                         pane.suppress.set(true);
@@ -1114,6 +1115,9 @@ impl Component for EpubEditorModel {
                 }
                 rebuild_source_tabs(&pane.tabs_box, self, pane, None, &sender);
                 rebuild_source_resource_list(&widgets.resource_list, self, &sender);
+                if load_next {
+                    self.load_source(&sender);
+                }
             }
             EpubEditorMsg::RestorePreviousSavedVersion => {
                 let Some(pane) = &self.source else { return };

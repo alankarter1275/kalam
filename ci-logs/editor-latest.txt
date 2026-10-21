@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots-editor settle=20
-binary: 67317304 bytes
+binary: 67337656 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4904.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4764.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,63 +32,65 @@ navigation: 'editor' differs from Home -- the page really did change
 navigation: OK -- the images below are 'editor'
 
 === timing lines from the app ===
-  [timing] startup_gtk_init       77.8 ms
-  [timing] startup_style          56.7 ms
-  [timing] startup_splash_show      1.9 ms
-  [timing] icons_write             0.1 ms
+  [timing] startup_gtk_init       47.6 ms
+  [timing] startup_style          33.2 ms
+  [timing] startup_splash_show      1.6 ms
+  [timing] icons_write             0.0 ms
   [timing] icons_theme             0.1 ms
-  [timing] icons_init              0.2 ms
-  [timing] startup_splash_pump    123.1 ms
-  [timing] startup_libraries       0.2 ms
-  [timing] startup_db_open         9.8 ms
-  [timing] startup_theme          16.8 ms
-  [timing] pre_run               286.6 ms
-  [timing] route_open:home         0.4 ms
-  [timing] startup_first_page      0.4 ms
-  [timing] service_home            2.5 ms
-  [timing] init_done             291.7 ms
-  [timing] window_shown          293.9 ms
+  [timing] icons_init              0.1 ms
+  [timing] startup_splash_pump    123.3 ms
+  [timing] startup_libraries       0.1 ms
+  [timing] startup_db_open         5.3 ms
+  [timing] startup_theme          10.1 ms
+  [timing] pre_run               221.4 ms
+  [timing] route_open:home         0.3 ms
+  [timing] startup_first_page      0.3 ms
+  [timing] service_home            1.8 ms
+  [timing] init_done             225.2 ms
+  [timing] window_shown          226.6 ms
   [timing] startup_dicts           0.1 ms
   [timing] covers_queued            11
-  [timing] home_fill               2.0 ms
+  [timing] home_fill               1.1 ms
   [timing] page_cache_miss           1
-  [timing] service_all_books       1.0 ms
-  [timing] grid_build             10.8 ms
+  [timing] service_all_books       0.8 ms
+  [timing] grid_build              6.4 ms
   [timing] grid_cards              139
   [timing] covers_queued           130
-  [timing] route_open:editor_picker     12.9 ms
+  [timing] route_open:editor_picker      8.1 ms
   [timing] covers_land             0.1 ms
+  [timing] covers_land             0.0 ms
   [timing] covers_decoded           11
-  [timing] covers_thumb              4
-  [timing] covers_full               7
-  [timing] covers_decode          65.1 ms
-  [timing] covers_decode_max      10.3 ms
+  [timing] covers_thumb              9
+  [timing] covers_full               2
+  [timing] covers_decode          26.2 ms
+  [timing] covers_decode_max       7.8 ms
   [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_gtk_init    241.2 ms
-  [timing] frame_after:startup_style    184.4 ms
-  [timing] frame_after:startup_splash_show    182.5 ms
-  [timing] frame_after:icons_write    170.0 ms
-  [timing] frame_after:icons_theme    169.9 ms
-  [timing] frame_after:icons_init    169.9 ms
-  [timing] frame_after:startup_splash_pump     59.3 ms
-  [timing] frame_after:startup_libraries     59.1 ms
-  [timing] frame_after:startup_db_open     49.3 ms
-  [timing] frame_after:startup_theme     32.5 ms
-  [timing] frame_after:pre_run     32.5 ms
-  [timing] frame_after:route_open:home     31.4 ms
-  [timing] frame_after:startup_first_page     31.4 ms
-  [timing] frame_after:service_home     28.9 ms
-  [timing] frame_after:init_done     27.4 ms
-  [timing] frame_after:window_shown     25.2 ms
-  [timing] frame_after:startup_dicts     24.7 ms
-  [timing] frame_after:home_fill     22.4 ms
-  [timing] frame_after:service_all_books     21.1 ms
-  [timing] frame_after:grid_build      9.5 ms
-  [timing] frame_after:route_open:editor_picker      9.3 ms
+  [timing] frame_after:startup_gtk_init    195.5 ms
+  [timing] frame_after:startup_style    162.1 ms
+  [timing] frame_after:startup_splash_show    160.5 ms
+  [timing] frame_after:icons_write    153.0 ms
+  [timing] frame_after:icons_theme    153.0 ms
+  [timing] frame_after:icons_init    153.0 ms
+  [timing] frame_after:startup_splash_pump     37.2 ms
+  [timing] frame_after:startup_libraries     37.1 ms
+  [timing] frame_after:startup_db_open     31.8 ms
+  [timing] frame_after:startup_theme     21.7 ms
+  [timing] frame_after:pre_run     21.7 ms
+  [timing] frame_after:route_open:home     20.7 ms
+  [timing] frame_after:startup_first_page     20.7 ms
+  [timing] frame_after:service_home     18.9 ms
+  [timing] frame_after:init_done     17.9 ms
+  [timing] frame_after:window_shown     16.5 ms
+  [timing] frame_after:startup_dicts     16.1 ms
+  [timing] frame_after:home_fill     14.8 ms
+  [timing] frame_after:service_all_books     13.8 ms
+  [timing] frame_after:grid_build      6.8 ms
+  [timing] frame_after:route_open:editor_picker      6.6 ms
+  [timing] frame_after:covers_land      0.1 ms
   [timing] frame_after:covers_land      0.0 ms
   [timing] frame_after:covers_decode      0.0 ms
   [timing] frame_after:covers_decode_max      0.0 ms
-  [timing] frame_paint:covers_decode_max    155.0 ms
+  [timing] frame_paint:covers_decode_max     96.0 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
@@ -111,6 +113,8 @@ navigation: OK -- the images below are 'editor'
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
@@ -127,28 +131,8 @@ navigation: OK -- the images below are 'editor'
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      1.8 ms
-  [timing] frame_after:covers_gap      1.8 ms
-  [timing] frame_after:covers_land      1.7 ms
-  [timing] frame_after:covers_gap      1.7 ms
-  [timing] frame_after:covers_land      1.6 ms
-  [timing] frame_after:covers_gap      1.6 ms
-  [timing] frame_after:covers_land      1.6 ms
-  [timing] frame_after:covers_gap      1.6 ms
-  [timing] frame_after:covers_land      1.5 ms
-  [timing] frame_after:covers_gap      1.5 ms
-  [timing] frame_after:covers_land      1.4 ms
-  [timing] frame_after:covers_gap      1.4 ms
+  [timing] frame_after:covers_land      1.3 ms
+  [timing] frame_after:covers_gap      1.3 ms
   [timing] frame_after:covers_land      1.3 ms
   [timing] frame_after:covers_gap      1.3 ms
   [timing] frame_after:covers_land      1.2 ms
@@ -156,408 +140,412 @@ navigation: OK -- the images below are 'editor'
   [timing] frame_after:covers_land      1.1 ms
   [timing] frame_after:covers_gap      1.1 ms
   [timing] frame_after:covers_land      1.1 ms
+  [timing] frame_after:covers_gap      1.1 ms
+  [timing] frame_after:covers_land      1.0 ms
+  [timing] frame_after:covers_gap      1.0 ms
   [timing] frame_after:covers_land      1.0 ms
   [timing] frame_after:covers_gap      1.0 ms
   [timing] frame_after:covers_land      0.9 ms
   [timing] frame_after:covers_gap      0.9 ms
   [timing] frame_after:covers_land      0.9 ms
   [timing] frame_after:covers_gap      0.9 ms
-  [timing] frame_after:covers_land      0.9 ms
-  [timing] frame_after:covers_gap      0.9 ms
   [timing] frame_after:covers_land      0.8 ms
-  [timing] frame_after:covers_gap      0.8 ms
+  [timing] frame_after:covers_land      0.7 ms
+  [timing] frame_after:covers_gap      0.7 ms
+  [timing] frame_after:covers_land      0.7 ms
+  [timing] frame_after:covers_gap      0.7 ms
   [timing] frame_after:covers_land      0.7 ms
   [timing] frame_after:covers_gap      0.7 ms
   [timing] frame_after:covers_land      0.6 ms
   [timing] frame_after:covers_gap      0.6 ms
   [timing] frame_after:covers_land      0.6 ms
   [timing] frame_after:covers_gap      0.6 ms
-  [timing] frame_after:covers_land      0.4 ms
-  [timing] frame_after:covers_gap      0.4 ms
+  [timing] frame_after:covers_land      0.5 ms
+  [timing] frame_after:covers_gap      0.5 ms
   [timing] frame_after:covers_land      0.4 ms
   [timing] frame_after:covers_gap      0.4 ms
   [timing] frame_after:covers_land      0.3 ms
   [timing] frame_after:covers_gap      0.3 ms
-  [timing] frame_after:covers_land      0.2 ms
+  [timing] frame_after:covers_land      0.3 ms
   [timing] frame_after:covers_gap      0.2 ms
   [timing] frame_after:covers_land      0.2 ms
   [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.1 ms
   [timing] frame_after:covers_land      0.1 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
   [timing] frame_after:covers_land      1.2 ms
   [timing] frame_after:covers_gap      1.2 ms
   [timing] frame_after:covers_land      1.1 ms
   [timing] frame_after:covers_gap      1.1 ms
   [timing] frame_after:covers_land      1.0 ms
   [timing] frame_after:covers_gap      1.0 ms
-  [timing] frame_after:covers_land      1.0 ms
+  [timing] frame_after:covers_land      0.9 ms
+  [timing] frame_after:covers_gap      0.9 ms
+  [timing] frame_after:covers_land      0.9 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.0 ms
   [timing] frame_after:covers_land      1.7 ms
   [timing] frame_after:covers_gap      1.7 ms
-  [timing] frame_after:covers_land      1.6 ms
-  [timing] covers_land             0.1 ms
   [timing] frame_after:covers_land      1.7 ms
   [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
+  [timing] covers_gap              0.8 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      1.3 ms
-  [timing] frame_after:covers_gap      1.3 ms
-  [timing] frame_after:covers_land      1.2 ms
+  [timing] frame_after:covers_land      3.7 ms
+  [timing] frame_after:covers_gap      2.9 ms
+  [timing] frame_after:covers_land      2.8 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      1.8 ms
+  [timing] covers_gap              1.3 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      1.2 ms
   [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      1.9 ms
-  [timing] frame_after:covers_gap      1.9 ms
-  [timing] frame_after:covers_land      1.8 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      1.3 ms
-  [timing] frame_after:covers_gap      1.3 ms
-  [timing] frame_after:covers_land      1.2 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.3 ms
-  [timing] covers_land             0.0 ms
-  [timing] frame_after:covers_land      0.6 ms
-  [timing] frame_after:covers_gap      0.3 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.7 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] frame_after:covers_land      0.5 ms
-  [timing] frame_after:covers_gap      0.5 ms
-  [timing] frame_after:covers_land      0.5 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.5 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] frame_after:covers_gap      0.3 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      6.0 ms
+  [timing] frame_after:covers_gap      4.8 ms
+  [timing] frame_after:covers_land      4.7 ms
   [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      6.0 ms
   [timing] thumbs_backfilled        50
   [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
+  [timing] covers_gap              0.3 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] frame_after:covers_land      6.3 ms
+  [timing] frame_after:covers_gap      6.0 ms
+  [timing] frame_after:covers_land      5.9 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.9 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      6.3 ms
+  [timing] frame_after:covers_gap      5.4 ms
+  [timing] frame_after:covers_land      5.3 ms
+  [timing] frame_after:covers_land      0.6 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.4 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      7.0 ms
+  [timing] frame_after:covers_gap      6.6 ms
+  [timing] frame_after:covers_land      6.5 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
+  [timing] frame_after:covers_land      6.4 ms
+  [timing] frame_after:covers_gap      6.4 ms
+  [timing] frame_after:covers_land      6.4 ms
+  [timing] frame_after:covers_land      2.3 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_gap              0.8 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      5.3 ms
+  [timing] frame_after:covers_gap      4.5 ms
+  [timing] frame_after:covers_land      4.5 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_gap              1.6 ms
   [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] frame_after:covers_land      5.3 ms
+  [timing] frame_after:covers_gap      3.7 ms
+  [timing] frame_after:covers_land      3.6 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
+  [timing] covers_gap              1.8 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] frame_after:covers_land      6.4 ms
+  [timing] frame_after:covers_gap      6.4 ms
+  [timing] frame_after:covers_land      6.3 ms
+  [timing] frame_after:covers_gap      4.5 ms
+  [timing] frame_after:covers_land      4.4 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] frame_after:covers_land      5.3 ms
+  [timing] frame_after:covers_gap      5.3 ms
+  [timing] frame_after:covers_land      5.3 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_gap              1.5 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      6.0 ms
+  [timing] frame_after:covers_gap      6.0 ms
+  [timing] frame_after:covers_land      6.0 ms
+  [timing] frame_after:covers_gap      4.4 ms
+  [timing] frame_after:covers_land      4.4 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.6 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      6.3 ms
+  [timing] frame_after:covers_gap      6.2 ms
+  [timing] frame_after:covers_land      6.1 ms
+  [timing] frame_after:covers_gap      5.6 ms
+  [timing] frame_after:covers_land      5.5 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.6 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      5.1 ms
+  [timing] frame_after:covers_gap      4.5 ms
+  [timing] frame_after:covers_land      4.4 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              1.3 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      4.7 ms
+  [timing] frame_after:covers_gap      3.4 ms
+  [timing] frame_after:covers_land      3.3 ms
+  [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_gap              1.6 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      5.9 ms
+  [timing] frame_after:covers_gap      5.9 ms
+  [timing] frame_after:covers_land      5.8 ms
+  [timing] frame_after:covers_gap      4.2 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.3 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      5.3 ms
+  [timing] frame_after:covers_gap      5.3 ms
+  [timing] frame_after:covers_land      5.2 ms
+  [timing] frame_after:covers_gap      4.9 ms
+  [timing] frame_after:covers_land      4.8 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.9 ms
+  [timing] covers_land             0.1 ms
+  [timing] thumbs_backfilled       100
+  [timing] frame_after:covers_land      4.3 ms
+  [timing] frame_after:covers_gap      3.4 ms
+  [timing] frame_after:covers_land      3.3 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.9 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      5.3 ms
+  [timing] frame_after:covers_gap      5.3 ms
+  [timing] frame_after:covers_land      5.2 ms
+  [timing] frame_after:covers_gap      4.3 ms
+  [timing] frame_after:covers_land      4.2 ms
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] frame_after:covers_land      4.8 ms
+  [timing] frame_after:covers_gap      4.8 ms
+  [timing] frame_after:covers_land      4.7 ms
+  [timing] frame_after:covers_gap      4.7 ms
+  [timing] frame_after:covers_land      4.7 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      4.3 ms
+  [timing] frame_after:covers_gap      4.3 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.2 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      4.3 ms
+  [timing] frame_after:covers_gap      4.3 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] frame_after:covers_gap      4.0 ms
+  [timing] frame_after:covers_land      4.0 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      4.5 ms
+  [timing] frame_after:covers_gap      4.5 ms
+  [timing] frame_after:covers_land      4.4 ms
+  [timing] frame_after:covers_gap      4.4 ms
+  [timing] frame_after:covers_land      4.3 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      3.9 ms
+  [timing] frame_after:covers_gap      3.9 ms
+  [timing] frame_after:covers_land      3.9 ms
+  [timing] frame_after:covers_land      0.9 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      4.6 ms
+  [timing] frame_after:covers_gap      4.6 ms
+  [timing] frame_after:covers_land      4.6 ms
+  [timing] frame_after:covers_land      1.6 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      4.6 ms
+  [timing] frame_after:covers_gap      4.5 ms
+  [timing] frame_after:covers_land      4.5 ms
+  [timing] frame_after:covers_land      2.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] thumbs_backfilled       130
+  [timing] thumbs_backfill_done      130
+  [timing] covers_gap              1.4 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] frame_after:covers_gap      4.2 ms
+  [timing] frame_after:covers_land      4.1 ms
+  [timing] frame_after:covers_gap      2.8 ms
+  [timing] frame_after:covers_land      2.7 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              1.3 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      5.0 ms
+  [timing] frame_after:covers_gap      5.0 ms
+  [timing] frame_after:covers_land      5.0 ms
+  [timing] frame_after:covers_gap      3.7 ms
+  [timing] frame_after:covers_land      3.6 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] frame_after:covers_land      5.5 ms
+  [timing] frame_after:covers_gap      5.5 ms
+  [timing] frame_after:covers_land      5.4 ms
+  [timing] frame_after:covers_gap      5.4 ms
+  [timing] frame_after:covers_land      5.3 ms
+  [timing] frame_after:covers_land      0.6 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      5.2 ms
+  [timing] frame_after:covers_gap      5.2 ms
+  [timing] frame_after:covers_land      5.1 ms
+  [timing] frame_after:covers_land      1.9 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              1.8 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      5.0 ms
+  [timing] frame_after:covers_gap      5.0 ms
+  [timing] frame_after:covers_land      4.9 ms
+  [timing] frame_after:covers_gap      3.2 ms
+  [timing] frame_after:covers_land      3.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.1 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      4.8 ms
+  [timing] frame_after:covers_gap      4.8 ms
+  [timing] frame_after:covers_land      4.7 ms
+  [timing] frame_after:covers_gap      4.6 ms
+  [timing] frame_after:covers_land      4.6 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      4.6 ms
+  [timing] frame_after:covers_gap      4.6 ms
+  [timing] frame_after:covers_land      4.6 ms
+  [timing] frame_after:covers_gap      4.6 ms
+  [timing] frame_after:covers_land      4.5 ms
+  [timing] frame_after:covers_land      1.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      4.5 ms
+  [timing] frame_after:covers_gap      4.5 ms
+  [timing] frame_after:covers_land      4.5 ms
+  [timing] frame_after:covers_land      2.4 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.6 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      4.4 ms
+  [timing] frame_after:covers_gap      4.4 ms
+  [timing] frame_after:covers_land      4.3 ms
+  [timing] frame_after:covers_gap      3.8 ms
+  [timing] frame_after:covers_land      3.7 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      4.3 ms
+  [timing] frame_after:covers_gap      4.3 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] frame_after:covers_gap      4.2 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] frame_after:covers_land      0.4 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] frame_after:covers_gap      4.2 ms
+  [timing] frame_after:covers_land      4.1 ms
+  [timing] frame_after:covers_land      1.7 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.5 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.8 ms
-  [timing] frame_after:covers_gap      0.8 ms
-  [timing] frame_after:covers_land      0.7 ms
-  [timing] frame_after:covers_gap      0.7 ms
-  [timing] frame_after:covers_land      0.6 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      3.3 ms
+  [timing] frame_after:covers_gap      3.3 ms
+  [timing] frame_after:covers_land      3.2 ms
+  [timing] frame_after:covers_gap      2.8 ms
+  [timing] frame_after:covers_land      2.7 ms
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] thumbs_backfilled       100
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] frame_after:covers_gap      0.0 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] frame_after:covers_gap      0.3 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
   [timing] covers_decoded          130
-  [timing] covers_thumb             68
-  [timing] covers_full              62
-  [timing] covers_decode         600.6 ms
-  [timing] covers_decode_max      10.7 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] frame_after:covers_gap      0.3 ms
-  [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] frame_after:covers_gap      0.0 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_thumb             91
+  [timing] covers_full              39
+  [timing] covers_decode         269.6 ms
+  [timing] covers_decode_max       6.5 ms
+  [timing] frame_after:covers_land      3.1 ms
+  [timing] frame_after:covers_gap      3.1 ms
+  [timing] frame_after:covers_land      3.0 ms
+  [timing] frame_after:covers_gap      3.0 ms
+  [timing] frame_after:covers_land      3.0 ms
   [timing] frame_after:covers_decode      0.0 ms
   [timing] frame_after:covers_decode_max      0.0 ms
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
-  [timing] thumbs_backfilled       130
-  [timing] thumbs_backfill_done      130
+  [timing] frame_after:covers_land      3.7 ms
+  [timing] frame_after:covers_gap      3.7 ms
+  [timing] frame_after:covers_land      3.6 ms
+  [timing] frame_after:covers_gap      3.6 ms
+  [timing] frame_after:covers_land      3.6 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
   (none -- no UI-loop block over ~100 ms was detected)
@@ -578,26 +566,26 @@ navigation: OK -- the images below are 'editor'
 
 === app stderr (non-timing lines) ===
   
-  (process:4941): Gtk-WARNING **: 19:04:25.079: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:4801): Gtk-WARNING **: 21:12:55.077: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=editor — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=113568 peak_rss_mb=110
+books=139 peak_rss_kb=111088 peak_rss_mb=108
 
 === shutting down ===
 
 === artifacts ===
   total 316
-  drwxr-xr-x  2 runner runner  4096 Oct 21 19:05 .
-  drwxr-xr-x 22 runner runner  4096 Oct 21 19:04 ..
-  -rw-r--r--  1 runner runner 54425 Oct 21 19:04 01-editor.png
-  -rw-r--r--  1 runner runner 54425 Oct 21 19:04 02-editor-settling.png
-  -rw-r--r--  1 runner runner 54425 Oct 21 19:05 03-editor-settled.png
-  -rw-r--r--  1 runner runner 66804 Oct 21 19:05 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Oct 21 19:04 grim.log
-  -rw-r--r--  1 runner runner  6541 Oct 21 19:05 kalam-home.log
-  -rw-r--r--  1 runner runner 22635 Oct 21 19:04 kalam.log
-  -rw-r--r--  1 runner runner 25700 Oct 21 19:05 report.txt
-  -rw-r--r--  1 runner runner    88 Oct 21 19:04 sway.log
-  -rw-r--r--  1 runner runner  7184 Oct 21 19:04 tree.json
---- run 39656910580 ---
+  drwxr-xr-x  2 runner runner  4096 Oct 21 21:13 .
+  drwxr-xr-x 22 runner runner  4096 Oct 21 21:12 ..
+  -rw-r--r--  1 runner runner 54425 Oct 21 21:13 01-editor.png
+  -rw-r--r--  1 runner runner 54425 Oct 21 21:13 02-editor-settling.png
+  -rw-r--r--  1 runner runner 54425 Oct 21 21:13 03-editor-settled.png
+  -rw-r--r--  1 runner runner 66804 Oct 21 21:13 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Oct 21 21:13 grim.log
+  -rw-r--r--  1 runner runner  6541 Oct 21 21:13 kalam-home.log
+  -rw-r--r--  1 runner runner 22131 Oct 21 21:12 kalam.log
+  -rw-r--r--  1 runner runner 25172 Oct 21 21:13 report.txt
+  -rw-r--r--  1 runner runner    88 Oct 21 21:12 sway.log
+  -rw-r--r--  1 runner runner  7184 Oct 21 21:13 tree.json
+--- run 39675835907 ---

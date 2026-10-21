@@ -17,7 +17,7 @@ pub use mod_model::ReaderModel;
 pub use types::ReaderOut;
 // Phase 6.8: the editor page builds its paragraph edits from these —
 // the same structs, so both scopes of editing stay one machinery.
-pub use types::{EditScope, EditorWidget, InlineEdit, VerifiedEdit};
+pub use types::{DirectEditSaved, EditScope, EditorWidget, InlineEdit};
 
 use chrome::{
     connect_hover_zone, find_overlay_by_class, overlay_child_box, rebuild_cover_host,
@@ -977,6 +977,7 @@ impl Component for ReaderModel {
             reader_reloading: false,
             reader_overlay: None,
             book_path: book.as_ref().map(|b| b.file_path.clone()),
+            book_hash: book_meta.file_hash.clone(),
             session_id: None,
             session_start: std::time::Instant::now(),
             session_start_pct: 0,
@@ -2080,131 +2081,90 @@ impl Component for ReaderModel {
                     crate::notify::info("Nothing to fix", "The text already says that.");
                     return;
                 }
-                // Verify off the UI thread against the chapter as the
-                // reader shows it: the book's path, the chapter the
-                // edit was made in, and the fixes already stored.
+                // Plan, validate, back up and rewrite off the GTK thread.
+                // The worker refuses if legacy pending patches still need
+                // review, and the entry hash guards against stale content.
                 let Some(path) = self.book_path.clone() else { return };
                 let chapter = edit.chapter;
                 let original = edit.original.clone();
                 let serial = edit.serial;
-                let is_paragraph = matches!(edit.scope, EditScope::Paragraph { .. });
-                let (prev, next) = match &edit.scope {
-                    EditScope::Selection => (None, None),
-                    EditScope::Paragraph { prev, next } => (prev.clone(), next.clone()),
+                let paragraph_context = match &edit.scope {
+                    EditScope::Selection => None,
+                    EditScope::Paragraph { prev, next } => Some((prev.clone(), next.clone())),
                 };
-                // Pending only — the same list the reader's entry filter
-                // runs, so the verification sees exactly the chapter the
-                // reader shows.
-                let prior = match self
-                    .service
-                    .catalog()
-                    .get_pending_patches_for_book(self.book_id)
-                {
-                    Ok(p) => p,
-                    Err(e) => {
-                        crate::notify::error("Could not read this book's saved fixes", &e.to_string());
-                        return;
-                    }
-                };
-                // Plain data over an async_channel — the tasks
-                // manager's worker→main-loop shape: the worker sends
-                // blocking, a local future on the main loop receives,
-                // and nothing GTK-side crosses the thread. One verdict
-                // per edit, so the future ends after one receive.
+                let catalog = self.service.catalog().clone();
                 let (verdict_tx, verdict_rx) =
-                    async_channel::unbounded::<Result<VerifiedEdit, (String, u64)>>();
+                    async_channel::unbounded::<Result<DirectEditSaved, (String, u64)>>();
                 let tx = sender.input_sender().clone();
                 gtk::glib::spawn_future_local(async move {
                     if let Ok(verdict) = verdict_rx.recv().await {
-                        let _ = tx.send(ReaderMsg::InlineEditVerified(verdict));
+                        let _ = tx.send(ReaderMsg::InlineEditSaved(verdict));
                     }
                 });
-                if is_paragraph {
-                    engine::verify_paragraph_edit(
-                        path, chapter, prior, original, prev, next, corrected, serial, verdict_tx,
-                    );
-                } else {
-                    engine::verify_inline_edit(
-                        path, chapter, prior, original, corrected, serial, verdict_tx,
-                    );
-                }
+                engine::save_inline_edit(
+                    catalog,
+                    self.book_id,
+                    path,
+                    self.book_hash.clone(),
+                    chapter,
+                    original,
+                    paragraph_context,
+                    corrected,
+                    crate::epub_sanitizer::DirectSaveBackup::KeepPristine,
+                    serial,
+                    verdict_tx,
+                );
                 if let Some(edit) = self.inline_edit.as_mut() {
                     edit.committed = true;
+                    edit.editor.widget().set_sensitive(false);
                 }
-                // The editor stays open until the verdict lands — a
-                // refusal is information (widen the selection), not a
-                // lost edit, and a slow book must not freeze the page.
+                // Save cannot be cancelled after the worker starts. The
+                // page stays visible and the inline control remains until
+                // the result arrives, keeping its text safe on failure.
             }
             ReaderMsg::CancelInlineEdit => {
-                // Escape: nothing was changed, nothing to reload.
+                if self
+                    .inline_edit
+                    .as_ref()
+                    .is_some_and(|edit| edit.committed)
+                {
+                    crate::notify::info("Saving edit", "Wait for this edit to finish saving.");
+                    return;
+                }
                 self.close_inline_edit();
             }
-            ReaderMsg::InlineEditVerified(verdict) => {
-                // The verdict carries everything it verified — href,
-                // kind, chapter, serial — because the editor it came
-                // from may already be gone (a quick second tap, or an
-                // Escape right after Enter): its patch still stores.
+            ReaderMsg::InlineEditSaved(verdict) => {
                 match verdict {
-                    Ok(verified) => {
-                        let source = if verified.kind == "paragraph" {
-                            "proofread"
+                    Ok(saved) => {
+                        self.book_hash = saved.book_hash.clone();
+                        let current = self
+                            .inline_edit
+                            .as_ref()
+                            .is_some_and(|edit| edit.serial == saved.serial);
+                        if current {
+                            self.close_inline_edit();
+                        }
+                        // A direct save is already permanent even if this
+                        // overlay was closed. Refresh only when no newer edit
+                        // is open, so its buffer and caret are never lost.
+                        if self.inline_edit.is_none() {
+                            self.reload_reader(&sender);
+                        }
+                        if let Some(warning) = saved.warning {
+                            crate::notify::info("Saved with a warning", &warning);
                         } else {
-                            "typo"
-                        };
-                        let inserted = self.service.catalog().insert_patch(
-                            self.book_id,
-                            verified.kind,
-                            &verified.href,
-                            verified.chapter as i64,
-                            &verified.planned.find_text,
-                            &verified.planned.replace_text,
-                            &verified.planned.context_before,
-                            &verified.planned.context_after,
-                            source,
-                        );
-                        match inserted {
-                            Ok(_) => {
-                                // Only the editor this verdict belongs to
-                                // comes down. A newer editor stands — its
-                                // half-typed text is not the casualty of
-                                // an older edit's slow verification — and
-                                // the reload waits for its own commit.
-                                let current = self
-                                    .inline_edit
-                                    .as_ref()
-                                    .is_some_and(|edit| edit.serial == verified.serial);
-                                if current {
-                                    self.close_inline_edit();
-                                    self.reload_reader(&sender);
-                                    crate::notify::success(
-                                        "Fixed",
-                                        "The edit now shows in the book.",
-                                    );
-                                } else {
-                                    crate::notify::success(
-                                        "Fixed",
-                                        "The edit is saved — it shows when this paragraph edit lands.",
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                // The store refused: nothing is saved, and
-                                // an editor that still stands keeps its
-                                // text so nothing typed is lost.
-                                crate::notify::error("Could not save the edit", &e.to_string());
-                            }
+                            crate::notify::success(
+                                "Saved to the EPUB",
+                                "The edit is now permanent.",
+                            );
                         }
                     }
-                    Err((toast, serial)) => {
-                        crate::notify::info("Couldn't save that edit", &toast);
-                        // A refusal of the editor still standing re-arms
-                        // it: the fix may be widened or reworded and
-                        // committed again. A stale refusal touches
-                        // nothing — the editor it refused is gone, and
-                        // the one that replaced it keeps its own state.
+                    Err((message, serial)) => {
+                        crate::notify::error("Could not save the edit", &message);
                         if let Some(edit) = self.inline_edit.as_mut() {
                             if edit.serial == serial {
                                 edit.committed = false;
+                                edit.editor.widget().set_sensitive(true);
                             }
                         }
                     }

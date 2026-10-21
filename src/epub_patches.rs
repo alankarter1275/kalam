@@ -270,6 +270,28 @@ pub fn plan_text_patch(
     })
 }
 
+/// Apply a verified edit to the exact entry it was planned against. This
+/// keeps the edit's byte-preserving guarantee when it is saved directly
+/// instead of entering the legacy patch queue.
+pub fn apply_planned_patch(
+    bytes: &[u8],
+    planned: &PlannedPatch,
+) -> Result<Vec<u8>, PatchRefusal> {
+    let span = match resolve_span(
+        bytes,
+        &planned.find_text,
+        &planned.context_before,
+        &planned.context_after,
+    ) {
+        Resolution::Found(span) => span,
+        Resolution::NotFound | Resolution::Stale => return Err(PatchRefusal::NotFound),
+        Resolution::Ambiguous(n) => return Err(PatchRefusal::Ambiguous(n)),
+    };
+    let mut out = bytes.to_vec();
+    out.splice(span, planned.replace_text.bytes());
+    Ok(out)
+}
+
 /// `text[index - back..index]` as a char-boundary-safe start, clamped to
 /// the string's beginning.
 pub(crate) fn floor_char_boundary(text: &str, index: usize, back: usize) -> usize {
@@ -561,6 +583,23 @@ mod tests {
             "<p>He said the word &amp; she smiled.</p>"
         );
         assert!(matches!(outcomes[0].resolution, Resolution::Found(_)));
+    }
+
+    #[test]
+    fn a_planned_edit_applies_only_its_verified_byte_span() {
+        let entry = b"<p>left teh word &amp; right</p>";
+        let planned = plan_text_patch(entry, "teh word &", "the word &")
+            .expect("the selected text is unique");
+        let updated = apply_planned_patch(entry, &planned).expect("verified span still matches");
+        assert_eq!(updated, b"<p>left the word &amp; right</p>");
+    }
+
+    #[test]
+    fn a_planned_edit_refuses_when_its_context_is_stale() {
+        let original = b"<p>left teh word right</p>";
+        let planned = plan_text_patch(original, "teh", "the").expect("the selected word is unique");
+        let changed = b"<p>elsewhere teh word right</p>";
+        assert_eq!(apply_planned_patch(changed, &planned), Err(PatchRefusal::NotFound));
     }
 
     #[test]

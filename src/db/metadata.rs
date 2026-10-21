@@ -396,6 +396,36 @@ impl Catalog {
         Ok(())
     }
 
+    /// Update the catalog hash after a serialized direct EPUB save. Unlike
+    /// [`Self::rehash_book`], this reads the hash currently stored for the
+    /// book while holding the catalog lock. Two saves can finish close
+    /// together, so using a hash captured before either write could strand
+    /// metadata overrides under the intermediate hash.
+    pub fn rehash_book_after_direct_save(&self, book_id: i64, new_hash: &str) -> Result<()> {
+        let conn = self.conn();
+        let current_hash: String = conn.query_row(
+            "SELECT file_hash FROM books WHERE id = ?1",
+            params![book_id],
+            |row| row.get(0),
+        )?;
+        if current_hash == new_hash {
+            return Ok(());
+        }
+        conn.execute(
+            "UPDATE books SET file_hash = ?2 WHERE id = ?1",
+            params![book_id, new_hash],
+        )?;
+        conn.execute(
+            "DELETE FROM metadata_overrides WHERE file_hash = ?1",
+            params![new_hash],
+        )?;
+        conn.execute(
+            "UPDATE metadata_overrides SET file_hash = ?2 WHERE file_hash = ?1",
+            params![current_hash, new_hash],
+        )?;
+        Ok(())
+    }
+
     /// Point the book at a new cover file inside its own directory.
     pub fn set_cover_name(&self, book_id: i64, cover_name: Option<&str>) -> Result<()> {
         {

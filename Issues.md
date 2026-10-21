@@ -20,7 +20,7 @@ The record's rules:
 
 ## KAL-5 — EPUB editor usability overhaul
 
-**Backlog · priority High · filed 2026-10-09**
+**In Progress · priority High · filed 2026-10-09**
 <https://linear.app/kalam-alan/issue/KAL-5/epub-editor-usability-overhaul-completely-useless-everything-about-it>
 
 Owner's verdict, verbatim:
@@ -32,12 +32,16 @@ Same day, on the rail's new picker page:
 
 > "it looks horrendous"
 
-**Current editor behavior.** The shipped editor stages guarded paragraph and
-chapter-source patches, supports chapter ordering and staged cover replacement,
-and lets the user review and apply selected changes. Applying patches rewrites
-the EPUB in the background, preserves a pristine `.orig` backup, updates the
-content hash and reindexes the book. The editor has no general archive file
-tree or arbitrary-file editing.
+**Baseline and implementation status.** Before KAL-5, paragraph and
+chapter-source edits, chapter ordering, and cover replacement could create
+pending patches. The patch panel applies selected legacy edits by rewriting the
+EPUB and refreshing its hash/index. The first direct-save slice is now drafted
+in the working tree: reader selection/paragraph fixes, deep-editor paragraph
+edits, and raw-source Save write into the EPUB rather than creating patches.
+It has not yet been compiled or tested. Chapter ordering and cover replacement
+are temporarily unavailable rather than creating new patches; the legacy panel
+remains the safe review/apply/discard path for existing pending edits. The
+editor still lacks a general archive file tree.
 
 **Owner's direction (2026-10-21).** Both in-reader quick edits and deep-editor
 changes should save directly into the EPUB; do not create new pending patches.
@@ -55,13 +59,14 @@ writes while preserving the user's buffer. The owner previously selected
 per-save timestamped backups for direct saves. The agent recommends keeping
 those for deep-editor saves, but making one pristine backup before the first
 in-reader edit and reusing it for quick fixes, to avoid copying the whole EPUB
-for every small correction. The post-save renderer refresh also needs
-engineering work to avoid a GTK-thread pause or visible flicker. See `plan.md` for the
-working behavior proposal. No editor implementation is authorized yet.
+for every small correction. Archive writes run off the GTK thread, but the
+reader refresh still opens the view synchronously; its delay/flicker needs
+engineering work and measurement. The implementation is authorized and in
+progress; see `plan.md` for the full behavior and remaining phases.
 
 **Pointers.**
 
-- `plan.md` — current KAL-5 proposal and open decisions
+- `plan.md` — current KAL-5 plan, implementation state, and remaining work
 - `docs/pitfalls.md` §72–§96 — implementation lessons
 - `docs/manual-test-checklist.md` — current editor checks
 - `src/pages/epub_editor.rs`, `src/pages/editor_picker.rs`,

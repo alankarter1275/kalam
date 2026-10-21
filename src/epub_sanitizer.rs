@@ -216,6 +216,391 @@ pub struct BakeReport {
     pub entries_patched: usize,
 }
 
+/// Backup policy for a permanent edit. Small in-reader fixes keep one
+/// pristine `.orig`; explicit deep-editor saves get a dated snapshot each
+/// time so the user can step back through larger edits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectSaveBackup {
+    KeepPristine,
+    Timestamped,
+}
+
+/// Result of replacing one existing EPUB resource.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectSaveReport {
+    pub entry_hash: String,
+    pub book_hash: String,
+    pub backup_path: std::path::PathBuf,
+}
+
+/// A direct entry save either succeeds or finds that the entry/archive no
+/// longer matches the version the editor loaded. A stale result never writes
+/// or backs up anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectSaveOutcome {
+    Saved(DirectSaveReport),
+    Stale,
+}
+
+/// Serialize archive replacements within the process. The GTK app has one
+/// active window, but two worker jobs can still overlap; protecting the
+/// compare-and-replace interval prevents them from silently overwriting one
+/// another after both observed the same baseline.
+pub(crate) static EPUB_WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Replace one existing XHTML, HTML, or CSS resource in an EPUB. The
+/// comparison, temporary archive, validation, backup, and atomic rename all
+/// happen in the caller's worker thread. `expected_entry_hash` is the SHA-256
+/// of the exact resource shown in the editor; `expected_book_hash`, when
+/// present, pins the whole archive to the version that editor opened.
+pub fn save_epub_entry_direct(
+    path: &Path,
+    href: &str,
+    expected_book_hash: Option<&str>,
+    expected_entry_hash: &str,
+    replacement: &[u8],
+    backup: DirectSaveBackup,
+) -> Result<DirectSaveOutcome> {
+    let _save = EPUB_WRITE_LOCK
+        .lock()
+        .map_err(|_| anyhow!("another EPUB save failed unexpectedly"))?;
+    save_epub_entry_direct_locked(
+        path,
+        href,
+        expected_book_hash,
+        expected_entry_hash,
+        replacement,
+        backup,
+    )
+}
+
+/// Direct-save implementation for a caller that already holds
+/// [`EPUB_WRITE_LOCK`] through its catalog/index follow-up.
+pub(crate) fn save_epub_entry_direct_locked(
+    path: &Path,
+    href: &str,
+    expected_book_hash: Option<&str>,
+    expected_entry_hash: &str,
+    replacement: &[u8],
+    backup: DirectSaveBackup,
+) -> Result<DirectSaveOutcome> {
+    use std::io::Read as _;
+    if !path.is_file() {
+        return Err(anyhow!("file not found: {}", path.display()));
+    }
+    if expected_book_hash.is_some_and(|expected| expected.is_empty()) {
+        return Err(anyhow!("the editor has no saved EPUB version to compare against"));
+    }
+    if href.is_empty()
+        || href.starts_with('/')
+        || href.contains('\\')
+        || href.split('/').any(|part| part == "..")
+        || href == "mimetype"
+    {
+        return Err(anyhow!("unsafe EPUB resource path: {href}"));
+    }
+    if expected_entry_hash.is_empty() {
+        return Err(anyhow!("the editor has no saved version to compare against"));
+    }
+    // The entry hash below protects the edited resource. Also pin the whole
+    // archive across the rewrite so unrelated concurrent changes are never
+    // silently discarded when the temporary ZIP replaces the original.
+    let original_book_hash = crate::db::hash_file(path).context("hash EPUB before direct save")?;
+    if expected_book_hash.is_some_and(|expected| expected != original_book_hash.as_str()) {
+        return Ok(DirectSaveOutcome::Stale);
+    }
+
+    let (entry_name, original, opf_path) = {
+        let file = fs::File::open(path).context("open EPUB before direct save")?;
+        let mut archive = ZipArchive::new(file).context("open EPUB archive")?;
+        let opf_path = crate::epub::find_opf_path_pub(&mut archive)?;
+        let decoded = percent_decode_path(href);
+        let entry_name = if archive.by_name(href).is_ok() {
+            href.to_string()
+        } else if decoded != href && archive.by_name(&decoded).is_ok() {
+            decoded
+        } else {
+            return Err(anyhow!("{href} is no longer present in the EPUB"));
+        };
+        let mut matches = 0usize;
+        for index in 0..archive.len() {
+            if archive.by_index(index)?.name() == entry_name {
+                matches += 1;
+            }
+        }
+        if matches != 1 {
+            return Err(anyhow!("{href} appears more than once in the EPUB"));
+        }
+        let mut original = Vec::new();
+        archive
+            .by_name(&entry_name)?
+            .read_to_end(&mut original)
+            .context("read the current EPUB resource")?;
+        if crate::epub_patches::hash_bytes(&original) != expected_entry_hash {
+            return Ok(DirectSaveOutcome::Stale);
+        }
+        (entry_name, original, opf_path)
+    };
+
+    validate_direct_entry(href, &original, replacement)?;
+
+    let tmp_path = path.with_file_name(format!(
+        "{}.kalam-tmp-{}",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        uuid::Uuid::new_v4()
+    ));
+    let result = (|| -> Result<DirectSaveReport> {
+        let mut archive = ZipArchive::new(fs::File::open(path).context("reopen EPUB for rewrite")?)
+            .context("reopen EPUB archive")?;
+        let mut current_entry = Vec::new();
+        archive
+            .by_name(&entry_name)
+            .context("the edited resource disappeared before the rewrite")?
+            .read_to_end(&mut current_entry)
+            .context("re-read the edited resource before rewrite")?;
+        if crate::epub_patches::hash_bytes(&current_entry) != expected_entry_hash {
+            return Err(anyhow!("the edited resource changed before the write; nothing was saved"));
+        }
+        let mut mimetype = Vec::new();
+        archive
+            .by_name("mimetype")
+            .context("EPUB has no mimetype entry")?
+            .read_to_end(&mut mimetype)
+            .context("read EPUB mimetype")?;
+        if mimetype != b"application/epub+zip" {
+            return Err(anyhow!("the EPUB mimetype entry is invalid"));
+        }
+
+        let source_permissions = fs::metadata(path)?.permissions();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .with_context(|| format!("create temporary archive {}", tmp_path.display()))?;
+        let mut out = ZipWriter::new(file);
+        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        out.start_file("mimetype", stored)?;
+        out.write_all(&mimetype)?;
+        let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let mut replaced = false;
+        for index in 0..archive.len() {
+            let entry = archive.by_index(index)?;
+            let name = entry.name().to_string();
+            if name == "mimetype" || name.ends_with('/') {
+                continue;
+            }
+            if name == entry_name {
+                drop(entry);
+                out.start_file(&name, deflated)?;
+                out.write_all(replacement)?;
+                replaced = true;
+            } else {
+                out.raw_copy_file(entry)?;
+            }
+        }
+        if !replaced {
+            return Err(anyhow!("{href} disappeared while the EPUB was being saved"));
+        }
+        let finished = out.finish()?;
+        finished.sync_all().context("flush temporary EPUB archive")?;
+        drop(finished);
+        fs::set_permissions(&tmp_path, source_permissions)?;
+
+        let entry_hash = crate::epub_patches::hash_bytes(replacement);
+        verify_direct_epub(&tmp_path, &opf_path, &entry_name, &entry_hash)?;
+        let book_hash = crate::db::hash_file(&tmp_path).context("hash rewritten EPUB")?;
+        let pristine_backup = crate::epub_metadata::backup_path(path);
+        let backup_preexisted =
+            backup == DirectSaveBackup::KeepPristine && pristine_backup.exists();
+        let backup_path = create_direct_backup(path, backup)?;
+        let current_book_hash =
+            crate::db::hash_file(path).context("recheck EPUB before replacement")?;
+        if current_book_hash != original_book_hash {
+            if backup == DirectSaveBackup::Timestamped || !backup_preexisted {
+                let _ = fs::remove_file(&backup_path);
+            }
+            return Err(anyhow!("the EPUB changed during this edit; nothing was saved"));
+        }
+        fs::rename(&tmp_path, path)
+            .with_context(|| format!("replace {} with the validated EPUB", path.display()))?;
+        Ok(DirectSaveReport {
+            entry_hash,
+            book_hash,
+            backup_path,
+        })
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp_path);
+    }
+    result.map(DirectSaveOutcome::Saved)
+}
+
+fn validate_direct_entry(href: &str, original: &[u8], replacement: &[u8]) -> Result<()> {
+    let original_text = std::str::from_utf8(original)
+        .with_context(|| format!("{href} is not UTF-8 text and cannot be edited safely"))?;
+    let replacement_text = std::str::from_utf8(replacement)
+        .with_context(|| format!("the edited {href} is not UTF-8 text"))?;
+    let lower = href.to_ascii_lowercase();
+    if lower.ends_with(".xhtml") || lower.ends_with(".html") || lower.ends_with(".htm") {
+        // Keep legacy books that were already malformed readable, but never
+        // let a valid XML chapter become invalid through an edit.
+        if roxmltree::Document::parse(original_text).is_ok()
+            && roxmltree::Document::parse(replacement_text).is_err()
+        {
+            return Err(anyhow!("the edit would make {href} invalid XML; nothing was saved"));
+        }
+    } else if lower.ends_with(".css") {
+        if css_structure_is_valid(original_text) && !css_structure_is_valid(replacement_text) {
+            return Err(anyhow!(
+                "the edit would leave {href} with unbalanced CSS; nothing was saved"
+            ));
+        }
+    } else {
+        return Err(anyhow!("direct editing is limited to XHTML, HTML, and CSS resources"));
+    }
+    Ok(())
+}
+
+/// Check CSS strings, comments, and grouping delimiters. This is a
+/// conservative corruption check rather than a full style-sheet linter; the
+/// preview and later Check Book tool provide deeper diagnostics.
+fn css_structure_is_valid(css: &str) -> bool {
+    let mut chars = css.chars().peekable();
+    let mut stack = Vec::new();
+    let mut quote = None;
+    let mut in_comment = false;
+    while let Some(ch) = chars.next() {
+        if in_comment {
+            if ch == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                in_comment = false;
+            }
+            continue;
+        }
+        if let Some(delimiter) = quote {
+            if ch == '\\' {
+                chars.next();
+            } else if ch == delimiter {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            in_comment = true;
+            continue;
+        }
+        if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            continue;
+        }
+        if ch == '\\' {
+            chars.next();
+            continue;
+        }
+        match ch {
+            '{' | '(' | '[' => stack.push(ch),
+            '}' => if stack.pop() != Some('{') { return false; },
+            ')' => if stack.pop() != Some('(') { return false; },
+            ']' => if stack.pop() != Some('[') { return false; },
+            _ => {}
+        }
+    }
+    !in_comment && quote.is_none() && stack.is_empty()
+}
+
+fn create_direct_backup(path: &Path, policy: DirectSaveBackup) -> Result<std::path::PathBuf> {
+    use std::io::copy;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let candidate = match policy {
+        DirectSaveBackup::KeepPristine => crate::epub_metadata::backup_path(path),
+        DirectSaveBackup::Timestamped => {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            path.with_file_name(format!("{name}.{stamp}.{}.bak", std::process::id()))
+        }
+    };
+    if policy == DirectSaveBackup::KeepPristine && candidate.exists() {
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+        return Err(anyhow!("the original-backup path is not a file"));
+    }
+
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&candidate)
+    {
+        Ok(mut target) => {
+            let copied = (|| -> Result<()> {
+                let mut source = fs::File::open(path).context("open EPUB for backup")?;
+                copy(&mut source, &mut target).context("copy EPUB backup")?;
+                target.sync_all().context("flush EPUB backup")?;
+                Ok(())
+            })();
+            if copied.is_err() {
+                let _ = fs::remove_file(&candidate);
+            }
+            copied?;
+            Ok(candidate)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            if policy == DirectSaveBackup::KeepPristine && candidate.is_file() {
+                Ok(candidate)
+            } else {
+                Err(err).with_context(|| format!("create backup {}", candidate.display()))
+            }
+        }
+        Err(err) => Err(err).with_context(|| format!("create backup {}", candidate.display())),
+    }
+}
+
+fn verify_direct_epub(
+    path: &Path,
+    opf_path: &str,
+    target: &str,
+    expected_hash: &str,
+) -> Result<()> {
+    use std::io::Read as _;
+    let file = fs::File::open(path).context("open rewritten EPUB for validation")?;
+    let mut archive = ZipArchive::new(file).context("rewritten EPUB is not a valid ZIP archive")?;
+    if archive.len() == 0 || archive.by_index(0)?.name() != "mimetype" {
+        return Err(anyhow!("rewritten EPUB does not put mimetype first"));
+    }
+    let mut opf = String::new();
+    archive
+        .by_name(opf_path)
+        .context("rewritten EPUB has no package document")?
+        .read_to_string(&mut opf)
+        .context("read rewritten package document")?;
+    roxmltree::Document::parse(&opf).context("rewritten package document is invalid XML")?;
+    let mut target_bytes = Vec::new();
+    archive
+        .by_name(target)
+        .context("rewritten EPUB has no edited resource")?
+        .read_to_end(&mut target_bytes)
+        .context("read rewritten resource")?;
+    if crate::epub_patches::hash_bytes(&target_bytes) != expected_hash {
+        return Err(anyhow!("rewritten EPUB does not contain the edited resource"));
+    }
+    // Read every member to the sink so ZIP CRC errors surface before the
+    // original file is replaced; memory use stays bounded to one entry.
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        if !entry.name().ends_with('/') {
+            std::io::copy(&mut entry, &mut std::io::sink())
+                .context("validate rewritten EPUB member data")?;
+        }
+    }
+    Ok(())
+}
+
 /// Bake pending edits into the EPUB file itself (Phase 6 step 5) — the
 /// moment the virtual becomes real.
 ///
@@ -233,6 +618,9 @@ pub struct BakeReport {
 /// re-hashing the book row, reindexing search — so this stays a pure
 /// file operation that tests can run against a zip alone.
 pub fn bake_epub(path: &Path, patches: &[crate::db::PatchRecord]) -> Result<BakeReport> {
+    let _save = EPUB_WRITE_LOCK
+        .lock()
+        .map_err(|_| anyhow!("another EPUB save failed unexpectedly"))?;
     if !path.is_file() {
         return Err(anyhow!("file not found: {}", path.display()));
     }
@@ -1808,6 +2196,178 @@ mod tests {
             "kalam-test-bake-{tag}-{}.epub",
             uuid::Uuid::new_v4()
         ))
+    }
+
+    #[test]
+    fn direct_reader_saves_are_atomic_and_keep_the_first_backup() {
+        let path = test_epub_path("direct-reader");
+        let original_chapter = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>First text.</p></body></html>"#;
+        write_minimal_epub(&path, original_chapter);
+        let original_file = fs::read(&path).unwrap();
+        let original_book_hash = crate::db::hash_file(&path).unwrap();
+        let original_entry = entry_bytes(&path, "chapter1.xhtml");
+        let first = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Edited once.</p></body></html>"#;
+        let first_result = save_epub_entry_direct(
+            &path,
+            "chapter1.xhtml",
+            Some(original_book_hash.as_str()),
+            &crate::epub_patches::hash_bytes(&original_entry),
+            first.as_bytes(),
+            DirectSaveBackup::KeepPristine,
+        )
+        .expect("first direct write");
+        let DirectSaveOutcome::Saved(first_report) = first_result else {
+            panic!("the untouched entry should be fresh");
+        };
+        assert_eq!(entry_bytes(&path, "chapter1.xhtml").as_slice(), first.as_bytes());
+        assert_eq!(fs::read(&first_report.backup_path).unwrap(), original_file);
+
+        let second = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Edited twice.</p></body></html>"#;
+        let second_result = save_epub_entry_direct(
+            &path,
+            "chapter1.xhtml",
+            Some(first_report.book_hash.as_str()),
+            &first_report.entry_hash,
+            second.as_bytes(),
+            DirectSaveBackup::KeepPristine,
+        )
+        .expect("second direct write");
+        let DirectSaveOutcome::Saved(second_report) = second_result else {
+            panic!("the entry still matches the first save");
+        };
+        assert_eq!(entry_bytes(&path, "chapter1.xhtml").as_slice(), second.as_bytes());
+        assert_eq!(second_report.backup_path, first_report.backup_path);
+        assert_eq!(fs::read(&second_report.backup_path).unwrap(), original_file);
+        assert_eq!(
+            crate::db::hash_file(&path).unwrap(),
+            second_report.book_hash
+        );
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(first_report.backup_path);
+    }
+
+    #[test]
+    fn a_stale_direct_save_does_not_write_or_create_a_backup() {
+        let path = test_epub_path("direct-stale");
+        write_minimal_epub(
+            &path,
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Original.</p></body></html>"#,
+        );
+        let before = fs::read(&path).unwrap();
+        let result = save_epub_entry_direct(
+            &path,
+            "chapter1.xhtml",
+            None,
+            "not-the-entry-hash",
+            b"<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><p>Wrong.</p></body></html>",
+            DirectSaveBackup::KeepPristine,
+        )
+        .expect("stale is a normal refusal");
+        assert_eq!(result, DirectSaveOutcome::Stale);
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert!(!crate::epub_metadata::backup_path(&path).exists());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_direct_save_refuses_a_changed_archive_even_if_the_entry_hash_was_loaded() {
+        let path = test_epub_path("direct-stale-archive");
+        write_minimal_epub(
+            &path,
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Original.</p></body></html>"#,
+        );
+        let expected_book_hash = crate::db::hash_file(&path).unwrap();
+        let original_entry = entry_bytes(&path, "chapter1.xhtml");
+        let mut externally_changed = fs::read(&path).unwrap();
+        externally_changed.push(0);
+        fs::write(&path, &externally_changed).unwrap();
+        let before_save = fs::read(&path).unwrap();
+        let result = save_epub_entry_direct(
+            &path,
+            "chapter1.xhtml",
+            Some(expected_book_hash.as_str()),
+            &crate::epub_patches::hash_bytes(&original_entry),
+            b"<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><p>Wrong.</p></body></html>",
+            DirectSaveBackup::KeepPristine,
+        )
+        .expect("a stale archive is a normal refusal");
+        assert_eq!(result, DirectSaveOutcome::Stale);
+        assert_eq!(fs::read(&path).unwrap(), before_save);
+        assert!(!crate::epub_metadata::backup_path(&path).exists());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_direct_save_that_breaks_valid_xhtml_is_refused_without_backup() {
+        let path = test_epub_path("direct-invalid");
+        write_minimal_epub(
+            &path,
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Original.</p></body></html>"#,
+        );
+        let before = fs::read(&path).unwrap();
+        let original_entry = entry_bytes(&path, "chapter1.xhtml");
+        let result = save_epub_entry_direct(
+            &path,
+            "chapter1.xhtml",
+            None,
+            &crate::epub_patches::hash_bytes(&original_entry),
+            b"<html><body><p>broken</body></html>",
+            DirectSaveBackup::Timestamped,
+        );
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn timestamped_direct_save_keeps_a_recovery_copy_for_deep_edits() {
+        let path = test_epub_path("direct-timestamped");
+        let original_chapter = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Original.</p></body></html>"#;
+        write_minimal_epub(&path, original_chapter);
+        let original_file = fs::read(&path).unwrap();
+        let original_book_hash = crate::db::hash_file(&path).unwrap();
+        let original_entry = entry_bytes(&path, "chapter1.xhtml");
+        let replacement = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Deep edit.</p></body></html>"#;
+        let result = save_epub_entry_direct(
+            &path,
+            "chapter1.xhtml",
+            Some(original_book_hash.as_str()),
+            &crate::epub_patches::hash_bytes(&original_entry),
+            replacement.as_bytes(),
+            DirectSaveBackup::Timestamped,
+        )
+        .expect("timestamped direct write");
+        let DirectSaveOutcome::Saved(report) = result else {
+            panic!("the untouched entry should be fresh");
+        };
+        assert_ne!(report.backup_path, crate::epub_metadata::backup_path(&path));
+        assert_eq!(fs::read(&report.backup_path).unwrap(), original_file);
+        assert_eq!(entry_bytes(&path, "chapter1.xhtml").as_slice(), replacement.as_bytes());
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(report.backup_path);
+    }
+
+    #[test]
+    fn direct_save_preserves_malformed_legacy_xhtml_as_raw_text() {
+        let path = test_epub_path("direct-malformed-legacy");
+        let original = "<html><body><p>legacy markup";
+        let replacement = "<html><body><p>legacy markup with a fix";
+        write_minimal_epub(&path, original);
+        let original_book_hash = crate::db::hash_file(&path).unwrap();
+        let original_entry = entry_bytes(&path, "chapter1.xhtml");
+        let result = save_epub_entry_direct(
+            &path,
+            "chapter1.xhtml",
+            Some(original_book_hash.as_str()),
+            &crate::epub_patches::hash_bytes(&original_entry),
+            replacement.as_bytes(),
+            DirectSaveBackup::KeepPristine,
+        )
+        .expect("an already malformed chapter remains editable as raw XHTML");
+        assert!(matches!(result, DirectSaveOutcome::Saved(_)));
+        assert_eq!(entry_bytes(&path, "chapter1.xhtml").as_slice(), replacement.as_bytes());
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(crate::epub_metadata::backup_path(&path));
     }
 
     #[test]

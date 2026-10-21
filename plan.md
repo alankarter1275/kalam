@@ -1,23 +1,33 @@
 # KAL-5 — EPUB editor usability overhaul
 
-**Status: Backlog; design in progress.** The owner has clarified the product
-vision; no editor implementation is authorized yet. The technical details below
-are the agent's proposal for turning that vision into a safe, responsive
-workflow.
+**Status: Implementation in progress; authorized 2026-10-21.** The first
+permanent-save slice is drafted in the working tree and has not yet been built
+or tested. The approved product direction is no longer awaiting authorization;
+the remaining work is to finish, validate, measure, and phase the experience.
 
 ## Current editor behavior
 
-The shipped editor stages guarded paragraph and chapter-source changes as
-patches; it also stages chapter ordering and cover replacement. Pending text
-patches can appear in the reader. Applying selected patches rewrites the EPUB,
-preserves the first `.orig` backup, updates the book hash and reindexes search.
-The editor has no general archive file tree or arbitrary-file editor.
+Before KAL-5, the shipped editor staged guarded paragraph and chapter-source
+changes as patches; it also staged chapter ordering and cover replacement.
+Pending text patches can appear in the reader. Applying selected patches
+rewrites the EPUB, preserves the first `.orig` backup, updates the book hash,
+and reindexes search. The editor has no general archive file tree or
+arbitrary-file editor.
+
+**Implementation in progress:** in-reader selection/paragraph fixes, full-editor
+paragraph edits, and raw-source Save now target direct EPUB writes in the local
+worktree. The writer uses entry and archive hash guards, validates the changed
+resource and repacked package, makes backups, atomically replaces the archive,
+and refreshes catalog/search/sidecar state. This code is not yet compiled or
+tested. Chapter ordering and cover replacement are temporarily unavailable
+rather than allowed to create new patches; the legacy patch panel remains for
+review/apply/discard of existing pending edits. The picker still uses its
+existing title-sorted cover grid, and the editor still lacks a general archive
+file tree.
 
 The entry points are the **Editor** sidebar picker and the per-book pencil in
-the reader sidebar. The picker uses a title-sorted EPUB cover grid and searches
-title/author text. The current Source pane's Save stages a guarded whole-entry
-patch; it does not write the EPUB directly. The current side-by-side source
-preview is a debounced raster from Kalam's native renderer, not WebKit.
+the reader sidebar. The current side-by-side source preview is a debounced
+raster from Kalam's native renderer, not WebKit.
 
 ## Owner's direction — 2026-10-21
 
@@ -134,10 +144,11 @@ full Check Book with cross-file/link/resource checks; saved searches; and
 formatting, punctuation and font tools. Keep the advanced list in scope for the
 program, but schedule it after the core editor is usable.
 
-## Product-level confirmation still needed
+## Product feedback and validation
 
-The key remaining product check is whether this describes the intended feel:
-reader stays a book during small edits; deep work uses the three-pane IDE; the
-Light mode is Markdown-like but saves losslessly to XHTML. The agent will own
-the implementation details and report any trade-offs that would change that
-experience.
+No further design approval blocks implementation. The owner's original
+first-use complaint remains broad—navigation felt unusable and capabilities
+were missing—and no concrete screen/action examples have been supplied. After
+the core path is buildable, test it end-to-end on real books and use the owner's
+first-use feedback to prioritize the next interaction improvements. Report any
+trade-off that changes the approved feel rather than silently changing scope.

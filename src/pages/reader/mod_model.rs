@@ -116,9 +116,11 @@ pub struct ReaderModel {
     /// with `set_child`; the overlay itself stays, so widgets laid over
     /// the reader keep their parent across a reload.
     pub(crate) reader_overlay: Option<gtk::Overlay>,
-    /// The open book's file path, for the edit-verification worker —
-    /// the thread cannot reach the view's own copy.
+    /// The open book's file path, for background readers and writers.
     pub(crate) book_path: Option<std::path::PathBuf>,
+    /// Catalog hash captured when this reader opened. Direct edits compare
+    /// against it so changes made since open are refused as stale.
+    pub(crate) book_hash: String,
     pub(crate) session_id: Option<i64>,
     pub(crate) session_start: std::time::Instant,
     pub(crate) session_start_pct: i64,

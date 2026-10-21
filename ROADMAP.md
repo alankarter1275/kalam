@@ -76,12 +76,15 @@ must not be required for the offline library or readers to work.
 
 ### EPUB editing
 
-The current editor stages guarded text and cover changes as patches. The reader
-can display pending text patches. Applying selected patches runs in the
-background, validates and rewrites the EPUB, preserves a pristine `.orig`
-backup, updates the content hash, and reindexes book text. The editor includes
-paragraph proofreading, chapter-source editing, and chapter ordering. It is
-not a full archive file manager and does not edit arbitrary EPUB files.
+Before KAL-5, the editor staged guarded paragraph/source edits, chapter order,
+and cover changes as patches; the reader can display pending text patches and
+the review panel can apply or discard them. KAL-5 is now authorized and in
+progress. The first direct-save slice is drafted but uncompiled/untested:
+reader selection/paragraph fixes, deep-editor paragraph edits, and raw-source
+Save write into the EPUB. Chapter-order and cover actions are temporarily
+disabled rather than allowed to create new patches. Legacy patches retain their
+review/apply/discard path. The editor still lacks the approved file-tree/IDE
+layout and arbitrary-file editing.
 
 ### Current limitations
 
@@ -90,8 +93,8 @@ not a full archive file manager and does not edit arbitrary EPUB files.
   Existing UI or queue scaffolding does not provide working online sources.
 - The Lua plugin substrate is selected, but neither the plugin runtime nor a
   source implementation is registered.
-- The KAL-5 proposal for a more usable EPUB editor is in Linear's Backlog. Its
-  behavior needs discussion and approval before implementation.
+- KAL-5 is authorized and in progress. Its first direct-save slice is drafted
+  but not yet built or tested; remaining scope and status are in `plan.md`.
 
 ## Crosswalk from earlier phase names to current status
 
@@ -129,16 +132,16 @@ that a feature shipped or remains in the app.
   track.
 - Lua (`mlua`, Lua 5.4) is the selected future plugin substrate. No plugin
   runtime or source implementation is in the app.
-- The shipped EPUB editor is still patch-based and lacks a general archive file
-  tree. The owner now wants both in-reader quick edits and deep-editor changes
-  to save directly into the EPUB; new edits should not create pending patches.
-  Resolve legacy pending patches through a review gate. Core IDE work comes
-  before advanced tools; use the native renderer and a lossless, safe-subset
-  Markdown-like Light mode. Strict validation and stale-write refusal remain
-  required. Follow the backup policy proposed in `plan.md`: a pristine backup
-  before the first in-reader fix, timestamped backups for deep-editor saves.
-  The post-save view refresh still needs engineering work and measurement; do
-  not implement until the overall behavior is agreed. See [`plan.md`](plan.md).
+- **KAL-5 is authorized and in progress.** Both in-reader quick edits and
+  deep-editor changes must write directly to the EPUB; no new edits should enter
+  the pending-patch queue. Resolve legacy pending patches through the review
+  gate. Core IDE work comes before advanced tools; use the native renderer and
+  a lossless, safe-subset Markdown-like Light mode. Strict validation and
+  stale-write refusal remain required. Follow the backup policy in `plan.md`:
+  one pristine backup before the first in-reader fix, timestamped backups for
+  deep-editor saves. The first direct-save slice is drafted but not yet built or
+  tested. The post-save view refresh still needs engineering work and
+  measurement. See [`plan.md`](plan.md).
 - Performance optimization is scheduled after the heavy feature work and the
   Material 3 redesign. Measure before choosing optimizations.
 - The earlier roadmap listed unauthorized shadow-library support, a Calibre
@@ -148,11 +151,11 @@ that a feature shipped or remains in the app.
 
 ## Current work order
 
-1. **Discuss KAL-5 behavior.** Agree on the editor's interaction, preview,
-   save, backup, validation, and conflict-handling rules. KAL-5 is in Linear's
-   Backlog; the working proposal and unresolved questions are in
-   [`plan.md`](plan.md). Do not implement the overhaul before the behavior is
-   approved and the plan is updated.
+1. **Continue KAL-5.** Finish and validate direct saves for reader and deep
+   editor text paths; preserve the legacy-patch review gate; then build the
+   approved reader-like quick-edit and deep-editor layout. Measure archive-write
+   and refresh responsiveness on large books before making timing promises.
+   Detailed scope and current status are in [`plan.md`](plan.md).
 2. **Schedule other approved feature work and the Material 3 redesign.** The
    old phase plans are historical input, not automatic authorization to build
    every item they listed.
@@ -195,7 +198,7 @@ with audited outcomes and a date-ordered implementation/retirement timeline.
 - [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md) — current
   manual smoke and regression checks.
 - [`docs/ci/README.md`](docs/ci/README.md) — CI checks and report locations.
-- [`plan.md`](plan.md) — KAL-5 proposal and unresolved decisions.
+- [`plan.md`](plan.md) — KAL-5 approved scope, implementation state, and remaining work.
 - [`docs/conversation.md`](docs/conversation.md) and
   [`docs/conversation-part-2.md`](docs/conversation-part-2.md) — design
   discussion records, with their final decisions called out in this roadmap.
@@ -634,7 +637,7 @@ a year. The 2026-09-30 pass corrected a table that had last been verified
 | **PDF reader & engine** | **shipped** | Rebuilt from scratch with MuPDF (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`). Crisp 8.7ms rasterization, unified EPUB-matching chrome (floating back chip, bottom pill with page jump and zoom, autohiding controls, slide-in TOC sidebar), continuous vertical scroll and paged modes, bounded memory cache (<80 MB). Replaced heuristic `lopdf` viewer. |
 | **Wasm plugins** | **NOT shipped** | `// mod plugins;` is commented out in `src/main.rs`; `wasmtime` is in neither `Cargo.toml` nor `Cargo.lock`. **Part 2.** |
 | Full-text library search | shipped | `book_content_fts` FTS5 table (`src/db.rs` schema v15), `src/content_index.rs`, background indexing + Reindex control; changelog 2026-09-29 |
-| EPUB editor | shipped 2026-10-09; **overhaul pending (KAL-5)** | Phase 6: `src/pages/epub_editor.rs` + `editor_picker.rs` + `edits_panel.rs`, routed as `PageSlot::Editor`/`EditorPicker` (`src/app.rs:145`); design settled 2026-10-08; green run `37901417687`. The owner's verdict on first use — the picker "horrendous", the editor "completely useless" — is filed as **KAL-5 (EPUB editor overhaul)** in the Linear Backlog; it starts from the owner's complaints, in words, when they are ready. Corrected 2026-10-10 from "not started", which predated the work (this table's last full verification was 2026-09-30). |
+| EPUB editor | shipped 2026-10-09; **KAL-5 implementation in progress** | Phase 6: `src/pages/epub_editor.rs` + `editor_picker.rs` + `edits_panel.rs`, routed as `PageSlot::Editor`/`EditorPicker` (`src/app.rs:145`); baseline run `37901417687`. The KAL-5 first direct-save slice is drafted in the working tree but not yet built/tested; see `plan.md`. |
 | OCR page cache (scanned PDFs) | shipped | `page_ocr_cache` table, schema v16, `src/db.rs`; loaded in `ensure_page_text`, saved in the `PageOcrResult` handler, `src/pages/pdf_reader.rs` |
 | Readable book folders | shipped | `book_folder_name` + folder index in `src/paths.rs`, rename pass in `src/folders.rs`, import wiring in `src/epub.rs`, edit hook in `src/db/metadata.rs` |
 | In-reader search (EPUB & PDF) | shipped | Phase 4 Step 1: Ctrl+F bar, live match count, "Matches at a Glance" popover — `src/pages/reader/mod.rs:2918`, `src/pages/pdf_reader.rs:4188`; field-tested in checklist Round 8 |

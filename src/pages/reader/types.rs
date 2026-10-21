@@ -199,14 +199,10 @@ pub enum ReaderMsg {
     CommitInlineEdit(String),
     /// Abandon the inline edit (Escape).
     CancelInlineEdit,
-    /// The background verification of an inline edit finished. Ok
-    /// carries the verified edit — href, patch kind, the serial of the
-    /// editor it came from, and the planned patch to store; Err carries
-    /// ready-to-show toast text for a refusal (unchanged, not locatable,
-    /// ambiguous) plus that editor's serial — a refusal of the
-    /// still-open editor re-arms it for another try, while the editor
-    /// stays open either way.
-    InlineEditVerified(Result<VerifiedEdit, (String, u64)>),
+    /// The background direct save of an inline edit finished. A saved
+    /// result carries its chapter and editor serial; failures keep the
+    /// editor and its text available for another attempt.
+    InlineEditSaved(Result<DirectEditSaved, (String, u64)>),
     /// From the selection chip.
     HighlightSelection(String),
     SaveAnnotationDetails {
@@ -356,19 +352,13 @@ pub struct InlineEdit {
     pub(crate) provider: gtk::CssProvider,
 }
 
-/// A verified edit coming back from the worker thread: where it lives,
-/// what kind of patch it is, the serial of the editor it verified, and
-/// the ready-to-store plan.
-// `pub` to match the enum whose variant carries it — the module is
-// private, so this is still crate-local; the private-interfaces lint
-// only compares declared visibilities.
+/// An inline edit that the worker saved directly into the EPUB.
 #[derive(Debug, Clone)]
-pub struct VerifiedEdit {
-    pub(crate) href: String,
-    pub(crate) kind: &'static str,
-    /// The spine index the edit was made in — the verdict's own, since
-    /// the editor it verified may already be gone.
-    pub(crate) chapter: usize,
+pub struct DirectEditSaved {
     pub(crate) serial: u64,
-    pub(crate) planned: crate::epub_patches::PlannedPatch,
+    /// Whole-archive hash after the atomic replacement, used as the next
+    /// edit's baseline until this reader reloads.
+    pub(crate) book_hash: String,
+    /// Non-fatal catalog/index follow-up problems after the file was saved.
+    pub(crate) warning: Option<String>,
 }

@@ -23,7 +23,7 @@
 
 use super::mod_model::ReaderModel;
 use super::types::*;
-use crate::db::{Annotation, HighlightColor as DbColor, AnnotationStyle, PatchRecord};
+use crate::db::{Annotation, Catalog, HighlightColor as DbColor, AnnotationStyle, PatchRecord};
 use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use kalam_reader::{
@@ -32,6 +32,7 @@ use kalam_reader::{
 };
 use relm4::ComponentSender;
 use std::path::Path;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------
 // Preferences: Kalam's stored values → the engine's
@@ -893,218 +894,224 @@ pub(crate) fn position_inline_editor(
     widget.set_size_request(rect.width().max(160), rect.height().max(28));
 }
 
-/// The structural snapshot (Phase 6 step 10): everything the visual TOC
-/// editor and the cover picker need to know about the *files* — which
-/// entry is the package, which is the cover, and what each hashes to
-/// right now. One worker at editor open, so no structural control ever
-/// touches disk on the main thread; the hashes become the ops'
-/// `before_hash` guards, exactly like the raw mode's whole-file edits.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct StructureSnapshot {
-    /// The package (OPF) entry's zip path — a spine op's href.
-    pub opf_href: Option<String>,
-    /// The package's current hash — a spine op's guard.
-    pub opf_hash: Option<String>,
-    /// The manifest cover's zip path, when the book names one.
-    pub cover_href: Option<String>,
-    /// The cover entry's current hash — an asset op's guard.
-    pub cover_hash: Option<String>,
+/// Outcome for a whole-resource save from the deep editor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DirectWriteOutcome {
+    Saved {
+        entry_hash: String,
+        book_hash: String,
+        warning: Option<String>,
+    },
+    Stale,
 }
 
-/// The snapshot worker: [`StructureSnapshot`] over `snapshot_tx`, the
-/// same worker→main-loop shape as the verify workers. A book that
-/// cannot answer lands with `None`s — the editor keeps its structural
-/// buttons insensitive rather than toasting about a question it asked
-/// in passing at open.
-pub(crate) fn read_structure_snapshot(
+/// Plan and permanently save an inline edit off the GTK thread. New saves
+/// refuse while old pending patches exist; those must be reviewed through
+/// the legacy panel first so a direct write cannot silently bake or lose them.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn save_inline_edit(
+    catalog: Arc<Catalog>,
+    book_id: i64,
     book_path: std::path::PathBuf,
-    snapshot_tx: async_channel::Sender<StructureSnapshot>,
-) {
-    std::thread::spawn(move || {
-        let _ = snapshot_tx.send_blocking(structure_snapshot_in_thread(&book_path));
-    });
-}
-
-/// The thread body. The cover question needs the parse (`Book::open`);
-/// the package question needs the container (`ZipArchive`). One open of
-/// each answers both, and a failure to answer any part is a `None`
-/// field, never an error — the snapshot is a question asked in passing
-/// at open, not a read the user is waiting on.
-fn structure_snapshot_in_thread(book_path: &Path) -> StructureSnapshot {
-    let mut snapshot = StructureSnapshot::default();
-    let file = match std::fs::File::open(book_path) {
-        Ok(f) => f,
-        Err(_) => return snapshot,
-    };
-    let mut archive = match zip::ZipArchive::new(file) {
-        Ok(a) => a,
-        Err(_) => return snapshot,
-    };
-    if let Ok(opf) = crate::epub::find_opf_path_pub(&mut archive) {
-        if let Some(hash) = entry_hash(&mut archive, &opf) {
-            snapshot.opf_href = Some(opf);
-            snapshot.opf_hash = Some(hash);
-        }
-    }
-    if let Ok(book) = chapbook_epub::Book::open(book_path) {
-        if let Some(cover) = book.cover_href() {
-            if let Some(hash) = entry_hash(&mut archive, &cover) {
-                snapshot.cover_href = Some(cover);
-                snapshot.cover_hash = Some(hash);
-            }
-        }
-    }
-    snapshot
-}
-
-/// One entry's hash, or `None` when it cannot be read — the snapshot's
-/// unit of "could not answer".
-fn entry_hash<R: std::io::Read + std::io::Seek>(
-    archive: &mut zip::ZipArchive<R>,
-    name: &str,
-) -> Option<String> {
-    use std::io::Read as _;
-    let mut entry = archive.by_name(name).ok()?;
-    let mut bytes = Vec::new();
-    entry.read_to_end(&mut bytes).ok()?;
-    Some(crate::epub_patches::hash_bytes(&bytes))
-}
-
-/// Verify an inline edit against the book's source, off the UI thread —
-/// opening the book is the same cost as the initial open and never
-/// belongs on the main loop (the `unit_bytes` contract says so too).
-///
-/// `prior` are the book's already-stored patches: the correction is
-/// planned against the chapter as the reader currently shows it, which
-/// is the text it will be matched against at render as well. The
-/// verdict goes back over `verdict_tx` — an `async_channel` carrying
-/// plain data, the tasks manager's worker→main-loop shape, so nothing
-/// GTK-side crosses the thread — and the main loop turns it into
-/// [`ReaderMsg::InlineEditVerified`]: `Ok` carries the entry href and
-/// the ready-to-store patch, `Err` carries the toast text for a
-/// refusal. The editor stays open either way; a refusal is
-/// information, not a lost edit.
-pub(crate) fn verify_inline_edit(
-    book_path: std::path::PathBuf,
+    expected_book_hash: String,
     chapter: usize,
-    prior: Vec<PatchRecord>,
     original: String,
+    paragraph_context: Option<(Option<String>, Option<String>)>,
     corrected: String,
+    backup: crate::epub_sanitizer::DirectSaveBackup,
     serial: u64,
-    verdict_tx: async_channel::Sender<Result<VerifiedEdit, (String, u64)>>,
+    verdict_tx: async_channel::Sender<Result<DirectEditSaved, (String, u64)>>,
 ) {
     std::thread::spawn(move || {
-        let verdict =
-            verify_inline_edit_in_thread(&book_path, chapter, &prior, &original, &corrected)
-                .map(|planned| VerifiedEdit {
-                    href: planned.0,
-                    kind: "text",
-                    chapter,
-                    serial,
-                    planned: planned.1,
-                })
-                .map_err(|toast| (toast, serial));
+        let verdict = save_inline_edit_in_thread(
+            &catalog,
+            book_id,
+            &book_path,
+            &expected_book_hash,
+            chapter,
+            &original,
+            paragraph_context,
+            &corrected,
+            backup,
+            serial,
+        )
+        .map_err(|message| (message, serial));
         let _ = verdict_tx.send_blocking(verdict);
     });
 }
 
-/// The thread body, split out so every early return reads as a verdict
-/// rather than a pile of nesting.
-fn verify_inline_edit_in_thread(
-    book_path: &std::path::Path,
+#[allow(clippy::too_many_arguments)]
+fn save_inline_edit_in_thread(
+    catalog: &Catalog,
+    book_id: i64,
+    book_path: &Path,
+    expected_book_hash: &str,
     chapter: usize,
-    prior: &[PatchRecord],
     original: &str,
+    paragraph_context: Option<(Option<String>, Option<String>)>,
     corrected: &str,
-) -> Result<(String, crate::epub_patches::PlannedPatch), String> {
+    backup: crate::epub_sanitizer::DirectSaveBackup,
+    serial: u64,
+) -> Result<DirectEditSaved, String> {
     use chapbook_core::Publication;
+
+    let pending = catalog
+        .get_pending_patches_for_book(book_id)
+        .map_err(|e| format!("Could not check legacy edits before saving: {e}"))?;
+    if !pending.is_empty() {
+        return Err(
+            "This book has pending edits from an earlier version. Review and apply or discard them before making a permanent edit.".into(),
+        );
+    }
+    let book_row = catalog
+        .get_book(book_id)
+        .map_err(|e| format!("Could not read this book's library record: {e}"))?
+        .ok_or_else(|| "This book is no longer in the library.".to_string())?;
+    if book_row.file_path.as_path() != book_path {
+        return Err("This book moved after it opened. Reopen it before editing.".into());
+    }
+
     let book = chapbook_epub::Book::open(book_path)
-        .map_err(|_| "The book could not be opened to verify the fix.".to_string())?;
+        .map_err(|_| "The book could not be opened to save this edit.".to_string())?;
     let href = book
         .spine()
         .get(chapter)
         .map(|item| item.href.clone())
         .ok_or_else(|| "The chapter being edited is no longer in the book.".to_string())?;
-    let bytes = book.unit_bytes(chapter).map_err(|_| {
-        "The chapter's text could not be read to verify the fix.".to_string()
-    })?;
-    // The chapter as the reader shows it: earlier pending patches
-    // applied. This is exactly what the new patch will run against at
-    // render, so a find that verifies here holds there.
-    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
-    crate::epub_patches::plan_text_patch(&virtual_bytes, original, corrected)
-        .map(|planned| (href, planned))
-        .map_err(|refusal| refusal_to_toast(&refusal))
-}
-
-/// The paragraph-scope sibling (phase 6.7): verify a proofreading edit
-/// against the chapter's source through the step-6 span mapper. Same
-/// worker-thread shape and the same verdict channel; the identity is
-/// the paragraph's text plus its neighbours', exactly what the tap
-/// carried. `serial` is the editor's, so a verdict landing after its
-/// editor was replaced stores its patch without closing the new one.
-// Nine inputs, one purpose — the same allow as `engine_prefs` and the
-// db inserts.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn verify_paragraph_edit(
-    book_path: std::path::PathBuf,
-    chapter: usize,
-    prior: Vec<PatchRecord>,
-    original: String,
-    prev: Option<String>,
-    next: Option<String>,
-    corrected: String,
-    serial: u64,
-    verdict_tx: async_channel::Sender<Result<VerifiedEdit, (String, u64)>>,
-) {
-    std::thread::spawn(move || {
-        let verdict = verify_paragraph_edit_in_thread(
-            &book_path,
-            chapter,
-            &prior,
-            &original,
+    let bytes = book
+        .unit_bytes(chapter)
+        .map_err(|_| "The chapter's text could not be read to save this edit.".to_string())?;
+    let planned = match paragraph_context {
+        Some((prev, next)) => crate::epub_spans::plan_paragraph_patch(
+            &bytes,
+            original,
             prev.as_deref(),
             next.as_deref(),
-            &corrected,
+            corrected,
         )
-        .map(|planned| VerifiedEdit {
-            href: planned.0,
-            kind: "paragraph",
-            chapter,
-            serial,
-            planned: planned.1,
-        })
-        .map_err(|toast| (toast, serial));
-        let _ = verdict_tx.send_blocking(verdict);
+        .map_err(|refusal| paragraph_refusal_to_toast(&refusal))?,
+        None => crate::epub_patches::plan_text_patch(&bytes, original, corrected)
+            .map_err(|refusal| refusal_to_toast(&refusal))?,
+    };
+    let replacement = crate::epub_patches::apply_planned_patch(&bytes, &planned)
+        .map_err(|refusal| refusal_to_toast(&refusal))?;
+    let expected_hash = crate::epub_patches::hash_bytes(&bytes);
+    let outcome = write_editor_resource(
+        catalog,
+        book_id,
+        book_path,
+        &href,
+        expected_book_hash,
+        &expected_hash,
+        &replacement,
+        backup,
+    )?;
+    let (book_hash, warning) = match outcome {
+        DirectWriteOutcome::Saved {
+            book_hash, warning, ..
+        } => (book_hash, warning),
+        DirectWriteOutcome::Stale => {
+            return Err(
+                "The chapter changed after this edit opened. Your text is still here; reload the book and try again.".into(),
+            )
+        }
+    };
+    Ok(DirectEditSaved {
+        serial,
+        book_hash,
+        warning,
+    })
+}
+
+/// Save a raw source buffer directly into its existing EPUB resource. The
+/// worker checks for legacy pending patches and uses the loaded entry and
+/// archive hashes as optimistic guards, then updates the catalog and search
+/// index after the atomic archive replacement succeeds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn save_source_entry_direct(
+    catalog: Arc<Catalog>,
+    book_id: i64,
+    book_path: std::path::PathBuf,
+    expected_book_hash: String,
+    href: String,
+    before_hash: String,
+    text: String,
+    backup: crate::epub_sanitizer::DirectSaveBackup,
+    tx: async_channel::Sender<Result<DirectWriteOutcome, String>>,
+) {
+    std::thread::spawn(move || {
+        let result = write_editor_resource(
+            &catalog,
+            book_id,
+            &book_path,
+            &href,
+            &expected_book_hash,
+            &before_hash,
+            text.as_bytes(),
+            backup,
+        );
+        let _ = tx.send_blocking(result);
     });
 }
 
-/// The thread body. The book-and-chapter preamble is the selection
-/// editor's; only the planning differs.
-fn verify_paragraph_edit_in_thread(
-    book_path: &std::path::Path,
-    chapter: usize,
-    prior: &[PatchRecord],
-    original: &str,
-    prev: Option<&str>,
-    next: Option<&str>,
-    corrected: &str,
-) -> Result<(String, crate::epub_patches::PlannedPatch), String> {
-    use chapbook_core::Publication;
-    let book = chapbook_epub::Book::open(book_path)
-        .map_err(|_| "The book could not be opened to verify the edit.".to_string())?;
-    let href = book
-        .spine()
-        .get(chapter)
-        .map(|item| item.href.clone())
-        .ok_or_else(|| "The chapter being edited is no longer in the book.".to_string())?;
-    let bytes = book.unit_bytes(chapter).map_err(|_| {
-        "The chapter's text could not be read to verify the edit.".to_string()
-    })?;
-    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(&href, &bytes, prior);
-    crate::epub_spans::plan_paragraph_patch(&virtual_bytes, original, prev, next, corrected)
-        .map(|planned| (href, planned))
-        .map_err(|refusal| paragraph_refusal_to_toast(&refusal))
+fn write_editor_resource(
+    catalog: &Catalog,
+    book_id: i64,
+    book_path: &Path,
+    href: &str,
+    expected_book_hash: &str,
+    before_hash: &str,
+    replacement: &[u8],
+    backup: crate::epub_sanitizer::DirectSaveBackup,
+) -> Result<DirectWriteOutcome, String> {
+    let _timing = crate::timing::measure("direct_epub_save");
+    let _save = crate::epub_sanitizer::EPUB_WRITE_LOCK
+        .lock()
+        .map_err(|_| "another EPUB save failed unexpectedly".to_string())?;
+    let pending = catalog
+        .get_pending_patches_for_book(book_id)
+        .map_err(|e| format!("Could not check legacy edits before saving: {e}"))?;
+    if !pending.is_empty() {
+        return Err(
+            "This book has pending edits from an earlier version. Review and apply or discard them before making a permanent edit.".into(),
+        );
+    }
+    let book_row = catalog
+        .get_book(book_id)
+        .map_err(|e| format!("Could not read this book's library record: {e}"))?
+        .ok_or_else(|| "This book is no longer in the library.".to_string())?;
+    if book_row.file_path.as_path() != book_path {
+        return Err("This book moved after it opened. Reopen it before editing.".into());
+    }
+    let report = match crate::epub_sanitizer::save_epub_entry_direct_locked(
+        book_path,
+        href,
+        Some(expected_book_hash),
+        before_hash,
+        replacement,
+        backup,
+    )
+    .map_err(|e| format!("Could not write the EPUB: {e:#}"))?
+    {
+        crate::epub_sanitizer::DirectSaveOutcome::Stale => {
+            return Ok(DirectWriteOutcome::Stale)
+        }
+        crate::epub_sanitizer::DirectSaveOutcome::Saved(report) => report,
+    };
+
+    let mut warnings = Vec::new();
+    if let Err(err) = catalog.rehash_book_after_direct_save(book_id, &report.book_hash) {
+        warnings.push(format!("The EPUB was saved, but its library hash needs repair: {err}"));
+    }
+    if let Err(err) = crate::content_index::index_book(catalog, book_id) {
+        warnings.push(format!("The EPUB was saved, but search indexing failed: {err}"));
+    }
+    crate::sidecar::refresh_for_book(catalog, book_id);
+    Ok(DirectWriteOutcome::Saved {
+        entry_hash: report.entry_hash,
+        book_hash: report.book_hash,
+        warning: (!warnings.is_empty()).then(|| warnings.join(" ")),
+    })
 }
 
 /// A paragraph refusal as the text the toast shows. Each one names the
@@ -1784,73 +1791,6 @@ fn load_source_entry_in_thread(
         text,
         href,
         chapter,
-    })
-}
-
-/// A save-time guard's verdict: the entry still hashes to what the pane
-/// loaded, or it does not. `Stale` is a refusal, not an error — nothing
-/// is wrong with the book; the edit was made against a past.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SourceSaveCheck {
-    /// The entry still hashes to the pane's baseline: the save may
-    /// store its whole-entry patch.
-    Fresh,
-    /// The entry changed since the pane loaded it (an inline fix, a
-    /// bake, another window). The caller must not store the patch.
-    Stale,
-}
-
-/// Re-read the chapter and check the pane's baseline hash against the
-/// bytes as they stand now. The insert itself stays on the main thread
-/// with the catalog; this worker only reads.
-pub(crate) fn check_source_save(
-    book_path: std::path::PathBuf,
-    chapter: usize,
-    prior: Vec<PatchRecord>,
-    href: &str,
-    before_hash: &str,
-    tx: async_channel::Sender<Result<SourceSaveCheck, String>>,
-) {
-    let href = href.to_string();
-    let before_hash = before_hash.to_string();
-    std::thread::spawn(move || {
-        let verdict =
-            check_source_save_in_thread(&book_path, chapter, &prior, &href, &before_hash);
-        let _ = tx.send_blocking(verdict);
-    });
-}
-
-fn check_source_save_in_thread(
-    book_path: &std::path::Path,
-    chapter: usize,
-    prior: &[PatchRecord],
-    href: &str,
-    before_hash: &str,
-) -> Result<SourceSaveCheck, String> {
-    use chapbook_core::Publication;
-    let book = chapbook_epub::Book::open(book_path)
-        .map_err(|_| "The book could not be opened to verify the source edit.".to_string())?;
-    let current_href = book
-        .spine()
-        .get(chapter)
-        .map(|item| item.href.clone())
-        .ok_or_else(|| "This chapter is no longer in the book.".to_string())?;
-    if current_href != href {
-        return Err(
-            "The chapter this pane edits has moved in the book. Revert the pane and edit it again."
-                .to_string(),
-        );
-    }
-    let bytes = book
-        .unit_bytes(chapter)
-        .map_err(|_| "The chapter's source could not be read.".to_string())?;
-    let (virtual_bytes, _) = crate::epub_patches::apply_text_patches(href, &bytes, prior);
-    let fresh = !before_hash.is_empty()
-        && crate::epub_patches::hash_bytes(&virtual_bytes) == before_hash;
-    Ok(if fresh {
-        SourceSaveCheck::Fresh
-    } else {
-        SourceSaveCheck::Stale
     })
 }
 

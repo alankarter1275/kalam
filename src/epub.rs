@@ -896,30 +896,6 @@ fn guess_image_ext(bytes: &[u8]) -> &'static str {
 // with the cover service anyway.
 // ---------------------------------------------------------------------------
 
-/// Stage a chosen cover image beside a book: `.kalam-staged/` under the
-/// book's folder, named by its own hash so re-picking the same image
-/// lands on the same file. The returned name is what the pending asset
-/// op carries — relative, resolved against the book at bake.
-pub fn stage_cover_image(book_dir: &Path, picked: &Path) -> Result<String> {
-    let bytes = fs::read(picked).context("read the chosen image")?;
-    if bytes.is_empty() {
-        return Err(anyhow!("that file is empty"));
-    }
-    let hash = crate::epub_patches::hash_bytes(&bytes);
-    let ext = picked
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))
-        .unwrap_or_else(|| "png".to_string());
-    let name = format!(".kalam-staged/{}-cover.{ext}", &hash[..8]);
-    let dir = book_dir.join(".kalam-staged");
-    fs::create_dir_all(&dir).context("make the staging folder")?;
-    let staged = book_dir.join(&name);
-    fs::copy(picked, &staged).context("copy the image into staging")?;
-    Ok(name)
-}
-
 /// Finish an asset op the bake just applied: the library's jacket is a
 /// cover file in the book's folder, extracted at import — stale the
 /// moment the bake wrote new bytes into the book. Route the staged

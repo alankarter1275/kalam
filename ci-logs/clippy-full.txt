@@ -19,25 +19,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/epub_editor.rs:563:22: [1m[91merror[E0599][0m: no method named `close_editor` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:568:30: [1m[91merror[E0599][0m: no method named `close_editor` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:574:30: [1m[91merror[E0599][0m: no method named `load_source` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:580:26: [1m[91merror[E0599][0m: no method named `close_editor` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:606:34: [1m[91merror[E0599][0m: no method named `load_source` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:745:22: [1m[91merror[E0599][0m: no method named `close_inline_edit` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:756:34: [1m[91merror[E0599][0m: no method named `close_inline_edit` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:759:34: [1m[91merror[E0599][0m: no method named `reload` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:763:38: [1m[91merror[E0599][0m: no method named `load_source` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:813:30: [1m[91merror[E0599][0m: no method named `reload` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:824:34: [1m[91merror[E0599][0m: no method named `load_source` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:863:26: [1m[91merror[E0599][0m: no method named `load_source` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:874:30: [1m[91merror[E0599][0m: no method named `kick_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:909:34: [1m[91merror[E0599][0m: no method named `load_source` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:936:34: [1m[91merror[E0599][0m: no method named `kick_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:990:22: [1m[91merror[E0599][0m: no method named `load_source` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:1016:30: [1m[91merror[E0599][0m: no method named `reload` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:1022:34: [1m[91merror[E0599][0m: no method named `load_source` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:1061:26: [1m[91merror[E0599][0m: no method named `kick_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 19 previous errors
+src/pages/epub_editor.rs:57:17: [1m[91merror[0m: fields `0` and `1` are never read
+src/epub_sanitizer.rs:506:20: [1m[91merror[0m: this `if` can be collapsed into the outer `match`
+src/epub_sanitizer.rs:573:8: [1m[91merror[0m: length comparison to zero: help: using `is_empty` is clearer and more explicit: `archive.is_empty()`
+src/pages/reader/engine.rs:1057:1: [1m[91merror[0m: this function has too many arguments (8/7)
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 19 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors

@@ -2,7 +2,6 @@
 
 use crate::db::HighlightColor;
 use crate::epub_book::ReadingTheme;
-use gtk::prelude::*;
 use relm4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;

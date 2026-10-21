@@ -205,6 +205,12 @@ pub fn sanitize_epub(path: &Path, backup: bool) -> Result<SanitizerReport> {
     Ok(report)
 }
 
+struct ManifestInfo {
+    css_paths: Vec<String>,
+    spine_paths: Vec<String>,
+    toc_missing: bool,
+}
+
 fn parse_manifest_items(opf_xml: &str, opf_path: &str) -> ManifestInfo {
     let opf_dir = opf_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
     let doc = match roxmltree::Document::parse(opf_xml) {

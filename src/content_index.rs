@@ -103,7 +103,7 @@ pub fn highlight_match_markers(snippet_with_markers: &str) -> String {
 
 /// Extract chapters and text from an EPUB file.
 fn extract_epub_content(path: &Path) -> Result<Vec<(usize, String, String)>> {
-    let mut book = chapbook_epub::Book::open(path)?;
+    let book = chapbook_epub::Book::open(path)?;
     let mut chapter_titles: HashMap<usize, String> = HashMap::new();
 
     fn collect_toc(entries: &[chapbook_core::TocEntry], map: &mut HashMap<usize, String>) {

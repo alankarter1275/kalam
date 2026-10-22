@@ -562,6 +562,17 @@ data) → series page (new route, retires float) → author page → EPUB reader
 chrome. Settings' Appearance tab lands with the token phase (it *is* the
 palette picker); the rest of Settings waits for its design.
 
+**Status (2026-10-23):** items 1 and 2 are complete and CI-green (tokens
+`5fbd12b`; component library through `c9d43cb`, exercised by the hidden
+`KALAM_ROUTE=components` gallery). Item 4's loop is in place: CI photographs
+the gallery in Terracotta Light and Dark on every push and commits the
+settled frames to `ci-logs/components-terracotta-{light,dark}.png` (see
+`docs/ci/README-screenshots.md`). Its first captures found — and `7b37de5`
+fixed, verified by re-capture — stretched selection-chip/chip labels,
+ellipsized cover kind tokens, and fixed-size covers inflated by wrap
+labels' one-line natural width. Items 3 and 5 remain, done per page/reader
+as scheduled above.
+
 ## 8. Designed-but-unbuilt features (inventory only — ruling 4)
 
 Recorded so they are neither built by accident nor designed away:

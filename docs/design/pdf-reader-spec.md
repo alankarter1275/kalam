@@ -1,6 +1,6 @@
 # PDF reader: design spec (draft)
 
-Source boards: https://claude.ai/artifact/V8ZF1hC4zNnh6ZvPmiDKmE (Terracotta, light and dark). Tokens are from `design-system.md` and `design-system-update.md`. Chrome is inherited from `epub-reader-spec.md` and `comic-reader-spec.md`. Decisions 52 to 76 in `decisions-update.md`.
+Source boards: https://claude.ai/artifact/V8ZF1hC4zNnh6ZvPmiDKmE (Terracotta, light and dark). Tokens are from `design-system.md`. Chrome is inherited from `epub-reader-spec.md` and `comic-reader-spec.md`. Decisions 52 to 76 in `decisions.md`.
 
 ## 1. Layout
 
@@ -59,7 +59,7 @@ Page area: spread (two pages, 3 gap) or single page, fit to height by default. P
 
 Drawn: chrome revealed; Contents, Contents with no outline; Pages, Pages edit mode, dragging, delete confirmation, unsaved changes; Notes (highlights, empty, Words, Words empty, Bookmarks, Bookmarks empty); Reading, Image, Shortcuts (key recording and conflict); selection and chip; text-highlight popover; dictionary popup; saved-word hover card; search (results list, no matches, no searchable text); page-jump field and out of range; continuous scroll of spreads; annotation toolbar and each tool (highlighter, pen, shape, text box, sticky note, eraser, selected drawing); page loading; page couldn't be drawn; scanned page notice; password, wrong password, can't be opened, file not found; control states (idle, hover, focus, selected, disabled).
 
-Not drawn: see "Not designed yet" in `decisions-update.md`.
+Not drawn: see "Not designed yet" in `decisions.md`.
 
 ## 5. GTK widgets and custom drawing
 

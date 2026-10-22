@@ -11,16 +11,55 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m icu_locale_fallback_data v2.4.0
+[1m[92m  Downloaded[0m icu_locale_fallback v2.4.0
+[1m[92m  Downloaded[0m icu_locale_core v2.4.0
+[1m[92m  Downloaded[0m icu_provider v2.4.0
+[1m[92m  Downloaded[0m icu_normalizer_data v2.4.0
+[1m[92m  Downloaded[0m icu_collections v2.4.0
+[1m[92m  Downloaded[0m icu_properties_data v2.4.0
+[1m[92m  Downloaded[0m icu_properties v2.4.0
+[1m[92m  Downloaded[0m icu_normalizer v2.4.0
+[1m[92m  Downloaded[0m icu_segmenter_data v2.4.0
+[1m[92m  Downloaded[0m icu_segmenter v2.4.0
+[1m[92m  Downloaded[0m tinystr v0.8.5
+[1m[92m  Downloaded[0m yoke v0.8.4
+[1m[92m  Downloaded[0m zerovec-derive v0.11.7
+[1m[92m  Downloaded[0m zerovec v0.11.9
+[1m[92m    Checking[0m yoke v0.8.4
+[1m[92m   Compiling[0m zerovec-derive v0.11.7
+[1m[92m   Compiling[0m icu_normalizer_data v2.4.0
+[1m[92m   Compiling[0m icu_properties_data v2.4.0
+[1m[92m    Checking[0m zerotrie v0.2.5
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m   Compiling[0m icu_locale_fallback_data v2.4.0
+[1m[92m   Compiling[0m icu_segmenter_data v2.4.0
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
-[1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
-[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
+[1m[92m    Checking[0m zerovec v0.11.9
+[1m[92m    Checking[0m tinystr v0.8.5
+[1m[92m    Checking[0m potential_utf v0.1.6
+[1m[92m    Checking[0m icu_collections v2.4.0
+[1m[92m    Checking[0m icu_locale_core v2.4.0
+[1m[92m    Checking[0m icu_provider v2.4.0
+[1m[92m    Checking[0m icu_properties v2.4.0
+[1m[92m    Checking[0m icu_normalizer v2.4.0
+[1m[92m    Checking[0m icu_locale_fallback v2.4.0
+[1m[92m    Checking[0m icu_segmenter v2.4.0
+[1m[92m    Checking[0m idna_adapter v1.2.2
+[1m[92m    Checking[0m idna v1.1.0
+[1m[92m    Checking[0m url v2.5.8
+[1m[92m    Checking[0m stylo_traits v0.20.0
+[1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
+[1m[92m    Checking[0m ureq v2.12.1
+[1m[92m    Checking[0m stylo v0.20.0
+[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.66s
---- run 39696137561 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 36.91s
+--- run 39767409961 ---

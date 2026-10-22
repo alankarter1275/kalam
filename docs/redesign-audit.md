@@ -571,7 +571,12 @@ settled frames to `ci-logs/components-terracotta-{light,dark}.png` (see
 fixed, verified by re-capture — stretched selection-chip/chip labels,
 ellipsized cover kind tokens, and fixed-size covers inflated by wrap
 labels' one-line natural width. Items 3 and 5 remain, done per page/reader
-as scheduled above.
+as scheduled above. The shell phase is also complete (`9870baf`): the rail
+is 68px with 44px circular items and the accent-fill active state, the Back
+pill matches the page specs, and the brand mark re-rasterizes on theme
+changes via `theme::on_theme_applied` — verified in capture at 32px in both
+modes, where the logo's hairline loop survives but stays delicate (the §5
+check; strengthening it would be an artwork change, not a builder one).
 
 ## 8. Designed-but-unbuilt features (inventory only — ruling 4)
 

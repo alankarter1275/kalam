@@ -5,7 +5,7 @@
 //! design asks for: half stars are painted by clipping the star path, not
 //! by relying on a font containing a half-star glyph.
 
-use super::paint::{rounded_rect, set_source, token_color};
+use super::paint::{color_probe, probe_color, rounded_rect, set_source};
 use gtk::prelude::*;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -105,6 +105,12 @@ pub fn rating_control(initial: u8, on_change: impl Fn(u8) + 'static) -> Rating {
         "Rate in half-star steps. Click the current rating to clear it; arrow keys also work.",
     ));
 
+    let accent_probe = color_probe("kalam-ui-token-accent");
+    let border_probe = color_probe("kalam-ui-token-border");
+    // Same-widget handles for the tree below; the originals move into the
+    // draw closure.
+    let accent_probe_in_tree = accent_probe.clone();
+    let border_probe_in_tree = border_probe.clone();
     {
         let value = value.clone();
         let hover = hover.clone();
@@ -112,8 +118,8 @@ pub fn rating_control(initial: u8, on_change: impl Fn(u8) + 'static) -> Rating {
             if width <= 0 || height <= 0 {
                 return;
             }
-            let accent = token_color(area, "kalam_accent");
-            let border = token_color(area, "kalam_border");
+            let accent = probe_color(&accent_probe);
+            let border = probe_color(&border_probe);
             let shown = hover.get().unwrap_or_else(|| value.get());
             let fill_alpha = if hover.get().is_some() { 0.6 } else { 1.0 };
 
@@ -239,6 +245,8 @@ pub fn rating_control(initial: u8, on_change: impl Fn(u8) + 'static) -> Rating {
     let root = gtk::Box::new(gtk::Orientation::Horizontal, crate::style::spacing::XS);
     root.append(&area);
     root.append(&label);
+    root.append(&accent_probe_in_tree);
+    root.append(&border_probe_in_tree);
 
     Rating {
         root,

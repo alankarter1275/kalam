@@ -314,7 +314,8 @@ fn build_progress_and_rating(host: &gtk::Box, status: &gtk::Label) {
             half_stars as f64 / 2.0
         ));
     });
-    let _initial_rating = rating.value();
+    let initial_rating = rating.value();
+    rating.set_value(initial_rating);
     body.append(&rating.widget());
 
     let quote = gtk::Label::new(Some(

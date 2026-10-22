@@ -1,6 +1,6 @@
 //! 3px linear and segmented progress indicators (§§10, 19).
 
-use super::paint::{rounded_rect, set_source, token_color};
+use super::paint::{color_probe, probe_color, rounded_rect, set_source};
 use gtk::prelude::*;
 
 const SEGMENT_GAP: f64 = 4.0;
@@ -42,22 +42,37 @@ pub enum SegmentState {
 
 /// One segment per item — series books, author works, and similar sets.
 /// `width` is a request; the drawing itself always uses the real allocation.
-pub fn segmented_progress(segments: &[SegmentState], width: i32) -> gtk::DrawingArea {
+///
+/// The returned box wraps the drawing area plus its hidden colour probes
+/// (see `paint.rs`); treat it as one widget.
+pub fn segmented_progress(segments: &[SegmentState], width: i32) -> gtk::Box {
+    let accent_probe = color_probe("kalam-ui-token-accent");
+    let border_probe = color_probe("kalam-ui-token-border");
+    let muted_probe = color_probe("kalam-ui-token-text-dim");
+
     let area = gtk::DrawingArea::new();
     area.add_css_class("kalam-ui-segmented-progress");
     area.set_content_width(width.max(1));
     area.set_content_height(7);
     area.set_size_request(width.max(1), 7);
     area.set_valign(gtk::Align::Center);
+    area.set_hexpand(true);
+
+    // Handles to the same probe widgets for the tree below; the originals
+    // move into the draw closure. A GTK clone is another reference to the
+    // same widget, not a second label.
+    let accent_probe_in_tree = accent_probe.clone();
+    let border_probe_in_tree = border_probe.clone();
+    let muted_probe_in_tree = muted_probe.clone();
 
     let states = segments.to_vec();
-    area.set_draw_func(move |area, cr, width, height| {
+    area.set_draw_func(move |_area, cr, width, height| {
         if states.is_empty() || width <= 0 || height <= 0 {
             return;
         }
-        let accent = token_color(area, "kalam_accent");
-        let border = token_color(area, "kalam_border");
-        let muted = token_color(area, "kalam_text_dim");
+        let accent = probe_color(&accent_probe);
+        let border = probe_color(&border_probe);
+        let muted = probe_color(&muted_probe);
         let segment_w = segment_width(width as f64, states.len());
         if segment_w <= 0.0 {
             return;
@@ -101,7 +116,16 @@ pub fn segmented_progress(segments: &[SegmentState], width: i32) -> gtk::Drawing
             }
         }
     });
-    area
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.set_size_request(width.max(1), 7);
+    root.set_halign(gtk::Align::Start);
+    root.set_valign(gtk::Align::Center);
+    root.append(&area);
+    root.append(&accent_probe_in_tree);
+    root.append(&border_probe_in_tree);
+    root.append(&muted_probe_in_tree);
+    root
 }
 
 #[cfg(test)]

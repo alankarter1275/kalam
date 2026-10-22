@@ -5200,3 +5200,9 @@ drawingarea.kalam-ui-rating {
     color: @kalam_text_dim;
     font-size: 12.5px;
 }
+
+/* Hidden foreground probes for Cairo-drawn components. They carry no text
+   and are never visible; only their resolved `color` is read. */
+.kalam-ui-token-accent { color: @kalam_accent; }
+.kalam-ui-token-border { color: @kalam_border; }
+.kalam-ui-token-text-dim { color: @kalam_text_dim; }

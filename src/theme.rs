@@ -553,6 +553,41 @@ pub const PREF_KEY: &str = "ui.theme";
 fn install_css(theme: &Theme) {
     let css = format!("{}{}", css_variables(theme), crate::style::APP_CSS);
     relm4::set_global_css(&css);
+    notify_theme_applied(theme);
+}
+
+/// Listeners told each time a theme is installed.
+///
+/// Almost everything recolours by CSS when the sheet is replaced. The one
+/// exception is art that had to be *rasterized* with a colour baked in —
+/// the rail's brand mark is an SVG path rendered to a texture with the
+/// accent substituted, because a texture has no CSS colour to inherit.
+/// Such pieces register here and rebuild themselves from the new theme.
+///
+/// Listeners live for the process: the shell outlives every page, and a
+/// registry that never removes is the honest shape of that. Register from
+/// shell-lifetime widgets only.
+thread_local! {
+    static THEME_APPLIED_LISTENERS: std::cell::RefCell<Vec<std::rc::Rc<dyn Fn(&Theme)>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Register `listener` to run after every future theme install — Settings
+/// changes and system light/dark flips alike, since both funnel through
+/// [`apply_choice`]. The already-installed theme is *not* replayed; build
+/// from [`current`] first, then register for changes.
+pub fn on_theme_applied(listener: std::rc::Rc<dyn Fn(&Theme)>) {
+    THEME_APPLIED_LISTENERS.with(|listeners| listeners.borrow_mut().push(listener));
+}
+
+fn notify_theme_applied(theme: &Theme) {
+    // Clone the handles out first: a listener may itself register another
+    // listener, and holding the borrow across the calls would panic.
+    let listeners: Vec<std::rc::Rc<dyn Fn(&Theme)>> =
+        THEME_APPLIED_LISTENERS.with(|listeners| listeners.borrow().clone());
+    for listener in listeners {
+        listener(theme);
+    }
 }
 
 /// Parse and install `theme` + the stylesheet as the application's CSS,
@@ -746,5 +781,22 @@ mod tests {
                 assert!(!value.is_empty(), "{} has empty {name}", t.id);
             }
         }
+    }
+
+    #[test]
+    fn theme_applied_listeners_receive_the_installed_theme() {
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let seen_clone = seen.clone();
+        on_theme_applied(std::rc::Rc::new(move |theme: &Theme| {
+            seen_clone.borrow_mut().push(theme.id);
+        }));
+
+        notify_theme_applied(&TERRACOTTA_LIGHT);
+        notify_theme_applied(&FOREST_DARK);
+
+        assert_eq!(
+            seen.borrow().as_slice(),
+            [TERRACOTTA_LIGHT.id, FOREST_DARK.id]
+        );
     }
 }

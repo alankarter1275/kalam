@@ -279,14 +279,14 @@ pub(crate) fn badge() -> Badge {
 /// warning. Three mutually exclusive states, one slot.
 ///
 /// Deliberately uses no new CSS. `resources/style.css` is under a ratchet
-/// (`tests/guardrails.rs`, 184 hex colours) and a badge does not justify
+/// (`tests/guardrails.rs`, 147 hex colours) and a badge does not justify
 /// spending any of that budget; the count inherits the nav button's own font.
 pub(crate) fn apply_badge(btn: &gtk::Button, state: Badge) {
     match state {
         Badge::Idle => {
             let icon = crate::icons::symbolic_with_classes(
                 "object-select-symbolic",
-                18,
+                20,
                 &["kalam-nav-icon"],
             );
             icon.set_halign(gtk::Align::Center);
@@ -305,7 +305,7 @@ pub(crate) fn apply_badge(btn: &gtk::Button, state: Badge) {
         Badge::Failed => {
             let icon = crate::icons::symbolic_with_classes(
                 "dialog-warning-symbolic",
-                18,
+                20,
                 &["kalam-nav-icon"],
             );
             icon.set_halign(gtk::Align::Center);

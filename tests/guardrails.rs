@@ -52,11 +52,12 @@ const MAX_ARC_CATALOG_IN_PAGES: usize = 58;
 /// Literal hex colours in `resources/style.css`.
 ///
 /// Colours are meant to live in `theme.rs`, with the stylesheet holding shape
-/// only, so that a theme change is one file. The stylesheet has 184 literal
-/// colours today and `theme.rs` has 169, which means the two duplicate each
-/// other and neither is the single source. Ratcheting at 184 does not fix
-/// that; it stops it getting worse while the duplication is worked down.
-const MAX_HEX_IN_CSS: usize = 184;
+/// only, so that a theme change is one file. The redesign's token phase cut
+/// the stylesheet's literal colours from 184, and every redesigned surface
+/// since has held the line; the shell phase took it to 147. The remaining
+/// literals live on pages the redesign has not rebuilt yet and leave with
+/// them, page by page.
+const MAX_HEX_IN_CSS: usize = 147;
 
 // ---------------------------------------------------------------------------
 // The checks

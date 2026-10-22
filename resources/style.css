@@ -101,21 +101,25 @@ scrollbar slider:active {
     background-color: @kalam_accent;
 }
 
-/* ── slim sidebar ───────────────────────────────────── */
+/* ── nav rail (design-system §4) ────────────────────── */
+/* 68 wide, 44 circular items, the active item filled with accent-fill
+   carrying a white glyph (decision 49: white sits only on accent-fill,
+   never on plain accent). The rail's entries stay as they are — their
+   final composition is still a draft (decision 3). */
 .kalam-sidebar {
     background: @kalam_sidebar;
     border-right: 1px solid @kalam_border;
-    /* Icon-only rail: 34px disc + 7px either side. */
-    min-width: 48px;
-    padding: 8px 0;
+    /* Icon-only rail: 44px disc + 12px either side. */
+    min-width: 68px;
+    padding: 12px 0;
 }
 
 .kalam-sidebar-inner {
-    padding: 0 6px;
+    padding: 0;
 }
 
 .kalam-brand {
-    padding: 2px 0 10px 0;
+    padding: 4px 0 8px 0;
 }
 
 /* No size here on purpose. The exact size is set in code with
@@ -132,24 +136,33 @@ scrollbar slider:active {
     background: transparent;
     border: none;
     color: @kalam_text_dim;
-    min-width: 34px;
-    min-height: 34px;
+    min-width: 44px;
+    min-height: 44px;
+    transition: background-color 120ms ease, color 120ms ease;
 }
 
 .kalam-nav-btn:hover {
-    background: @kalam_surface_2;
+    background: @kalam_hover;
     color: @kalam_text;
 }
 
 .kalam-nav-btn.active {
-    background: @kalam_accent_dim;
-    color: @kalam_accent;
-    font-weight: 600;
+    background: @kalam_accent_fill;
+    color: white;
+}
+
+.kalam-nav-btn.active:hover {
+    background: shade(@kalam_accent_fill, 1.08);
+}
+
+.kalam-nav-btn:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
 }
 
 .kalam-nav-icon {
     color: inherit;
-    -gtk-icon-size: 18px;
+    -gtk-icon-size: 20px;
 }
 
 .kalam-nav-spacer {
@@ -190,22 +203,31 @@ scrollbar slider:active {
 }
 
 /* ── breadcrumbs / back ─────────────────────────────── */
+/* The page specs' Back pill: top-left at a 16px inset (set in app.rs),
+   40 high, card fill. The readers grow their own hidden variant with the
+   Bubble peek in the reader-chrome phase (decision 15). */
 .kalam-back-btn {
-    padding: 6px 14px;
+    padding: 0 16px;
+    min-height: 40px;
     border-radius: 999px;
     background: @kalam_surface_2;
     color: @kalam_text;
     border: 1px solid @kalam_border;
-    font-size: 0.85rem;
+    font-size: 14px;
+    transition: background-color 120ms ease, color 120ms ease;
 }
 
 .kalam-back-btn:hover {
     background: @kalam_border;
 }
 
+.kalam-back-btn:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
 .kalam-back-float {
-    background: alpha(@kalam_surface, 0.92);
-    box-shadow: 0 10px 26px alpha(#000, 0.28);
+    background: @kalam_card;
 }
 
 .kalam-back-float image {

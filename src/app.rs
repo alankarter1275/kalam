@@ -1517,9 +1517,18 @@ impl Component for AppModel {
             }
         }
 
-        widgets
-            .brand
-            .append(&brand_logo(crate::theme::current(&model.catalog).accent));
+        // The brand mark is rasterized in the accent colour (a texture
+        // cannot inherit CSS), so it re-rasterizes on every theme install.
+        // The listener lives as long as the process — so does the rail.
+        let brand_image = brand_logo(crate::theme::current(&model.catalog).accent);
+        widgets.brand.append(&brand_image);
+        crate::theme::on_theme_applied(std::rc::Rc::new(
+            move |theme: &crate::theme::Theme| {
+                if let Some(texture) = brand_texture(theme.accent) {
+                    brand_image.set_paintable(Some(&texture));
+                }
+            },
+        ));
 
         let popover_list = widgets.download_popover_list.clone();
         widgets.download_popover.connect_visible_notify(move |popover| {
@@ -1861,22 +1870,20 @@ impl Component for AppModel {
 /// stays self-contained — there is no install step that would place an asset
 /// directory next to it. The path fills with `currentColor`; a texture has no
 /// CSS colour to inherit, so the current accent is substituted before
-/// rasterizing. That makes the colour a startup snapshot — changing the
-/// palette in Settings re-styles everything except this mark until the next
-/// launch. Moving it to a symbolic theme icon (CSS-recoloured) belongs to
-/// the shell redesign, with the 68px rail.
+/// rasterizing. So the colour does not freeze as a startup snapshot, `init`
+/// registers a [`crate::theme::on_theme_applied`] listener that re-rasterizes
+/// the mark on every theme install. (A symbolic theme icon would recolour
+/// for free, but `icons::init` is deferred to idle for its theme-rescan
+/// cost, and the rail is on screen before that runs.)
 fn brand_logo(accent: &str) -> gtk::Image {
-    const LOGO_SVG: &str = include_str!("../assets/logo.svg");
-    // Matches the nav glyphs, a shade larger so the mark still leads the rail.
-    const LOGO_PX: i32 = 24;
+    // design-system §5: the loop is a hairline, so check it at 32px. The
+    // 68px rail is drawn around this size.
+    const LOGO_PX: i32 = 32;
 
-    let svg = LOGO_SVG.replace("currentColor", accent);
-    let bytes = gtk::glib::Bytes::from_owned(svg.into_bytes());
-    let image = match gtk::gdk::Texture::from_bytes(&bytes) {
-        Ok(texture) => gtk::Image::from_paintable(Some(&texture)),
-        // A corrupt asset should not stop the app from starting.
-        Err(_) => gtk::Image::new(),
-    };
+    let image = gtk::Image::new();
+    if let Some(texture) = brand_texture(accent) {
+        image.set_paintable(Some(&texture));
+    }
     // gtk::Image, not gtk::Picture. A Picture's natural size is the texture's
     // own size, and both set_size_request and CSS min-width are *floors*, so a
     // 128px texture drew at 128px and stretched the whole rail. Image with
@@ -1888,10 +1895,20 @@ fn brand_logo(accent: &str) -> gtk::Image {
     image
 }
 
+/// Rasterize the logo in one accent colour. `None` only when the embedded
+/// asset is corrupt; the app should still start, just without its mark.
+fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
+    const LOGO_SVG: &str = include_str!("../assets/logo.svg");
+
+    let svg = LOGO_SVG.replace("currentColor", accent);
+    let bytes = gtk::glib::Bytes::from_owned(svg.into_bytes());
+    gtk::gdk::Texture::from_bytes(&bytes).ok()
+}
+
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     // Icon only. The rail is too narrow for a readable caption, and the
     // tooltip already carries the page name.
-    let icon = crate::icons::symbolic_with_classes(item.icon(), 18, &["kalam-nav-icon"]);
+    let icon = crate::icons::symbolic_with_classes(item.icon(), 20, &["kalam-nav-icon"]);
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
 

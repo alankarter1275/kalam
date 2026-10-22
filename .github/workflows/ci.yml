@@ -418,6 +418,25 @@ jobs:
           BOOKS=139 OUT=ci-shots-tasks SETTLE=20 ROUTE=tasks \
             docs/ci/screenshot.sh
 
+      # Redesign groundwork (audit §7.4): the hidden component gallery is
+      # the GTK equivalent of the designs' Components artboard. It needs no
+      # seeded library to speak of, so BOOKS stays small. The tall output
+      # is deliberate -- see OUTPUT_H in screenshot.sh -- and the two runs
+      # photograph the identical gallery under Terracotta Light and Dark,
+      # the "both modes" half of the artboard. Other palettes differ only
+      # in token values (owner ruling), which the theme tests already pin.
+      - name: open the component gallery (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-components-light SETTLE=20 ROUTE=components \
+            THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=3400 \
+            docs/ci/screenshot.sh
+
+      - name: open the component gallery (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-components-dark SETTLE=20 ROUTE=components \
+            THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=3400 \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -434,9 +453,30 @@ jobs:
           cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
             || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
+          cp ci-shots-components-light/report.txt ci-logs/components-light-latest.txt 2>/dev/null \
+            || echo "(no components-light report produced)" > ci-logs/components-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/components-light-latest.txt
+          cp ci-shots-components-dark/report.txt ci-logs/components-dark-latest.txt 2>/dev/null \
+            || echo "(no components-dark report produced)" > ci-logs/components-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/components-dark-latest.txt
+          # The two settled gallery frames are the one deliberate exception
+          # to "PNGs stay in the job workspace": an artboard nobody can see
+          # is not an artboard, and the agent cannot download artifacts
+          # (see above). Only the settled frame of each mode is committed,
+          # under a stable name, to bound the history churn; every other
+          # route's PNGs still stay uncommitted.
+          cp ci-shots-components-light/03-components-settled.png \
+            ci-logs/components-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-components-dark/03-components-settled.png \
+            ci-logs/components-terracotta-dark.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt
+          git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt \
+            ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt
+          for shot in ci-logs/components-terracotta-light.png \
+                      ci-logs/components-terracotta-dark.png; do
+            if [ -f "$shot" ]; then git add -f "$shot"; fi
+          done
           git commit -m "ci: publish smoke-test report [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true

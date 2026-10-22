@@ -9,7 +9,7 @@ workflow.
 | Job | Required for success? | Purpose |
 |---|---:|---|
 | `build` | Yes | Format report, Clippy, workspace tests, release build and OCR diagnostic. |
-| `screenshots` | No | Launch the release binary under headless Sway and report reader and tasks routes. |
+| `screenshots` | No | Launch the release binary under headless Sway and report reader, tasks and component-gallery routes. |
 
 Both jobs run on Ubuntu 26.04. The GTK4 bindings require GTK 4.16 or newer.
 
@@ -42,11 +42,16 @@ day. The smoke-test job downloads that binary rather than building it again.
 
 The `screenshots` job depends on a successful build and uses
 `continue-on-error: true`. A compositor or rendering problem therefore does
-not block a correct code change. It runs `docs/ci/screenshot.sh` twice
-under headless Sway with 139 seeded books:
+not block a correct code change. It runs `docs/ci/screenshot.sh` four times
+under headless Sway:
 
-- `ROUTE=read-1` opens the first seeded EPUB.
+- `ROUTE=read-1` opens the first of 139 seeded EPUBs.
 - `ROUTE=tasks` opens the task manager.
+- `ROUTE=components` twice, over a small 20-book seed, opens the hidden
+  redesign component gallery under Terracotta Light and Dark
+  (`THEME=terracotta-light` / `terracotta-dark`, applied by the app's
+  non-persisting `KALAM_THEME` startup override) on a tall 1600×3400
+  output, so the whole artboard fits in one frame.
 
 The seeder creates valid EPUB files in folders named with the same readable
 name and short id as the app. The seed database begins at schema version 1 and
@@ -60,8 +65,14 @@ prove that the reader opened its book or that the UI is visually correct.
 
 Screenshots and run logs are kept only in the Actions job workspace. The
 workflow does not upload PNG screenshots. It commits the text summaries to
-`ci-logs/reader-latest.txt` and `ci-logs/tasks-latest.txt`, including on
-successful runs. The build job also
+`ci-logs/reader-latest.txt`, `ci-logs/tasks-latest.txt`,
+`ci-logs/components-light-latest.txt` and
+`ci-logs/components-dark-latest.txt`, including on successful runs. The
+settled gallery frame of each mode is the one exception to the no-PNG rule:
+it is committed as `ci-logs/components-terracotta-light.png` and
+`ci-logs/components-terracotta-dark.png`, because an artboard exists to be
+looked at and the agent cannot download Actions artifacts from its
+sandbox. The build job also
 publishes rustfmt, Clippy, test and OCR-probe output under `ci-logs/`.
 
 The summaries are evidence to inspect, not a visual approval. See

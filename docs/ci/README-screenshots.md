@@ -6,12 +6,14 @@ test and not a required CI gate.
 
 ## Routes exercised
 
-The job runs `docs/ci/screenshot.sh` with 139 synthetic books for each route:
+The job runs `docs/ci/screenshot.sh` for each route (139 synthetic books
+for the first two; the gallery needs no library to speak of and seeds 20):
 
 | Route | What it opens |
 |---|---|
 | `read-1` | The EPUB reader with the first seeded EPUB. |
 | `tasks` | The task manager's current empty/idle state. |
+| `components` | The hidden redesign component gallery, twice: Terracotta Light and Dark on a tall 1600×3400 output. |
 
 The seeder writes real EPUBs and covers under readable author/title folders
 with short-id suffixes. It creates a minimal schema-version-1 catalog; Kalam
@@ -34,12 +36,18 @@ The job commits text reports to:
 
 - `ci-logs/reader-latest.txt`
 - `ci-logs/tasks-latest.txt`
+- `ci-logs/components-light-latest.txt`
+- `ci-logs/components-dark-latest.txt`
 
 The report includes route checks, timing spans, main-loop stalls, pixel
 samples, screenshot fingerprints, app output and peak RSS. PNG images and
 compositor logs stay in the temporary Actions workspace; the workflow does not
 upload them as artifacts. The only uploaded artifact is the release binary
-used by the smoke job.
+used by the smoke job. The single exception is the gallery: its settled
+frame in each mode is committed as
+`ci-logs/components-terracotta-light.png` and
+`ci-logs/components-terracotta-dark.png`, because the artboard's whole
+purpose is to be looked at and the agent cannot download artifacts.
 
 A passing route check is not a visual verdict. Compare the app's logs and
 fingerprints with what the selected route is expected to display. A reader
@@ -70,8 +78,10 @@ The script reports measurements and does not set a pass threshold.
   Use `KALAM_TIMING=1` on the target desktop for timing decisions. Peak memory
   is reported as a diagnostic.
 - **Screenshots:** because PNGs are not uploaded, the committed report is what
-  an agent can inspect from the repository. It contains fingerprints and
-  metrics, not the image itself.
+  an agent can inspect from the repository for most routes: fingerprints and
+  metrics, not the image itself. The two gallery frames are committed as
+  PNGs (above), so those can and should be eyeballed directly — remembering
+  they were taken on a 1600×3400 software-rendered output no user has.
 
 ## Run locally
 
@@ -81,6 +91,15 @@ Build Kalam first, then set a disposable data directory and select one route:
 cargo build --release
 XDG_DATA_HOME=/tmp/kalam-ci-data \
   BOOKS=20 OUT=/tmp/kalam-ci-reader ROUTE=read-1 \
+  docs/ci/screenshot.sh
+```
+
+For the component gallery in one mode:
+
+```bash
+XDG_DATA_HOME=/tmp/kalam-ci-data \
+  BOOKS=20 OUT=/tmp/kalam-ci-components ROUTE=components \
+  THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=3400 \
   docs/ci/screenshot.sh
 ```
 

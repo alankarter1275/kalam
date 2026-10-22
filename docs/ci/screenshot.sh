@@ -21,6 +21,15 @@ BOOKS="${BOOKS:-139}"
 # Generous: a cold binary on a shared runner is slow to first paint, and a
 # screenshot taken too early shows an empty window and looks exactly like a bug.
 SETTLE="${SETTLE:-25}"
+# Headless output size. The default matches a laptop-ish window. A tall
+# route (the component gallery is ~3,000 px of stacked sections) can ask
+# for a taller output instead of synthetic scrolling, which headless sway
+# does not deliver reliably (see the TAP probe's status note below). The
+# shot then shows the whole page in one frame, at the cost of a window
+# shape no user has -- fine for an artboard, wrong for judging a real page,
+# so real routes keep the default.
+OUTPUT_W="${OUTPUT_W:-1600}"
+OUTPUT_H="${OUTPUT_H:-1000}"
 
 mkdir -p "$OUT"
 REPORT="$OUT/report.txt"
@@ -30,7 +39,7 @@ REPORT="$OUT/report.txt"
 say() { echo "$*" | tee -a "$REPORT"; }
 
 say "=== kalam screenshot run ==="
-say "books=$BOOKS out=$OUT settle=$SETTLE"
+say "books=$BOOKS out=$OUT settle=$SETTLE output=${OUTPUT_W}x${OUTPUT_H}"
 
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/tmp/kalam-ci-data}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/kalam-ci-run}"
@@ -75,10 +84,12 @@ cat > "$SWAY_CONF" <<'EOF'
 # -- which is exactly how the first two screenshot runs died. Kalam is a native
 # Wayland (GTK4) app and never needs X11, so there is nothing to lose here.
 xwayland disable
-output HEADLESS-1 resolution 1600x1000
 default_border none
 focus_follows_mouse no
 EOF
+# Appended, not interpolated: the block above is a quoted heredoc because it
+# contains backticks, so $OUTPUT_W would not expand inside it.
+echo "output HEADLESS-1 resolution ${OUTPUT_W}x${OUTPUT_H}" >> "$SWAY_CONF"
 
 say "sway binary: $(command -v sway || echo MISSING) $(sway --version 2>&1 | head -1)"
 
@@ -189,6 +200,13 @@ say "=== launching kalam ==="
 # times and still reported success.
 ROUTE="${ROUTE:-all-books}"
 say "requested route: $ROUTE"
+# THEME names a palette/mode choice id for the app to apply for this run
+# only (KALAM_THEME, not persisted). The app prints the resolved id, and
+# that line lands in the report's app-stderr section -- a typo totalises
+# to the default theme, so the printed id, not this request, is the
+# evidence of which theme was photographed.
+THEME="${THEME:-}"
+say "requested theme: ${THEME:-<saved/default>}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
 # negative one, KALAM_NO_WINDOWED_GRID.
@@ -215,7 +233,7 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
-KALAM_ROUTE="$ROUTE" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do
@@ -399,7 +417,7 @@ if [ "$ROUTE" != "home" ]; then
   # `sample_rss` uses `pgrep -n` (newest), so it follows this process too.
   # That keeps the peak-memory figure honest -- it is still the high-water
   # mark of a single kalam process, just possibly the second one.
-  KALAM_ROUTE=home KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam-home.log" 2>&1 &
+  KALAM_ROUTE=home KALAM_THEME="$THEME" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam-home.log" 2>&1 &
   HOME_PID=$!
   for _ in $(seq 1 12); do sample_rss; sleep 1; done
   shot "04-home-for-comparison"

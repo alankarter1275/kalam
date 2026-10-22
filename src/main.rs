@@ -220,7 +220,26 @@ fn main() {
     // on GTK, after several wrong guesses.
     timing::span("startup_theme");
     if std::env::var_os("KALAM_NO_CSS").is_none() {
-        let choice = theme::current_choice(&catalog);
+        // KALAM_THEME=<choice-id> applies a palette/mode for this run only
+        // and never writes the pref. It is the theme counterpart of
+        // KALAM_ROUTE: the CI screenshot loop uses it to photograph the
+        // component gallery in both modes without reaching into the seeded
+        // library's prefs (`ui.theme` is a global pref with its own file,
+        // so faking it from outside would be fragile in exactly the place
+        // that must not lie). The resolved id is printed, so a typo'd value
+        // — which `choice_by_id` totalises to the default — is visible in
+        // the log rather than silently photographing the wrong theme.
+        let choice = match std::env::var("KALAM_THEME") {
+            Ok(id) if !id.trim().is_empty() => {
+                let choice = theme::choice_by_id(id.trim());
+                eprintln!(
+                    "kalam: KALAM_THEME={id} — applying {} for this run (not saved)",
+                    choice.id()
+                );
+                choice
+            }
+            _ => theme::current_choice(&catalog),
+        };
         theme::apply_choice(&choice);
         // A "System" choice must track the desktop while the app runs,
         // not just at startup. The handler re-reads the saved choice and

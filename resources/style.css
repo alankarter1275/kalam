@@ -5507,7 +5507,9 @@ drawingarea.kalam-ui-timeline-gutter {
 }
 
 .kalam-ui-fetch-cover {
-    margin-top: 8px;
+    /* The missing-cover column already contributes 6px of row spacing;
+       together these give §28's 8px below the caption. */
+    margin-top: 2px;
 }
 
 .kalam-ui-finished-badge {
@@ -5574,6 +5576,10 @@ popover.kalam-ui-selection-popover > contents {
 
 /* Redesign dialogs (§§13, 18, 31), layered onto the existing
    `in_app_dialog` scrim/focus-trap/teardown machinery. */
+.kalam-float-scrim.kalam-ui-dialog-scrim {
+    background: @kalam_overlay;
+}
+
 .kalam-float.kalam-in-app-dialog.kalam-ui-dialog-panel {
     background: @kalam_card;
     border: 1px solid @kalam_border;
@@ -5603,7 +5609,9 @@ popover.kalam-ui-selection-popover > contents {
 }
 
 .kalam-ui-dialog-footer {
-    margin-top: 28px;
+    /* DialogShell's column contributes the other 16px; §31 asks for the
+       actions 28px below the body in total. */
+    margin-top: 12px;
 }
 
 .kalam-ui-field-label {

@@ -267,6 +267,9 @@ fn present_inner(
     // underneath; without it a "modal" dialog is decoration.
     let scrim = gtk::Box::new(gtk::Orientation::Vertical, 0);
     scrim.add_css_class("kalam-float-scrim");
+    if redesign {
+        scrim.add_css_class("kalam-ui-dialog-scrim");
+    }
     scrim.set_halign(gtk::Align::Fill);
     scrim.set_valign(gtk::Align::Fill);
     scrim.set_hexpand(true);

@@ -71,6 +71,7 @@ pub fn slide_out_pill(
 ) -> SlideOutPill {
     let primary_widget: gtk::Widget = primary.as_ref().clone();
     primary_widget.add_css_class("kalam-ui-slideout-primary");
+    primary_widget.set_size_request(-1, HEIGHT);
     primary_widget.set_halign(gtk::Align::Start);
     primary_widget.set_valign(gtk::Align::Center);
 

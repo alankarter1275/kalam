@@ -5,9 +5,21 @@
 //! Components artboard, used to inspect every shared widget in both light
 //! and dark modes before a page redesign depends on it.
 
+use crate::db::HighlightColor;
+use crate::models::{Book, BookFormat};
 use crate::style::{size, spacing};
 use crate::widgets::{
     chip::{chip_label, count_badge, filter_chip, key_chip, ChipSize},
+    cover_state::{
+        book_cover, cover, cover_with_finished_badge, fallback_cover, finished_badge,
+        missing_cover, missing_cover_with_fetch, CoverAvailability, CoverSpec,
+    },
+    dialog::{
+        confirmation_dialog, dialog_shell, present_dialog, text_field, ConfirmationKind,
+        DialogSize,
+    },
+    in_app_dialog::{DialogExit, InAppDialog},
+    menu::{menu_button, menu_popover, MenuWidth},
     pill_button::{
         boxed_ghost_button, ghost_button, icon_button, pill_button, primary_button,
         set_icon_button_selected, PillButtonKind,
@@ -15,14 +27,20 @@ use crate::widgets::{
     progress::{linear_progress, segmented_progress, SegmentState},
     rating::rating_control,
     segmented::{segmented_control, SegmentedSize},
+    selection_chip::{selection_chip, SelectionChipAction},
     setting_row::{slider_row, stepper_row, switch_row},
+    slide_out_pill::slide_out_pill,
     surface::{
         add_inset_row, hairline, inset_card, outlined_section, quiet_notice, side_panel,
         side_panel_close_button, state_card, state_card_with_action,
     },
+    timeline::{timeline, TimelineEntry, TimelineState},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::rc::Rc;
 
 pub struct ComponentPreviewModel;
 
@@ -101,6 +119,8 @@ fn build_preview(host: &gtk::Box) {
 
     build_buttons(host, &status);
     host.append(&hairline());
+    build_menus_and_slideout(host, &status);
+    host.append(&hairline());
     build_segments_and_chips(host, &status);
     host.append(&hairline());
     build_setting_rows(host, &status);
@@ -108,6 +128,10 @@ fn build_preview(host: &gtk::Box) {
     build_progress_and_rating(host, &status);
     host.append(&hairline());
     build_surfaces(host, &status);
+    host.append(&hairline());
+    build_timeline_and_covers(host, &status);
+    host.append(&hairline());
+    build_reader_and_dialogs(host, &status);
 }
 
 fn build_buttons(host: &gtk::Box, status: &gtk::Label) {
@@ -368,4 +392,328 @@ fn build_surfaces(host: &gtk::Box, status: &gtk::Label) {
     ));
     layout.append(&states);
     body.append(&layout);
+}
+
+fn build_menus_and_slideout(host: &gtk::Box, status: &gtk::Label) {
+    let body = section(host, "Menus and slide-out pill");
+
+    let menu = menu_popover(MenuWidth::Wide);
+    menu.popover().set_position(gtk::PositionType::Bottom);
+    menu.list().set_spacing(0);
+
+    let status_for_open = status.clone();
+    menu.add_item("Open book", move || {
+        status_for_open.set_label("Menu: Open book.");
+    });
+
+    let status_for_annotations = status.clone();
+    menu.add_item_with_count("Annotations", 12, move || {
+        status_for_annotations.set_label("Menu: Annotations.");
+    });
+
+    let status_for_favourite = status.clone();
+    menu.add_check_item("Favourite", true, move |checked| {
+        status_for_favourite.set_label(&format!("Menu checklist: Favourite = {checked}."));
+    });
+    menu.add_separator();
+
+    let sort_menu = menu_popover(MenuWidth::Short);
+    let status_for_sort_title = status.clone();
+    sort_menu.add_item("Title", move || {
+        status_for_sort_title.set_label("Submenu: Sort by title.");
+    });
+    let status_for_sort_author = status.clone();
+    sort_menu.add_item("Author", move || {
+        status_for_sort_author.set_label("Submenu: Sort by author.");
+    });
+    menu.add_submenu("Sort by", sort_menu);
+
+    let tools_menu = menu_popover(MenuWidth::Tools);
+    let status_for_metadata = status.clone();
+    tools_menu.add_item("Fetch metadata", move || {
+        status_for_metadata.set_label("Tools submenu: Fetch metadata.");
+    });
+    let status_for_remaster = status.clone();
+    tools_menu.add_item("Remaster EPUB", move || {
+        status_for_remaster.set_label("Tools submenu: Remaster EPUB.");
+    });
+    menu.add_submenu("Tools", tools_menu);
+
+    menu.add_separator();
+    let status_for_remove = status.clone();
+    menu.add_destructive_item("Remove from library", move || {
+        status_for_remove.set_label("Menu: Remove from library.");
+    });
+
+    let menu_row = row(spacing::SM);
+    menu_row.append(&menu_button(
+        "view-more-symbolic",
+        "Open component menu",
+        menu,
+    ));
+    let menu_caption = gtk::Label::new(Some("Menu, submenus, counts and checklist"));
+    menu_caption.add_css_class("kalam-ui-meta");
+    menu_row.append(&menu_caption);
+    body.append(&menu_row);
+
+    let slide_row = row(spacing::SM);
+    let status_for_back = status.clone();
+    let primary = boxed_ghost_button("Back", move || {
+        status_for_back.set_label("Slide-out primary: Back.");
+    });
+    let status_for_bubble = status.clone();
+    let slideout = slide_out_pill(&primary, "3 highlights", move || {
+        status_for_bubble.set_label("Slide-out pill: highlights.");
+    });
+    slideout
+        .secondary_button()
+        .set_tooltip_text(Some("Preview the secondary pill"));
+    slideout.set_secondary_sensitive(true);
+    if slideout.is_revealed() {
+        slideout.hide();
+    }
+    slide_row.append(&slideout.widget());
+
+    let slideout_for_toggle = slideout.clone();
+    let status_for_toggle = status.clone();
+    slide_row.append(&ghost_button("Toggle pill", move || {
+        if slideout_for_toggle.is_revealed() {
+            slideout_for_toggle.hide();
+            status_for_toggle.set_label("Slide-out pill hidden.");
+        } else {
+            slideout_for_toggle.reveal();
+            status_for_toggle.set_label("Slide-out pill revealed.");
+        }
+    }));
+    slide_row.append(&chip_label("I slide aside", false));
+    body.append(&slide_row);
+}
+
+fn build_timeline_and_covers(host: &gtk::Box, status: &gtk::Label) {
+    let body = section(host, "Timeline and cover states");
+
+    let entries = vec![
+        TimelineEntry::new("A Wizard of Earthsea", TimelineState::Read)
+            .with_subtitle("Earthsea · Book 1")
+            .with_right("12 Mar 2026")
+            .with_bookmarks(2),
+        TimelineEntry::new("The Tombs of Atuan", TimelineState::Read)
+            .with_subtitle("Earthsea · Book 2")
+            .with_right("28 Mar 2026"),
+        TimelineEntry::new("The Farthest Shore", TimelineState::Current)
+            .with_subtitle("Earthsea · Book 3")
+            .with_right("46%")
+            .with_bookmarks(1),
+        TimelineEntry::new("Tehanu", TimelineState::Upcoming)
+            .with_subtitle("Earthsea · Book 4")
+            .with_right("Unread"),
+    ];
+    body.append(&timeline(&entries));
+
+    let book = Book {
+        id: 0,
+        uuid: String::new(),
+        title: "Dune".to_owned(),
+        authors: "Frank Herbert".to_owned(),
+        series: None,
+        description: String::new(),
+        format: BookFormat::Epub,
+        file_name: "dune.epub".to_owned(),
+        file_hash: String::new(),
+        cover_name: None,
+        added_at: String::new(),
+        progress: 100,
+        rating: 0,
+        publisher: String::new(),
+        published: String::new(),
+        series_index: 0.0,
+        tags: Vec::new(),
+        cover_path: None,
+        file_path: PathBuf::new(),
+    };
+
+    let covers = row(spacing::LG);
+    covers.set_valign(gtk::Align::Start);
+    covers.append(&book_cover(
+        &book,
+        120,
+        180,
+        true,
+        CoverAvailability::Available,
+        true,
+    ));
+
+    let direct_fallback = fallback_cover(
+        "The Left Hand of Darkness",
+        "Ursula K. Le Guin",
+        "EPUB",
+        100,
+        150,
+    );
+    covers.append(&cover_with_finished_badge(&direct_fallback, false));
+    covers.append(&missing_cover("The Dispossessed", 120, 180));
+
+    let status_for_fetch = status.clone();
+    covers.append(&missing_cover_with_fetch(
+        "Always Coming Home",
+        120,
+        180,
+        move || status_for_fetch.set_label("Missing cover: Fetch requested."),
+    ));
+    body.append(&covers);
+
+    let badge_row = row(spacing::XS);
+    badge_row.append(&finished_badge());
+    let badge_caption = gtk::Label::new(Some("Finished badge"));
+    badge_caption.add_css_class("kalam-ui-meta");
+    badge_row.append(&badge_caption);
+    body.append(&badge_row);
+
+    body.append(&cover(CoverSpec {
+        path: None,
+        title: "The Word for World Is Forest",
+        author: "Ursula K. Le Guin",
+        kind: "PDF",
+        width: 120,
+        height: 180,
+        finished: false,
+        availability: CoverAvailability::FileMissing,
+        deferred: false,
+    }));
+}
+
+fn close_dialog_slot(slot: &Rc<RefCell<Option<InAppDialog>>>) {
+    let dialog = slot.borrow().clone();
+    if let Some(dialog) = dialog {
+        dialog.close();
+    }
+}
+
+fn build_reader_and_dialogs(host: &gtk::Box, status: &gtk::Label) {
+    let body = section(host, "Selection chip and dialogs");
+
+    let status_for_selection = status.clone();
+    let chip = selection_chip(move |action| {
+        let message = match action {
+            SelectionChipAction::Highlight(color) => {
+                format!("Selection chip: Highlight in {color:?}.")
+            }
+            SelectionChipAction::Note => "Selection chip: Add note.".to_owned(),
+            SelectionChipAction::Define => "Selection chip: Define.".to_owned(),
+        };
+        status_for_selection.set_label(&message);
+    });
+    chip.set_selected_color(HighlightColor::Blue);
+    let _selected_at_build = chip.selected_color();
+    body.append(&chip.widget());
+
+    let dialog_buttons = row(spacing::SM);
+
+    let status_for_confirmation = status.clone();
+    dialog_buttons.append(&ghost_button("Open confirmation", move || {
+        let status_for_confirm = status_for_confirmation.clone();
+        let dialog = confirmation_dialog(
+            &status_for_confirmation,
+            "Save this highlight?",
+            "The confirmation shell uses the existing in-app scrim, focus trap and teardown, with the redesign's 420px card and pill actions.",
+            "Cancel",
+            "Save highlight",
+            ConfirmationKind::Primary,
+            move || status_for_confirm.set_label("Confirmation dialog: Save highlight."),
+        );
+        if dialog.is_none() {
+            status_for_confirmation
+                .set_label("Confirmation dialog could not find the app overlay.");
+        }
+    }));
+
+    let status_for_destructive = status.clone();
+    dialog_buttons.append(&ghost_button("Open destructive confirmation", move || {
+        let status_for_confirm = status_for_destructive.clone();
+        let dialog = confirmation_dialog(
+            &status_for_destructive,
+            "Remove this highlight?",
+            "Destructive confirmations keep the same shell and use the accent outline for the action that cannot be undone.",
+            "Keep highlight",
+            "Remove",
+            ConfirmationKind::Destructive,
+            move || status_for_confirm.set_label("Destructive confirmation: Remove."),
+        );
+        if dialog.is_none() {
+            status_for_destructive
+                .set_label("Destructive confirmation could not find the app overlay.");
+        }
+    }));
+
+    let status_for_form = status.clone();
+    dialog_buttons.append(&ghost_button("Open form dialog", move || {
+        let shell = dialog_shell(DialogSize::Form, Some("for Ursula K. Le Guin"));
+        shell
+            .widget()
+            .set_tooltip_text(Some("Redesign form dialog shell"));
+        let _dialog_width = shell.size().width();
+
+        let field = text_field("Shelf name", "e.g. Favourites", "");
+        field.set_value("Weekend reading");
+        field.entry().set_tooltip_text(Some("Preview shelf name"));
+        shell.body().append(&field.widget());
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_for_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_dialog_slot(&slot_for_cancel);
+        }));
+
+        let slot_for_save = slot.clone();
+        let field_for_save = field.clone();
+        let status_for_save = status_for_form.clone();
+        shell.footer().append(&primary_button("Create shelf", move || {
+            let value = field_for_save.value();
+            close_dialog_slot(&slot_for_save);
+            status_for_save.set_label(&format!("Form dialog: Create shelf {value:?}."));
+        }));
+
+        match present_dialog(
+            &status_for_form,
+            "Create shelf",
+            DialogExit::UnsavedInput,
+            &shell,
+        ) {
+            Some(dialog) => *slot.borrow_mut() = Some(dialog),
+            None => status_for_form.set_label("Form dialog could not find the app overlay."),
+        }
+    }));
+
+    let status_for_list = status.clone();
+    dialog_buttons.append(&ghost_button("Open list dialog", move || {
+        let shell = dialog_shell(DialogSize::List, Some("560 × 660 list surface"));
+        let entries = vec![
+            TimelineEntry::new("Saved highlight", TimelineState::Read)
+                .with_right("14 Mar 2026"),
+            TimelineEntry::new("Current note", TimelineState::Current).with_right("46%"),
+            TimelineEntry::new("Upcoming review", TimelineState::Upcoming)
+                .with_right("Unread"),
+        ];
+        shell.body().append(&timeline(&entries));
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_for_done = slot.clone();
+        let status_for_done = status_for_list.clone();
+        shell.footer().append(&primary_button("Done", move || {
+            close_dialog_slot(&slot_for_done);
+            status_for_done.set_label("List dialog: Done.");
+        }));
+
+        match present_dialog(
+            &status_for_list,
+            "Annotations",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            Some(dialog) => *slot.borrow_mut() = Some(dialog),
+            None => status_for_list.set_label("List dialog could not find the app overlay."),
+        }
+    }));
+
+    body.append(&dialog_buttons);
 }

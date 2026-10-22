@@ -920,6 +920,69 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
     frame.upcast()
 }
 
+/// [`cover_widget`] with a caller-supplied no-cover face.
+///
+/// The generic placeholder cannot know a book's title or author. The
+/// redesign's cover-state component supplies its generated text cover here,
+/// while this module remains the only place that knows how an image is
+/// decoded and framed. `fallback` is called only when no picture can be
+/// decoded synchronously.
+pub fn cover_widget_or_else(
+    path: Option<&Path>,
+    w: i32,
+    h: i32,
+    fallback: impl FnOnce() -> gtk::Widget,
+) -> gtk::Widget {
+    let frame = new_cover_frame(w, h);
+
+    if let Some(path) = path {
+        if path.is_file() {
+            if let Some(picture) = scaled_cover_picture(path, w, h) {
+                frame.append(&picture);
+                return frame.upcast();
+            }
+        }
+    }
+
+    frame.append(&fallback());
+    frame.upcast()
+}
+
+/// Deferred counterpart to [`cover_widget_or_else`]: the caller's generated
+/// cover is the underlay from the first frame, and a transparent picture
+/// above it receives the decoded texture in place. As with the original
+/// deferred path, the swap is a repaint, never a relayout.
+pub fn cover_widget_deferred_or_else(
+    path: Option<&Path>,
+    w: i32,
+    h: i32,
+    fallback: impl FnOnce() -> gtk::Widget,
+) -> gtk::Widget {
+    if !crate::preload::preload_enabled() {
+        return cover_widget_or_else(path, w, h, fallback);
+    }
+
+    let (frame, picture) = new_deferred_overlay_frame(w, h, &fallback());
+
+    if let Some(path) = path {
+        if path.is_file() {
+            let key = (path.to_string_lossy().to_string(), w, h);
+            if let Some(texture) = COVER_CACHE.with(|c| c.borrow_mut().get(&key)) {
+                picture.set_paintable(Some(&texture));
+                return frame.upcast();
+            }
+            PENDING_FRAMES.with(|p| {
+                p.borrow_mut().push(PendingFrame {
+                    key,
+                    picture: picture.downgrade(),
+                });
+            });
+        }
+    }
+
+    frame.upcast()
+}
+
 /// Like [`cover_widget`], but never decodes on the UI thread.
 ///
 /// A0 step 5, and the half of step 3 that was deferred to here: an uncached
@@ -1006,6 +1069,28 @@ fn new_deferred_frame(w: i32, h: i32) -> (gtk::Box, gtk::Picture) {
     frame.set_overflow(gtk::Overflow::Hidden);
     let picture = cover_picture(w, h);
     frame.append(&picture);
+    (frame, picture)
+}
+
+/// The fallback-aware deferred frame. `GtkOverlay` is needed because the
+/// generated text cover is a real widget tree, not a background gradient;
+/// the paintless picture still sits above it at the same fixed size.
+fn new_deferred_overlay_frame(
+    w: i32,
+    h: i32,
+    underlay: &gtk::Widget,
+) -> (gtk::Overlay, gtk::Picture) {
+    let frame = gtk::Overlay::new();
+    frame.add_css_class("kalam-cover-frame");
+    frame.set_size_request(w, h);
+    frame.set_hexpand(false);
+    frame.set_vexpand(false);
+    frame.set_halign(gtk::Align::Center);
+    frame.set_valign(gtk::Align::Start);
+    frame.set_overflow(gtk::Overflow::Hidden);
+    frame.set_child(Some(underlay));
+    let picture = cover_picture(w, h);
+    frame.add_overlay(&picture);
     (frame, picture)
 }
 

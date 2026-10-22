@@ -5206,3 +5206,434 @@ drawingarea.kalam-ui-rating {
 .kalam-ui-token-accent { color: @kalam_accent; }
 .kalam-ui-token-border { color: @kalam_border; }
 .kalam-ui-token-text-dim { color: @kalam_text_dim; }
+
+/* Menus and submenus (§17). GTK paints a popover through its `contents`
+   node; styling only the outer popover leaves the platform surface and
+   shadow behind, so the redesign surface lives there. */
+popover.kalam-ui-menu {
+    background: transparent;
+}
+
+popover.kalam-ui-menu > contents {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 6px;
+    box-shadow: none;
+}
+
+.kalam-ui-menu-list {
+    background: transparent;
+}
+
+button.kalam-ui-menu-item,
+menubutton.kalam-ui-menu-item {
+    min-height: 40px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: @kalam_text;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+menubutton.kalam-ui-menu-item > button {
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+button.kalam-ui-menu-item:hover,
+menubutton.kalam-ui-menu-item:hover,
+menubutton.kalam-ui-menu-item > button:hover,
+button.kalam-ui-menu-item.open,
+menubutton.kalam-ui-menu-item.open {
+    background: @kalam_hover;
+}
+
+button.kalam-ui-menu-item:focus,
+menubutton.kalam-ui-menu-item:focus,
+menubutton.kalam-ui-menu-item > button:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: -2px;
+}
+
+button.kalam-ui-menu-item:disabled,
+menubutton.kalam-ui-menu-item:disabled {
+    opacity: 0.4;
+}
+
+button.kalam-ui-menu-item.destructive,
+menubutton.kalam-ui-menu-item.destructive {
+    color: @kalam_accent;
+}
+
+.kalam-ui-menu-item-content {
+    padding: 0 10px;
+}
+
+.kalam-ui-menu-item-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: inherit;
+}
+
+.kalam-ui-menu-chevron {
+    color: @kalam_text_dim;
+    font-size: 16px;
+}
+
+.kalam-ui-menu-check {
+    min-width: 22px;
+    min-height: 22px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: transparent;
+    color: transparent;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.kalam-ui-menu-check.checked {
+    background: @kalam_accent_fill;
+    border-color: @kalam_accent_fill;
+    color: white;
+}
+
+.kalam-ui-menu-separator {
+    min-height: 1px;
+    background: @kalam_border;
+    margin: 4px 10px;
+}
+
+button.kalam-ui-menu-trigger,
+menubutton.kalam-ui-menu-trigger {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: @kalam_text;
+}
+
+menubutton.kalam-ui-menu-trigger > button {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+}
+
+menubutton.kalam-ui-menu-trigger:hover,
+menubutton.kalam-ui-menu-trigger > button:hover {
+    background: @kalam_hover;
+}
+
+menubutton.kalam-ui-menu-trigger:focus,
+menubutton.kalam-ui-menu-trigger > button:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+/* Slide-out pill (§23). The sizing/reveal mechanics are in
+   `slide_out_pill.rs`: an expanding spacer moves following controls while
+   the primary stays painted above the secondary pill's tucked-under edge. */
+.kalam-ui-slideout {
+    background: transparent;
+}
+
+.kalam-ui-slideout-primary,
+button.kalam-ui-pill-button.kalam-ui-slideout-primary {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    color: @kalam_text;
+}
+
+button.kalam-ui-slideout-pill {
+    min-height: 44px;
+    padding: 0 16px 0 38px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: @kalam_bg;
+    color: @kalam_text;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+button.kalam-ui-slideout-pill:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-ui-slideout-pill:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+button.kalam-ui-slideout-pill:disabled {
+    background: @kalam_bg;
+    color: alpha(@kalam_text, 0.4);
+}
+
+/* Series timeline (§15). The gutter itself is Cairo-drawn in
+   `timeline.rs`; these classes carry the row's text roles. */
+.kalam-ui-timeline {
+    background: transparent;
+}
+
+.kalam-ui-timeline-row {
+    min-height: 64px;
+}
+
+drawingarea.kalam-ui-timeline-gutter {
+    min-width: 24px;
+    min-height: 64px;
+}
+
+.kalam-ui-timeline-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-ui-timeline-subtitle {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-timeline-right {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-timeline-right.current {
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+.kalam-ui-timeline-bookmarks {
+    color: @kalam_accent;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.kalam-ui-timeline-bookmarks image {
+    color: @kalam_accent;
+    -gtk-icon-size: 14px;
+}
+
+/* Cover fallback, missing and finished states (§20). */
+.kalam-ui-cover-fallback {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.kalam-ui-cover-fallback.compact {
+    padding: 8px;
+    border-radius: 6px;
+}
+
+.kalam-ui-cover-kind {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-cover-fallback.compact .kalam-ui-cover-kind {
+    font-size: 8px;
+}
+
+.kalam-ui-cover-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: @kalam_text;
+}
+
+.kalam-ui-cover-fallback.compact .kalam-ui-cover-title {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.kalam-ui-cover-author {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-cover-fallback.compact .kalam-ui-cover-author {
+    font-size: 9px;
+}
+
+.kalam-ui-cover-missing {
+    background: transparent;
+    border: 1.5px dashed @kalam_text_dim;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.kalam-ui-cover-missing.compact {
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.kalam-ui-cover-missing-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-ui-cover-missing.compact .kalam-ui-cover-missing-title {
+    font-size: 10px;
+}
+
+.kalam-ui-cover-missing-caption {
+    font-size: 11px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-fetch-cover {
+    margin-top: 8px;
+}
+
+.kalam-ui-finished-badge {
+    min-width: 22px;
+    min-height: 22px;
+    border: 1px solid @kalam_accent_fill;
+    border-radius: 999px;
+    background: @kalam_accent_fill;
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+/* Reader selection chip (§13). The five colour dots are Cairo-drawn so
+   their fixed highlight palette does not become five new CSS hex rules. */
+.kalam-ui-selection-chip {
+    min-height: 44px;
+    padding: 0 8px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: @kalam_card;
+}
+
+button.kalam-ui-selection-color {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+}
+
+button.kalam-ui-selection-color:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-ui-selection-color:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+drawingarea.kalam-ui-selection-dot {
+    min-width: 20px;
+    min-height: 20px;
+}
+
+.kalam-ui-selection-divider {
+    min-width: 1px;
+    min-height: 24px;
+    background: @kalam_border;
+    margin: 0 4px;
+}
+
+popover.kalam-ui-selection-popover {
+    background: transparent;
+}
+
+popover.kalam-ui-selection-popover > contents {
+    background: transparent;
+    border: none;
+    padding: 0;
+    box-shadow: none;
+}
+
+/* Redesign dialogs (§§13, 18, 31), layered onto the existing
+   `in_app_dialog` scrim/focus-trap/teardown machinery. */
+.kalam-float.kalam-in-app-dialog.kalam-ui-dialog-panel {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    box-shadow: none;
+}
+
+.kalam-ui-dialog-head {
+    padding: 24px 24px 0 24px;
+}
+
+.kalam-ui-dialog-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 18px;
+    font-weight: 500;
+    color: @kalam_text;
+}
+
+.kalam-ui-dialog-body {
+    padding: 12px 24px 24px 24px;
+}
+
+.kalam-ui-dialog-message {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-dialog-footer {
+    margin-top: 28px;
+}
+
+.kalam-ui-field-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: @kalam_text_dim;
+}
+
+entry.kalam-ui-field {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    background: @kalam_bg;
+    color: @kalam_text;
+    font-size: 14px;
+}
+
+entry.kalam-ui-field:focus {
+    border-color: @kalam_accent;
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+entry.kalam-ui-field:disabled {
+    opacity: 0.4;
+}
+
+/* Additional Cairo colour probes used by the timeline. */
+.kalam-ui-token-accent-fill { color: @kalam_accent_fill; }
+.kalam-ui-token-bg { color: @kalam_bg; }
+.kalam-ui-token-text { color: @kalam_text; }

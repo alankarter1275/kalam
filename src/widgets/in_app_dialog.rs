@@ -225,6 +225,42 @@ pub fn present(
     exit: DialogExit,
     content: &impl IsA<gtk::Widget>,
 ) -> Option<InAppDialog> {
+    present_inner(anchor, title, exit, content, None, None, false)
+}
+
+/// Show `content` in the redesign dialog surface (design-system §§13, 18):
+/// a fixed 420px form width or a 560×660 list request, card fill, radius 14,
+/// no shadow, and the Playfair section title. The scrim, Esc handling,
+/// focus trap and teardown are exactly those of [`present`]; only the
+/// panel's measurable size and classes differ.
+pub fn present_redesign(
+    anchor: &impl IsA<gtk::Widget>,
+    title: &str,
+    exit: DialogExit,
+    content: &impl IsA<gtk::Widget>,
+    width: i32,
+    height: Option<i32>,
+) -> Option<InAppDialog> {
+    present_inner(
+        anchor,
+        title,
+        exit,
+        content,
+        Some(width.max(1)),
+        height.map(|height| height.max(1)),
+        true,
+    )
+}
+
+fn present_inner(
+    anchor: &impl IsA<gtk::Widget>,
+    title: &str,
+    exit: DialogExit,
+    content: &impl IsA<gtk::Widget>,
+    panel_width: Option<i32>,
+    panel_height: Option<i32>,
+    redesign: bool,
+) -> Option<InAppDialog> {
     let overlay = nearest_overlay(anchor)?;
 
     // Dimmed backdrop. `can_target` is what stops clicks reaching the page
@@ -251,11 +287,26 @@ pub fn present(
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
     panel.add_css_class("kalam-float");
     panel.add_css_class("kalam-in-app-dialog");
+    if redesign {
+        panel.add_css_class("kalam-ui-dialog-panel");
+    }
+    if let Some(width) = panel_width {
+        // Height stays content-sized for form dialogs. For list dialogs it
+        // is a request rather than a hard allocation: the list inside the
+        // panel owns scrolling, and GTK CSS has no usable max-height here.
+        panel.set_size_request(width, panel_height.unwrap_or(-1));
+    }
 
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     header.add_css_class("kalam-in-app-dialog-head");
+    if redesign {
+        header.add_css_class("kalam-ui-dialog-head");
+    }
     let title_label = gtk::Label::new(Some(title));
     title_label.add_css_class("kalam-card-title");
+    if redesign {
+        title_label.add_css_class("kalam-ui-dialog-title");
+    }
     title_label.set_halign(gtk::Align::Start);
     title_label.set_hexpand(true);
     title_label.set_xalign(0.0);
@@ -265,6 +316,9 @@ pub fn present(
 
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.add_css_class("kalam-in-app-dialog-body");
+    if redesign {
+        body.add_css_class("kalam-ui-dialog-body");
+    }
     body.append(content.as_ref());
     panel.append(&body);
     host.append(&panel);

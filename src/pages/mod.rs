@@ -19,6 +19,7 @@ pub mod book;
 pub mod book_float;
 pub mod comics;
 pub mod comics_reader;
+pub mod component_preview;
 pub mod history;
 pub mod home;
 pub mod library;

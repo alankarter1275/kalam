@@ -12,6 +12,7 @@ use crate::pages::{downloads::DownloadsModel,
     browse::{BrowseModel, BrowseOut},
     remote_detail::{RemoteDetailModel, RemoteDetailOut, RemoteDetailInit},
     comics_reader::{ComicsReaderModel, ComicsReaderOut},
+    component_preview::ComponentPreviewModel,
     history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
@@ -141,6 +142,7 @@ enum PageSlot {
     RemoteBrowse(Controller<BrowseModel>),
     RemoteDetail(Controller<RemoteDetailModel>),
     Settings(Controller<SettingsPageModel>),
+    ComponentPreview(Controller<ComponentPreviewModel>),
     Placeholder(Controller<PlaceholderPageModel>),
     Downloads(Controller<DownloadsModel>),
 }
@@ -173,6 +175,7 @@ impl PageSlot {
             PageSlot::RemoteBrowse(c) => c.widget().clone().upcast(),
             PageSlot::RemoteDetail(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
+            PageSlot::ComponentPreview(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
         }
     }
@@ -261,6 +264,7 @@ fn cache_key(route: &Route) -> Option<String> {
         Route::Module(NavItem::Shelves) | Route::ShelvesGrid => Some("shelves".into()),
         Route::Module(NavItem::Settings) => Some("settings".into()),
         Route::Module(item) => Some(format!("mod:{}", item.label())),
+        Route::ComponentPreview => Some("components".into()),
         // Everything below reflects data the user is actively changing.
         Route::LibrarySection(_)
         | Route::ShelfDetail { .. }
@@ -884,6 +888,10 @@ impl AppModel {
                     .launch(catalog.clone())
                     .detach();
                 PageSlot::Settings(ctrl)
+            }
+            Route::ComponentPreview => {
+                let ctrl = ComponentPreviewModel::builder().launch(()).detach();
+                PageSlot::ComponentPreview(ctrl)
             }
             Route::Module(NavItem::RemoteBrowse) => {
                 let init = crate::pages::browse::BrowseInit {
@@ -2072,6 +2080,7 @@ fn route_by_name(name: &str) -> Option<Route> {
         "browse" => Route::Module(NavItem::RemoteBrowse),
         "fanfiction" => Route::Module(NavItem::Fanfiction),
         "settings" => Route::Module(NavItem::Settings),
+        "components" => Route::ComponentPreview,
         "shelves" => Route::ShelvesGrid,
         "all-books" | "allbooks" => Route::LibrarySection(LibrarySection::AllBooks),
         "reading-list" => Route::LibrarySection(LibrarySection::ReadingList),
@@ -2098,6 +2107,7 @@ fn known_route_names() -> Vec<&'static str> {
         "browse",
         "fanfiction",
         "settings",
+        "components",
         "shelves",
         "all-books",
         "reading-list",
@@ -2133,6 +2143,7 @@ fn route_label(route: &Route) -> &'static str {
         Route::Module(NavItem::RemoteBrowse) => "route_open:remote_browse",
         Route::Module(NavItem::Fanfiction) => "route_open:fanfiction",
         Route::Module(NavItem::Settings) => "route_open:settings",
+        Route::ComponentPreview => "route_open:component_preview",
         Route::LibrarySection(LibrarySection::AllBooks) => "route_open:all_books",
         Route::LibrarySection(LibrarySection::ReadingList) => "route_open:reading_list",
         Route::LibrarySection(LibrarySection::History) => "route_open:history",
@@ -2204,6 +2215,7 @@ mod tests {
             route_by_name("settings"),
             Some(Route::Module(NavItem::Settings))
         );
+        assert_eq!(route_by_name("components"), Some(Route::ComponentPreview));
         assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
         assert_eq!(
             route_by_name("all-books"),

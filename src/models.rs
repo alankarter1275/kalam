@@ -115,12 +115,16 @@ pub enum Route {
     ComicSeries {
         series_name: String,
     },
+    /// Hidden redesign component preview, reached only through
+    /// `KALAM_ROUTE=components`.
+    ComponentPreview,
 }
 
 impl Route {
     pub fn sidebar_item(&self) -> NavItem {
         match self {
             Route::Module(item) => *item,
+            Route::ComponentPreview => NavItem::Settings,
             Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,

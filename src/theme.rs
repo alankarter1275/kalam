@@ -556,19 +556,23 @@ fn install_css(theme: &Theme) {
     notify_theme_applied(theme);
 }
 
-/// Listeners told each time a theme is installed.
-///
-/// Almost everything recolours by CSS when the sheet is replaced. The one
-/// exception is art that had to be *rasterized* with a colour baked in —
-/// the rail's brand mark is an SVG path rendered to a texture with the
-/// accent substituted, because a texture has no CSS colour to inherit.
-/// Such pieces register here and rebuild themselves from the new theme.
-///
-/// Listeners live for the process: the shell outlives every page, and a
-/// registry that never removes is the honest shape of that. Register from
-/// shell-lifetime widgets only.
+// Listeners told each time a theme is installed.
+//
+// Almost everything recolours by CSS when the sheet is replaced. The one
+// exception is art that had to be *rasterized* with a colour baked in —
+// the rail's brand mark is an SVG path rendered to a texture with the
+// accent substituted, because a texture has no CSS colour to inherit.
+// Such pieces register here and rebuild themselves from the new theme.
+//
+// Listeners live for the process: the shell outlives every page, and a
+// registry that never removes is the honest shape of that. Register from
+// shell-lifetime widgets only.
+
+/// A callback run after each theme install; see [`on_theme_applied`].
+pub type ThemeAppliedListener = std::rc::Rc<dyn Fn(&Theme)>;
+
 thread_local! {
-    static THEME_APPLIED_LISTENERS: std::cell::RefCell<Vec<std::rc::Rc<dyn Fn(&Theme)>>> =
+    static THEME_APPLIED_LISTENERS: std::cell::RefCell<Vec<ThemeAppliedListener>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -576,14 +580,14 @@ thread_local! {
 /// changes and system light/dark flips alike, since both funnel through
 /// [`apply_choice`]. The already-installed theme is *not* replayed; build
 /// from [`current`] first, then register for changes.
-pub fn on_theme_applied(listener: std::rc::Rc<dyn Fn(&Theme)>) {
+pub fn on_theme_applied(listener: ThemeAppliedListener) {
     THEME_APPLIED_LISTENERS.with(|listeners| listeners.borrow_mut().push(listener));
 }
 
 fn notify_theme_applied(theme: &Theme) {
     // Clone the handles out first: a listener may itself register another
     // listener, and holding the borrow across the calls would panic.
-    let listeners: Vec<std::rc::Rc<dyn Fn(&Theme)>> =
+    let listeners: Vec<ThemeAppliedListener> =
         THEME_APPLIED_LISTENERS.with(|listeners| listeners.borrow().clone());
     for listener in listeners {
         listener(theme);

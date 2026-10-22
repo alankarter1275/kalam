@@ -1,6 +1,11 @@
-# kalam-engine
+# Archived `kalam-engine` README
 
-**`kalam-engine`** is the official standalone, pure-Rust reading & text-rendering engine built specifically for **Kalam** (`calibre-alt`).
+> **Archive notice:** This file describes the abandoned from-scratch engine
+> plan. Kalam uses the local Chapbook crates in the current workspace; see the
+> repository-root `README.md`, `ARCH.md` and `ROADMAP.md` for current project
+> information.
+
+**`kalam-engine`** was the proposed standalone, pure-Rust reading and text-rendering engine for **Kalam** (`calibre-alt`).
 
 It replaces heavy browser-based webviews (`WebKitGTK`) with a lightweight, sub-millisecond, pure-Rust rendering pipeline powered by `lol_html`, `cosmic-text`, and `tiny-skia`.
 
@@ -41,4 +46,6 @@ cargo run --example demo
 ## 📚 Documentation Map
 - **[`docs/ARCHITECTURE.md`](./ARCHITECTURE.md):** Detailed breakdown of the rendering pipeline, pagination data structures, and GTK painting model.
 - **[`docs/RESTRICTIONS.md`](./RESTRICTIONS.md):** Non-negotiable architectural boundaries (No C++ `stylo`, No WebKit/WebViews, No JS bridges).
-- **[`docs/ROADMAP.md`](./ROADMAP.md):** Sequenced implementation plan for `kalam-engine`.
+- **[Root `ROADMAP.md`](../../../ROADMAP.md):** the current project roadmap;
+  the abandoned six-step `kalam-engine` proposal is summarized under
+  “First custom-engine proposal.”

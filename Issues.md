@@ -23,47 +23,32 @@ The record's rules:
 **Backlog · priority High · filed 2026-10-09**
 <https://linear.app/kalam-alan/issue/KAL-5/epub-editor-usability-overhaul-completely-useless-everything-about-it>
 
-Owner's verdict, verbatim:
+Owner's original verdict, verbatim:
 
 > "making epub editor...usable. currently it's completely useless,
 > everything about it is kind of a mess"
 
-Same day, on the rail's new picker page:
+The earlier KAL-5 design and implementation are superseded by the owner's
+2026-10-21 direction: remove the EPUB content editor for now rather than
+continue its redesign. Reader inline editing, its Deep Editor/source entry
+point, the standalone editor, picker/navigation entry, and pending-edit review
+UI have been removed. There is no editor route through the reader, library or
+app navigation. Do not continue implementation or mockups unless the owner
+reopens the work.
 
-> "it looks horrendous"
+If reopened later, editing is limited to HTML/XHTML and CSS edited directly.
+Markdown support and Markdown conversion are out of scope. This decision does
+not affect book metadata editing or annotations.
 
-**Context.** Phase 6 shipped all 10 steps, each CI-green (602 tests,
-screenshot passes): inline selection editing in the reader, the patch
-matcher/serializer, review panel + bake, proofreading mode, the full
-editor page + the reader's TOC pencil, raw source mode, structural ops
-(spine reorder, staged cover replacement), and the rail Editor entry +
-picker page. Every piece is verified by tests and CI screenshots — and
-the whole is still a mess to use. **The gap is UX, not machinery.**
-
-**First step: gather the owner's concrete complaints.** The
-assessment is total but not yet itemized. Before touching code, walk
-the flows screen-by-screen with the owner and write the list: entry
-points and discoverability, the edit → review → bake loop, the editor
-page's chrome, the picker page's look, performance feel, and trust
-(what the bake does to the file, `.orig` backup). Note: the agent
-cannot view screenshots in its environment — complaints need to
-arrive as words.
+Legacy patch rows and sidecar fields remain only so older saved data is not
+silently erased; the current app does not create, render, apply, or review these
+patches.
 
 **Pointers.**
 
-- `plan.md` — Phase 6 step log (settled design + per-step outcomes)
-- `docs/pitfalls.md` §72–§96 — the phase's lessons
-- `src/pages/epub_editor.rs` (~1.9k lines), `src/pages/editor_picker.rs`,
-  `src/pages/edits_panel.rs`
-- `resources/style.css` (`kalam-*` classes)
-- Standing: the §38 field check (baked EPUB opens correctly in
-  another reader) is still open on the owner's side
-
-**Definition of done.** The owner uses the editor on a real book
-end-to-end without calling it useless — and can say what it does in
-one sentence.
-
----
+- `plan.md` — the current deferral and future scope boundary
+- `docs/kalam/INTEGRATION.md` — current reader integration and removed editor
+- `src/pages/metadata_editor.rs` — unrelated book metadata editor, retained
 
 ## KAL-6 — PDF tools: annotations, ink, page surgery — browser-parity (Zen/Edge) and beyond
 
@@ -108,13 +93,12 @@ Not possible / off-character:
   the page is possible (`src/shape/` in the crate).
 
 **Architecture decision needed.** Browsers write annotations
-directly into the file. kalam today keeps PDF highlights DB-side
-(overlay, file untouched). Recommended: the Phase 6 pattern — stage
-edits DB-side for instant display and undo, then a
-review-and-**bake-into-the-file** step (`.orig` backup, same as the
-EPUB editor).
+directly into the file. Kalam keeps PDF highlights in the database and
+paints them over the page; it does not write them into the PDF. One option
+is to stage edits for review, then offer an explicit background bake with a
+pristine `.orig` backup, following the current EPUB patch workflow.
 
-**Sizing — a phase, not a step.** Suggested order:
+**Suggested implementation order:**
 
 1. Highlights + notes written into the file (selection UI and drawer
    already exist)
@@ -130,5 +114,3 @@ EPUB editor).
   (`save` / `insert_pdf` / `move_page` / `delete_pages` /
   `select_pages`), `src/shape/` (draw-onto-page), forms via
   `PdfWidget`
-- Precedent for staged edits + bake: the EPUB editor (`plan.md`
-  Phase 6, `src/epub_patches.rs`, `src/epub.rs`)

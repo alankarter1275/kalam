@@ -419,6 +419,17 @@ if [ "$ROUTE" != "home" ]; then
   fi
 fi
 
+# Route acceptance and a changed screenshot do not prove the reader opened
+# its EPUB. Treat an explicit open failure as a failed reader smoke check.
+case "$ROUTE" in
+  read-*)
+    if grep -q "open epub failed" "$OUT/kalam.log" 2>/dev/null; then
+      say "navigation: FAILED -- the reader route could not open its seeded EPUB"
+      NAV_OK=0
+    fi
+    ;;
+esac
+
 if [ "$NAV_OK" = "1" ]; then
   say "navigation: OK -- the images below are '$ROUTE'"
 else
@@ -447,12 +458,13 @@ else
 fi
 
 say ""
-say "=== did the covers actually load? ==="
-# The seeded covers are deliberately colourful; the placeholder is grey. So
-# "how many strongly-coloured pixels are there" is a machine-checkable proxy
-# for "did the covers appear", and it does not need a human to squint at a PNG.
+say "=== screenshot pixel sample ==="
+# Strong colour is a rough cover-loading proxy only for a library-grid route.
+# On reader or tasks routes the percentage is descriptive, not a pass
+# or failure signal.
+say "  low colour is a cover warning only on a seeded library-grid route."
 python3 docs/ci/check-shot.py "$OUT"/0*.png 2>&1 | tee -a "$REPORT" \
-  || say "  (cover check failed to run)"
+  || say "  (pixel sample failed to run)"
 
 say ""
 say "=== screenshot fingerprints ==="

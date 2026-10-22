@@ -1,5 +1,10 @@
 # Writing a shell
 
+> **Status:** historical API guide. Some example shells and method calls below
+> do not match the current workspace. Check the `chapbook-reader` source and
+> [`kalam-reader` API guide](../crates/kalam-reader/README.md) before using an
+> example.
+
 Chapbook is an engine, not an app. A **shell** is the part you write: it
 owns a window or a panel, it owns input, and it owns the process. Between
 those, it drives one object — `chapbook_reader::Session` — which owns

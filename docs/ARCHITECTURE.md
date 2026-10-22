@@ -1,4 +1,10 @@
-# chapbook architecture
+# Chapbook architecture notes
+
+> **Status:** design reference, not a complete implementation inventory. Some
+> producers, platforms and backends described below are not present in this
+> workspace. Check the root `Cargo.toml` and crate source before treating a
+> capability as shipped. Kalam's app architecture is in [`ARCH.md`](../ARCH.md);
+> the current reader integration is in [`docs/kalam/INTEGRATION.md`](kalam/INTEGRATION.md).
 
 Core principle: **no webview, no full HTML5 browser.** Chapbook implements the
 EPUB 3 standards — XHTML content documents and the EPUB 3 CSS profile (CSS 2.1

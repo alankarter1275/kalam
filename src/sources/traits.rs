@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 
-/// What a chapter contains.
-/// This enum is the crucial seam that unifies Manga (P9) and Fiction (P7).
+/// Content returned for a remote chapter by a future Part 2 source.
 #[derive(Debug, Clone)]
 pub enum ChapterContent {
-    /// Manga returns a list of image URLs to stream.
-    #[allow(dead_code)] // no source returns raw images yet; reserved for the Wasm API
+    /// A comic source can return image URLs for a chapter.
+    #[allow(dead_code)] // no online source implementation is registered
     Images(Vec<String>),
-    /// Fiction returns an HTML string.
-    #[allow(dead_code)] // fiction sources return HTML; consumed once the Wasm reader lands
+    /// A fiction source can return chapter HTML.
+    #[allow(dead_code)] // no online source implementation is registered
     Html(String),
 }
 
@@ -47,7 +46,7 @@ pub struct RemoteChapter {
 /// Dynamic filter type definition for Tachiyomi-style UI generation.
 #[derive(Debug, Clone)]
 pub enum FilterType {
-    #[allow(dead_code)] // filter/sort controls for source browse; wired with the Wasm UI
+    #[allow(dead_code)] // used by the future source-browse UI
     Text { placeholder: String },
     #[allow(dead_code)] // as above
     Checkbox,
@@ -80,12 +79,11 @@ pub trait Source: Send + Sync {
     fn id(&self) -> &str;
     
     /// Human-readable name of this source.
-    #[allow(dead_code)] // part of the Source contract; callers arrive with the Wasm sources
+    #[allow(dead_code)] // part of the Source interface; no source is registered yet
     fn name(&self) -> &str;
     
     /// Base URL for this source, if applicable.
-    #[allow(dead_code)]
-    // Will be utilized by Wasm plugins in Phase 4.
+    #[allow(dead_code)] // used when a source implementation is registered
     fn base_url(&self) -> &str;
 
     /// Declare available dynamic search filters.

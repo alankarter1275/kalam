@@ -1,161 +1,594 @@
-# Kalam — Roadmap
+# Kalam roadmap
 
-**This is the only roadmap.** It replaced both the old P0–P12 phase plan and
-`docs/offline-roadmap.md` on 2026-09-18. The old phase write-ups are archived
-in [`docs/archive/roadmap-phases-p0-p12.md`](./docs/archive/roadmap-phases-p0-p12.md),
-kept for their lessons, not for planning.
+**Last consolidated:** 2026-10-22
 
-Part 1 is a **fast, capable, offline** ebook reader, editor and library. Every
-online piece — plugins, scrapers, MangaDex/AO3/FicHub clients — is Part 2.
+## Contents
+
+- [How to read this roadmap](#how-to-read-this-roadmap)
+- [Product goal](#product-goal)
+- [Current app status](#current-app-status-checked-against-the-source-on-2026-10-22)
+- [Crosswalk from earlier phase names](#crosswalk-from-earlier-phase-names-to-current-status)
+- [Current decisions and boundaries](#current-decisions-and-boundaries)
+- [Current work order](#current-work-order)
+- [Major roadmap transitions](#major-roadmap-transitions)
+- [Project history](#project-history)
+  - [First custom-engine proposal](#first-custom-engine-proposal-abandoned-2026-09-08)
+  - [Original phase plan](#original-phase-plan)
+- [Later offline roadmap and decision log](#later-offline-roadmap-and-decision-log)
+
+This is the single, detailed roadmap for Kalam. It contains the current app
+status, the active work order, the earlier P0–P12 plan, and the later detailed
+offline-library roadmap and decision log.
+
+## How to read this roadmap
+
+- **The current status, phase crosswalk, and work order in the first part of
+  this file are authoritative.** They were checked against the current app and
+  issue status on 2026-10-22.
+- **The project history below preserves earlier plans and decision changes.**
+  Historical checkmarks and labels such as “done” describe what a plan claimed
+  at that date; they are not proof that the feature shipped or remains in the
+  app. The original P0–P12 plan is reconciled phase by phase below.
+- When an old phase note disagrees with the current crosswalk, use the
+  crosswalk. The code and current integration docs define what the app does.
+- Keep new accepted work and decisions in this file. Do not create another
+  parallel roadmap. `plan.md` records KAL-5's current deferral; update this
+  roadmap if the owner reopens that work or changes the active work order.
+- Repository workflow rules live in [`docs/WORKING.md`](docs/WORKING.md);
+  architecture constraints live in [`ARCH.md`](ARCH.md).
+
+## Product goal
+
+Kalam is a native Linux app for a personal library of books and comics. Its
+library, reading, annotations, and dictionaries work offline. It supports
+reflowable EPUB, PDF, and local CBZ/CBR reading, with optional network access
+for metadata lookup. Online content sources are a separate future track and
+must not be required for the offline library or readers to work.
+
+## Current app status (checked against the source on 2026-10-22)
+
+### Library and organization
+
+- Import EPUB, PDF, CBZ, and CBR books. The catalog detects duplicates by file
+  hash.
+- Search and sort the library, edit metadata, and organize books with tags,
+  shelves, reading lists, ratings, and analytics.
+- Use multiple library folders, watched folders, per-book sidecar snapshots,
+  and indexed book-text search. The current SQLite schema version is 18.
+- Optional Open Library and Google Books metadata lookup is separate from
+  online content-source support.
+
+### Reading
+
+- Read **reflowable EPUBs** with the native `kalam-reader` widget. Fixed-layout
+  EPUBs are rejected.
+- The reader loads a book's saved annotations. Its publisher TOC is rendered
+  depth-first, with spine-title fallback if no entry has a usable spine
+  target. Sidebar clicks navigate by spine index; Kalam does not call the
+  widget's `goto_toc()` API.
+- EPUB search is whole-book search. PDF reading and text search use the MuPDF
+  reader. CBZ/CBR books use the comics reader.
+- Reading progress and bookmarks are saved. Offline word lookup and Word
+  Memory support vocabulary collection and export; generic tap-a-word
+  dictionary lookup is not part of the current reader.
+- Bubbles can retain several books, but mount a primary reader and at most one
+  additional reader in split mode.
+
+### EPUB editing
+
+The EPUB content editor has been removed and deferred on 2026-10-21. Reader
+inline editing, the reader's Deep Editor/source entry point, the standalone
+editor, its picker/navigation route and the pending-edit review UI are not
+available through the reader, library or another app route. Do not continue
+editor implementation or mockups unless the owner explicitly reopens the work.
+If reopened, the content scope is HTML/XHTML and CSS edited directly, with no
+Markdown support or conversion. Book metadata editing and annotations remain.
+Legacy patch rows and sidecar fields are preserved only for compatibility;
+the current app does not create, render, apply or review them.
+
+### Current limitations
+
+- Fixed-layout EPUBs are not supported.
+- Remote browsing and downloads have no registered source implementation.
+  Existing UI or queue scaffolding does not provide working online sources.
+- The Lua plugin substrate is selected, but neither the plugin runtime nor a
+  source implementation is registered.
+- The EPUB content editor (KAL-5) was removed and deferred on 2026-10-21.
+  Its prior designs and CI results are historical, not authorization for new
+  implementation. If the owner reopens it, use HTML/XHTML and CSS directly,
+  with no Markdown support or conversion; see `plan.md`.
+
+## Crosswalk from earlier phase names to current status
+
+This table prevents older phase labels from being mistaken for current app
+behavior. The historical section below records the original scope, current
+outcome, and Git chronology; old checkbox marks are not accepted as evidence
+that a feature shipped or remains in the app.
+
+| Earlier label | Current outcome |
+|---|---|
+| **P0 — Application shell** | Shipped. The native app shell and routing remain. Downloads, Browse, and Fanfic sidebar entries are hidden because no online source is registered. |
+| **P1 — Library core** | Shipped and expanded beyond the original EPUB-only scope: the catalog now imports EPUB, PDF, CBZ, and CBR. |
+| **P2 — Text reader** | EPUB reading remains, but the planned WebKit reader was replaced by the native `kalam-reader` engine. Fixed-layout EPUBs are unsupported. WebKit-specific checklist items are historical, not a current work queue. |
+| **P2.1 — Reader chrome** | The immersive reader direction shipped, then the chrome changed with the native engine. It is not the unchanged 2026-07 WebKit screen. |
+| **P3 — Annotations and dictionary** | Core annotations, offline lookup, saved words, and exports remain. Generic tap-a-word lookup was implemented and later removed; current lookup is explicit/selection-based. |
+| **P4 — Library depth** | Shipped: shelves, reading lists, tags, history, and reading analytics are in the app. |
+| **P5 — Metadata** | Shipped: metadata editing and optional provider lookup are in the app. Bulk metadata editing arrived later under the broad P11 tools idea. |
+| **P5.5 — UI overhaul** | Partial, not a closed all-screens phase. The theme system, settings, book detail, and series float work landed; the remainder was moved to the end. A September Material 3 pass was reverted, and the later redesign remains planned. |
+| **P6.5 — Multiple libraries** | Core library selection/switching and portable sidecars shipped. Rebuilding a database from book folders and moving a library from inside the app did not. |
+| **P6 + P7 — Downloads and fiction client** | A prototype and queue scaffolding existed, but the online source implementations were retired. The current `SourceManager` is empty and the pages are hidden. Local watched-folder import is a separate later feature, not a working online download client. |
+| **P8 — Local comics** | Shipped: local CBZ/CBR import and the comics reader remain. A later comic-OCR experiment was removed on 2026-09-29. |
+| **P9 — Manga sources** | MangaDex and scraper adapters briefly existed, then were removed in the 2026-09-08 offline pivot. No manga source implementation is registered now. |
+| **P10 — PDF** | PDF reading shipped and was rebuilt on MuPDF. Text selection can save annotation records, but EPUB-style persistent page-positioned marks are only partial. |
+| **P11 — Tools** | Partial: bulk tags/metadata editing shipped. External conversion, generic EPUB polish, batch cover refresh, and Calibre `metadata.db` import did not. The later EPUB content editor was removed and deferred on 2026-10-21. |
+| **P12 — Plugins** | No app-integrated plugin runtime or online source is registered. The Wasm host scaffold was archived; the final design decision is Lua (`mlua`, Lua 5.4), not yet implemented. |
+| **A0 — Architecture and performance** | Steps 1–7 shipped: measurement, `LibraryService`, thumbnails, tasks, preloaders, windowed grid, and query-count CI budgets. Step 8 has `Source`/empty-manager scaffolding and design notes, but no plugin host or registered source. |
+| **A1 — In-app dialogs** | Shipped: in-app dialogs use the overlay helper and focus handling; portal-backed file pickers remain native. |
+| **Dictionary overhaul, steps 1–10** | Most data, lookup, vocabulary, pronunciation, priority, and history work remains. The old Phase 6 tap-to-look-up interaction was later removed, so the old “all steps complete” label is not a current feature checklist. |
+| **Later offline roadmap, phases 1–6** | Shipped work is reflected in the current app status above. The initial EPUB editor shipped and was removed/deferred on 2026-10-21; KAL-5 is not active implementation work. |
+| **Later offline roadmap, phases 7–8** | Query-count performance checks exist. Further optimization is last; the separate Material 3 redesign remains planned. |
+
+## Current decisions and boundaries
+
+- Core reading and library use must work offline. Online sources are a separate
+  track.
+- Lua (`mlua`, Lua 5.4) is the selected future plugin substrate. No plugin
+  runtime or source implementation is in the app.
+- **KAL-5 is deferred.** The EPUB content editor and its current routes/UI have
+  been removed. Do not implement or mock up a replacement unless the owner
+  explicitly reopens the work. Future scope, if reopened: HTML/XHTML and CSS
+  edited directly, with no Markdown support or conversion. Preserve unrelated
+  book metadata editing and annotations; see [`plan.md`](plan.md).
+- Performance optimization is scheduled after the heavy feature work and the
+  Material 3 redesign. Measure before choosing optimizations.
+- The earlier roadmap listed unauthorized shadow-library support, a Calibre
+  multi-app/content-server/news-fetching suite, and Windows/macOS support as
+  out of scope. None is in the active work order; revisit only by an explicit
+  decision.
+
+## Current work order
+
+1. **No active KAL-5 implementation.** The editor has been removed and the
+   work is deferred until the owner explicitly reopens it. The future scope
+   boundary is recorded in [`plan.md`](plan.md).
+
+2. **Schedule other approved feature work and the Material 3 redesign.** The
+   old phase plans are historical input, not automatic authorization to build
+   every item they listed.
+3. **Do performance optimization last**, after the heavy feature work and
+   redesign. Use measurements to choose the work; do not start speculative
+   optimization early.
+
+Online sources, downloads, Manga sources, and plugin runtime remain a separate
+future track. No specific source implementation is currently registered or
+scheduled. Keep Part 1 usable without them.
+
+## Major roadmap transitions
+
+The original P0–P12 roadmap stopped being the executable queue when the
+project's direction changed. Work on the app continued: some original items
+shipped, some plans changed, and several source/plugin phases were only
+prototyped or later retired. On 2026-09-18, a later detailed roadmap was
+started around the offline library and the native reader. It did not carry
+the complete earlier record forward. This file brings both records together
+and reconciles their phase labels against the current code above. The P0–P12
+history below keeps the
+planned scope and decision context, but replaces the old completion checklist
+with audited outcomes and a date-ordered implementation/retirement timeline.
+
+| Period | Roadmap state |
+|---|---|
+| **Before 2026-09-08** | An initial six-step, from-scratch `kalam-engine` plan used `lol_html`, `cosmic-text`, and `tiny-skia`. It was abandoned before completion in favor of integrating Chapbook; its purpose and the decision are summarized below and detailed in `docs/kalam/PLAN.md` and `docs/kalam/RESEARCH.md`. |
+| **2026-07 to 2026-09-08** | The original P0–P12 plan was the active phase map. The phase-by-phase record below preserves its useful scope and decisions, and reconciles each status against current code and Git history instead of carrying forward old checkboxes as proof. |
+| **2026-09-18 onward** | The project moved to a detailed offline-library roadmap and a native Chapbook-based reading engine. The new plan tracked what actually shipped and kept online sources separate. Its detailed phase plan and decision log are retained below. |
+| **2026-10-21** | Current app behavior, the phase crosswalk, and the approved work order were checked against the repository and issue status. |
+| **2026-10-21** | KAL-5 was superseded by the owner's direction to remove and defer EPUB content editing. The current app status and work order above record that decision; earlier editor designs remain historical. |
+
+## Working references
+
+- [`README.md`](README.md) — installation and current user-facing features.
+- [`ARCH.md`](ARCH.md) — architecture rules and system boundaries.
+- [`docs/WORKING.md`](docs/WORKING.md) — repository workflow and engineering
+  guardrails.
+- [`docs/kalam/INTEGRATION.md`](docs/kalam/INTEGRATION.md) — current EPUB-reader
+  integration.
+- [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md) — current
+  manual smoke and regression checks.
+- [`docs/ci/README.md`](docs/ci/README.md) — CI checks and report locations.
+- [`plan.md`](plan.md) — KAL-5 deferral and future scope boundary.
+- [`docs/conversation.md`](docs/conversation.md) and
+  [`docs/conversation-part-2.md`](docs/conversation-part-2.md) — design
+  discussion records, with their final decisions called out in this roadmap.
+
+## Project history
+
+The detailed records below are part of this file so there is one roadmap to
+read. They preserve the decisions, planned work, shipped milestones, and
+corrections made along the way. Read them as dated records; use the current
+status and work order above for today's implementation truth.
+
+### First custom-engine proposal (abandoned 2026-09-08)
+
+Before Kalam adopted the local Chapbook crates, a standalone `kalam-engine`
+was planned from scratch. Its six proposed steps were:
+
+1. Define engine/document/page/locator types, the layered locator, and EPUB
+   container parsing.
+2. Normalize EPUB content with `lol_html` and turn it into semantic text.
+3. Lay out text and shape lines with `cosmic-text`.
+4. Paint pages with `tiny-skia` in a GTK4 demo.
+5. Add text selection, hit-testing, and dictionary hooks.
+6. Integrate the engine into Kalam and replace the WebKit reader.
+
+Only a small placeholder scaffold was written. The from-scratch approach was
+abandoned on 2026-09-08 in favor of forking and trimming Chapbook. That is why
+the old six-phase checklist is not a current implementation plan. The full
+selection and integration reasoning remains in
+[`docs/kalam/PLAN.md`](docs/kalam/PLAN.md) and
+[`docs/kalam/RESEARCH.md`](docs/kalam/RESEARCH.md).
+
+### Original phase plan
+
+**Recorded period:** 2026-07 through 2026-09-08. This section replaces the
+old P0–P12 checklist with a phase-by-phase history: what was planned, what is
+in the app now, and what was replaced, retired, or never shipped. The old
+checkmarks were claims in a plan at the time, not evidence of present-day
+behavior. Outcomes below were checked against the current tree on 2026-10-21;
+short hashes point to the commits that establish the chronology.
+
+**Status terms:**
+
+- **Shipped/current** — the capability is present in the active app.
+- **Partial** — some of the planned capability is present, but the acceptance
+  scope was not completed or was later narrowed.
+- **Replaced** — a later implementation took over; the earlier implementation
+  or design is not the one in the current app.
+- **Retired** — code or a working prototype existed, then was removed.
+- **Not shipped** — there is no active implementation; design notes or
+  scaffolding do not count as a feature.
+
+#### P0 — Application shell
+
+**Planned:** native window, sidebar, routed pages, back navigation, settings,
+and a real CI/smoke-test path.
+
+**Outcome — shipped/current.** The GTK shell and route stack remain in
+`src/app.rs`. The original sidebar also advertised Downloads, Browse, and
+Fanfic; those entries are deliberately absent from `NavItem::ALL` today
+because no online source is registered. Their route/page scaffolding is not a
+working feature.
+
+**Git history:** first shell and roadmap landed 2026-07-24 (`993e6339`).
+
+#### P1 — Library core
+
+**Planned:** a local SQLite catalog, EPUB import and metadata/cover extraction,
+cover-card library, search/sort, and book detail surfaces.
+
+**Outcome — shipped and expanded.** The catalog and import workflow remain.
+The supported local formats grew to EPUB, PDF, CBZ, and CBR; current library
+views also include later organization and search features. The original fixed
+application data path was superseded by selectable libraries in P6.5.
+
+**Git history:** P1 landed 2026-07-25 (`09e49780`).
+
+#### P2 — Text reader (EPUB)
+
+**Planned:** WebKitGTK chapter-by-chapter EPUB reading, TOC, themes, font
+controls, saved progress, keyboard navigation, and an immersive reader shell.
+The old plan also listed near-end auto-advance, multi-chapter DOM buffering,
+and live CSS updates as incomplete WebKit work.
+
+**Outcome — core reading shipped; engine replaced.** EPUB reading, navigation,
+and saved progress remain, but the active reader is the native
+[`kalam-reader`](crates/kalam-reader/) engine, not WebKit. Fixed-layout EPUBs
+are not supported. Near-end auto-advance was explicitly unfinished in the
+WebKit plan; the native engine instead lays chapters into a continuous strip
+and keeps explicit chapter navigation. Multi-chapter DOM buffering, JS
+bridges, and CSS-variable updates were WebKit-specific; the native engine
+superseded those implementation tasks rather than completing them one by one.
+
+**Git history:** the WebKit reader landed 2026-07-26 (`91e11e02`). WebKit was
+removed when the native engine took over on 2026-09-10 (`43eafba1`).
+
+#### P2.1 — Reader chrome restyle
+
+**Planned:** a “tablet book” surface: close/crumb, floating bottom controls,
+sepia-friendly colors, and no browser-like toolbar.
+
+**Outcome — direction retained, original screen replaced.** The immersive
+chrome and reader-first visual intent shipped with the WebKit implementation.
+The native reader later received its own chrome and controls, so the exact
+P2.1 screen is not the current implementation.
+
+**Git history:** decision and first restyle, 2026-07-26, alongside P2.
+
+#### P3 — Annotations and dictionary
+
+**Planned:** select text to highlight or save a quote, offline dictionary
+lookup, persisted marks, and saved words/quotes.
+
+**Outcome — core shipped, interactions evolved.** Annotations, saved quotes,
+offline dictionaries, saved words, and export workflows remain. The old
+WebKit-specific reinjection and popup implementation were subsequently
+reworked around the native reader. Generic tap-a-word lookup was implemented
+in the dictionary interaction track, then removed on 2026-09-18; the current
+reader does not define words on an arbitrary single tap. Use the current app
+status above for supported lookup behavior.
+
+**Git history:** P3 landed 2026-07-26 (`d5ca2ba1`). The tap-to-look-up path was
+removed on 2026-09-18 (`6cc7dd6c`); later reader and dictionary passes changed
+the popup again.
+
+##### Dictionary-overhaul track (2026-08-31 onward)
+
+The separate dictionary plan numbered its own phases 1–10 (plus 5.5 and 5.6),
+which are not the global P5/P6/P8/P9 roadmap numbers. The September 2 commit
+`dc3ea12f` records the overhaul as complete, but Phase 6's tap-a-word behavior
+was later removed. The surviving work includes indexed lookup, WordNet-based
+lemmatization, phrase decomposition, merged dictionary results, POS/sense
+presentation, offline pronunciation data, saved-word review/export, dictionary
+priority controls, and lookup history. The old “all done” checkbox therefore
+cannot be read as “every interaction is still present.”
+
+#### P4 — Library depth
+
+**Planned:** manual and smart shelves, reading lists, history, reading-time
+tracking, tag browsing, and analytics.
+
+**Outcome — shipped/current.** Shelves, reading lists, tags, history, sessions,
+and analytics are in the app. Several design constraints from the original
+phase remain: smart-shelf rules are flat rather than nested, an empty smart
+shelf matches nothing, and deleting a shelf never deletes its books.
+
+**Git history:** schema and UI landed 2026-07-27 (`bc21221e`, `a3835682`).
+
+#### P5 — Metadata
+
+**Planned:** edit title/author/series/tags/description, replace covers, and
+look up candidate metadata without overwriting good local data.
+
+**Outcome — shipped/current.** Metadata editing and cover replacement remain;
+Open Library and Google Books are optional providers. The original safe-import
+decision remains: provider results are staged for review, and sparse results
+do not blank richer local metadata. Bulk metadata editing arrived later as a
+separate P11-related tool.
+
+**Git history:** the original metadata editor and Open Library lookup landed
+2026-07-27 (`e98c4a15`); Google Books was added later.
+
+#### P5.5 — UI overhaul
+
+**Planned:** a mockup-first, one-window-at-a-time visual pass, initially
+covering app chrome, themes, settings, book detail, Home, Library, reader
+chrome, and dialogs. On 2026-09-04 the remaining redesign was moved to the end
+so it would not be repeated while feature screens were still changing.
+
+**Outcome — partial; not a completed all-screens phase.** The color/theme
+system, sidebar, redesigned Settings, book detail, and series float were
+implemented in stages. Similar-from-your-shelf and the later all-screen pass
+did not ship as part of a closed P5.5 milestone. A Material 3/Libadwaita pass
+was attempted and refined on 2026-09-18, then reverted the same day because it
+left broken GTK/CSS behavior (`ff98742e`, `e15500e1`, `dea5e16d`). A distinct
+Material 3 redesign remains in the later offline roadmap; the current work
+order above takes precedence.
+
+**Git history:** Settings v2 landed 2026-07-28 (`bb84bc14`), the P5.5 Settings
+and book-detail work continued 2026-08-26–29 (`cbdda9e6`, `019f3e21`), and the
+requested “last” ordering was recorded 2026-09-04 (`3a5a3ace`).
+
+#### P6.5 — Multiple libraries
+
+**Planned:** let people choose separate library folders, switch between them,
+keep machine-level preferences and dictionaries shared, and make a copied
+library portable. Shelves remain views within one library, not separate
+libraries.
+
+**Outcome — core shipped; two proposed extras were not implemented.** Library
+registration, switching, shared app preferences/dictionaries, and per-book
+`kalam.json` backup sidecars are present. The database remains authoritative;
+sidecars are backups, not a live import source. A rebuild-database-from-folders
+command and an in-app library-folder move were listed as possible follow-ups
+but are not implemented or scheduled. Simultaneous multi-machine writes/sync
+were out of scope.
+
+**Git history:** registry and switching landed 2026-09-04; sidecars and the
+completion record followed on 2026-09-05 (`ac8968ea`, `3488b792`, `f629fe17`).
+
+#### P8 — Local comics
+
+**Planned:** import CBZ/CBR into the local catalog and read them in a
+memory-conscious image pager with LTR/RTL, webtoon mode, fit controls, and
+per-book progress.
+
+**Outcome — shipped/current.** Local comics import, the Comics Hub, and a
+Moku-style reader remain. The reader later gained series/chapter organization,
+fit modes, and remaster tools. Bubble-aware comic OCR was a later experiment,
+not a surviving P8 capability: it was added in September and removed entirely
+on 2026-09-29. Scanned-PDF OCR is separate and remains.
+
+**Git history:** CBZ/CBR reader/import shipped 2026-09-05 (`365d4c8a`,
+`e0f3bc14`, `d23617b7`); comic OCR removal is `0ea9cc83`.
+
+#### P9 — Manga platform
+
+**Planned:** one Tachiyomi-shaped source-adapter API for search, details,
+chapters, and page fetching; MangaDex first, with Komga/Kavita/OPDS and
+permitted scraped sources as possible later adapters. It was an adapter
+concept, not a Kotlin-extension bridge or a Suwayomi server rewrite; downloads
+would open in the local comics reader.
+
+**Outcome — prototype retired; no current online manga source.** MangaDex and
+several scraper adapters were implemented in Rust, but the 2026-09-08 offline
+pivot removed the source implementations. `Source` traits and browse/detail
+scaffolding remain, but `SourceManager::new()` has an empty source list. The
+planned Komga/Kavita/OPDS client set was not shipped. Current local comics do
+not depend on remote sources.
+
+**Git history:** initial remote architecture and MangaDex landed 2026-09-05
+(`32f7b488`, followed by `926f925a` and `a489ae95`); source adapters were
+removed in the 2026-09-08 pivot (`685d539b`, merged to main as `68575509`).
+
+#### P6 + P7 — Downloads hub and fiction client
+
+**Why they were combined:** on 2026-09-04 the user asked to build the queue
+with its real caller rather than design a downloads page against imagined
+jobs. P7 was also moved behind the comics work, and P5.5 was moved last.
+
+**Planned P6:** one queue for queued/active/done/failed jobs, a Downloads page,
+folder-watch import, and hooks for AO3/comics downloads.
+
+**Planned P7:** a read-only fiction *client*, not just a downloader: browse
+categories/fandoms, source-native filters and sort orders, author pages, online
+per-chapter reading, explicit Save vs Download tiers, followed-work updates,
+and later optional accounts. The planned screens were native and structured,
+not a general-purpose website browser; source-specific WebKit fetching was
+considered for FFN. The proposed order was AO3 → Royal Road → Literotica →
+FanFiction.net. AO3 would provide its own EPUB; Royal Road and
+Literotica would require parsing and local EPUB assembly; FFN browsing and
+FicHub downloading were treated as separate problems. Webnovel was dropped
+because the useful catalog was paywalled. Writing actions against source sites
+were out of scope; account support was last, with no stored passwords. These
+were design decisions, not evidence of completed features. Save/Download
+semantics and the login flow were still open.
+
+**Outcome — partial scaffolding; online client retired.** `src/downloads.rs`
+and `src/pages/downloads.rs` still contain queue/worker/UI code, and browse
+and remote-detail pages remain. However, the current source manager registers
+nothing, so there is no working online browse, reader, download, follow, or
+update workflow; the sidebar hides these pages. The AO3/source prototype was
+developed on the P7 branch, but the source adapters were deleted in the
+2026-09-08 offline pivot before the branch merge completed. The folder-watch
+feature that exists today is local auto-import from the later offline roadmap,
+not an online download queue. No remote author/account workflow shipped.
+
+**Git history:** source and online-reader work accumulated 2026-09-05–07
+(`32f7b488`, `7a7bcc36`, `32514604`, `457037ae`); the offline-first change
+removed the adapter implementations on 2026-09-08 (`685d539b`,
+`68575509`). Current source registration is in `src/sources/mod.rs` and
+`src/models.rs`.
+
+#### P10 — PDF
+
+**Planned:** PDF reading in the text-reader family, page or continuous modes,
+lightweight highlights/underlines where possible, and the same local library
+entry model.
+
+**Outcome — reader shipped; marks partial.** PDF import and reading remain.
+The first viewer used a `lopdf`-based rendering/crop approach; it was rebuilt
+around MuPDF with unified reader chrome on 2026-09-23. Text can be selected,
+and the reader can save highlight/quote records to the shared annotations
+table, but those PDF records carry a page index rather than an EPUB-style text
+locator and are not re-rendered as persistent page overlays. Do not describe
+full EPUB-equivalent PDF annotation anchoring as shipped. Scanned-page OCR and
+text search were added in the later offline roadmap.
+
+**Git history:** first PDF viewer 2026-09-18 (`834fdaa6`); MuPDF rebuild
+2026-09-23 (`7b250d0f`); scanned-PDF OCR followed 2026-09-26 (`14ca5223`).
+
+#### P11 — Tools
+
+**Planned:** optional external conversion (`ebook-convert`/`pandoc`), EPUB
+cleanup/polish, batch metadata and cover refresh, and a one-time Calibre
+`metadata.db` import.
+
+**Outcome — partial, with a different tool set.** Tag management and bulk
+metadata editing shipped on 2026-09-18 (`33bcc46f`). The current source has no
+external converter, generic “strip junk CSS” polish tool, batch cover-refresh
+job, or Calibre database importer. The EPUB editor that arrived in the later
+roadmap is a separate guarded-patch workflow; it is not completion of the
+original P11 list. P11 was never closed as a phase.
+
+#### P12 — Plugin system
+
+**Planned:** let frequently changing online sources be extended without
+rebuilding the app, while keeping stable APIs and core behavior in Rust. The
+September design initially split stable API-backed sources (built-in Rust)
+from volatile scrapers (Lua), but the old section's heading says Wasm while
+its body and the 2026-09-03 notes also discuss Lua; the substrate changed
+several times during planning.
+
+**Outcome — design only; no runtime.** On 2026-09-08 the offline pivot added a
+Wasm host scaffold, WIT contract, and a separate AO3 guest workspace. The
+host was explicitly unused, and the AO3 guest is only a stub (empty search;
+details/chapters return “not implemented”). The Rust source adapters were
+removed at the same time. The host module was later moved out of `src/` into
+`docs/archive/plugins-mod.rs`; the `plugins/` and `wit/` files are historical
+experiments, not sources registered by the app. The plugin system was set
+aside for Part 2 on 2026-09-18.
+
+On 2026-10-10 the user chose one Lua system (`mlua`, Lua 5.4), superseding the
+September Wasm decision. The final design is “Lua points, Rust carries” and
+makes Wasm an escape hatch for untrusted or compute-heavy plugins. Neither
+`mlua` nor an app-integrated Wasm runtime is in the current app, and no source
+is registered. The TOML scraper file is a historical artifact, not an active
+plugin format. See [`docs/conversation-part-2.md`](docs/conversation-part-2.md)
+for the final design discussion.
+
+#### A0 — Architecture and performance track
+
+**Planned:** measure first; add a `LibraryService` seam; persist/backfill
+thumbnails; move long tasks off the UI thread; preload covers/chapters;
+virtualize large grids if measurement justified it; gate query counts in CI;
+design a source/plugin host seam.
+
+**Outcome — steps 1–7 shipped; step 8 is only a partial seam.** The service,
+task manager, thumbnails, preloaders, windowed grid, and query-count budgets
+are in the app. The grid was first called done from an invalid/small test path,
+then reopened and measured at 2,000 books: approximately 502 MB → 247 MB and
+434 ms → 12 ms. Those are the later measured figures, not the earlier
+assumption. `Source` traits and an empty manager exist, but the plugin host and
+registered-source integration never shipped. The WebView-pool optimization
+was superseded when WebKit itself was removed in P2's engine replacement.
+
+**Git history:** A0 work ran 2026-09-02–04 (`87491f98`, `0d8d3323`,
+`d65facfc`, `eea7c752`, `cdf82b97`, `623b2946`); the seam design was recorded
+2026-09-03 (`a0aabdd9`). Later roadmap ordering puts additional optimization
+last, after feature work and the Material 3 redesign.
+
+#### A1 — In-app dialogs
+
+**Planned:** move application-owned modal windows into the main window and
+make dismissal, focus, and unsaved-input behavior explicit.
+
+**Outcome — shipped/current.** The in-app dialog helper and focus handling
+remain. Exit behavior reflects dialog purpose (for example, named Cancel/Save
+for forms rather than a generic close action). Desktop portal file pickers
+remain native by design; A1 did not replace them with an in-app file browser.
+
+**Git history:** remaining dialogs moved into the app on 2026-09-03
+(`0df5dda1`), followed by focus and consistency fixes.
+
+#### Chronology of implementation and change
+
+The phase entries above are organized by the old plan labels. This compact
+timeline puts the implementation and retirement events in Git order so a
+historical “done” claim is not mistaken for the state that survived.
+
+| Date | Git event and actual consequence |
+|---|---|
+| **2026-07-24–27** | P0–P5 landed in order: shell (`993e6339`), EPUB library (`09e49780`), WebKit reader (`91e11e02`), annotations/dictionary (`d5ca2ba1`), library depth (`bc21221e`, `a3835682`), and metadata (`e98c4a15`). |
+| **2026-07-28–08-29** | P5.5 delivered theme/settings/book-detail pieces (`bb84bc14`, `cbdda9e6`, `019f3e21`); this was a partial visual pass, not closure of the later all-screen redesign. |
+| **2026-08-31–09-03** | Dictionary overhaul and A0/A1 work were added (`dc3ea12f`, `87491f98`, `0df5dda1`). Measurement-led grid windowing and query-count budgets followed. |
+| **2026-09-04–05** | P7 moved behind comics, P6/P7 were paired, and P5.5 moved last (`e4245e31`, `3a5a3ace`). Multi-library switching and sidecars shipped (`ac8968ea`, `3488b792`, `f629fe17`); local CBZ/CBR comics shipped (`365d4c8a`, `e0f3bc14`, `d23617b7`). |
+| **2026-09-05–07** | MangaDex/scraper adapters and remote browse/download/reader flows were implemented (`32f7b488`, `926f925a`, `a489ae95`, `7a7bcc36`); an AO3/filter prototype was developed (`32514604`, `457037ae`). These were temporary source-client implementations, not current behavior. |
+| **2026-09-08** | The offline-library pivot removed the in-app source adapters and added unused Wasm scaffolding (`685d539b`); the P7 branch merge kept the retired-source state (`68575509`). |
+| **2026-09-10** | The WebKit EPUB reader was replaced by the native reader widget (`43eafba1`). |
+| **2026-09-18** | Bulk tags/metadata editing and the first PDF viewer landed (`33bcc46f`, `834fdaa6`); generic tap lookup was removed (`6cc7dd6c`); a Material 3 pass was attempted and reverted the same day (`ff98742e`, `e15500e1`, `dea5e16d`). The plugin system was set aside for Part 2 (`1920fa33`). |
+| **2026-09-23–26** | The PDF reader was rebuilt on MuPDF (`7b250d0f`), followed by scanned-PDF OCR (`14ca5223`). |
+| **2026-09-27–29** | Comic OCR was experimented with and then removed entirely by owner decision (`37d6f87f`, `c2d88e53`, `0ea9cc83`). PDF OCR remains separate. |
+| **2026-10-10** | The user selected Lua as the single future plugin substrate (`f8da1f26`); the unused Wasm host was moved out of the app source tree in the same consolidation (`b36aa39e`). |
+
+No P0–P12 label creates an active commitment by itself. For work that may
+start now, use the current status and work order at the top of this roadmap.
 
 ---
 
-## ⚠️ Read this first — every chat, every agent
+### Later offline roadmap and decision log
 
-If you are an AI agent starting work on this repo, read ALL of this before
-touching code:
+**Recorded period:** 2026-09-18 through 2026-10-10. This is the detailed offline-library plan and execution record used after the original phase map. Its status snapshots and next-step labels describe those dates; the current status and work order at the top of this file take precedence.
 
-1. **`README.md`** — what the app is, current status table.
-2. **This file** — the plan, the order, what is really shipped.
-3. **`docs/conversation.md`** — the living design log: every accepted and
-   rejected idea, with reasons. **Do not re-litigate settled decisions** — if
-   you think one is wrong, raise it in chat first.
-4. **[`docs/pitfalls.md`](./docs/pitfalls.md)** — mistakes already made here and
-   how they were fixed. Every entry cost a CI cycle or shipped a bug once
-   already. Skim it before you write code, and **read the relevant section in
-   full** before you touch GTK sizing, scrollbars, keyboard shortcuts, error
-   paths, or anything that deletes a call site.
-5. **[`docs/kalam/RESTRICTIONS.md`](./docs/kalam/RESTRICTIONS.md)** — the live
-   guardrails for the reading engine.
-
-**Hard rules for every change you make:**
-
-- **Write and speak in plain, simple English.** Standing instruction from the
-  owner, given 2026-09-04: *"I can't understand anything you said. I need you to
-  use easy and simple language to explain things."* It applies to chat replies
-  first, and to docs and comments too.
-
-  What that means in practice:
-
-  - **Explain the thing before naming it.** Not "the `PENDING_FRAMES` weak-ref
-    map breaks under recycling" — instead "each cover picture remembers which
-    book it belongs to. If we start reusing pictures for different books, a
-    slow-loading cover can land on the wrong book."
-  - **No unexplained jargon.** *Virtualization*, *refcount*, *GObject*, *N+1*,
-    *LRU* mean nothing on their own. Say it in ordinary words, or give a
-    one-line explanation the first time.
-  - **Short sentences. One idea each.** Long sentences with three clauses and
-    two dashes are the main problem, not the vocabulary.
-  - **Lead with the answer**, then the reasoning.
-  - **Numbers need meaning.** Not "507 MB peak RSS at 2,000 books" — "it uses
-    507 MB of memory, which is a lot on a 4 GB machine."
-  - **When asking the owner to choose, make the options concrete**: what
-    changes on screen, what could break, how long it takes.
-
-  Being simple is not the same as leaving things out. Keep the honesty, the
-  caveats and the numbers — just say them in words that do not need a glossary.
-  This rule is about *communication only*. It does not lower the bar for the
-  engineering, the testing, or the docs.
-
-- **All work follows this roadmap, and every change is recorded — even when
-  the owner does not ask for the record.** Standing instruction, 2026-09-30.
-  Nothing is built, removed or changed outside this file's items: a new want
-  or a decision made mid-conversation gets a number and a place *before* it
-  is implemented, and a changelog row in the same commit — the record is not
-  optional and does not wait to be requested. After recording, tell the
-  owner plainly that it was recorded, so a decision made in chat can never
-  silently evaporate. This rule exists because it has gone wrong: status was
-  quoted from memory of the *old, archived* plan, and the owner had to
-  demand a truth pass (see `docs/pitfalls.md` §27). Quoting this file from
-  memory is the same mistake.
-- **Every runtime warning the owner reports and every agent mistake goes
-  into `docs/pitfalls.md` — every instance, no exceptions — and the
-  pitfalls file is re-read at the start of each phase.** (Owner directive,
-  2026-10-01; see pitfalls §29.)
-- **No emoji, ever — in UI strings, comments, or docs.** Plain text, or
-  symbolic monochrome SVG icons where a glyph is truly needed —
-  **professional and restrained only**, no novelty icons (owner: "no funky
-  icons like a flame — the app should look professional"). Color emoji in
-  GTK labels send Pango to Noto Color Emoji, which cairo cannot scale on
-  the owner's system (pitfalls §29). Nerd Fonts were considered and
-  declined: private-use codepoints, extra megabytes, tofu boxes when the
-  font is missing.
-- **Every piece of work follows plan.md: planning → implementation plan →
-  implementation.** The plan is written and refined at the repo root in
-  `plan.md` before any code: research with file/line evidence, pitfalls
-  consulted, test plan, and every open question asked of the owner DURING
-  planning — never mid-implementation. If implementation proves the plan
-  wrong, stop, update the plan, ask again. When work moves on, the outcome
-  is recorded here (item + changelog) and in pitfalls first — then
-  plan.md's content is deleted and replaced by the next plan. (Owner
-  directive, 2026-10-01.)
-- **Keep the docs current — in the same commit as the code.** A change that
-  leaves this file stale is **not done**.
-- **Commit work regularly after major changes or completed batches.** Standing
-  instruction, 2026-09-05. Do not leave large diffs accumulating.
-- **When you get something wrong, write it down.** If a mistake cost a CI
-  failure, produced a user-visible bug, or was only caught by re-reading an
-  existing warning, add it to `docs/pitfalls.md` in the same commit as the fix:
-  what went wrong, *why*, and what to do instead.
-- **Never skip the changelog.** This file ends with a changelog table — append a
-  dated row for every phase shipped or decision locked. It is how a new chat
-  catches up in one glance.
-- **CI is the gate.** There is no local Rust toolchain in the sandbox: push and
-  watch GitHub Actions (`gh run list`). Never force-push. The agent edits
-  `.github/workflows/ci.yml` directly and pushes it — the owner granted the
-  GitHub App the `workflows` permission on 2026-09-18. See `docs/ci/README.md`.
-- **You cannot see the screen.** The owner is the QA loop for anything visual:
-  ask for error text (not screenshots — you cannot view them), and have them run
-  the app on Arch at phase boundaries.
-- **Branch:** each Arena session is pinned to its own `arena/<id>-kalam` branch.
-  Work only on the branch the current session names, and push only to it. Do not
-  copy the branch id out of this file — it changes every session.
-- **A status claim needs evidence.** See the next section. A ✅ with nothing
-  behind it is how this project spent a year believing the downloads hub was
-  finished.
-
----
-
-## Working agreement
-
-| Who | Does |
-|-----|------|
-| **Agent** | Implements the phase, pushes code and workflow files, keeps CI green, updates this doc |
-| **CI (GitHub Actions)** | `fmt` · `clippy` · `test` · `cargo build` on every push, plus a non-blocking GUI smoke test |
-| **You** | (1) Paste failed CI step logs only when `ci-logs/` does not have them. (2) Run the app on Arch **once per completed phase** for UX feedback |
-
-You do **not** need to build between small commits. Only at phase boundaries.
-
-### Definition of Done (every phase)
-
-1. CI green on the branch
-2. Feature list for that phase implemented
-3. README / ARCH / **this file** updated if behaviour or UX targets changed
-4. You ran it on Arch (or explicitly deferred) and listed change requests
-
-### Parked for later discussion
-
-Raised, deliberately not decided, and **not** dropped.
-
-- ~~**Multiple books/readers open at once**~~ **Resolved — it is item 2.13,
-  shipped 2026-09-28.**
-  Raised 2026-09-04 as "discuss before designing", then discussed and designed
-  on 2026-09-19: the bubbles. Design and recorded decisions are in
-  [Bubbles](#bubbles--multiple-books-open-at-once).
-
-### Non-goals (whole project)
-
-- Z-Library / unauthorized shadow libraries
-- Calibre multi-app suite, content server, fetch news
-- Windows / macOS
-- **Tap-a-word-to-open-dictionary.** Shipped once under WebKit, removed
-  deliberately on 2026-09-18. Look a word up by selecting it. Do not
-  reintroduce it — `ReaderView::connect_word` and `TappedWord` were deleted
-  from the engine so it cannot come back by accident.
-
----
-
-## North star
+#### North star
 
 > One native Linux app: a fast personal library for a few thousand books,
 > excellent EPUB reading, annotation and editing, honest metadata — no bloat,
@@ -166,9 +599,11 @@ native engine — no WebKit) · **MuPDF** (`mupdf = { version = "0.8", default-f
 
 ---
 
-## What is really shipped
+#### Shipped status audited on 2026-09-30
 
-Verified against the code on 2026-09-30, not copied from a status mark. Every
+Verified against the code on 2026-09-30, not copied from a status mark. This
+is a historical snapshot; later editor work and current status are recorded
+below and at the top of this roadmap. Every
 line cites the evidence it rests on. **When a claim has no evidence to cite,
 that is the finding** — which is exactly how the downloads hub stayed "done" for
 a year. The 2026-09-30 pass corrected a table that had last been verified
@@ -199,7 +634,7 @@ a year. The 2026-09-30 pass corrected a table that had last been verified
 | **PDF reader & engine** | **shipped** | Rebuilt from scratch with MuPDF (`mupdf = { version = "0.8", default-features = false, features = ["base14-fonts"] }`). Crisp 8.7ms rasterization, unified EPUB-matching chrome (floating back chip, bottom pill with page jump and zoom, autohiding controls, slide-in TOC sidebar), continuous vertical scroll and paged modes, bounded memory cache (<80 MB). Replaced heuristic `lopdf` viewer. |
 | **Wasm plugins** | **NOT shipped** | `// mod plugins;` is commented out in `src/main.rs`; `wasmtime` is in neither `Cargo.toml` nor `Cargo.lock`. **Part 2.** |
 | Full-text library search | shipped | `book_content_fts` FTS5 table (`src/db.rs` schema v15), `src/content_index.rs`, background indexing + Reindex control; changelog 2026-09-29 |
-| EPUB editor | shipped 2026-10-09; **overhaul pending (KAL-5)** | Phase 6: `src/pages/epub_editor.rs` + `editor_picker.rs` + `edits_panel.rs`, routed as `PageSlot::Editor`/`EditorPicker` (`src/app.rs:145`); design settled 2026-10-08; green run `37901417687`. The owner's verdict on first use — the picker "horrendous", the editor "completely useless" — is filed as **KAL-5 (EPUB editor overhaul)** in the Linear Backlog; it starts from the owner's complaints, in words, when they are ready. Corrected 2026-10-10 from "not started", which predated the work (this table's last full verification was 2026-09-30). |
+| EPUB content editor | shipped 2026-10-09; **removed and deferred 2026-10-21** | Reader inline edit, Deep Editor/source entry, standalone editor, picker/navigation route and pending-edits review UI are removed. Historical designs and CI results do not authorize further work. Legacy patch data is preserved for compatibility only. Future scope if reopened: direct HTML/XHTML and CSS editing, no Markdown or conversion; see `plan.md`. |
 | OCR page cache (scanned PDFs) | shipped | `page_ocr_cache` table, schema v16, `src/db.rs`; loaded in `ensure_page_text`, saved in the `PageOcrResult` handler, `src/pages/pdf_reader.rs` |
 | Readable book folders | shipped | `book_folder_name` + folder index in `src/paths.rs`, rename pass in `src/folders.rs`, import wiring in `src/epub.rs`, edit hook in `src/db/metadata.rs` |
 | In-reader search (EPUB & PDF) | shipped | Phase 4 Step 1: Ctrl+F bar, live match count, "Matches at a Glance" popover — `src/pages/reader/mod.rs:2918`, `src/pages/pdf_reader.rs:4188`; field-tested in checklist Round 8 |
@@ -220,7 +655,7 @@ tested. (Historical: 884 = `36628490914`, 881 = `36613679329`, 750 =
 
 ---
 
-## Part 1 — the offline library
+#### Part 1 — the offline library
 
 Part 1 is split into **eight phases**. Unlike the old plan, these *are* a queue:
 work top to bottom, and take the next unfinished item from the phase you are in.
@@ -257,7 +692,7 @@ Three reasons:
 Each phase below ends with **"Done when"**. A phase is not finished when the
 code is written; it is finished when that line is true.
 
-### Every work item has a permanent number
+##### Every work item has a permanent number
 
 Items are numbered `1.1`, `2.4`, and so on. **The numbers never change.**
 Finished items keep their number and are struck through; new items are
@@ -282,7 +717,7 @@ row for that commit so the record still accounts for it.
 
 ---
 
-### Phase 1 — Foundations
+##### Phase 1 — Foundations
 
 > Mostly invisible. Everything after this sits on it.
 
@@ -1121,7 +1556,7 @@ status table survives a line-by-line check against the code.
 
 ---
 
-### Phase 2 — Reading quality
+##### Phase 2 — Reading quality
 
 > Visible. The reader is the part you touch most, and it is where the engine
 > swap did the most damage.
@@ -1574,7 +2009,7 @@ jump back from the TOC — needs no workaround.
 
 ---
 
-### Phase 3 — Ingestion
+##### Phase 3 — Ingestion
 
 > Mostly invisible, but the result is visible: fewer broken books.
 
@@ -1604,7 +2039,7 @@ touching the interface.
 
 ---
 
-### Phase 4 — Search
+##### Phase 4 — Search
 
 > The largest single new subsystem in Part 1.
 
@@ -1649,7 +2084,7 @@ does not block the interface.
 
 ---
 
-### Phase 5 — Library management
+##### Phase 5 — Library management
 
 > Visible. Browsing and organising.
 
@@ -1684,9 +2119,13 @@ leaving the app or editing files by hand.
 
 ---
 
-### Phase 6 — The EPUB editor
+##### Phase 6 — The EPUB editor (historical; removed and deferred 2026-10-21)
 
-> The biggest item in Part 1, and the reason everything above comes first.
+> **Superseded.** The following section records the earlier plan only. The
+> current app has no EPUB content editor and no further design/implementation
+> is authorized unless the owner reopens the work. If reopened, the scope is
+> HTML/XHTML and CSS edited directly; Markdown support and conversion are out
+> of scope.
 
 **Goal:** edit EPUBs without another application.
 
@@ -1756,7 +2195,7 @@ contents, and produce a clean `.epub` that opens correctly in another reader.
 
 ---
 
-### Phase 7 — Performance budgets
+##### Phase 7 — Performance budgets
 
 **Goal:** keep it fast as the app grows.
 
@@ -1844,7 +2283,7 @@ per card. See `ci-logs/scale-2000-comparison.txt`.
 
 ---
 
-### Phase 8 — Material 3 redesign
+##### Phase 8 — Material 3 redesign
 
 **Deliberately last.** Every phase above adds screens, so restyling now means
 restyling again later. Home, Library, Details, Reader, Settings and the author
@@ -1852,7 +2291,7 @@ hub, once.
 
 ---
 
-## Bubbles — multiple books open at once
+#### Bubbles — multiple books open at once
 
 **A vital part of Part 1.** Engine work in Phase 1, the bubbles themselves in
 Phase 2. This section is the design, recorded so it does not evaporate the way
@@ -1863,7 +2302,7 @@ The only earlier record of this was one line in `docs/conversation.md`:
 `gtk::Overlay` floating chat head outside reader."* Half of that is dead — there
 is no WebKit process any more. The other half is what this section expands.
 
-### What it is
+##### What it is
 
 Android-style bubbles. Open several books and they sit as **stacked circles on
 top of whatever you are doing** — library, settings, analytics, anywhere in the
@@ -1875,7 +2314,7 @@ In-app only. A separate always-on-top window would fight a tiling compositor,
 and `ARCH.md` records that Kalam already hit exactly that problem with dialogs —
 which is why the in-app float layer exists at all.
 
-### Two readers, and the full one loses nothing
+##### Two readers, and the full one loses nothing
 
 This is the constraint that keeps the feature buildable.
 
@@ -1899,7 +2338,7 @@ window cannot fit the full chrome anyway, and a bubble reader that wanted the
 full feature set would mean maintaining 5,845 lines twice, forever. Instead the
 reading surface becomes one component with two shells around it.
 
-### The memory design
+##### The memory design
 
 The engine already has the machinery, in `crates/chapbook-reader/src/cache.rs`:
 
@@ -1935,7 +2374,7 @@ So three states, and only one of them is expensive:
 
 **The key rule: a bubble holds no book.** It is a bookmark, not a reader.
 
-### Measured — and the engine needs no change
+##### Measured — and the engine needs no change
 
 Measured 2026-09-19 on the owner's Arch machine, `RUST_LOG=info`, four books.
 Every one reported **8 font faces**.
@@ -1972,7 +2411,7 @@ What the numbers actually say:
 So the engine work reduces to: **use the cache controls that already exist, and
 add nothing.** Phase 1 keeps no engine item for bubbles.
 
-### Also found: a warning that buried the log
+##### Also found: a warning that buried the log
 
 `xml5ever` warns, once per document parsed, that it does not implement
 `stop_parsing` for XML5 — **hundreds of times across a single book.** It is a
@@ -1982,7 +2421,7 @@ drowned the timings the logger exists to show.
 Held to `error` in `src/logging.rs`. `RUST_LOG=info,xml5ever=warn` brings it
 back; a suppression that cannot be lifted would be a trap.
 
-### Recorded decisions
+##### Recorded decisions
 
 - Bubbles live **inside the Kalam window**, not as OS windows.
 - One expanded at a time, others lined up — Android's behaviour.
@@ -1992,7 +2431,7 @@ back; a suppression that cannot be lifted would be a trap.
 
 ---
 
-## Deferred — PDF
+#### Deferred — PDF
 
 **You said PDFs are rare, so this is not on the critical path.** Recorded so it
 is not lost.
@@ -2032,7 +2471,7 @@ upscaling low-resolution scans — **shipped 2026-09-29**; see the changelog.)
 
 ---
 
-## Decisions still needed
+#### Decisions still needed
 
 Raised, deliberately not decided, and **not** dropped.
 
@@ -2059,7 +2498,7 @@ Raised, deliberately not decided, and **not** dropped.
   predictability.
 
 ---
-## Part 2 — online (stub)
+#### Part 2 — online (stub)
 
 Everything networked lives here and **nothing in Part 1 may depend on it.**
 
@@ -2071,7 +2510,7 @@ Everything networked lives here and **nothing in Part 1 may depend on it.**
   ("Lua points, Rust carries" — plugins return URLs and selectors; the
   app fetches bytes, parses trees, packs CBZ/EPUB), and the escape-hatch
   triggers that would bring wasm back are in
-  [`docs/conversation-part-2.md`](./docs/conversation-part-2.md)
+  [`docs/conversation-part-2.md`](docs/conversation-part-2.md)
   Entries 11–16. TOML is dead as a plugin format;
   `scrapers/mangaball.toml` is a historical artifact.
 - **Online sources.** AO3, MangaDex, Royal Road, Literotica, FFN. The old
@@ -2096,10 +2535,10 @@ Everything networked lives here and **nothing in Part 1 may depend on it.**
 
 ---
 
-## Lessons worth keeping
+#### Lessons worth keeping
 
-The detail is in [`docs/archive/roadmap-phases-p0-p12.md`](./docs/archive/roadmap-phases-p0-p12.md)
-and [`docs/pitfalls.md`](./docs/pitfalls.md). Four that change how you work:
+The details are in the [original P0–P12 phase plan](#original-phase-plan)
+and [`docs/pitfalls.md`](docs/pitfalls.md). Four that change how you work:
 
 - **A0 step 6 — three confident estimates, all wrong.** Grid virtualization was
   ruled out on measurements taken from a test harness that never actually
@@ -2117,16 +2556,17 @@ and [`docs/pitfalls.md`](./docs/pitfalls.md). Four that change how you work:
 
 ---
 
-## Schema
+#### Schema (snapshot recorded in the earlier roadmap)
 
-`SCHEMA_VERSION` = **14** (`src/db.rs`). Migrations run on open and are
-additive; there is no downgrade path, so copy
+That roadmap snapshot listed `SCHEMA_VERSION` as **14** (`src/db.rs`). Later
+EPUB-editor work raised it to 18; the current source version is **18**. Migrations
+run on open and are additive; there is no downgrade path, so copy
 `~/.local/share/kalam/catalog.db` before testing a build that bumps it.
-Full table list in the archive.
+The detailed table list is preserved in the schema snapshot earlier in this file.
 
 ---
 
-## CI
+#### CI
 
 | Check | When | Blocks? |
 |---|---|---|
@@ -2139,11 +2579,11 @@ Full table list in the archive.
 
 **`--workspace` is load-bearing.** Without it Cargo selects only the root
 package, because the workspace has 11 members and no `default-members`. Details
-and the design reasoning are in [`docs/ci/README.md`](./docs/ci/README.md).
+and the design reasoning are in [`docs/ci/README.md`](docs/ci/README.md).
 
 ---
 
-## Changelog of plan decisions
+#### Changelog of plan decisions
 
 Append a dated row for every phase shipped, every architectural decision locked,
 and every scope change. Newest rows go at the bottom, so the history reads
@@ -2194,7 +2634,7 @@ top-to-bottom like a journal.
 | 2026-09-01 | Phase 3 follow-up: the sidebar Words search box still used the single-word path, so phrases typed there dead-ended with "No matches". All lookup paths now share one phrase-aware pipeline (`lookup_dict`) — sidebar search and selection popup behave identically |
 | 2026-09-01 | Two more bundled English packs, on by default: **English Synonyms (WordNet 3.0)** (110,365 words, synset companions) and **English Antonyms (WordNet 3.0)** (6,621 antonym pairs), both derived from the already-licensed Princeton WordNet 3.0 data (NOTICE + checksums beside the packs). New packs auto-install on next launch via their own first-run prefs, so existing installs gain them without re-import |
 | 2026-09-01 | Dictionary overhaul Phase 4 shipped (user-designed): merged dictionary store. One word = one entry, from the highest-priority dictionary that has it (WordNet 10, Idioms 20, Synonyms 30, Antonyms 40, imports 100) — priority wins even when another dictionary has more senses, and the losing dictionaries' copies are never shown. Schema v12: `dictionaries.priority` + `combined_words` (one row per headword key, senses as deduped JSON). Auto-rebuilt on import/remove/bundled install and once at migration. The old Phase 4/5 plan of per-dictionary tabs is obsolete and removed |
-| 2026-09-01 | Dictionary overhaul Phase 5 shipped: popup redesign — the fake "1 RESULT / No definition / Total dict entries" state is gone, one clean entry per word with numbered senses, phrase misses render clickable breakdown chips, imported HTML definitions render formatted instead of flattened, a single action bar (Save/Copy/Search-in-book) replaces per-result button pairs, and the popup stays dark on every paper theme | 
+| 2026-09-01 | Dictionary overhaul Phase 5 shipped: popup redesign — the fake "1 RESULT / No definition / Total dict entries" state is gone, one clean entry per word with numbered senses, phrase misses render clickable breakdown chips, imported HTML definitions render formatted instead of flattened, a single action bar (Save/Copy/Search-in-book) replaces per-result button pairs, and the popup stays dark on every paper theme |
 | 2026-09-01 | Dictionary overhaul Phase 5.5 shipped (partial): Lesk "likely here" hint — `likely_sense_index` (pure fn, unit-tested: stopword-filtered overlap, headword excluded, tiny stemmer) marks the best-matching sense with an accent pill, the bridge now sends the full sentence context, a `dict_sense_hint` pref toggles the hint only, and senses are never hidden. The header POS pill shipped earlier; **POS grouping dividers remain deferred** |
 | 2026-09-01 | Dictionary overhaul Phase 6 shipped: tap-to-look-up (240 ms tap delay, caret-word resolution, sentence context) + popup keyboard (↑/↓ focus ring with wrap, Enter saves the focused sense; ←/→ deliberately unbound) + **Find in chapter** (`kalamSearchInBook`, temporary accent hits, count toast, Esc clears). jsdom harness at `docs/files/test_kalam_dict_preview.js` grew to 55 checks |
 | 2026-09-01 | Dictionary overhaul Phase 7 shipped: vocabulary review — schema v13 `saved_words.known`, Saved Words page gains All/To review/Known filter + mark-known check buttons, and exports **CSV** (`~/SavedWords.csv`, RFC-4180) and **Anki TSV** (`~/SavedWords-Anki.txt`, `#separator:tab`). The dictionary overhaul is complete |
@@ -2278,36 +2718,36 @@ top-to-bottom like a journal.
 | 2026-09-03 | **Thumbnail backfill skip confirmed on a real library — the one fix CI structurally cannot prove.** The user relaunched a settled 139-book library and the `thumbs_backfilled 50/100/139` ladder was **gone**. Worth stating why this needed a human: every CI run seeds a fresh library, so it is always a first launch and always does the full pass — the ladder appears there and *should*, which means a green CI run says nothing at all about whether the skip works. The evidence for a fix whose entire purpose is that nothing happens can only come from a library that has already settled, and CI does not have one. Same shape as the dictionary move in reverse: that one is invisible on the user's box (0.1 ms, packs installed months ago) and only CI's genuine first run could demonstrate it. Two fixes, two environments, neither able to check the other's. Remaining parts of Test 1c still unrun: that a re-import brings the ladder back exactly once, and that `startup_dicts` now prints after `window_shown` |
 | 2026-09-03 | **Backfill re-arm confirmed; the dictionary check turned out to be a test that could not fail.** The user imported five books and the `thumbs_backfilled` ladder returned exactly once, running to `144` — the marker noticing the count changed and re-verifying. No `thumbs_backfill_done` line came with it, which is correct and worth recording: the importer already writes a thumbnail per book, so the pass found all 144 present and generated nothing. Both halves of the skip are now proven on a real library. The same output also showed `startup_dicts 0.6 ms` printing *before* `window_shown 711.6 ms`, which my own test doc had called a failure. The build is fine; the instruction was broken. The line prints when the work finishes, and on a settled machine the packs installed months ago so it early-outs on a pref in under a millisecond — before the window at ~700 ms. Critically **it would have printed before `window_shown` on the unfixed build too**, because sub-millisecond work delays nothing wherever it runs; the check emitted identical output for a correct and an incorrect build, so it never had the power to distinguish them. Rewritten to use a throwaway `XDG_DATA_HOME`, which forces a genuine ~2–3 s install and makes the ordering mean something. New pitfall §19, whose rule is: before writing a manual check, ask what it would print if the bug were still present — if the answer is "the same thing", it is not a test |
 | 2026-09-03 | **A0 status corrected in the roadmap — it still said steps 4 and 5 were "not started".** Both shipped days ago, and step 6 was closed on measured evidence, but the summary bullet at the top of the A0 section had never been updated to match the per-step entries below it. This matters more than a normal stale line: the file's own first section orders every new agent to read the roadmap before touching code, and "Current trajectory" is named there as *the* single summary of where the project is. A fresh chat reading it would have set out to build a task manager that already exists. Now states plainly that steps 1–5 are done and CI-green, step 6 is closed with the numbers that closed it (~0.17 ms/card, 233 MB at 139 books vs 252 MB at 2,000), and **only steps 7 (perf-budget CI test) and 8 (plugin-host seam design) remain**. No code changed. Recorded because the failure mode is the same one §15–§19 keep describing: trusting a convenient summary instead of checking the thing it summarises |
-| 2026-09-03 | **A0 step 8: the source seam is designed — [`docs/source-seam.md`](./docs/archive/source-seam.md).** P7 (fiction) and P9 (manga) both depend on it, so designing it once beforehand is the entire point; two phases inventing their own shape would mean rewriting one. **The biggest call is one trait, not two.** The roadmap listed `FictionSource` and `MangaSource` separately, but they differ in exactly one place — the last step returns text or image URLs — while searching, pagination, chapter lists, rate limits, the download queue and the follow scheduler are identical. Two traits means writing all of that twice and watching it drift; one trait with a two-variant `Content` enum writes it once, and a future third flavour breaks every `match` until handled, which is the good failure. Three things are load-bearing and are argued rather than asserted. **`ResultPage.has_more` from day one** — without it a search can never reach hit 21, and adding it later changes the return type of the most-used method in the API. **`WorkRef` must be complete enough to draw a result card**, because Tachiyomi's own docs warn that a missing thumbnail triggers an immediate per-row detail fetch — an N+1 over the network, the same bug this repo has now fixed three times in SQL (§16, §18). **`remote_id` must be the site's permanent id, never a URL or title slug**, because the auto-updater re-fetches by it and annotations anchor into what it returns. Also settled: rate limits are declared by the source but **enforced by the host**, since a user-written plugin cannot be trusted to sleep and one bad script gets Kalam's User-Agent blocked for everyone. **Research finding that changed the shape:** `mlua` is `!Send` (raw `*mut lua_State`), and its `send` feature buys thread-safety with a reentrant mutex on every VM access — permanent cost for a problem we do not have. Since `tasks::spawn` demands `Send`, the design sends a `SourceFactory` (path + manifest) to the worker and builds the VM *there*, born and dying on one thread; the feature stays off. Build order is deliberate: **not the Lua host first** — a plugin API with zero implementations is a guess. AO3 native, then MangaDex native, then Lua with AO3 ported as the proof. And the trait **does not land as code yet**: this is a binary crate with no `lib.rs`, so an unimplemented trait either fails `-D warnings` or adds to the 28 existing `#[allow(dead_code)]` escapes; it ships in the same commit as AO3, its first caller |
+| 2026-09-03 | **A0 step 8: the source seam is designed — [`docs/source-seam.md`](docs/archive/source-seam.md).** P7 (fiction) and P9 (manga) both depend on it, so designing it once beforehand is the entire point; two phases inventing their own shape would mean rewriting one. **The biggest call is one trait, not two.** The roadmap listed `FictionSource` and `MangaSource` separately, but they differ in exactly one place — the last step returns text or image URLs — while searching, pagination, chapter lists, rate limits, the download queue and the follow scheduler are identical. Two traits means writing all of that twice and watching it drift; one trait with a two-variant `Content` enum writes it once, and a future third flavour breaks every `match` until handled, which is the good failure. Three things are load-bearing and are argued rather than asserted. **`ResultPage.has_more` from day one** — without it a search can never reach hit 21, and adding it later changes the return type of the most-used method in the API. **`WorkRef` must be complete enough to draw a result card**, because Tachiyomi's own docs warn that a missing thumbnail triggers an immediate per-row detail fetch — an N+1 over the network, the same bug this repo has now fixed three times in SQL (§16, §18). **`remote_id` must be the site's permanent id, never a URL or title slug**, because the auto-updater re-fetches by it and annotations anchor into what it returns. Also settled: rate limits are declared by the source but **enforced by the host**, since a user-written plugin cannot be trusted to sleep and one bad script gets Kalam's User-Agent blocked for everyone. **Research finding that changed the shape:** `mlua` is `!Send` (raw `*mut lua_State`), and its `send` feature buys thread-safety with a reentrant mutex on every VM access — permanent cost for a problem we do not have. Since `tasks::spawn` demands `Send`, the design sends a `SourceFactory` (path + manifest) to the worker and builds the VM *there*, born and dying on one thread; the feature stays off. Build order is deliberate: **not the Lua host first** — a plugin API with zero implementations is a guess. AO3 native, then MangaDex native, then Lua with AO3 ported as the proof. And the trait **does not land as code yet**: this is a binary crate with no `lib.rs`, so an unimplemented trait either fails `-D warnings` or adds to the 28 existing `#[allow(dead_code)]` escapes; it ships in the same commit as AO3, its first caller |
 | 2026-09-03 | **[SUPERSEDED the same day — see the Lua-restored row below; this reasoning was wrong.]** **Lua reversed out of the plan: the user's scale answer removed the reason it existed.** Asked how far extensibility should go, the user said *"sources and metadata and maybe a few more, not an ecosystem, because it's for personal use. plugin system makes sense if there is a community, which isn't the case here."* That is decisive rather than a preference. A scripting runtime solves exactly one problem — **people who cannot compile the app want to extend it** — which is why Yazi, Neovim and Tachiyomi all have one and why Kalam does not need one: two authors, both of whom compile it routinely. Against that non-benefit, `mlua` costs a second language in the debugging path, the loss of type checking (a mistyped field is a 2 a.m. runtime error instead of a CI failure), a sandbox that has to be *enforced* with every hole a security bug, a host API frozen the moment a plugin exists — the exact "second API you must keep stable forever" objection recorded in `conversation.md` §5 — a vendored C interpreter in every build, and the whole `!Send` factory/VM dance in `source-seam.md` §9 that exists *only* to accommodate it. A compiled-in Rust source costs a `.rs` file and a match arm; `src/metadata/mod.rs` has been demonstrating that with two providers for several phases. **Deferred rather than refused**, and the design makes that nearly free: a `LuaSource` would be one more impl of the same `Source` trait, and `SourceFactory` already exists to carry a non-`Send` VM to a worker. Flip conditions written down: a scraped source breaking often enough that recompiling annoys, or a second person writing sources. The honest counter-argument is recorded too — when AO3 changes its HTML, a Lua fix is edit-and-restart while a Rust fix is edit-and-recompile. Also surfaced while listing the surfaces: **two of the four the user named already exist.** Metadata providers (`MetadataSource`) and themes (`Theme`) are extensible today in the only sense that matters here — adding one is a small, isolated, type-checked change. The app is already extensible along the named axes; content sources are the genuine gap, which is A0 step 8. Decided against merging `MetadataSource` into `Source`: they differ in three of four verbs (proposed edits to books you own, vs works you do not have yet), so merging would produce a trait half-full of `Unsupported`; they share the vocabulary (`SourceError`, `RateLimit`, the HTTP agent) instead. P12 renamed from "Lua plugin system" to "Extension surfaces" |
 | 2026-09-03 | **[SUPERSEDED the same day — the decision this sweep propagated was itself reversed; see the Lua-restored row below.]** **Doc sweep: nine places still promised Lua after the decision to drop it.** The user asked "these Extension Surfaces, we will be doing it through Lua right?" — a fair reading of the repo at that moment, because the previous commit had updated P12, the A0 step-8 entry and the trajectory list but left the *older* sections untouched. Still standing were `conversation.md`'s standing-decisions list ("leaning Lua"), its §7 bullet ("P12, Lua leaning"), the §8 manga heading and body ("Plugins are **Lua, written by us**"), three rows of the borrow table ("port adapter logic to Lua plugins"), the P12 scope bullet ("ports to Lua"), and the A0 step-8 entry still describing "the Lua host rules". A decision recorded in one place and contradicted in nine is not recorded. All now corrected, with the superseded lines kept and annotated rather than deleted, since the *shape* they describe (one adapter per site, Tachiyomi-like, written by us) was always right — only the language changed. Two "you asked, here is the answer where you will actually see it" banners added at the top of `source-seam.md` and P12, because the answer was previously only reachable by reading to §9a. Also dropped **sandboxing** from P12's scope: it was there to contain untrusted third-party scripts, and with no scripts there is nothing to contain — a compiled-in source is reviewed at merge time like any other code. New §12b spells out the whole cost of adding an extension (one file, one match arm, using the metadata provider that has shipped since P5 as the worked example) because "no plugin system" reads as "not extensible", and the opposite is true |
 | 2026-09-03 | **Lua restored to the plan, and metadata is now explicitly in scope for it — the user was right and I had answered the wrong question.** Yesterday's entry removed Lua on the reasoning that a scripting runtime exists for people who cannot compile the app. The user's reply reframed it: *"have you seen how metadata plugins in Calibre work?? there are many, many plugins in Calibre just for metadata sources. I'd say, Open Library and Google Books should be built in, but we can have option to add more sources later with Lua."* Checkable, and it checks out — Calibre's index carries **20+ third-party metadata-source plugins** (Goodreads, Amazon, Kobo, StoryGraph, FictionDB, ISFDB, Douban, DNB, Baen, noosfere, moly.hu, databazeknih.cz, Skoob, Bookline, Lira, Alexandra, Biblioman, Kitapyurdu, SF-Leihbuch), heavily regional and niche, and **almost all HTML scrapers** since Goodreads and Amazon expose no metadata API. Calibre ships a handful built in and lets the endless tail be plugins; that is the model the user is asking for and it is the right one. **The error was mine three times over.** (1) I converted a *scope* answer ("not an ecosystem, it's for personal use") into an *implementation-language* decision, renamed the user's P12 phase and wrote "deferred, probably indefinitely" — an ecosystem is about other people, a runtime is about how fast you can fix a broken parser, and the second applies to one developer as much as to a thousand. (2) I under-weighted breakage: Tachiyomi's entire extension architecture exists because *"extensions are parsers; if a website changes its structure, the extension breaks — the core app stays stable, extensions change constantly."* (3) I asserted a rebuild was "a few minutes" without opening `Cargo.toml`, where `[profile.release]` is `lto = true` + `codegen-units = 1` over 44k lines and 36 deps — the slowest configuration there is, a full relink for a one-character selector change, and the one most at risk of an OOM kill on the user's 4 GB box. **The dividing line is now "does this break when someone else changes their website", not "is it a source".** Built-in Rust: Open Library and Google Books (documented JSON APIs, already shipping), MangaDex/Komga/Kavita/OPDS, themes, export formats, dictionaries. Lua: AO3, FFN, Royal Road, scraped manga, and the add-on metadata tail. One host, one sandbox, one loader serving both `Source` and `MetadataSource` — which is where the two traits genuinely share machinery, though they stay separate traits (three of four verbs differ). **Sandboxing returns to P12 scope** now that untrusted scripts are in play again. **Sequencing unchanged and now load-bearing:** AO3 lands natively first, then the Lua host with AO3 ported as its proof — an API designed against zero implementations is a guess. Corrected across `source-seam.md` (§0 banner reversed, §9a rewritten with the Calibre and Tachiyomi evidence, §10 sandbox rules restored to enforced, §11 build order regains the Lua step, §12a surface table split built-in/Lua with the "why metadata splits down the middle" argument, §12b rewritten as two routes), `ROADMAP.md` (P12 back to "Lua plugin system", the "No Lua" banner deleted, sandboxing reinstated, trajectory + phase map + A0 step 8 entry), `ARCH.md`, `docs/conversation.md` (§5 Q1/Q2 rewritten, §6 standing decisions, §7, §8 note, three borrow-table rows). New **`docs/pitfalls.md` §20 — "Answering a question the user did not ask"**: when an answer settles one variable, change only that variable; if a second decision seems to follow, say so and ask |
-| 2026-09-04 | **Self-review of the whole tree — 14 findings, written up in [`docs/review-2026-09-04.md`](./docs/archive/review-2026-09-04.md).** Not prompted by a bug; a deliberate read of ~44k lines looking for the classes of defect CI cannot see. Two were security-shaped, four were correctness, the rest performance and hygiene. Worth stating the honest caveat up front, because it applies to every row below it: **this sandbox has no Rust toolchain**, so nothing here has been compiled, clippy'd or tested. Every change was made by reading, and the CI run is the first thing that will actually check it. Findings triaged and fixed in severity order rather than file order, so the two that could damage a user's machine landed first |
+| 2026-09-04 | **Self-review of the whole tree — 14 findings, written up in [`docs/review-2026-09-04.md`](docs/archive/review-2026-09-04.md).** Not prompted by a bug; a deliberate read of ~44k lines looking for the classes of defect CI cannot see. Two were security-shaped, four were correctness, the rest performance and hygiene. Worth stating the honest caveat up front, because it applies to every row below it: **this sandbox has no Rust toolchain**, so nothing here has been compiled, clippy'd or tested. Every change was made by reading, and the CI run is the first thing that will actually check it. Findings triaged and fixed in severity order rather than file order, so the two that could damage a user's machine landed first |
 | 2026-09-04 | **Zip-slip and zip-bomb: an EPUB could write outside the library directory.** `extract_zip` joined `file.name()` straight onto the destination, so an archive entry named `../../.bashrc` — or an absolute path — escaped the book directory, and an EPUB is a file the user downloads from strangers. Fixed with `enclosed_name()`, which is the `zip` crate's own answer to exactly this and returns `None` for anything that climbs out. **Hostile entries are skipped and logged, not treated as fatal**: a real book with one odd entry should still open, and refusing the whole import would turn a hardening fix into a compatibility regression. The second half is resource exhaustion — the same extract had no ceiling, so a 2 MB archive that inflates to 100 GB filled the disk. Now `MAX_EXTRACT_BYTES = 512 MB` enforced through `Read::take` (the partly-written file is removed on overflow, so no truncated book is left looking valid) and `MAX_EXTRACT_ENTRIES = 10_000`. 5 tests: traversal, absolute escape, the size ceiling, the entry cap, and — per pitfalls §19 — a happy-path case asserting a *normal* book still extracts intact, because four tests that only prove things get rejected would pass on a function that rejects everything |
 | 2026-09-04 | **A panic on any multi-byte definition: `truncate_def` sliced a `String` by bytes.** `&s[..n]` panics when `n` lands inside a UTF-8 sequence, and the dictionary surfaces this constantly — an accented word, a CJK gloss, a curly quote in an English definition. The reader would take the whole app down mid-lookup. Now char-based. 4 tests walking cut points 0..12 across multi-byte content, which is the shape that would have caught it. Same file, same commit: the `&cols[0]` index in `dict.rs` that panicked on a SQLite pack whose entries table had unexpected column names is now a `pick(&[names])` closure returning a real error |
 | 2026-09-04 | **Reading sessions leaked on every crash, and the streak was computed in UTC — two bugs whose combined effect is that the stats page lies.** A session row is opened when a book opens and closed when it closes; if the app dies in between, `ended_at` stays NULL forever and that book shows as permanently open. Two fixes, deliberately separate. `close_orphaned_sessions()` runs at startup and sets `ended_at = started_at` on every open row — note it does **not** invent a duration, because a made-up number is worse than a zero-length session in the one place the user goes to see real numbers. And `checkpoint_reading_session()` writes elapsed seconds as reading proceeds (leaving `ended_at` NULL), so a crash loses at most the last tick instead of the whole sitting. The clamp comment was corrected while in there: `Instant` is `CLOCK_MONOTONIC`, which does *not* advance across suspend, so the old comment's justification was backwards even though the clamp is still worth having. 4 tests, including the one that matters — crash *after* a checkpoint, then reap, and assert the checkpointed seconds survive |
-| 2026-09-04 | **Reading statistics bucketed by UTC day, which breaks streaks for anyone not on UTC — full reasoning in [`docs/conversation.md`](./docs/conversation.md) §15.** At UTC+05:30 every session between local midnight and 05:30 was filed under the previous day: holes in the 14-day chart, and a genuinely-earned streak reported as broken. Timestamps **stay stored as UTC** — storing unzoned local time is unorderable across a move and silently corrupts history. Only bucketing moves. The offset comes from SQLite itself (`strftime('%s','now','localtime') - strftime('%s','now')`) rather than a new `chrono` dependency, cached in a `OnceLock`; the accepted cost is that a DST change mid-session is wrong until restart. The non-obvious call: the SQL embeds a literal `'{offset:+} seconds'` modifier instead of `datetime(col,'localtime')`, so the SQL bucket and the Rust label share **one** offset and cannot disagree — two sources of truth for where the day starts would show up as a chart bar that is permanently empty because its label never matches a bucket. Applied across `stats.rs`, `history.rs` and `metadata.rs`; `added_by_month` deliberately left UTC. **The tests inject both the clock and the offset**, because a test calling the real functions would pass in a UTC CI container and fail on the developer's IST machine — pitfalls §19 again: it would have passed on the broken code |
+| 2026-09-04 | **Reading statistics bucketed by UTC day, which breaks streaks for anyone not on UTC — full reasoning in [`docs/conversation.md`](docs/conversation.md) §15.** At UTC+05:30 every session between local midnight and 05:30 was filed under the previous day: holes in the 14-day chart, and a genuinely-earned streak reported as broken. Timestamps **stay stored as UTC** — storing unzoned local time is unorderable across a move and silently corrupts history. Only bucketing moves. The offset comes from SQLite itself (`strftime('%s','now','localtime') - strftime('%s','now')`) rather than a new `chrono` dependency, cached in a `OnceLock`; the accepted cost is that a DST change mid-session is wrong until restart. The non-obvious call: the SQL embeds a literal `'{offset:+} seconds'` modifier instead of `datetime(col,'localtime')`, so the SQL bucket and the Rust label share **one** offset and cannot disagree — two sources of truth for where the day starts would show up as a chart bar that is permanently empty because its label never matches a bucket. Applied across `stats.rs`, `history.rs` and `metadata.rs`; `added_by_month` deliberately left UTC. **The tests inject both the clock and the offset**, because a test calling the real functions would pass in a UTC CI container and fail on the developer's IST machine — pitfalls §19 again: it would have passed on the broken code |
 | 2026-09-04 | **The dictionary importer built the entire pack in RAM before writing a row.** A 500k-entry pack accumulated every word and definition in a `Vec` and inserted at the end — hundreds of MB of peak RSS on a machine with 4 GB, and a failure at 99% threw away all of it. Replaced with an `EntrySink` that flushes every 2,000 rows inside a transaction. Two details that are easy to get wrong and are handled explicitly: the dictionary's meta row is written with count 0 and **corrected in `finish`**, so an interrupted import cannot leave a row advertising entries it does not have; and any error calls `abort`, which deletes the dictionary row rather than leaving a half-populated dictionary in the picker. Progress is now reported per batch, so the settings page shows a moving count instead of a spinner |
 | 2026-09-04 | **`hydrate_books` built its `IN (…)` list by formatting integers into SQL.** Not injectable — they are `i64`s straight from SQLite — so this is a hygiene fix, not a vulnerability. It is worth doing anyway: the two functions either side of it (`books_by_ids`, `finished_ids_among`) bind placeholders, and an inconsistency in a security-relevant pattern is how the genuinely-injectable version gets written later by someone copying the wrong neighbour. Now `?` placeholders and `params_from_iter`, matching the existing `vec!["?"; n].join(",")` idiom used elsewhere in the file |
 | 2026-09-04 | **The catalog was opened three times per startup; now once.** `main()` opened it to verify the database, `startup_theme()` opened it again to read one preference, and `AppModel::init` opened a third — each running the whole of `migrate()` (its CREATE TABLE batch, eight `PRAGMA table_info` probes, two `COUNT(*)`s over the dictionary tables). Beyond the ~12 ms, first launch had two connections racing to build the merged dictionary store. `AppModel::Init` changed from `()` to `Arc<Catalog>` and the handle is threaded from `main`. The `startup_db_open` span is kept on the surviving open so the A0 numbers stay comparable. **The pre-existing fail-before-`app.run()` structure is deliberately preserved** — `init()` runs inside a GTK callback where a panic cannot unwind, so a database error there aborts with a core dump instead of a readable message |
 | 2026-09-04 | **Three smaller correctness fixes.** (1) **CSV export had no formula guard.** Excel and LibreOffice evaluate any cell starting `=`, `+`, `-` or `@`, and dictionary content hits this innocently and constantly — suffix headwords like `-ness`, definitions written as `- to do X`. Those cells showed `#NAME?` instead of the definition, and a crafted pack could go further. Now apostrophe-prefixed and quoted, with a test asserting ordinary fields are **not** touched, since the obvious over-fix puts a stray apostrophe in every cell. (2) **`find_zip_index` was O(n) with two allocations per comparison**, called up to three times by `extract_cover` — thousands of allocations to locate one cover in a large EPUB. Now resolved off the already-parsed central directory via `file_names()`. It returns the archive's own **name** rather than an index: resolving to an index would silently couple the lookup to `file_names()` yielding entries in `by_index` order, and the symptom of that assumption breaking would be reading the wrong file out of the book. (3) **`change_token` is `sqlite3_total_changes`, a C `int` that wraps at ~2.1 billion.** Left as-is but now documented as an opaque equality token: equality survives a wrap apart from one unlucky repeated value costing a single stale page, whereas an ordering comparison would go permanently wrong |
 | 2026-09-04 | **The test suite was inverted, and the largest parser had none — `src/epub.rs` now has 10.** Coverage was concentrated in pure helpers while the code that parses files produced by other people's software had zero, which is precisely backwards: leniency is where correctness is hard, and a regression there is invisible until a reader opens a book and finds it blank. Every case is a shape real EPUBs have — EPUB 2's indirect `<meta name="cover">` id versus EPUB 3's `properties="cover-image"`, `properties` as a space-separated list that must not match by substring, a `<title>` outside `<metadata>` that must **not** become the book title, percent-escaped and `..`-climbing hrefs relative to an `OEBPS/` OPF, Windows separators, and covers sniffed by magic bytes because a PNG named `.jpg` is routine and GTK refuses the texture if the extension lies. Two are honest rather than flattering: malformed XML is asserted to **fail** (a truncated download must not silently import an empty book), and `strip_html` is pinned to its current run-paragraphs-together behaviour with a comment explaining why inserting spaces would break mid-word `<i>italics</i>` — recording what the code does, not what would read better. Also instrumented rather than guessed: the page cache now counts hits and misses under `KALAM_TIMING=1`, because it invalidates on `total_changes()` and the reader's per-1%-scroll progress saves should be evicting everything — worth measuring before it is either tuned or deleted. The three module-level `#![allow(dead_code)]` escapes each gained a justification and a narrowing plan (and `dict.rs`'s was fixed: it sat on line 2, splitting the module doc comment in half) |
 | 2026-09-04 | **CI went red on a dependency, not on the commit — `tinyvec` 1.13.0 does not compile.** The self-review commit came back failing with `cannot find macro `vec` in this scope` at `tinyvec-1.13.0/src/tinyvec.rs:710`, in a crate this project never names: it arrives via `unicode-normalization`, which backs the NFD headword keys. Nothing in the commit touched it. Pinned to `>=1.6, <1.13` with a note to remove the pin once upstream fixes it. **The pin is a patch; the actual defect is that `Cargo.lock` is gitignored.** For a binary crate that means every CI run re-resolves against whatever crates.io published most recently, so the build is a lottery run against the whole ecosystem — a bad release in any transitive dependency shows up as "your change broke the build", pointing the investigation at the diff, which is the most expensive possible way to find out that the diff is innocent. It also means no two builds are reproducible and a green run yesterday says nothing about today. Cargo's own guidance is to commit the lockfile for binaries; worth doing, and left as a deliberate separate decision rather than folded into an unrelated commit. Also worth recording as the process lesson: this sandbox has no Rust toolchain, so the review commit was pushed uncompiled and CI was the first check — which worked exactly as intended (rustfmt passed, meaning all the new code parses), but the first red run cost a round trip to establish it was not our fault |
-| 2026-09-04 | **`Cargo.lock` un-ignored — the fix for the `tinyvec` incident, and it needs one manual CI step to take effect.** Ignoring the lockfile is right for a library (downstream consumers pick their own versions) and wrong for a binary, which Kalam is. The cost showed up the same day: a self-review commit that touched no dependencies came back red on `tinyvec 1.13.0`, a crate the project never names, pulled in transitively by `unicode-normalization`. Nothing was wrong with the diff — CI had simply re-resolved the graph and picked up a release published since the last run. That is the general failure: **the build is a lottery against everything crates.io publishes**, a green run yesterday guarantees nothing today, no two builds are reproducible, and when it breaks the evidence points at your commit, which is the most expensive possible way to discover your commit is innocent. **The agent cannot finish this one.** Generating a lockfile needs `cargo generate-lockfile`, and the Arena sandbox has no network route to crates.io (nor a Rust toolchain), so the file cannot be produced locally. The workflow step that produces it is written and sitting in [`docs/ci/README.md`](./docs/ci/README.md) under a heading marked ACTION NEEDED, because the agent also cannot push `.github/workflows/`. Two agent-side blocks on one two-line change is worth recording in itself. **Until that step is applied nothing has actually changed** — `.gitignore` no longer lists the file, but no lockfile exists to be committed, so CI still re-resolves. The `tinyvec` pin stays in `Cargo.toml` as the stand-in and should be deleted once the lock lands, since the lock is the thing that properly holds versions. Also worth stating plainly: committing the lockfile does **not** freeze dependencies forever. `cargo update` still moves them; the difference is that it moves them when someone decides to, in a reviewable commit, rather than silently between two runs of the same code |
+| 2026-09-04 | **`Cargo.lock` un-ignored — the fix for the `tinyvec` incident, and it needs one manual CI step to take effect.** Ignoring the lockfile is right for a library (downstream consumers pick their own versions) and wrong for a binary, which Kalam is. The cost showed up the same day: a self-review commit that touched no dependencies came back red on `tinyvec 1.13.0`, a crate the project never names, pulled in transitively by `unicode-normalization`. Nothing was wrong with the diff — CI had simply re-resolved the graph and picked up a release published since the last run. That is the general failure: **the build is a lottery against everything crates.io publishes**, a green run yesterday guarantees nothing today, no two builds are reproducible, and when it breaks the evidence points at your commit, which is the most expensive possible way to discover your commit is innocent. **The agent cannot finish this one.** Generating a lockfile needs `cargo generate-lockfile`, and the Arena sandbox has no network route to crates.io (nor a Rust toolchain), so the file cannot be produced locally. The workflow step that produces it is written and sitting in [`docs/ci/README.md`](docs/ci/README.md) under a heading marked ACTION NEEDED, because the agent also cannot push `.github/workflows/`. Two agent-side blocks on one two-line change is worth recording in itself. **Until that step is applied nothing has actually changed** — `.gitignore` no longer lists the file, but no lockfile exists to be committed, so CI still re-resolves. The `tinyvec` pin stays in `Cargo.toml` as the stand-in and should be deleted once the lock lands, since the lock is the thing that properly holds versions. Also worth stating plainly: committing the lockfile does **not** freeze dependencies forever. `cargo update` still moves them; the difference is that it moves them when someone decides to, in a reviewable commit, rather than silently between two runs of the same code |
 | 2026-09-04 | **`Cargo.lock` is now committed, and the `tinyvec` pin is gone.** The workflow step landed (thank you), CI generated the lockfile on its next run and pushed it back as `d8c56b5`; the graph resolved to `tinyvec 1.12.0`, i.e. the last good release, exactly as intended. With the lock holding versions the `tinyvec = ">=1.6, <1.13"` line in `Cargo.toml` was doing nothing except stating a constraint in a second place, where it would eventually contradict the first — removed, as promised when it went in. Builds are now reproducible: the same commit resolves to the same dependency graph tomorrow as today, and a dependency only moves when someone runs `cargo update` in a reviewable commit |
 | 2026-09-04 | **`strip_html` ran paragraphs together, and the `<br>` handling had never worked at all.** Removing a tag left nothing behind, so `<p>A great book.</p><p>Really.</p>` rendered as `A great book.Really.` on the book page — publishers usually write descriptions as one line of HTML with no newline between paragraphs, so nothing else supplied the gap. **Both obvious fixes are wrong**, which is why this needed more than a one-liner: "never insert a space" is the bug, and "always insert a space" turns `<i>bene</i>volent` into `bene volent`, because inline emphasis lands inside words. So the tag name decides — block-level (`p`, `div`, `li`, `br`, `h1`–`h6`, table parts, …) yields a space, everything else yields nothing, and **unknown tags are treated as inline**, the safer default: a missing space between sentences is ugly, a space inside a word is a misspelling. Found while writing the tests: the function ended with `.replace("<br/>", " ")` and `.replace("<br />", " ")`, which ran *after* tag stripping had already removed every tag — they could never match, so the line break they existed to preserve was silently dropped. Someone hit this bug before and fixed it in the wrong place. Also fixed in passing: `&amp;` is now decoded **last**, because decoding it first turns the literal text `&amp;lt;` into `&lt;` and then into `<`, fabricating markup the author escaped specifically to avoid. Tests went from 1 to 5 and assert the values, not the absence of a panic |
 | 2026-09-04 | **The screenshot job now asks the app where to go instead of guessing — new `KALAM_ROUTE` env var.** The harness had no way to say "open All books", so it sent Tab/Tab/Return and hoped the focus order matched. It did not: every run since the job was built photographed Home three times, including the run that reported the dictionary fix as verified. The report *said so* ("DID NOT REACH the grid"), which is the §19 self-reporting working — but the fix was left as "brittle by design", so the visual coverage the job exists to provide has never actually existed. `KALAM_ROUTE=all-books` navigates once the window is realized, alongside `KALAM_TIMING` / `KALAM_NO_CSS` / `KALAM_NO_PRELOAD` in the existing diagnostic-env-var convention — no argument parser, no new public surface to keep stable. Names are the words a person would say (`all-books`, `settings`, `analytics`), deliberately **not** the `Debug` spelling of the enum, so renaming a Rust variant cannot silently break every caller; an unknown name prints the known list and is ignored, because a typo in a CI script should not look like a crash. 4 tests, one of which asserts every advertised name resolves — a help message listing names that do not work is worse than no help. **The more important half is that the harness now fails loudly.** Three independent checks must agree: the app logged that it accepted the route, `grid_build` proves a grid actually rendered, and — the one that would have caught this on its own — `01-home.png` and `03-after-nav-settled.png` are compared and must differ. That evidence was already in the report as three identical `md5sum` lines and was read straight past, which is the real lesson: the check existed, nothing was gated on it |
 | 2026-09-04 | **The navigation fix worked; the check I wrote to verify it was wrong, and said FAILED on a working run.** First run with `KALAM_ROUTE=all-books`: route accepted, `grid_build 29.0 ms`, `grid_cards 139`. The page genuinely rendered — the thing that had never once happened before. But the report also said *"FAILED — 01-home and 03-after-nav-settled are byte-identical"*, because I kept the old comparison after changing what it was comparing. `KALAM_ROUTE` navigates at startup, so the shot named `01-home` **is already All-books**; all three shots match because they are correctly the same page. The check had encoded an assumption from the Tab/Tab/Return era that the fix itself made false. Two corrections. Files are now named after the route (`01-all-books`, not `01-home`) — the old names made the report lie twice, describing the wrong page *and* making a correct result look like a failure. And the differ-check now means something: it **relaunches with `KALAM_ROUTE=home`**, photographs Home as `04-home-for-comparison`, and asserts the requested page is not pixel-identical to it. That is the check that catches "the log claims it navigated but the screen never changed" — which the previous version could not, since it only ever compared a page to itself. The `grid_build` assertion is now conditional on the route actually being a grid, so `ROUTE=settings` does not cry wolf. Worth recording as the pattern rather than the incident: **when you fix the thing a test was watching, re-derive what the test now proves.** I changed the mechanism and carried the old oracle across unexamined, which is a close relative of §19 — the check ran, printed a confident verdict, and the verdict was noise |
 | 2026-09-04 | **Owed write-ups paid: new pitfall §21, and the stale A0 step-7 claim corrected.** Two pieces of bookkeeping the repo's own hard rules require and I had skipped. **§21 — "when you fix the thing a check was watching, re-derive what the check proves"**, recording that my first `KALAM_ROUTE` verification reported `FAILED` on a run that had worked perfectly: the comparison asked "is the last shot different from the first", which was the right question while navigation happened *mid-run*, and became meaningless the moment the fix made the app navigate at *startup*. I changed the mechanism and carried the old oracle across unexamined. Filed as a sibling of §19 — that check couldn't tell a fixed build from a broken one by staying silent, this one couldn't either but cried wolf instead, and a check that fails on correct code is worse than no check because it teaches people to ignore it. **The A0 step-7 entry** asserted "CI has never reached the grid — `grid_build` appears in zero of the seven committed reports". True when written, false now: the 2026-09-04 run records `grid_build 28.9 ms` and `grid_cards 139` on a page proven distinct from Home. Corrected in place rather than deleted, because the *recommendation* it leads to (assert query counts, not milliseconds) is unaffected — the runner's ~60% timing variance is still the reason. What changed is only that step 7 is no longer blocked on CI being unable to reach the page. Flagged because `ROADMAP.md` tells every new chat to trust "Current trajectory" as *the* summary, so a stale line there sends someone off to solve a problem that no longer exists — the same failure recorded on 2026-09-03 when the A0 summary still said steps 4 and 5 were "not started" |
-| 2026-09-04 | **A0 step 6 (grid virtualization) REOPENED — peak memory at 2,000 books is 502 MB, not the 252 MB that closed it.** Full reasoning in [`docs/conversation.md`](./docs/conversation.md) §16. Step 6 was closed on 2026-09-03 on the finding that memory is *flat* in library size (233 MB at 139 books vs 252 MB at 2,000), so the grid does not scale badly and virtualization buys nothing. Those numbers were not mismeasured — they were **measured on a page that was never open.** The screenshot harness had never successfully navigated, so every run sampled Home. Fixing that (`KALAM_ROUTE`) changed the answer immediately: same job, same build, **226 MB before the grid was reached and 502 MB after**, with 255 MB at 139 books. Memory roughly doubles with library size, ~0.15 MB per card, for cards overwhelmingly off screen. **The cover LRU is not the cause and the earlier analysis of it was right** — that is precisely why this hid so well: a real bound was doing real work next to an unbounded cost, and made it invisible. The unbounded cost is `build_book_grid`, which constructs and attaches a widget tree for **every** book before returning. `grid_build 421 ms` at 2,000 books is now measured rather than extrapolated. **Not fixed in this pass, deliberately**: swapping `GtkGrid` for a recycling view touches the most-used screen in the app, the user is the only visual QA, and the approach should be agreed first. Corrected in all four live places (A0 summary, the step-6 entry, the step list, the phase-map diagram); the historical changelog rows are left standing as the record of what was believed when. **The lesson:** three roadmap entries revised the step-6 estimate, each more confident than the last, all three reasoning about output from a harness that never ran the code in question — and the tell (`grid_build` absent from every report) was in front of us each time |
+| 2026-09-04 | **A0 step 6 (grid virtualization) REOPENED — peak memory at 2,000 books is 502 MB, not the 252 MB that closed it.** Full reasoning in [`docs/conversation.md`](docs/conversation.md) §16. Step 6 was closed on 2026-09-03 on the finding that memory is *flat* in library size (233 MB at 139 books vs 252 MB at 2,000), so the grid does not scale badly and virtualization buys nothing. Those numbers were not mismeasured — they were **measured on a page that was never open.** The screenshot harness had never successfully navigated, so every run sampled Home. Fixing that (`KALAM_ROUTE`) changed the answer immediately: same job, same build, **226 MB before the grid was reached and 502 MB after**, with 255 MB at 139 books. Memory roughly doubles with library size, ~0.15 MB per card, for cards overwhelmingly off screen. **The cover LRU is not the cause and the earlier analysis of it was right** — that is precisely why this hid so well: a real bound was doing real work next to an unbounded cost, and made it invisible. The unbounded cost is `build_book_grid`, which constructs and attaches a widget tree for **every** book before returning. `grid_build 421 ms` at 2,000 books is now measured rather than extrapolated. **Not fixed in this pass, deliberately**: swapping `GtkGrid` for a recycling view touches the most-used screen in the app, the user is the only visual QA, and the approach should be agreed first. Corrected in all four live places (A0 summary, the step-6 entry, the step list, the phase-map diagram); the historical changelog rows are left standing as the record of what was believed when. **The lesson:** three roadmap entries revised the step-6 estimate, each more confident than the last, all three reasoning about output from a harness that never ran the code in question — and the tell (`grid_build` absent from every report) was in front of us each time |
 | 2026-09-04 | **A0 step 7 shipped — perf budgets that count SQL statements, not milliseconds.** The step as written said "seed 2,000 books; assert grid build under N ms", and that test could not have worked: the runner's wall-clock varies ~60% between identical runs (byte-identical dictionary work measured 2774 ms and 3740 ms on consecutive runs), so any ceiling loose enough to survive the noise would sail past a 2× regression. Worse, **slowness is not the bug that keeps happening here.** All three perf incidents in this repo — pitfalls §16, §18, and the cover preloader — were the same shape: a loop issuing one query per row. That is nearly invisible in a timing on a small library and fatal on a large one. So the budgets count statements. Six of them in `src/perf.rs`, using rusqlite's `trace` hook via a new `Catalog::count_queries`, and **deliberately not `#[ignore]`d** — unlike the two timing probes they sit beside, they run on every `cargo test` and gate CI, which is the entire point of a budget. **The assertions are comparisons, not literals.** Each runs the same call against a 20-book and a 60-book library and requires the counts to be *equal*; the absolute number is printed, never asserted. Hard-coding `assert_eq!(n, 2)` would bake in a free implementation choice (whether tags hydrate in one query or two), so a legitimate refactor would fail for no reason and teach the next person to edit the number until it passes — the count comparison can only be satisfied by genuinely not querying per row. Also covered: `library_stats` must serve its second call from the memo (0 statements) **and** must invalidate after a write, because a memo that never expires shows stale numbers on the dashboard. **Verified by sabotage, per §19** — a check that has never failed is not known to work. `hydrate_books` was temporarily reverted to a per-book tag query and pushed: CI went red on 4 of the 6 budgets while the other 270 tests passed, which is precisely the intended blast radius. Reverted in the following commit. This also clears the way for A0 step 6: grid virtualization now has a machine-independent before/after to be judged against, and **step 6 is the only A0 item left open** |
 | 2026-09-04 | **Standing instruction added: write and speak in plain, simple English.** The user, after a reply about grid memory: *"I can't understand anything you said. I need you to use easy and simple language to explain things. Infact add this instruction somewhere so that future chats will also follow it."* Recorded as a hard rule in the "Read this first" block, with a pointer from the working agreement, so it survives into every future chat rather than lasting one conversation. The rule spells out what actually went wrong, because "be clearer" is too vague to act on: **explain the thing before naming it** (not "the `PENDING_FRAMES` weak-ref map breaks under recycling" but "each cover picture remembers which book it belongs to; if pictures get reused for different books, a slow cover can land on the wrong one"), **no unexplained jargon** (*virtualization*, *refcount*, *GObject*, *N+1*, *LRU* mean nothing on their own), **short sentences with one idea each** — which was the real problem more than the vocabulary was — **lead with the answer** instead of making the user read the analysis to reach it, **give numbers meaning** ("507 MB, which is a lot on a 4 GB machine", not "507 MB peak RSS"), and **make choices concrete**: what changes on screen, what could break, how long it takes. Explicitly scoped: this is about *communication only*. It does not lower the bar for the engineering, the testing or the documentation — keep the caveats and the numbers, just say them in words that do not need a glossary |
 | 2026-09-04 | **A0 step 6 first cut: the book grid now builds only the rows you can see — switched off by default, needs a look on a real screen.** Turn it on with `KALAM_WINDOWED_GRID=1`. At 2,000 books the old grid builds 2,000 cards before the page can appear (396 ms measured) and holds ~232 MB, almost all of it cover images kept alive by cards scrolled far off screen. This builds about 48: the rows in view plus three rows of margin above and below. **The first plan for this was wrong and was thrown away.** It assumed GTK's own recycling grid (`GridView`), which insists on owning the scrolling — that would have meant restructuring the page so the header and search bar stayed fixed while only the books scrolled, plus care to avoid two scrollbars. The user's reaction to that was immediate and correct: they want the page to stay as it is. So this keeps the plain `GtkGrid` exactly where it sits, in the same box, in the same page, inside the app's existing scroller. **Nothing about the layout changes** — same 6 columns, one scrollbar, header still scrolls away with the page. The trick is a spacer sized to the full height the grid would have had, so the scrollbar is the same length and in the same place; the grid then listens to the scroller it is already inside (found by walking up the widget tree, so the three call sites needed no edits at all) and mounts and unmounts cards as rows come in and out of view. Two risks the user has to judge, both visible only on a real screen: blank patches if a fast flick outruns the mounting, and covers arriving late into a slot. The overscan margin addresses the first; the second turned out to be smaller than feared, because cards are discarded rather than reused and the pending-cover list is keyed by cover path, so a late decode cannot paint onto a slot that now belongs to a different book. 7 tests on the pure row arithmetic — it is the part that can be wrong in an interesting way and needs no display: viewport coverage checked at every scroll offset across the whole range, no skipped rows between consecutive positions, both edges (negative overscroll, past-the-end), empty and small libraries, and the case where GTK has not laid out yet and reports a viewport height of zero, which if treated as "nothing is visible" would open the page blank |
 | 2026-09-04 | **Windowed grid v1 was broken on a real screen; rebuilt on `GtkFixed`.** The user switched it on and found three bugs immediately: the page scrolled about twice as far as it should with blank space past the books, some books were missing, and the covers and scrollbar jumped while scrolling. All three had one cause, now written up as pitfall §22. v1 kept the existing `GtkGrid` and added a tall spacer widget in the last row to hold the full height open. But **a grid row is as tall as its tallest child**, so the 6,532 px spacer made the last *row* 6,532 px tall on top of the 23 real rows above it — 6,796 px of books became 13,064 px of scrolling. The spacer also occupied a real cell (column 0 of the last row), so the book belonging there had nowhere to go; and rows with no mounted cards collapsed to zero height, so the total height shifted under the scrollbar as cards came and went. The general rule: **a container that derives its size from its children cannot be used to virtualize those children** — the premise is "most children do not exist", and no arrangement of spacers fixes that, since a spacer is just another child feeding the same calculation. v2 uses `GtkFixed`: every card is placed at an explicit x/y and the total size is set once from the book count, so geometry depends on the number of books and never on what is mounted. Verified pixel-identical to the existing grid — 144 books gives 6,796 px both ways. **The lesson about the testing is the part worth keeping.** The row arithmetic had seven tests and was right the whole time; the pixel arithmetic had none, because it lived inside a function that needs a display and was written off as untestable. It was not — `grid_height()` and `card_position()` are pure integer functions, and pulling them out gave 7 more tests that **fail against v1** (13,064 px vs 6,796 px). Having tests for one half of a change is not having tests for the change, and the half that had them was the half I found interesting rather than the half most likely to break |
 | 2026-09-04 | **A0 step 6 shipped and is now the default — the All-books page at 2,000 books went from 502 MB to 247 MB and from 434 ms to 12 ms.** The user checked the rebuilt (`GtkFixed`) version on a real screen and confirmed all three earlier bugs were gone: the page ends where the books end, every book is present, and the scrollbar stays steady while scrolling. That check is the one thing CI cannot do, so it was the gate. The switch flipped from opt-in `KALAM_WINDOWED_GRID=1` to opt-out **`KALAM_NO_WINDOWED_GRID=1`**, matching the shape of `KALAM_NO_PRELOAD` and `KALAM_NO_WEBVIEW_POOL` — an escape hatch is only useful if it works like the other escape hatches. Measured side by side on one machine in one run: 2,000 cards → 48, 434 ms → 12 ms, 502 MB → 247 MB, with the screenshot check reporting an identical 21.7% coloured-pixel count, i.e. the page looks exactly the same. **One trap avoided while flipping the default:** the installed workflow passes `WINDOWED=1` on one run and nothing on the other, which was right while windowed was opt-in — but "nothing" now means *windowed too*, so both runs would have measured the same thing and published a green, meaningless comparison. That is pitfall §21 exactly (change the mechanism and a check watching the old one quietly stops proving anything), caught this time by asking what the check would report *after* the change rather than after it had already lied. Rather than ask for another manual workflow install, `screenshot.sh` now infers the baseline from the output directory, so the installed copy and the updated one in `docs/ci/` are both correct — and `docs/ci/README.md` now has no outstanding ACTION NEEDED items. **This closes A0 except for step 8** (the plugin-host seam), which is designed in `docs/source-seam.md` and deliberately lands with AO3 in P7 |
-| 2026-09-04 | **P6.5 created — libraries land before P7.** Calibre-style: pick the folder, keep several, switch between them, copy one to another machine and it opens. Ordered before P7 deliberately, because P7 *adds books from new places* and this changes *where books live* — do both at once and a missing fic could be either one's fault. The user drew a distinction the roadmap had blurred: Kalam's shelves are Calibre's **virtual** libraries (a saved view over everything), while a real **library** is a hard wall — fanfiction in one, technical books in another, genuinely absent from each other. Both exist afterwards; shelves are unchanged. Reading the code first turned up two things that make this smaller than it looked: **nothing machine-specific is stored** (the `books` table holds `"book.epub"` and `"cover.jpg"`, never absolute paths — those are rebuilt at read time, so a Kalam folder is *already* portable), and **every path derives from one function**, `data_dir()`. The real work is elsewhere: the library list must live *outside* the libraries (a setting stored in a library cannot be read before the library is found), and per-library must be split from global — books and highlights travel, dictionaries and theme must not, or you reinstall dictionaries per library. Also in scope: a `kalam.json` per book folder as a **backup copy**, database still authoritative and never read from it during normal use, plus a rebuild-from-folders command — that is what makes a library self-describing if `catalog.db` is ever lost. JSON not OPF, because OPF cannot express highlights or reading sessions without abuse and nothing else reads a stray `metadata.opf`. Out of scope: two machines using one library at once. Discussion in [`docs/libraries-and-portability.md`](./docs/archive/libraries-and-portability.md) |
-| 2026-09-04 | **P7 sources settled: AO3 → Royal Road → Literotica → FFN, each proving something different.** Webnovel dropped — nearly everything worth reading sits behind their coin paywall, so a downloader gets a few free chapters and stops, and bypassing a paywall is out of scope. The ordering is deliberate rather than by popularity: **AO3 needs no text parsing at all**, because `download.archiveofourown.org/downloads/<id>/fic.epub` is a real EPUB that AO3 builds with Calibre and lists on their own FAQ, so scraping AO3 is only for *finding* things — which means AO3 alone would prove nothing about parsing. **Royal Road is second** because it is the first source where we build an EPUB ourselves, the biggest untested piece, and it is a gentle place to get that wrong. **Literotica** stresses the assumption that every source has neat chapters. **FFN is last and goes through FicHub, not scraping** — this is the finding that changed the plan. FFN sits behind Cloudflare and FanFicFare effectively abandoned it, but [FicHub](https://fichub.net/api) has a documented public API returning metadata plus a ready-made EPUB, and absorbs the Cloudflare problem on their side. Their conditions are conditions, not suggestions: identify the project in the user-agent with contact info, **never** concurrent requests, honour `429`/`Retry-After`, no bulk export. The dependency has to be visible in the UI, because if FicHub is down FFN silently stops working and the user deserves to know why. **The WebKit-as-fetcher idea is deferred, not rejected** — it was right when FFN looked impossible, and FicLab's extension proves the browser-session route works, but building a second fetching mechanism (heavier, slower, tied to the UI thread) cannot be justified when one JSON call does the job. It stays the fallback and the reasoning is recorded so it is not rediscovered from scratch. Also settled: **one shared EPUB assembler** rather than one per source, and highlights that survive an update by re-anchoring on their saved text. See [`docs/fichub-and-ffn.md`](./docs/archive/fichub-and-ffn.md) |
-| 2026-09-04 | **P7 scope corrected: it is a browsing client, not a downloader — and FicHub does not solve FanFiction.net after all.** The user stopped the plan: *"not just a downloader, but surfing, exploring, etc."* They were right, and the tell had been sitting in `source-seam.md` §1 the whole time. Its four verbs — search → detail → chapters → content — **all begin from "I already know which work I want"**, which is a downloader's shape and cannot express wandering. Missing entirely: category and fandom browsing, author pages (their works, favourites, follows, profile), the site's own sort orders, your favourites and follows, series and collections, reviews. **The trait must be rewritten before anything is built**, because retrofitting a browse model onto a download-shaped API means changing every source and every screen. **The correction I most need to own: FicHub does not solve FFN.** I presented it as the answer one turn earlier. It has exactly two endpoints, `/api/v0/epub` and `/api/v0/meta`, and **both require a fic URL you already have** — no search, no browse, no author pages. So it solves *downloading* from FFN and does nothing for *browsing* it, which is most of this phase. My reasoning was sound only while the goal was downloading; the moment the goal is browsing, it collapses. **The WebKit-as-fetcher idea is therefore un-deferred the same day it was deferred** — browsing FFN means fetching FFN pages, means Cloudflare, means the browser engine we already ship. Best answer is probably both: WebKit for browsing, FicHub for the download once a fic is chosen. **Login also moves in-scope**, having been parked in `source-seam.md` §13 as "probably out of scope until someone asks" — someone asked, since favourites and follows live behind a site login, so credential storage needs doing properly. AO3, FFN and Literotica get full browsing; the trait must let other sources offer less without the UI breaking. P7 is now clearly several phases of work rather than one. Full write-up in [`docs/p7-scope-correction.md`](./docs/archive/p7-scope-correction.md) |
+| 2026-09-04 | **P6.5 created — libraries land before P7.** Calibre-style: pick the folder, keep several, switch between them, copy one to another machine and it opens. Ordered before P7 deliberately, because P7 *adds books from new places* and this changes *where books live* — do both at once and a missing fic could be either one's fault. The user drew a distinction the roadmap had blurred: Kalam's shelves are Calibre's **virtual** libraries (a saved view over everything), while a real **library** is a hard wall — fanfiction in one, technical books in another, genuinely absent from each other. Both exist afterwards; shelves are unchanged. Reading the code first turned up two things that make this smaller than it looked: **nothing machine-specific is stored** (the `books` table holds `"book.epub"` and `"cover.jpg"`, never absolute paths — those are rebuilt at read time, so a Kalam folder is *already* portable), and **every path derives from one function**, `data_dir()`. The real work is elsewhere: the library list must live *outside* the libraries (a setting stored in a library cannot be read before the library is found), and per-library must be split from global — books and highlights travel, dictionaries and theme must not, or you reinstall dictionaries per library. Also in scope: a `kalam.json` per book folder as a **backup copy**, database still authoritative and never read from it during normal use, plus a rebuild-from-folders command — that is what makes a library self-describing if `catalog.db` is ever lost. JSON not OPF, because OPF cannot express highlights or reading sessions without abuse and nothing else reads a stray `metadata.opf`. Out of scope: two machines using one library at once. Discussion in [`docs/libraries-and-portability.md`](docs/archive/libraries-and-portability.md) |
+| 2026-09-04 | **P7 sources settled: AO3 → Royal Road → Literotica → FFN, each proving something different.** Webnovel dropped — nearly everything worth reading sits behind their coin paywall, so a downloader gets a few free chapters and stops, and bypassing a paywall is out of scope. The ordering is deliberate rather than by popularity: **AO3 needs no text parsing at all**, because `download.archiveofourown.org/downloads/<id>/fic.epub` is a real EPUB that AO3 builds with Calibre and lists on their own FAQ, so scraping AO3 is only for *finding* things — which means AO3 alone would prove nothing about parsing. **Royal Road is second** because it is the first source where we build an EPUB ourselves, the biggest untested piece, and it is a gentle place to get that wrong. **Literotica** stresses the assumption that every source has neat chapters. **FFN is last and goes through FicHub, not scraping** — this is the finding that changed the plan. FFN sits behind Cloudflare and FanFicFare effectively abandoned it, but [FicHub](https://fichub.net/api) has a documented public API returning metadata plus a ready-made EPUB, and absorbs the Cloudflare problem on their side. Their conditions are conditions, not suggestions: identify the project in the user-agent with contact info, **never** concurrent requests, honour `429`/`Retry-After`, no bulk export. The dependency has to be visible in the UI, because if FicHub is down FFN silently stops working and the user deserves to know why. **The WebKit-as-fetcher idea is deferred, not rejected** — it was right when FFN looked impossible, and FicLab's extension proves the browser-session route works, but building a second fetching mechanism (heavier, slower, tied to the UI thread) cannot be justified when one JSON call does the job. It stays the fallback and the reasoning is recorded so it is not rediscovered from scratch. Also settled: **one shared EPUB assembler** rather than one per source, and highlights that survive an update by re-anchoring on their saved text. See [`docs/fichub-and-ffn.md`](docs/archive/fichub-and-ffn.md) |
+| 2026-09-04 | **P7 scope corrected: it is a browsing client, not a downloader — and FicHub does not solve FanFiction.net after all.** The user stopped the plan: *"not just a downloader, but surfing, exploring, etc."* They were right, and the tell had been sitting in `source-seam.md` §1 the whole time. Its four verbs — search → detail → chapters → content — **all begin from "I already know which work I want"**, which is a downloader's shape and cannot express wandering. Missing entirely: category and fandom browsing, author pages (their works, favourites, follows, profile), the site's own sort orders, your favourites and follows, series and collections, reviews. **The trait must be rewritten before anything is built**, because retrofitting a browse model onto a download-shaped API means changing every source and every screen. **The correction I most need to own: FicHub does not solve FFN.** I presented it as the answer one turn earlier. It has exactly two endpoints, `/api/v0/epub` and `/api/v0/meta`, and **both require a fic URL you already have** — no search, no browse, no author pages. So it solves *downloading* from FFN and does nothing for *browsing* it, which is most of this phase. My reasoning was sound only while the goal was downloading; the moment the goal is browsing, it collapses. **The WebKit-as-fetcher idea is therefore un-deferred the same day it was deferred** — browsing FFN means fetching FFN pages, means Cloudflare, means the browser engine we already ship. Best answer is probably both: WebKit for browsing, FicHub for the download once a fic is chosen. **Login also moves in-scope**, having been parked in `source-seam.md` §13 as "probably out of scope until someone asks" — someone asked, since favourites and follows live behind a site login, so credential storage needs doing properly. AO3, FFN and Literotica get full browsing; the trait must let other sources offer less without the UI breaking. P7 is now clearly several phases of work rather than one. Full write-up in [`docs/p7-scope-correction.md`](docs/archive/p7-scope-correction.md) |
 | 2026-09-04 | **P7 split into six stages; read-online decided; login pushed last and password storage ruled out; multiple-readers parked.** The phase is several phases of work, so it is now **P7a** trait+browse+search → **P7b** reading online → **P7c** author pages → **P7d** the other three sources → **P7e** accounts (if wanted) → **P7f** download/follow/auto-update. Note the inversion: downloading, which was the entire original plan, is now the *last* stage. **Read-online costs far less than expected** because the reader already works that way — it never reads an EPUB directly, it unpacks into `cache/reader/<uuid>/` and reads the unpacked files, and `prune_reader_cache` already sweeps old ones at startup. So the reader does not care whether the EPUB came from disk or the network; what is missing is a temporary identity for a non-library fic and a "keep this" promote action. Two refinements on the user's sketch: **do not delete on app close** (a few days or a size cap instead, so closing and returning an hour later does not re-download), and **very long serials cannot use this at all** — downloading a 2,000-chapter Royal Road work to read one chapter is not viable, so those need per-chapter fetching, which is why the trait still needs a chapter-content verb that AO3 will never use. **Writing actions are out entirely** — no kudos, bookmarking, posting or reading reviews — which keeps Kalam read-only against every source. **Login goes last and passwords are ruled out.** AO3's own mobile-apps post says that if a third-party app asks for your AO3 login you provide it *at your own risk*, and r/AO3 auto-replies with that link on every app question; it is a warning rather than a ban, but **we are that third party**, and there is no sanctioned route since AO3 still has no public API thirteen years after calling one "several major releases away". If accounts happen it is session-cookie-only, obtained by logging in through a real AO3 page in a WebKit window we never read the password from, stored in config rather than in a library folder so it cannot travel with copied books. Worth stating plainly: **Kalam's own follows already work across all four sources without an account**, which is a better feature than the site-side list login would buy. Also **parked for a later thread at the user's request: multiple books/readers open at once** — recorded in a new "Parked for later discussion" section so it is not rediscovered, and flagged as touching the reader, the WebView pool (which parks exactly one view today) and reading-session bookkeeping |
 | 2026-09-04 | **P7 moved behind the comics phases; P6.5 (libraries) is next; reading model settled as three tiers with per-chapter fetching.** The user: *"push this step back at the very last. this is a complex step and I am still working things out."* P7 now runs **after P8/P9** rather than before. Two reasons and the second is better: the design is still moving, and the `Source` trait gets proven against the **image** flavour first — which it has never been tested against at all, especially since MangaDex moved into the comics phase. Discussion continues; nothing is frozen. **Reading model.** Three explicit tiers: browsing keeps nothing, **Save** keeps a fic in the temp area without it becoming a library book, **Download** makes it a real book. Fetching is **per-chapter**, not whole-work — required, because a 2,000-chapter Royal Road serial cannot be downloaded to read one chapter. That has a design consequence worth writing down: **the trait needs a fetch-one-chapter verb that AO3 will never use**, because AO3 hands over a complete EPUB — so *AO3 is the unusual source, not the template*, and designing the trait around it would produce the wrong shape. **I withdrew a suggestion here and the user's model was better.** I had proposed keeping every temporary cache for a few days with a size cap instead of deleting on close; they rejected it for the explicit Save tier. They were right: time-and-size pruning means the *app* decides what to keep, disk usage drifts on its own, and "why is this still here, why did that vanish" has no answer a user can predict, whereas an explicit Save is a decision you made and can see. It also dissolved the problem I was solving — losing a big download by closing the app only bites if reading requires downloading the whole work first, which per-chapter reading removes. Still open and flagged: **what actually separates Save from Download**, since both keep the fic; the answer decides whether saved fics need their own screen. **Login stays undecided** ("we will see") and is unblocking, since it is the last stage. Also corrected while here: the top-of-file "agreed order" list was badly stale — it still showed A0 as NEXT (finished), P7 before comics, and Webnovel in scope |
 | 2026-09-04 | **P6.5 started: the library registry and the Libraries settings card are in, CI green.** `~/.config/kalam/libraries.json` records every library and which one is open, and `paths::data_dir()` now reads it — so the ~30 path helpers built on that one function follow automatically, which is why making libraries switchable was a change at the root rather than a sweep through the app. **Existing installs are untouched**: with no library chosen it falls back to the old fixed location, so an upgrade is a no-op until the user asks for something else. The registry is written temp-file-then-rename, the same rule `epub_write.rs` follows, because a truncated write here would lose the record of where every library lives. Settings → Storage now has a Libraries card with Add / Open / Forget; Forget removes the list entry only and the message says plainly that the folder and books were not touched, since "forget" and "delete my library" must never be confusable. 10 tests, deliberately concentrated on the index arithmetic — `active` is an index into the list, so forgetting an *earlier* entry shifts it, and an off-by-one there does not crash, it silently opens somebody else's library. **Worth recording how this went:** the first two pushes failed CI on dead code, because `-D warnings` rejects methods with no caller — precisely the rule `source-seam.md` §12 gives for why the `Source` trait cannot land before its first implementation. The fix both times was to build the caller rather than silence the lint, which is the right pressure: no API lands in this repo without something that uses it. Still to come: the relaunch flow (selecting currently takes effect on next start), migrating an existing library into the scheme, the per-library/global split so dictionaries stay shared, and the `kalam.json` per-book backup |
@@ -2530,34 +2970,7 @@ than one that visibly changes.
 
 ---
 
-## Where the old content went
+## Current status remains at the top
 
-- **The P0–P12 phase write-ups, A0/A1 tracks, and the dictionary overhaul
-  brief** → [`docs/archive/roadmap-phases-p0-p12.md`](./docs/archive/roadmap-phases-p0-p12.md).
-  Kept for the lessons in them, not for planning.
-- **`docs/offline-roadmap.md`** → merged into this file as Part 1; that file is
-  now a pointer.
-- **Working agreements, anti-bloat rules, and the engine boundary** →
-  [`docs/WORKING.md`](./docs/WORKING.md).
-- **The old ARCH.md living document** (product/navigation notes, the stale
-  `lopdf` mention) → git history, superseded 2026-10-02 by the
-  prescriptive principles document. Navigation and UX decisions live in
-  this file and `docs/conversation.md`.
-/docs/archive/roadmap-phases-p0-p12.md).
-  Kept for the lessons in them, not for planning.
-- **`docs/offline-roadmap.md`** → merged into this file as Part 1; that file is
-  now a pointer.
-- **Working agreements, anti-bloat rules, and the engine boundary** →
-  [`docs/WORKING.md`](./docs/WORKING.md).
-- **The old ARCH.md living document** (product/navigation notes, the stale
-  `lopdf` mention) → git history, superseded 2026-10-02 by the
-  prescriptive principles document. Navigation and UX decisions live in
-  this file and `docs/conversation.md`.
-avigation and UX decisions live in
-  this file and `docs/conversation.md`.
-ocs/WORKING.md`](./docs/WORKING.md).
-- **The old ARCH.md living document** (product/navigation notes, the stale
-  `lopdf` mention) → git history, superseded 2026-10-02 by the
-  prescriptive principles document. Navigation and UX decisions live in
-  this file and `docs/conversation.md`.
-| 2026-10-10 | **KAL-5 EPUB Editor Overhaul design settled.** Shifted from the Phase 6 proofreader model to a full Calibre-parity IDE. Direct `.epub` saves for the full editor (dropping the virtual patch system to enable file management), while retaining lightweight patches for zero-lag in-reader quick fixes. Dual editing modes (Obsidian-style Live Preview and Raw Code). Added File Manager, TOC Editor, Check Book, and automated tools to the requirements. |
+The historical records above end with the earlier roadmap decisions and changelog. For implementation status and the work order as of 2026-10-21, use the current sections at the beginning of this file.
+e.

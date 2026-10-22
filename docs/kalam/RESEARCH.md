@@ -1,3 +1,15 @@
+# Archived reader-engine research record
+
+> This dated record preserves research from the Chapbook selection, trimming
+> and Kalam integration work. It is not current API or product guidance. The
+> source tree is authoritative; current reader behavior is described in
+> [`INTEGRATION.md`](INTEGRATION.md) and
+> [`crates/kalam-reader/README.md`](../../crates/kalam-reader/README.md).
+> Some original design-reference files mentioned below are not in the current
+> repository; treat those paths as historical references, not available assets.
+
+---
+
 # Research record
 
 Audience: AI agents and engineers continuing this work. Technical by
@@ -1404,16 +1416,20 @@ Not verified here (no display): what the plates look like on the
 owner's screen. The mechanism matches the CSS the owner accepted for a
 year, so the expectation is "as before, without the cover inverted".
 
-## R14. Open questions (not researched yet)
+## R14. Integration questions answered from the current tree (2026-10-21)
 
-- Does Kalam's `lists.rs::rebuild_toc` walk `OpenBook.spine` titles or a
-  nested TOC? (Affects whether INTEGRATION.md 3b passes `view.toc()` or
-  `chapter_titles`.) Resolve on first build error.
-- Whether Kalam's `service.reader(book_id)` snapshot already includes
-  every annotation of the book (`snap.annotations`) — assumed yes from
-  `mod.rs` :398.
-- Fixed-layout EPUBs (`Book::is_fixed_layout`, `chapbook-epub/src/book.rs`
-  :171): the widget has not been exercised on one; Kalam's WebKit path
-  rendered them as ordinary pages.
-- Behaviour on a 4 GB machine when two readers are open (Kalam allows
-  only one reader page at a time — believed, not verified).
+- **TOC source and navigation:** `ReaderView::toc()` returns the publisher's
+  nested TOC. `src/pages/reader/lists.rs::rebuild_toc` walks it depth-first and
+  falls back to spine titles only when no entry has a usable spine target.
+  Sidebar clicks navigate to the entry's spine index with `goto_chapter`; the
+  app does not call the widget's `goto_toc()` API.
+- **Annotation snapshot:** `LibraryService::reader(book_id)` loads all rows
+  from `Catalog::get_annotations_for_book(book_id)` into
+  `ReaderSnapshot::annotations`. The reader then paints rows with a usable
+  locator; rows without one remain available in the annotations list.
+- **Fixed-layout EPUBs:** `chapbook-epub` detects `rendition:layout
+  pre-paginated` and rejects fixed-layout content. The current reader supports
+  reflowable EPUBs, not fixed-layout books.
+- **Multiple readers:** bubbles keep lightweight entries for several books.
+  They mount one primary reader and can mount a second reader in side-by-side
+  split mode, for a maximum of two active reader widgets.

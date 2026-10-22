@@ -4,10 +4,15 @@
 actually made here, caught, and fixed. They are written down so the next agent
 does not spend a CI cycle — or ship a bug — rediscovering them.
 
-Format: **what went wrong** → **why** → **what to do instead**.
+Format: **what went wrong** → **why** → **what to do instead**. This is a
+record of past mistakes, not a feature-status document. Phase labels and plans
+inside dated entries are historical; current behavior is in the source and
+current work order is in `ROADMAP.md`.
 
-Related reading: `ROADMAP.md` ("Read this first"), `docs/conversation.md`
-(settled design decisions), `docs/ci/README.md` (how CI is installed).
+Related reading: [`ROADMAP.md`](../ROADMAP.md) (current status and work order),
+[`docs/WORKING.md`](WORKING.md) (current development rules), and
+[`docs/ci/README.md`](ci/README.md) (CI checks and reports). The conversation
+files preserve design discussions; they are not implementation specifications.
 
 ---
 
@@ -442,8 +447,9 @@ Practical consequences:
 - **`echo "push=$?"` after `git push … | tail` reports `tail`'s status**, not
   git's. A rejected push can print `push=0`. Read the hint text or check
   `$PIPESTATUS`.
-- On a rebase conflict in `ROADMAP.md`, it is almost always duelling appended
-  changelog rows. Keep both.
+- Resolve a `ROADMAP.md` conflict against the current source and the owner's
+  approved work order. It is a current summary, not an append-only changelog;
+  do not keep conflicting versions blindly.
 
 ## 12. Editing files you cannot compile
 
@@ -1174,13 +1180,13 @@ test-only it is.
 ## 27. Status claims come from the repo, never from memory
 
 The owner asked "what is P7/P9/P12?" and "isn't the custom renderer done?" —
-and was right to be angry. The reply had cited the **archived** P0–P12 phase
-plan (fiction sources, manga sources, Lua plugins, "renderer research parked")
-as if it were current. ROADMAP.md's first paragraph says it replaced that plan
-on 2026-09-18 and that the old write-ups live in
-`docs/archive/roadmap-phases-p0-p12.md` "for their lessons, not for planning."
-The custom renderer is not research — it shipped with the engine swap and is
-the core of the app.
+and was right to be angry. The reply had treated an old phase plan (fiction
+sources, manga sources, Lua plugins, "renderer research parked") as current.
+The original P0–P12 plan and the later detailed roadmap now live together in
+the historical section of the root [`ROADMAP.md`](../ROADMAP.md). Its current
+phase crosswalk and work order are at the top; old status marks below them are
+historical. The custom renderer is implemented in the local Chapbook crates;
+it is not a research item.
 
 Two failure modes stacked up:
 
@@ -1197,9 +1203,10 @@ Two failure modes stacked up:
 
 ### The rule
 
-- **Before any claim about what is shipped, what is next, or what a phase
-  number means: read the "What is really shipped" table and the changelog tail
-  of ROADMAP.md in this session.** Never cite a phase number from memory.
+- **Before making a claim about current behavior or the next work item, read
+  the root `README.md` and `ROADMAP.md`, then verify details in the source and
+  tests.** Check tracked issue status in the connected issue tracker. Do not
+  use phase numbers or old status tables from archived plans as current facts.
 - **After any environment reset or surprising git output, run `git fetch`
   followed by `git reset --mixed origin/<branch>` before believing `git
   ls-files`, `grep`, or `git log`** — they all answer for whatever commit HEAD

@@ -58,7 +58,7 @@ pub fn sparkline(series: &[i64], css_class: &str) -> gtk::DrawingArea {
         }
         let _ = cr.stroke();
 
-        // End dot on the newest point, like the mockup's sparklines.
+        // Mark the newest point.
         if let Some(&last) = data.last() {
             let (lx, ly) = point(data.len() - 1, last);
             cr.arc(lx, ly, 2.5, 0.0, std::f64::consts::TAU);

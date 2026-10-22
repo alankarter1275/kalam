@@ -1,70 +1,67 @@
-# Repository Working Rules & Developer Invariants
+# Working rules
 
-This document outlines the strict developer invariants and repository guidelines for **Kalam**. All developers and automated coding agents modifying this codebase must adhere to these rules without exception.
+This file records current development boundaries and the checks that enforce
+them. The application source and tests are authoritative; update this guide
+when they change.
 
-> **There are two files named `WORKING.md` in this repository.** This one
-> (`docs/WORKING.md`) is the short list of invariants and guardrails. The
-> other, [`docs/kalam/WORKING.md`](./kalam/WORKING.md), is the much longer
-> agent-facing guide: hard rules, the build and CI loop, a repository map,
-> design decisions not to undo, and how a working round goes. They do not
-> overlap in content, but the names collide — check which one you have open
-> before editing.
+## Data and sidecars
 
----
+- SQLite is the source of truth for catalog and reading state.
+- A book's `kalam.json` is a portable backup snapshot, not a live database.
+  Reader progress is written to SQLite; page turns do not refresh the sidecar.
+  Metadata, annotation and bookmark changes refresh it. Legacy EPUB patch
+  fields are preserved for older data but are not active edit state.
+- Keep database migrations and persistence changes covered by tests. Do not
+  describe the sidecar as synchronizing after every database update.
 
-## 1. Core Invariants
+## UI and work
 
-### 1. Zero `unwrap()` in Production Code
-- **Rule**: `unwrap()` and `expect()` are forbidden in non-test production code.
-- **Rationale**: An unhandled panic in production crashes the application, resulting in bad user experience and potential data corruption.
-- **Enforcement**: Always handle errors explicitly using `?`, pattern matching (`match`, `if let`), `unwrap_or()`, or `unwrap_or_default()`. If an invariant is truly unreachable, use error logging or safe fallbacks.
-- **Status, honestly**: this rule is currently broken in **12** places, so it is enforced as a *ratchet* rather than an absolute — `tests/guardrails.rs` fails if the count rises above 12, and the constant is lowered as they are fixed. A test asserting zero would have failed the day it was written and then been deleted; a ratchet at the real number does the useful job.
+- Keep GTK objects on the GTK thread. Do not move widgets or widget references
+  into background work.
+- Use `src/tasks.rs` for work that may block the interface, such as catalog
+  queries, filesystem operations, EPUB processing, imports and OCR. Send owned
+  results back to the UI through messages.
+- Pages should request data through `LibraryService` snapshots rather than
+  acquiring the catalog directly. This is a ratcheted boundary: the current
+  code still has exceptions, and the guardrail test prevents the count from
+  growing.
+- Keep worker results independent of GTK types. A worker may use the catalog,
+  file paths and parsing libraries, but must not manipulate widgets.
 
-### 2. Sidecar Backup Synchronization on Database Updates
-- **Rule**: Every database modification that alters book annotations, bookmarks, metadata, or reading progress must synchronize the corresponding sidecar backup files (`crate::sidecar::refresh_for_book`).
-- **Rationale**: Sidecar files ensure portable, non-destructive persistence of user annotations alongside book files even if the main database is rebuilt or moved.
-- **Enforcement**: Call `crate::sidecar::refresh_for_book(catalog, book_id)` immediately after any database insert, update, or deletion operation affecting annotations or reading state.
+## Error handling and tests
 
-### 3. No Root Scratch Files
-- **Rule**: Do not create or leave temporary scratch files, debug logs, or intermediate artifacts in the repository root or worktree root.
-- **Rationale**: Keeps the working tree clean, prevents accidental commits of junk files, and maintains standard repository hygiene.
-- **Enforcement**: Place documentation under `docs/`, tests under `tests/`, and temporary build outputs under `target/`.
+- Avoid production `unwrap()` and `expect()`. A guardrail test tracks the
+  existing production sites and prevents them from increasing; the current
+  code has not yet reached zero.
+- Do not weaken or raise a guardrail budget to accommodate new violations.
+  When removing violations, lower the corresponding limit.
+- Add focused tests for changed persistence, parsing and compatibility behavior. Use
+  `cargo test --workspace --all-targets` for workspace coverage and
+  `cargo clippy --workspace --all-targets -- -D warnings` for linting when a
+  Rust toolchain is available.
 
-### 4. Plain English Documentation & Communication
-- **Rule**: Code comments, commit messages, and documentation files must be written in clear, concise, plain English.
-- **Rationale**: Keeps codebase context easily accessible to developers of all skill levels and ensures smooth handoffs between engineering agents.
+## Repository hygiene
 
----
+- Keep temporary files, build outputs and generated reports out of the source
+  tree; use `target/` for build output and the established locations under
+  `docs/` for maintained documentation.
+- Do not add a new dependency, abstraction, environment switch or page without
+  explaining why it is needed and how it fits the existing design.
+- Update active documentation when user-visible behavior or architecture
+  changes. Keep archival notes clearly identified as historical.
 
-## 2. Reading Engine Architecture
+## Guardrails
 
-- **Separation of Concerns**: `crates/kalam-reader` acts as the embedded reader widget and owns rendering, layout, and font shaping without disk I/O.
-- **Persistence Owner**: Kalam's SQLite catalog (`~/.local/share/kalam/catalog.db`) owns database persistence for bookmarks, annotations, saved words, and progress.
+`tests/guardrails.rs` contains count-based limits for production panic sites,
+`Arc<Catalog>` use under `src/pages/`, and color literals in the stylesheet.
+They are regression ratchets, not proof that the desired architecture is
+fully implemented. `src/perf.rs` holds query-count checks; the stall monitor
+is implemented in `src/stall.rs`.
 
----
+## Reader boundary
 
-## 3. Guardrails and ratchets (2026-09-19)
-
-`crates/kalam-reader` inherits strict boundaries from upstream, which is a large part of why that code stayed clean. `src/` had no equivalent — and this document's own rules were prose, which constrains nobody.
-
-**The proof is in the engine's own archived `RESTRICTIONS.md`.** It banned `stylo` while the workspace pinned five stylo crates and built the whole cascade on them, and mandated `lol_html` as the CSS sanitizer when no such dependency existed anywhere. Two of its four rules were false and nothing noticed, because nothing checked them.
-
-So the rules below are **tests**, in `tests/guardrails.rs`:
-
-| Rule | Ratchet |
-|---|---|
-| No `unwrap()`/`expect()` in production code (§1 above) | 12 |
-| Pages ask `LibraryService`, they do not hold `Arc<Catalog>` | 58 occurrences in `src/pages/` |
-| Colours live in `theme.rs`, not `resources/style.css` | 184 hex literals |
-
-A **ratchet** counts today's violations and asserts the count never rises. Fix some, lower the constant. That is what makes a rule practical when most of them are already broken in a few places — a test asserting the ideal would fail on day one and get deleted.
-
-### Anti-bloat rules
-
-These stay prose, because nothing can test for "unnecessary". The list is kept short enough to actually be read:
-
-- **No new abstraction before there is a second caller.** One caller means write it inline; extract when the second appears.
-- **No new dependency without saying what it replaces or enables.**
-- **No new environment-variable switch without removing one.** There are currently **five** `KALAM_*` switches plus `RUST_LOG`; that is the ceiling. Note this already slipped by one since the count was first written down, which is the argument for writing the ceiling down at all.
-- **No new page without a route and a way back out of it.**
-- **Part 2 stays out of Part 1.** `docs/offline-roadmap.md` is the boundary; anything that touches the network belongs on the other side of it.
+`crates/kalam-reader` supplies the GTK EPUB reader widget used by the app.
+Kalam connects its reader events to app features. Dictionary lookup is driven
+by explicit selection/actions; tap callbacks are used for Word Memory terms,
+not for generic tap-to-dictionary lookup. Keep engine changes aligned with the
+current public API in `crates/kalam-reader/README.md`.

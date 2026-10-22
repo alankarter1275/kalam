@@ -2,7 +2,6 @@
 
 use crate::db::HighlightColor;
 use crate::epub_book::ReadingTheme;
-use gtk::prelude::*;
 use relm4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -12,9 +11,6 @@ pub enum ReaderOut {
     Close,
     MinimizeToBubble { book_id: i64 },
     OpenAuthor { name: String },
-    /// Phase 6.8: the pencil beside the cover in the reader's left
-    /// sidebar — open the full editor for this book.
-    OpenEditor { book_id: i64 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,33 +176,8 @@ pub enum ReaderMsg {
     EnginePosition(usize, f64),
     /// From the engine: a finished selection (text, where), or cleared.
     EngineSelection(Option<(String, gtk::gdk::Rectangle)>),
-    /// From the engine, after a draw moved it: where the selection now
-    /// sits in widget coordinates (`None` = gone/off screen). The inline
-    /// editor follows its text with this.
+    /// From the engine, after layout moved the selected text's visible rect.
     EngineSelectionMoved(Option<gtk::gdk::Rectangle>),
-    /// Phase 6.4: the pencil on the selection chip was pressed — open
-    /// the inline editor over the selection.
-    BeginInlineEdit,
-    /// Phase 6.7: the proofreading pencil in the chrome was toggled.
-    ToggleProofreading(bool),
-    /// Phase 6.8: the sidebar pencil — open the full editor.
-    OpenEditor,
-    /// Phase 6.7: a proofread tap found — or failed to yield — an
-    /// editable paragraph. Ok carries the paragraph's identity (its
-    /// text and neighbours' texts) and the rect its editor opens over.
-    EngineParagraphTap(Option<(kalam_reader::ParagraphIdentity, gtk::gdk::Rectangle)>),
-    /// Commit the inline edit with this text (Enter or click-away).
-    CommitInlineEdit(String),
-    /// Abandon the inline edit (Escape).
-    CancelInlineEdit,
-    /// The background verification of an inline edit finished. Ok
-    /// carries the verified edit — href, patch kind, the serial of the
-    /// editor it came from, and the planned patch to store; Err carries
-    /// ready-to-show toast text for a refusal (unchanged, not locatable,
-    /// ambiguous) plus that editor's serial — a refusal of the
-    /// still-open editor re-arms it for another try, while the editor
-    /// stays open either way.
-    InlineEditVerified(Result<VerifiedEdit, (String, u64)>),
     /// From the selection chip.
     HighlightSelection(String),
     SaveAnnotationDetails {
@@ -283,92 +254,4 @@ pub enum ReaderMsg {
     UserScrolled,
     TopEdgeHover(bool),
     BottomEdgeHover(bool),
-}
-
-/// The scope an open inline edit covers: a selection-level typo fix
-/// (phase 6.4), or a whole paragraph in proofreading mode (phase 6.7)
-/// — one editing feel, two granularities.
-pub enum EditScope {
-    /// The selected run, matched in text space by the step-2 matcher.
-    Selection,
-    /// A whole paragraph, matched through the step-6 span mapper. The
-    /// neighbours are the identity the proofread tap carried.
-    Paragraph {
-        prev: Option<String>,
-        next: Option<String>,
-    },
-}
-
-/// The editor widget of an open edit: an entry for a selection, a
-/// wrapped multi-line view for a paragraph — a paragraph keeps its
-/// `<br>` newlines, which an entry cannot hold.
-pub enum EditorWidget {
-    Selection(gtk::Entry),
-    Paragraph(gtk::TextView),
-}
-
-impl EditorWidget {
-    /// The text as it stands — the entry's text, or the view's buffer.
-    pub(crate) fn text(&self) -> String {
-        match self {
-            EditorWidget::Selection(entry) => entry.text().to_string(),
-            EditorWidget::Paragraph(view) => {
-                let buffer = view.buffer();
-                let (start, end) = buffer.bounds();
-                buffer.text(&start, &end, false).to_string()
-            }
-        }
-    }
-
-    /// The widget to overlay, position, and eventually unparent.
-    pub(crate) fn widget(&self) -> &gtk::Widget {
-        match self {
-            EditorWidget::Selection(entry) => entry.upcast_ref(),
-            EditorWidget::Paragraph(view) => view.upcast_ref(),
-        }
-    }
-}
-
-/// An open inline edit: the original text, the chapter it was made in,
-/// its scope, and the editor laid over it with the provider that
-/// typesets it in the reader's own face. The editor is the source of
-/// truth for the current text; `original` is what a commit is planned
-/// against.
-pub struct InlineEdit {
-    pub(crate) original: String,
-    pub(crate) chapter: usize,
-    pub(crate) scope: EditScope,
-    /// Which edit this is: verdicts carry the serial of the editor they
-    /// verified, so a verdict that lands after its editor was replaced
-    /// (a quick second tap) still stores its patch — without tearing
-    /// down the editor that replaced it.
-    pub(crate) serial: u64,
-    /// Set once a commit has been dispatched and no verdict has
-    /// landed: Enter, click-away, and focus-out can all race the
-    /// verdict, and none of them may re-send what another already
-    /// sent. A refusal of this editor's own verdict re-arms it.
-    pub(crate) committed: bool,
-    pub(crate) editor: EditorWidget,
-    /// The editor's typeface provider, registered on the display by
-    /// `engine::build_inline_editor` / `engine::build_paragraph_editor`
-    /// and unregistered when this edit closes, so sessions do not
-    /// accumulate one per edit.
-    pub(crate) provider: gtk::CssProvider,
-}
-
-/// A verified edit coming back from the worker thread: where it lives,
-/// what kind of patch it is, the serial of the editor it verified, and
-/// the ready-to-store plan.
-// `pub` to match the enum whose variant carries it — the module is
-// private, so this is still crate-local; the private-interfaces lint
-// only compares declared visibilities.
-#[derive(Debug, Clone)]
-pub struct VerifiedEdit {
-    pub(crate) href: String,
-    pub(crate) kind: &'static str,
-    /// The spine index the edit was made in — the verdict's own, since
-    /// the editor it verified may already be gone.
-    pub(crate) chapter: usize,
-    pub(crate) serial: u64,
-    pub(crate) planned: crate::epub_patches::PlannedPatch,
 }

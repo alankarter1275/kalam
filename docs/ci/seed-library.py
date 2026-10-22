@@ -18,9 +18,11 @@ could not say anything about the reading page.
 Usage:
     XDG_DATA_HOME=/tmp/kalam-ci python3 seed-library.py --books 139
 
-Keep SCHEMA_VERSION in step with src/db.rs:53. If the app ever refuses to open
-a seeded database, that mismatch is the first thing to check -- the app runs
-migrations forward, so a *lower* number here is safe; a higher one is not.
+The script creates a minimal schema-version-1 catalog. Opening the app runs
+its migrations to the current schema, so this also exercises the migration
+path used by the screenshot job. The seeded book folders use the same readable
+name and short-id format as the app, so startup does not rename them while a
+smoke-test route is opening a book.
 """
 
 import argparse
@@ -32,13 +34,11 @@ import sqlite3
 import struct
 import sys
 import uuid
+import unicodedata
 import zipfile
 import zlib
 from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
-
-# Must not exceed src/db.rs SCHEMA_VERSION. Lower is fine (the app migrates up).
-SCHEMA_VERSION = 14
 
 # Deliberately varied: the point of a synthetic library is to hit the layout
 # edges a tidy fixture would miss. Long titles, one-word titles, punctuation,
@@ -321,6 +321,45 @@ def cover_colour(i: int) -> tuple:
     return (40 + (i * 37) % 200, 60 + (i * 71) % 180, 90 + (i * 113) % 160)
 
 
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    """Match the app's byte-bounded, character-safe folder truncation."""
+    out = []
+    used = 0
+    for char in text:
+        size = len(char.encode("utf-8"))
+        if used + size > max_bytes:
+            break
+        out.append(char)
+        used += size
+    return "".join(out)
+
+
+def _sanitize_folder_text(raw: str, max_bytes: int) -> str:
+    """Match `src/paths.rs::sanitize_folder_text` for seeded book names."""
+    out = []
+    last_was_space = True
+    for char in raw:
+        if char.isspace() or unicodedata.category(char) == "Cc" or char == "/":
+            if not last_was_space:
+                out.append(" ")
+                last_was_space = True
+            continue
+        out.append(char)
+        last_was_space = False
+    return _truncate_utf8("".join(out).strip(". "), max_bytes)
+
+
+def book_folder_name(authors: str, title: str, book_uuid: str) -> str:
+    """Build the same readable, id-suffixed folder name as `src/paths.rs`."""
+    author = _sanitize_folder_text(authors, 60)
+    has_author = bool(author) and author.lower() != "unknown"
+    clean_title = _sanitize_folder_text(title, 64) or "Untitled"
+    prefix = f"{author} - {clean_title}" if has_author else clean_title
+    suffix = book_uuid[:8]
+    prefix = _truncate_utf8(prefix, max(0, 120 - len(suffix.encode("utf-8")) - 1))
+    return f"{prefix} {suffix}"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--books", type=int, default=139)
@@ -406,7 +445,7 @@ def main() -> int:
         # Spread added_at so "recently added" is not an arbitrary tie-break.
         added = (now - timedelta(hours=i)).isoformat()
 
-        bdir = library / book_uuid
+        bdir = library / book_folder_name(author, title, book_uuid)
         bdir.mkdir(parents=True, exist_ok=True)
         # Book 1 is the one the reader screenshot opens (`read-1`), so that
         # is the one that carries the nested table of contents.

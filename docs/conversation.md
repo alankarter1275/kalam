@@ -1,10 +1,12 @@
 # Kalam — Design Conversation Log
 
-This file is a **living record of design discussions**. It is edited as ideas
-are accepted, refined, or rejected. Rejected ideas are marked with `~~strike~~`
-and a one-line reason, so we remember *why* — not just *what* we decided.
+This file is a **design discussion record**, not a current implementation
+specification. It preserves accepted, rejected and superseded proposals. Check
+current behavior in the source and current scope in [`ROADMAP.md`](../ROADMAP.md)
+and [`plan.md`](../plan.md) before acting on an entry.
 
-Status emoji: ✅ accepted · 🔶 under discussion · ~~struck~~ rejected.
+Status markers used inside the record: ✅ accepted · 🔶 under discussion ·
+~~struck~~ rejected.
 
 ---
 
@@ -1622,10 +1624,11 @@ Implemented local comic archive reading and interactive Relm4 comics viewer comp
 
 ## 20. Which PDF engine? (2026-09-18)
 
-**Trigger.** `docs/offline-roadmap.md` Module 1 calls for "crisp PDF rendering
-backed by Google's PDFium engine (`pdfium-render`)". Checking that against the
-code found the assumption underneath it was wrong, so the decision was taken
-back up.
+**Trigger.** The 2026-09-18 offline-roadmap draft's Module 1 called for crisp
+PDF rendering with Google's `pdfium-render`. That draft was later consolidated
+into the root `ROADMAP.md`; its original wording is preserved in Git history.
+Checking the assumption against the code showed it was wrong, so the decision
+was taken back up.
 
 ### What is actually there
 
@@ -1775,8 +1778,9 @@ list short enough that it can actually be read:
   that is the ceiling. One was already dead (`KALAM_NO_WEBVIEW_POOL`) and has
   been removed from the README.
 - **No new page without a route and a way back out of it.**
-- **Part 2 stays out of Part 1.** `docs/offline-roadmap.md` is the boundary;
-  anything that touches the network belongs on the other side of it.
+- **Part 2 stays out of Part 1.** The root `ROADMAP.md` keeps online work
+  separate from the offline library; anything that touches the network belongs
+  on the separate future track.
 
 ### Recommendation
 
@@ -1806,11 +1810,10 @@ PDFium a close second and Poppler clearly behind both.
 - Its **default features pull in XPS, SVG, EPUB, HTML, Tesseract OCR, Brotli
   and DOCX output.** Use `default-features = false` and enable only PDF, or
   the "not bloated" goal dies at build time rather than at install time.
-- This does not remove the need for the small fix first: page mode currently
-  draws black bars for a text PDF (see `docs/offline-roadmap.md`, "The PDF
-  reader is not doing what the roadmap assumes"). That fix stands on its own
-  and should land before the engine swap, because it makes the broken state go
-  away today.
+- This did not remove the need for the small fix identified at the time:
+  page mode drew black bars for a text PDF (diagnosed above in §20). That fix
+  stood on its own and was expected before the engine swap, because it made
+  the broken state go away immediately.
 - `lopdf` stays for now — it is still doing text extraction and the ink-bounds
   measurement that smart crop depends on.
 

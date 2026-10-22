@@ -3,7 +3,7 @@
 // This is the engine.rs Kalam's reader page started from (handoff
 // bundles up to engine 63d854f). Kalam has edited its own copy at
 // calibre-alt src/pages/reader/engine.rs every round since — dictionary
-// card rebuilt from the owner's mockup, tap-to-dictionary removed, the
+// card rebuilt from the design reference, tap-to-dictionary removed, the
 // selection chip rebuilt — and that copy is authoritative. Do not copy
 // this file over it. It is kept so the recipe in docs/kalam/INTEGRATION.md
 // still has the code it describes; it is no longer shipped in the bundle.

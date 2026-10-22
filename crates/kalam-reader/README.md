@@ -1,156 +1,88 @@
 # kalam-reader
 
-The reading widget Kalam embeds. One GTK4 widget (`ReaderView`) with the
-kalam-engine behind it instead of WebKit. Kalam's paper and ink, Kalam's
-Literata, no JavaScript, no network.
+`kalam-reader` is the GTK4 widget Kalam uses for reflowable EPUBs. Fixed-layout
+EPUBs are not supported. The public widget is `ReaderView`; the host owns
+navigation chrome, persistence, dictionary UI and other application features.
 
-## Try it without Kalam
+## Build the demo
 
-```sh
-cargo build --release -j 2 -p kalam-reader-demo
-./target/release/kalam-reader-demo book.epub
+```bash
+cargo run --release -p kalam-reader-demo -- book.epub
 ```
 
-Keys in the demo: arrows / PageUp / PageDown / space turn pages, `n`/`p`
-skip chapters, `s` switches between paged and scrolled reading, `t` cycles
-the four themes, `+`/`-` font size, `[`/`]` line height, `{`/`}` column
-width, drag to select, `h` highlights the selection, `q` quits. Everything the
-widget would tell Kalam is printed with a `demo:` prefix.
+The demo embeds the widget in a GTK window and prints the interaction callbacks
+it receives. The full app integration is in
+[`src/pages/reader/engine.rs`](../../src/pages/reader/engine.rs).
 
-There is deliberately no tap-a-word handler: Kalam removed
-tap-to-look-up as a feature, and `ReaderView::connect_word` and the
-`TappedWord` type were deleted from the widget with it. A tap on text is a
-tap — the page-turn zones decide what it does.
+## Open and embed a book
 
-`--host-fonts` also loads the system's fonts (for CJK, Devanagari, Arabic,
-emoji). Off by default because scanning them is the slow part on a cold
-disk.
+`ReaderView::open(path, prefs, options)` opens an EPUB and returns a GTK
+`DrawingArea` wrapper. Opening is synchronous and performs archive/package
+loading; call it on the GTK thread because it constructs GTK objects. Chapter
+layout and image loading continue as the widget draws the book. `ReaderOptions`
+controls host-font scanning, additional font files and the cache budget.
 
-## What Kalam does with it
+```rust,ignore
+let prefs = kalam_reader::KalamPrefs::default();
+let options = kalam_reader::ReaderOptions::default();
+let view = kalam_reader::ReaderView::open("book.epub", prefs, &options)?;
+container.append(view.widget());
 
-```text
-Kalam                                  ReaderView
-─────                                  ──────────
-ReaderView::open(path, prefs, opts) ──▶ opens the book, lays out on first draw
-overlay.set_child(view.widget())
-
-ReaderMsg::NextChapter          ──▶ view.next_chapter()
-"scroll" / "pages" toggle       ──▶ view.set_mode(ReadingMode::Scrolled / Paged)
-gtk::Scrollbar in the overlay   ──▶ ::new(Vertical, Some(view.vadjustment()))
-ReaderMsg::Theme(t)             ──▶ view.set_theme(t)
-ReaderMsg::FontDelta(d)         ──▶ view.set_font_px(prefs.font_px + d)
-ReaderMsg::JumpToLocation(c, f) ──▶ view.goto_chapter(c, f)
-ReaderMsg::TocSelect(entry)     ──▶ view.goto_toc(&entry)
-"highlight yellow" chip button  ──▶ view.capture_highlight(Yellow) → NewHighlight
-  INSERT INTO annotations … → id ──▶ view.show_highlight(id, &h)
-open / AnnotationsReload        ──▶ view.set_highlights(rows)
-Delete/RecolorAnnotation(id, c) ──▶ view.remove_highlight(id) / recolor_highlight(id, c)
-
-save_progress(chapter, fraction) ◀── connect_position(|pos| …)
-dictionary popover               ◀── connect_word(|word| …)   (word, sentence, rect, highlight?)
-selection chip                   ◀── connect_selection(|sel| …)
-open in browser                  ◀── connect_external_link(|href| …)
+view.connect_position(|position| {
+    // Persist the current chapter and fraction in the host application.
+});
 ```
 
-Two ways of reading, one widget. `ReadingMode::Paged` shows one page at
-a time and arrows, PageDown, space and the side thirds turn it.
-`ReadingMode::Scrolled` shows the whole book as one column: the wheel,
-the arrows, PageDown and the scrollbar move through it, chapter after
-chapter with no seams to click through. Chapters the engine has not laid
-out yet take an estimated height (their length in characters at the
-density of the ones it has), so the scrollbar means "how far through the
-book" from the first frame, and the estimate is corrected as the reader
-arrives without moving the text on screen. Switching modes keeps the
-place: the page on screen becomes the page under the reading line (48 px
-below the top edge, where a page's first line sits) and back. Everything
-below — positions, highlights, taps, selections — means the same in both
-modes; in scrolled mode "the page" is the one under the reading line.
-Between chapters the strip draws Kalam's divider — the hairline with the
-chapter's title in a small pill, as the WebKit reader had; the title is
-the table of contents' entry for that chapter, else "Chapter N". While the
-reader is reading one chapter the widget lays out the next (and the
-previous) in an idle, so arriving at a seam costs nothing.
+Call `view.close()` when the reader page is destroyed. It releases the session
+and breaks the callback/controller references that otherwise keep the book's
+layouts and decoded images alive.
 
-`view.vadjustment()` drives a `gtk::Scrollbar`; it reads all zeros in
-paged mode, so hide the bar then. Put the bar in a `gtk::Overlay` over the
-widget (`halign: End`), as the demo does, not in a box beside it: a bar
-that appears beside the widget narrows it, and a new width is a new
-layout of every chapter.
+Callbacks execute on the GTK main thread. Keep them short; send owned values to
+the host model or defer expensive work. The widget itself has no catalog or
+application database.
 
-Positions come in two forms. Every page turn reports `chapter` +
-`fraction` — exactly what Kalam's `reading_progress` table holds today, and
-cheap. `view.locator()` gives the durable form, a `LayeredLocator` that
-re-finds the text by its surrounding words after a re-import or a different
-edition; ask for it on close and at chapter changes (it needs the whole
-book's text counted once, which the widget does in an idle after the first
-frame). Store both; restore with `goto_locator` when you have one,
-`goto_chapter` otherwise.
+## Reader features
 
-Highlights live in **Kalam's** `annotations` table and nowhere else. The
-widget captures one (`capture_highlight`: text + two `LayeredLocator`s, the
-JSON of which fits the unused `cfi` column), Kalam inserts the row, and the
-widget paints it under Kalam's row id (`show_highlight`). Recolour, delete
-and jump all take that id; at open, `set_highlights` takes every row for the
-book. Re-anchoring after a re-import is the engine's, by the quote context
-in the locator. A tap on a highlighted word reports the word *and* the
-highlight's id, so Kalam can offer "recolour / delete" instead of a lookup.
+- EPUB pagination with facing pages when the widget is wide enough, and a
+  single long continuous-scroll mode. `ReaderView::set_mode()` changes modes;
+  `vadjustment()` supplies the scroll position for a host scrollbar.
+- Nested publisher table of contents through `toc()` and `goto_toc()`.
+- Chapter/fraction navigation, back stack, and `LayeredLocator` capture and
+  restoration.
+- Text selection with move notifications and selection geometry for a host
+  action chip.
+- Host-managed highlights: capture, display, update, recolor, remove and jump
+  to highlights. Highlight IDs belong to the host.
+- Whole-book text search through `search()`. Queries shorter than two
+  characters return no results; results are capped at 500.
+- Internal links and footnotes through `connect_note`; external links through
+  `connect_external_link`; image taps through `connect_image_tap`.
+- Reader preferences for theme, font, line height, column width, justification,
+  hyphenation and publisher styles.
+- Bundled reader fonts, optional host-font scanning, and optional extra fonts
+  from `ReaderOptions::fonts_dir`.
 
-Text the widget hands over — a selection, a highlight's excerpt, a tapped
-word and its sentence — is cleaned first: publishers' files are full of
-soft hyphens inside words and zero-width spaces after hard hyphens, which
-the engine keeps (its positions are offsets into the raw text) and which
-would send `Har\u{ad}ry` to the dictionary. Store what the widget gives
-you; nothing to strip on Kalam's side.
+`DEFAULT_CACHE_BUDGET` is 32 MiB. Set `ReaderOptions::cache_budget` to override
+it; `cache_bytes()` reports current use.
 
-Memory: the engine keeps laid-out chapters and decoded images up to
-`ReaderOptions::cache_budget`, 32 MB unless Kalam says otherwise (the
-engine's own default is 192 MB, sized for comics). `view.cache_bytes()`
-says how much it holds right now.
+## Word Memory and dictionary lookup
 
-## What it needs from Kalam
+The widget has no general tap-a-word-to-dictionary behavior. The host supplies
+saved vocabulary with `set_word_memory()`. Those terms receive a dotted
+underline; `connect_word_tap()` and `connect_word_hover()` report interactions
+with those marked terms. Kalam uses selection and an explicit Dictionary action
+for ordinary word and phrase lookup.
 
-* **gtk4-rs 0.11** (Kalam is on 0.9). gtk4-sys can only exist once in a
-  binary, so Kalam moves to gtk4 0.11 / libadwaita 0.9 / relm4 0.11 when it
-  takes this crate. Mechanical; the API differences are small.
-* Nothing else. No WebKit, no font files on disk, no network, and no
-  database of its own: the engine writes nothing to disk. Kalam's
-  database is the only store, fed from the position callback and the
-  highlight calls above.
-* One call on the way out: `view.close()` when the reader page goes
-  away. GTK's draw function and controllers hold the view, and the view
-  holds the widget they hang on; `close` cuts that loop so the book,
-  its layouts and its fonts are freed.
+## Persistence
 
-The step-by-step recipe for the swap, with the glue file Kalam drops
-in, is [`docs/kalam/INTEGRATION.md`](../../docs/kalam/INTEGRATION.md).
+The widget does not persist progress, highlights, bookmarks or preferences.
+The host saves the `chapter` and `fraction` from `connect_position()` and may
+also store a locator for more durable text-based restoration. The host owns all
+highlight ids and rows.
 
-## Where the numbers come from
+## Dependencies
 
-Every colour and range in `src/prefs.rs` is copied from Kalam's source:
-`ReadingTheme::swatch()` and `selection_style()` for the paper, ink and
-selection tints; the `.kalam-hl-*` rules for the five highlight colours; the
-`reader.*` preference defaults and clamps for font size (13–24, default 17),
-line height (1.3–2.5, default 1.8) and column width (400–860, default 620).
-When Kalam changes one, change it here.
-
-## Fonts
-
-`fonts/` holds Literata and Noto Sans, four faces each, SIL OFL 1.1 (licence
-texts alongside). They are compiled into the binary with `include_bytes!`.
-`serif` is Literata, every other CSS generic is Noto Sans; books are always
-laid out in Literata because the widget forces the reader font
-(`ReadingSettings::font_family`) and switches publisher stylesheets off —
-Kalam's theme wins, as before.
-
-## Not yet
-
-* Scrolled mode paints each visible page whole and copies out the band it
-  shows — two or three pages a frame, about 8 ms in all on a novel on the
-  target machine. A book of full-page images would want the rasters
-  cached; wait for it to show before building it.
-* Kinetic (flick) scrolling: the wheel moves in steps, a touchpad's
-  smooth deltas are honoured, but nothing coasts after the finger lifts.
-* A converter for Kalam's existing highlight rows (node-path anchors) to
-  layered locators — planned to match by `text_excerpt`.
-* Search in chapter, bookmarks list — the engine has the calls, the widget
-  does not expose them yet.
+The crate uses gtk4-rs 0.11 and requires system GTK 4.16 or newer. It wraps the
+local Chapbook workspace crates, which provide EPUB parsing, text layout,
+pagination and CPU rendering. PDF and CBZ/CBR reading are implemented by
+Kalam outside this widget.

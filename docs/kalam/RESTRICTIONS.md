@@ -1,3 +1,13 @@
+# Archived reading-engine restrictions record
+
+> The sections below preserve dated engine restrictions and rationale. They
+> are not live policy; check the current manifests and source before relying on
+> technical details. Current repository boundaries are in [`ARCH.md`](../../ARCH.md)
+> and [`docs/WORKING.md`](../WORKING.md), and the current widget behavior is in
+> [`INTEGRATION.md`](INTEGRATION.md).
+
+---
+
 # kalam-engine — architectural restrictions
 
 The boundaries that keep the reading engine from turning into a browser

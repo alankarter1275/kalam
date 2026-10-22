@@ -1,23 +1,24 @@
 # Part 2 (online) — the design conversation, in full
 
 > **What this file is.** The complete record of the Part 2 — online design
-> conversation, opened 2026-10-09 at the owner's instruction. Unlike
-> `docs/conversation.md` (the distilled, cross-cutting decision log), this
-> file keeps **full detail**: the owner's asks recorded verbatim, the
-> research with file-and-line evidence behind every claim, the decisions as
-> they land, and the open questions in order. Entries are appended in
-> conversation order and never rewritten except to mark a decision's final
-> status.
+> conversation. It keeps the asks, research, decisions and open questions in
+> conversation order; entries are historical notes, not implementation
+> instructions.
 >
-> Status markers follow the house style: ✅ accepted · 🔶 under discussion ·
-> ~~struck~~ rejected.
+> **Current Part 2 status:** online sources and the plugin runtime are not
+> implemented. The settled plugin-substrate proposal is Lua (`mlua`, Lua 5.4),
+> as recorded in Entry 16 and summarized in [`ROADMAP.md`](../ROADMAP.md).
+> Consult the final entry and current source before using older proposals in
+> this record.
+>
+> Status markers: ✅ accepted · 🔶 under discussion · ~~struck~~ rejected.
 >
 > **Terminology guard.** "Part 2" here always means **ROADMAP's Part 2 —
 > online** (networked: sources, plugins, downloads). It is *not* Part 1's
 > internal "Phase 2 — Reading quality" (offline items 2.1–2.13, mostly
-> shipped: dictionary keyboard, PDF rebuild, bubbles). The old phase plan
-> also called the online work "P7" before it was archived — same thing,
-> older name.
+> shipped: dictionary keyboard, PDF rebuild, bubbles). The original P0–P12
+> plan in the historical section of `ROADMAP.md` called the online work
+> "P7" — the same track under its earlier name.
 
 ---
 
@@ -45,8 +46,8 @@ online (stub)"; rule: *nothing in Part 1 may depend on it*):
    rebuild is not a fast fix loop. Reasoning in `docs/conversation.md` §22.
 2. **Online sources: AO3, MangaDex, Royal Road, Literotica, FFN.** The old
    design and its evidence are in
-   `docs/archive/roadmap-phases-p0-p12.md`; the `Source` trait has never
-   been implemented — "treat it as unbuilt."
+   the original P0–P12 plan in [`ROADMAP.md`](../ROADMAP.md#original-phase-plan);
+   the `Source` trait has never been implemented — "treat it as unbuilt."
 3. **Downloads hub.** The pages exist and are unreachable (the nav hides
    them). Standing requirement when this starts: use `src/tasks.rs` —
    `src/downloads.rs` currently uses bare `thread::spawn` and six
@@ -291,7 +292,7 @@ a legal source matters to them. Awaiting the owner's pick of one or two
    that need a selector*.
 3. **`ARCH.md`'s Source-seam section** — the Lua-era seam design,
    banner-marked set aside, pointing to §22.
-4. **`docs/archive/roadmap-phases-p0-p12.md` P6+P7** — the richest doc.
+4. **`ROADMAP.md` — original P0–P12 phase plan** — the richest record of the earlier P6+P7 design.
    P6+P7 deliberately combined: the queue is infrastructure, the client is
    the feature, designed together so the queue answers to real needs.
 5. **`docs/archive/source-seam.md`** — the original seam design: the

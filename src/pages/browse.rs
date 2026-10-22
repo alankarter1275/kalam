@@ -30,7 +30,7 @@ pub struct BrowseInit {
 }
 
 pub struct BrowseModel {
-    #[allow(dead_code)] // browse state for the Wasm sources UI
+    #[allow(dead_code)] // used when online source browsing is implemented
     manager: Arc<SourceManager>,
     #[allow(dead_code)] // as above
     source_id: String,

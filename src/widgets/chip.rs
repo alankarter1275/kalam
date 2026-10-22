@@ -33,6 +33,9 @@ pub fn chip_label(label: &str, active: bool) -> gtk::Label {
     if active {
         chip.add_css_class("active");
     }
+    // Content-sized: without this the label fills its parent and the pill
+    // background stretches with it (seen in the §7.4 gallery captures).
+    chip.set_halign(gtk::Align::Start);
     chip.set_valign(gtk::Align::Center);
     chip
 }
@@ -44,6 +47,7 @@ pub fn key_chip(label: &str, recording: bool) -> gtk::Label {
     if recording {
         chip.add_css_class("recording");
     }
+    chip.set_halign(gtk::Align::Start);
     chip.set_valign(gtk::Align::Center);
     chip
 }
@@ -52,6 +56,7 @@ pub fn key_chip(label: &str, recording: bool) -> gtk::Label {
 pub fn count_badge(count: usize) -> gtk::Label {
     let badge = gtk::Label::new(Some(&count.to_string()));
     badge.add_css_class("kalam-ui-count-badge");
+    badge.set_halign(gtk::Align::Start);
     badge.set_valign(gtk::Align::Center);
     badge
 }

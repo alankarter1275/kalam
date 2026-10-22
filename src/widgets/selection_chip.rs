@@ -83,6 +83,10 @@ pub fn selection_chip_with_colors(
 
     let root = gtk::Box::new(gtk::Orientation::Horizontal, 2);
     root.add_css_class("kalam-ui-selection-chip");
+    // Content-sized like the segmented controls; the chip must hug its
+    // swatches and actions, not stretch to its parent's width.
+    root.set_halign(gtk::Align::Start);
+    root.set_valign(gtk::Align::Center);
     root.set_size_request(-1, crate::style::size::TOUCH_TARGET);
     root.set_valign(gtk::Align::Center);
 

@@ -78,11 +78,14 @@ pub fn cover(spec: CoverSpec<'_>) -> gtk::Widget {
         })
     };
 
-    let stated = match spec.availability {
-        CoverAvailability::Available => base,
-        CoverAvailability::FileMissing => file_missing_cover(base).upcast::<gtk::Widget>(),
-    };
-    cover_with_finished_badge(&stated, spec.finished).upcast::<gtk::Widget>()
+    // Badge the cover face itself first: the tick belongs at the cover's
+    // corner (and dims with it when the file is missing), not at the corner
+    // of the wider file-missing stack.
+    let badged = cover_with_finished_badge(&base, spec.finished).upcast::<gtk::Widget>();
+    match spec.availability {
+        CoverAvailability::Available => badged,
+        CoverAvailability::FileMissing => file_missing_cover(badged).upcast::<gtk::Widget>(),
+    }
 }
 
 /// Book-shaped convenience over [`cover`] for the common page call.
@@ -125,11 +128,19 @@ pub fn fallback_cover(title: &str, author: &str, kind: &str, width: i32, height:
     spacer.set_vexpand(true);
     cover.append(&spacer);
 
+    // The §7.4 gallery captures exposed two GtkLabel behaviours here: an
+    // ellipsizing start-aligned label is allocated only a few characters
+    // ("EPUB" rendered as "EPU…"), and a wrapping label's natural width is
+    // its full one-line width, which inflated these fixed-size covers well
+    // past the requested width. So the bounded kind token does not
+    // ellipsize at all, and the wrapping labels cap their natural width at
+    // the cover's inner width via max-width-chars.
+    let inner_width = width - if compact { 16 } else { 40 };
+
     let kind_label = gtk::Label::new(Some(&display_text(kind, "BOOK").to_ascii_uppercase()));
     kind_label.add_css_class("kalam-ui-cover-kind");
     kind_label.set_halign(gtk::Align::Start);
     kind_label.set_xalign(0.0);
-    kind_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     cover.append(&kind_label);
 
     let title_label = gtk::Label::new(Some(display_text(title, "Untitled")));
@@ -139,6 +150,7 @@ pub fn fallback_cover(title: &str, author: &str, kind: &str, width: i32, height:
     title_label.set_wrap(true);
     title_label.set_lines(if compact { 3 } else { 4 });
     title_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title_label.set_max_width_chars(max_chars_for(inner_width, if compact { 6 } else { 11 }));
     cover.append(&title_label);
 
     let author_label = gtk::Label::new(Some(display_text(author, "Unknown")));
@@ -148,6 +160,7 @@ pub fn fallback_cover(title: &str, author: &str, kind: &str, width: i32, height:
     author_label.set_wrap(true);
     author_label.set_lines(2);
     author_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    author_label.set_max_width_chars(max_chars_for(inner_width, if compact { 5 } else { 6 }));
     cover.append(&author_label);
 
     cover
@@ -282,6 +295,13 @@ fn missing_cover_inner(
         title_label.set_justify(gtk::Justification::Center);
         title_label.set_lines(3);
         title_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        // Same fixed-width guard as the generated face: keep the wrapping
+        // title's natural width inside the requested cover width.
+        let inner_width = width - if compact { 16 } else { 32 };
+        title_label.set_max_width_chars(max_chars_for(
+            inner_width,
+            if compact { 5 } else { 8 },
+        ));
         cover.append(&title_label);
 
         let caption = gtk::Label::new(Some("Not in library"));
@@ -305,6 +325,14 @@ fn cover_is_compact(width: i32, height: i32) -> bool {
     width < 110 || height < 150
 }
 
+/// Approximate how many average characters fit in `inner_px`, for capping a
+/// wrapping label's natural width with `set_max_width_chars`. The divisors
+/// are ~0.5–0.55 of each label's CSS font size, matching Pango's average
+/// char width closely enough that the cover keeps its requested size.
+fn max_chars_for(inner_px: i32, approx_char_px: i32) -> i32 {
+    (inner_px.max(0) / approx_char_px.max(1)).max(1)
+}
+
 fn display_text<'a>(value: &'a str, fallback: &'a str) -> &'a str {
     let value = value.trim();
     if value.is_empty() {
@@ -316,7 +344,7 @@ fn display_text<'a>(value: &'a str, fallback: &'a str) -> &'a str {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_is_compact, display_text};
+    use super::{cover_is_compact, display_text, max_chars_for};
 
     #[test]
     fn blank_cover_copy_has_stable_fallbacks() {
@@ -329,5 +357,14 @@ mod tests {
         assert!(cover_is_compact(56, 84));
         assert!(cover_is_compact(100, 180));
         assert!(!cover_is_compact(180, 270));
+    }
+
+    #[test]
+    fn max_chars_stays_within_the_cover_and_never_vanishes() {
+        // 120px cover, 20px padding each side, 22px title face.
+        assert_eq!(max_chars_for(80, 11), 7);
+        assert_eq!(max_chars_for(84, 6), 14);
+        assert_eq!(max_chars_for(0, 11), 1);
+        assert_eq!(max_chars_for(-20, 11), 1);
     }
 }

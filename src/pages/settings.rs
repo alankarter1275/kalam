@@ -41,7 +41,9 @@ impl SettingsTab {
 
     pub fn subtitle(self) -> &'static str {
         match self {
-            Self::Appearance => "Every theme is dark. Changes apply immediately.",
+            Self::Appearance => {
+                "Choose a palette, and whether Kalam follows your system appearance. Changes apply immediately."
+            }
             Self::Storage => {
                 "Manage where Kalam stores your catalog database, library EPUB files, backups, and reader cache."
             }
@@ -80,50 +82,23 @@ const NAV_GROUPS: &[(&str, &[SettingsTab])] = &[
 /// label prefix used to derive each variant's short name).
 const THEME_FAMILIES: &[(&str, &str, &str, &str)] = &[
     (
-        "onedark",
-        "One Dark",
-        "Warm-tinted greys, soft blue accent. The default.",
-        "One Dark",
+        "terracotta",
+        "Terracotta",
+        "Warm paper and ink with a clay accent. The default.",
+        "Terracotta",
     ),
     (
-        "tokyonight",
-        "Tokyo Night",
-        "Deep indigo, high-chroma violet and blue accents.",
-        "Tokyo Night",
+        "forest",
+        "Forest",
+        "Quiet greens with a leaf-green accent.",
+        "Forest",
     ),
-    (
-        "everforest",
-        "Everforest",
-        "Low-saturation greens and warm greys. Easy on the eyes.",
-        "Everforest",
-    ),
-    (
-        "catppuccin",
-        "Catppuccin Mocha",
-        "Soft pastels on a near-black lavender base.",
-        "Catppuccin",
-    ),
-    (
-        "gruvbox",
-        "Gruvbox",
-        "Warm retro browns and ochres — a classic.",
-        "Gruvbox",
-    ),
-    (
-        "ayu",
-        "Ayu",
-        "Muted slate with a distinctive amber accent.",
-        "Ayu",
-    ),
-    (
-        "nord",
-        "Nord",
-        "Cool arctic blue-greys. No darker variant — already deep.",
-        "Nord",
-    ),
+    ("plum", "Plum", "Muted plum accent, soft contrasts.", "Plum"),
+    ("teal", "Teal", "Calm teal accent on cool neutrals.", "Teal"),
 ];
 
 const THEME_BUTTON_PREFIX: &str = "theme-btn-";
+const THEME_MODE_PREFIX: &str = "theme-mode-";
 const THEME_BADGE_PREFIX: &str = "theme-badge-";
 const THEME_CHECK_PREFIX: &str = "theme-check-";
 
@@ -860,25 +835,71 @@ fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>, active: &str) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    // `active` arrives from the snapshot (7.1 step 2c); the catalog stays
-    // for the save-and-apply callbacks, which are click-time writes.
+    // `active` arrives from the snapshot (7.1 step 2c) as a stored choice
+    // id (palette + Light/Dark/System); the catalog stays for the
+    // save-and-apply callbacks, which are click-time writes. Cards mark
+    // the *resolved* theme, so a System choice still shows which of its
+    // palette's two modes is on screen.
+    let active_choice = crate::theme::choice_by_id(active);
+    let active_resolved = active_choice.resolve();
+
+    // Mode row, spanning the grid: Light / Dark / System for whichever
+    // palette is current. Picking a mode keeps the palette; picking a
+    // palette card (below) keeps System when it is the current mode.
+    let mode_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let mode_label = gtk::Label::new(Some("Appearance"));
+    mode_label.add_css_class("kalam-theme-mode-label");
+    mode_label.set_valign(gtk::Align::Center);
+    mode_row.append(&mode_label);
+    for mode in [
+        crate::theme::ModePref::Light,
+        crate::theme::ModePref::Dark,
+        crate::theme::ModePref::System,
+    ] {
+        let btn = gtk::Button::with_label(mode.label());
+        btn.add_css_class("kalam-theme-mode-btn");
+        btn.set_widget_name(&format!("{THEME_MODE_PREFIX}{}", mode.id()));
+        if mode == active_choice.mode {
+            btn.add_css_class("active");
+        }
+        let host = host.clone();
+        let catalog = catalog.clone();
+        btn.connect_clicked(move |_| {
+            let current = crate::theme::current_choice(&catalog);
+            let next = crate::theme::ThemeChoice {
+                palette: current.palette,
+                mode,
+            };
+            crate::theme::save_and_apply_choice(&catalog, &next);
+            update_theme_picker_state(&host, &next);
+            crate::notify::success("Theme changed", &next.label());
+        });
+        mode_row.append(&btn);
+    }
+    host.attach(&mode_row, 0, 0, 2, 1);
+
     let mut slot = 0;
     for (family_key, name, desc, prefix) in THEME_FAMILIES.iter() {
         let family = themes_for_family(family_key);
         if family.is_empty() {
             continue;
         }
-        let block = theme_family_block(&family, name, desc, prefix, active, host, catalog);
-        host.attach(&block, slot % 2, slot / 2, 1, 1);
+        let block = theme_family_block(
+            &family,
+            name,
+            desc,
+            prefix,
+            active_resolved.id,
+            host,
+            catalog,
+        );
+        host.attach(&block, slot % 2, 1 + slot / 2, 1, 1);
         slot += 1;
     }
 }
 
-/// Group theme ids into the families shown in Settings.
-///
-/// Most families are `base` + `base-darker`, but Ayu's shipped ids are
-/// `ayumirage` and `ayu-darker`, so this cannot rely on a simple `base-`
-/// prefix match.
+/// Group themes into the palette families shown in Settings. Each
+/// resolved theme carries its palette id, so grouping is a field read.
 fn themes_for_family(family_key: &str) -> Vec<&'static crate::theme::Theme> {
     crate::theme::ALL
         .iter()
@@ -887,23 +908,7 @@ fn themes_for_family(family_key: &str) -> Vec<&'static crate::theme::Theme> {
 }
 
 fn theme_family_key(theme: &crate::theme::Theme) -> &'static str {
-    if theme.id.starts_with("onedark") {
-        "onedark"
-    } else if theme.id.starts_with("tokyonight") {
-        "tokyonight"
-    } else if theme.id.starts_with("everforest") {
-        "everforest"
-    } else if theme.id.starts_with("catppuccin") {
-        "catppuccin"
-    } else if theme.id.starts_with("gruvbox") {
-        "gruvbox"
-    } else if theme.id.starts_with("ayu") {
-        "ayu"
-    } else if theme.id == "nord" {
-        "nord"
-    } else {
-        theme.id
-    }
+    theme.palette
 }
 
 fn active_theme_badge(theme: &crate::theme::Theme) -> &'static str {
@@ -929,11 +934,22 @@ fn visit_widget_tree(widget: &gtk::Widget, visit: &mut impl FnMut(&gtk::Widget))
 /// Rebuilding the entire grid after every click caused the Appearance tab to
 /// visibly blink. The preview cards are static samples, so only the selected
 /// state needs to change.
-fn update_theme_picker_state(host: &gtk::Grid, active: &crate::theme::Theme) {
+fn update_theme_picker_state(host: &gtk::Grid, active_choice: &crate::theme::ThemeChoice) {
+    // Cards track the resolved theme; the mode row tracks the choice.
+    let resolved = active_choice.resolve();
+    let active = &resolved;
     let root: gtk::Widget = host.clone().upcast();
     visit_widget_tree(&root, &mut |widget| {
         if let Ok(btn) = widget.clone().downcast::<gtk::Button>() {
             let name = btn.widget_name();
+            if let Some(mode_id) = name.strip_prefix(THEME_MODE_PREFIX) {
+                if mode_id == active_choice.mode.id() {
+                    btn.add_css_class("active");
+                } else {
+                    btn.remove_css_class("active");
+                }
+                return;
+            }
             let Some(theme_id) = name.strip_prefix(THEME_BUTTON_PREFIX) else {
                 return;
             };
@@ -1181,9 +1197,22 @@ fn theme_variant_button(
     let catalog = catalog.clone();
     let chosen = *theme;
     btn.connect_clicked(move |_| {
-        crate::theme::save_and_apply(&catalog, &chosen);
-        update_theme_picker_state(&host, &chosen);
-        crate::notify::success("Theme changed", chosen.label);
+        // A palette card is an explicit Light/Dark pick — unless the
+        // current mode is System, where the card changes only the
+        // palette and the desktop keeps choosing the mode.
+        let current = crate::theme::current_choice(&catalog);
+        let next = if current.mode == crate::theme::ModePref::System {
+            crate::theme::ThemeChoice {
+                palette: crate::theme::Palette::from_id(chosen.palette)
+                    .unwrap_or(current.palette),
+                mode: crate::theme::ModePref::System,
+            }
+        } else {
+            crate::theme::ThemeChoice::from(&chosen)
+        };
+        crate::theme::save_and_apply_choice(&catalog, &next);
+        update_theme_picker_state(&host, &next);
+        crate::notify::success("Theme changed", &next.label());
     });
     btn
 }
@@ -2539,14 +2568,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ayu_family_collects_both_variants() {
-        let ids: Vec<&str> = themes_for_family("ayu").into_iter().map(|t| t.id).collect();
-        assert_eq!(ids, vec!["ayumirage", "ayu-darker"]);
+    fn palette_family_collects_light_and_dark() {
+        let ids: Vec<&str> = themes_for_family("terracotta")
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, vec!["terracotta-light", "terracotta-dark"]);
     }
 
     #[test]
     fn selected_badge_marks_only_the_default_theme_as_default() {
         assert_eq!(active_theme_badge(&crate::theme::DEFAULT), "default");
-        assert_eq!(active_theme_badge(&crate::theme::TOKYONIGHT), "current");
+        assert_eq!(
+            active_theme_badge(&crate::theme::TERRACOTTA_LIGHT),
+            "current"
+        );
     }
 }

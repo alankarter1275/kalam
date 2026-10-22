@@ -1509,7 +1509,9 @@ impl Component for AppModel {
             }
         }
 
-        widgets.brand.append(&brand_logo());
+        widgets
+            .brand
+            .append(&brand_logo(crate::theme::current(&model.catalog).accent));
 
         let popover_list = widgets.download_popover_list.clone();
         widgets.download_popover.connect_visible_notify(move |popover| {
@@ -1844,17 +1846,24 @@ impl Component for AppModel {
     }
 }
 
-/// The sidebar wordmark: the Kalam logo.
+/// The sidebar wordmark: the Kalam logo (calligraphic K, one SVG path,
+/// materialized from `docs/design/logo-svg.md`).
 ///
-/// Embedded with `include_bytes!` rather than read from disk so the binary
+/// Embedded with `include_str!` rather than read from disk so the binary
 /// stays self-contained — there is no install step that would place an asset
-/// directory next to it.
-fn brand_logo() -> gtk::Image {
-    const LOGO: &[u8] = include_bytes!("../assets/logo.png");
+/// directory next to it. The path fills with `currentColor`; a texture has no
+/// CSS colour to inherit, so the current accent is substituted before
+/// rasterizing. That makes the colour a startup snapshot — changing the
+/// palette in Settings re-styles everything except this mark until the next
+/// launch. Moving it to a symbolic theme icon (CSS-recoloured) belongs to
+/// the shell redesign, with the 68px rail.
+fn brand_logo(accent: &str) -> gtk::Image {
+    const LOGO_SVG: &str = include_str!("../assets/logo.svg");
     // Matches the nav glyphs, a shade larger so the mark still leads the rail.
     const LOGO_PX: i32 = 24;
 
-    let bytes = gtk::glib::Bytes::from_static(LOGO);
+    let svg = LOGO_SVG.replace("currentColor", accent);
+    let bytes = gtk::glib::Bytes::from_owned(svg.into_bytes());
     let image = match gtk::gdk::Texture::from_bytes(&bytes) {
         Ok(texture) => gtk::Image::from_paintable(Some(&texture)),
         // A corrupt asset should not stop the app from starting.

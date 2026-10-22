@@ -609,7 +609,7 @@ impl LibraryService {
         SettingsSnapshot {
             dicts,
             dicts_error,
-            theme_id: crate::theme::current(&self.catalog).id.to_string(),
+            theme_id: crate::theme::current_choice(&self.catalog).id(),
             watch_rules: crate::watch_folder::load_watch_rules(&self.catalog),
             shelves: self.catalog.list_shelves().unwrap_or_default(),
             source_open_library,

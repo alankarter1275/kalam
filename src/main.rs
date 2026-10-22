@@ -19,6 +19,7 @@ pub mod epub_sanitizer;
 mod export;
 mod epub_writer;
 mod folders;
+mod fonts;
 mod frames;
 mod icons;
 mod libraries;
@@ -55,6 +56,14 @@ fn main() {
     // chapter-turn / dict-lookup milliseconds to the terminal (no-op otherwise).
     timing::start();
 
+    // Register the bundled UI fonts (Playfair Display + DM Sans) as
+    // fontconfig application fonts. This must precede RelmApp::new: Pango
+    // builds its font map at GTK init and never rescans, so faces added
+    // afterwards would be invisible to every widget. See src/fonts.rs.
+    timing::span("startup_fonts");
+    fonts::init_ui_fonts();
+    timing::span_end("startup_fonts");
+
     // RelmApp::new initializes GTK; only touch Adwaita/GTK after that.
     timing::span("startup_gtk_init");
     let app = RelmApp::new("app.kalam.Kalam");
@@ -83,11 +92,11 @@ fn main() {
         icons::init();
     });
 
-    // Dark baseline via Adwaita (GtkSettings prefer-dark is unsupported with libadwaita).
-    timing::span("startup_style");
-    let style = adw::StyleManager::default();
-    style.set_color_scheme(adw::ColorScheme::ForceDark);
-    timing::span_end("startup_style");
+    // No colour scheme is forced here any more: the saved palette/mode
+    // choice is applied with the theme below, once the catalog that holds
+    // it is open (theme::apply_choice sets the Adwaita scheme to match,
+    // including follow-the-system). Until then Adwaita follows the
+    // desktop, which only the splash — carrying its own CSS — can see.
 
     // A branded splash before the remaining blocking startup work (catalogue
     // open, first page), so the user is never left with a blank screen; pump
@@ -211,7 +220,15 @@ fn main() {
     // on GTK, after several wrong guesses.
     timing::span("startup_theme");
     if std::env::var_os("KALAM_NO_CSS").is_none() {
-        theme::apply(&theme::current(&catalog));
+        let choice = theme::current_choice(&catalog);
+        theme::apply_choice(&choice);
+        // A "System" choice must track the desktop while the app runs,
+        // not just at startup. The handler re-reads the saved choice and
+        // no-ops for explicit Light/Dark picks.
+        let system_catalog = catalog.clone();
+        adw::StyleManager::default().connect_dark_notify(move |_| {
+            theme::refresh_for_system_change(&system_catalog);
+        });
     } else {
         eprintln!("kalam: KALAM_NO_CSS set — running with stock GTK styling");
     }

@@ -1,4 +1,9 @@
-(no lines matched; last 100 lines of output)
+src/widgets/paint.rs:14:10: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::style_context`: Since 4.10
+src/widgets/paint.rs:14:26: [1m[91merror[0m: use of deprecated method `gtk4::prelude::StyleContextExt::lookup_color`: Since 4.10
+src/widgets/rating.rs:66:5: [1m[91merror[0m: fields `area`, `label`, and `hover` are never read
+src/widgets/rating.rs:82:12: [1m[91merror[0m: method `set_value` is never used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -19,8 +24,14 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.09s
---- run 39793430623 ---
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/widgets/paint.rs:14:10: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::style_context`: Since 4.10
+src/widgets/paint.rs:14:26: [1m[91merror[0m: use of deprecated method `gtk4::prelude::StyleContextExt::lookup_color`: Since 4.10
+src/widgets/rating.rs:66:5: [1m[91merror[0m: fields `area`, `label`, and `hover` are never read
+src/widgets/rating.rs:82:12: [1m[91merror[0m: method `set_value` is never used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+--- run 39806711578 ---

@@ -21,6 +21,7 @@ pub struct ReaderModel {
     pub(crate) fraction: f64,
     /// The page's resolved palette (decisions 19/145): the app theme by
     /// default; the per-book override will resolve here instead.
+    #[allow(dead_code)] // read once the per-book override lands (EPUB T3)
     pub(crate) palette: ReaderPalette,
     pub(crate) font_px: u32,
     pub(crate) line_height: f32,

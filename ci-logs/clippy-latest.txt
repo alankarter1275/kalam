@@ -1,11 +1,7 @@
-src/pages/settings.rs:3029:21: [1m[91merror[E0432][0m: unresolved imports `gtk::glib::StaticType`, `gtk::glib::ToValue`: no `StaticType` in the root, no `ToValue` in the root
-src/theme.rs:652:18: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-src/theme.rs:661:20: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-src/theme.rs:662:21: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-src/theme.rs:687:18: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-src/theme.rs:754:18: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+src/pages/settings.rs:90:12: [1m[91merror[0m: method `Meta_line` should have a snake case name: help: convert the identifier to snake case: `meta_line`
+src/pages/settings.rs:973:52: [1m[91merror[0m: variable `Meta` should have a snake case name: help: convert the identifier to snake case: `meta`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -27,15 +23,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/settings.rs:3029:21: [1m[91merror[E0432][0m: unresolved imports `gtk::glib::StaticType`, `gtk::glib::ToValue`: no `StaticType` in the root, no `ToValue` in the root
-src/theme.rs:652:18: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-src/theme.rs:661:20: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-src/theme.rs:662:21: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-src/theme.rs:687:18: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-src/theme.rs:754:18: [1m[91merror[E0425][0m: cannot find value `ALL` in this scope: not found in this scope
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/settings.rs:90:12: [1m[91merror[0m: method `Meta_line` should have a snake case name: help: convert the identifier to snake case: `meta_line`
+src/pages/settings.rs:973:52: [1m[91merror[0m: variable `Meta` should have a snake case name: help: convert the identifier to snake case: `meta`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
---- run 39952493153 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+--- run 39952852141 ---

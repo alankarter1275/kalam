@@ -625,15 +625,19 @@ impl SeriesPageModel {
             return;
         }
         let Some(book) = &entry.book else { return };
-        if book.format != BookFormat::Epub
-            || self.chapter_counts.contains_key(&book.id)
-            || !self.chapter_requests.insert(book.id)
-        {
+        if book.format != BookFormat::Epub {
             return;
         }
+        // Owned copies, so the request bookkeeping below can borrow
+        // `self` mutably again.
         let book_id = book.id;
         let path = book.file_path.clone();
         let cache = crate::paths::reader_cache_dir(&book.uuid);
+        if self.chapter_counts.contains_key(&book_id)
+            || !self.chapter_requests.insert(book_id)
+        {
+            return;
+        }
         let s = sender.input_sender().clone();
         crate::tasks::spawn_internal(
             "Reading chapter count",
@@ -926,7 +930,7 @@ impl SeriesPageModel {
             .build();
         scroll.set_margin_top(16);
 
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, STRIP_GAP as u32);
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, STRIP_GAP);
         row.add_css_class("kalam-series-strip");
         row.set_halign(gtk::Align::Start);
         row.set_valign(gtk::Align::Start);

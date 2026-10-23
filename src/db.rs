@@ -916,7 +916,7 @@ impl Catalog {
                 ON author_aliases(author_id);
 
             -- v10: series listings fetched from Open Library, one row per
-            -- series so the book page's series float caches first-time only.
+            -- series so the series page caches first-time only.
             CREATE TABLE IF NOT EXISTS series_cache (
                 series_key TEXT PRIMARY KEY,
                 source     TEXT NOT NULL,

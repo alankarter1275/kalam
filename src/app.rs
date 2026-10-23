@@ -24,7 +24,7 @@ use crate::pages::{downloads::DownloadsModel,
     review::{ReviewModel, ReviewOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
-    series_float::{SeriesFloatModel, SeriesFloatOut},
+    series::{SeriesPageInit, SeriesPageModel, SeriesPageOut},
     settings::SettingsPageModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
@@ -60,11 +60,6 @@ pub enum AppMsg {
     /// Re-read the task registry: refreshes the sidebar badge and, when the
     /// `w` dialog is open, its rows. One tick drives both.
     TasksTick,
-    /// Open the series float from the book page's Series link.
-    OpenSeriesFloat {
-        series: String,
-        first_author: String,
-    },
     /// Open the shelves checklist panel (in-app float).
     OpenShelvesFloat {
         book_id: i64,
@@ -127,6 +122,7 @@ enum PageSlot {
     TaskManager(Controller<TaskManagerModel>),
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
+    Series(Controller<SeriesPageModel>),
     Reader(Controller<ReaderModel>),
     PdfReader(Controller<PdfReaderModel>),
     Comics(Controller<ComicsModel>),
@@ -160,6 +156,7 @@ impl PageSlot {
             PageSlot::TaskManager(c) => c.widget().clone().upcast(),
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
+            PageSlot::Series(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
             PageSlot::PdfReader(c) => c.widget().clone().upcast(),
             PageSlot::Comics(c) => c.widget().clone().upcast(),
@@ -180,8 +177,6 @@ enum Floating {
     // component alive until it closes — see the enum doc.
     #[allow(dead_code)]
     Book(Controller<BookFloatModel>),
-    #[allow(dead_code)]
-    Series(Controller<SeriesFloatModel>),
     /// Shelves checklist — a plain widget panel, nothing to keep alive.
     /// `return_to` holds the book id when the panel was opened from the book
     /// float, so closing it hands control back to that float, not the page.
@@ -259,6 +254,7 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::TagBooks { .. }
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
+        | Route::SeriesPage { .. }
         | Route::ComicSeries { .. }
         | Route::Reader { .. }
         | Route::PdfReader { .. }
@@ -365,37 +361,6 @@ impl AppModel {
         float.grab_focus();
 
         self.floating = Some(Floating::Book(ctrl));
-    }
-
-    /// The series float, opened from the book page's Series link.
-    fn open_series_floating(
-        &mut self,
-        series: String,
-        first_author: String,
-        sender: &ComponentSender<Self>,
-    ) {
-        let _span = crate::timing::measure("dialog_open:series_float");
-        let _activity = crate::timing::activity("dialog_open:series_float");
-        self.close_floating();
-
-        let ctrl = SeriesFloatModel::builder()
-            .launch((self.catalog.clone(), series, first_author))
-            .forward(sender.input_sender(), |out| match out {
-                SeriesFloatOut::OpenBook { book_id } => AppMsg::FloatOpenFull { book_id },
-            });
-
-        let float = ctrl.widget().clone();
-        float.set_size_request(560, 560);
-        float.set_hexpand(false);
-        float.set_vexpand(false);
-        float.set_halign(gtk::Align::Center);
-        float.set_valign(gtk::Align::Center);
-        self.float_host.append(&float);
-        self.float_scrim.set_visible(true);
-        self.float_host.set_visible(true);
-        float.grab_focus();
-
-        self.floating = Some(Floating::Series(ctrl));
     }
 
     fn open_shelves_floating(
@@ -662,15 +627,40 @@ impl AppModel {
                             if let Ok(Some(s)) = cat_for_series.get_comic_series_by_title(&series) {
                                 AppMsg::Push(Route::ComicSeries { series_name: s.title })
                             } else {
-                                AppMsg::OpenSeriesFloat {
+                                AppMsg::Push(Route::SeriesPage {
                                     series,
                                     first_author,
-                                }
+                                })
                             }
                         }
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
+            }
+            Route::SeriesPage {
+                series,
+                first_author,
+            } => {
+                let init = SeriesPageInit {
+                    service: crate::service::LibraryService::new(catalog.clone()),
+                    series: series.clone(),
+                    first_author: first_author.clone(),
+                };
+                let ctrl = SeriesPageModel::builder()
+                    .launch(init)
+                    .forward(sender.input_sender(), |out| match out {
+                        SeriesPageOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        SeriesPageOut::OpenReader { book_id } => {
+                            AppMsg::OpenReader { book_id }
+                        }
+                        SeriesPageOut::OpenAuthor { name } => {
+                            AppMsg::Push(Route::AuthorPage { author: name })
+                        }
+                        SeriesPageOut::Back => AppMsg::Back,
+                    });
+                PageSlot::Series(ctrl)
             }
             Route::Reader { book_id } => {
                 let id = *book_id;
@@ -1569,7 +1559,9 @@ impl Component for AppModel {
         // a CI script should not look like an application crash.
         if let Some(name) = std::env::var_os("KALAM_ROUTE") {
             let name = name.to_string_lossy().to_string();
-            match route_by_name(&name) {
+            match series_route_for_book(&model.catalog, &name)
+                .or_else(|| route_by_name(&name))
+            {
                 Some(route) => {
                     eprintln!("kalam: KALAM_ROUTE={name} — navigating");
                     sender.input(AppMsg::Push(route));
@@ -1652,12 +1644,6 @@ impl Component for AppModel {
             }
             AppMsg::OpenBookDialog { book_id } => {
                 self.open_floating(book_id, &sender);
-            }
-            AppMsg::OpenSeriesFloat {
-                series,
-                first_author,
-            } => {
-                self.open_series_floating(series, first_author, &sender);
             }
             AppMsg::OpenShelvesFloat {
                 book_id,
@@ -1994,6 +1980,38 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
     }
 }
 
+/// The series route a `KALAM_ROUTE=series-book-<id>` value refers to.
+///
+/// A series route carries a name and an author, neither of which belongs
+/// in a shell variable; the anchor book's id does, and the book supplies
+/// both — exactly the identity its own Series link would open. Kept out
+/// of `route_by_name` because that map is deliberately pure (its tests
+/// resolve names without a catalog).
+fn series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
+    let normalized = name.trim().to_ascii_lowercase();
+    let book_id = normalized
+        .strip_prefix("series-book-")?
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)?;
+    let book = catalog.get_book(book_id).ok().flatten()?;
+    let series = book.series?.trim().to_string();
+    if series.is_empty() {
+        return None;
+    }
+    let first_author = book
+        .authors
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    Some(Route::SeriesPage {
+        series,
+        first_author,
+    })
+}
+
 /// The route a `KALAM_ROUTE=<name>` value refers to, if any.
 ///
 /// Names are the lowercase page names a person would say out loud, not the
@@ -2067,9 +2085,9 @@ fn known_route_names() -> Vec<&'static str> {
     ]
 }
 
-/// The two names that take an id, for the error message only. They are not in
+/// The names that take an id, for the error message only. They are not in
 /// `known_route_names` because that list is asserted to resolve as it stands.
-const ROUTE_ID_FORMS: [&str; 2] = ["book-<id>", "read-<id>"];
+const ROUTE_ID_FORMS: [&str; 3] = ["book-<id>", "read-<id>", "series-book-<id>"];
 
 /// A short static label per route, for the `route_open:` timing span and the
 /// stall watchdog's activity stack (`timing::activity`). Every route gets
@@ -2105,6 +2123,7 @@ fn route_label(route: &Route) -> &'static str {
         Route::TagBooks { .. } => "route_open:tag_books",
         Route::AuthorPage { .. } => "route_open:author",
         Route::BookPage { .. } => "route_open:book",
+        Route::SeriesPage { .. } => "route_open:series",
         Route::RemoteDetail { .. } => "route_open:remote_detail",
         Route::RemoteReader { .. } => "route_open:remote_reader",
         Route::Reader { .. } => "route_open:reader",
@@ -2143,6 +2162,12 @@ mod tests {
         for name in ["book-1", "read-1"] {
             labels.push(route_label(&route_by_name(name).expect("id form resolves")));
         }
+        // `series-book-<id>` resolves through the catalog, so its route is
+        // built by hand here.
+        labels.push(route_label(&Route::SeriesPage {
+            series: "Alpha".into(),
+            first_author: "An Author".into(),
+        }));
         let unique: std::collections::HashSet<&'static str> =
             labels.iter().copied().collect();
         assert_eq!(

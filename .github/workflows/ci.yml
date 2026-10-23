@@ -482,6 +482,28 @@ jobs:
             DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      # The series page (strip in both Terracotta modes, list in light)
+      # over the seeder's coherent 3-of-4 fixture. The route anchors on
+      # fixture Book 1 — id 21 after the 20 generic books — and the
+      # seeded listing cache keeps the page off the network.
+      - name: open the series page strip (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-series-light SETTLE=20 ROUTE=series-book-21 \
+            SERIES_FIXTURE=1 THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the series page strip (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-series-dark SETTLE=20 ROUTE=series-book-21 \
+            SERIES_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the series page list (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-series-list-light SETTLE=20 ROUTE=series-book-21 \
+            SERIES_FIXTURE=1 SERIES_VIEW=list THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -522,6 +544,15 @@ jobs:
           cp ci-shots-book-annotations-dark/report.txt ci-logs/book-annotations-dark-latest.txt 2>/dev/null \
             || echo "(no book-annotations-dark report produced)" > ci-logs/book-annotations-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-annotations-dark-latest.txt
+          cp ci-shots-series-light/report.txt ci-logs/series-light-latest.txt 2>/dev/null \
+            || echo "(no series-light report produced)" > ci-logs/series-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-light-latest.txt
+          cp ci-shots-series-dark/report.txt ci-logs/series-dark-latest.txt 2>/dev/null \
+            || echo "(no series-dark report produced)" > ci-logs/series-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-dark-latest.txt
+          cp ci-shots-series-list-light/report.txt ci-logs/series-list-light-latest.txt 2>/dev/null \
+            || echo "(no series-list-light report produced)" > ci-logs/series-list-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-list-light-latest.txt
           # The settled gallery/book/dialog frames are the one deliberate
           # exception to "PNGs stay in the job workspace": an artboard
           # nobody can see is not an artboard, and the agent cannot
@@ -544,13 +575,21 @@ jobs:
             ci-logs/book-annotations-terracotta-light.png 2>/dev/null || true
           cp ci-shots-book-annotations-dark/03-book-1-settled.png \
             ci-logs/book-annotations-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-series-light/03-series-book-21-settled.png \
+            ci-logs/series-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-series-dark/03-series-book-21-settled.png \
+            ci-logs/series-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-series-list-light/03-series-book-21-settled.png \
+            ci-logs/series-list-terracotta-light.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
             ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
             ci-logs/book-tags-light-latest.txt ci-logs/book-tags-dark-latest.txt \
-            ci-logs/book-annotations-light-latest.txt ci-logs/book-annotations-dark-latest.txt
+            ci-logs/book-annotations-light-latest.txt ci-logs/book-annotations-dark-latest.txt \
+            ci-logs/series-light-latest.txt ci-logs/series-dark-latest.txt \
+            ci-logs/series-list-light-latest.txt
           for shot in ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \
@@ -558,7 +597,10 @@ jobs:
                       ci-logs/book-tags-terracotta-light.png \
                       ci-logs/book-tags-terracotta-dark.png \
                       ci-logs/book-annotations-terracotta-light.png \
-                      ci-logs/book-annotations-terracotta-dark.png; do
+                      ci-logs/book-annotations-terracotta-dark.png \
+                      ci-logs/series-terracotta-light.png \
+                      ci-logs/series-terracotta-dark.png \
+                      ci-logs/series-list-terracotta-light.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

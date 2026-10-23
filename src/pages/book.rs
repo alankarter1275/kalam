@@ -15,8 +15,7 @@
 //! too, while the app-level shelves float (opened from the book float)
 //! still uses the older panel below.
 //!
-//! The series link opens the series float (`series_float.rs`) until the
-//! series-page phase replaces it (decision 94).
+//! The series link opens the series page (`series.rs`, decision 94).
 
 use crate::db::{Catalog, HighlightColor, ShelfKind};
 use crate::models::{Book, BookFormat};
@@ -60,7 +59,7 @@ pub enum BookPageOut {
     OpenBook {
         book_id: i64,
     },
-    /// Open the series float for a book's series.
+    /// Open the series page for a book's series.
     OpenSeries {
         series: String,
         first_author: String,

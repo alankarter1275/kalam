@@ -1,9 +1,8 @@
-//! Open Library series lookup — the data source for the book page's series
-//! float.
+//! Open Library series lookup — the data source for the series page.
 //!
 //! Best-effort by design: OL's series field is derived from edition data, so
-//! a listing can include a false member or miss a work. The float shows the
-//! source and fetch time, and its refresh button is the escape hatch.
+//! a listing can include a false member or miss a work. The page shows the
+//! source and fetch time, and its refresh action is the escape hatch.
 //!
 //! Ordering is by first publish year, which is reading order for the great
 //! majority of series. Works without a year sort last, alphabetically.

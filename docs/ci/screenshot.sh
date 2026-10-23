@@ -65,7 +65,15 @@ say "binary: $(ls -la "$BIN" | awk '{print $5" bytes"}')"
 
 say ""
 say "=== seeding $BOOKS books ==="
-if ! python3 docs/ci/seed-library.py --books "$BOOKS" 2>&1 | tee -a "$REPORT"; then
+# SERIES_FIXTURE adds the seeder's one coherent series (3 owned of a
+# cached 4) after the generic books, so `series-book-$((BOOKS+1))` opens
+# the series page's drawn reading state with no network fetch.
+SERIES_FIXTURE="${SERIES_FIXTURE:-}"
+SEED_ARGS=(--books "$BOOKS")
+if [ -n "$SERIES_FIXTURE" ]; then
+  SEED_ARGS+=(--series-fixture)
+fi
+if ! python3 docs/ci/seed-library.py "${SEED_ARGS[@]}" 2>&1 | tee -a "$REPORT"; then
   say "FATAL: seeding failed"
   exit 0
 fi
@@ -213,6 +221,11 @@ say "requested theme: ${THEME:-<saved/default>}"
 # the two dialogs the book page owns.
 DIALOG="${DIALOG:-}"
 say "requested dialog: ${DIALOG:-<none>}"
+# SERIES_VIEW asks the series page to open on its strip or list view
+# (KALAM_SERIES_VIEW) without writing the per-series pref, so both views
+# can be photographed against the same seeded library.
+SERIES_VIEW="${SERIES_VIEW:-}"
+say "requested series view: ${SERIES_VIEW:-<remembered>}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
 # negative one, KALAM_NO_WINDOWED_GRID.
@@ -239,7 +252,7 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
-KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do

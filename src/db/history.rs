@@ -178,6 +178,36 @@ impl Catalog {
         Ok(out)
     }
 
+    /// Finished stamps for many books at once — the series page's version
+    /// of [`Catalog::finished_book_ids`], for rows that print the date and
+    /// not just the tick. Unfinished and unknown ids are simply absent.
+    pub fn finished_dates_by_ids(
+        &self,
+        ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, String>> {
+        let mut out = std::collections::HashMap::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id, finished_at FROM books \
+                 WHERE finished_at IS NOT NULL AND id IN ({holders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (id, finished_at) = row?;
+                out.insert(id, finished_at);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn book_finished_at(&self, book_id: i64) -> Result<Option<String>> {
         let conn = self.conn();
         let v: Option<Option<String>> = conn

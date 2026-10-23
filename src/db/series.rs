@@ -1,9 +1,9 @@
-//! Series cache — remote series listings for the book page's series float.
+//! Series cache — remote series listings for the series page.
 //!
 //! A series spans books you may not own, and the local catalog can only know
 //! about the ones in the library. So the complete listing is fetched from
 //! Open Library once per series, cached here together with the downloaded
-//! covers, and only refreshed when the user asks (the ⟳ button in the float).
+//! covers, and only refreshed when the user asks (the series page's ⋯ menu).
 //!
 //! The cache key includes the first author because two series can share a
 //! name. The fetch itself is by series name only, so a key collision means a

@@ -211,6 +211,52 @@ pub struct BookPageSnapshot {
     pub file_size: Option<u64>,
 }
 
+/// One volume on the series page: a cached listing entry, an owned book
+/// matched into it, or an owned book the listing never mentioned.
+///
+/// `book: None` is the page's dashed "Not in library" state. The position
+/// is the volume's own metadata position where one exists (fractional
+/// volumes keep their fraction); the listing's order supplies it where the
+/// owned book's metadata never set one.
+#[derive(Debug, Default)]
+pub struct SeriesEntrySnapshot {
+    pub title: String,
+    pub position: f32,
+    pub year: Option<i64>,
+    pub book: Option<Book>,
+    pub finished_at: Option<String>,
+    /// 0-based current chapter from `reading_progress`, when the book has
+    /// been opened. The chapter *count* is a file question, so the page's
+    /// worker reads it separately, exactly as the book page does.
+    pub chapter_index: Option<usize>,
+}
+
+/// Everything the series page draws, in one call.
+///
+/// The cached provider listing and the owned books are merged here — the
+/// same join [`LibraryService::book_page`] reduces to one neighbour — so
+/// the page renders one ordered row per volume and never has to know how
+/// ownership was matched. `listed_total` is `None` until a listing has
+/// been fetched: without one the owned count must never be passed off as
+/// the series' total.
+#[derive(Debug, Default)]
+pub struct SeriesPageSnapshot {
+    pub series_name: String,
+    pub first_author: String,
+    pub series_key: String,
+    pub entries: Vec<SeriesEntrySnapshot>,
+    pub listed_total: Option<usize>,
+    /// The listing's provider id (`openlibrary`) and fetch stamp, for the
+    /// source line. Both are `None` on the local-only listing.
+    pub source: Option<String>,
+    pub fetched_at: Option<String>,
+    /// The remembered Strip/List choice for this series, and the pref key
+    /// it lives under (the page writes the toggle back through it).
+    pub view_list: bool,
+    pub view_pref_key: String,
+    pub errors: Errors,
+}
+
 /// The settings page, first half (7.1 step 2c): every pref- and table-shaped
 /// read its six tabs need, in one DB-pure pass. Fast by design — a handful of
 /// single-row reads — so the page can fill almost immediately.
@@ -622,7 +668,7 @@ impl LibraryService {
 
         // Next in series: the cached provider listing joined with the
         // owned books by normalised title — the same merge the series
-        // float renders, reduced to the one neighbour this page needs.
+        // page renders, reduced to the one neighbour this page needs.
         // Without a cached listing the owned books alone still answer
         // "what do I read next", just not "of M".
         let (next_in_series, next_series_title, series_position, series_total) =
@@ -725,6 +771,172 @@ impl LibraryService {
             Some((_, Some(next))) => (Some(next), None, position, total),
             Some((title, None)) => (None, Some(title), position, total),
             None => (None, None, position, total),
+        }
+    }
+
+    /// The whole series page in one call. See `SeriesPageSnapshot`.
+    ///
+    /// The merge is the retired float's, kept honest in the same places:
+    /// provider order first, owned books matched in by normalised title,
+    /// unmatched owned books appended (they are truth the provider never
+    /// mentioned) — with one change the full page needs: an owned book's
+    /// own `series_index` outranks its slot in the provider order, so
+    /// "Book 2.5" stays Book 2.5 and sorts between 2 and 3.
+    pub fn series_page(&self, series: &str, first_author: &str) -> SeriesPageSnapshot {
+        let _t = crate::timing::measure("service_series_page");
+        let mut errors = Errors::new();
+        let series_name = series.trim().to_string();
+        let owned = take(
+            self.catalog.books_in_series(&series_name),
+            "books in series",
+            &mut errors,
+        );
+
+        let first_author = if first_author.trim().is_empty() {
+            owned
+                .first()
+                .map(|b| {
+                    b.authors
+                        .split(',')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string()
+                })
+                .unwrap_or_default()
+        } else {
+            first_author.trim().to_string()
+        };
+        let key = crate::db::series_key(&series_name, &first_author);
+        let cached = take(
+            self.catalog.get_cached_series(&key),
+            "series listing",
+            &mut errors,
+        );
+        let (works, source, fetched_at) = match cached {
+            Some(entry) => (entry.works, Some(entry.source), Some(entry.fetched_at)),
+            None => (Vec::new(), None, None),
+        };
+        // A series opened with no author and no owned books can still take
+        // its byline from the listing itself.
+        let first_author = if first_author.is_empty() {
+            works
+                .iter()
+                .find_map(|w| {
+                    let author = w.author.trim();
+                    (!author.is_empty()).then(|| author.to_string())
+                })
+                .unwrap_or_default()
+        } else {
+            first_author
+        };
+
+        let normalise = |s: &str| {
+            s.to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        };
+
+        let mut entries: Vec<SeriesEntrySnapshot> = works
+            .iter()
+            .enumerate()
+            .map(|(i, work)| SeriesEntrySnapshot {
+                title: work.title.clone(),
+                position: (i + 1) as f32,
+                year: (work.year > 0).then_some(work.year),
+                book: None,
+                finished_at: None,
+                chapter_index: None,
+            })
+            .collect();
+
+        let mut extras: Vec<Book> = Vec::new();
+        for book in owned {
+            let wanted = normalise(&book.title);
+            let slot = entries
+                .iter()
+                .position(|e| e.book.is_none() && normalise(&e.title) == wanted);
+            match slot {
+                Some(i) => {
+                    entries[i].title = book.title.clone();
+                    if book.series_index > 0.0 {
+                        entries[i].position = book.series_index;
+                    }
+                    if entries[i].year.is_none() {
+                        entries[i].year = published_year(&book.published);
+                    }
+                    entries[i].book = Some(book);
+                }
+                None => extras.push(book),
+            }
+        }
+
+        // Unindexed owned books keep the reading order `books_in_series`
+        // returned, after everything whose position is actually known.
+        let mut next_unindexed = entries
+            .iter()
+            .map(|e| e.position)
+            .fold(0.0f32, f32::max);
+        next_unindexed = extras
+            .iter()
+            .filter(|b| b.series_index > 0.0)
+            .fold(next_unindexed, |max, b| max.max(b.series_index));
+        for book in extras {
+            let position = if book.series_index > 0.0 {
+                book.series_index
+            } else {
+                next_unindexed += 1.0;
+                next_unindexed
+            };
+            entries.push(SeriesEntrySnapshot {
+                title: book.title.clone(),
+                position,
+                year: published_year(&book.published),
+                book: Some(book),
+                finished_at: None,
+                chapter_index: None,
+            });
+        }
+        entries.sort_by(|a, b| a.position.total_cmp(&b.position));
+
+        let listed_total = (!works.is_empty()).then_some(entries.len());
+
+        let owned_ids: Vec<i64> = entries
+            .iter()
+            .filter_map(|e| e.book.as_ref().map(|b| b.id))
+            .collect();
+        let finished_dates = take(
+            self.catalog.finished_dates_by_ids(&owned_ids),
+            "finished dates",
+            &mut errors,
+        );
+        let positions = take(
+            self.catalog.reading_progress_by_ids(&owned_ids),
+            "reading positions",
+            &mut errors,
+        );
+        for entry in &mut entries {
+            if let Some(book) = &entry.book {
+                entry.finished_at = finished_dates.get(&book.id).cloned();
+                entry.chapter_index = positions.get(&book.id).map(|(chapter, _)| *chapter);
+            }
+        }
+
+        let view_pref_key = format!("series.view.{key}");
+        let view_list = self.catalog.get_pref(&view_pref_key).as_deref() == Some("list");
+
+        SeriesPageSnapshot {
+            series_name,
+            first_author,
+            series_key: key,
+            entries,
+            listed_total,
+            source,
+            fetched_at,
+            view_list,
+            view_pref_key,
+            errors,
         }
     }
 
@@ -1142,6 +1354,28 @@ impl LibraryService {
 /// Unwrap a query result, or record why it failed and fall back to the empty
 /// value. This is the one place the "a failed read shows as empty" policy
 /// lives; it used to be repeated, silently, in every page.
+/// The first plausible four-digit year in a free-form published string
+/// (`1969`, `1969-06-01`, `June 1969`). The catalog stores whatever the
+/// file's metadata said, so a series row that wants a year has to dig it
+/// out rather than assume a shape.
+fn published_year(published: &str) -> Option<i64> {
+    let bytes = published.as_bytes();
+    let last = bytes.len().checked_sub(4)?;
+    for i in 0..=last {
+        if bytes[i].is_ascii_digit()
+            && bytes[i + 1].is_ascii_digit()
+            && bytes[i + 2].is_ascii_digit()
+            && bytes[i + 3].is_ascii_digit()
+        {
+            let year: i64 = published[i..i + 4].parse().ok()?;
+            if (1000..=2999).contains(&year) {
+                return Some(year);
+            }
+        }
+    }
+    None
+}
+
 fn take<T: Default>(result: crate::db::Result<T>, what: &str, errors: &mut Errors) -> T {
     match result {
         Ok(value) => value,
@@ -1306,6 +1540,8 @@ mod tests {
         assert_send::<BookStatsSnapshot>();
         // The book page snapshot crosses a worker boundary (7.1 step 2a).
         assert_send::<BookPageSnapshot>();
+        // The series page reads on the same worker pattern.
+        assert_send::<SeriesPageSnapshot>();
         // Settings and the author page join it in 7.1 step 2c.
         assert_send::<SettingsSnapshot>();
         assert_send::<AuthorPageSnapshot>();
@@ -1466,6 +1702,74 @@ mod tests {
         // AuthorProfile is not PartialEq, so the emptiness is asked, not
         // compared.
         assert!(snap.profile.is_none());
+    }
+
+    #[test]
+    fn series_page_merges_the_listing_with_owned_books() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let cat = svc.catalog();
+        let one = seed(cat, "Alpha One", &[]);
+        let two = seed(cat, "Alpha Two", &[]);
+        cat.set_book_series(one, Some("Alpha"), 1.0).unwrap();
+        // A fractional owned position outranks the listing's slot for the
+        // same work: the listing puts this third, the book says 2.5.
+        cat.set_book_series(two, Some("Alpha"), 2.5).unwrap();
+        cat.set_book_finished(one, true).unwrap();
+        cat.set_reading_progress(two, 8, 0.5, 10).unwrap();
+        {
+            let conn = cat.conn();
+            conn.execute(
+                "UPDATE books SET published = 'June 2001', progress = 42 WHERE id = ?1",
+                rusqlite::params![two],
+            )
+            .unwrap();
+        }
+
+        let works = vec![
+            crate::db::SeriesWork {
+                title: "Alpha One".into(),
+                key: String::new(),
+                cover_path: String::new(),
+                year: 1998,
+                author: "An Author".into(),
+            },
+            crate::db::SeriesWork {
+                title: "Alpha Missing".into(),
+                key: String::new(),
+                cover_path: String::new(),
+                year: 2000,
+                author: "An Author".into(),
+            },
+            crate::db::SeriesWork {
+                title: "Alpha Two".into(),
+                key: String::new(),
+                cover_path: String::new(),
+                year: 0,
+                author: "An Author".into(),
+            },
+        ];
+        cat.upsert_series_cache(
+            &crate::db::series_key("Alpha", "An Author"),
+            "openlibrary",
+            &works,
+        )
+        .unwrap();
+
+        let snap = svc.series_page("Alpha", "An Author");
+        assert!(snap.errors.is_empty(), "errors: {:?}", snap.errors);
+        assert_eq!(snap.listed_total, Some(3));
+        let titles: Vec<&str> = snap.entries.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(titles, ["Alpha One", "Alpha Missing", "Alpha Two"]);
+        assert_eq!(snap.entries[2].position, 2.5);
+        assert!(snap.entries[0].finished_at.is_some());
+        assert!(snap.entries[1].book.is_none(), "the unowned work stays a gap");
+        assert_eq!(snap.entries[2].chapter_index, Some(8));
+        assert_eq!(snap.entries[2].year, Some(2001));
+        assert!(!snap.view_list);
+
+        cat.set_pref(&snap.view_pref_key, "list");
+        assert!(svc.series_page("Alpha", "An Author").view_list);
     }
 
     fn seed(cat: &Catalog, title: &str, tags: &[&str]) -> i64 {

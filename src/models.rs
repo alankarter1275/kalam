@@ -87,6 +87,13 @@ pub enum Route {
     BookPage {
         book_id: i64,
     },
+    /// The full book-series page. The first author is part of the route
+    /// because it is part of the cached listing's identity: two authors can
+    /// use the same series name without sharing a page or a fetch.
+    SeriesPage {
+        series: String,
+        first_author: String,
+    },
     RemoteDetail {
         source_id: String,
         remote_id: String,
@@ -129,7 +136,7 @@ impl Route {
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
-            Route::BookPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
+            Route::BookPage { .. } | Route::SeriesPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {
                 if source_id == "royalroad" {

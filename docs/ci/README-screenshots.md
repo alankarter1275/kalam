@@ -17,6 +17,7 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 | `book-1` | The redesigned book details page for the first seeded EPUB, twice: Terracotta Light and Dark at 1600×1200. |
 | `book-4` + `DIALOG=tags` | The book page's Tag dialog opened over it (`KALAM_DIALOG`), twice: Light and Dark. Book 4 is the first seeded book carrying three tags, so chips and ticked library rows render for real. |
 | `book-1` + `DIALOG=annotations` | The Annotations dialog the same way, twice. The seeder writes no annotations, so these photograph the empty states. |
+| `series-book-21` + `SERIES_FIXTURE=1` | The series page over the seeder's coherent fixture series (Book 1 finished, Book 2 at 42%, Book 3 unread, Book 4 only in the seeded listing cache): the strip in Light and Dark, plus the list view in Light via `SERIES_VIEW=list`. The route anchors on a book id because a series route's name/author do not belong in a shell variable. |
 
 The seeder writes real EPUBs and covers under readable author/title folders
 with short-id suffixes. It creates a minimal schema-version-1 catalog; Kalam
@@ -47,17 +48,23 @@ The job commits text reports to:
 - `ci-logs/book-tags-dark-latest.txt`
 - `ci-logs/book-annotations-light-latest.txt`
 - `ci-logs/book-annotations-dark-latest.txt`
+- `ci-logs/series-light-latest.txt`
+- `ci-logs/series-dark-latest.txt`
+- `ci-logs/series-list-light-latest.txt`
 
 The report includes route checks, timing spans, main-loop stalls, pixel
 samples, screenshot fingerprints, app output and peak RSS. PNG images and
 compositor logs stay in the temporary Actions workspace; the workflow does not
 upload them as artifacts. The only uploaded artifact is the release binary
-used by the smoke job. The exceptions are the gallery, the book page and
-its two dialogs: their settled frames in each mode are committed as
+used by the smoke job. The exceptions are the gallery, the book page, its
+two dialogs and the series page: their settled frames in each mode are
+committed as
 `ci-logs/components-terracotta-{light,dark}.png`,
 `ci-logs/book-terracotta-{light,dark}.png`,
-`ci-logs/book-tags-terracotta-{light,dark}.png` and
-`ci-logs/book-annotations-terracotta-{light,dark}.png`, because a redesign
+`ci-logs/book-tags-terracotta-{light,dark}.png`,
+`ci-logs/book-annotations-terracotta-{light,dark}.png`,
+`ci-logs/series-terracotta-{light,dark}.png` and
+`ci-logs/series-list-terracotta-light.png`, because a redesign
 nobody can look at is not verified and the agent cannot download artifacts.
 
 A passing route check is not a visual verdict. Compare the app's logs and

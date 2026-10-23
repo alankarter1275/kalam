@@ -27,6 +27,7 @@ smoke-test route is opening a book.
 
 import argparse
 import io
+import json
 import os
 import pathlib
 import random
@@ -360,6 +361,151 @@ def book_folder_name(authors: str, title: str, book_uuid: str) -> str:
     return f"{prefix} {suffix}"
 
 
+def _add_column_if_missing(conn, table: str, column: str, declaration: str) -> None:
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN {column} {declaration}"
+        )
+
+
+def seed_series_fixture(conn, library: pathlib.Path, now: datetime, first_index: int) -> int:
+    """Add one coherent series for the series-page screenshot.
+
+    The generic loop deliberately pairs titles, authors and series at
+    random offsets, which is right for grids and wrong for judging a
+    series page. This fixture is the drawn "reading" state instead:
+    Book 1 finished, Book 2 at 42% (the default focus and Continue
+    target), Book 3 unread, and Book 4 present only in the cached
+    listing — so one frame exercises the tick badge, the progress bar,
+    the dashed missing cover, the years and the source line. The cache
+    row is what keeps the screenshot off the network.
+
+    The columns/table it needs postdate schema v1; adding them here is
+    safe because the app's migrations add-if-missing and create-if-absent.
+    Returns the number of covers written.
+    """
+    _add_column_if_missing(conn, "books", "published", "TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "books", "finished_at", "TEXT")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_cache (
+            series_key TEXT PRIMARY KEY,
+            source     TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            works_json TEXT NOT NULL
+        )
+        """
+    )
+
+    series = "The Glass Meridian"
+    author = "Ada Meridian"
+    owned = [
+        (
+            "The Glass Meridian",
+            1998,
+            100,
+            "2026-10-03T00:00:00Z",
+            "The first voyage beyond the glass meridian, and the chart "
+            "that brought its crew home changed.",
+        ),
+        (
+            "The Salt Meridian",
+            2001,
+            42,
+            None,
+            "Salt, debt and a second crossing: the crew returns to the "
+            "meridian with a chart nobody trusts, a captain keeping one "
+            "secret too many, and a coastline that has moved since the "
+            "first voyage.",
+        ),
+        (
+            "The Iron Meridian",
+            2004,
+            0,
+            None,
+            "An iron fleet, a winter port, and the price of finishing "
+            "the chart.",
+        ),
+    ]
+    works = [
+        {
+            "title": title,
+            "key": "",
+            "cover_path": "",
+            "year": year,
+            "author": author,
+        }
+        for title, year, _progress, _finished, _description in owned
+    ]
+    works.append(
+        {
+            "title": "The Last Meridian",
+            "key": "",
+            "cover_path": "",
+            "year": 2008,
+            "author": author,
+        }
+    )
+
+    covers_written = 0
+    for offset, (title, year, progress, finished_at, description) in enumerate(owned):
+        book_uuid = str(uuid.uuid4())
+        bdir = library / book_folder_name(author, title, book_uuid)
+        bdir.mkdir(parents=True, exist_ok=True)
+        (bdir / "book.epub").write_bytes(epub_bytes(title, author))
+        (bdir / "cover.png").write_bytes(
+            png(600, 960, cover_colour(first_index + offset))
+        )
+        covers_written += 1
+        added = (now - timedelta(days=30 - offset)).isoformat()
+        cur = conn.execute(
+            "INSERT INTO books (uuid, title, sort_title, authors, series, "
+            "description, format, file_name, file_hash, cover_name, added_at, "
+            "progress, published, series_index, finished_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                book_uuid,
+                title,
+                title.lower(),
+                author,
+                series,
+                description,
+                "epub",
+                "book.epub",
+                f"hash-series-{offset:06d}",
+                "cover.png",
+                added,
+                progress,
+                str(year),
+                float(offset + 1),
+                finished_at,
+            ),
+        )
+        if progress == 42:
+            # Chapter 4 of the fixture EPUB's six, for the focused row.
+            conn.execute(
+                "INSERT INTO reading_progress (book_id, chapter_index, "
+                "fraction, updated_at) VALUES (?,?,?,?)",
+                (cur.lastrowid, 3, 0.42, added),
+            )
+
+    # Mirrors `src/db/series.rs::series_key`: the leading article drops
+    # from the series, then both halves keep alphanumerics only.
+    conn.execute(
+        "INSERT OR REPLACE INTO series_cache (series_key, source, "
+        "fetched_at, works_json) VALUES (?,?,?,?)",
+        (
+            "glassmeridian|melark",
+            "openlibrary",
+            "2026-10-20T00:00:00Z",
+            json.dumps(works),
+        ),
+    )
+    return covers_written
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--books", type=int, default=139)
@@ -368,6 +514,11 @@ def main() -> int:
         type=int,
         default=17,
         help="every Nth book gets no cover at all (a real and untidy state)",
+    )
+    ap.add_argument(
+        "--series-fixture",
+        action="store_true",
+        help="add the coherent 3-of-4 series the series-page screenshot opens",
     )
     args = ap.parse_args()
 
@@ -500,10 +651,15 @@ def main() -> int:
                 (book_id, i % 12, ((i * 7) % 101) / 100.0, added),
             )
 
+    total_books = args.books
+    if args.series_fixture:
+        covers_written += seed_series_fixture(conn, library, now, args.books)
+        total_books += 3
+
     conn.commit()
     conn.close()
 
-    print(f"seed-library: {args.books} books, {covers_written} covers -> {root}")
+    print(f"seed-library: {total_books} books, {covers_written} covers -> {root}")
     return 0
 
 

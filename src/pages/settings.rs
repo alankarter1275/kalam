@@ -87,7 +87,7 @@ impl SettingsTab {
 
     /// The Meta line under the pane title (design-system section 41).
     /// About carries its own heading block instead and hides the pair.
-    pub fn Meta_line(self) -> &'static str {
+    pub fn meta_line(self) -> &'static str {
         match self {
             Self::Appearance => {
                 "One choice of palette, in light or dark. Changes apply immediately."
@@ -400,7 +400,7 @@ impl Component for SettingsPageModel {
         let widgets = view_output!();
 
         widgets.tab_title.set_label(active_tab.label());
-        widgets.tab_meta.set_label(active_tab.Meta_line());
+        widgets.tab_meta.set_label(active_tab.meta_line());
         let chrome = active_tab != SettingsTab::About;
         widgets.tab_title.set_visible(chrome);
         widgets.tab_meta.set_visible(chrome);
@@ -460,7 +460,7 @@ impl Component for SettingsPageModel {
             SettingsMsg::SelectTab(tab) => {
                 self.active_tab = tab;
                 widgets.tab_title.set_label(tab.label());
-                widgets.tab_meta.set_label(tab.Meta_line());
+                widgets.tab_meta.set_label(tab.meta_line());
                 let chrome = tab != SettingsTab::About;
                 widgets.tab_title.set_visible(chrome);
                 widgets.tab_meta.set_visible(chrome);
@@ -970,7 +970,7 @@ fn pane_section_custom_heading(host: &gtk::Box, heading: &gtk::Box) -> gtk::Box 
 /// The dashed state card (design-system section 10): a centred
 /// Card-title heading and Meta line, with the caller's action(s)
 /// appended to the returned card.
-fn dashed_state_card(host: &gtk::Box, title: &str, Meta: Option<&str>) -> gtk::Box {
+fn dashed_state_card(host: &gtk::Box, title: &str, meta: Option<&str>) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
     card.add_css_class("kalam-settings-state-card");
 
@@ -981,7 +981,7 @@ fn dashed_state_card(host: &gtk::Box, title: &str, Meta: Option<&str>) -> gtk::B
     heading.set_wrap(true);
     card.append(&heading);
 
-    if let Some(text) = Meta {
+    if let Some(text) = meta {
         let line = gtk::Label::new(Some(text));
         line.add_css_class("kalam-ui-meta");
         line.set_halign(gtk::Align::Center);

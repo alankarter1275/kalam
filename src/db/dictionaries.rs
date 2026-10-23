@@ -186,9 +186,16 @@ impl Catalog {
         Ok(())
     }
 
-    /// Move a dictionary one step up (`delta = -1`) or down (`+1`) in the
-    /// effective order, then renumber all priorities compactly (0, 1, 2, …)
-    /// and rebuild the merged store so the change speaks immediately.
+    /// Move a dictionary `delta` places in the effective order (negative
+    /// toward the front), then renumber all priorities compactly
+    /// (0, 1, 2, …) and rebuild the merged store so the change speaks
+    /// immediately.
+    ///
+    /// The move is remove + insert, not a swap: the Settings list is
+    /// drag-reordered, and dropping a row several places away must land it
+    /// *there* with the rows in between shifting, not exchange it with the
+    /// row that happened to sit at the target. The target index is clamped
+    /// to the list; an unknown id or a no-op move returns quietly.
     ///
     /// Order is the only thing that matters to `rebuild_combined_dictionary`
     /// — the compact renumbering overwrites the bundled packs' semantic
@@ -200,11 +207,12 @@ impl Catalog {
         let Some(idx) = dicts.iter().position(|d| d.id == id) else {
             return Ok(());
         };
-        let target = idx as i64 + delta;
-        if target < 0 || target as usize >= dicts.len() {
+        let target = (idx as i64 + delta).clamp(0, dicts.len() as i64 - 1) as usize;
+        if target == idx {
             return Ok(());
         }
-        dicts.swap(idx, target as usize);
+        let moved = dicts.remove(idx);
+        dicts.insert(target, moved);
         for (pos, d) in dicts.iter().enumerate() {
             self.set_dictionary_priority(d.id, pos as i64)?;
         }

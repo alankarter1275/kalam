@@ -6299,3 +6299,86 @@ button.kalam-settings-link:focus-visible {
   line-height: 1.5;
   color: @kalam_text;
 }
+
+/* Watch folders, Dictionaries and Metadata sources (§§41, 44;
+   decisions 151–153). */
+.kalam-settings-state-card {
+  border: 1.5px dashed @kalam_text_dim;
+  border-radius: 6px;
+  background: @kalam_bg;
+  padding: 24px 20px;
+}
+.kalam-settings-folder-heading {
+  font-size: 13px;
+  font-weight: 600;
+  color: @kalam_text;
+}
+
+.kalam-settings-row.dict {
+  min-height: 56px;
+}
+.kalam-settings-row.dict.drop-before {
+  box-shadow: inset 0 3px @kalam_accent;
+}
+.kalam-settings-row.dict.drop-after {
+  box-shadow: inset 0 -3px @kalam_accent;
+}
+.kalam-settings-dict-handle {
+  cursor: grab;
+}
+.kalam-settings-dict-handle:active {
+  cursor: grabbing;
+}
+.kalam-settings-dict-handle-icon {
+  color: @kalam_text_dim;
+}
+
+button.kalam-settings-chevron {
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  box-shadow: none;
+  padding: 0;
+  color: @kalam_text_dim;
+}
+button.kalam-settings-chevron:hover {
+  background: @kalam_hover;
+}
+button.kalam-settings-chevron:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+button.kalam-settings-chevron:disabled {
+  opacity: 0.4;
+}
+
+entry.kalam-settings-entry {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid @kalam_border;
+  border-radius: 10px;
+  background: @kalam_bg;
+  color: @kalam_text;
+  font-size: 13px;
+}
+entry.kalam-settings-entry:focus {
+  border-color: @kalam_accent;
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+entry.kalam-settings-entry.rejected {
+  border-color: @kalam_accent;
+}
+.kalam-settings-error-line {
+  font-size: 12px;
+  color: @kalam_accent;
+}
+
+/* Nested Google Books rows keep the hairline under their parent,
+   but the two nested rows have no line between them (decision 153). */
+.kalam-settings-nested-rows > .kalam-settings-row:first-child {
+  border-top: 1px solid @kalam_border;
+}
+.kalam-settings-nested-rows > .kalam-settings-row + .kalam-settings-row {
+  border-top: none;
+}

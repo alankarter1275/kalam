@@ -284,6 +284,10 @@ pub struct SettingsSnapshot {
     pub source_google_books: bool,
     pub google_books_key: String,
     pub google_books_country: String,
+    /// Google rejected the stored API key on its last keyed attempt; the
+    /// Metadata sources pane shows the rejected-key state. Written by the
+    /// fetcher via `enabled_sources`, cleared on key save or success.
+    pub google_books_key_rejected: bool,
     /// EPUB polish-on-import and metadata writeback toggles (Book Files).
     pub clean_on_import: bool,
     pub writeback_enabled: bool,
@@ -1023,6 +1027,11 @@ impl LibraryService {
                 .catalog
                 .get_pref("meta.googlebooks.country")
                 .unwrap_or_else(crate::metadata::google_books::detect_country),
+            google_books_key_rejected: self
+                .catalog
+                .get_pref("meta.googlebooks.key_rejected")
+                .map(|v| v == "1")
+                .unwrap_or(false),
             clean_on_import: crate::epub_sanitizer::clean_on_import_enabled(&self.catalog),
             writeback_enabled: crate::epub_metadata::write_enabled(&self.catalog),
             // The Reading pane's data. The typeface list builds a font

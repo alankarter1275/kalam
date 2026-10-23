@@ -1065,6 +1065,7 @@ fn rebuild_results(
                                     Box::new(metadata::google_books::GoogleBooks {
                                         api_key: String::new(),
                                         country: metadata::google_books::detect_country(),
+                                        on_key_state: None,
                                     })
                                 }
                             };

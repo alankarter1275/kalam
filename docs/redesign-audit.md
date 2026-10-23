@@ -542,6 +542,15 @@ Deltas:
   drawn (existing flows keep working behind the new buttons);
   Integrations ships fully disabled (154); the reader Theme card
   redraw (145) waits for the reader boards.
+- Implementation note (Settings tranche 2b, owner confirmation
+  wanted): decision 151's watch-folder rows have no place for the
+  legacy per-folder `enabled` pause or the per-format `import_*`
+  toggles. The build keeps the pause as one extra “Watch this
+  folder” switch — otherwise removing the folder would be the only
+  way to stop it — and drops the per-format toggles, treating the
+  shelf-routing choice itself as enabling that format. Removing the
+  extra row to match the board exactly first needs a drawn answer
+  for how a paused folder is represented.
 
 ## 6. Verified inventory of everything else (not yet designed)
 

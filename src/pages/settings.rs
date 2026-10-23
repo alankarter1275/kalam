@@ -87,7 +87,7 @@ impl SettingsTab {
 
     /// The Meta line under the pane title (design-system section 41).
     /// About carries its own heading block instead and hides the pair.
-    pub fn Meta(self) -> &'static str {
+    pub fn Meta_line(self) -> &'static str {
         match self {
             Self::Appearance => {
                 "One choice of palette, in light or dark. Changes apply immediately."
@@ -147,8 +147,10 @@ pub enum SettingsMsg {
     ClearNotifications,
     ImportDict,
     DeleteDict(i64),
-    /// Reorder the merged-store priority (Phase 9): id, delta (−1 up / +1 down).
+    /// Reorder the merged-store priority after a drag: id, signed distance.
     MoveDict(i64, i64),
+    /// Bring back any removed packs shipped in the binary (decision 152).
+    RestoreBundledDicts,
     Refresh,
     /// A library-list or backups change needs the disk reads redone:
     /// the FS worker runs again and `FsLoaded` rebuilds the panes
@@ -257,7 +259,7 @@ impl Component for SettingsPageModel {
                         set_wrap: true,
                     },
 
-                    #[name = "tab_Meta"]
+                    #[name = "tab_meta"]
                     gtk::Label {
                         add_css_class: "kalam-ui-meta",
                         add_css_class: "kalam-settings-Meta",
@@ -398,10 +400,10 @@ impl Component for SettingsPageModel {
         let widgets = view_output!();
 
         widgets.tab_title.set_label(active_tab.label());
-        widgets.tab_Meta.set_label(active_tab.Meta());
+        widgets.tab_meta.set_label(active_tab.Meta_line());
         let chrome = active_tab != SettingsTab::About;
         widgets.tab_title.set_visible(chrome);
-        widgets.tab_Meta.set_visible(chrome);
+        widgets.tab_meta.set_visible(chrome);
 
         for (group, tabs) in PANE_GROUPS.iter() {
             let group_label = gtk::Label::new(Some(&group.to_uppercase()));
@@ -458,10 +460,10 @@ impl Component for SettingsPageModel {
             SettingsMsg::SelectTab(tab) => {
                 self.active_tab = tab;
                 widgets.tab_title.set_label(tab.label());
-                widgets.tab_Meta.set_label(tab.Meta());
+                widgets.tab_meta.set_label(tab.Meta_line());
                 let chrome = tab != SettingsTab::About;
                 widgets.tab_title.set_visible(chrome);
-                widgets.tab_Meta.set_visible(chrome);
+                widgets.tab_meta.set_visible(chrome);
                 update_tab_styles(&widgets.nav_list, tab);
                 // The notifications log is in-memory session state, so it
                 // rebuilds on every visit (its old behavior); every other
@@ -507,7 +509,7 @@ impl Component for SettingsPageModel {
                     && self.built_tabs.contains(&SettingsTab::Dictionaries)
                 {
                     if let Some(snap) = &self.snapshot {
-                        rebuild_dicts(&widgets.dict_list, &snap.dicts, &sender);
+                        build_dictionaries_pane(&widgets.dict_list, &snap.dicts, &sender);
                     }
                 }
             }
@@ -632,6 +634,34 @@ impl Component for SettingsPageModel {
                     crate::notify::error("Could not reorder dictionaries", &err.to_string());
                 }
                 request_snapshot(&self.service, &sender);
+            }
+            SettingsMsg::RestoreBundledDicts => {
+                let catalog = self.catalog.clone();
+                let done_sender = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    "Restoring dictionary packs",
+                    move |reporter| {
+                        let result = dict::restore_bundled_dictionaries(&catalog)
+                            .map_err(|err| format!("{err:#}"));
+                        if result.is_err() {
+                            reporter.fail();
+                        }
+                        result
+                    },
+                    |_| {},
+                    move |result| {
+                        match result {
+                            Ok(()) => crate::notify::success(
+                                "Bundled packs restored",
+                                "The dictionaries that ship with Kalam are available again.",
+                            ),
+                            Err(detail) => {
+                                crate::notify::error("Could not restore dictionary packs", &detail)
+                            }
+                        }
+                        let _ = done_sender.send(SettingsMsg::Refresh);
+                    },
+                );
             }
         }
         self.update_view(widgets, sender);
@@ -815,19 +845,21 @@ impl SettingsPageModel {
             }
             SettingsTab::WatchFolders => {
                 clear_box(&widgets.watch_content);
-                render_watch_cards_with(
+                build_watch_sections(
                     &widgets.watch_content,
-                    &self.catalog,
+                    &WatchPaneStore {
+                        catalog: self.catalog.clone(),
+                    },
                     &snap.watch_rules,
                     &snap.shelves,
                 );
             }
             SettingsTab::Dictionaries => {
-                rebuild_dicts(&widgets.dict_list, &snap.dicts, sender);
+                build_dictionaries_pane(&widgets.dict_list, &snap.dicts, sender);
             }
             SettingsTab::Metadata => {
                 clear_box(&widgets.source_list);
-                build_sources(&widgets.source_list, &self.catalog, snap);
+                build_sources_pane(&widgets.source_list, &self.service, snap);
             }
             SettingsTab::Integrations => {
                 clear_box(&widgets.integrations_content);
@@ -878,11 +910,11 @@ fn update_tab_styles(container: &gtk::Box, active: SettingsTab) {
 
 use crate::appearance::{HeadingFont, InterfaceFont, ReduceMotion, TextSize};
 use crate::widgets::dialog::{
-    confirmation_dialog, dialog_shell, present_dialog, ConfirmationKind, DialogSize,
+    confirmation_dialog, dialog_shell, present_dialog, text_field, ConfirmationKind, DialogSize,
 };
 use crate::widgets::dropdown::{dropdown, DropdownOption};
 use crate::widgets::in_app_dialog::DialogExit;
-use crate::widgets::pill_button::{boxed_ghost_button, icon_button};
+use crate::widgets::pill_button::{boxed_ghost_button, ghost_button, icon_button, primary_button};
 use crate::widgets::segmented::{segmented_control, SegmentedSize};
 
 /// Append one outlined section (design-system sections 14 and 41) to
@@ -916,6 +948,50 @@ fn pane_section(host: &gtk::Box, heading: &str) -> gtk::Box {
 /// heading block of its own (About).
 fn pane_section_bare(host: &gtk::Box) -> gtk::Box {
     pane_section_box(host, None)
+}
+
+/// A section whose heading is a row of its own rather than a Label:
+/// a watch folder's path, which is user text and keeps its own case,
+/// with that folder's Remove action at the right (decision 151).
+fn pane_section_custom_heading(host: &gtk::Box, heading: &gtk::Box) -> gtk::Box {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    if host.first_child().is_some() {
+        wrap.set_margin_top(24);
+    }
+    heading.set_margin_bottom(8);
+    wrap.append(heading);
+    let rows = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    rows.add_css_class("kalam-settings-section");
+    wrap.append(&rows);
+    host.append(&wrap);
+    rows
+}
+
+/// The dashed state card (design-system section 10): a centred
+/// Card-title heading and Meta line, with the caller's action(s)
+/// appended to the returned card.
+fn dashed_state_card(host: &gtk::Box, title: &str, Meta: Option<&str>) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card.add_css_class("kalam-settings-state-card");
+
+    let heading = gtk::Label::new(Some(title));
+    heading.add_css_class("kalam-ui-card-title");
+    heading.set_halign(gtk::Align::Center);
+    heading.set_xalign(0.5);
+    heading.set_wrap(true);
+    card.append(&heading);
+
+    if let Some(text) = Meta {
+        let line = gtk::Label::new(Some(text));
+        line.add_css_class("kalam-ui-meta");
+        line.set_halign(gtk::Align::Center);
+        line.set_xalign(0.5);
+        line.set_wrap(true);
+        card.append(&line);
+    }
+
+    host.append(&card);
+    card
 }
 
 /// One 48-high row: label over an optional caption at the left,
@@ -1500,11 +1576,11 @@ fn build_reading(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapsho
         let column_px = column_px.clone();
         let justify = justify.clone();
         Rc::new(move || {
+            let line_height = format!("{:.1}", line_tenths.get() as f64 / 10.0);
             body.set_markup(&format!(
-                "<span font=\"{} {}\" line_height=\"{}\">{}</span>",
+                "<span font=\"{} {}\" line_height=\"{line_height}\">{}</span>",
                 gtk::glib::markup_escape_text(&family.borrow()),
                 font_px.get(),
-                format!("{:.1}", line_tenths.get() as f64 / 10.0),
                 gtk::glib::markup_escape_text(PREVIEW_TEXT),
             ));
             body.set_justify(if justify.get() {
@@ -2523,7 +2599,7 @@ fn build_book_files_pane(
 
     let (caption, count, total) = match epub_backups {
         None => ("Checking…".to_string(), 0usize, 0u64),
-        Some(backups) if backups.is_empty() => ("No backups kept".to_string(), 0, 0),
+        Some([]) => ("No backups kept".to_string(), 0, 0),
         Some(backups) => {
             let total: u64 = backups.iter().map(|(_, size)| size).sum();
             (
@@ -2573,6 +2649,805 @@ fn build_book_files_pane(
     pane_row_with(&rows, "Original backups", Some(&caption), &delete);
 }
 
+// ---------------------------------------------------------------------------
+// Watch folders (decision 151).
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+enum WatchShelfKind {
+    Epub,
+    Pdf,
+    Comics,
+}
+
+impl WatchShelfKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Epub => "Books (EPUB)",
+            Self::Pdf => "Documents (PDF)",
+            Self::Comics => "Comics",
+        }
+    }
+
+    fn shelf_id(self, rule: &crate::watch_folder::WatchFolderRule) -> Option<i64> {
+        match self {
+            Self::Epub => rule.epub_shelf_id,
+            Self::Pdf => rule.pdf_shelf_id,
+            Self::Comics => rule.comics_shelf_id,
+        }
+    }
+
+    fn set_shelf(self, rule: &mut crate::watch_folder::WatchFolderRule, shelf_id: Option<i64>) {
+        // Decision 151 replaces the old per-format checkboxes with the
+        // routing choice itself: choosing where a format goes also says
+        // that format is imported.
+        match self {
+            Self::Epub => {
+                rule.epub_shelf_id = shelf_id;
+                rule.import_epub = true;
+            }
+            Self::Pdf => {
+                rule.pdf_shelf_id = shelf_id;
+                rule.import_pdf = true;
+            }
+            Self::Comics => {
+                rule.comics_shelf_id = shelf_id;
+                rule.import_comics = true;
+            }
+        }
+    }
+}
+
+/// The one catalog handle every watch-folder action shares. The pane's
+/// widgets outlive the builder that made them, so their callbacks clone
+/// this small context instead of threading the handle through each
+/// helper separately.
+#[derive(Clone)]
+struct WatchPaneStore {
+    catalog: Arc<Catalog>,
+}
+
+impl WatchPaneStore {
+    fn update_rule(
+        &self,
+        rule_id: &str,
+        reload: bool,
+        change: impl FnOnce(&mut crate::watch_folder::WatchFolderRule),
+    ) {
+        let mut rules = crate::watch_folder::load_watch_rules(&self.catalog);
+        if let Some(rule) = rules.iter_mut().find(|rule| rule.id == rule_id) {
+            change(rule);
+            crate::watch_folder::save_watch_rules(&self.catalog, &rules);
+            if reload {
+                crate::watch_folder::request_reload();
+            }
+        }
+    }
+
+    fn refresh(&self, container: &gtk::Box) {
+        clear_box(container);
+        let rules = crate::watch_folder::load_watch_rules(&self.catalog);
+        let shelves = self.catalog.list_shelves().unwrap_or_default();
+        build_watch_sections(container, self, &rules, &shelves);
+    }
+}
+
+fn build_watch_sections(
+    container: &gtk::Box,
+    store: &WatchPaneStore,
+    rules: &[crate::watch_folder::WatchFolderRule],
+    shelves: &[crate::db::Shelf],
+) {
+    if rules.is_empty() {
+        let card = dashed_state_card(
+            container,
+            "No watch folders",
+            Some("Kalam can check a folder for new books and add them automatically."),
+        );
+        let add = {
+            let store = store.clone();
+            let container = container.clone();
+            boxed_ghost_button("Add watch folder…", move || {
+                add_watch_folder_flow(&container, &store)
+            })
+        };
+        add.set_halign(gtk::Align::Center);
+        card.append(&add);
+        return;
+    }
+
+    for rule in rules {
+        let heading = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let path_text = rule.path.to_string_lossy().into_owned();
+        let path = gtk::Label::new(Some(&path_text));
+        path.add_css_class("kalam-settings-folder-heading");
+        path.set_hexpand(true);
+        path.set_halign(gtk::Align::Start);
+        path.set_xalign(0.0);
+        path.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        path.set_tooltip_text(Some(&path_text));
+        heading.append(&path);
+
+        let remove = {
+            let store = store.clone();
+            let container = container.clone();
+            let rule_id = rule.id.clone();
+            ghost_button("Remove", move || {
+                let mut rules = crate::watch_folder::load_watch_rules(&store.catalog);
+                rules.retain(|rule| rule.id != rule_id);
+                crate::watch_folder::save_watch_rules(&store.catalog, &rules);
+                crate::watch_folder::request_reload();
+                store.refresh(&container);
+            })
+        };
+        remove.set_valign(gtk::Align::Center);
+        heading.append(&remove);
+
+        let rows = pane_section_custom_heading(container, &heading);
+        for kind in [
+            WatchShelfKind::Epub,
+            WatchShelfKind::Pdf,
+            WatchShelfKind::Comics,
+        ] {
+            let picker = watch_shelf_dropdown(container, store, rule, shelves, kind);
+            pane_row_with(&rows, kind.label(), None, &picker);
+        }
+
+        let subfolders = row_switch("Shelves from subfolders", rule.subfolder_shelves, {
+            let store = store.clone();
+            let rule_id = rule.id.clone();
+            move |on| {
+                store.update_rule(&rule_id, false, |rule| {
+                    rule.subfolder_shelves = on;
+                });
+            }
+        });
+        pane_row_with(&rows, "Shelves from subfolders", None, &subfolders);
+
+        let cleanup = row_switch(
+            "Delete the original after import",
+            rule.cleanup_original,
+            {
+                let store = store.clone();
+                let rule_id = rule.id.clone();
+                move |on| {
+                    store.update_rule(&rule_id, false, |rule| {
+                        rule.cleanup_original = on;
+                    });
+                }
+            },
+        );
+        pane_row_with(&rows, "Delete the original after import", None, &cleanup);
+
+        // The board has no pause control, but removing the folder was
+        // previously the only replacement for one. Keep that existing
+        // behavior as one extra row rather than silently dropping it.
+        let enabled = row_switch("Watch this folder", rule.enabled, {
+            let store = store.clone();
+            let rule_id = rule.id.clone();
+            move |on| {
+                store.update_rule(&rule_id, true, |rule| {
+                    rule.enabled = on;
+                });
+            }
+        });
+        pane_row_with(&rows, "Watch this folder", None, &enabled);
+    }
+
+    let add = {
+        let store = store.clone();
+        let container = container.clone();
+        boxed_ghost_button("Add watch folder…", move || {
+            add_watch_folder_flow(&container, &store)
+        })
+    };
+    add.set_halign(gtk::Align::Start);
+    add.set_margin_top(12);
+    container.append(&add);
+}
+
+fn watch_shelf_dropdown(
+    container: &gtk::Box,
+    store: &WatchPaneStore,
+    rule: &crate::watch_folder::WatchFolderRule,
+    shelves: &[crate::db::Shelf],
+    kind: WatchShelfKind,
+) -> gtk::MenuButton {
+    let mut choices = vec![(None, "No shelf".to_string())];
+    choices.extend(
+        shelves
+            .iter()
+            .map(|shelf| (Some(shelf.id), shelf.name.clone())),
+    );
+    let selected = choices
+        .iter()
+        .position(|(shelf_id, _)| *shelf_id == kind.shelf_id(rule))
+        .unwrap_or(0);
+    let options = choices
+        .iter()
+        .map(|(_, name)| DropdownOption::new(name.clone()))
+        .collect();
+    let label = format!("Shelf for {}", kind.label());
+
+    let on_change = {
+        let store = store.clone();
+        let rule_id = rule.id.clone();
+        let choices = choices.clone();
+        move |index: usize| {
+            if let Some((shelf_id, _)) = choices.get(index) {
+                let shelf_id = *shelf_id;
+                store.update_rule(&rule_id, true, |rule| {
+                    kind.set_shelf(rule, shelf_id);
+                });
+            }
+        }
+    };
+    let on_footer = {
+        let store = store.clone();
+        let container = container.clone();
+        let rule_id = rule.id.clone();
+        move || {
+            new_shelf_dialog(&container, &store, &container, rule_id.clone(), kind);
+        }
+    };
+
+    dropdown(&label, options, selected, Some("New shelf…"), on_change, on_footer).widget()
+}
+
+fn new_shelf_dialog(
+    anchor: &gtk::Box,
+    store: &WatchPaneStore,
+    container: &gtk::Box,
+    rule_id: String,
+    kind: WatchShelfKind,
+) {
+    let shell = dialog_shell(
+        DialogSize::Form,
+        Some(&format!("It will be used for {} from this folder.", kind.label())),
+    );
+    let field = text_field("Shelf name", "e.g. New arrivals", "");
+    shell.body().append(&field.widget());
+
+    let slot: Rc<RefCell<Option<crate::widgets::in_app_dialog::InAppDialog>>> =
+        Rc::new(RefCell::new(None));
+    let close = {
+        let slot = slot.clone();
+        Rc::new(move || {
+            if let Some(dialog) = slot.borrow().clone() {
+                dialog.close();
+            }
+        })
+    };
+
+    let create = {
+        let store = store.clone();
+        let container = container.clone();
+        let field = field.clone();
+        let close = close.clone();
+        Rc::new(move || {
+            let name = field.value().trim().to_string();
+            if name.is_empty() {
+                field.entry().grab_focus();
+                return;
+            }
+            match store
+                .catalog
+                .create_shelf(&name, crate::db::ShelfKind::Manual, "", "")
+            {
+                Ok(shelf_id) => {
+                    store.update_rule(&rule_id, true, |rule| {
+                        kind.set_shelf(rule, Some(shelf_id));
+                    });
+                    close();
+                    crate::notify::success("Shelf created", &name);
+                    store.refresh(&container);
+                }
+                Err(err) => {
+                    crate::notify::error("Could not create that shelf", &err.to_string());
+                }
+            }
+        })
+    };
+
+    {
+        let create = create.clone();
+        field.entry().connect_activate(move |_| create());
+    }
+    shell.footer().append(&boxed_ghost_button("Cancel", {
+        let close = close.clone();
+        move || close()
+    }));
+    shell.footer().append(&primary_button("Create shelf", {
+        let create = create.clone();
+        move || create()
+    }));
+
+    match present_dialog(anchor, "New shelf", DialogExit::UnsavedInput, &shell) {
+        Some(dialog) => {
+            *slot.borrow_mut() = Some(dialog);
+            field.entry().grab_focus();
+        }
+        None => crate::notify::error(
+            "Could not open the dialog",
+            "The new shelf dialog could not be opened.",
+        ),
+    }
+}
+
+fn add_watch_folder_flow(anchor: &gtk::Box, store: &WatchPaneStore) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Select folder to watch")
+        .modal(true)
+        .build();
+    let window = anchor
+        .root()
+        .and_then(|root| root.downcast::<gtk::Window>().ok());
+    let store = store.clone();
+    let container = anchor.clone();
+    dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+        let Ok(folder) = res else { return };
+        let Some(path) = folder.path() else { return };
+        let mut rules = crate::watch_folder::load_watch_rules(&store.catalog);
+        if rules.iter().any(|rule| rule.path == path) {
+            crate::notify::info(
+                "Already watching that folder",
+                "This folder is already in your watch list.",
+            );
+            return;
+        }
+        rules.push(crate::watch_folder::WatchFolderRule::new(path));
+        crate::watch_folder::save_watch_rules(&store.catalog, &rules);
+        crate::watch_folder::request_reload();
+        store.refresh(&container);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Dictionaries (decision 152).
+// ---------------------------------------------------------------------------
+
+fn set_dictionary_drop_indicator(row: &gtk::Box, y: f64) {
+    if y < row.height() as f64 / 2.0 {
+        row.add_css_class("drop-before");
+        row.remove_css_class("drop-after");
+    } else {
+        row.remove_css_class("drop-before");
+        row.add_css_class("drop-after");
+    }
+}
+
+fn clear_dictionary_drop_indicator(row: &gtk::Box) {
+    row.remove_css_class("drop-before");
+    row.remove_css_class("drop-after");
+}
+
+fn build_dictionaries_pane(
+    host: &gtk::Box,
+    dicts: &[crate::db::Dictionary],
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    use gtk::glib::{StaticType, ToValue};
+
+    clear_box(host);
+
+    if dicts.is_empty() {
+        let card = dashed_state_card(
+            host,
+            "No dictionaries",
+            Some("Import a pack, or bring back the dictionaries that ship with Kalam."),
+        );
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        actions.set_halign(gtk::Align::Center);
+        let import = {
+            let sender = sender.clone();
+            primary_button("Import dictionary", move || sender.input(SettingsMsg::ImportDict))
+        };
+        actions.append(&import);
+        let restore = {
+            let sender = sender.clone();
+            boxed_ghost_button("Restore bundled packs", move || {
+                sender.input(SettingsMsg::RestoreBundledDicts)
+            })
+        };
+        actions.append(&restore);
+        card.append(&actions);
+        return;
+    }
+
+    let rows = pane_section_bare(host);
+    let order = Rc::new(
+        dicts
+            .iter()
+            .map(|dictionary| dictionary.id)
+            .collect::<Vec<_>>(),
+    );
+
+    for (index, dictionary) in dicts.iter().enumerate() {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row.add_css_class("kalam-settings-row");
+        row.add_css_class("dict");
+
+        let handle = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        handle.add_css_class("kalam-settings-dict-handle");
+        handle.set_size_request(28, 56);
+        handle.set_valign(gtk::Align::Fill);
+        handle.set_tooltip_text(Some(&format!("Drag to reorder {}", dictionary.name)));
+        handle.update_property(&[gtk::accessible::Property::Label(&format!(
+            "Drag to reorder {}",
+            dictionary.name
+        ))]);
+        let handle_icon = gtk::Image::from_icon_name("list-drag-handle-symbolic");
+        handle_icon.add_css_class("kalam-settings-dict-handle-icon");
+        handle_icon.set_pixel_size(16);
+        handle_icon.set_halign(gtk::Align::Center);
+        handle_icon.set_valign(gtk::Align::Center);
+        handle.append(&handle_icon);
+        row.append(&handle);
+
+        let provider = gtk::gdk::ContentProvider::for_value(&dictionary.id.to_value());
+        let source = gtk::DragSource::new();
+        source.set_actions(gtk::gdk::DragAction::MOVE);
+        source.set_content(Some(&provider));
+        {
+            let row_begin = row.clone();
+            source.connect_drag_begin(move |source, _drag| {
+                row_begin.set_opacity(0.4);
+                row_begin.add_css_class("dragging");
+                let paintable = gtk::WidgetPaintable::new(Some(&row_begin));
+                source.set_icon(Some(&paintable), 14, 28);
+            });
+        }
+        {
+            let row_end = row.clone();
+            source.connect_drag_end(move |_, _drag, _delete_data| {
+                row_end.set_opacity(1.0);
+                row_end.remove_css_class("dragging");
+            });
+        }
+        {
+            let row_cancel = row.clone();
+            source.connect_drag_cancel(move |_, _drag, _reason| {
+                row_cancel.set_opacity(1.0);
+                row_cancel.remove_css_class("dragging");
+                false
+            });
+        }
+        handle.add_controller(source);
+
+        let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        info.set_hexpand(true);
+        info.set_valign(gtk::Align::Center);
+        let name = gtk::Label::new(Some(&dictionary.name));
+        name.add_css_class("kalam-settings-row-label");
+        name.set_halign(gtk::Align::Start);
+        name.set_xalign(0.0);
+        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        info.append(&name);
+        let meta = gtk::Label::new(Some(&format!(
+            "{} entr{}",
+            dictionary.entry_count,
+            if dictionary.entry_count == 1 { "y" } else { "ies" }
+        )));
+        meta.add_css_class("kalam-ui-meta");
+        meta.set_halign(gtk::Align::Start);
+        meta.set_xalign(0.0);
+        info.append(&meta);
+        row.append(&info);
+
+        if index == 0 {
+            row.append(&settings_chip("Speaks first", true));
+        }
+
+        let remove = {
+            let sender = sender.clone();
+            let anchor = rows.clone();
+            let name = dictionary.name.clone();
+            let entry_count = dictionary.entry_count;
+            let id = dictionary.id;
+            ghost_button("Remove", move || {
+                let detail = if dict::is_bundled_dictionary(&name) {
+                    "Restore bundled packs can bring it back."
+                } else {
+                    "Kalam will not add it back unless it is imported again."
+                };
+                let message = format!(
+                    "{name} and its {entry_count} entr{} will be removed. {detail}",
+                    if entry_count == 1 { "y" } else { "ies" }
+                );
+                let sender = sender.clone();
+                let _ = confirmation_dialog(
+                    &anchor,
+                    &format!("Remove {name}?"),
+                    &message,
+                    "Cancel",
+                    "Remove dictionary",
+                    ConfirmationKind::Destructive,
+                    move || sender.input(SettingsMsg::DeleteDict(id)),
+                );
+            })
+        };
+        remove.set_valign(gtk::Align::Center);
+        row.append(&remove);
+
+        let target = gtk::DropTarget::new(i64::static_type(), gtk::gdk::DragAction::MOVE);
+        {
+            let row_enter = row.clone();
+            target.connect_enter(move |_, _x, y| {
+                set_dictionary_drop_indicator(&row_enter, y);
+                gtk::gdk::DragAction::MOVE
+            });
+        }
+        {
+            let row_motion = row.clone();
+            target.connect_motion(move |_, _x, y| {
+                set_dictionary_drop_indicator(&row_motion, y);
+                gtk::gdk::DragAction::MOVE
+            });
+        }
+        {
+            let row_leave = row.clone();
+            target.connect_leave(move |_| {
+                clear_dictionary_drop_indicator(&row_leave);
+            });
+        }
+        {
+            let row_drop = row.clone();
+            let sender = sender.clone();
+            let order = order.clone();
+            target.connect_drop(move |_, value, _x, y| {
+                let after = y >= row_drop.height() as f64 / 2.0;
+                clear_dictionary_drop_indicator(&row_drop);
+                let Ok(source_id) = value.get::<i64>() else {
+                    return false;
+                };
+                let Some(source_index) = order.iter().position(|id| *id == source_id) else {
+                    return false;
+                };
+                let slot = if after { index + 1 } else { index };
+                let final_index = if slot > source_index {
+                    slot - 1
+                } else {
+                    slot
+                };
+                let delta = final_index as i64 - source_index as i64;
+                if delta != 0 {
+                    sender.input(SettingsMsg::MoveDict(source_id, delta));
+                }
+                true
+            });
+        }
+        row.add_controller(target);
+
+        rows.append(&row);
+    }
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.set_margin_top(12);
+    let import = {
+        let sender = sender.clone();
+        primary_button("Import dictionary", move || sender.input(SettingsMsg::ImportDict))
+    };
+    actions.append(&import);
+    let rescan = {
+        let sender = sender.clone();
+        boxed_ghost_button("Rescan", move || sender.input(SettingsMsg::Refresh))
+    };
+    actions.append(&rescan);
+    host.append(&actions);
+}
+
+// ---------------------------------------------------------------------------
+// Metadata sources (decision 153).
+// ---------------------------------------------------------------------------
+
+fn set_google_chevron(button: &gtk::Button, expanded: bool) {
+    let icon = gtk::Image::from_icon_name(if expanded {
+        "pan-up-symbolic"
+    } else {
+        "pan-down-symbolic"
+    });
+    icon.set_pixel_size(16);
+    button.set_child(Some(&icon));
+    let label = if expanded {
+        "Hide Google Books settings"
+    } else {
+        "Show Google Books settings"
+    };
+    button.set_tooltip_text(Some(label));
+    button.update_property(&[gtk::accessible::Property::Label(label)]);
+}
+
+fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &SettingsSnapshot) {
+    use crate::metadata::{set_source_enabled, SourceId};
+
+    // The pane's callbacks outlive this builder, so they share one
+    // handle cloned out of the service here.
+    let catalog = service.catalog().clone();
+
+    let rows = pane_section(host, "Books");
+
+    let open_library = row_switch("Open Library", snap.source_open_library, {
+        let catalog = catalog.clone();
+        move |on| set_source_enabled(&catalog, SourceId::OpenLibrary, on)
+    });
+    pane_row_with(&rows, "Open Library", Some("No key needed"), &open_library);
+
+    let expanded = Rc::new(Cell::new(snap.source_google_books));
+    let revealer = gtk::Revealer::new();
+    revealer.set_transition_type(if crate::appearance::reduce_motion() {
+        gtk::RevealerTransitionType::Crossfade
+    } else {
+        gtk::RevealerTransitionType::SlideDown
+    });
+    revealer.set_transition_duration(180);
+    revealer.set_reveal_child(expanded.get());
+    let nested = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    nested.add_css_class("kalam-settings-nested-rows");
+    revealer.set_child(Some(&nested));
+
+    let google_row = pane_row(&rows, "Google Books", None);
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    controls.set_valign(gtk::Align::Center);
+
+    let chevron = gtk::Button::new();
+    chevron.add_css_class("kalam-settings-chevron");
+    chevron.set_size_request(36, 36);
+    chevron.set_valign(gtk::Align::Center);
+    chevron.set_sensitive(snap.source_google_books);
+    set_google_chevron(&chevron, expanded.get());
+
+    let google_switch = row_switch("Google Books", snap.source_google_books, {
+        let catalog = catalog.clone();
+        let expanded_switch = expanded.clone();
+        let revealer_switch = revealer.clone();
+        let chevron_switch = chevron.clone();
+        move |on| {
+            set_source_enabled(&catalog, SourceId::GoogleBooks, on);
+            expanded_switch.set(on);
+            revealer_switch.set_reveal_child(on);
+            chevron_switch.set_sensitive(on);
+            set_google_chevron(&chevron_switch, on);
+        }
+    });
+    controls.append(&google_switch);
+    controls.append(&chevron);
+    google_row.append(&controls);
+    rows.append(&revealer);
+
+    {
+        let expanded_chevron = expanded.clone();
+        let revealer_chevron = revealer.clone();
+        chevron.connect_clicked(move |button| {
+            let next = !expanded_chevron.get();
+            expanded_chevron.set(next);
+            revealer_chevron.set_reveal_child(next);
+            set_google_chevron(button, next);
+        });
+    }
+
+    // API key. Saving happens when the field is left, not on every
+    // keystroke: a partly typed key must never replace a working one.
+    let key_row = pane_row(&nested, "API key", None);
+    key_row.add_css_class("nested");
+    key_row.set_margin_start(20);
+    let key_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    key_box.set_valign(gtk::Align::Center);
+    key_box.set_size_request(280, -1);
+    let key_entry = gtk::Entry::new();
+    key_entry.add_css_class("kalam-settings-entry");
+    if snap.google_books_key_rejected {
+        key_entry.add_css_class("rejected");
+    }
+    key_entry.set_placeholder_text(Some("Optional API key"));
+    key_entry.set_text(&snap.google_books_key);
+    key_entry.set_hexpand(true);
+    key_entry.update_property(&[gtk::accessible::Property::Label("Google Books API key")]);
+    key_box.append(&key_entry);
+    let key_error = gtk::Label::new(Some("Google Books rejected this key."));
+    key_error.add_css_class("kalam-settings-error-line");
+    key_error.set_halign(gtk::Align::Start);
+    key_error.set_xalign(0.0);
+    key_error.set_visible(snap.google_books_key_rejected);
+    key_box.append(&key_error);
+    key_row.append(&key_box);
+
+    let saved_key = Rc::new(RefCell::new(snap.google_books_key.trim().to_string()));
+    let save_key = {
+        let catalog = catalog.clone();
+        let entry = key_entry.clone();
+        let saved = saved_key.clone();
+        let error = key_error.clone();
+        Rc::new(move || {
+            let value = entry.text().trim().to_string();
+            if *saved.borrow() == value {
+                return;
+            }
+            catalog.set_pref("meta.googlebooks.key", &value);
+            catalog.set_pref("meta.googlebooks.key_rejected", "0");
+            *saved.borrow_mut() = value;
+            entry.remove_css_class("rejected");
+            error.set_visible(false);
+        })
+    };
+    {
+        let save_key = save_key.clone();
+        key_entry.connect_activate(move |_| save_key());
+    }
+    let key_focus = gtk::EventControllerFocus::new();
+    {
+        let save_key = save_key.clone();
+        key_focus.connect_leave(move |_| save_key());
+    }
+    key_entry.add_controller(key_focus);
+
+    // Country code, saved the same way. An incomplete code is not a
+    // setting, so leaving the field with one restores the saved code.
+    let country_row = pane_row(&nested, "Country code", Some("Used to rank results"));
+    country_row.add_css_class("nested");
+    country_row.set_margin_start(20);
+    let initial_country = snap.google_books_country.trim().to_uppercase();
+    let country_entry = gtk::Entry::new();
+    country_entry.add_css_class("kalam-settings-entry");
+    country_entry.set_text(&initial_country);
+    country_entry.set_max_length(2);
+    country_entry.set_width_chars(2);
+    country_entry.set_size_request(76, -1);
+    country_entry.set_valign(gtk::Align::Center);
+    country_entry.update_property(&[gtk::accessible::Property::Label(
+        "Google Books country code",
+    )]);
+    country_row.append(&country_entry);
+
+    let saved_country = Rc::new(RefCell::new(initial_country));
+    let save_country = {
+        let catalog = catalog.clone();
+        let entry = country_entry.clone();
+        let saved = saved_country.clone();
+        Rc::new(move || {
+            let normalized: String = entry
+                .text()
+                .chars()
+                .filter(|c| c.is_ascii_alphabetic())
+                .flat_map(char::to_uppercase)
+                .take(2)
+                .collect();
+            if normalized.len() != 2 {
+                entry.set_text(&saved.borrow());
+                return;
+            }
+            if entry.text().as_str() != normalized {
+                entry.set_text(&normalized);
+            }
+            if *saved.borrow() == normalized {
+                return;
+            }
+            catalog.set_pref("meta.googlebooks.country", &normalized);
+            *saved.borrow_mut() = normalized;
+        })
+    };
+    {
+        let save_country = save_country.clone();
+        country_entry.connect_activate(move |_| save_country());
+    }
+    let country_focus = gtk::EventControllerFocus::new();
+    {
+        let save_country = save_country.clone();
+        country_focus.connect_leave(move |_| save_country());
+    }
+    country_entry.add_controller(country_focus);
+
+    let rows = pane_section(host, "Comics");
+    for name in ["MyAnimeList", "Comic Vine"] {
+        let row = pane_row(&rows, name, None);
+        row.append(&settings_chip("Not available yet", false));
+        let sw = gtk::Switch::new();
+        sw.set_sensitive(false);
+        sw.set_valign(gtk::Align::Center);
+        sw.update_property(&[gtk::accessible::Property::Label(name)]);
+        row.append(&sw);
+    }
+}
+
 /// One card with an accent icon, a title, an optional description, a hairline
 /// divider, and a body host the caller fills with rows. Appended to `host`.
 fn section_card(host: &gtk::Box, icon_name: &str, title: &str, desc: Option<&str>) -> gtk::Box {
@@ -2611,35 +3486,6 @@ fn section_card(host: &gtk::Box, icon_name: &str, title: &str, desc: Option<&str
     body
 }
 
-/// Label + description on the left, one control on the right. Hairlines
-/// between rows come from CSS, so rows simply stack.
-fn setting_row(body: &gtk::Box, label: &str, desc: &str, right: &impl IsA<gtk::Widget>) {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
-    row.add_css_class("kalam-setting-row");
-
-    let left = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    left.set_hexpand(true);
-    let label_widget = gtk::Label::new(Some(label));
-    label_widget.add_css_class("kalam-setting-label");
-    label_widget.set_halign(gtk::Align::Start);
-    label_widget.set_xalign(0.0);
-    left.append(&label_widget);
-    let desc_widget = gtk::Label::new(Some(desc));
-    desc_widget.add_css_class("kalam-setting-desc");
-    desc_widget.set_wrap(true);
-    desc_widget.set_xalign(0.0);
-    desc_widget.set_halign(gtk::Align::Start);
-    left.append(&desc_widget);
-    row.append(&left);
-
-    let control = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    control.set_valign(gtk::Align::Center);
-    control.append(right);
-    row.append(&control);
-
-    body.append(&row);
-}
-
 /// The app's pill switch. `on_toggle` fires only for user changes: the
 /// initial state is set before the handler is attached.
 pub(crate) fn toggle_switch(initial: bool, on_toggle: impl Fn(bool) + 'static) -> gtk::Switch {
@@ -2660,600 +3506,12 @@ fn chip_label(text: &str, class: &str) -> gtk::Label {
     label
 }
 
-/// Installed dictionary packs: icon, name, mono meta, Remove — plus the
-/// filled Import button in the card footer.
-fn rebuild_dicts(
-    host: &gtk::Box,
-    dicts: &[crate::db::Dictionary],
-    sender: &ComponentSender<SettingsPageModel>,
-) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    let body = section_card(
-        host,
-        "book-open-symbolic",
-        "Installed packs",
-        Some("StarDict (.ifo/.idx/.dict), SQLite (.db), and TSV formats are supported."),
-    );
-
-    if dicts.is_empty() {
-        let empty = gtk::Label::new(Some(
-            "No dictionaries yet. Import StarDict, SQLite or TSV packs for offline lookup (D key in the reader).",
-        ));
-        empty.add_css_class("kalam-placeholder");
-        empty.set_wrap(true);
-        empty.set_xalign(0.0);
-        body.append(&empty);
-    } else {
-        let last = dicts.len() - 1;
-        for (index, d) in dicts.iter().enumerate() {
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-            row.add_css_class("kalam-setting-row");
-
-            let icon = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            icon.add_css_class("kalam-dict-icon");
-            icon.set_size_request(32, 32);
-            icon.set_halign(gtk::Align::Center);
-            icon.set_valign(gtk::Align::Center);
-            icon.append(&crate::icons::symbolic_with_classes(
-                "book-open-symbolic",
-                16,
-                &["kalam-dict-icon-glyph"],
-            ));
-            row.append(&icon);
-
-            let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
-            info.set_hexpand(true);
-            let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            let name_label = gtk::Label::new(Some(&d.name));
-            name_label.add_css_class("kalam-setting-label");
-            name_label.set_halign(gtk::Align::Start);
-            name_label.set_xalign(0.0);
-            name_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            name_row.append(&name_label);
-            // Phase 9: the top of the list is what the merged store consults
-            // first — say so, or the ordering is unexplained.
-            if index == 0 {
-                name_row.append(&chip_label("speaks first", "kalam-chip-info"));
-            }
-            info.append(&name_row);
-            let meta = match &d.lang {
-                Some(lang) => format!("{lang} · {} entries", d.entry_count),
-                None => format!("{} entries", d.entry_count),
-            };
-            let meta_label = gtk::Label::new(Some(&meta));
-            meta_label.add_css_class("kalam-dict-meta");
-            meta_label.set_halign(gtk::Align::Start);
-            meta_label.set_xalign(0.0);
-            info.append(&meta_label);
-            row.append(&info);
-
-            let id = d.id;
-            let up = gtk::Button::new();
-            up.set_child(Some(&crate::icons::symbolic_with_classes(
-                "go-up-symbolic",
-                16,
-                &["kalam-inline-icon"],
-            )));
-            up.add_css_class("kalam-mini-btn");
-            up.set_valign(gtk::Align::Center);
-            up.set_sensitive(index > 0);
-            up.set_tooltip_text(Some("Speak before the dictionaries above"));
-            {
-                let s = sender.clone();
-                up.connect_clicked(move |_| s.input(SettingsMsg::MoveDict(id, -1)));
-            }
-            row.append(&up);
-
-            let down = gtk::Button::new();
-            down.set_child(Some(&crate::icons::symbolic_with_classes(
-                "go-down-symbolic",
-                16,
-                &["kalam-inline-icon"],
-            )));
-            down.add_css_class("kalam-mini-btn");
-            down.set_valign(gtk::Align::Center);
-            down.set_sensitive(index < last);
-            down.set_tooltip_text(Some("Speak after the dictionaries below"));
-            {
-                let s = sender.clone();
-                down.connect_clicked(move |_| s.input(SettingsMsg::MoveDict(id, 1)));
-            }
-            row.append(&down);
-
-            let remove = gtk::Button::with_label("Remove");
-            remove.add_css_class("kalam-btn-danger");
-            remove.add_css_class("kalam-btn-sm");
-            remove.set_valign(gtk::Align::Center);
-            let s = sender.clone();
-            remove.connect_clicked(move |_| s.input(SettingsMsg::DeleteDict(id)));
-            row.append(&remove);
-
-            body.append(&row);
-        }
-    }
-
-    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    footer.add_css_class("kalam-card-footer");
-    let import_btn = gtk::Button::new();
-    import_btn.set_child(Some(&crate::icons::labelled(
-        "list-add-symbolic",
-        16,
-        "Import dictionary",
-        6,
-    )));
-    import_btn.add_css_class("kalam-btn-filled");
-    {
-        let s = sender.clone();
-        import_btn.connect_clicked(move |_| s.input(SettingsMsg::ImportDict));
-    }
-    footer.append(&import_btn);
-    let refresh_btn = gtk::Button::new();
-    refresh_btn.set_child(Some(&crate::icons::symbolic_with_classes(
-        "view-refresh-symbolic",
-        16,
-        &["kalam-inline-icon"],
-    )));
-    refresh_btn.add_css_class("kalam-btn-ghost");
-    refresh_btn.set_tooltip_text(Some("Rescan dictionary packs"));
-    {
-        let s = sender.clone();
-        refresh_btn.connect_clicked(move |_| s.input(SettingsMsg::Refresh));
-    }
-    footer.append(&refresh_btn);
-    body.append(&footer);
-}
-
-fn build_shelf_dropdown(
-    shelves: &[(Option<i64>, String)],
-    current_shelf_id: Option<i64>,
-    on_change: impl Fn(Option<i64>) + 'static,
-) -> gtk::DropDown {
-    let titles: Vec<&str> = shelves.iter().map(|(_, name)| name.as_str()).collect();
-    let drop = gtk::DropDown::from_strings(&titles);
-    drop.set_valign(gtk::Align::Center);
-
-    let init_idx = shelves
-        .iter()
-        .position(|(id, _)| *id == current_shelf_id)
-        .unwrap_or(0);
-    drop.set_selected(init_idx as u32);
-
-    let shelves_map = shelves.to_vec();
-    drop.connect_selected_notify(move |combo| {
-        let idx = combo.selected() as usize;
-        if let Some((shelf_id, _)) = shelves_map.get(idx) {
-            on_change(*shelf_id);
-        }
-    });
-
-    drop
-}
-
-/// Re-render from live data — the click paths (add / remove a watch folder)
-/// still read inline, as they always did; this wrapper keeps them working.
-fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::Catalog>) {
-    let rules = crate::watch_folder::load_watch_rules(catalog);
-    let shelves = catalog.list_shelves().unwrap_or_default();
-    render_watch_cards_with(container, catalog, &rules, &shelves);
-}
-
-/// Build the watch-folder cards from data the caller already holds: the
-/// page's snapshot on first build (7.1 step 2c — no read happens on the UI
-/// thread there), or a fresh click-time read through the wrapper above.
-fn render_watch_cards_with(
-    container: &gtk::Box,
-    catalog: &std::sync::Arc<crate::db::Catalog>,
-    rules: &[crate::watch_folder::WatchFolderRule],
-    shelves: &[crate::db::Shelf],
-) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
-    }
-
-    let mut shelf_choices: Vec<(Option<i64>, String)> =
-        vec![(None, "Library Default (No shelf)".to_string())];
-    for s in shelves {
-        shelf_choices.push((Some(s.id), s.name.clone()));
-    }
-
-    if rules.is_empty() {
-        let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        placeholder.set_margin_top(12);
-        placeholder.set_margin_bottom(12);
-
-        let empty = gtk::Label::new(Some(
-            "No watch folders configured yet.\nClick “+ Add Watch Folder” to monitor folders and route books to shelves.",
-        ));
-        empty.add_css_class("kalam-placeholder");
-        empty.set_wrap(true);
-        empty.set_justify(gtk::Justification::Center);
-        placeholder.append(&empty);
-        container.append(&placeholder);
-        return;
-    }
-
-    for rule in rules {
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        card.add_css_class("kalam-watch-card");
-
-        // Header: Path + Switch + Remove
-        let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        header.add_css_class("kalam-watch-card-header");
-
-        let folder_icon = gtk::Image::from_icon_name("folder-symbolic");
-        header.append(&folder_icon);
-
-        let path_display = rule.path.to_string_lossy().into_owned();
-        let path_chip = chip_label(&path_display, "kalam-chip-neutral");
-        path_chip.set_tooltip_text(Some(&path_display));
-        header.append(&path_chip);
-
-        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        header.append(&spacer);
-
-        let sw = toggle_switch(rule.enabled, {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            move |active| {
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.enabled = active;
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    crate::watch_folder::request_reload();
-                }
-            }
-        });
-        sw.set_tooltip_text(Some("Enable or pause monitoring for this folder"));
-        header.append(&sw);
-
-        let remove_btn = gtk::Button::from_icon_name("user-trash-symbolic");
-        remove_btn.add_css_class("flat");
-        remove_btn.add_css_class("danger");
-        remove_btn.set_tooltip_text(Some("Remove this watch folder"));
-        {
-            let cat = catalog.clone();
-            let cont = container.clone();
-            let rule_id = rule.id.clone();
-            remove_btn.connect_clicked(move |_| {
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                all_rules.retain(|r| r.id != rule_id);
-                crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                crate::watch_folder::request_reload();
-                render_watch_cards(&cont, &cat);
-            });
-        }
-        header.append(&remove_btn);
-        card.append(&header);
-
-        // Format row 1: EPUB
-        let row_epub = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        row_epub.add_css_class("kalam-watch-format-row");
-        row_epub.set_valign(gtk::Align::Center);
-
-        let epub_check = gtk::CheckButton::with_label("Novels & Ebooks (EPUB)");
-        epub_check.set_active(rule.import_epub);
-        epub_check.add_css_class("kalam-watch-format-label");
-        row_epub.append(&epub_check);
-
-        let arrow_epub = gtk::Label::new(Some("Put into:"));
-        arrow_epub.add_css_class("kalam-setting-desc");
-        row_epub.append(&arrow_epub);
-
-        let epub_drop = build_shelf_dropdown(
-            &shelf_choices,
-            rule.epub_shelf_id,
-            {
-                let cat = catalog.clone();
-                let rule_id = rule.id.clone();
-                move |sid| {
-                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                        r.epub_shelf_id = sid;
-                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    }
-                }
-            },
-        );
-        epub_drop.set_sensitive(rule.import_epub);
-        row_epub.append(&epub_drop);
-
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            let drop_ref = epub_drop.clone();
-            epub_check.connect_toggled(move |chk| {
-                let active = chk.is_active();
-                drop_ref.set_sensitive(active);
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.import_epub = active;
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    crate::watch_folder::request_reload();
-                }
-            });
-        }
-        card.append(&row_epub);
-
-        // Format row 2: PDF
-        let row_pdf = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        row_pdf.add_css_class("kalam-watch-format-row");
-        row_pdf.set_valign(gtk::Align::Center);
-
-        let pdf_check = gtk::CheckButton::with_label("Documents & Papers (PDF)");
-        pdf_check.set_active(rule.import_pdf);
-        pdf_check.add_css_class("kalam-watch-format-label");
-        row_pdf.append(&pdf_check);
-
-        let arrow_pdf = gtk::Label::new(Some("Put into:"));
-        arrow_pdf.add_css_class("kalam-setting-desc");
-        row_pdf.append(&arrow_pdf);
-
-        let pdf_drop = build_shelf_dropdown(
-            &shelf_choices,
-            rule.pdf_shelf_id,
-            {
-                let cat = catalog.clone();
-                let rule_id = rule.id.clone();
-                move |sid| {
-                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                        r.pdf_shelf_id = sid;
-                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    }
-                }
-            },
-        );
-        pdf_drop.set_sensitive(rule.import_pdf);
-        row_pdf.append(&pdf_drop);
-
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            let drop_ref = pdf_drop.clone();
-            pdf_check.connect_toggled(move |chk| {
-                let active = chk.is_active();
-                drop_ref.set_sensitive(active);
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.import_pdf = active;
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    crate::watch_folder::request_reload();
-                }
-            });
-        }
-        card.append(&row_pdf);
-
-        // Format row 3: Comics (CBZ / CBR)
-        let row_comics = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        row_comics.add_css_class("kalam-watch-format-row");
-        row_comics.set_valign(gtk::Align::Center);
-
-        let comics_check = gtk::CheckButton::with_label("Comics & Manga (CBZ/CBR)");
-        comics_check.set_active(rule.import_comics);
-        comics_check.add_css_class("kalam-watch-format-label");
-        row_comics.append(&comics_check);
-
-        let arrow_comics = gtk::Label::new(Some("Put into:"));
-        arrow_comics.add_css_class("kalam-setting-desc");
-        row_comics.append(&arrow_comics);
-
-        let comics_drop = build_shelf_dropdown(
-            &shelf_choices,
-            rule.comics_shelf_id,
-            {
-                let cat = catalog.clone();
-                let rule_id = rule.id.clone();
-                move |sid| {
-                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                        r.comics_shelf_id = sid;
-                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    }
-                }
-            },
-        );
-        comics_drop.set_sensitive(rule.import_comics);
-        row_comics.append(&comics_drop);
-
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            let drop_ref = comics_drop.clone();
-            comics_check.connect_toggled(move |chk| {
-                let active = chk.is_active();
-                drop_ref.set_sensitive(active);
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.import_comics = active;
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    crate::watch_folder::request_reload();
-                }
-            });
-        }
-        card.append(&row_comics);
-
-        // Options: Subfolder shelves + Clean up
-        let options_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        options_box.set_margin_top(4);
-
-        let subfolder_check = gtk::CheckButton::with_label(
-            "Automatically create shelves from subfolders (e.g. Manga/One Piece ➔ \"One Piece\")",
-        );
-        subfolder_check.set_active(rule.subfolder_shelves);
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            subfolder_check.connect_toggled(move |chk| {
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.subfolder_shelves = chk.is_active();
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                }
-            });
-        }
-        options_box.append(&subfolder_check);
-
-        let cleanup_check = gtk::CheckButton::with_label(
-            "Clean up: delete original file from folder after safe import",
-        );
-        cleanup_check.set_active(rule.cleanup_original);
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            cleanup_check.connect_toggled(move |chk| {
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.cleanup_original = chk.is_active();
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                }
-            });
-        }
-        options_box.append(&cleanup_check);
-
-        card.append(&options_box);
-        container.append(&card);
-    }
-}
-
 /// `2026-07-28`, for backup filenames.
 fn today_stamp() -> String {
     gtk::glib::DateTime::now_local()
         .and_then(|d| d.format("%Y-%m-%d"))
         .map(|s| s.to_string())
         .unwrap_or_default()
-}
-
-/// Explains why a country code is needed at all.
-fn country_hint_label() -> gtk::Label {
-    let label = gtk::Label::new(Some(
-        "Two-letter code. Google only serves results for countries it has rights in.",
-    ));
-    label.add_css_class("kalam-muted");
-    label.set_wrap(true);
-    label.set_xalign(0.0);
-    label
-}
-
-/// One section card per metadata provider, each with a real switch and its
-/// own extra rows.
-fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapshot) {
-    use crate::metadata::{set_source_enabled, SourceId};
-
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-
-    let ol_body = section_card(
-        host,
-        "system-search-symbolic",
-        "Open Library",
-        Some("Internet Archive. No key needed. Strong on older and public-domain titles."),
-    );
-    {
-        let catalog = catalog.clone();
-        let sw = toggle_switch(snap.source_open_library, move |on| {
-            set_source_enabled(&catalog, SourceId::OpenLibrary, on);
-        });
-        setting_row(
-            &ol_body,
-            "Enable Open Library lookup",
-            "Adds a search panel inside the metadata editor.",
-            &sw,
-        );
-    }
-
-    let gb_body = section_card(
-        host,
-        "system-search-symbolic",
-        "Google Books",
-        Some(
-            "Broad coverage, good for recent and non-English books. Works without a key, but anonymous requests share a global quota and can be rate limited.",
-        ),
-    );
-    {
-        let catalog = catalog.clone();
-        let sw = toggle_switch(snap.source_google_books, move |on| {
-            set_source_enabled(&catalog, SourceId::GoogleBooks, on);
-        });
-        setting_row(
-            &gb_body,
-            "Enable Google Books lookup",
-            "Adds results from Google Books to the metadata editor.",
-            &sw,
-        );
-    }
-
-    // API key row.
-    {
-        let right = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        right.set_valign(gtk::Align::Center);
-        let entry = gtk::Entry::new();
-        entry.set_placeholder_text(Some("Optional API key — lifts the shared rate limit"));
-        entry.set_text(&snap.google_books_key);
-        entry.set_hexpand(true);
-        entry.add_css_class("kalam-setting-entry");
-        right.append(&entry);
-        let save = gtk::Button::with_label("Save key");
-        save.add_css_class("kalam-btn-outlined");
-        save.add_css_class("kalam-btn-sm");
-        {
-            let catalog = catalog.clone();
-            let entry = entry.clone();
-            save.connect_clicked(move |_| {
-                let key = entry.text().trim().to_string();
-                catalog.set_pref("meta.googlebooks.key", &key);
-                if key.is_empty() {
-                    crate::notify::info("Google Books key cleared", "Using the shared quota");
-                } else {
-                    crate::notify::success("Google Books key saved", "Your own quota is in use");
-                }
-            });
-        }
-        right.append(&save);
-        setting_row(
-            &gb_body,
-            "API key",
-            "Free from console.cloud.google.com — create a project, enable the Books API, then make an API key. No card required.",
-            &right,
-        );
-    }
-
-    // Country row.
-    {
-        let right = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        right.set_valign(gtk::Align::Center);
-        let country = gtk::Entry::new();
-        country.set_max_length(2);
-        country.set_width_chars(4);
-        country.set_placeholder_text(Some("IN"));
-        country.set_text(&snap.google_books_country);
-        country.add_css_class("kalam-setting-entry");
-        right.append(&country);
-        let save = gtk::Button::with_label("Save");
-        save.add_css_class("kalam-btn-outlined");
-        save.add_css_class("kalam-btn-sm");
-        {
-            let catalog = catalog.clone();
-            let country = country.clone();
-            save.connect_clicked(move |_| {
-                let code = country.text().trim().to_uppercase();
-                catalog.set_pref("meta.googlebooks.country", &code);
-                crate::notify::success("Country saved", &code);
-            });
-        }
-        right.append(&save);
-        let hint = country_hint_label();
-        right.append(&hint);
-        setting_row(
-            &gb_body,
-            "Country",
-            "Two-letter code. Google only serves results for countries it has rights in.",
-            &right,
-        );
-    }
 }
 
 /// Recent notifications, so a toast that faded can still be read.

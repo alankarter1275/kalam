@@ -278,18 +278,6 @@ pub const TEAL_DARK: Theme = Theme {
     info: "#8ab4e8",
 };
 
-/// Every resolved theme, Light then Dark per palette, in Settings order.
-pub const ALL: &[Theme] = &[
-    TERRACOTTA_LIGHT,
-    TERRACOTTA_DARK,
-    FOREST_LIGHT,
-    FOREST_DARK,
-    PLUM_LIGHT,
-    PLUM_DARK,
-    TEAL_LIGHT,
-    TEAL_DARK,
-];
-
 /// The theme used on first run and whenever a stored id is unrecognised
 /// (including every id from the previous thirteen-theme system).
 pub const DEFAULT: Theme = TERRACOTTA_DARK;
@@ -374,14 +362,6 @@ impl ModePref {
             ModePref::Light => "light",
             ModePref::Dark => "dark",
             ModePref::System => "system",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            ModePref::Light => "Light",
-            ModePref::Dark => "Dark",
-            ModePref::System => "System",
         }
     }
 }

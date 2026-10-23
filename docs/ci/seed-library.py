@@ -31,6 +31,7 @@ import json
 import os
 import pathlib
 import random
+import shutil
 import sqlite3
 import struct
 import sys
@@ -750,6 +751,145 @@ def seed_author_fixture(conn, library: pathlib.Path, now: datetime, first_index:
     return covers_written
 
 
+def seed_settings_fixture(
+    conn,
+    library: pathlib.Path,
+    root: pathlib.Path,
+    now: datetime,
+    *,
+    empty_dictionaries: bool = False,
+) -> None:
+    """Add the populated states the redesigned Settings panes photograph.
+
+    A bare seeded catalog can only show the empty/default half of most
+    panes. This fixture supplies the other designed states without driving
+    the UI: two shelves and a watch rule routed into them, a rejected
+    Google Books key, three EPUB original backups, and a libraries
+    registry holding the active library, a second folder that can be
+    opened, and one whose folder is missing.
+
+    The registry and bundled-dictionary markers are config-side state, so
+    they are written under XDG_CONFIG_HOME. `screenshot.sh` gives every
+    invocation a fresh config home; without that, the first run's
+    dictionary markers would make every later fresh catalog look as though
+    its bundled packs had already been installed and then removed.
+    """
+    stamp = now.isoformat()
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS app_prefs (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS shelves (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+            kind        TEXT    NOT NULL DEFAULT 'manual',
+            description TEXT    NOT NULL DEFAULT '',
+            rules       TEXT    NOT NULL DEFAULT '',
+            position    INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL
+        );
+        """
+    )
+
+    shelf_ids = []
+    for position, name in enumerate(("New arrivals", "Comics inbox")):
+        cur = conn.execute(
+            "INSERT OR REPLACE INTO shelves "
+            "(name, kind, description, rules, position, created_at, updated_at) "
+            "VALUES (?, 'manual', '', '', ?, ?, ?)",
+            (name, position, stamp, stamp),
+        )
+        shelf_ids.append(cur.lastrowid)
+
+    watch_dir = root / "watch-fixture"
+    watch_dir.mkdir(parents=True, exist_ok=True)
+    watch_rules = [
+        {
+            "id": "ci-settings-watch-folder",
+            "path": str(watch_dir),
+            "enabled": True,
+            "import_epub": True,
+            "epub_shelf_id": shelf_ids[0],
+            "import_pdf": True,
+            "pdf_shelf_id": None,
+            "import_comics": True,
+            "comics_shelf_id": shelf_ids[1],
+            "subfolder_shelves": True,
+            "cleanup_original": False,
+        }
+    ]
+    prefs = {
+        "import.watch_folder_rules": json.dumps(watch_rules),
+        "meta.googlebooks.enabled": "1",
+        "meta.googlebooks.key": "AIza-fixture-key",
+        "meta.googlebooks.country": "GB",
+        "meta.googlebooks.key_rejected": "1",
+    }
+    for key, value in prefs.items():
+        conn.execute(
+            "INSERT INTO app_prefs (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+    # list_backups scans the whole library tree, including folders left by
+    # earlier seeds in the shared CI data home. Clear those first so the
+    # Book files pane reports this fixture's three backups, not however
+    # many screenshot runs happened before it in the same job.
+    for stale in library.glob("*/*.orig"):
+        stale.unlink()
+    for epub in sorted(library.glob("*/book.epub"))[:3]:
+        shutil.copyfile(epub, epub.with_name("book.epub.orig"))
+
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    config_root = (
+        pathlib.Path(config_home)
+        if config_home
+        else pathlib.Path.home() / ".config"
+    )
+    config_dir = config_root / "kalam"
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    work_library = root.parent / "kalam-work"
+    work_library.mkdir(parents=True, exist_ok=True)
+    missing_library = root.parent / "kalam-missing"
+    shutil.rmtree(missing_library, ignore_errors=True)
+    registry = {
+        "libraries": [
+            {"name": "CI library", "path": str(root)},
+            {"name": "Work", "path": str(work_library)},
+            {"name": "Archive", "path": str(missing_library)},
+        ],
+        "active": 0,
+    }
+    (config_dir / "libraries.json").write_text(
+        json.dumps(registry, indent=2) + "\n", encoding="utf-8"
+    )
+
+    global_prefs_path = config_dir / "prefs.json"
+    try:
+        global_prefs = json.loads(global_prefs_path.read_text(encoding="utf-8"))
+        if not isinstance(global_prefs, dict):
+            global_prefs = {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        global_prefs = {}
+    marker = "installed" if empty_dictionaries else ""
+    for key in (
+        "bundled_dictionary_english_wordnet_2025",
+        "bundled_dictionary_english_idioms_2024",
+        "bundled_dictionary_english_synonyms_3_0",
+        "bundled_dictionary_english_antonyms_3_0",
+    ):
+        global_prefs[key] = marker
+    global_prefs_path.write_text(
+        json.dumps(global_prefs, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--books", type=int, default=139)
@@ -768,6 +908,16 @@ def main() -> int:
         "--author-fixture",
         action="store_true",
         help="add the cached bibliography + marks the author-page screenshot opens",
+    )
+    ap.add_argument(
+        "--settings-fixture",
+        action="store_true",
+        help="add populated libraries, watch, metadata and backup states for Settings",
+    )
+    ap.add_argument(
+        "--settings-empty-dicts",
+        action="store_true",
+        help="with --settings-fixture, keep bundled dictionaries uninstalled",
     )
     args = ap.parse_args()
 
@@ -910,6 +1060,15 @@ def main() -> int:
             conn, library, now, args.books + (3 if args.series_fixture else 0)
         )
         total_books += 2
+
+    if args.settings_fixture or args.settings_empty_dicts:
+        seed_settings_fixture(
+            conn,
+            library,
+            root,
+            now,
+            empty_dictionaries=args.settings_empty_dicts,
+        )
 
     conn.commit()
     conn.close()

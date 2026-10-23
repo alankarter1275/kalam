@@ -538,6 +538,146 @@ jobs:
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      # Settings (decisions 144-158): every pane, plus the drawn states
+      # a route alone cannot reach -- open dropdowns, the three
+      # confirmations, populated/empty watch folders and dictionaries,
+      # dictionary dragging, shortcut recording refused by a conflict,
+      # and the rail bell's panel with and without history. Modes are
+      # alternated where the other mode is already photographed on the
+      # same pane or state; Appearance gets both because its custom
+      # palette cards are the point of the pane.
+      - name: open settings appearance (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-appearance-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings appearance (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-appearance-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings reading (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-reading-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=reading THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings reading typeface dropdown (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-reading-dropdown-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=reading DIALOG=typeface-dropdown THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings libraries (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-libraries-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=libraries THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings open-library dialog (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-libraries-open-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=libraries DIALOG=open-library THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings data and export (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-data-export-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=data-export THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings book files (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-book-files-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=book-files THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings delete-backups dialog (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-book-files-delete-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=book-files DIALOG=delete-backups THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings watch folders (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-watch-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=watch-folders THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings watch shelf dropdown (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-watch-dropdown-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=watch-folders DIALOG=watch-dropdown THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings watch folders empty (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-watch-empty-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=watch-folders THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings dictionaries dragging (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-dictionaries-drag-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=dictionaries DIALOG=dictionary-drag THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings remove-dictionary dialog (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-dictionaries-remove-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=dictionaries DIALOG=remove-dictionary THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings dictionaries empty (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-dictionaries-empty-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_EMPTY_DICTS=1 SETTINGS_PANE=dictionaries THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings metadata rejected key (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-metadata-rejected-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=metadata THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings integrations (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-integrations-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=integrations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings shortcuts (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-shortcuts-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=shortcuts THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings shortcuts recording conflict (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-shortcuts-recording-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=shortcuts DIALOG=shortcut-recording THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings about (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-about-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=about THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the notification panel with events (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-notifications-events-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance DIALOG=notifications THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the notification panel empty (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-notifications-empty-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance DIALOG=notifications-empty THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -602,6 +742,30 @@ jobs:
           cp ci-shots-author-annotations-dark/report.txt ci-logs/author-annotations-dark-latest.txt 2>/dev/null \
             || echo "(no author-annotations-dark report produced)" > ci-logs/author-annotations-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-annotations-dark-latest.txt
+          # Settings has enough panes and states that spelling out 22
+          # report/PNG pairs would bury the publish step. The slug is
+          # the OUT suffix and the published PNG name, so this loop is
+          # the whole mapping.
+          for shot in settings-appearance-light settings-appearance-dark \
+                      settings-reading-light settings-reading-dropdown-dark \
+                      settings-libraries-light settings-libraries-open-dark \
+                      settings-data-export-dark settings-book-files-light \
+                      settings-book-files-delete-dark settings-watch-light \
+                      settings-watch-dropdown-dark settings-watch-empty-light \
+                      settings-dictionaries-drag-light \
+                      settings-dictionaries-remove-dark \
+                      settings-dictionaries-empty-light \
+                      settings-metadata-rejected-light \
+                      settings-integrations-dark settings-shortcuts-light \
+                      settings-shortcuts-recording-dark settings-about-light \
+                      settings-notifications-events-dark \
+                      settings-notifications-empty-light; do
+            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
+              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
+            cp "ci-shots-$shot/03-settings-settled.png" \
+              "ci-logs/$shot.png" 2>/dev/null || true
+          done
           # The settled gallery/book/dialog frames are the one deliberate
           # exception to "PNGs stay in the job workspace": an artboard
           # nobody can see is not an artboard, and the agent cannot
@@ -652,6 +816,23 @@ jobs:
             ci-logs/author-light-latest.txt ci-logs/author-dark-latest.txt \
             ci-logs/author-panel-light-latest.txt ci-logs/author-shelf-light-latest.txt \
             ci-logs/author-annotations-dark-latest.txt
+          for shot in settings-appearance-light settings-appearance-dark \
+                      settings-reading-light settings-reading-dropdown-dark \
+                      settings-libraries-light settings-libraries-open-dark \
+                      settings-data-export-dark settings-book-files-light \
+                      settings-book-files-delete-dark settings-watch-light \
+                      settings-watch-dropdown-dark settings-watch-empty-light \
+                      settings-dictionaries-drag-light \
+                      settings-dictionaries-remove-dark \
+                      settings-dictionaries-empty-light \
+                      settings-metadata-rejected-light \
+                      settings-integrations-dark settings-shortcuts-light \
+                      settings-shortcuts-recording-dark settings-about-light \
+                      settings-notifications-events-dark \
+                      settings-notifications-empty-light; do
+            git add -f "ci-logs/$shot-latest.txt"
+            if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
+          done
           for shot in ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \

@@ -42,6 +42,20 @@ say "=== kalam screenshot run ==="
 say "books=$BOOKS out=$OUT settle=$SETTLE output=${OUTPUT_W}x${OUTPUT_H}"
 
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/tmp/kalam-ci-data}"
+# Global prefs and the libraries registry live under XDG_CONFIG_HOME.
+# Give each screenshot invocation a fresh one under OUT unless the caller
+# chose a config home deliberately: the seeded catalog is rebuilt on every
+# run, so sharing the runner's real config across runs lets one run's
+# bundled-dictionary markers or library registry silently change the next
+# run's supposedly fresh library.
+if [ -z "${XDG_CONFIG_HOME:-}" ]; then
+  case "$OUT" in
+    /*) export XDG_CONFIG_HOME="$OUT/config-home" ;;
+    *) export XDG_CONFIG_HOME="$PWD/$OUT/config-home" ;;
+  esac
+  rm -rf "$XDG_CONFIG_HOME"
+fi
+mkdir -p "$XDG_CONFIG_HOME"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/kalam-ci-run}"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
@@ -81,6 +95,19 @@ fi
 AUTHOR_FIXTURE="${AUTHOR_FIXTURE:-}"
 if [ -n "$AUTHOR_FIXTURE" ]; then
   SEED_ARGS+=(--author-fixture)
+fi
+# SETTINGS_FIXTURE gives the Settings panes the populated states a bare
+# library cannot show: known/missing libraries, shelves and a watch rule,
+# rejected Google Books key state, EPUB original backups, and bundled
+# dictionaries ready to install into the fresh catalog. The empty-dicts
+# variant marks those packs already installed so the empty state stays empty.
+SETTINGS_FIXTURE="${SETTINGS_FIXTURE:-}"
+SETTINGS_EMPTY_DICTS="${SETTINGS_EMPTY_DICTS:-}"
+if [ -n "$SETTINGS_FIXTURE" ]; then
+  SEED_ARGS+=(--settings-fixture)
+fi
+if [ -n "$SETTINGS_EMPTY_DICTS" ]; then
+  SEED_ARGS+=(--settings-empty-dicts)
 fi
 if ! python3 docs/ci/seed-library.py "${SEED_ARGS[@]}" 2>&1 | tee -a "$REPORT"; then
   say "FATAL: seeding failed"
@@ -235,6 +262,12 @@ say "requested dialog: ${DIALOG:-<none>}"
 # can be photographed against the same seeded library.
 SERIES_VIEW="${SERIES_VIEW:-}"
 say "requested series view: ${SERIES_VIEW:-<remembered>}"
+# SETTINGS_PANE preselects one of Settings' decision-144 panes. The route
+# alone always opens Appearance, so without this pass-through ten of the
+# eleven redesigned panes could never be photographed.
+SETTINGS_PANE="${SETTINGS_PANE:-}"
+say "requested settings pane: ${SETTINGS_PANE:-<default>}"
+say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
 # negative one, KALAM_NO_WINDOWED_GRID.
@@ -261,7 +294,7 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
-KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do

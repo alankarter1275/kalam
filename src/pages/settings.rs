@@ -684,6 +684,31 @@ fn clear_box(host: &gtk::Box) {
     }
 }
 
+/// CI screenshot hooks for states no route or pane id can reach: a
+/// confirmation opened from a row button, or a dropdown left open. The
+/// delay lets the freshly built pane enter the window before the click
+/// or popup is replayed; outside the screenshot loop the environment
+/// variable is unset and these helpers do nothing.
+fn click_button_for_screenshot(button: &gtk::Button, state: &'static str) {
+    if std::env::var("KALAM_DIALOG").as_deref() != Ok(state) {
+        return;
+    }
+    let button = button.clone();
+    gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+        button.emit_clicked();
+    });
+}
+
+fn popup_menu_for_screenshot(button: &gtk::MenuButton, state: &'static str) {
+    if std::env::var("KALAM_DIALOG").as_deref() != Ok(state) {
+        return;
+    }
+    let button = button.clone();
+    gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+        button.popup();
+    });
+}
+
 /// Ask the worker for the DB snapshot. Called at init and after a dict
 /// import / delete / move — the UI thread never reads the library
 /// (7.1 step 2c).
@@ -1601,6 +1626,7 @@ fn build_reading(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapsho
             },
             || {},
         );
+        popup_menu_for_screenshot(&typeface.widget(), "typeface-dropdown");
         pane_row_with(&rows, "Typeface", None, &typeface.widget());
     }
     {
@@ -1923,6 +1949,26 @@ fn build_shortcuts(host: &gtk::Box, catalog: &Catalog, save: ShortcutSave) {
         conflict.set_visible(false);
         host.append(&conflict);
         conflicts.borrow_mut().push(conflict);
+    }
+
+    // CI screenshot state: Go to Home is recording, and the candidate
+    // just pressed was Search the library's standing key. Replaying the
+    // recorder's own refresh/conflict helpers photographs the exact
+    // refused state without changing either binding.
+    if std::env::var("KALAM_DIALOG").as_deref() == Ok("shortcut-recording") {
+        let action = ShortcutAction::GoHome;
+        let candidate = bindings.borrow().binding(ShortcutAction::SearchLibrary);
+        recording.set(Some(action));
+        show_shortcut_conflict(
+            &conflicts,
+            0,
+            &format!(
+                "{} is already used by {}.",
+                candidate.display_label(),
+                ShortcutAction::SearchLibrary.label()
+            ),
+        );
+        refresh_shortcut_faces(&controls.borrow(), &bindings.borrow(), recording.get());
     }
 }
 
@@ -2304,7 +2350,7 @@ fn library_row(
 fn open_library_button(index: usize, name: &str, anchor: &gtk::Box) -> gtk::Button {
     let name = name.to_string();
     let anchor = anchor.clone();
-    boxed_ghost_button("Open", move || {
+    let button = boxed_ghost_button("Open", move || {
         let confirm_name = name.clone();
         let _ = confirmation_dialog(
             &anchor,
@@ -2343,7 +2389,9 @@ fn open_library_button(index: usize, name: &str, anchor: &gtk::Box) -> gtk::Butt
                 );
             },
         );
-    })
+    });
+    click_button_for_screenshot(&button, "open-library");
+    button
 }
 
 /// Forget a library: direct, no confirm (decision 150) — it only
@@ -2731,6 +2779,7 @@ fn build_book_files_pane(
         })
     };
     delete.set_sensitive(count > 0);
+    click_button_for_screenshot(&delete, "delete-backups");
     pane_row_with(&rows, "Original backups", Some(&caption), &delete);
 }
 
@@ -2841,7 +2890,7 @@ fn build_watch_sections(
         return;
     }
 
-    for rule in rules {
+    for (rule_index, rule) in rules.iter().enumerate() {
         let heading = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         let path_text = rule.path.to_string_lossy().into_owned();
         let path = gtk::Label::new(Some(&path_text));
@@ -2875,6 +2924,9 @@ fn build_watch_sections(
             WatchShelfKind::Comics,
         ] {
             let picker = watch_shelf_dropdown(container, store, rule, shelves, kind);
+            if rule_index == 0 && matches!(kind, WatchShelfKind::Epub) {
+                popup_menu_for_screenshot(&picker, "watch-dropdown");
+            }
             pane_row_with(&rows, kind.label(), None, &picker);
         }
 
@@ -3252,6 +3304,9 @@ fn build_dictionaries_pane(
             })
         };
         remove.set_valign(gtk::Align::Center);
+        if index == 0 {
+            click_button_for_screenshot(&remove, "remove-dictionary");
+        }
         row.append(&remove);
 
         let target = gtk::DropTarget::new(i64::static_type(), gtk::gdk::DragAction::MOVE);
@@ -3302,6 +3357,19 @@ fn build_dictionaries_pane(
             });
         }
         row.add_controller(target);
+
+        // CI screenshot state: replay drag-begin's 40% source row and
+        // the following row's drop-before bar, the two halves of the
+        // drawn dragging state that synthetic headless input cannot
+        // deliver reliably.
+        if std::env::var("KALAM_DIALOG").as_deref() == Ok("dictionary-drag") {
+            if index == 0 {
+                row.set_opacity(0.4);
+                row.add_css_class("dragging");
+            } else if index == 1 {
+                row.add_css_class("drop-before");
+            }
+        }
 
         rows.append(&row);
     }

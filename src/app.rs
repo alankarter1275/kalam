@@ -1531,6 +1531,42 @@ impl Component for AppModel {
         // From here on, any notify::* call lands on screen.
         crate::notify::attach(widgets.toast_host.clone());
 
+        // CI screenshot states for the rail bell: no route reaches the
+        // floating panel, and a fresh seeded launch has no history to
+        // show. `notifications` seeds three ordinary events through the
+        // real notify path; `notifications-empty` clears any startup
+        // housekeeping entry. Both then toggle the actual panel.
+        match std::env::var("KALAM_DIALOG").as_deref() {
+            Ok(state @ ("notifications" | "notifications-empty")) => {
+                let panel = notifications.clone();
+                let with_events = state == "notifications";
+                gtk::glib::timeout_add_local_once(
+                    std::time::Duration::from_millis(900),
+                    move || {
+                        crate::notify::clear_history();
+                        if with_events {
+                            crate::notify::success(
+                                "Imported 3 books",
+                                "Added to New arrivals.",
+                            );
+                            crate::notify::info(
+                                "Library backed up",
+                                "kalam-backup.db",
+                            );
+                            crate::notify::error(
+                                "Could not import one file",
+                                "broken.epub is not a readable EPUB.",
+                            );
+                        }
+                        if !panel.is_open() {
+                            panel.toggle();
+                        }
+                    },
+                );
+            }
+            _ => {}
+        }
+
         // Any reading session still marked open belongs to a previous process
         // that died before it could close one. Reap them now, before anything
         // reads the statistics — an open row silently breaks the reading

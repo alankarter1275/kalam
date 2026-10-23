@@ -28,7 +28,7 @@ use crate::widgets::{
     dialog::{dialog_shell, present_dialog, text_field, DialogSize},
     in_app_dialog::{DialogExit, InAppDialog},
     menu::{menu_button, menu_popover, MenuWidth},
-    pill_button::{ghost_button, icon_button, primary_button},
+    pill_button::{boxed_ghost_button, icon_button, primary_button},
     progress::{linear_progress, segmented_progress, SegmentState},
     segmented::{segmented_control, SegmentedSize},
     surface::hairline,
@@ -336,9 +336,9 @@ impl Component for AuthorPageModel {
     ) -> ComponentParts<Self> {
         // Overlay children: the open-series panel (under its card, over
         // the content below — decision 108) and the ⋯ button (top-right,
-        // level with the shell's Back pill; the negative top margin pulls
-        // it up into the content host's 72px back-pill band, 24+32 = the
-        // spec's 56px right inset).
+        // level with the shell's Back pill — the host's CSS transform
+        // lifts it into the content host's 72px back-pill band because
+        // GTK4 clamps negative margins; 24+32 = the spec's 56px inset).
         let panel_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
         panel_box.add_css_class("kalam-authorpage-panel");
 
@@ -352,9 +352,9 @@ impl Component for AuthorPageModel {
         panel_revealer.set_child(Some(&panel_box));
 
         let more_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        more_host.add_css_class("kalam-authorpage-more-host");
         more_host.set_halign(gtk::Align::End);
         more_host.set_valign(gtk::Align::Start);
-        more_host.set_margin_top(-60);
         more_host.set_margin_end(32);
 
         let menu_open = Rc::new(Cell::new(false));
@@ -470,6 +470,7 @@ impl Component for AuthorPageModel {
                                     })
                                     .map(|g| g.title.clone())
                             });
+                            self.warm_panel_covers();
                         }
                         Ok("shelf") => sender.input(AuthorPageMsg::OpenCreateShelf),
                         Ok("annotations") => sender.input(AuthorPageMsg::OpenAnnotations),
@@ -616,7 +617,7 @@ impl AuthorPageModel {
         title.set_wrap(true);
         title.set_lines(2);
         title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        title.set_max_width_chars(28);
+        title.set_max_width_chars(24);
         left.append(&title);
 
         let snap = self.snapshot.as_ref();
@@ -641,31 +642,38 @@ impl AuthorPageModel {
                     bio_label.set_wrap(true);
                     bio_label.set_lines(3);
                     bio_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                    bio_label.set_max_width_chars(96);
+                    bio_label.set_max_width_chars(84);
                     left.append(&bio_label);
 
-                    // ~3 lines at this measure; longer bios get the toggle.
-                    if bio.chars().count() > 300 {
-                        let more = gtk::Button::with_label("More");
-                        more.add_css_class("kalam-authorpage-more");
-                        more.set_halign(gtk::Align::Start);
-                        let expanded = Rc::new(Cell::new(false));
-                        let bio_for_toggle = bio_label.clone();
-                        more.connect_clicked(move |button| {
-                            let next = !expanded.get();
-                            expanded.set(next);
-                            if next {
-                                bio_for_toggle.set_lines(-1);
-                                bio_for_toggle.set_ellipsize(gtk::pango::EllipsizeMode::None);
-                                button.set_label("Less");
-                            } else {
-                                bio_for_toggle.set_lines(3);
-                                bio_for_toggle.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                                button.set_label("More");
-                            }
-                        });
-                        left.append(&more);
-                    }
+                    // The More toggle exists only when the three lines
+                    // actually cut the bio short — asked of the laid-out
+                    // text on map, not guessed from a character count
+                    // (a count misjudges at real font metrics, CI caught
+                    // a More under a fully-shown bio).
+                    let more = gtk::Button::with_label("More");
+                    more.add_css_class("kalam-authorpage-more");
+                    more.set_halign(gtk::Align::Start);
+                    more.set_visible(false);
+                    let more_for_map = more.clone();
+                    bio_label.connect_map(move |label| {
+                        more_for_map.set_visible(label.layout().is_ellipsized());
+                    });
+                    let expanded = Rc::new(Cell::new(false));
+                    let bio_for_toggle = bio_label.clone();
+                    more.connect_clicked(move |button| {
+                        let next = !expanded.get();
+                        expanded.set(next);
+                        if next {
+                            bio_for_toggle.set_lines(-1);
+                            bio_for_toggle.set_ellipsize(gtk::pango::EllipsizeMode::None);
+                            button.set_label("Less");
+                        } else {
+                            bio_for_toggle.set_lines(3);
+                            bio_for_toggle.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                            button.set_label("More");
+                        }
+                    });
+                    left.append(&more);
                 }
 
                 let pills = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -675,20 +683,20 @@ impl AuthorPageModel {
                 match snap.shelf {
                     Some((shelf_id, _)) => {
                         let s = sender.clone();
-                        pills.append(&ghost_button("Open shelf", move || {
+                        pills.append(&boxed_ghost_button("Open shelf", move || {
                             s.output(AuthorPageOut::OpenShelf { shelf_id }).ok();
                         }));
                     }
                     None => {
                         let s = sender.clone();
-                        pills.append(&ghost_button("Create shelf", move || {
+                        pills.append(&boxed_ghost_button("Create shelf", move || {
                             s.input(AuthorPageMsg::OpenCreateShelf);
                         }));
                     }
                 }
 
                 let s = sender.clone();
-                let find = ghost_button("Find metadata", move || {
+                let find = boxed_ghost_button("Find metadata", move || {
                     s.input(AuthorPageMsg::FindMetadata);
                 });
                 find.set_sensitive(!self.fetching);
@@ -875,6 +883,13 @@ impl AuthorPageModel {
                 );
                 self.card_buttons[index] = Some(card.clone());
                 grid.attach(&card, (slot % 2) as i32, (slot / 2) as i32, 1, 1);
+            }
+            // A lone card in the last row still gets only its half: the
+            // empty cell keeps the second homogeneous column in being,
+            // or the single occupied column stretches full-width.
+            if indices.len() % 2 == 1 {
+                let filler = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                grid.attach(&filler, 1, (indices.len() / 2) as i32, 1, 1);
             }
             widgets.groups_host.append(&grid);
         }
@@ -1076,11 +1091,22 @@ impl AuthorPageModel {
         scroller.set_child(Some(&row));
         self.panel_box.append(&scroller);
 
-        // Anchor under the card once allocations settle.
+        // Anchor under the card once it has a real allocation: a single
+        // idle is not enough on first load, when the fill that built the
+        // card hasn't been allocated yet and compute_point would read
+        // the unallocated origin (panel over the header, CI caught it).
+        // Capped so a card torn down by a rebuild in between cannot spin
+        // forever; the next rebuild re-anchors anyway.
         if let Some(card) = self.card_buttons.get(index).cloned().flatten() {
             let revealer = self.panel_revealer.clone();
             let overlay = root.clone();
-            gtk::glib::idle_add_local_once(move || {
+            let mut tries = 0;
+            gtk::glib::idle_add_local(move || {
+                tries += 1;
+                let ready = card.is_mapped() && card.width() > 1;
+                if !ready && tries < 90 {
+                    return gtk::glib::ControlFlow::Continue;
+                }
                 if let Some(point) =
                     card.compute_point(&overlay, &gtk::graphene::Point::new(0.0, 0.0))
                 {
@@ -1090,6 +1116,7 @@ impl AuthorPageModel {
                 }
                 revealer.set_visible(true);
                 revealer.set_reveal_child(true);
+                gtk::glib::ControlFlow::Break
             });
         } else {
             self.panel_revealer.set_visible(true);
@@ -1886,7 +1913,7 @@ fn present_create_shelf_dialog(
 
     let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
     let slot_for_cancel = slot.clone();
-    shell.footer().append(&ghost_button("Cancel", move || {
+    shell.footer().append(&boxed_ghost_button("Cancel", move || {
         if let Some(dialog) = slot_for_cancel.borrow().clone() {
             dialog.close();
         }
@@ -1987,7 +2014,11 @@ fn book_heading(host: &gtk::Box, title: &str) {
     let heading = gtk::Label::new(Some(&title.to_uppercase()));
     heading.add_css_class("kalam-ui-label");
     heading.set_halign(gtk::Align::Start);
-    heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    // Wrap, not ellipsize: a non-wrapping ellipsized label asks for only
+    // its minimum width, which cut "CHART OF SMALL HOURS" mid-word well
+    // inside the dialog's measure.
+    heading.set_wrap(true);
+    heading.set_xalign(0.0);
     heading.set_margin_top(4);
     host.append(&heading);
 }

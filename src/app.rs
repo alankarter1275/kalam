@@ -730,10 +730,6 @@ impl AppModel {
                             }
                         }
                         BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat { book_id: id },
-                        BookPageOut::ShowShelves => AppMsg::OpenShelvesFloat {
-                            book_id: id,
-                            from_book_float: false,
-                        },
                         BookPageOut::ShowTags => AppMsg::OpenTagsFloat { book_id: id },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });

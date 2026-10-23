@@ -111,16 +111,24 @@ pub struct ReaderSnapshot {
     pub errors: Errors,
 }
 
-/// The book page's reading-stats and timeline panel.
+/// Per-book reading stats.
 ///
 /// Six reads that were each swallowed, so a database problem drew a page
-/// saying you had never read the book.
+/// saying you had never read the book. The redesigned book page removed
+/// its stats/history card (decision 79) and now reads only the chapter
+/// index and the started/finished dates; the remaining fields stay
+/// because this is still the service's per-book stats read — the perf
+/// harness and the service tests consume them.
 #[derive(Debug, Default)]
 pub struct BookStatsSnapshot {
+    #[allow(dead_code)] // stats card removed by decision 79; perf/tests read it
     pub total_seconds: i64,
+    #[allow(dead_code)] // as above
     pub session_count: i64,
     pub chapter_index: usize,
+    #[allow(dead_code)] // as above
     pub seconds_by_day: Vec<(String, i64)>,
+    #[allow(dead_code)] // as above
     pub recent_sessions: Vec<SessionRow>,
     pub finished_at: Option<String>,
     pub first_opened: Option<String>,

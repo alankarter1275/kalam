@@ -54,7 +54,7 @@ pub enum BookPageOut {
     OpenAuthor {
         name: String,
     },
-    /// Open another book's page (author card thumbnails).
+    /// Open another book's page (the Finished slide-out's Next pill).
     OpenBook {
         book_id: i64,
     },
@@ -65,8 +65,6 @@ pub enum BookPageOut {
     },
     /// Open the highlights & quotes panel (in-app float).
     ViewHighlights,
-    /// Open the shelves checklist panel (in-app float).
-    ShowShelves,
     /// Open the tags panel (in-app float) from the hero's "+" chip.
     ShowTags,
     Deleted {
@@ -112,10 +110,7 @@ pub enum BookPageMsg {
         first_author: String,
     },
     EditMetadata,
-    ShowShelfMenu,
     Refresh,
-    /// The author card's "View page →" — always the first listed author.
-    OpenFirstAuthor,
     /// Open the tags panel (in-app float) — tags are managed there.
     ShowTags,
     /// Toggle the journey between 6 chapters and the full list.
@@ -593,20 +588,6 @@ impl Component for BookPageModel {
                     })
                     .ok();
             }
-            BookPageMsg::OpenFirstAuthor => {
-                if let Some(book) = &self.book {
-                    let name = book
-                        .authors
-                        .split(',')
-                        .next()
-                        .unwrap_or("")
-                        .trim()
-                        .to_string();
-                    if !name.is_empty() {
-                        sender.output(BookPageOut::OpenAuthor { name }).ok();
-                    }
-                }
-            }
             BookPageMsg::ToggleFinished => {
                 if let Some(book) = &self.book {
                     let id = book.id;
@@ -637,9 +618,6 @@ impl Component for BookPageModel {
                         let _ = s.input_sender().send(BookPageMsg::Refresh);
                     });
                 }
-            }
-            BookPageMsg::ShowShelfMenu => {
-                sender.output(BookPageOut::ShowShelves).ok();
             }
             BookPageMsg::ShowTags => {
                 sender.output(BookPageOut::ShowTags).ok();

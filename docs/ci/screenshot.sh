@@ -43,19 +43,21 @@ say "books=$BOOKS out=$OUT settle=$SETTLE output=${OUTPUT_W}x${OUTPUT_H}"
 
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/tmp/kalam-ci-data}"
 # Global prefs and the libraries registry live under XDG_CONFIG_HOME.
-# Give each screenshot invocation a fresh one under OUT unless the caller
-# chose a config home deliberately: the seeded catalog is rebuilt on every
-# run, so sharing the runner's real config across runs lets one run's
-# bundled-dictionary markers or library registry silently change the next
-# run's supposedly fresh library.
-if [ -z "${XDG_CONFIG_HOME:-}" ]; then
-  case "$OUT" in
-    /*) export XDG_CONFIG_HOME="$OUT/config-home" ;;
-    *) export XDG_CONFIG_HOME="$PWD/$OUT/config-home" ;;
-  esac
-  rm -rf "$XDG_CONFIG_HOME"
-fi
+# Give each screenshot invocation a fresh one under OUT, unconditionally:
+# the seeded catalog is rebuilt on every run, so sharing a real config
+# across runs lets one run's bundled-dictionary markers or library
+# registry silently change the next run's supposedly fresh library.
+# (An earlier "unless the caller set one" guard never fired in CI —
+# the runner image exports XDG_CONFIG_HOME=/home/runner/.config, which
+# the Data and export capture then photographed as the app-settings
+# path. Nothing in the workflow sets it deliberately.)
+case "$OUT" in
+  /*) export XDG_CONFIG_HOME="$OUT/config-home" ;;
+  *) export XDG_CONFIG_HOME="$PWD/$OUT/config-home" ;;
+esac
+rm -rf "$XDG_CONFIG_HOME"
 mkdir -p "$XDG_CONFIG_HOME"
+say "config home: $XDG_CONFIG_HOME"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/kalam-ci-run}"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
@@ -98,9 +100,10 @@ if [ -n "$AUTHOR_FIXTURE" ]; then
 fi
 # SETTINGS_FIXTURE gives the Settings panes the populated states a bare
 # library cannot show: known/missing libraries, shelves and a watch rule,
-# rejected Google Books key state, EPUB original backups, and bundled
-# dictionaries ready to install into the fresh catalog. The empty-dicts
-# variant marks those packs already installed so the empty state stays empty.
+# rejected Google Books key state, EPUB original backups, and the four
+# bundled dictionary packs as catalog rows. The empty-dicts variant
+# leaves that table empty instead; both suppress the startup install,
+# which finishes after the Settings snapshot is taken.
 SETTINGS_FIXTURE="${SETTINGS_FIXTURE:-}"
 SETTINGS_EMPTY_DICTS="${SETTINGS_EMPTY_DICTS:-}"
 if [ -n "$SETTINGS_FIXTURE" ]; then

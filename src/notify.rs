@@ -241,12 +241,28 @@ pub fn outcome_info<T, E: std::fmt::Display>(
 }
 
 fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
+    push_at(kind, title, detail, compact, clock_now(), day_now(), true);
+}
+
+/// Record an entry with an explicit clock/day, optionally without
+/// presenting its toast. `push` is the live path; the parameters exist
+/// so the screenshot seeder below can file a backdated entry into the
+/// panel's Earlier group without flashing a toast for it now.
+fn push_at(
+    kind: Kind,
+    title: &str,
+    detail: &str,
+    compact: bool,
+    at: String,
+    day: String,
+    present: bool,
+) {
     let entry = Entry {
         kind,
         title: title.to_string(),
         detail: detail.to_string(),
-        at: clock_now(),
-        day: day_now(),
+        at,
+        day,
         compact,
     };
 
@@ -277,11 +293,13 @@ fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
     // The history write above is deliberately *not* bounced: it is plain data,
     // callers (and tests) expect it to be readable the moment `push` returns,
     // and deferring it would make `notify::history()` racy.
-    let context = gtk::glib::MainContext::default();
-    if context.is_owner() {
-        deliver(entry);
-    } else {
-        context.invoke(move || deliver(entry));
+    if present {
+        let context = gtk::glib::MainContext::default();
+        if context.is_owner() {
+            deliver(entry);
+        } else {
+            context.invoke(move || deliver(entry));
+        }
     }
     notify_history_changed();
 }
@@ -307,6 +325,32 @@ pub fn clear_history() {
     with_history(|h| h.clear());
     UNSEEN.store(0, Ordering::SeqCst);
     notify_history_changed();
+}
+
+/// Seed the history the Settings screenshot states photograph
+/// (`KALAM_DIALOG=notifications*` in `app.rs`): three of today's events
+/// through the real `notify::*` path, over one backdated entry so the
+/// bell panel shows its Earlier group too — a session-only history can
+/// otherwise only reach Earlier by running across midnight, which no
+/// screenshot settle can wait for. The backdated entry is filed
+/// without a toast, and its fixed day only has to not be today.
+pub fn seed_screenshot_history() {
+    clear_history();
+    push_at(
+        Kind::Info,
+        "Cleaned up reader cache",
+        "Freed 18 MB",
+        false,
+        "09:12".to_string(),
+        "2000-01-01".to_string(),
+        false,
+    );
+    success("Imported 3 books", "Added to New arrivals.");
+    info("Library backed up", "kalam-backup.db");
+    error(
+        "Could not import one file",
+        "broken.epub is not a readable EPUB.",
+    );
 }
 
 /// How many entries arrived since the bell panel was last opened.

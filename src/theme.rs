@@ -544,6 +544,30 @@ pub fn css_variables(t: &Theme) -> String {
 /// Pref key holding the chosen theme choice id.
 pub const PREF_KEY: &str = "ui.theme";
 
+/// The choice most recently installed by [`apply_choice`].
+///
+/// This is deliberately process-wide, not thread-local: the Settings
+/// snapshot is built on a service worker, and it must report the palette
+/// that is actually on screen. That matters when `KALAM_THEME` applies a
+/// run-only choice without writing `ui.theme`; reading only the pref made
+/// the Appearance picker mark the saved (dark) card in a light screenshot.
+static APPLIED_CHOICE: std::sync::Mutex<Option<ThemeChoice>> = std::sync::Mutex::new(None);
+
+fn applied_choice() -> Option<ThemeChoice> {
+    match APPLIED_CHOICE.lock() {
+        Ok(guard) => *guard,
+        Err(poisoned) => *poisoned.into_inner(),
+    }
+}
+
+fn remember_applied_choice(choice: &ThemeChoice) {
+    let mut guard = match APPLIED_CHOICE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    *guard = Some(*choice);
+}
+
 /// Install one resolved theme's colours as the application's CSS.
 fn install_css(theme: &Theme) {
     // The appearance override rides last: the Appearance pane's font
@@ -616,6 +640,7 @@ pub fn apply(theme: &Theme) {
 /// (follow-the-desktop) behaviour *before* resolving, so the resolved
 /// colours are the ones the desktop is actually asking for.
 pub fn apply_choice(choice: &ThemeChoice) {
+    remember_applied_choice(choice);
     match choice.mode {
         ModePref::Light => apply(&choice.palette.light()),
         ModePref::Dark => apply(&choice.palette.dark()),
@@ -635,20 +660,21 @@ pub fn refresh_for_system_change(catalog: &crate::db::Catalog) {
     }
 }
 
-/// Read the saved choice, falling back to the default when unset.
+/// Read the choice in force: the last one [`apply_choice`] installed,
+/// or the saved choice when nothing has been applied yet (startup).
+/// Falls back to the default when neither exists.
 pub fn current_choice(catalog: &crate::db::Catalog) -> ThemeChoice {
-    catalog
-        .get_pref(PREF_KEY)
-        .map(|id| choice_by_id(&id))
-        .unwrap_or_default()
+    applied_choice().unwrap_or_else(|| {
+        catalog
+            .get_pref(PREF_KEY)
+            .map(|id| choice_by_id(&id))
+            .unwrap_or_default()
+    })
 }
 
-/// Read the saved theme, resolved, falling back to the default when unset.
+/// Read the theme in force, resolved.
 pub fn current(catalog: &crate::db::Catalog) -> Theme {
-    catalog
-        .get_pref(PREF_KEY)
-        .map(|id| by_id(&id))
-        .unwrap_or(DEFAULT)
+    current_choice(catalog).resolve()
 }
 
 /// Persist and apply a choice in one step.

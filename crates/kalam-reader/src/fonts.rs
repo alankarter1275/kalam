@@ -29,9 +29,35 @@ use chapbook_core::{Faces, Fallbacks, FontSource, GenericFamilies, Generics};
 /// Family name of the bundled sans face.
 pub const SANS_FONT: &str = "Noto Sans";
 
+const LITERATA_REGULAR: &[u8] = include_bytes!("../fonts/Literata-Regular.ttf");
+const LITERATA_ITALIC: &[u8] = include_bytes!("../fonts/Literata-Italic.ttf");
+const LITERATA_BOLD: &[u8] = include_bytes!("../fonts/Literata-Bold.ttf");
+const LITERATA_BOLD_ITALIC: &[u8] = include_bytes!("../fonts/Literata-BoldItalic.ttf");
+const NOTO_SANS_REGULAR: &[u8] = include_bytes!("../fonts/NotoSans-Regular.ttf");
+const NOTO_SANS_ITALIC: &[u8] = include_bytes!("../fonts/NotoSans-Italic.ttf");
+const NOTO_SANS_BOLD: &[u8] = include_bytes!("../fonts/NotoSans-Bold.ttf");
+const NOTO_SANS_BOLD_ITALIC: &[u8] = include_bytes!("../fonts/NotoSans-BoldItalic.ttf");
+
+/// The bundled faces as named files, for hosts that also need them in a
+/// second font system. Kalam's GTK side registers these as fontconfig
+/// application fonts so the Settings typeface picker and live preview —
+/// Pango text, not engine text — can show Literata and Noto Sans instead
+/// of whatever fallback the host happens to pick. The slices are the
+/// same compiled-in bytes the engine loads, not a second copy.
+pub static BUNDLED_FONT_FILES: &[(&str, &[u8])] = &[
+    ("Literata-Regular.ttf", LITERATA_REGULAR),
+    ("Literata-Italic.ttf", LITERATA_ITALIC),
+    ("Literata-Bold.ttf", LITERATA_BOLD),
+    ("Literata-BoldItalic.ttf", LITERATA_BOLD_ITALIC),
+    ("NotoSans-Regular.ttf", NOTO_SANS_REGULAR),
+    ("NotoSans-Italic.ttf", NOTO_SANS_ITALIC),
+    ("NotoSans-Bold.ttf", NOTO_SANS_BOLD),
+    ("NotoSans-BoldItalic.ttf", NOTO_SANS_BOLD_ITALIC),
+];
+
 macro_rules! face {
-    ($file:literal) => {
-        Faces::Bytes(Arc::from(&include_bytes!(concat!("../fonts/", $file))[..]))
+    ($bytes:expr) => {
+        Faces::Bytes(Arc::from(&$bytes[..]))
     };
 }
 
@@ -45,14 +71,14 @@ macro_rules! face {
 /// in simply joins the picker.
 pub fn font_source(host_fonts: bool, fonts_dir: Option<std::path::PathBuf>) -> FontSource {
     let mut faces = vec![
-        face!("Literata-Regular.ttf"),
-        face!("Literata-Italic.ttf"),
-        face!("Literata-Bold.ttf"),
-        face!("Literata-BoldItalic.ttf"),
-        face!("NotoSans-Regular.ttf"),
-        face!("NotoSans-Italic.ttf"),
-        face!("NotoSans-Bold.ttf"),
-        face!("NotoSans-BoldItalic.ttf"),
+        face!(LITERATA_REGULAR),
+        face!(LITERATA_ITALIC),
+        face!(LITERATA_BOLD),
+        face!(LITERATA_BOLD_ITALIC),
+        face!(NOTO_SANS_REGULAR),
+        face!(NOTO_SANS_ITALIC),
+        face!(NOTO_SANS_BOLD),
+        face!(NOTO_SANS_BOLD_ITALIC),
     ];
     if let Some(dir) = fonts_dir {
         // Recursive, and a folder that does not exist is simply no faces:

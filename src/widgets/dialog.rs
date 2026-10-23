@@ -85,6 +85,7 @@ pub fn dialog_shell(size: DialogSize, subtitle: Option<&str>) -> DialogShell {
         label.set_wrap(true);
         // A wrap label's natural width is its one-line width; cap it so a
         // long subtitle wraps inside the panel instead of widening it.
+        label.set_width_chars(1);
         label.set_max_width_chars(((size.width() - 48) / 6).max(1));
         root.append(&label);
     }
@@ -170,7 +171,11 @@ pub fn confirmation_dialog(
     message_label.set_halign(gtk::Align::Start);
     message_label.set_xalign(0.0);
     message_label.set_wrap(true);
-    // Same fixed-panel guard as the shell subtitle (13.5px face).
+    // Same fixed-panel guard as the shell subtitle (13.5px face). The
+    // one-character desired width matters: the Settings captures
+    // measured a 420 dialog at 448, widened by exactly this label's
+    // natural width at 53 characters.
+    message_label.set_width_chars(1);
     message_label.set_max_width_chars(((shell.size().width() - 48) / 7).max(1));
     shell.body.append(&message_label);
 

@@ -542,7 +542,8 @@ jobs:
       # a route alone cannot reach -- open dropdowns, the three
       # confirmations, populated/empty watch folders and dictionaries,
       # dictionary dragging, shortcut recording refused by a conflict,
-      # and the rail bell's panel with and without history. Modes are
+      # and the rail bell's panel with and without history, closed
+      # with its unseen dot. Modes are
       # alternated where the other mode is already photographed on the
       # same pane or state; Appearance gets both because its custom
       # palette cards are the point of the pane.
@@ -678,6 +679,12 @@ jobs:
             SETTINGS_PANE=appearance DIALOG=notifications-empty THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      - name: show the notification bell's unseen dot (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-notifications-dot-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance DIALOG=notifications-dot THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -742,7 +749,7 @@ jobs:
           cp ci-shots-author-annotations-dark/report.txt ci-logs/author-annotations-dark-latest.txt 2>/dev/null \
             || echo "(no author-annotations-dark report produced)" > ci-logs/author-annotations-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-annotations-dark-latest.txt
-          # Settings has enough panes and states that spelling out 22
+          # Settings has enough panes and states that spelling out 23
           # report/PNG pairs would bury the publish step. The slug is
           # the OUT suffix and the published PNG name, so this loop is
           # the whole mapping.
@@ -759,7 +766,8 @@ jobs:
                       settings-integrations-dark settings-shortcuts-light \
                       settings-shortcuts-recording-dark settings-about-light \
                       settings-notifications-events-dark \
-                      settings-notifications-empty-light; do
+                      settings-notifications-empty-light \
+                      settings-notifications-dot-dark; do
             cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
               || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
@@ -829,7 +837,8 @@ jobs:
                       settings-integrations-dark settings-shortcuts-light \
                       settings-shortcuts-recording-dark settings-about-light \
                       settings-notifications-events-dark \
-                      settings-notifications-empty-light; do
+                      settings-notifications-empty-light \
+                      settings-notifications-dot-dark; do
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done

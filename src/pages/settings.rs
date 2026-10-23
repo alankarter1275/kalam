@@ -1560,6 +1560,12 @@ fn build_reading(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapsho
     let body = gtk::Label::new(None);
     body.set_wrap(true);
     body.set_xalign(0.0);
+    // A wrapping label's natural width is its one-line width — here a
+    // 250-character paragraph — and that natural width is what widened
+    // the whole 640 content column to the window edge in the tranche-5
+    // captures. Ask for a one-character natural width and let the
+    // refresh below cap it to the standing column width instead.
+    body.set_width_chars(1);
     column.append(&body);
     preview.append(&column);
     host.append(&preview);
@@ -1574,10 +1580,15 @@ fn build_reading(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapsho
         let justify = justify.clone();
         Rc::new(move || {
             let line_height = format!("{:.1}", line_tenths.get() as f64 / 10.0);
+            // `reader.font_px` is device pixels; a Pango font size is
+            // points. Naming the px value as points (the old
+            // `font="… 17"`) set the preview a third too large at the
+            // usual 96 dpi. Pango markup `size` is thousandths of a
+            // point, so px × 750 is the same em at 96 dpi.
             body.set_markup(&format!(
-                "<span font=\"{} {}\" line_height=\"{line_height}\">{}</span>",
+                "<span font_family=\"{}\" size=\"{}\" line_height=\"{line_height}\">{}</span>",
                 gtk::glib::markup_escape_text(&family.borrow()),
-                font_px.get(),
+                font_px.get() * 750,
                 gtk::glib::markup_escape_text(PREVIEW_TEXT),
             ));
             body.set_justify(if justify.get() {
@@ -1585,7 +1596,12 @@ fn build_reading(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapsho
             } else {
                 gtk::Justification::Left
             });
-            column.set_size_request(column_px.get().min(600), -1);
+            let width = column_px.get().min(600);
+            // Cap the natural width at the standing column (an average
+            // glyph is about half an em wide) so the preview can never
+            // widen the pane past its 640 column again.
+            body.set_max_width_chars(((width * 2) / font_px.get().max(1)).clamp(20, 120));
+            column.set_size_request(width, -1);
         })
     };
     refresh();
@@ -3208,6 +3224,9 @@ fn build_dictionaries_pane(
         handle.add_css_class("kalam-settings-dict-handle");
         handle.set_size_request(28, 56);
         handle.set_valign(gtk::Align::Fill);
+        // GTK CSS has no `cursor` property (the stylesheet's attempt was
+        // a parser warning in every log); cursors are widget state.
+        handle.set_cursor_from_name(Some("grab"));
         handle.set_tooltip_text(Some(&format!("Drag to reorder {}", dictionary.name)));
         handle.update_property(&[gtk::accessible::Property::Label(&format!(
             "Drag to reorder {}",

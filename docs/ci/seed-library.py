@@ -773,6 +773,15 @@ def seed_settings_fixture(
     invocation a fresh config home; without that, the first run's
     dictionary markers would make every later fresh catalog look as though
     its bundled packs had already been installed and then removed.
+
+    The dictionary rows themselves are seeded directly into the catalog.
+    The first Settings captures instead cleared the installed markers and
+    let the app's startup task install the bundled packs — but that task
+    finishes about a second after the Settings snapshot is taken and
+    nothing refreshes the pane, so the populated drag/remove frames came
+    out byte-identical to the empty one. Seeding rows (with the packs'
+    real entry counts) and marking them installed keeps the pane honest
+    from the first frame; the empty variant just skips the rows.
     """
     stamp = now.isoformat()
     conn.executescript(
@@ -791,8 +800,43 @@ def seed_settings_fixture(
             created_at  TEXT    NOT NULL,
             updated_at  TEXT    NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS dictionaries (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL UNIQUE,
+            lang        TEXT,
+            entry_count INTEGER NOT NULL DEFAULT 0,
+            added_at    TEXT    NOT NULL,
+            priority    INTEGER NOT NULL DEFAULT 100
+        );
+        CREATE TABLE IF NOT EXISTS dict_entries (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            dict_id    INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+            word       TEXT    NOT NULL COLLATE NOCASE,
+            definition TEXT    NOT NULL,
+            key        TEXT
+        );
         """
     )
+
+    # The four bundled packs in their install order (src/dict.rs):
+    # priority decides who speaks first, lower first. Entry counts are
+    # the bundled TSVs' line counts, so the rows read like the real
+    # packs. No entries are seeded — the pane photographs the list,
+    # and no Settings capture looks a word up.
+    conn.execute("DELETE FROM dict_entries")
+    conn.execute("DELETE FROM dictionaries")
+    if not empty_dictionaries:
+        for name, count, priority in (
+            ("English WordNet 2025", 127284, 10),
+            ("English Idioms and Expressions", 1024, 20),
+            ("English Synonyms (WordNet 3.0)", 110365, 30),
+            ("English Antonyms (WordNet 3.0)", 6621, 40),
+        ):
+            conn.execute(
+                "INSERT INTO dictionaries (name, lang, entry_count, added_at, priority) "
+                "VALUES (?, 'en', ?, ?, ?)",
+                (name, count, stamp, priority),
+            )
 
     shelf_ids = []
     for position, name in enumerate(("New arrivals", "Comics inbox")):
@@ -876,7 +920,10 @@ def seed_settings_fixture(
             global_prefs = {}
     except (FileNotFoundError, json.JSONDecodeError):
         global_prefs = {}
-    marker = "installed" if empty_dictionaries else ""
+    # The rows above stand in for the installed packs (or, in the empty
+    # variant, for packs installed and since removed), so the startup
+    # installer must stay out of either photograph.
+    marker = "installed"
     for key in (
         "bundled_dictionary_english_wordnet_2025",
         "bundled_dictionary_english_idioms_2024",
@@ -917,7 +964,7 @@ def main() -> int:
     ap.add_argument(
         "--settings-empty-dicts",
         action="store_true",
-        help="with --settings-fixture, keep bundled dictionaries uninstalled",
+        help="with --settings-fixture, seed no dictionaries (the empty state)",
     )
     args = ap.parse_args()
 

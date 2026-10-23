@@ -6417,12 +6417,8 @@ button.kalam-settings-link:focus-visible {
 .kalam-settings-row.dict.drop-after {
   box-shadow: inset 0 -3px @kalam_accent;
 }
-.kalam-settings-dict-handle {
-  cursor: grab;
-}
-.kalam-settings-dict-handle:active {
-  cursor: grabbing;
-}
+/* The drag handle's grab cursor is widget state, not CSS — GTK's CSS
+   has no `cursor` property; see build_dictionaries_pane. */
 .kalam-settings-dict-handle-icon {
   color: @kalam_text_dim;
 }

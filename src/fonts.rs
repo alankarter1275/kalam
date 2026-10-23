@@ -8,6 +8,15 @@
 //! registered as *application fonts*: visible to this process only, never
 //! installed into the user's system font folders.
 //!
+//! The reader's bundled Literata and Noto Sans are registered the same
+//! way (their bytes come from `kalam_reader::BUNDLED_FONT_FILES`, so the
+//! binary still carries one copy): the Settings Reading pane's typeface
+//! picker and live preview are Pango text, and without registration they
+//! showed the host's fallback face while claiming to show the book's.
+//! The user's own reader fonts folder is registered too, for the same
+//! reason — a typeface dropped in there joins the picker, so the
+//! preview has to be able to set text in it.
+//!
 //! The files in `assets/fonts/` are the unmodified upstream variable
 //! fonts from google/fonts (Playfair Display carries a Reserved Font
 //! Name, so they must stay unmodified to keep the name), each with its
@@ -22,7 +31,8 @@
 
 use std::path::Path;
 
-/// (file name, embedded bytes) for each bundled face.
+/// (file name, embedded bytes) for each bundled UI face. The reader's
+/// faces join them from `kalam_reader::BUNDLED_FONT_FILES` at write time.
 const FONT_FILES: &[(&str, &[u8])] = &[
     (
         "PlayfairDisplay[wght].ttf",
@@ -58,11 +68,25 @@ pub fn init_ui_fonts() {
             dir.display()
         );
     }
+    // The reader's drop-in folder (`paths::fonts_dir`, shared across
+    // libraries) may not exist on a first run; registering a missing
+    // directory is pointless but harmless, so only try when it is there.
+    let reader_fonts = crate::paths::fonts_dir();
+    if reader_fonts.is_dir() && !register_font_dir(&reader_fonts) {
+        eprintln!(
+            "kalam: fontconfig refused the reader font directory {}",
+            reader_fonts.display()
+        );
+    }
 }
 
 fn write_fonts(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
-    for (name, bytes) in FONT_FILES {
+    let files = FONT_FILES
+        .iter()
+        .copied()
+        .chain(kalam_reader::BUNDLED_FONT_FILES.iter().copied());
+    for (name, bytes) in files {
         let path = dir.join(name);
         let stale = std::fs::metadata(&path)
             .map(|m| m.len() != bytes.len() as u64)

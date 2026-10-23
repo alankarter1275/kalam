@@ -1533,25 +1533,24 @@ impl Component for AppModel {
 
         // CI screenshot states for the rail bell: no route reaches the
         // floating panel, and a fresh seeded launch has no history to
-        // show. `notifications` seeds three ordinary events through the
-        // real notify path; `notifications-empty` clears any startup
-        // housekeeping entry. Both then toggle the actual panel.
-        if let Ok(state @ ("notifications" | "notifications-empty")) =
+        // show. `notifications` seeds ordinary events (Today and
+        // Earlier) and opens the actual panel; `notifications-empty`
+        // clears any startup housekeeping entry and opens it empty;
+        // `notifications-dot` seeds the same events but leaves the
+        // panel closed, so the bell carries its unseen dot.
+        if let Ok(state @ ("notifications" | "notifications-empty" | "notifications-dot")) =
             std::env::var("KALAM_DIALOG").as_deref()
         {
             let panel = notifications.clone();
-            let with_events = state == "notifications";
+            let with_events = state != "notifications-empty";
+            let open_panel = state != "notifications-dot";
             gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
-                crate::notify::clear_history();
                 if with_events {
-                    crate::notify::success("Imported 3 books", "Added to New arrivals.");
-                    crate::notify::info("Library backed up", "kalam-backup.db");
-                    crate::notify::error(
-                        "Could not import one file",
-                        "broken.epub is not a readable EPUB.",
-                    );
+                    crate::notify::seed_screenshot_history();
+                } else {
+                    crate::notify::clear_history();
                 }
-                if !panel.is_open() {
+                if open_panel && !panel.is_open() {
                     panel.toggle();
                 }
             });

@@ -997,9 +997,7 @@ impl AuthorPageModel {
     /// Rebuild and anchor the open-series panel (decision 108): directly
     /// under its card, over the content below, nothing else moves.
     fn update_panel(&self, root: &gtk::Overlay, sender: &ComponentSender<Self>) {
-        let open = self
-            .open_group_index()
-            .and_then(|index| self.snapshot.as_ref().map(|snap| (index, snap)));
+        let open = self.open_group_index().zip(self.snapshot.as_ref());
         let Some((index, snap)) = open else {
             self.panel_revealer.set_reveal_child(false);
             self.panel_revealer.set_visible(false);
@@ -1083,9 +1081,11 @@ impl AuthorPageModel {
             let revealer = self.panel_revealer.clone();
             let overlay = root.clone();
             gtk::glib::idle_add_local_once(move || {
-                if let Some((x, y)) = card.translate_coordinates(&overlay, 0.0, 0.0) {
-                    revealer.set_margin_start(x as i32);
-                    revealer.set_margin_top(y as i32 + card.height());
+                if let Some(point) =
+                    card.compute_point(&overlay, &gtk::graphene::Point::new(0.0, 0.0))
+                {
+                    revealer.set_margin_start(point.x() as i32);
+                    revealer.set_margin_top(point.y() as i32 + card.height());
                     revealer.set_size_request(card.width(), -1);
                 }
                 revealer.set_visible(true);

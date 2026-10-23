@@ -300,9 +300,6 @@ pub struct AuthorEntrySnapshot {
     /// owned book's `series_index`); 0 means unknown and sorts last.
     pub position: f32,
     pub book: Option<Book>,
-    /// The bibliography's downloaded cover for an unowned work, resolved
-    /// against the authors dir. Owned entries use the book's own cover.
-    pub work_cover: Option<std::path::PathBuf>,
 }
 
 /// One card on the author page: a series, or the standalone works.
@@ -1526,10 +1523,6 @@ fn author_groups(
                 year: work.first_publish_year,
                 position,
                 book: None,
-                work_cover: work
-                    .cover_file
-                    .as_deref()
-                    .map(|file| crate::paths::authors_dir().join(file)),
             });
             work_slots.insert(title_key, (group_pos, group.entries.len() - 1));
         }
@@ -1567,7 +1560,6 @@ fn author_groups(
                 0.0
             },
             book: Some(book.clone()),
-            work_cover: None,
         });
     }
 

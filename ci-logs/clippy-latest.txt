@@ -1,9 +1,12 @@
-src/pages/settings.rs:1224:23: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
-src/pages/settings.rs:1225:20: [1m[91merror[E0382][0m: borrow of moved value: `area`: value borrowed here after move
-src/pages/settings.rs:1241:23: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
-src/pages/settings.rs:1242:20: [1m[91merror[E0382][0m: borrow of moved value: `area`: value borrowed here after move
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+src/theme.rs:282:11: [1m[91merror[0m: constant `ALL` is never used
+src/theme.rs:380:12: [1m[91merror[0m: method `label` is never used
+src/pages/settings.rs:1503:30: [1m[91merror[0m: `format!` in `format!` args
+src/pages/settings.rs:2526:26: [1m[91merror[0m: redundant guard
+src/pages/settings.rs:90:12: [1m[91merror[0m: method `Meta` should have a snake case name: help: convert the identifier to snake case: `meta`
+src/pages/settings.rs:260:30: [1m[91merror[0m: structure field `tab_Meta` should have a snake case name: help: convert the identifier to snake case: `tab_meta`
+src/pages/settings.rs:260:30: [1m[91merror[0m: variable `tab_Meta` should have a snake case name: help: convert the identifier to snake case: `tab_meta`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -24,14 +27,17 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/settings.rs:1224:23: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
-src/pages/settings.rs:1225:20: [1m[91merror[E0382][0m: borrow of moved value: `area`: value borrowed here after move
-src/pages/settings.rs:1241:23: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
-src/pages/settings.rs:1242:20: [1m[91merror[E0382][0m: borrow of moved value: `area`: value borrowed here after move
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+src/theme.rs:282:11: [1m[91merror[0m: constant `ALL` is never used
+src/theme.rs:380:12: [1m[91merror[0m: method `label` is never used
+src/pages/settings.rs:1503:30: [1m[91merror[0m: `format!` in `format!` args
+src/pages/settings.rs:2526:26: [1m[91merror[0m: redundant guard
+src/pages/settings.rs:90:12: [1m[91merror[0m: method `Meta` should have a snake case name: help: convert the identifier to snake case: `meta`
+src/pages/settings.rs:260:30: [1m[91merror[0m: structure field `tab_Meta` should have a snake case name: help: convert the identifier to snake case: `tab_meta`
+src/pages/settings.rs:260:30: [1m[91merror[0m: variable `tab_Meta` should have a snake case name: help: convert the identifier to snake case: `tab_meta`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
---- run 39947913037 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+--- run 39949511036 ---

@@ -2925,7 +2925,7 @@ switch.kalam-switch slider {
 
 .kalam-bookpage-title {
     font-family: "Playfair Display", "Literata", Georgia, serif;
-    font-size: 1.7rem;
+    font-size: 46px;
     font-weight: 600;
     line-height: 1.15;
     color: @kalam_text;
@@ -2937,6 +2937,104 @@ switch.kalam-switch slider {
     font-size: 0.95rem;
     line-height: 1.55;
     color: @kalam_text_dim;
+}
+
+/* Book details (book-details-spec): the page-local pieces the shared
+   component classes do not own. */
+.kalam-bookpage-kind {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: @kalam_accent;
+}
+
+button.kalam-bookpage-series {
+    background: none;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 16px;
+    font-style: italic;
+    font-weight: 500;
+    color: @kalam_accent;
+}
+
+button.kalam-bookpage-series:hover {
+    text-decoration-line: underline;
+}
+
+button.kalam-bookpage-author {
+    background: none;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+button.kalam-bookpage-author:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+.kalam-bookpage-credit-role {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-bookpage-facts {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-bookpage-description {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: @kalam_text_dim;
+}
+
+.kalam-bookpage-progress-pct {
+    font-size: 20px;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-bookpage-progress-meta {
+    font-size: 12px;
+    color: @kalam_text_dim;
+}
+
+.kalam-bookpage-annotation-count {
+    font-size: 16px;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-bookpage-annotation-quote {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 16px;
+    font-style: italic;
+    line-height: 1.5;
+    color: @kalam_text;
+}
+
+/* The cover's pencil (36px card circle) and the header's ⋯ (44px): the
+   shared menu trigger is 40px, so the page sizes its two instances. */
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-cover-edit,
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-cover-edit > button {
+    min-width: 36px;
+    min-height: 36px;
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+}
+
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-more,
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-more > button {
+    min-width: 44px;
+    min-height: 44px;
 }
 
 /* Cover face with the page-edge behind it. */

@@ -709,7 +709,7 @@ impl AppModel {
                 let id = *book_id;
                 let cat_for_series = catalog.clone();
                 let ctrl = BookPageModel::builder()
-                    .launch((catalog.clone(), id))
+                    .launch((crate::service::LibraryService::new(catalog.clone()), id))
                     .forward(sender.input_sender(), move |out| match out {
                         BookPageOut::OpenReader => AppMsg::OpenReader { book_id: id },
                         BookPageOut::OpenAuthor { name } => {

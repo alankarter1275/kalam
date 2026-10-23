@@ -45,9 +45,12 @@ const MAX_PROD_PANICS: usize = 8;
 /// The rule behind it: pages ask `LibraryService`, they do not hold the
 /// database handle. That is what made moving queries off the UI thread a
 /// change in one place (roadmap 1.2b) rather than a sweep through every page.
-/// 58 across 22 files today — this counts occurrences, not files, so a page
+/// 54 across 22 files today — this counts occurrences, not files, so a page
 /// that stops holding a handle lowers it by however many it mentioned.
-const MAX_ARC_CATALOG_IN_PAGES: usize = 58;
+/// The book details page took a `LibraryService` in its redesign; the
+/// three mentions left in its file are the floating-panel builders the
+/// app hosts, which leave when those panels are rebuilt.
+const MAX_ARC_CATALOG_IN_PAGES: usize = 54;
 
 /// Literal hex colours in `resources/style.css`.
 ///

@@ -14,6 +14,7 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 | `read-1` | The EPUB reader with the first seeded EPUB. |
 | `tasks` | The task manager's current empty/idle state. |
 | `components` | The hidden redesign component gallery, twice: Terracotta Light and Dark on a tall 1600×3400 output. |
+| `book-1` | The redesigned book details page for the first seeded EPUB, twice: Terracotta Light and Dark at 1600×1200. |
 
 The seeder writes real EPUBs and covers under readable author/title folders
 with short-id suffixes. It creates a minimal schema-version-1 catalog; Kalam
@@ -38,16 +39,20 @@ The job commits text reports to:
 - `ci-logs/tasks-latest.txt`
 - `ci-logs/components-light-latest.txt`
 - `ci-logs/components-dark-latest.txt`
+- `ci-logs/book-light-latest.txt`
+- `ci-logs/book-dark-latest.txt`
 
 The report includes route checks, timing spans, main-loop stalls, pixel
 samples, screenshot fingerprints, app output and peak RSS. PNG images and
 compositor logs stay in the temporary Actions workspace; the workflow does not
 upload them as artifacts. The only uploaded artifact is the release binary
-used by the smoke job. The single exception is the gallery: its settled
-frame in each mode is committed as
-`ci-logs/components-terracotta-light.png` and
-`ci-logs/components-terracotta-dark.png`, because the artboard's whole
-purpose is to be looked at and the agent cannot download artifacts.
+used by the smoke job. The exceptions are the gallery and the book page:
+their settled frames in each mode are committed as
+`ci-logs/components-terracotta-light.png`,
+`ci-logs/components-terracotta-dark.png`,
+`ci-logs/book-terracotta-light.png` and
+`ci-logs/book-terracotta-dark.png`, because a redesign nobody can look at
+is not verified and the agent cannot download artifacts.
 
 A passing route check is not a visual verdict. Compare the app's logs and
 fingerprints with what the selected route is expected to display. A reader
@@ -79,9 +84,10 @@ The script reports measurements and does not set a pass threshold.
   is reported as a diagnostic.
 - **Screenshots:** because PNGs are not uploaded, the committed report is what
   an agent can inspect from the repository for most routes: fingerprints and
-  metrics, not the image itself. The two gallery frames are committed as
-  PNGs (above), so those can and should be eyeballed directly — remembering
-  they were taken on a 1600×3400 software-rendered output no user has.
+  metrics, not the image itself. The gallery and book-page frames are
+  committed as PNGs (above), so those can and should be eyeballed directly —
+  remembering the gallery's 1600×3400 software-rendered output is a shape
+  no user has.
 
 ## Run locally
 

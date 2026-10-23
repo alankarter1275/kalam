@@ -30,6 +30,9 @@ pub struct TimelineEntry {
     pub right: Option<String>,
     pub state: TimelineState,
     pub bookmark_count: u32,
+    /// Contents rows put the small "Chapter N" kicker above the chapter
+    /// title (book-details-spec §3); series rows keep title-then-subtitle.
+    pub subtitle_first: bool,
 }
 
 impl TimelineEntry {
@@ -40,6 +43,7 @@ impl TimelineEntry {
             right: None,
             state,
             bookmark_count: 0,
+            subtitle_first: false,
         }
     }
 
@@ -55,6 +59,13 @@ impl TimelineEntry {
 
     pub fn with_bookmarks(mut self, bookmark_count: u32) -> Self {
         self.bookmark_count = bookmark_count;
+        self
+    }
+
+    /// Render the subtitle above the title, as the Contents timeline's
+    /// "Chapter N" kicker requires.
+    pub fn with_subtitle_first(mut self) -> Self {
+        self.subtitle_first = true;
         self
     }
 }
@@ -103,15 +114,26 @@ pub fn timeline_row(entry: &TimelineEntry, links: TimelineLinks) -> gtk::Box {
     title.set_halign(gtk::Align::Start);
     title.set_xalign(0.0);
     title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    copy.append(&title);
 
-    if let Some(subtitle) = &entry.subtitle {
-        let subtitle_label = gtk::Label::new(Some(subtitle));
-        subtitle_label.add_css_class("kalam-ui-timeline-subtitle");
-        subtitle_label.set_halign(gtk::Align::Start);
-        subtitle_label.set_xalign(0.0);
-        subtitle_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        copy.append(&subtitle_label);
+    let subtitle_label = entry.subtitle.as_ref().map(|subtitle| {
+        let label = gtk::Label::new(Some(subtitle));
+        label.add_css_class("kalam-ui-timeline-subtitle");
+        label.set_halign(gtk::Align::Start);
+        label.set_xalign(0.0);
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        label
+    });
+
+    if entry.subtitle_first {
+        if let Some(label) = &subtitle_label {
+            copy.append(label);
+        }
+        copy.append(&title);
+    } else {
+        copy.append(&title);
+        if let Some(label) = &subtitle_label {
+            copy.append(label);
+        }
     }
     row.append(&copy);
 

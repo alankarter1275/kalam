@@ -437,6 +437,21 @@ jobs:
             THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=3400 \
             docs/ci/screenshot.sh
 
+      # The redesigned book details page, photographed the same way: a
+      # real page at a plausible window size, both Terracotta modes.
+      # Book 1 is the first seeded EPUB (AUTOINCREMENT from 1).
+      - name: open the book page (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-book-light SETTLE=20 ROUTE=book-1 \
+            THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the book page (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-book-dark SETTLE=20 ROUTE=book-1 \
+            THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -459,6 +474,12 @@ jobs:
           cp ci-shots-components-dark/report.txt ci-logs/components-dark-latest.txt 2>/dev/null \
             || echo "(no components-dark report produced)" > ci-logs/components-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/components-dark-latest.txt
+          cp ci-shots-book-light/report.txt ci-logs/book-light-latest.txt 2>/dev/null \
+            || echo "(no book-light report produced)" > ci-logs/book-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-light-latest.txt
+          cp ci-shots-book-dark/report.txt ci-logs/book-dark-latest.txt 2>/dev/null \
+            || echo "(no book-dark report produced)" > ci-logs/book-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-dark-latest.txt
           # The two settled gallery frames are the one deliberate exception
           # to "PNGs stay in the job workspace": an artboard nobody can see
           # is not an artboard, and the agent cannot download artifacts
@@ -469,12 +490,19 @@ jobs:
             ci-logs/components-terracotta-light.png 2>/dev/null || true
           cp ci-shots-components-dark/03-components-settled.png \
             ci-logs/components-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-book-light/03-book-1-settled.png \
+            ci-logs/book-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-book-dark/03-book-1-settled.png \
+            ci-logs/book-terracotta-dark.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt \
-            ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt
+            ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
+            ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt
           for shot in ci-logs/components-terracotta-light.png \
-                      ci-logs/components-terracotta-dark.png; do
+                      ci-logs/components-terracotta-dark.png \
+                      ci-logs/book-terracotta-light.png \
+                      ci-logs/book-terracotta-dark.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

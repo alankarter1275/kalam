@@ -156,11 +156,13 @@ pub struct BookDetailSnapshot {
 /// The page builds its skeleton on the UI thread and a worker fills it
 /// when this snapshot arrives, so opening a book never touches the
 /// database, the filesystem or the EPUB parser on the UI thread. It
-/// composes the two existing per-card snapshots and adds the three reads
-/// the fill functions used to do inline: reading position (one read
-/// shared by the hero bar and the journey card), the highlights list,
-/// and the author profile. The file-size stat stays with the page's
-/// worker — it is a filesystem question, not a catalog one.
+/// composes the two existing per-card snapshots and adds the reads the
+/// redesigned page needs: reading position, annotations, bookmarks,
+/// this book's saved words, manual-shelf membership for the actions
+/// submenu, and the next volume in the series. The file-size stat stays
+/// with the page's worker — it is a filesystem question, not a catalog
+/// one. (The old author profile / other-books reads left with the
+/// author card the redesign retired; the author page has its own.)
 #[derive(Debug, Default)]
 pub struct BookPageSnapshot {
     pub detail: BookDetailSnapshot,
@@ -171,10 +173,30 @@ pub struct BookPageSnapshot {
     /// Why the highlights list is empty when that read failed — reported
     /// with the highlights wording, not a generic database error.
     pub annotations_error: Option<String>,
-    pub author_profile: Option<AuthorProfile>,
-    /// Other books by the same (first) author, for the author card's
-    /// thumbnails. Read once here instead of in the fill function.
-    pub author_other_books: Vec<Book>,
+    /// Reader bookmarks in this book — the Contents timeline's
+    /// per-chapter counts and the Annotations section's bookmark rows.
+    pub bookmarks: Vec<ReadingBookmark>,
+    /// Words saved while reading this book (book scope only; a word
+    /// saved in another volume is not this page's to show).
+    pub saved_words: Vec<SavedWord>,
+    /// Manual shelves, for the actions menu's "Add to shelf" checklist.
+    pub shelves: Vec<Shelf>,
+    /// Which of `shelves` this book is already on.
+    pub shelf_ids: Vec<i64>,
+    /// The next volume when it is in the library — the finished state's
+    /// primary action opens it.
+    pub next_in_series: Option<Book>,
+    /// The next volume's title when the cached series listing names it
+    /// but the library does not own it.
+    pub next_series_title: Option<String>,
+    /// 1-based position in the merged series listing, when known. The
+    /// page prefers the book's own `series_index` for "Book N"; this is
+    /// the fallback for books whose metadata never set one.
+    pub series_position: Option<usize>,
+    /// Length of the cached series listing ("of M"). `None` when no
+    /// listing has been fetched — the owned-book count is never passed
+    /// off as the series' total.
+    pub series_total: Option<usize>,
     /// Not read by the service (it is DB-pure): the page's worker fills
     /// this with the file's `fs::metadata` size on its way back, so the
     /// stat also stays off the UI thread.
@@ -553,7 +575,7 @@ impl LibraryService {
     /// panic and never a silent wrong screen.
     pub fn book_page(&self, book_id: i64) -> BookPageSnapshot {
         let _t = crate::timing::measure("service_book_page");
-        let detail = self.book_detail(book_id);
+        let mut detail = self.book_detail(book_id);
         // One read for both consumers of the reading position: the hero
         // progress bar and the journey card queried it separately.
         let progress = self.catalog.get_reading_progress(book_id).ok().flatten();
@@ -563,34 +585,138 @@ impl LibraryService {
                 Ok(rows) => (rows, None),
                 Err(err) => (Vec::new(), Some(err.to_string())),
             };
-        let first_author = detail
-            .book
-            .as_ref()
-            .map(|b| b.authors.split(',').next().unwrap_or("").trim().to_string())
-            .unwrap_or_default();
-        let author_profile = if first_author.is_empty() {
-            None
-        } else {
-            self.catalog
-                .get_author_profile_by_name(&first_author)
-                .ok()
-                .flatten()
-        };
-        let author_other_books = if first_author.is_empty() {
-            Vec::new()
-        } else {
-            crate::author::owned_books_for_author(&self.catalog, &first_author)
-        };
+        let bookmarks = take(
+            self.catalog.list_reading_bookmarks(book_id),
+            "bookmarks",
+            &mut detail.errors,
+        );
+        let saved_words = take(
+            self.catalog.get_saved_words_for_scope(book_id, "book"),
+            "saved words",
+            &mut detail.errors,
+        );
+        let shelves: Vec<Shelf> = take(
+            self.catalog.list_shelves(),
+            "shelves",
+            &mut detail.errors,
+        )
+        .into_iter()
+        .filter(|s| s.kind == crate::db::ShelfKind::Manual)
+        .collect();
+        let shelf_ids: Vec<i64> = take(
+            self.catalog.shelves_for_book(book_id),
+            "shelf membership",
+            &mut detail.errors,
+        )
+        .into_iter()
+        .map(|(id, _name)| id)
+        .collect();
+
+        // Next in series: the cached provider listing joined with the
+        // owned books by normalised title — the same merge the series
+        // float renders, reduced to the one neighbour this page needs.
+        // Without a cached listing the owned books alone still answer
+        // "what do I read next", just not "of M".
+        let (next_in_series, next_series_title, series_position, series_total) =
+            self.next_in_series(book_id, detail.book.as_ref(), &mut detail.errors);
+
         BookPageSnapshot {
             detail,
             progress,
             stats,
             annotations,
             annotations_error,
-            author_profile,
-            author_other_books,
+            bookmarks,
+            saved_words,
+            shelves,
+            shelf_ids,
+            next_in_series,
+            next_series_title,
+            series_position,
+            series_total,
             // The service is DB-pure; the page's worker fills this.
             file_size: None,
+        }
+    }
+
+    /// Resolve the volume after `book_id` in its series. Returns
+    /// `(owned next, unowned next title, position, total)`.
+    #[allow(clippy::type_complexity)]
+    fn next_in_series(
+        &self,
+        book_id: i64,
+        book: Option<&Book>,
+        errors: &mut Errors,
+    ) -> (Option<Book>, Option<String>, Option<usize>, Option<usize>) {
+        let Some(book) = book else {
+            return (None, None, None, None);
+        };
+        let series = book.series.as_deref().unwrap_or("").trim();
+        if series.is_empty() {
+            return (None, None, None, None);
+        }
+        let first_author = book
+            .authors
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let key = crate::db::series_key(series, &first_author);
+        let works = take(
+            self.catalog.get_cached_series(&key),
+            "series listing",
+            errors,
+        )
+        .map(|entry| entry.works)
+        .unwrap_or_default();
+        let owned = take(
+            self.catalog.books_in_series(series),
+            "books in series",
+            errors,
+        );
+
+        let normalise = |s: &str| {
+            s.to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        };
+
+        // One ordered row per volume: provider order first, owned books
+        // matched into their slots, unmatched owned books appended in
+        // series order (they are truth the provider never mentioned).
+        let mut rows: Vec<(String, Option<Book>)> = works
+            .iter()
+            .map(|w| (w.title.clone(), None))
+            .collect();
+        let mut extras: Vec<(String, Option<Book>)> = Vec::new();
+        for owned_book in owned {
+            let wanted = normalise(&owned_book.title);
+            let slot = rows
+                .iter()
+                .position(|(title, local)| local.is_none() && normalise(title) == wanted);
+            match slot {
+                Some(i) => rows[i].1 = Some(owned_book),
+                None => extras.push((owned_book.title.clone(), Some(owned_book))),
+            }
+        }
+        let has_listing = !rows.is_empty();
+        rows.extend(extras);
+
+        let Some(index) = rows
+            .iter()
+            .position(|(_, local)| local.as_ref().is_some_and(|b| b.id == book_id))
+        else {
+            return (None, None, None, None);
+        };
+        let position = Some(index + 1);
+        // "of M" only when a fetched listing backs the number.
+        let total = has_listing.then_some(rows.len());
+        match rows.into_iter().nth(index + 1) {
+            Some((_, Some(next))) => (Some(next), None, position, total),
+            Some((title, None)) => (None, Some(title), position, total),
+            None => (None, None, position, total),
         }
     }
 
@@ -1246,10 +1372,12 @@ mod tests {
         );
         assert_eq!(snap.progress.map(|(c, _)| c), Some(3));
         assert_eq!(snap.annotations.len(), 5);
-        // Both books share an author, so the list has both — the author
-        // card filters out the book itself when it draws.
-        assert_eq!(snap.author_other_books.len(), 2);
-        assert!(snap.author_other_books.iter().any(|b| b.title == "Bare"));
+        // The redesign's reads ride along empty rather than erroring:
+        // no bookmarks or saved words were seeded, and neither book is
+        // in a series, so there is no next volume to offer.
+        assert!(snap.bookmarks.is_empty());
+        assert!(snap.saved_words.is_empty());
+        assert!(snap.next_in_series.is_none());
     }
 
     /// 7.1 step 2c: the settings snapshot is one fixed set of statements.

@@ -504,6 +504,40 @@ jobs:
             SERIES_FIXTURE=1 SERIES_VIEW=list THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      # The author page over the same author as the series fixture plus
+      # her cached bibliography and marks: both Terracotta modes, the
+      # open-series panel, Create shelf and the author-scope Annotations
+      # dialog. anchor book 21 is fixture Book 1, by Ada Meridian.
+      - name: open the author page (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-author-light SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the author page (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-author-dark SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the author open-series panel (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-author-panel-light SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=panel THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the author create-shelf dialog (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-author-shelf-light SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=shelf THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the author annotations dialog (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-author-annotations-dark SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -553,6 +587,21 @@ jobs:
           cp ci-shots-series-list-light/report.txt ci-logs/series-list-light-latest.txt 2>/dev/null \
             || echo "(no series-list-light report produced)" > ci-logs/series-list-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-list-light-latest.txt
+          cp ci-shots-author-light/report.txt ci-logs/author-light-latest.txt 2>/dev/null \
+            || echo "(no author-light report produced)" > ci-logs/author-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-light-latest.txt
+          cp ci-shots-author-dark/report.txt ci-logs/author-dark-latest.txt 2>/dev/null \
+            || echo "(no author-dark report produced)" > ci-logs/author-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-dark-latest.txt
+          cp ci-shots-author-panel-light/report.txt ci-logs/author-panel-light-latest.txt 2>/dev/null \
+            || echo "(no author-panel-light report produced)" > ci-logs/author-panel-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-panel-light-latest.txt
+          cp ci-shots-author-shelf-light/report.txt ci-logs/author-shelf-light-latest.txt 2>/dev/null \
+            || echo "(no author-shelf-light report produced)" > ci-logs/author-shelf-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-shelf-light-latest.txt
+          cp ci-shots-author-annotations-dark/report.txt ci-logs/author-annotations-dark-latest.txt 2>/dev/null \
+            || echo "(no author-annotations-dark report produced)" > ci-logs/author-annotations-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-annotations-dark-latest.txt
           # The settled gallery/book/dialog frames are the one deliberate
           # exception to "PNGs stay in the job workspace": an artboard
           # nobody can see is not an artboard, and the agent cannot
@@ -581,6 +630,16 @@ jobs:
             ci-logs/series-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-series-list-light/03-series-book-21-settled.png \
             ci-logs/series-list-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-light/03-author-book-21-settled.png \
+            ci-logs/author-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-dark/03-author-book-21-settled.png \
+            ci-logs/author-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-author-panel-light/03-author-book-21-settled.png \
+            ci-logs/author-panel-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-shelf-light/03-author-book-21-settled.png \
+            ci-logs/author-shelf-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-annotations-dark/03-author-book-21-settled.png \
+            ci-logs/author-annotations-terracotta-dark.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt \
@@ -589,7 +648,10 @@ jobs:
             ci-logs/book-tags-light-latest.txt ci-logs/book-tags-dark-latest.txt \
             ci-logs/book-annotations-light-latest.txt ci-logs/book-annotations-dark-latest.txt \
             ci-logs/series-light-latest.txt ci-logs/series-dark-latest.txt \
-            ci-logs/series-list-light-latest.txt
+            ci-logs/series-list-light-latest.txt \
+            ci-logs/author-light-latest.txt ci-logs/author-dark-latest.txt \
+            ci-logs/author-panel-light-latest.txt ci-logs/author-shelf-light-latest.txt \
+            ci-logs/author-annotations-dark-latest.txt
           for shot in ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \
@@ -600,7 +662,12 @@ jobs:
                       ci-logs/book-annotations-terracotta-dark.png \
                       ci-logs/series-terracotta-light.png \
                       ci-logs/series-terracotta-dark.png \
-                      ci-logs/series-list-terracotta-light.png; do
+                      ci-logs/series-list-terracotta-light.png \
+                      ci-logs/author-terracotta-light.png \
+                      ci-logs/author-terracotta-dark.png \
+                      ci-logs/author-panel-terracotta-light.png \
+                      ci-logs/author-shelf-terracotta-light.png \
+                      ci-logs/author-annotations-terracotta-dark.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

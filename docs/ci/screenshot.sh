@@ -73,6 +73,15 @@ SEED_ARGS=(--books "$BOOKS")
 if [ -n "$SERIES_FIXTURE" ]; then
   SEED_ARGS+=(--series-fixture)
 fi
+# AUTHOR_FIXTURE adds the same author's two owned standalones, her
+# cached bibliography and three marks across her books, so
+# `author-book-$((BOOKS+1))` opens the author page with both groups,
+# highlights and facts populated — still no network fetch (the page
+# never fetches on open).
+AUTHOR_FIXTURE="${AUTHOR_FIXTURE:-}"
+if [ -n "$AUTHOR_FIXTURE" ]; then
+  SEED_ARGS+=(--author-fixture)
+fi
 if ! python3 docs/ci/seed-library.py "${SEED_ARGS[@]}" 2>&1 | tee -a "$REPORT"; then
   say "FATAL: seeding failed"
   exit 0

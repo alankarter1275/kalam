@@ -1,30 +1,70 @@
-use crate::author::{
-    self, display_author_name, initials, status_counts, works_not_in_library, SeriesProgress,
+//! Author page (author-page-spec.md, decisions 104–117).
+//!
+//! A scrolling page on plain `bg`: header (label, name, bio, pills) with
+//! the outlined facts panel on the right, the author's works as series
+//! cards under In library / Not in library headings, an open-series panel
+//! overlaid under its card, a sideways highlights row, and the
+//! bibliography footer. The bibliography is whatever Find metadata last
+//! cached — opening the page never touches the network (decision 110).
+//!
+//! The grouping (cached bibliography merged with owned books) lives in
+//! `LibraryService::author_page`; this file only renders it. Dialogs:
+//! Create shelf (§31) and the author-scoped Annotations dialog
+//! (decision 115) at the bottom of the file.
+
+use crate::author::{self, display_author_name, initials};
+use crate::db::{Annotation, AuthorProfile, Catalog, HighlightColor, ShelfKind};
+use crate::models::{Book, BookFormat};
+use crate::pages::history::pretty_day;
+use crate::service::{
+    AuthorEntrySnapshot, AuthorGroupSnapshot, AuthorPageSnapshot, LibraryService,
+    AUTHOR_SHELF_PREF_PREFIX,
 };
-use crate::db::{AuthorProfile, AuthorWork, Catalog};
-use crate::models::Book;
-use crate::service::{AuthorPageSnapshot, LibraryService};
+use crate::shelf_rules::{Rule, RuleField, RuleOp, RuleSet};
+use crate::widgets::book_row::{cache_decoded_cover, cover_widget};
 use crate::widgets::{
-    book_row::{build_book_card, cache_decoded_cover, cover_widget, COVER_H, COVER_W},
-    charts::stars_label,
+    chip::{filter_chip, ChipSize},
+    cover_state::{book_cover, missing_cover, missing_cover_with_disabled_fetch, CoverAvailability},
+    dialog::{dialog_shell, present_dialog, text_field, DialogSize},
+    in_app_dialog::{DialogExit, InAppDialog},
+    menu::{menu_button, menu_popover, MenuWidth},
+    pill_button::{ghost_button, icon_button, primary_button},
+    progress::{linear_progress, segmented_progress, SegmentState},
+    segmented::{segmented_control, SegmentedSize},
+    surface::hairline,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
+
+const FAN_W: i32 = 56;
+const FAN_H: i32 = 84;
+const PANEL_COVER_W: i32 = 180;
+const PANEL_COVER_H: i32 = 270;
+const HL_COVER_W: i32 = 72;
+const HL_COVER_H: i32 = 108;
+const PORTRAIT: i32 = 64;
 
 #[derive(Debug)]
 pub enum AuthorPageOut {
     OpenBook { book_id: i64 },
-    OpenBookDialog { book_id: i64 },
     /// A comic series card — chapters are only ever seen on the series page.
     ComicSeries { series_name: String },
+    OpenSeries { series: String, first_author: String },
+    OpenShelf { shelf_id: i64 },
+    OpenReaderAt { book_id: i64, chapter: usize },
+    ShowInLibrary { query: String },
 }
 
 #[derive(Debug)]
 pub enum AuthorPageMsg {
+    /// Re-read the snapshot (first load, and after any write).
     Refresh,
+    FindMetadata,
     // Boxed: AuthorProfile is ~376 bytes, so an unboxed variant made every
     // AuthorPageMsg that large -- including the far more frequent Refresh.
     Fetched(Box<Result<AuthorProfile, String>>),
@@ -33,67 +73,210 @@ pub enum AuthorPageMsg {
     /// decoded for the fill. Boxed with `Fetched` for the same size
     /// reason.
     Loaded(Box<AuthorPageLoad>),
+    ToggleGroup(usize),
+    ClosePanel,
+    OpenCreateShelf,
+    OpenAnnotations,
+    AddAllToReadingList,
+    ExportHighlights,
 }
 
 /// The snapshot plus the covers its worker decoded for the fill — the
-/// book page's `PageLoad` recipe (7.1 step 2a.2).
-///
-/// `fill_author_page` builds its cards with synchronous `cover_widget`
-/// calls, and the heaviest of them — the author photo and the works'
-/// group covers — live in the authors dir, outside the library, so no
-/// thumbnail exists for them: decoding them on the UI thread was the
-/// fill's whole weight (323 ms in field runs #2–#5). The worker decodes
-/// them instead; the handler caches them; the fill then takes its
-/// "already decoded" branch everywhere.
+/// book page's `PageLoad` recipe (7.1 step 2a.2). The fill builds its
+/// covers with deferred/synchronous cache lookups, and the heaviest of
+/// them (the author photo) lives in the authors dir, outside the
+/// library, so no thumbnail exists for it: decoding it on the UI thread
+/// was the fill's whole weight (323 ms in field runs #2–#5). The worker
+/// decodes them instead; the handler caches them; the fill then takes
+/// its "already decoded" branch everywhere.
 #[derive(Debug)]
-pub(crate) struct AuthorPageLoad {
+pub struct AuthorPageLoad {
     snap: AuthorPageSnapshot,
     covers: Vec<crate::preload::DecodedCover>,
 }
 
 pub struct AuthorPageModel {
-    catalog: Arc<Catalog>,
     service: LibraryService,
     requested_name: String,
-    profile: Option<AuthorProfile>,
-    owned_books: Vec<Book>,
-    series: Vec<SeriesProgress>,
-    loading: bool,
-    error: Option<String>,
-    /// Whether the first snapshot has landed (7.1 step 2c). The old init
-    /// knew synchronously whether a cached profile existed and only then
-    /// started the network fetch; the recipe learns it here, once.
+    snapshot: Option<AuthorPageSnapshot>,
+    fetching: bool,
     snapshot_seen: bool,
+    /// The open panel's group, by title so a re-snapshot that reorders
+    /// groups keeps the same card open.
+    open_group_title: Option<String>,
+    /// Card buttons aligned with `snapshot.groups`, for anchoring the
+    /// open-series panel under the open card.
+    card_buttons: Vec<Option<gtk::Button>>,
+    /// Overlay children (⋯ host, panel) built in `init` outside the
+    /// `view!` tree, like the series page's scrolled window handle.
+    more_host: gtk::Box,
+    panel_revealer: gtk::Revealer,
+    panel_box: gtk::Box,
+    /// Shared with the root key handler: while the ⋯ menu is open its Esc
+    /// belongs to the menu, not the panel.
+    menu_open: Rc<Cell<bool>>,
 }
 
-#[derive(Debug, Clone)]
-struct WorkGroup {
-    title: String,
-    work_count: usize,
-    first_year: Option<i64>,
-    last_year: Option<i64>,
-    cover_path: Option<PathBuf>,
-    rating_average: Option<f32>,
-    rating_count: i64,
-    is_series: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EntryState {
+    Missing,
+    Read,
+    InProgress,
+    Unread,
 }
 
-#[derive(Default)]
-struct WorkGroupBuilder {
-    title: String,
-    work_count: usize,
-    years: Vec<i64>,
-    cover_path: Option<PathBuf>,
-    rating_weight: f64,
-    rating_count: i64,
-    is_series: bool,
+fn entry_state(entry: &AuthorEntrySnapshot, finished: &HashSet<i64>) -> EntryState {
+    let Some(book) = &entry.book else {
+        return EntryState::Missing;
+    };
+    if finished.contains(&book.id) || book.progress >= 100 {
+        EntryState::Read
+    } else if book.progress > 0 {
+        EntryState::InProgress
+    } else {
+        EntryState::Unread
+    }
 }
 
-#[derive(Default)]
-struct OnlineSeriesSummary {
-    known_count: usize,
-    first_year: Option<i64>,
-    last_year: Option<i64>,
+fn entry_segment(entry: &AuthorEntrySnapshot, finished: &HashSet<i64>) -> SegmentState {
+    match entry_state(entry, finished) {
+        EntryState::Missing => SegmentState::Missing,
+        EntryState::Read => SegmentState::Read,
+        EntryState::InProgress => SegmentState::InProgress(
+            f64::from(entry.book.as_ref().map(|b| b.progress).unwrap_or_default()) / 100.0,
+        ),
+        EntryState::Unread => SegmentState::Unread,
+    }
+}
+
+fn book_segment(book: &Book, finished: &HashSet<i64>) -> SegmentState {
+    if finished.contains(&book.id) || book.progress >= 100 {
+        SegmentState::Read
+    } else if book.progress > 0 {
+        SegmentState::InProgress(f64::from(book.progress) / 100.0)
+    } else {
+        SegmentState::Unread
+    }
+}
+
+fn is_read(book: &Book, finished: &HashSet<i64>) -> bool {
+    finished.contains(&book.id) || book.progress >= 100
+}
+
+fn is_comic(book: &Book) -> bool {
+    matches!(book.format, BookFormat::Cbz | BookFormat::Cbr)
+}
+
+fn has_bibliography(snap: &AuthorPageSnapshot) -> bool {
+    snap.profile
+        .as_ref()
+        .is_some_and(|profile| !profile.works.is_empty())
+}
+
+fn display_name(model: &AuthorPageModel) -> String {
+    model
+        .snapshot
+        .as_ref()
+        .and_then(|snap| snap.profile.as_ref())
+        .map(|profile| profile.canonical_name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| display_author_name(&model.requested_name))
+}
+
+fn highlights_of(snap: &AuthorPageSnapshot) -> Vec<&Annotation> {
+    snap.annotations
+        .iter()
+        .filter(|anno| !anno.text_excerpt.trim().is_empty())
+        .collect()
+}
+
+fn year_range_text(entries: &[AuthorEntrySnapshot]) -> Option<String> {
+    let mut years: Vec<i64> = entries.iter().filter_map(|e| e.year).collect();
+    years.sort_unstable();
+    match (years.first(), years.last()) {
+        (Some(a), Some(b)) if a == b => Some(a.to_string()),
+        (Some(a), Some(b)) => Some(format!("{a}–{b}")),
+        _ => None,
+    }
+}
+
+/// The first plausible year in a free-form Open Library date string
+/// ("21 October 1929", "1929", "1929-10-21").
+fn parse_year(text: &str) -> Option<i64> {
+    let bytes = text.as_bytes();
+    if bytes.len() < 4 {
+        return None;
+    }
+    for i in 0..=bytes.len() - 4 {
+        if bytes[i].is_ascii_digit()
+            && bytes[i + 1].is_ascii_digit()
+            && bytes[i + 2].is_ascii_digit()
+            && bytes[i + 3].is_ascii_digit()
+        {
+            if let Ok(year) = text[i..i + 4].parse::<i64>() {
+                if (800..=2999).contains(&year) {
+                    return Some(year);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Days since the civil epoch for a YYYY-MM-DD prefix (Howard Hinnant's
+/// algorithm), for the footer's "updated N days ago".
+fn days_from_iso(text: &str) -> Option<i64> {
+    let date = text.get(..10)?;
+    let year: i64 = date.get(0..4)?.parse().ok()?;
+    let month: i64 = date.get(5..7)?.parse().ok()?;
+    let day: i64 = date.get(8..10)?.parse().ok()?;
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era * 146097 + doe)
+}
+
+fn updated_text(fetched_at: &str) -> Option<String> {
+    let then = days_from_iso(fetched_at)?;
+    let today = days_from_iso(&crate::db::chrono_like_now())?;
+    let days = (today - then).max(0);
+    let text = match days {
+        0 => "today".to_string(),
+        1 => "yesterday".to_string(),
+        2..=29 => format!("{days} days ago"),
+        30..=364 => {
+            let months = days / 30;
+            format!("{months} month{} ago", if months == 1 { "" } else { "s" })
+        }
+        _ => {
+            let years = days / 365;
+            format!("{years} year{} ago", if years == 1 { "" } else { "s" })
+        }
+    };
+    Some(text)
+}
+
+fn hl_color_class(color: &str) -> &'static str {
+    match color.to_ascii_lowercase().as_str() {
+        "green" => "kalam-hl-bar-green",
+        "blue" => "kalam-hl-bar-blue",
+        "pink" | "rose" => "kalam-hl-bar-pink",
+        "orange" => "kalam-hl-bar-orange",
+        _ => "kalam-hl-bar-yellow",
+    }
+}
+
+fn set_accessible_label(widget: &impl IsA<gtk::Accessible>, label: &str) {
+    widget.update_property(&[gtk::accessible::Property::Label(label)]);
+}
+
+fn clear_box(host: &gtk::Box) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
 }
 
 #[relm4::component(pub)]
@@ -105,92 +288,42 @@ impl Component for AuthorPageModel {
 
     view! {
         #[root]
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
-            set_spacing: 22,
+        gtk::Overlay {
+            add_css_class: "kalam-authorpage",
             set_hexpand: true,
             set_vexpand: false,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 24,
-                set_hexpand: true,
+            #[wrap(Some)]
+            set_child = &gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                add_css_class: "kalam-authorpage-inner",
+                set_spacing: 0,
 
-                #[name = "hero_main"]
+                #[name = "header_host"]
                 gtk::Box {
-                    add_css_class: "kalam-author-hero",
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
-                    set_hexpand: true,
-
-                    // The skeleton's only moving part (7.1 step 2c):
-                    // cleared by the first fill, like Home's sections.
-                    gtk::Label {
-                        set_label: "Loading author…",
-                        add_css_class: "kalam-muted",
-                        set_halign: gtk::Align::Start,
-                    },
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 32,
+                    set_valign: gtk::Align::Start,
                 },
 
-                #[name = "hero_side"]
+                #[name = "notice_host"]
                 gtk::Box {
-                    add_css_class: "kalam-author-side",
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 14,
-                    set_hexpand: false,
-                    set_halign: gtk::Align::End,
                 },
-            },
 
-            gtk::Label {
-                set_label: "SERIES TRACKER",
-                add_css_class: "kalam-section-label",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "series_host"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 8,
-                gtk::Label {
-                    set_label: "Loading…",
-                    add_css_class: "kalam-muted",
-                    set_halign: gtk::Align::Start,
+                #[name = "groups_host"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
                 },
-            },
 
-            gtk::Label {
-                set_label: "YOUR BOOKS",
-                add_css_class: "kalam-section-label",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "owned_host"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 8,
-                gtk::Label {
-                    set_label: "Loading your books…",
-                    add_css_class: "kalam-muted",
-                    set_halign: gtk::Align::Start,
+                #[name = "highlights_host"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
                 },
-            },
 
-            gtk::Label {
-                set_label: "MORE BY THIS AUTHOR",
-                add_css_class: "kalam-section-label",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "works_host"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 8,
-                set_margin_bottom: 12,
-                gtk::Label {
-                    set_label: "Loading…",
-                    add_css_class: "kalam-muted",
-                    set_halign: gtk::Align::Start,
+                #[name = "footer_host"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
                 },
             },
         }
@@ -198,27 +331,80 @@ impl Component for AuthorPageModel {
 
     fn init(
         (catalog, author_name): Self::Init,
-        _root: Self::Root,
+        root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        // Skeleton only (7.1 step 2c): the hosts paint their loading rows
-        // and both reads — the profile/books/series snapshot and, when the
-        // profile turns out to be uncached, the network fetch — run on
-        // workers.
-        let service = LibraryService::new(catalog.clone());
-        let model = AuthorPageModel {
-            catalog,
-            service,
+        // Overlay children: the open-series panel (under its card, over
+        // the content below — decision 108) and the ⋯ button (top-right,
+        // level with the shell's Back pill; the negative top margin pulls
+        // it up into the content host's 72px back-pill band, 24+32 = the
+        // spec's 56px right inset).
+        let panel_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        panel_box.add_css_class("kalam-authorpage-panel");
+
+        let panel_revealer = gtk::Revealer::new();
+        panel_revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
+        panel_revealer.set_transition_duration(250);
+        panel_revealer.set_halign(gtk::Align::Start);
+        panel_revealer.set_valign(gtk::Align::Start);
+        panel_revealer.set_reveal_child(false);
+        panel_revealer.set_visible(false);
+        panel_revealer.set_child(Some(&panel_box));
+
+        let more_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        more_host.set_halign(gtk::Align::End);
+        more_host.set_valign(gtk::Align::Start);
+        more_host.set_margin_top(-60);
+        more_host.set_margin_end(32);
+
+        let menu_open = Rc::new(Cell::new(false));
+
+        let mut model = AuthorPageModel {
+            service: LibraryService::new(catalog),
             requested_name: author_name,
-            profile: None,
-            owned_books: Vec::new(),
-            series: Vec::new(),
-            loading: true,
-            error: None,
+            snapshot: None,
+            fetching: false,
             snapshot_seen: false,
+            open_group_title: None,
+            card_buttons: Vec::new(),
+            more_host: more_host.clone(),
+            panel_revealer: panel_revealer.clone(),
+            panel_box: panel_box.clone(),
+            menu_open: menu_open.clone(),
         };
         let widgets = view_output!();
+
+        root.add_overlay(&panel_revealer);
+        root.add_overlay(&more_host);
+
+        // Esc closes the open panel (decision 108). Bubble phase (the
+        // default): focused widgets and the ⋯ popover consume theirs
+        // first; in-app dialogs live outside this subtree entirely.
+        let keys = gtk::EventControllerKey::new();
+        let key_sender = sender.clone();
+        keys.connect_key_pressed(move |_, keyval, _, state| {
+            use gtk::gdk::Key;
+            if state.contains(gtk::gdk::ModifierType::CONTROL_MASK)
+                || state.contains(gtk::gdk::ModifierType::ALT_MASK)
+            {
+                return gtk::glib::Propagation::Proceed;
+            }
+            if menu_open.get() {
+                return gtk::glib::Propagation::Proceed;
+            }
+            if keyval == Key::Escape {
+                key_sender.input(AuthorPageMsg::ClosePanel);
+                return gtk::glib::Propagation::Stop;
+            }
+            gtk::glib::Propagation::Proceed
+        });
+        root.add_controller(keys);
+
+        // Skeleton fill (name + loading line), then the worker read.
+        // No network fetch is started here or on load (decision 110).
+        model.rebuild(&widgets, &root, &sender);
         request_snapshot(&model.service, &model.requested_name, &sender);
+
         ComponentParts { model, widgets }
     }
 
@@ -227,70 +413,1273 @@ impl Component for AuthorPageModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
+        let mut rebuild = true;
         match msg {
             AuthorPageMsg::Refresh => {
-                self.loading = true;
-                self.error = None;
-                spawn_author_fetch(
-                    self.catalog.clone(),
-                    self.requested_name.clone(),
-                    self.owned_books.clone(),
-                    &sender,
-                );
+                request_snapshot(&self.service, &self.requested_name, &sender);
+                rebuild = false;
+            }
+            AuthorPageMsg::FindMetadata => {
+                if !self.fetching {
+                    self.fetching = true;
+                    spawn_author_fetch(self, &sender);
+                }
             }
             AuthorPageMsg::Fetched(result) => {
-                self.loading = false;
+                self.fetching = false;
                 match *result {
-                    Ok(profile) => {
-                        self.profile = Some(profile);
-                        self.error = None;
+                    Ok(_) => {
+                        request_snapshot(&self.service, &self.requested_name, &sender);
                     }
                     Err(err) => {
-                        self.error = Some(err);
+                        crate::notify::error("Could not fetch author info", &err);
                     }
                 }
-                // The old path re-read the owned books inline here; the
-                // re-read now rides the worker and the fill happens when
-                // it lands (7.1 step 2c).
-                request_snapshot(&self.service, &self.requested_name, &sender);
             }
             AuthorPageMsg::Loaded(load) => {
                 let load = *load;
                 // Cache what the worker decoded before the fill runs, so
-                // every `cover_widget` below takes its "already decoded"
-                // branch instead of decoding on the UI thread.
+                // every cover below takes its "already decoded" branch
+                // instead of decoding on the UI thread.
                 for decoded in &load.covers {
                     cache_decoded_cover(decoded);
                 }
-                let snap = load.snap;
-                self.profile = snap.profile;
-                self.owned_books = snap.owned_books;
-                self.series = snap.series;
-                if !self.snapshot_seen {
-                    self.snapshot_seen = true;
-                    if self.profile.is_none() && self.error.is_none() {
-                        // No cached profile: fetch one from the network.
-                        // The old init answered this question inline; the
-                        // recipe learns it here, once.
-                        self.loading = true;
-                        spawn_author_fetch(
-                            self.catalog.clone(),
-                            self.requested_name.clone(),
-                            self.owned_books.clone(),
-                            &sender,
-                        );
-                    } else {
-                        self.loading = false;
+                let first_load = !self.snapshot_seen;
+                self.snapshot_seen = true;
+                self.snapshot = Some(load.snap);
+
+                if first_load {
+                    // CI screenshot hooks, mirroring the book page's
+                    // KALAM_DIALOG: photograph the open-series panel and
+                    // this page's two dialogs headlessly.
+                    match std::env::var("KALAM_DIALOG").as_deref() {
+                        Ok("panel") => {
+                            self.open_group_title = self.snapshot.as_ref().and_then(|snap| {
+                                snap.groups
+                                    .iter()
+                                    .find(|g| {
+                                        g.series.is_some()
+                                            && g.entries.iter().any(|e| e.book.is_some())
+                                    })
+                                    .or_else(|| {
+                                        snap.groups
+                                            .iter()
+                                            .find(|g| g.entries.iter().any(|e| e.book.is_some()))
+                                    })
+                                    .map(|g| g.title.clone())
+                            });
+                        }
+                        Ok("shelf") => sender.input(AuthorPageMsg::OpenCreateShelf),
+                        Ok("annotations") => sender.input(AuthorPageMsg::OpenAnnotations),
+                        _ => {}
                     }
                 }
             }
+            AuthorPageMsg::ToggleGroup(index) => {
+                let title = self
+                    .snapshot
+                    .as_ref()
+                    .and_then(|snap| snap.groups.get(index))
+                    .map(|group| group.title.clone());
+                if let Some(title) = title {
+                    if self.open_group_title.as_deref() == Some(title.as_str()) {
+                        self.open_group_title = None;
+                    } else {
+                        self.open_group_title = Some(title);
+                        self.warm_panel_covers();
+                    }
+                }
+            }
+            AuthorPageMsg::ClosePanel => {
+                if self.open_group_title.take().is_none() {
+                    rebuild = false;
+                }
+            }
+            AuthorPageMsg::OpenCreateShelf => {
+                present_create_shelf_dialog(root, self, &sender);
+                rebuild = false;
+            }
+            AuthorPageMsg::OpenAnnotations => {
+                present_author_annotations_dialog(root, self, &sender);
+                rebuild = false;
+            }
+            AuthorPageMsg::AddAllToReadingList => {
+                let catalog = self.service.catalog();
+                let mut added = 0usize;
+                if let Some(snap) = &self.snapshot {
+                    for book in &snap.owned_books {
+                        if catalog.add_to_reading_list(book.id).is_ok() {
+                            added += 1;
+                        }
+                    }
+                }
+                if added > 0 {
+                    crate::notify::success(
+                        &format!(
+                            "Added {added} book{} to your reading list",
+                            if added == 1 { "" } else { "s" }
+                        ),
+                        &display_name(self),
+                    );
+                } else {
+                    crate::notify::info("Nothing to add", "No owned books by this author.");
+                }
+                rebuild = false;
+            }
+            AuthorPageMsg::ExportHighlights => {
+                export_highlights(self);
+                rebuild = false;
+            }
         }
 
-        fill_author_page(widgets, self, &sender);
+        if rebuild {
+            self.rebuild(widgets, root, &sender);
+        }
         self.update_view(widgets, sender);
     }
+}
+
+impl AuthorPageModel {
+    fn rebuild(
+        &mut self,
+        widgets: &AuthorPageModelWidgets,
+        root: &gtk::Overlay,
+        sender: &ComponentSender<Self>,
+    ) {
+        // The same attribution pair the other migrated pages use: a timing
+        // span for KALAM_TIMING=1 and an activity label so a stall during
+        // this build says "while author_fill" (7.1 step 2c).
+        let _t = crate::timing::measure("author_fill");
+        let _a = crate::timing::activity("author_fill");
+        self.menu_open.set(false);
+        self.fill_header(widgets, sender);
+        self.fill_notice(widgets, sender);
+        self.fill_groups(widgets, sender);
+        self.fill_highlights(widgets, sender);
+        self.fill_footer(widgets);
+        self.update_panel(root, sender);
+    }
+
+    fn open_group_index(&self) -> Option<usize> {
+        let title = self.open_group_title.as_deref()?;
+        self.snapshot
+            .as_ref()?
+            .groups
+            .iter()
+            .position(|group| group.title == title)
+    }
+
+    fn warm_panel_covers(&self) {
+        let Some(index) = self.open_group_index() else {
+            return;
+        };
+        let Some(snap) = &self.snapshot else { return };
+        let paths: Vec<std::path::PathBuf> = snap
+            .groups
+            .get(index)
+            .map(|group| {
+                group
+                    .entries
+                    .iter()
+                    .filter_map(|entry| entry.book.as_ref())
+                    .filter_map(|book| book.cover_path.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if !paths.is_empty() {
+            crate::preload::warm_covers(paths, PANEL_COVER_W, PANEL_COVER_H);
+        }
+    }
+
+    fn fill_header(&self, widgets: &AuthorPageModelWidgets, sender: &ComponentSender<Self>) {
+        clear_box(&widgets.header_host);
+        clear_box(&self.more_host);
+
+        let name = display_name(self);
+        let left = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        left.set_size_request(640, -1);
+        left.set_hexpand(false);
+        left.set_valign(gtk::Align::Start);
+
+        let eyebrow = gtk::Label::new(Some("AUTHOR"));
+        eyebrow.add_css_class("kalam-authorpage-eyebrow");
+        eyebrow.set_halign(gtk::Align::Start);
+        eyebrow.set_xalign(0.0);
+        left.append(&eyebrow);
+
+        let title = gtk::Label::new(Some(&name));
+        title.add_css_class("kalam-authorpage-title");
+        title.set_halign(gtk::Align::Start);
+        title.set_xalign(0.0);
+        title.set_wrap(true);
+        title.set_lines(2);
+        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        title.set_max_width_chars(28);
+        left.append(&title);
+
+        let snap = self.snapshot.as_ref();
+        match snap {
+            None => {
+                let loading = gtk::Label::new(Some("Loading author…"));
+                loading.add_css_class("kalam-ui-meta");
+                loading.set_halign(gtk::Align::Start);
+                left.append(&loading);
+            }
+            Some(snap) => {
+                if let Some(bio) = snap
+                    .profile
+                    .as_ref()
+                    .map(|profile| profile.bio.trim())
+                    .filter(|bio| !bio.is_empty())
+                {
+                    let bio_label = gtk::Label::new(Some(bio));
+                    bio_label.add_css_class("kalam-authorpage-bio");
+                    bio_label.set_halign(gtk::Align::Start);
+                    bio_label.set_xalign(0.0);
+                    bio_label.set_wrap(true);
+                    bio_label.set_lines(3);
+                    bio_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    bio_label.set_max_width_chars(96);
+                    left.append(&bio_label);
+
+                    // ~3 lines at this measure; longer bios get the toggle.
+                    if bio.chars().count() > 300 {
+                        let more = gtk::Button::with_label("More");
+                        more.add_css_class("kalam-authorpage-more");
+                        more.set_halign(gtk::Align::Start);
+                        let expanded = Rc::new(Cell::new(false));
+                        let bio_for_toggle = bio_label.clone();
+                        more.connect_clicked(move |button| {
+                            let next = !expanded.get();
+                            expanded.set(next);
+                            if next {
+                                bio_for_toggle.set_lines(-1);
+                                bio_for_toggle.set_ellipsize(gtk::pango::EllipsizeMode::None);
+                                button.set_label("Less");
+                            } else {
+                                bio_for_toggle.set_lines(3);
+                                bio_for_toggle.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                                button.set_label("More");
+                            }
+                        });
+                        left.append(&more);
+                    }
+                }
+
+                let pills = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+                pills.set_margin_top(20);
+                pills.set_halign(gtk::Align::Start);
+
+                match snap.shelf {
+                    Some((shelf_id, _)) => {
+                        let s = sender.clone();
+                        pills.append(&ghost_button("Open shelf", move || {
+                            s.output(AuthorPageOut::OpenShelf { shelf_id }).ok();
+                        }));
+                    }
+                    None => {
+                        let s = sender.clone();
+                        pills.append(&ghost_button("Create shelf", move || {
+                            s.input(AuthorPageMsg::OpenCreateShelf);
+                        }));
+                    }
+                }
+
+                let s = sender.clone();
+                let find = ghost_button("Find metadata", move || {
+                    s.input(AuthorPageMsg::FindMetadata);
+                });
+                find.set_sensitive(!self.fetching);
+                find.set_tooltip_text(Some(
+                    "Fetch this author's bibliography from Open Library",
+                ));
+                pills.append(&find);
+                left.append(&pills);
+            }
+        }
+        widgets.header_host.append(&left);
+
+        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        widgets.header_host.append(&spacer);
+
+        if let Some(snap) = snap {
+            widgets.header_host.append(&facts_panel(snap, &name));
+            self.fill_more_menu(snap, &name, sender);
+        }
+    }
+
+    fn fill_more_menu(
+        &self,
+        snap: &AuthorPageSnapshot,
+        name: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        // Edit author… and Merge into another author… belong to this menu
+        // (decision 112) but their dialogs are not designed yet; like the
+        // book page's Edit book, they stay out until they are.
+        let menu = menu_popover(MenuWidth::Wide);
+
+        match snap.shelf {
+            Some((shelf_id, _)) => {
+                let s = sender.clone();
+                menu.add_item("Open shelf", move || {
+                    s.output(AuthorPageOut::OpenShelf { shelf_id }).ok();
+                });
+            }
+            None => {
+                let s = sender.clone();
+                menu.add_item("Create shelf…", move || {
+                    s.input(AuthorPageMsg::OpenCreateShelf);
+                });
+            }
+        }
+        menu.add_separator();
+
+        let owned = snap.owned_books.len();
+        let s = sender.clone();
+        menu.add_item(
+            &format!(
+                "Find metadata for {owned} book{}…",
+                if owned == 1 { "" } else { "s" }
+            ),
+            move || {
+                s.input(AuthorPageMsg::FindMetadata);
+            },
+        );
+        let s = sender.clone();
+        menu.add_item("Add all to reading list", move || {
+            s.input(AuthorPageMsg::AddAllToReadingList);
+        });
+        let query = name.to_string();
+        let s = sender.clone();
+        menu.add_item("Show books in library", move || {
+            s.output(AuthorPageOut::ShowInLibrary {
+                query: query.clone(),
+            })
+            .ok();
+        });
+        let s = sender.clone();
+        menu.add_item("Export highlights…", move || {
+            s.input(AuthorPageMsg::ExportHighlights);
+        });
+
+        let more = menu_button("view-more-symbolic", "Author actions", menu);
+        more.add_css_class("kalam-authorpage-more-btn");
+        more.set_size_request(44, 44);
+        more.set_sensitive(!self.fetching);
+        let menu_open = self.menu_open.clone();
+        more.connect_active_notify(move |button| {
+            menu_open.set(button.is_active());
+        });
+        set_accessible_label(&more, "Author actions");
+        self.more_host.append(&more);
+    }
+
+    fn fill_notice(&self, widgets: &AuthorPageModelWidgets, sender: &ComponentSender<Self>) {
+        clear_box(&widgets.notice_host);
+        let Some(snap) = &self.snapshot else { return };
+        if has_bibliography(snap) {
+            return;
+        }
+        // The quiet notice (decision 111): one Meta line under a hairline,
+        // with Find metadata as an accent link inside the sentence.
+        let host = &widgets.notice_host;
+        let rule = hairline();
+        rule.set_margin_top(32);
+        host.append(&rule);
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row.set_margin_top(16);
+        row.set_halign(gtk::Align::Start);
+
+        let before = gtk::Label::new(Some("No bibliography yet. "));
+        before.add_css_class("kalam-authorpage-notice");
+        before.set_valign(gtk::Align::Center);
+        row.append(&before);
+
+        let s = sender.clone();
+        let link = gtk::Button::with_label("Find metadata");
+        link.add_css_class("kalam-authorpage-notice-link");
+        link.set_valign(gtk::Align::Center);
+        link.set_sensitive(!self.fetching);
+        link.connect_clicked(move |_| {
+            s.input(AuthorPageMsg::FindMetadata);
+        });
+        row.append(&link);
+
+        let after = gtk::Label::new(Some(
+            " to see this author's other works. Your own books are shown below.",
+        ));
+        after.add_css_class("kalam-authorpage-notice");
+        after.set_valign(gtk::Align::Center);
+        after.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        row.append(&after);
+        host.append(&row);
+    }
+
+    fn fill_groups(&mut self, widgets: &AuthorPageModelWidgets, sender: &ComponentSender<Self>) {
+        clear_box(&widgets.groups_host);
+        self.card_buttons.clear();
+        let Some(snap) = &self.snapshot else { return };
+        self.card_buttons = (0..snap.groups.len()).map(|_| None).collect();
+
+        let bib = has_bibliography(snap);
+        let open_index = self.open_group_index();
+
+        for in_library in [true, false] {
+            let indices: Vec<usize> = snap
+                .groups
+                .iter()
+                .enumerate()
+                .filter(|(_, group)| {
+                    group.entries.iter().any(|e| e.book.is_some()) == in_library
+                })
+                .map(|(index, _)| index)
+                .collect();
+            if indices.is_empty() {
+                continue;
+            }
+
+            let heading = gtk::Label::new(Some(if in_library {
+                "IN LIBRARY"
+            } else {
+                "NOT IN LIBRARY"
+            }));
+            heading.add_css_class("kalam-ui-label");
+            heading.set_halign(gtk::Align::Start);
+            // 48 above, 16 below (decision 107), whichever side of the
+            // header or the other group it follows.
+            heading.set_margin_top(48);
+            heading.set_margin_bottom(16);
+            widgets.groups_host.append(&heading);
+
+            let grid = gtk::Grid::new();
+            grid.set_column_homogeneous(true);
+            grid.set_column_spacing(16);
+            grid.set_row_spacing(16);
+            grid.set_hexpand(true);
+
+            for (slot, &index) in indices.iter().enumerate() {
+                let group = &snap.groups[index];
+                let card = series_card(
+                    index,
+                    group,
+                    bib,
+                    in_library,
+                    open_index == Some(index),
+                    snap,
+                    sender,
+                );
+                self.card_buttons[index] = Some(card.clone());
+                grid.attach(&card, (slot % 2) as i32, (slot / 2) as i32, 1, 1);
+            }
+            widgets.groups_host.append(&grid);
+        }
+
+        if snap.groups.is_empty() {
+            let empty = gtk::Label::new(Some("No books by this author yet."));
+            empty.add_css_class("kalam-ui-meta");
+            empty.set_halign(gtk::Align::Start);
+            empty.set_margin_top(48);
+            widgets.groups_host.append(&empty);
+        }
+    }
+
+    fn fill_highlights(&self, widgets: &AuthorPageModelWidgets, sender: &ComponentSender<Self>) {
+        clear_box(&widgets.highlights_host);
+        let Some(snap) = &self.snapshot else { return };
+        let highlights = highlights_of(snap);
+        if highlights.is_empty() {
+            return;
+        }
+        let books: HashMap<i64, &Book> =
+            snap.owned_books.iter().map(|book| (book.id, book)).collect();
+
+        let heading_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        heading_row.set_margin_top(48);
+        heading_row.set_margin_bottom(16);
+
+        let heading = gtk::Label::new(Some("Your highlights"));
+        heading.add_css_class("kalam-ui-section-title");
+        heading.set_halign(gtk::Align::Start);
+        heading.set_valign(gtk::Align::Center);
+        heading_row.append(&heading);
+
+        let total = snap.annotations.len();
+        let s = sender.clone();
+        let see_all = gtk::Button::with_label(&format!("See all {total}"));
+        see_all.add_css_class("kalam-authorpage-see-all");
+        see_all.set_valign(gtk::Align::Center);
+        see_all.set_tooltip_text(Some("Open all annotations for this author"));
+        see_all.connect_clicked(move |_| {
+            s.input(AuthorPageMsg::OpenAnnotations);
+        });
+        heading_row.append(&see_all);
+
+        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        heading_row.append(&spacer);
+
+        // The scroller first: the arrows drive its adjustment.
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::External)
+            .vscrollbar_policy(gtk::PolicyType::Never)
+            .overlay_scrolling(true)
+            .hexpand(true)
+            .build();
+
+        let adjustment = scroller.hadjustment();
+        let adj_prev = adjustment.clone();
+        let prev = icon_button("go-previous-symbolic", "Scroll highlights back", 36, true, move || {
+            scroll_highlights(&adj_prev, -1.0);
+        });
+        let adj_next = adjustment.clone();
+        let next = icon_button("go-next-symbolic", "Scroll highlights forward", 36, true, move || {
+            scroll_highlights(&adj_next, 1.0);
+        });
+        let sync_arrows = {
+            let prev = prev.clone();
+            let next = next.clone();
+            let adjustment = adjustment.clone();
+            Rc::new(move || {
+                let max = (adjustment.upper() - adjustment.page_size()).max(0.0);
+                let value = adjustment.value();
+                set_arrow_state(&prev, value > 0.5);
+                set_arrow_state(&next, value < max - 0.5);
+            })
+        };
+        {
+            let sync = sync_arrows.clone();
+            adjustment.connect_value_changed(move |_| sync());
+            let sync = sync_arrows.clone();
+            adjustment.connect_upper_notify(move |_| sync());
+            let sync = sync_arrows.clone();
+            adjustment.connect_page_size_notify(move |_| sync());
+        }
+        heading_row.append(&prev);
+        heading_row.append(&next);
+        widgets.highlights_host.append(&heading_row);
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+        row.set_halign(gtk::Align::Start);
+        row.set_valign(gtk::Align::Start);
+        for anno in highlights {
+            let Some(book) = books.get(&anno.book_id) else {
+                continue;
+            };
+            row.append(&highlight_card(anno, book, snap, sender));
+        }
+        scroller.set_child(Some(&row));
+        widgets.highlights_host.append(&scroller);
+        sync_arrows();
+    }
+
+    fn fill_footer(&self, widgets: &AuthorPageModelWidgets) {
+        clear_box(&widgets.footer_host);
+        let Some(snap) = &self.snapshot else { return };
+        let Some(profile) = &snap.profile else { return };
+        let Some(updated) = updated_text(&profile.fetched_at) else {
+            return;
+        };
+        let footer = gtk::Label::new(Some(&format!(
+            "Bibliography from Open Library · updated {updated}"
+        )));
+        footer.add_css_class("kalam-authorpage-footer");
+        footer.set_halign(gtk::Align::Start);
+        footer.set_xalign(0.0);
+        footer.set_margin_top(32);
+        widgets.footer_host.append(&footer);
+    }
+
+    /// Rebuild and anchor the open-series panel (decision 108): directly
+    /// under its card, over the content below, nothing else moves.
+    fn update_panel(&self, root: &gtk::Overlay, sender: &ComponentSender<Self>) {
+        let open = self
+            .open_group_index()
+            .and_then(|index| self.snapshot.as_ref().map(|snap| (index, snap)));
+        let Some((index, snap)) = open else {
+            self.panel_revealer.set_reveal_child(false);
+            self.panel_revealer.set_visible(false);
+            return;
+        };
+        let group = &snap.groups[index];
+
+        clear_box(&self.panel_box);
+
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let count = group.entries.len();
+        let caption = gtk::Label::new(Some(&format!(
+            "{} · {count} book{}",
+            group.title,
+            if count == 1 { "" } else { "s" }
+        )));
+        caption.add_css_class("kalam-ui-meta");
+        caption.set_halign(gtk::Align::Start);
+        caption.set_valign(gtk::Align::Center);
+        caption.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        header.append(&caption);
+
+        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        header.append(&spacer);
+
+        if let Some(series) = &group.series {
+            let comic = group
+                .entries
+                .iter()
+                .filter_map(|entry| entry.book.as_ref())
+                .any(is_comic);
+            let series = series.clone();
+            let author = display_name(self);
+            let s = sender.clone();
+            let open_series = gtk::Button::with_label("Open series ›");
+            open_series.add_css_class("kalam-authorpage-open-series");
+            open_series.set_valign(gtk::Align::Center);
+            open_series.set_tooltip_text(Some("Open the series page"));
+            open_series.connect_clicked(move |_| {
+                if comic {
+                    s.output(AuthorPageOut::ComicSeries {
+                        series_name: series.clone(),
+                    })
+                    .ok();
+                } else {
+                    s.output(AuthorPageOut::OpenSeries {
+                        series: series.clone(),
+                        first_author: author.clone(),
+                    })
+                    .ok();
+                }
+            });
+            header.append(&open_series);
+        }
+        self.panel_box.append(&header);
+
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::External)
+            .vscrollbar_policy(gtk::PolicyType::Never)
+            .overlay_scrolling(true)
+            .hexpand(true)
+            .build();
+        scroller.set_margin_top(16);
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 20);
+        row.set_margin_start(4);
+        row.set_margin_end(4);
+        row.set_margin_top(4);
+        row.set_margin_bottom(4);
+        row.set_halign(gtk::Align::Start);
+        row.set_valign(gtk::Align::Start);
+        for entry in &group.entries {
+            row.append(&panel_entry_column(entry, group, snap, sender));
+        }
+        scroller.set_child(Some(&row));
+        self.panel_box.append(&scroller);
+
+        // Anchor under the card once allocations settle.
+        if let Some(card) = self.card_buttons.get(index).cloned().flatten() {
+            let revealer = self.panel_revealer.clone();
+            let overlay = root.clone();
+            gtk::glib::idle_add_local_once(move || {
+                if let Some((x, y)) = card.translate_coordinates(&overlay, 0.0, 0.0) {
+                    revealer.set_margin_start(x as i32);
+                    revealer.set_margin_top(y as i32 + card.height());
+                    revealer.set_size_request(card.width(), -1);
+                }
+                revealer.set_visible(true);
+                revealer.set_reveal_child(true);
+            });
+        } else {
+            self.panel_revealer.set_visible(true);
+            self.panel_revealer.set_reveal_child(true);
+        }
+    }
+}
+
+fn scroll_highlights(adjustment: &gtk::Adjustment, direction: f64) {
+    let max = (adjustment.upper() - adjustment.page_size()).max(0.0);
+    let step = 420.0 + 16.0;
+    adjustment.set_value((adjustment.value() + direction * step).clamp(0.0, max));
+}
+
+fn set_arrow_state(button: &gtk::Button, enabled: bool) {
+    button.set_sensitive(enabled);
+    button.set_opacity(if enabled { 1.0 } else { 0.4 });
+}
+
+/// §25 facts panel: outlined 340, portrait + lifespan, Works / Series /
+/// You've read rows over hairlines.
+fn facts_panel(snap: &AuthorPageSnapshot, name: &str) -> gtk::Box {
+    let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    panel.add_css_class("kalam-authorpage-facts");
+    panel.set_size_request(340, -1);
+    panel.set_hexpand(false);
+    panel.set_valign(gtk::Align::Start);
+
+    let bib = has_bibliography(snap);
+    let profile = snap.profile.as_ref();
+
+    let top = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    top.set_valign(gtk::Align::Start);
+
+    let photo = profile
+        .and_then(|p| p.photo_path.as_deref())
+        .filter(|path| path.is_file());
+    let portrait: gtk::Widget = match photo {
+        Some(path) => {
+            let widget = cover_widget(Some(path), PORTRAIT, PORTRAIT);
+            widget.add_css_class("kalam-authorpage-portrait");
+            widget.set_size_request(PORTRAIT, PORTRAIT);
+            widget
+        }
+        None => {
+            let disc = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            disc.add_css_class("kalam-authorpage-portrait-initials");
+            disc.set_size_request(PORTRAIT, PORTRAIT);
+            disc.set_halign(gtk::Align::Start);
+            let label = gtk::Label::new(Some(&initials(name)));
+            label.add_css_class("kalam-authorpage-initials-text");
+            label.set_halign(gtk::Align::Center);
+            label.set_valign(gtk::Align::Center);
+            label.set_vexpand(true);
+            disc.append(&label);
+            disc.upcast()
+        }
+    };
+    portrait.set_valign(gtk::Align::Start);
+    top.append(&portrait);
+
+    let birth = profile.and_then(|p| parse_year(&p.birth_date));
+    let death = profile.and_then(|p| parse_year(&p.death_date));
+    match (birth, death) {
+        (Some(b), Some(d)) => top.append(&lifespan_block(&format!("{b}–{d}"))),
+        (Some(b), None) => top.append(&lifespan_block(&format!("Born {b}"))),
+        (None, Some(d)) => top.append(&lifespan_block(&format!("Died {d}"))),
+        (None, None) => {
+            let none = gtk::Label::new(Some("No details yet"));
+            none.add_css_class("kalam-ui-meta");
+            none.set_halign(gtk::Align::Start);
+            none.set_valign(gtk::Align::Center);
+            none.set_vexpand(true);
+            top.append(&none);
+        }
+    }
+    panel.append(&top);
+
+    let owned = snap.owned_books.len();
+    let total: usize = snap.groups.iter().map(|g| g.entries.len()).sum();
+    let works_value = if bib {
+        format!("{total} · {owned} in your library")
+    } else {
+        format!("{owned} in your library")
+    };
+    panel.append(&fact_row("Works", &works_value, None));
+
+    let series_groups: Vec<&AuthorGroupSnapshot> = snap
+        .groups
+        .iter()
+        .filter(|g| g.series.is_some())
+        .collect();
+    if bib && !series_groups.is_empty() {
+        let in_library = series_groups
+            .iter()
+            .filter(|g| g.entries.iter().any(|e| e.book.is_some()))
+            .count();
+        panel.append(&fact_row(
+            "Series",
+            &format!("{} · {in_library} in your library", series_groups.len()),
+            None,
+        ));
+    }
+
+    let read = snap
+        .owned_books
+        .iter()
+        .filter(|book| is_read(book, &snap.finished))
+        .count();
+    let segments: Vec<SegmentState> = snap
+        .owned_books
+        .iter()
+        .map(|book| book_segment(book, &snap.finished))
+        .collect();
+    let bar = if segments.is_empty() {
+        None
+    } else {
+        Some(segmented_progress(&segments, 300))
+    };
+    panel.append(&fact_row("You've read", &format!("{read} of {owned}"), bar));
+
+    panel
+}
+
+fn lifespan_block(value: &str) -> gtk::Box {
+    let block = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    block.set_valign(gtk::Align::Center);
+    block.set_vexpand(true);
+    let key = gtk::Label::new(Some("LIFESPAN"));
+    key.add_css_class("kalam-ui-label");
+    key.set_halign(gtk::Align::Start);
+    block.append(&key);
+    let val = gtk::Label::new(Some(value));
+    val.add_css_class("kalam-authorpage-lifespan");
+    val.set_halign(gtk::Align::Start);
+    block.append(&val);
+    block
+}
+
+fn fact_row(key: &str, value: &str, bar: Option<gtk::Box>) -> gtk::Box {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let rule = hairline();
+    rule.set_margin_top(14);
+    wrap.append(&rule);
+
+    let row = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    row.set_margin_top(14);
+    let key_label = gtk::Label::new(Some(&key.to_uppercase()));
+    key_label.add_css_class("kalam-ui-label");
+    key_label.set_halign(gtk::Align::Start);
+    key_label.set_xalign(0.0);
+    row.append(&key_label);
+
+    let value_label = gtk::Label::new(Some(value));
+    value_label.add_css_class("kalam-authorpage-fact-value");
+    value_label.set_halign(gtk::Align::Start);
+    value_label.set_xalign(0.0);
+    row.append(&value_label);
+
+    if let Some(bar) = bar {
+        bar.set_margin_top(8);
+        bar.set_halign(gtk::Align::Start);
+        row.append(&bar);
+    }
+    wrap.append(&row);
+    wrap
+}
+
+/// §26 series card: title, segmented bar, Meta line, cover fan, chevron.
+fn series_card(
+    index: usize,
+    group: &AuthorGroupSnapshot,
+    bib: bool,
+    in_library: bool,
+    open: bool,
+    snap: &AuthorPageSnapshot,
+    sender: &ComponentSender<AuthorPageModel>,
+) -> gtk::Button {
+    let button = gtk::Button::new();
+    button.add_css_class("kalam-authorpage-card");
+    if open {
+        button.add_css_class("open");
+    }
+    button.set_size_request(-1, 124);
+    button.set_hexpand(true);
+    button.set_can_focus(true);
+
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
+    row.set_valign(gtk::Align::Center);
+
+    let info = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    info.set_valign(gtk::Align::Center);
+    info.set_hexpand(true);
+
+    let title = gtk::Label::new(Some(&group.title));
+    title.add_css_class("kalam-ui-card-title");
+    title.set_halign(gtk::Align::Start);
+    title.set_xalign(0.0);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_max_width_chars(34);
+    info.append(&title);
+
+    let segments: Vec<SegmentState> = group
+        .entries
+        .iter()
+        .map(|entry| entry_segment(entry, &snap.finished))
+        .collect();
+    let bar = segmented_progress(&segments, 220);
+    bar.set_margin_top(10);
+    bar.set_halign(gtk::Align::Start);
+    info.append(&bar);
+
+    let owned = group.entries.iter().filter(|e| e.book.is_some()).count();
+    let total = group.entries.len();
+    let read = group
+        .entries
+        .iter()
+        .filter_map(|e| e.book.as_ref())
+        .filter(|book| is_read(book, &snap.finished))
+        .count();
+    let mut meta = if bib {
+        format!("{owned} of {total} owned")
+    } else {
+        format!("{owned} owned")
+    };
+    if in_library {
+        meta.push_str(&format!(" · {read} read"));
+    }
+    if let Some(years) = year_range_text(&group.entries) {
+        meta.push_str(&format!(" · {years}"));
+    }
+    let meta_label = gtk::Label::new(Some(&meta));
+    meta_label.add_css_class("kalam-ui-meta");
+    meta_label.set_halign(gtk::Align::Start);
+    meta_label.set_xalign(0.0);
+    meta_label.set_margin_top(8);
+    meta_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    info.append(&meta_label);
+    row.append(&info);
+
+    row.append(&cover_fan(group, snap));
+
+    let chevron = gtk::Image::from_icon_name(if open {
+        "go-up-symbolic"
+    } else {
+        "go-down-symbolic"
+    });
+    chevron.set_pixel_size(20);
+    chevron.add_css_class("kalam-authorpage-chevron");
+    chevron.set_valign(gtk::Align::Center);
+    row.append(&chevron);
+
+    button.set_child(Some(&row));
+    let action = if open {
+        format!("Close {}", group.title)
+    } else {
+        format!("Open {}", group.title)
+    };
+    button.set_tooltip_text(Some(&action));
+    set_accessible_label(&button, &action);
+    let s = sender.clone();
+    button.connect_clicked(move |_| {
+        s.input(AuthorPageMsg::ToggleGroup(index));
+    });
+    button
+}
+
+/// Three 56×84 covers overlapped by 22, first on top, no rotation (§26).
+fn cover_fan(group: &AuthorGroupSnapshot, snap: &AuthorPageSnapshot) -> gtk::Overlay {
+    let fan = gtk::Overlay::new();
+    fan.set_size_request(100, FAN_H);
+    fan.set_halign(gtk::Align::Start);
+    fan.set_valign(gtk::Align::Center);
+    fan.set_hexpand(false);
+
+    let entries: Vec<&AuthorEntrySnapshot> = group.entries.iter().take(3).collect();
+    if entries.is_empty() {
+        return fan;
+    }
+    // Overlay children paint above the main child in add order, so lay
+    // the fan back-to-front: last cover as the child, first on top.
+    let make = |entry: &AuthorEntrySnapshot, offset: i32| -> gtk::Widget {
+        let widget = match &entry.book {
+            Some(book) => book_cover(
+                book,
+                FAN_W,
+                FAN_H,
+                false,
+                CoverAvailability::Available,
+                true,
+            ),
+            None => missing_cover(&entry.title, FAN_W, FAN_H).upcast(),
+        };
+        widget.add_css_class("kalam-authorpage-fan-cover");
+        widget.set_halign(gtk::Align::Start);
+        widget.set_valign(gtk::Align::Start);
+        widget.set_margin_start(offset);
+        widget.set_size_request(FAN_W, FAN_H);
+        widget
+    };
+    let _ = snap;
+    let last = entries.len() - 1;
+    fan.set_child(Some(&make(entries[last], 22 * last as i32)));
+    for i in (0..last).rev() {
+        fan.add_overlay(&make(entries[i], 22 * i as i32));
+    }
+    fan
+}
+
+/// One cover column in the open-series panel (§27).
+fn panel_entry_column(
+    entry: &AuthorEntrySnapshot,
+    group: &AuthorGroupSnapshot,
+    snap: &AuthorPageSnapshot,
+    sender: &ComponentSender<AuthorPageModel>,
+) -> gtk::Box {
+    let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    column.set_size_request(PANEL_COVER_W, -1);
+    column.set_hexpand(false);
+    column.set_valign(gtk::Align::Start);
+
+    match &entry.book {
+        Some(book) => {
+            let finished = is_read(book, &snap.finished);
+            let button = gtk::Button::new();
+            button.add_css_class("kalam-authorpage-panel-cover");
+            button.set_size_request(PANEL_COVER_W, PANEL_COVER_H);
+            button.set_halign(gtk::Align::Start);
+            button.set_can_focus(true);
+            button.set_child(Some(&book_cover(
+                book,
+                PANEL_COVER_W,
+                PANEL_COVER_H,
+                finished,
+                CoverAvailability::Available,
+                true,
+            )));
+            let tip = format!("Open {}", book.title);
+            button.set_tooltip_text(Some(&tip));
+            set_accessible_label(&button, &tip);
+            let book_id = book.id;
+            let comic_name = if is_comic(book) {
+                book.series
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| group.title.clone())
+            } else {
+                String::new()
+            };
+            let comic = is_comic(book);
+            let s = sender.clone();
+            button.connect_clicked(move |_| {
+                if comic {
+                    s.output(AuthorPageOut::ComicSeries {
+                        series_name: comic_name.clone(),
+                    })
+                    .ok();
+                } else {
+                    s.output(AuthorPageOut::OpenBook { book_id }).ok();
+                }
+            });
+            column.append(&button);
+
+            let progress_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            progress_host.set_size_request(PANEL_COVER_W, 3);
+            progress_host.set_margin_top(10);
+            if entry_state(entry, &snap.finished) == EntryState::InProgress {
+                let bar = linear_progress(f64::from(book.progress) / 100.0);
+                bar.set_size_request(PANEL_COVER_W, 3);
+                bar.set_hexpand(false);
+                progress_host.append(&bar);
+            }
+            column.append(&progress_host);
+        }
+        None => {
+            let missing = missing_cover_with_disabled_fetch(
+                &entry.title,
+                PANEL_COVER_W,
+                PANEL_COVER_H,
+            );
+            missing.add_css_class("kalam-authorpage-panel-missing");
+            column.append(&missing);
+
+            let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            spacer.set_size_request(PANEL_COVER_W, 3);
+            spacer.set_margin_top(10);
+            column.append(&spacer);
+        }
+    }
+
+    let title = gtk::Label::new(Some(&entry.title));
+    title.add_css_class("kalam-authorpage-panel-title");
+    title.set_halign(gtk::Align::Start);
+    title.set_xalign(0.0);
+    title.set_wrap(true);
+    title.set_lines(2);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_max_width_chars(21);
+    title.set_margin_top(8);
+    column.append(&title);
+
+    if let Some(year) = entry.year {
+        let year_label = gtk::Label::new(Some(&year.to_string()));
+        year_label.add_css_class("kalam-ui-meta");
+        year_label.set_halign(gtk::Align::Start);
+        column.append(&year_label);
+    }
+
+    column
+}
+
+/// §29 highlight card: header (book title, colour dot, chapter/date),
+/// hairline, cover + four-line quote.
+fn highlight_card(
+    anno: &Annotation,
+    book: &Book,
+    snap: &AuthorPageSnapshot,
+    sender: &ComponentSender<AuthorPageModel>,
+) -> gtk::Button {
+    let button = gtk::Button::new();
+    button.add_css_class("kalam-authorpage-hl-card");
+    button.set_size_request(420, -1);
+    button.set_hexpand(false);
+    button.set_valign(gtk::Align::Start);
+    button.set_can_focus(true);
+
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    card.set_size_request(420, -1);
+
+    let head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    head.add_css_class("kalam-authorpage-hl-head");
+
+    let head_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    head_text.set_hexpand(true);
+    let title = gtk::Label::new(Some(&book.title));
+    title.add_css_class("kalam-ui-card-title");
+    title.set_halign(gtk::Align::Start);
+    title.set_xalign(0.0);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_max_width_chars(40);
+    head_text.append(&title);
+
+    let chapter = anno.chapter_index.max(0) + 1;
+    let day = anno
+        .created_at
+        .get(..10)
+        .map(pretty_day)
+        .unwrap_or_else(|| anno.created_at.clone());
+    let meta = gtk::Label::new(Some(&format!("Chapter {chapter} · Saved {day}")));
+    meta.add_css_class("kalam-ui-meta");
+    meta.set_halign(gtk::Align::Start);
+    meta.set_xalign(0.0);
+    head_text.append(&meta);
+    head.append(&head_text);
+
+    let dot = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    dot.add_css_class("kalam-authorpage-hl-dot");
+    dot.add_css_class(hl_color_class(&anno.color));
+    dot.set_size_request(10, 10);
+    dot.set_valign(gtk::Align::Start);
+    dot.set_halign(gtk::Align::End);
+    head.append(&dot);
+    card.append(&head);
+
+    card.append(&hairline());
+
+    let body = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    body.add_css_class("kalam-authorpage-hl-body");
+    body.set_valign(gtk::Align::Start);
+
+    let cover = book_cover(
+        book,
+        HL_COVER_W,
+        HL_COVER_H,
+        false,
+        CoverAvailability::Available,
+        true,
+    );
+    let cover_wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    cover_wrap.add_css_class("kalam-authorpage-hl-cover");
+    cover_wrap.set_size_request(HL_COVER_W, HL_COVER_H);
+    cover_wrap.append(&cover);
+    body.append(&cover_wrap);
+
+    let quote = gtk::Label::new(Some(anno.text_excerpt.trim()));
+    quote.add_css_class("kalam-authorpage-hl-quote");
+    quote.set_halign(gtk::Align::Start);
+    quote.set_xalign(0.0);
+    quote.set_wrap(true);
+    quote.set_lines(4);
+    quote.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    quote.set_max_width_chars(44);
+    quote.set_valign(gtk::Align::Start);
+    body.append(&quote);
+    card.append(&body);
+
+    button.set_child(Some(&card));
+    let tip = format!("Open {} at this highlight", book.title);
+    button.set_tooltip_text(Some(&tip));
+    set_accessible_label(&button, &tip);
+    let _ = snap;
+    let book_id = book.id;
+    let chapter = anno.chapter_index.max(0) as usize;
+    let s = sender.clone();
+    button.connect_clicked(move |_| {
+        s.output(AuthorPageOut::OpenReaderAt { book_id, chapter })
+            .ok();
+    });
+    button
+}
+
+fn export_highlights(model: &AuthorPageModel) {
+    let Some(snap) = &model.snapshot else { return };
+    let highlights = highlights_of(snap);
+    if highlights.is_empty() {
+        crate::notify::info("No highlights to export", "This author has no highlights yet.");
+        return;
+    }
+    let name = display_name(model);
+    let books: HashMap<i64, &Book> = snap.owned_books.iter().map(|b| (b.id, b)).collect();
+
+    let mut by_book: Vec<(String, Vec<&Annotation>)> = Vec::new();
+    let mut index: HashMap<i64, usize> = HashMap::new();
+    for anno in highlights {
+        let title = books
+            .get(&anno.book_id)
+            .map(|book| book.title.clone())
+            .unwrap_or_else(|| "Unknown book".to_string());
+        let slot = *index.entry(anno.book_id).or_insert_with(|| {
+            by_book.push((title, Vec::new()));
+            by_book.len() - 1
+        });
+        by_book[slot].1.push(anno);
+    }
+
+    let count: usize = by_book.iter().map(|(_, items)| items.len()).sum();
+    let mut md = format!("# Highlights — {name}\n");
+    for (title, items) in &by_book {
+        md.push_str(&format!("\n## {title}\n"));
+        for anno in items {
+            let excerpt = anno
+                .text_excerpt
+                .trim()
+                .replace("\r\n", "\n")
+                .replace('\n', " ");
+            md.push_str(&format!("\n- > {excerpt}\n"));
+            let chapter = anno.chapter_index.max(0) + 1;
+            let day = anno
+                .created_at
+                .get(..10)
+                .map(pretty_day)
+                .unwrap_or_else(|| anno.created_at.clone());
+            md.push_str(&format!("  — Chapter {chapter} · Saved {day}\n"));
+            let note = anno.note.trim();
+            if !note.is_empty() {
+                md.push_str(&format!("  - Note: {}\n", note.replace('\n', " ")));
+            }
+        }
+    }
+
+    let safe_name: String = name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
+        .collect::<String>()
+        .trim()
+        .to_string();
+    let safe_name = if safe_name.is_empty() {
+        "Author".to_string()
+    } else {
+        safe_name
+    };
+    let out_path = crate::paths::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(format!("Kalam-Highlights-{safe_name}.md"));
+    let out_done = out_path.clone();
+    crate::tasks::spawn(
+        "Exporting highlights",
+        move |_| std::fs::write(&out_path, md).map_err(|e| e.to_string()),
+        |_| {},
+        move |res| match res {
+            Ok(()) => crate::notify::success(
+                &format!(
+                    "{count} highlight{} exported",
+                    if count == 1 { "" } else { "s" }
+                ),
+                &out_done.display().to_string(),
+            ),
+            Err(err) => crate::notify::error("Could not export highlights", &err),
+        },
+    );
 }
 
 /// Ask the worker for the page's data (7.1 step 2c): profile, owned books
@@ -321,776 +1710,795 @@ fn request_snapshot(
 
 /// Decode, off the UI thread, every cover the fill will show on it.
 ///
-/// The sizes are the fill's own card sizes; if a card size changes,
-/// this list must change with it — a drift does not break anything,
-/// it just puts the fill's synchronous decode back on the UI thread,
-/// visible again as a slow `author_fill` line.
+/// The sizes are the fill's own sizes; if a size changes, this list must
+/// change with it — a drift does not break anything, it just puts the
+/// fill's synchronous decode back on the UI thread, visible again as a
+/// slow `author_fill` line. Panel covers (180×270) warm on panel open
+/// instead: most page views never open one.
 fn warm_author_covers(snap: &AuthorPageSnapshot) -> Vec<crate::preload::DecodedCover> {
     let mut covers = Vec::new();
-    let mut want = |path: Option<&Path>, w: i32, h: i32| {
+    let mut seen: HashSet<(std::path::PathBuf, i32, i32)> = HashSet::new();
+    let mut want = |path: Option<&Path>, w: i32, h: i32, covers: &mut Vec<crate::preload::DecodedCover>| {
         let Some(path) = path else { return };
+        if !seen.insert((path.to_path_buf(), w, h)) {
+            return;
+        }
         if let Some(d) = crate::preload::decode_for_cache(path, w, h) {
             covers.push(d);
         }
     };
+
     if let Some(profile) = &snap.profile {
-        // The photo (220×220) and the works' group covers (136×204):
-        // authors-dir files, no thumbnails — the fill's old weight.
-        want(profile.photo_path.as_deref(), 220, 220);
-        for work in &profile.works {
-            want(work_cover_path(work).as_deref(), 136, 204);
+        want(profile.photo_path.as_deref(), PORTRAIT, PORTRAIT, &mut covers);
+    }
+    // The cards' fans: the first three covers of every group.
+    for group in &snap.groups {
+        for entry in group.entries.iter().take(3) {
+            if let Some(book) = &entry.book {
+                want(book.cover_path.as_deref(), FAN_W, FAN_H, &mut covers);
+            }
         }
     }
-    // The series strip's first-book covers (72×112) and the owned
-    // books' cards (COVER_W×COVER_H — the deferred path; warmed here,
-    // they paint immediately instead of through the placeholder swap).
-    for entry in &snap.series {
-        want(
-            entry.owned.first().and_then(|b| b.cover_path.as_deref()),
-            72,
-            112,
-        );
-    }
-    for book in &snap.owned_books {
-        want(book.cover_path.as_deref(), COVER_W, COVER_H);
+    // The highlights row's book covers.
+    let books: HashMap<i64, &Book> = snap.owned_books.iter().map(|b| (b.id, b)).collect();
+    for anno in highlights_of(snap) {
+        if let Some(book) = books.get(&anno.book_id) {
+            want(book.cover_path.as_deref(), HL_COVER_W, HL_COVER_H, &mut covers);
+        }
     }
     covers
 }
 
-fn spawn_author_fetch(
-    catalog: Arc<Catalog>,
-    author_name: String,
-    owned_books: Vec<Book>,
-    sender: &ComponentSender<AuthorPageModel>,
-) {
+fn spawn_author_fetch(model: &AuthorPageModel, sender: &ComponentSender<AuthorPageModel>) {
     // A0 step 4. The old version posted straight into the input sender from
     // the worker, which happens to be safe (relm4 senders are `Send`) but left
     // the page with no way to be told to stop. Going through the seam means
     // this fetch is registered and gets cancelled with everything else when
     // the window closes.
+    let catalog = model.service.catalog().clone();
+    let author_name = model.requested_name.clone();
+    let owned_books = model
+        .snapshot
+        .as_ref()
+        .map(|snap| snap.owned_books.clone())
+        .unwrap_or_default();
     let tx = sender.input_sender().clone();
     crate::tasks::spawn(
-        "Fetching author photo",
-        move |_reporter| {
-            let result = author::fetch_and_cache_author(&catalog, &author_name, &owned_books);
-            // The handler swaps the new profile in and fills the page the
-            // moment this lands — before the re-snapshot it also asks for
-            // can arrive. Warm the new photo here (220×220, the hero's
-            // size) so that fill takes its "already decoded" branch too.
-            let photo = match &result {
-                Ok(profile) => profile
-                    .photo_path
-                    .as_deref()
-                    .and_then(|p| crate::preload::decode_for_cache(p, 220, 220)),
-                Err(_) => None,
-            };
-            AuthorFetchLoad { result, photo }
-        },
+        "Fetching author info",
+        move |_reporter| author::fetch_and_cache_author(&catalog, &author_name, &owned_books),
         |_update| {},
-        move |load| {
-            if let Some(photo) = &load.photo {
-                cache_decoded_cover(photo);
-            }
-            let _ = tx.send(AuthorPageMsg::Fetched(Box::new(load.result)));
+        move |result| {
+            let _ = tx.send(AuthorPageMsg::Fetched(Box::new(result)));
         },
     );
 }
 
-/// The fetch result plus the photo its worker decoded for the immediate
-/// fill (see `spawn_author_fetch`); the profile itself still rides the
-/// `Fetched` message unchanged.
-struct AuthorFetchLoad {
-    result: Result<AuthorProfile, String>,
-    photo: Option<crate::preload::DecodedCover>,
-}
+// ---------------------------------------------------------------------------
+// Create shelf dialog (§31, decision 113)
+// ---------------------------------------------------------------------------
 
-fn fill_author_page(
-    widgets: &mut AuthorPageModelWidgets,
+fn present_create_shelf_dialog(
+    anchor: &gtk::Overlay,
     model: &AuthorPageModel,
     sender: &ComponentSender<AuthorPageModel>,
 ) {
-    // The same attribution pair the other migrated pages use: a timing
-    // span for KALAM_TIMING=1 and an activity label so a stall during
-    // this build says "while author_fill" (7.1 step 2c).
-    let _t = crate::timing::measure("author_fill");
-    let _a = crate::timing::activity("author_fill");
-    rebuild_hero(&widgets.hero_main, &widgets.hero_side, model, sender);
-    rebuild_series(&widgets.series_host, model);
-    rebuild_owned_books(&widgets.owned_host, &model.owned_books, sender);
-    rebuild_works(&widgets.works_host, model);
-}
+    let Some(snap) = &model.snapshot else { return };
+    let author = display_name(model);
+    let requested_name = model.requested_name.clone();
+    let owned_ids: Vec<i64> = snap.owned_books.iter().map(|b| b.id).collect();
+    let service = model.service.clone();
 
-fn rebuild_hero(
-    main_host: &gtk::Box,
-    side_host: &gtk::Box,
-    model: &AuthorPageModel,
-    sender: &ComponentSender<AuthorPageModel>,
-) {
-    clear_box(main_host);
-    clear_box(side_host);
+    let ruleset = RuleSet {
+        match_mode: "all".to_string(),
+        rules: vec![Rule::new(RuleField::Author, RuleOp::Is, author.clone())],
+    };
+    let smart_count = service
+        .catalog()
+        .count_matching_rules(&ruleset)
+        .unwrap_or(owned_ids.len());
+    let owned_count = owned_ids.len();
 
-    let display_name = model
-        .profile
-        .as_ref()
-        .map(|profile| profile.canonical_name.clone())
-        .unwrap_or_else(|| display_author_name(&model.requested_name));
+    let shell = dialog_shell(DialogSize::Form, Some(&format!("for {author}")));
 
-    let title = gtk::Label::new(Some(&display_name));
-    title.add_css_class("kalam-author-name");
-    title.set_halign(gtk::Align::Start);
-    title.set_wrap(true);
-    title.set_xalign(0.0);
-    main_host.append(&title);
+    let name_field = text_field("Name", &author, &author);
+    name_field.entry().set_sensitive(false);
+    shell.body().append(&name_field.widget());
 
-    let facts = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    facts.add_css_class("kalam-author-facts");
-    for (label, value) in hero_fact_rows(model, &display_name) {
-        facts.append(&fact_row(&label, &value));
-    }
-    main_host.append(&facts);
+    // "Name the shelf after the author": on = the field is disabled and
+    // the shelf follows a future author rename (recorded in the pref).
+    let switch_row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    switch_row.set_margin_top(16);
+    let switch_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    switch_text.set_hexpand(true);
+    let switch_label = gtk::Label::new(Some("Name the shelf after the author"));
+    switch_label.add_css_class("kalam-ui-body");
+    switch_label.set_halign(gtk::Align::Start);
+    switch_label.set_xalign(0.0);
+    switch_text.append(&switch_label);
+    let switch_caption = gtk::Label::new(Some("Renamed automatically if the author is renamed."));
+    switch_caption.add_css_class("kalam-ui-meta");
+    switch_caption.set_halign(gtk::Align::Start);
+    switch_caption.set_xalign(0.0);
+    switch_text.append(&switch_caption);
+    switch_row.append(&switch_text);
 
-    let bio = model
-        .profile
-        .as_ref()
-        .map(|profile| profile.bio.trim())
-        .filter(|bio| !bio.is_empty())
-        .unwrap_or("No bio has been loaded yet for this author.");
-    let bio_label = gtk::Label::new(Some(bio));
-    bio_label.add_css_class("kalam-author-bio");
-    bio_label.set_halign(gtk::Align::Start);
-    bio_label.set_wrap(true);
-    bio_label.set_xalign(0.0);
-    main_host.append(&bio_label);
-
-    if let Some(err) = &model.error {
-        let error = gtk::Label::new(Some(err));
-        error.add_css_class("kalam-error-text");
-        error.set_halign(gtk::Align::Start);
-        error.set_wrap(true);
-        error.set_xalign(0.0);
-        main_host.append(&error);
-    }
-
-    side_host.append(&author_photo_overlay(model, sender));
-    side_host.append(&author_stats(model));
-}
-
-fn rebuild_series(host: &gtk::Box, model: &AuthorPageModel) {
-    clear_box(host);
-    if model.series.is_empty() {
-        host.append(&simple_note(
-            "No series showed up from the books you already own by this author.",
-        ));
-        return;
-    }
-
-    let flow = gtk::FlowBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .column_spacing(14)
-        .row_spacing(14)
-        .halign(gtk::Align::Start)
-        .build();
-
-    for entry in &model.series {
-        flow.insert(&series_card(entry, model.profile.as_ref()), -1);
-    }
-
-    host.append(&flow);
-}
-
-fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender<AuthorPageModel>) {
-    clear_box(host);
-    if books.is_empty() {
-        host.append(&simple_note(
-            "No books by this author are in your library yet.",
-        ));
-        return;
-    }
-
-    let mut books = books.to_vec();
-    books.sort_by(|a, b| {
-        a.series
-            .as_deref()
-            .unwrap_or("")
-            .cmp(b.series.as_deref().unwrap_or(""))
-            .then_with(|| {
-                a.series_index
-                    .partial_cmp(&b.series_index)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .then_with(|| a.title.cmp(&b.title))
+    let follow_switch = gtk::Switch::new();
+    follow_switch.set_active(true);
+    follow_switch.set_valign(gtk::Align::Center);
+    set_accessible_label(&follow_switch, "Name the shelf after the author");
+    let field_for_switch = name_field.entry();
+    let author_for_switch = author.clone();
+    follow_switch.connect_active_notify(move |sw| {
+        let on = sw.is_active();
+        field_for_switch.set_sensitive(!on);
+        if on {
+            field_for_switch.set_text(&author_for_switch);
+        }
     });
+    switch_row.append(&follow_switch);
+    shell.body().append(&switch_row);
 
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
-    row.add_css_class("kalam-author-books-strip");
-    row.set_halign(gtk::Align::Start);
+    let smart = Rc::new(Cell::new(true));
+    let explanation = gtk::Label::new(None);
+    explanation.add_css_class("kalam-ui-meta");
+    explanation.set_halign(gtk::Align::Start);
+    explanation.set_xalign(0.0);
+    explanation.set_wrap(true);
+    explanation.set_max_width_chars(52);
+    explanation.set_margin_top(8);
+    let smart_text = format!(
+        "Books by {author} join automatically, including future imports. {smart_count} book{} match now.",
+        if smart_count == 1 { "" } else { "s" }
+    );
+    let manual_text = format!(
+        "Adds the {owned_count} book{} you own now. New books are not added automatically.",
+        if owned_count == 1 { "" } else { "s" }
+    );
+    explanation.set_text(&smart_text);
 
-    for book in &books {
-        let book_id = book.id;
-        // Comic cards open the series page — the same rule every list obeys.
-        let comic_series = if matches!(
-            book.format,
-            crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
-        ) {
-            book.series.clone()
-        } else {
-            None
-        };
-        let full_sender = sender.clone();
-        let float_sender = sender.clone();
-        row.append(&build_book_card(
-            book,
-            crate::widgets::book_row::CLICK_HINT_LIBRARY,
-            move || {
-                if let Some(ser) = comic_series.as_ref() {
-                    full_sender
-                        .output(AuthorPageOut::ComicSeries {
-                            series_name: ser.clone(),
-                        })
-                        .ok();
-                    return;
-                }
-                full_sender.output(AuthorPageOut::OpenBook { book_id }).ok();
-            },
-            move || {
-                float_sender
-                    .output(AuthorPageOut::OpenBookDialog { book_id })
-                    .ok();
-            },
-        ));
-    }
+    let type_caption = gtk::Label::new(Some("TYPE"));
+    type_caption.add_css_class("kalam-ui-field-label");
+    type_caption.set_halign(gtk::Align::Start);
+    type_caption.set_margin_top(16);
+    shell.body().append(&type_caption);
 
-    // These cards defer their cover decode, so nothing fills them without
-    // this. (`build_book_grid` does it for pages that use the grid; this page
-    // builds its strip by hand.)
-    crate::preload::warm_books(
-        &books,
+    let explanation_for_seg = explanation.clone();
+    let smart_for_seg = smart.clone();
+    let type_switch = segmented_control(
+        &["Smart", "Manual"],
         0,
-        crate::widgets::book_row::COVER_W,
-        crate::widgets::book_row::COVER_H,
+        SegmentedSize::Small,
+        move |index| {
+            let is_smart = index == 0;
+            smart_for_seg.set(is_smart);
+            explanation_for_seg.set_text(if is_smart {
+                &smart_text
+            } else {
+                &manual_text
+            });
+        },
     );
+    let type_widget = type_switch.widget();
+    type_widget.set_halign(gtk::Align::Start);
+    type_widget.set_margin_top(6);
+    shell.body().append(&type_widget);
+    shell.body().append(&explanation);
 
-    let rail = gtk::ScrolledWindow::new();
-    rail.add_css_class("kalam-author-books-rail");
-    rail.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
-    rail.set_hexpand(true);
-    rail.set_vexpand(false);
-    rail.set_child(Some(&row));
-    host.append(&rail);
-}
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    let slot_for_cancel = slot.clone();
+    shell.footer().append(&ghost_button("Cancel", move || {
+        if let Some(dialog) = slot_for_cancel.borrow().clone() {
+            dialog.close();
+        }
+    }));
 
-fn rebuild_works(host: &gtk::Box, model: &AuthorPageModel) {
-    clear_box(host);
-    if model.profile.is_none() {
-        let text = if model.loading {
-            "Loading more books by this author…"
+    let slot_for_create = slot.clone();
+    let s = sender.input_sender().clone();
+    shell.footer().append(&primary_button("Create shelf", move || {
+        let follow = follow_switch.is_active();
+        let name = if follow {
+            author.clone()
         } else {
-            "No online author data has been loaded yet."
+            name_field.value().trim().to_string()
         };
-        host.append(&simple_note(text));
-        return;
-    }
-
-    let groups = more_work_groups(model);
-    if groups.is_empty() {
-        host.append(&simple_note(
-            "No extra books are ready to show yet, or you already own the fetched ones.",
-        ));
-        return;
-    }
-
-    let flow = gtk::FlowBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .column_spacing(16)
-        .row_spacing(16)
-        .halign(gtk::Align::Start)
-        .build();
-
-    for group in groups {
-        flow.insert(&work_group_card(&group), -1);
-    }
-
-    host.append(&flow);
-}
-
-fn hero_fact_rows(model: &AuthorPageModel, display_name: &str) -> Vec<(String, String)> {
-    let mut rows = vec![("Name".to_string(), display_name.to_string())];
-
-    if let Some(profile) = &model.profile {
-        if !profile.birth_date.trim().is_empty() {
-            rows.push((
-                "Date of birth".to_string(),
-                profile.birth_date.trim().to_string(),
-            ));
+        if name.is_empty() {
+            crate::notify::error("Name the shelf", "The shelf needs a name first.");
+            return;
         }
-        if !profile.death_date.trim().is_empty() {
-            rows.push((
-                "Date of death".to_string(),
-                profile.death_date.trim().to_string(),
-            ));
+        let catalog = service.catalog();
+        match catalog.shelf_name_taken(&name, None) {
+            Ok(true) => {
+                crate::notify::error(
+                    "That shelf name is taken",
+                    "Pick a different name for this shelf.",
+                );
+                return;
+            }
+            Ok(false) => {}
+            Err(err) => {
+                crate::notify::error("Could not check the shelf name", &err.to_string());
+                return;
+            }
         }
-        if profile.work_count > 0 {
-            rows.push(("Works found".to_string(), profile.work_count.to_string()));
+        let created = if smart.get() {
+            catalog.create_shelf(&name, ShelfKind::Smart, "", &ruleset.to_json())
+        } else {
+            catalog.create_shelf(&name, ShelfKind::Manual, "", "")
+        };
+        let shelf_id = match created {
+            Ok(id) => id,
+            Err(err) => {
+                crate::notify::error("Could not create the shelf", &err.to_string());
+                return;
+            }
+        };
+        if !smart.get() {
+            for book_id in &owned_ids {
+                let _ = catalog.add_book_to_shelf(shelf_id, *book_id);
+            }
         }
-        let aliases = profile
-            .aliases
-            .iter()
-            .filter(|name| normalize_key(name) != normalize_key(display_name))
-            .take(3)
-            .cloned()
-            .collect::<Vec<_>>();
-        if !aliases.is_empty() {
-            rows.push(("Also written as".to_string(), aliases.join(" · ")));
+        catalog.set_pref(
+            &format!(
+                "{AUTHOR_SHELF_PREF_PREFIX}{}",
+                crate::author::normalize_author_name(&requested_name)
+            ),
+            &format!("{shelf_id}{}", if follow { ":linked" } else { "" }),
+        );
+        crate::notify::success("Shelf created", &name);
+        if let Some(dialog) = slot_for_create.borrow().clone() {
+            dialog.close();
         }
-        if !profile.fetched_at.trim().is_empty() {
-            rows.push((
-                "Last updated".to_string(),
-                profile
-                    .fetched_at
-                    .split('T')
-                    .next()
-                    .unwrap_or(profile.fetched_at.as_str())
-                    .to_string(),
-            ));
-        }
-    }
+        let _ = s.send(AuthorPageMsg::Refresh);
+    }));
 
-    if model.loading {
-        rows.push(("Status".to_string(), "Loading author info…".to_string()));
-    }
-
-    rows
-}
-
-fn fact_row(label: &str, value: &str) -> gtk::Box {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    row.add_css_class("kalam-author-fact-row");
-
-    let key = gtk::Label::new(Some(label));
-    key.add_css_class("kalam-author-fact-key");
-    key.set_halign(gtk::Align::Start);
-    key.set_valign(gtk::Align::Start);
-    key.set_xalign(0.0);
-    row.append(&key);
-
-    let val = gtk::Label::new(Some(value));
-    val.add_css_class("kalam-author-fact-val");
-    val.set_halign(gtk::Align::Start);
-    val.set_wrap(true);
-    val.set_xalign(0.0);
-    row.append(&val);
-
-    row
-}
-
-fn author_photo_overlay(
-    model: &AuthorPageModel,
-    sender: &ComponentSender<AuthorPageModel>,
-) -> gtk::Overlay {
-    let overlay = gtk::Overlay::new();
-    overlay.add_css_class("kalam-author-photo-wrap");
-    overlay.set_halign(gtk::Align::Center);
-    overlay.set_child(Some(&author_photo(model)));
-
-    let refresh = gtk::Button::new();
-    refresh.add_css_class("kalam-author-photo-refresh");
-    refresh.set_tooltip_text(Some("Refresh author info"));
-    refresh.set_halign(gtk::Align::End);
-    refresh.set_valign(gtk::Align::End);
-    refresh.set_sensitive(!model.loading);
-    let icon = gtk::Image::from_icon_name("view-refresh-symbolic");
-    refresh.set_child(Some(&icon));
-    let tx = sender.input_sender().clone();
-    refresh.connect_clicked(move |_| {
-        let _ = tx.send(AuthorPageMsg::Refresh);
-    });
-    overlay.add_overlay(&refresh);
-
-    overlay
-}
-
-fn author_stats(model: &AuthorPageModel) -> gtk::Grid {
-    let (owned, finished, reading) = status_counts(&model.owned_books);
-    let unread = owned.saturating_sub(finished + reading);
-
-    let grid = gtk::Grid::new();
-    grid.add_css_class("kalam-author-stats-grid");
-    grid.set_row_spacing(10);
-    grid.set_column_spacing(10);
-    grid.set_halign(gtk::Align::Center);
-
-    for (idx, (label, value, css)) in [
-        ("Owned", owned.to_string(), "kalam-author-stat-owned"),
-        (
-            "Finished",
-            finished.to_string(),
-            "kalam-author-stat-finished",
+    match present_dialog(anchor, "Create shelf", DialogExit::OwnButtons, &shell) {
+        Some(dialog) => *slot.borrow_mut() = Some(dialog),
+        None => crate::notify::error(
+            "Could not open the dialog",
+            "The create-shelf dialog could not be opened.",
         ),
-        ("Reading", reading.to_string(), "kalam-author-stat-reading"),
-        ("Unread", unread.to_string(), "kalam-author-stat-unread"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let disc = stat_disc(label, &value, css);
-        grid.attach(&disc, (idx % 2) as i32, (idx / 2) as i32, 1, 1);
-    }
-
-    grid
-}
-
-fn stat_disc(label: &str, value: &str, css: &str) -> gtk::Box {
-    let disc = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    disc.add_css_class("kalam-author-stat-disc");
-    disc.add_css_class(css);
-    disc.set_halign(gtk::Align::Center);
-    disc.set_valign(gtk::Align::Center);
-    disc.set_size_request(92, 92);
-
-    let value_label = gtk::Label::new(Some(value));
-    value_label.add_css_class("kalam-author-stat-disc-value");
-    value_label.set_halign(gtk::Align::Center);
-    disc.append(&value_label);
-
-    let label_widget = gtk::Label::new(Some(label));
-    label_widget.add_css_class("kalam-author-stat-disc-label");
-    label_widget.set_halign(gtk::Align::Center);
-    disc.append(&label_widget);
-
-    disc
-}
-
-fn author_photo(model: &AuthorPageModel) -> gtk::Widget {
-    if let Some(profile) = &model.profile {
-        if let Some(path) = profile.photo_path.as_deref() {
-            if path.is_file() {
-                let photo = cover_widget(Some(path), 220, 220);
-                photo.remove_css_class("kalam-cover-frame");
-                photo.add_css_class("kalam-author-photo-shell");
-                photo.add_css_class("kalam-author-photo");
-                photo.set_overflow(gtk::Overflow::Hidden);
-                photo.set_size_request(220, 220);
-                return photo;
-            }
-        }
-    }
-
-    let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    placeholder.add_css_class("kalam-author-photo-placeholder");
-    placeholder.set_size_request(220, 220);
-    placeholder.set_halign(gtk::Align::Center);
-    placeholder.set_valign(gtk::Align::Start);
-
-    let label = gtk::Label::new(Some(&initials(
-        model
-            .profile
-            .as_ref()
-            .map(|profile| profile.canonical_name.as_str())
-            .unwrap_or(model.requested_name.as_str()),
-    )));
-    label.add_css_class("kalam-author-photo-initials");
-    label.set_halign(gtk::Align::Center);
-    label.set_valign(gtk::Align::Center);
-    placeholder.append(&label);
-    placeholder.upcast()
-}
-
-fn series_card(entry: &SeriesProgress, profile: Option<&AuthorProfile>) -> gtk::Box {
-    let card = gtk::Box::new(gtk::Orientation::Horizontal, 14);
-    card.add_css_class("kalam-author-series-card");
-    card.set_size_request(480, -1);
-    card.set_halign(gtk::Align::Start);
-
-    let first_book = entry.owned.first();
-    let cover = cover_widget(
-        first_book.and_then(|book| book.cover_path.as_deref()),
-        72,
-        112,
-    );
-    card.append(&cover);
-
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    body.set_hexpand(true);
-
-    let title = gtk::Label::new(Some(&entry.name));
-    title.add_css_class("kalam-author-series-title");
-    title.set_halign(gtk::Align::Start);
-    title.set_wrap(true);
-    title.set_xalign(0.0);
-    body.append(&title);
-
-    let summary = online_series_summary(profile, &entry.name).unwrap_or_default();
-    let known_count = summary.known_count.max(entry.owned.len());
-    let counts = gtk::Label::new(Some(&format!(
-        "{} book{} · you own {}",
-        known_count,
-        if known_count == 1 { "" } else { "s" },
-        entry.owned.len()
-    )));
-    counts.add_css_class("kalam-author-series-meta");
-    counts.set_halign(gtk::Align::Start);
-    counts.set_xalign(0.0);
-    body.append(&counts);
-
-    if let Some(years) = series_year_text(entry, &summary) {
-        let years_label = gtk::Label::new(Some(&years));
-        years_label.add_css_class("kalam-author-series-meta");
-        years_label.set_halign(gtk::Align::Start);
-        years_label.set_xalign(0.0);
-        body.append(&years_label);
-    }
-
-    let status_text = if entry.missing.is_empty() {
-        "Your shelf has no missing numbered books so far.".to_string()
-    } else {
-        format!("Missing from your shelf: {}", entry.missing.join(" · "))
-    };
-    let status = gtk::Label::new(Some(&status_text));
-    status.add_css_class("kalam-author-series-status");
-    status.set_halign(gtk::Align::Start);
-    status.set_wrap(true);
-    status.set_xalign(0.0);
-    body.append(&status);
-
-    card.append(&body);
-    card
-}
-
-fn online_series_summary(
-    profile: Option<&AuthorProfile>,
-    series_name: &str,
-) -> Option<OnlineSeriesSummary> {
-    let profile = profile?;
-    let target = normalize_key(series_name);
-    if target.is_empty() {
-        return None;
-    }
-
-    let mut years = Vec::new();
-    let mut count = 0usize;
-    for work in &profile.works {
-        if normalize_key(&work.series_name) == target {
-            count += 1;
-            if let Some(year) = work.first_publish_year {
-                years.push(year);
-            }
-        }
-    }
-    if count == 0 {
-        return None;
-    }
-
-    years.sort_unstable();
-    Some(OnlineSeriesSummary {
-        known_count: count,
-        first_year: years.first().copied(),
-        last_year: years.last().copied(),
-    })
-}
-
-fn series_year_text(entry: &SeriesProgress, summary: &OnlineSeriesSummary) -> Option<String> {
-    if let Some(text) = year_range_text(summary.first_year, summary.last_year) {
-        return Some(format!("Release: {text}"));
-    }
-
-    let mut years = entry.owned.iter().filter_map(book_year).collect::<Vec<_>>();
-    years.sort_unstable();
-    year_range_text(years.first().copied(), years.last().copied())
-        .map(|text| format!("Release: {text}"))
-}
-
-fn book_year(book: &Book) -> Option<i64> {
-    let digits = book
-        .published
-        .chars()
-        .filter(|ch| ch.is_ascii_digit())
-        .collect::<String>();
-    if digits.len() < 4 {
-        None
-    } else {
-        digits[..4].parse().ok()
     }
 }
 
-fn more_work_groups(model: &AuthorPageModel) -> Vec<WorkGroup> {
-    let Some(profile) = &model.profile else {
-        return Vec::new();
-    };
+// ---------------------------------------------------------------------------
+// Annotations dialog, author scope (decision 115)
+// ---------------------------------------------------------------------------
 
-    let works = works_not_in_library(profile, &model.owned_books);
-    let mut grouped: BTreeMap<String, WorkGroupBuilder> = BTreeMap::new();
-
-    for work in works {
-        let series_name = work.series_name.trim();
-        let (key, title, is_series) = if series_name.is_empty() {
-            (
-                format!(
-                    "work:{}",
-                    if work.work_key.trim().is_empty() {
-                        normalize_key(&work.title)
-                    } else {
-                        normalize_key(&work.work_key)
-                    }
-                ),
-                work.title.clone(),
-                false,
-            )
-        } else {
-            (
-                format!("series:{}", normalize_key(series_name)),
-                series_name.to_string(),
-                true,
-            )
-        };
-
-        let entry = grouped.entry(key).or_insert_with(|| WorkGroupBuilder {
-            title,
-            is_series,
-            ..WorkGroupBuilder::default()
-        });
-        entry.work_count += 1;
-        if entry.cover_path.is_none() {
-            entry.cover_path = work_cover_path(&work);
-        }
-        if let Some(year) = work.first_publish_year {
-            entry.years.push(year);
-        }
-        if let Some(avg) = work.rating_average {
-            if work.rating_count > 0 {
-                let count = work.rating_count as f64;
-                entry.rating_weight += (avg as f64) * count;
-                entry.rating_count += work.rating_count;
-            }
-        }
-    }
-
-    let mut groups = grouped
-        .into_values()
-        .map(|mut entry| {
-            entry.years.sort_unstable();
-            WorkGroup {
-                title: entry.title,
-                work_count: entry.work_count,
-                first_year: entry.years.first().copied(),
-                last_year: entry.years.last().copied(),
-                cover_path: entry.cover_path,
-                rating_average: if entry.rating_count > 0 {
-                    Some((entry.rating_weight / entry.rating_count as f64) as f32)
-                } else {
-                    None
-                },
-                rating_count: entry.rating_count,
-                is_series: entry.is_series,
-            }
-        })
-        .collect::<Vec<_>>();
-
-    groups.sort_by(|a, b| {
-        a.first_year
-            .unwrap_or(i64::MAX)
-            .cmp(&b.first_year.unwrap_or(i64::MAX))
-            .then_with(|| a.title.cmp(&b.title))
-    });
-    groups.truncate(18);
-    groups
+fn author_dialog_scroll(child: &gtk::Box) -> gtk::ScrolledWindow {
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::External);
+    scroll.set_hexpand(true);
+    scroll.set_vexpand(true);
+    scroll.set_child(Some(child));
+    scroll
 }
 
-fn work_group_card(group: &WorkGroup) -> gtk::Box {
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    card.add_css_class("kalam-author-discovery-card");
-    card.set_size_request(210, -1);
-    card.set_halign(gtk::Align::Start);
-
-    card.append(&work_group_cover(group));
-
-    let title = gtk::Label::new(Some(&group.title));
-    title.add_css_class("kalam-author-discovery-title");
-    title.set_halign(gtk::Align::Start);
-    title.set_wrap(true);
-    title.set_xalign(0.0);
-    card.append(&title);
-
-    let kind = if group.is_series {
-        format!(
-            "Series · {} book{}",
-            group.work_count,
-            if group.work_count == 1 { "" } else { "s" }
-        )
-    } else {
-        "Standalone".to_string()
-    };
-    let meta = gtk::Label::new(Some(&kind));
-    meta.add_css_class("kalam-author-discovery-meta");
-    meta.set_halign(gtk::Align::Start);
-    meta.set_xalign(0.0);
-    card.append(&meta);
-
-    if let Some(years) = year_range_text(group.first_year, group.last_year) {
-        let years_label = gtk::Label::new(Some(&years));
-        years_label.add_css_class("kalam-author-discovery-meta");
-        years_label.set_halign(gtk::Align::Start);
-        years_label.set_xalign(0.0);
-        card.append(&years_label);
-    }
-
-    if let Some(avg) = group.rating_average {
-        let rating_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        rating_box.set_halign(gtk::Align::Start);
-        rating_box.append(&stars_label(rating_half_stars(avg)));
-        if group.rating_count > 0 {
-            let count = gtk::Label::new(Some(&format!("{} ratings", group.rating_count)));
-            count.add_css_class("kalam-author-discovery-meta");
-            count.set_halign(gtk::Align::Start);
-            rating_box.append(&count);
-        }
-        card.append(&rating_box);
-    }
-
-    card
-}
-
-fn work_group_cover(group: &WorkGroup) -> gtk::Widget {
-    cover_widget(group.cover_path.as_deref(), 136, 204)
-}
-
-fn work_cover_path(work: &AuthorWork) -> Option<PathBuf> {
-    let file = work.cover_file.as_deref()?;
-    let path = crate::paths::authors_dir().join(file);
-    path.is_file().then_some(path)
-}
-
-fn rating_half_stars(value: f32) -> u8 {
-    (value * 2.0).round().clamp(0.0, 10.0) as u8
-}
-
-fn year_range_text(first: Option<i64>, last: Option<i64>) -> Option<String> {
-    match (first, last) {
-        (Some(a), Some(b)) if a == b => Some(a.to_string()),
-        (Some(a), Some(b)) => Some(format!("{a}–{b}")),
-        (Some(a), None) => Some(a.to_string()),
-        (None, Some(b)) => Some(b.to_string()),
-        (None, None) => None,
-    }
-}
-
-fn simple_note(text: &str) -> gtk::Label {
+fn author_annotations_empty(host: &gtk::Box, text: &str) {
     let label = gtk::Label::new(Some(text));
-    label.add_css_class("kalam-author-empty");
+    label.add_css_class("kalam-ui-meta");
     label.set_halign(gtk::Align::Start);
     label.set_wrap(true);
     label.set_xalign(0.0);
-    label
+    label.set_max_width_chars(58);
+    host.append(&label);
 }
 
-fn normalize_key(text: &str) -> String {
-    text.to_lowercase()
-        .chars()
-        .filter(|ch| ch.is_alphanumeric())
-        .collect()
+fn book_heading(host: &gtk::Box, title: &str) {
+    let heading = gtk::Label::new(Some(&title.to_uppercase()));
+    heading.add_css_class("kalam-ui-label");
+    heading.set_halign(gtk::Align::Start);
+    heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    heading.set_margin_top(4);
+    host.append(&heading);
 }
 
-fn clear_box(host: &gtk::Box) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
+/// Group dialog items under book headings, books in title order.
+fn group_by_book<'a, T>(
+    items: &[&'a T],
+    book_of: impl Fn(&T) -> i64,
+    titles: &HashMap<i64, String>,
+) -> Vec<(String, Vec<&'a T>)> {
+    let mut by_id: BTreeMap<i64, Vec<&T>> = BTreeMap::new();
+    for item in items {
+        by_id.entry(book_of(item)).or_default().push(item);
     }
+    let mut groups: Vec<(String, Vec<&T>)> = by_id
+        .into_iter()
+        .map(|(book_id, items)| {
+            (
+                titles
+                    .get(&book_id)
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown book".to_string()),
+                items,
+            )
+        })
+        .collect();
+    groups.sort_by(|a, b| a.0.cmp(&b.0));
+    groups
+}
+
+fn present_author_annotations_dialog(
+    anchor: &gtk::Overlay,
+    model: &AuthorPageModel,
+    sender: &ComponentSender<AuthorPageModel>,
+) {
+    let Some(snap) = &model.snapshot else { return };
+    let author = display_name(model);
+    let service = model.service.clone();
+    let titles: HashMap<i64, String> = snap
+        .owned_books
+        .iter()
+        .map(|book| (book.id, book.title.clone()))
+        .collect();
+
+    let shell = dialog_shell(DialogSize::List, Some(&author));
+
+    let stack = gtk::Stack::new();
+    stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+    stack.set_hexpand(true);
+    stack.set_vexpand(true);
+    stack.add_named(
+        &author_highlights_page(
+            service.clone(),
+            Rc::new(RefCell::new(snap.annotations.clone())),
+            titles.clone(),
+        ),
+        Some("highlights"),
+    );
+    stack.add_named(
+        &author_bookmarks_page(
+            service.clone(),
+            Rc::new(RefCell::new(snap.bookmarks.clone())),
+            titles.clone(),
+        ),
+        Some("bookmarks"),
+    );
+    stack.add_named(
+        &author_words_page(
+            service,
+            Rc::new(RefCell::new(snap.words.clone())),
+            titles,
+        ),
+        Some("words"),
+    );
+
+    let labels = [
+        format!("Highlights {}", snap.annotations.len()),
+        format!("Bookmarks {}", snap.bookmarks.len()),
+        format!("Words {}", snap.words.len()),
+    ];
+    let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let stack_for_tabs = stack.clone();
+    let tabs = segmented_control(&label_refs, 0, SegmentedSize::Panel, move |index| {
+        stack_for_tabs.set_visible_child_name(match index {
+            1 => "bookmarks",
+            2 => "words",
+            _ => "highlights",
+        });
+    });
+    let tabs_widget = tabs.widget();
+    tabs_widget.set_halign(gtk::Align::Center);
+    shell.body().append(&tabs_widget);
+    shell.body().append(&stack);
+
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    let slot_for_done = slot.clone();
+    let s = sender.input_sender().clone();
+    shell.footer().append(&primary_button("Done", move || {
+        if let Some(dialog) = slot_for_done.borrow().clone() {
+            dialog.close();
+        }
+        let _ = s.send(AuthorPageMsg::Refresh);
+    }));
+
+    match present_dialog(anchor, "Annotations", DialogExit::OwnButtons, &shell) {
+        Some(dialog) => *slot.borrow_mut() = Some(dialog),
+        None => crate::notify::error(
+            "Could not open annotations",
+            "The dialog could not be opened.",
+        ),
+    }
+}
+
+fn author_highlights_page(
+    service: LibraryService,
+    annotations: Rc<RefCell<Vec<Annotation>>>,
+    titles: HashMap<i64, String>,
+) -> gtk::Box {
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    root.set_vexpand(true);
+    let filter = Rc::new(Cell::new(None::<HighlightColor>));
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 10);
+
+    // Self-referential rebuild, the panels' established pattern: delete
+    // buttons and the colour filter re-run it through the holder slot.
+    let holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+    let rebuild: Rc<dyn Fn()> = Rc::new({
+        let host = list_host.clone();
+        let annotations = annotations.clone();
+        let filter = filter.clone();
+        let titles = titles.clone();
+        let service = service.clone();
+        let holder = holder.clone();
+        move || {
+            clear_box(&host);
+            let current = annotations.borrow();
+            let shown: Vec<&Annotation> = current
+                .iter()
+                .filter(|a| {
+                    filter
+                        .get()
+                        .is_none_or(|c| HighlightColor::from_str_lossy(&a.color) == c)
+                })
+                .collect();
+            if shown.is_empty() {
+                author_annotations_empty(
+                    &host,
+                    if filter.get().is_some() {
+                        "No highlights in this colour."
+                    } else {
+                        "No highlights yet — select some text in the reader."
+                    },
+                );
+                return;
+            }
+            for (book_title, items) in group_by_book(&shown, |a| a.book_id, &titles) {
+                book_heading(&host, &book_title);
+                for anno in items {
+                    host.append(&hairline());
+                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                    let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                    bar.add_css_class("kalam-hl-bar");
+                    bar.add_css_class(hl_color_class(&anno.color));
+                    bar.set_valign(gtk::Align::Fill);
+                    row.append(&bar);
+
+                    let info = gtk::Box::new(gtk::Orientation::Vertical, 3);
+                    info.set_hexpand(true);
+                    let text = anno.text_excerpt.trim();
+                    if !text.is_empty() {
+                        let quote = gtk::Label::new(Some(text));
+                        quote.add_css_class("kalam-bookpage-annotation-quote");
+                        quote.set_halign(gtk::Align::Start);
+                        quote.set_wrap(true);
+                        quote.set_xalign(0.0);
+                        quote.set_max_width_chars(58);
+                        info.append(&quote);
+                    }
+                    let chapter = anno.chapter_index.max(0) + 1;
+                    let day = anno
+                        .created_at
+                        .get(..10)
+                        .map(pretty_day)
+                        .unwrap_or_else(|| anno.created_at.clone());
+                    let mut meta_parts = vec![format!("Chapter {chapter}"), day];
+                    let note = anno.note.trim();
+                    if !note.is_empty() {
+                        let short: String = note.chars().take(90).collect();
+                        meta_parts.push(short);
+                    }
+                    let meta = gtk::Label::new(Some(&meta_parts.join(" · ")));
+                    meta.add_css_class("kalam-ui-meta");
+                    meta.set_halign(gtk::Align::Start);
+                    meta.set_wrap(true);
+                    meta.set_xalign(0.0);
+                    meta.set_max_width_chars(58);
+                    info.append(&meta);
+                    row.append(&info);
+
+                    let id = anno.id;
+                    let service = service.clone();
+                    let annotations = annotations.clone();
+                    let holder = holder.clone();
+                    row.append(&icon_button(
+                        "user-trash-symbolic",
+                        "Delete highlight",
+                        32,
+                        false,
+                        move || {
+                            match service.catalog().delete_annotation(id) {
+                                Ok(()) => {
+                                    annotations.borrow_mut().retain(|a| a.id != id);
+                                    crate::notify::compact("Annotation deleted", "");
+                                }
+                                Err(err) => crate::notify::error(
+                                    "Could not delete the annotation",
+                                    &err.to_string(),
+                                ),
+                            }
+                            if let Some(refresh) = holder.borrow().clone() {
+                                refresh();
+                            }
+                        },
+                    ));
+                    host.append(&row);
+                }
+            }
+        }
+    });
+    *holder.borrow_mut() = Some(rebuild.clone());
+
+    // An All chip and the five colour dots (decision 115); tapping the
+    // active dot again clears back to All.
+    let filter_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let clear_actives = |row: &gtk::Box| {
+        let mut child = row.first_child();
+        while let Some(widget) = child {
+            let next = widget.next_sibling();
+            widget.remove_css_class("active");
+            child = next;
+        }
+    };
+
+    let all_chip = filter_chip("All", true, ChipSize::Standard, {
+        let filter = filter.clone();
+        let holder = holder.clone();
+        let row = filter_row.clone();
+        move |active| {
+            if active {
+                filter.set(None);
+                // Dots are plain buttons: drop their active class.
+                let mut child = row.first_child();
+                while let Some(widget) = child {
+                    let next = widget.next_sibling();
+                    if widget.css_classes().iter().any(|c| c == "k-color-dot") {
+                        widget.remove_css_class("active");
+                    }
+                    child = next;
+                }
+                if let Some(refresh) = holder.borrow().clone() {
+                    refresh();
+                }
+            }
+        }
+    });
+    filter_row.append(&all_chip);
+
+    for &color in HighlightColor::SOFT_FIVE {
+        let dot = gtk::Button::new();
+        dot.add_css_class("k-color-dot");
+        dot.add_css_class(&format!("k-color-dot-{}", color.as_str()));
+        dot.set_size_request(24, 24);
+        dot.set_hexpand(false);
+        dot.set_halign(gtk::Align::Start);
+        dot.set_valign(gtk::Align::Center);
+        dot.set_tooltip_text(Some(&format!("Show {} highlights", color.as_str())));
+        set_accessible_label(&dot, &format!("Show {} highlights", color.as_str()));
+        let filter = filter.clone();
+        let holder = holder.clone();
+        let all_chip = all_chip.clone();
+        let row = filter_row.clone();
+        dot.connect_clicked(move |clicked| {
+            let next = if filter.get() == Some(color) {
+                None
+            } else {
+                Some(color)
+            };
+            filter.set(next);
+            clear_actives(&row);
+            if next.is_some() {
+                clicked.add_css_class("active");
+                all_chip.set_active(false);
+            } else {
+                all_chip.set_active(true);
+            }
+            if let Some(refresh) = holder.borrow().clone() {
+                refresh();
+            }
+        });
+        filter_row.append(&dot);
+    }
+    root.append(&filter_row);
+    root.append(&author_dialog_scroll(&list_host));
+
+    rebuild();
+    root
+}
+
+fn author_bookmarks_page(
+    service: LibraryService,
+    bookmarks: Rc<RefCell<Vec<crate::db::ReadingBookmark>>>,
+    titles: HashMap<i64, String>,
+) -> gtk::Box {
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+    let rebuild: Rc<dyn Fn()> = Rc::new({
+        let host = list_host.clone();
+        let bookmarks_state = bookmarks.clone();
+        let service = service.clone();
+        let holder = holder.clone();
+        move || {
+            clear_box(&host);
+            let current = bookmarks_state.borrow();
+            if current.is_empty() {
+                author_annotations_empty(&host, "No bookmarks in this author's books yet.");
+                return;
+            }
+            let refs: Vec<&crate::db::ReadingBookmark> = current.iter().collect();
+            for (book_title, items) in group_by_book(&refs, |b| b.book_id, &titles) {
+                book_heading(&host, &book_title);
+                for bookmark in items {
+                    host.append(&hairline());
+                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                    let icon = gtk::Image::from_icon_name("bookmark-new-symbolic");
+                    icon.set_pixel_size(15);
+                    icon.set_valign(gtk::Align::Center);
+                    row.append(&icon);
+
+                    let chapter = format!("Chapter {}", bookmark.chapter_index.max(0) + 1);
+                    let label = bookmark.label.trim();
+                    let info = gtk::Box::new(gtk::Orientation::Vertical, 3);
+                    info.set_hexpand(true);
+                    let title = gtk::Label::new(Some(if label.is_empty() {
+                        chapter.as_str()
+                    } else {
+                        label
+                    }));
+                    title.add_css_class("kalam-ui-body");
+                    title.set_halign(gtk::Align::Start);
+                    title.set_wrap(true);
+                    title.set_xalign(0.0);
+                    title.set_max_width_chars(58);
+                    info.append(&title);
+                    let pct = (bookmark.fraction.clamp(0.0, 1.0) * 100.0).round() as i64;
+                    let day = bookmark
+                        .created_at
+                        .get(..10)
+                        .map(pretty_day)
+                        .unwrap_or_else(|| bookmark.created_at.clone());
+                    let meta_text = if label.is_empty() {
+                        format!("{day} · {pct}%")
+                    } else {
+                        format!("{chapter} · {day} · {pct}%")
+                    };
+                    let meta = gtk::Label::new(Some(&meta_text));
+                    meta.add_css_class("kalam-ui-meta");
+                    meta.set_halign(gtk::Align::Start);
+                    meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    info.append(&meta);
+                    row.append(&info);
+
+                    let id = bookmark.id;
+                    let service = service.clone();
+                    let bookmarks_state = bookmarks_state.clone();
+                    let holder = holder.clone();
+                    row.append(&icon_button(
+                        "user-trash-symbolic",
+                        "Delete bookmark",
+                        32,
+                        false,
+                        move || {
+                            match service.catalog().delete_reading_bookmark(id) {
+                                Ok(()) => {
+                                    bookmarks_state.borrow_mut().retain(|b| b.id != id);
+                                    crate::notify::compact("Bookmark deleted", "");
+                                }
+                                Err(err) => crate::notify::error(
+                                    "Could not delete the bookmark",
+                                    &err.to_string(),
+                                ),
+                            }
+                            if let Some(refresh) = holder.borrow().clone() {
+                                refresh();
+                            }
+                        },
+                    ));
+                    host.append(&row);
+                }
+            }
+        }
+    });
+    *holder.borrow_mut() = Some(rebuild.clone());
+    rebuild();
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.set_vexpand(true);
+    root.append(&author_dialog_scroll(&list_host));
+    root
+}
+
+fn author_words_page(
+    service: LibraryService,
+    words: Rc<RefCell<Vec<crate::db::SavedWord>>>,
+    titles: HashMap<i64, String>,
+) -> gtk::Box {
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+    let rebuild: Rc<dyn Fn()> = Rc::new({
+        let host = list_host.clone();
+        let words_state = words.clone();
+        let service = service.clone();
+        let holder = holder.clone();
+        move || {
+            clear_box(&host);
+            let current = words_state.borrow();
+            if current.is_empty() {
+                author_annotations_empty(&host, "No saved words from this author's books yet.");
+                return;
+            }
+            let refs: Vec<&crate::db::SavedWord> = current.iter().collect();
+            for (book_title, items) in
+                group_by_book(&refs, |w| w.book_id.unwrap_or_default(), &titles)
+            {
+                book_heading(&host, &book_title);
+                for word in items {
+                    host.append(&hairline());
+                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                    let info = gtk::Box::new(gtk::Orientation::Vertical, 3);
+                    info.set_hexpand(true);
+                    let headword = gtk::Label::new(Some(&word.word));
+                    headword.add_css_class("kalam-ui-card-title");
+                    headword.set_halign(gtk::Align::Start);
+                    headword.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    info.append(&headword);
+
+                    let meaning = word
+                        .definition
+                        .lines()
+                        .map(str::trim)
+                        .find(|line| !line.is_empty())
+                        .unwrap_or("");
+                    if !meaning.is_empty() {
+                        let meaning_label = gtk::Label::new(Some(meaning));
+                        meaning_label.add_css_class("kalam-ui-meta");
+                        meaning_label.set_halign(gtk::Align::Start);
+                        meaning_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                        meaning_label.set_max_width_chars(58);
+                        info.append(&meaning_label);
+                    }
+                    let mut meta_parts: Vec<String> = Vec::new();
+                    if let Some(chapter_index) = word.chapter_index {
+                        meta_parts.push(format!("Chapter {}", chapter_index.max(0) + 1));
+                    }
+                    if word.known {
+                        meta_parts.push("Known".to_string());
+                    }
+                    if !meta_parts.is_empty() {
+                        let meta = gtk::Label::new(Some(&meta_parts.join(" · ")));
+                        meta.add_css_class("kalam-ui-caption");
+                        meta.set_halign(gtk::Align::Start);
+                        meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                        info.append(&meta);
+                    }
+                    row.append(&info);
+
+                    let id = word.id;
+                    let word_text = word.word.clone();
+                    let service = service.clone();
+                    let words_state = words_state.clone();
+                    let holder = holder.clone();
+                    row.append(&icon_button(
+                        "user-trash-symbolic",
+                        "Delete saved word",
+                        32,
+                        false,
+                        move || {
+                            match service.catalog().delete_saved_word(id) {
+                                Ok(()) => {
+                                    words_state.borrow_mut().retain(|w| w.id != id);
+                                    crate::notify::compact("Saved word deleted", &word_text);
+                                }
+                                Err(err) => crate::notify::error(
+                                    "Could not delete the saved word",
+                                    &err.to_string(),
+                                ),
+                            }
+                            if let Some(refresh) = holder.borrow().clone() {
+                                refresh();
+                            }
+                        },
+                    ));
+                    host.append(&row);
+                }
+            }
+        }
+    });
+    *holder.borrow_mut() = Some(rebuild.clone());
+    rebuild();
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.set_vexpand(true);
+    root.append(&author_dialog_scroll(&list_host));
+    root
 }

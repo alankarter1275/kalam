@@ -27,6 +27,10 @@ pub enum SearchMode {
 #[derive(Debug)]
 pub enum AllBooksMsg {
     SearchChanged(String),
+    /// Set the search from outside (the author page's "Show books in
+    /// library"): the entry text and the query move together, so what
+    /// the reader sees is a search they can keep editing.
+    SetQuery(String),
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
@@ -506,6 +510,14 @@ impl Component for AllBooksModel {
                             self.status = status_line(n, &self.query);
                         }
                     }
+                }
+            }
+            AllBooksMsg::SetQuery(q) => {
+                // Setting the entry text fires search-changed, which
+                // arrives as SearchChanged and does the actual reload.
+                widgets.search.set_text(&q);
+                if self.query != q {
+                    sender.input(AllBooksMsg::SearchChanged(q));
                 }
             }
             AllBooksMsg::SearchChanged(q) => {

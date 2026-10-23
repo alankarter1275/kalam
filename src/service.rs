@@ -289,14 +289,60 @@ pub struct SettingsSnapshot {
     pub writeback_enabled: bool,
 }
 
-/// The author page: profile, the owned-books list, and the series grouping
-/// computed from it (7.1 step 2c). The grouping used to run on the UI thread
-/// in `init`; it is pure work over the books, so the worker runs it here.
+/// One work on the author page: a cached bibliography entry, an owned book
+/// matched into it by normalised title, or an owned book the bibliography
+/// never mentioned. `book: None` is the dashed "Not in library" state.
+#[derive(Debug, Default)]
+pub struct AuthorEntrySnapshot {
+    pub title: String,
+    pub year: Option<i64>,
+    /// Series position where one is known (bibliography position, else the
+    /// owned book's `series_index`); 0 means unknown and sorts last.
+    pub position: f32,
+    pub book: Option<Book>,
+    /// The bibliography's downloaded cover for an unowned work, resolved
+    /// against the authors dir. Owned entries use the book's own cover.
+    pub work_cover: Option<std::path::PathBuf>,
+}
+
+/// One card on the author page: a series, or the standalone works.
+/// Groups arrive ordered — standalone first, then series by first year —
+/// with entries in series order (decision 106).
+#[derive(Debug, Default)]
+pub struct AuthorGroupSnapshot {
+    pub title: String,
+    /// `Some(series name)` for a series group, `None` for standalone.
+    pub series: Option<String>,
+    pub entries: Vec<AuthorEntrySnapshot>,
+}
+
+/// The pref prefix under which the author page remembers the shelf it
+/// created (`author.shelf.<normalized name>` → `"<shelf id>"`, with a
+/// `:linked` suffix when the name switch was on, so a future author
+/// rename can follow it — decision 113).
+pub const AUTHOR_SHELF_PREF_PREFIX: &str = "author.shelf.";
+
+/// The author page: profile, owned books, the grouped bibliography
+/// (cached works merged with owned books, the series page's join widened
+/// to a whole author), the author's annotations/bookmarks/words, and the
+/// shelf this page created for the author when one is live. The grouping
+/// used to run on the UI thread in `init`; it is pure work over the books,
+/// so the worker runs it here.
 #[derive(Debug, Default)]
 pub struct AuthorPageSnapshot {
     pub profile: Option<AuthorProfile>,
     pub owned_books: Vec<Book>,
-    pub series: Vec<crate::author::SeriesProgress>,
+    pub groups: Vec<AuthorGroupSnapshot>,
+    /// Newest first (the order both the highlights row and the dialog use).
+    pub annotations: Vec<Annotation>,
+    pub bookmarks: Vec<ReadingBookmark>,
+    pub words: Vec<SavedWord>,
+    /// `(shelf id, shelf name)` for the author's shelf, if one was created
+    /// from this page and still exists.
+    pub shelf: Option<(i64, String)>,
+    /// Owned books with a finished stamp — read state is "stamped or at
+    /// 100%", the series page's rule, and the stamp lives outside `Book`.
+    pub finished: std::collections::HashSet<i64>,
 }
 
 /// The vocabulary page: the visible word list plus its header counts.
@@ -974,7 +1020,9 @@ impl LibraryService {
     }
 
     /// The author page's whole data question in one call (7.1 step 2c):
-    /// the profile if cached, the owned books, and their series grouping.
+    /// the profile if cached, the owned books, their bibliography
+    /// grouping, and the reader's own marks across those books. Nothing
+    /// here fetches: the bibliography is shown as cached (decision 110).
     pub fn author_page(&self, author_name: &str) -> AuthorPageSnapshot {
         let _t = crate::timing::measure("service_author");
         let mut owned_books = crate::author::owned_books_for_author(&self.catalog, author_name);
@@ -986,11 +1034,39 @@ impl LibraryService {
             .get_author_profile_by_name(author_name)
             .ok()
             .flatten();
-        let series = crate::author::series_progress(&owned_books);
+        let groups = author_groups(profile.as_ref(), &owned_books);
+
+        let ids: Vec<i64> = owned_books.iter().map(|book| book.id).collect();
+        let finished = self.catalog.finished_book_ids(&ids).unwrap_or_default();
+        let annotations = self
+            .catalog
+            .annotations_for_books(&ids)
+            .unwrap_or_default();
+        let bookmarks = self
+            .catalog
+            .reading_bookmarks_for_books(&ids)
+            .unwrap_or_default();
+        let words = self.catalog.saved_words_for_books(&ids).unwrap_or_default();
+
+        let shelf = self
+            .catalog
+            .get_pref(&format!(
+                "{AUTHOR_SHELF_PREF_PREFIX}{}",
+                crate::author::normalize_author_name(author_name)
+            ))
+            .and_then(|raw| raw.split(':').next()?.parse::<i64>().ok())
+            .and_then(|id| self.catalog.get_shelf(id).ok().flatten())
+            .map(|shelf| (shelf.id, shelf.name));
+
         AuthorPageSnapshot {
             profile,
             owned_books,
-            series,
+            groups,
+            annotations,
+            bookmarks,
+            words,
+            shelf,
+            finished,
         }
     }
 
@@ -1376,6 +1452,164 @@ fn published_year(published: &str) -> Option<i64> {
     None
 }
 
+/// Merge a cached bibliography with the owned books into the author
+/// page's cards (decisions 106, 110): bibliography works first (duplicate
+/// editions collapse by normalised title), owned books matched in by
+/// normalised title, unmatched owned books grouped by the series their
+/// file metadata names, else standalone. Without a bibliography the
+/// owned books alone still group the same way — the page just shows no
+/// totals and no missing works.
+fn author_groups(
+    profile: Option<&AuthorProfile>,
+    owned_books: &[Book],
+) -> Vec<AuthorGroupSnapshot> {
+    use std::collections::HashMap;
+
+    let normalise = |s: &str| {
+        s.to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect::<String>()
+    };
+
+    // Groups keyed by normalised series name; "" is standalone. Built in
+    // encounter order, reordered at the end.
+    let mut groups: Vec<AuthorGroupSnapshot> = Vec::new();
+    let mut group_index: HashMap<String, usize> = HashMap::new();
+    // Normalised title → (group, entry) for bibliography works, so owned
+    // books land in their work's slot.
+    let mut work_slots: HashMap<String, (usize, usize)> = HashMap::new();
+
+    fn group_for<'g>(
+        groups: &'g mut Vec<AuthorGroupSnapshot>,
+        group_index: &mut HashMap<String, usize>,
+        key: &str,
+        series: Option<String>,
+    ) -> &'g mut AuthorGroupSnapshot {
+        let index = *group_index.entry(key.to_string()).or_insert_with(|| {
+            groups.push(AuthorGroupSnapshot {
+                title: series
+                    .clone()
+                    .unwrap_or_else(|| "Standalone works".to_string()),
+                series,
+                entries: Vec::new(),
+            });
+            groups.len() - 1
+        });
+        &mut groups[index]
+    }
+
+    if let Some(profile) = profile {
+        for work in &profile.works {
+            let title = work.title.trim();
+            if title.is_empty() {
+                continue;
+            }
+            let title_key = normalise(title);
+            // Duplicate editions/translations of one work collapse.
+            if work_slots.contains_key(&title_key) {
+                continue;
+            }
+            let series_name = work.series_name.trim();
+            let (key, series) = if series_name.is_empty() {
+                (String::new(), None)
+            } else {
+                (normalise(series_name), Some(series_name.to_string()))
+            };
+            let group = group_for(&mut groups, &mut group_index, &key, series);
+            let group_pos = group_index[&key];
+            // Open Library positions arrive as text ("1", "2.5", sometimes
+            // prose); anything unparseable is simply unknown.
+            let position = work.series_position.trim().parse::<f32>().unwrap_or(0.0);
+            group.entries.push(AuthorEntrySnapshot {
+                title: title.to_string(),
+                year: work.first_publish_year,
+                position,
+                book: None,
+                work_cover: work
+                    .cover_file
+                    .as_deref()
+                    .map(|file| crate::paths::authors_dir().join(file)),
+            });
+            work_slots.insert(title_key, (group_pos, group.entries.len() - 1));
+        }
+    }
+
+    for book in owned_books {
+        let title_key = normalise(&book.title);
+        if let Some(&(group_pos, entry_pos)) = work_slots.get(&title_key) {
+            let entry = &mut groups[group_pos].entries[entry_pos];
+            if entry.book.is_none() {
+                entry.title = book.title.clone();
+                if entry.year.is_none() {
+                    entry.year = published_year(&book.published);
+                }
+                if book.series_index > 0.0 {
+                    entry.position = book.series_index;
+                }
+                entry.book = Some(book.clone());
+                continue;
+            }
+        }
+        let series_name = book.series.as_deref().unwrap_or("").trim();
+        let (key, series) = if series_name.is_empty() {
+            (String::new(), None)
+        } else {
+            (normalise(series_name), Some(series_name.to_string()))
+        };
+        let group = group_for(&mut groups, &mut group_index, &key, series);
+        group.entries.push(AuthorEntrySnapshot {
+            title: book.title.clone(),
+            year: published_year(&book.published),
+            position: if book.series_index > 0.0 {
+                book.series_index
+            } else {
+                0.0
+            },
+            book: Some(book.clone()),
+            work_cover: None,
+        });
+    }
+
+    groups.retain(|group| !group.entries.is_empty());
+    for group in &mut groups {
+        let is_series = group.series.is_some();
+        group.entries.sort_by(|a, b| {
+            if is_series {
+                let pos = |e: &AuthorEntrySnapshot| {
+                    if e.position > 0.0 { e.position } else { f32::MAX }
+                };
+                pos(a)
+                    .partial_cmp(&pos(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                std::cmp::Ordering::Equal
+            }
+            .then_with(|| {
+                a.year
+                    .unwrap_or(i64::MAX)
+                    .cmp(&b.year.unwrap_or(i64::MAX))
+            })
+            .then_with(|| a.title.cmp(&b.title))
+        });
+    }
+    // Standalone first, then series by first year (decision 106).
+    groups.sort_by(|a, b| {
+        let rank = |g: &AuthorGroupSnapshot| {
+            (
+                g.series.is_some(),
+                g.entries
+                    .iter()
+                    .filter_map(|e| e.year)
+                    .min()
+                    .unwrap_or(i64::MAX),
+            )
+        };
+        rank(a).cmp(&rank(b)).then_with(|| a.title.cmp(&b.title))
+    });
+    groups
+}
+
 fn take<T: Default>(result: crate::db::Result<T>, what: &str, errors: &mut Errors) -> T {
     match result {
         Ok(value) => value,
@@ -1702,6 +1936,72 @@ mod tests {
         // AuthorProfile is not PartialEq, so the emptiness is asked, not
         // compared.
         assert!(snap.profile.is_none());
+    }
+
+    #[test]
+    fn author_page_groups_bibliography_with_owned_books() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let cat = svc.catalog();
+
+        // Owned: series books 1 and 3 of "Alpha", one standalone the
+        // bibliography never mentions.
+        let one = seed(cat, "Alpha One", &[]);
+        let three = seed(cat, "Alpha Three", &[]);
+        seed(cat, "Loose Ends", &[]);
+        cat.set_book_series(one, Some("Alpha"), 1.0).unwrap();
+        cat.set_book_series(three, Some("Alpha"), 3.0).unwrap();
+
+        let work = |title: &str, series: &str, position: &str, year: i64| crate::db::AuthorWork {
+            title: title.into(),
+            series_name: series.into(),
+            series_position: position.into(),
+            first_publish_year: Some(year),
+            ..crate::db::AuthorWork::default()
+        };
+        let profile = AuthorProfile {
+            canonical_name: "An Author".into(),
+            normalized_name: crate::author::normalize_author_name("An Author"),
+            works: vec![
+                work("Alpha One", "Alpha", "1", 2001),
+                work("Alpha Two", "Alpha", "2", 2003),
+                // A duplicate edition of the same work collapses.
+                work("Alpha Two", "Alpha", "2", 2004),
+                work("Alpha Three", "Alpha", "3", 2005),
+                work("Solo Flight", "", "", 1999),
+            ],
+            ..AuthorProfile::default()
+        };
+        cat.upsert_author_profile(&profile).unwrap();
+
+        let snap = svc.author_page("An Author");
+        // Standalone first, then the series (decision 106).
+        assert_eq!(snap.groups.len(), 2);
+        let standalone = &snap.groups[0];
+        assert_eq!(standalone.title, "Standalone works");
+        assert!(standalone.series.is_none());
+        // Year order: the bibliography's Solo Flight (missing), then the
+        // unlisted owned book.
+        assert_eq!(standalone.entries.len(), 2);
+        assert_eq!(standalone.entries[0].title, "Solo Flight");
+        assert!(standalone.entries[0].book.is_none());
+        assert_eq!(standalone.entries[1].title, "Loose Ends");
+        assert!(standalone.entries[1].book.is_some());
+
+        let alpha = &snap.groups[1];
+        assert_eq!(alpha.series.as_deref(), Some("Alpha"));
+        assert_eq!(alpha.entries.len(), 3, "duplicate edition collapsed");
+        assert_eq!(
+            alpha
+                .entries
+                .iter()
+                .map(|e| e.book.is_some())
+                .collect::<Vec<_>>(),
+            vec![true, false, true],
+            "position order with the middle book missing"
+        );
+        assert_eq!(alpha.entries[1].year, Some(2003));
+        assert_eq!(alpha.entries[2].position, 3.0);
     }
 
     #[test]

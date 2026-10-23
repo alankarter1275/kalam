@@ -51,7 +51,7 @@ const MAX_PROD_PANICS: usize = 8;
 /// one mention left in its file is the shelves floating-panel builder
 /// the app still hosts, which leaves when that panel goes. The series
 /// page's redesign retired the float's six mentions.
-const MAX_ARC_CATALOG_IN_PAGES: usize = 46;
+const MAX_ARC_CATALOG_IN_PAGES: usize = 44;
 
 /// Literal hex colours in `resources/style.css`.
 ///

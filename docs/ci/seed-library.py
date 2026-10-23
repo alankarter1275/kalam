@@ -516,6 +516,240 @@ def seed_series_fixture(conn, library: pathlib.Path, now: datetime, first_index:
     return covers_written
 
 
+def seed_author_fixture(conn, library: pathlib.Path, now: datetime, first_index: int) -> int:
+    """Add the author-page fixture: one author, a cached bibliography
+    with a standalone and a series the reader only partly owns, plus a
+    highlight, a bookmark and a saved word so Highlights and the
+    author-scope dialog have something true to show.
+
+    Same author as the series fixture (Ada Meridian, "The Glass
+    Meridian"), so one author page shows Standalone first (decision
+    107) then the series, In library and Not in library both
+    populated. The bibliography lives in author_profiles.works_json:
+    the page never fetches on open (decision 110), so the cache row
+    is the only source and the screenshot stays off the network.
+
+    Tables it needs postdate schema v1; creating them here is safe
+    because the app's migrations are create-if-absent. Returns the
+    number of covers written.
+    """
+    _add_column_if_missing(conn, "books", "published", "TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "books", "finished_at", "TEXT")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS author_profiles (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name    TEXT NOT NULL,
+            sort_name         TEXT NOT NULL DEFAULT '',
+            normalized_name   TEXT NOT NULL UNIQUE,
+            bio               TEXT NOT NULL DEFAULT '',
+            birth_date        TEXT NOT NULL DEFAULT '',
+            death_date        TEXT NOT NULL DEFAULT '',
+            top_work          TEXT NOT NULL DEFAULT '',
+            top_subjects_json TEXT NOT NULL DEFAULT '[]',
+            openlibrary_key   TEXT NOT NULL DEFAULT '',
+            photo_file        TEXT,
+            work_count        INTEGER NOT NULL DEFAULT 0,
+            works_json        TEXT NOT NULL DEFAULT '[]',
+            fetched_at        TEXT NOT NULL DEFAULT '',
+            source_url        TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS annotations (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            kind          TEXT    NOT NULL,
+            chapter_index INTEGER NOT NULL,
+            start_path    TEXT    NOT NULL,
+            start_offset  INTEGER NOT NULL,
+            end_path      TEXT    NOT NULL,
+            end_offset    INTEGER NOT NULL,
+            color         TEXT    NOT NULL DEFAULT 'yellow',
+            style         TEXT    NOT NULL DEFAULT 'solid',
+            text_excerpt  TEXT    NOT NULL DEFAULT '',
+            note          TEXT    NOT NULL DEFAULT '',
+            cfi           TEXT,
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS reading_bookmarks (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            chapter_index INTEGER NOT NULL,
+            fraction      REAL    NOT NULL DEFAULT 0.0,
+            label         TEXT    NOT NULL DEFAULT '',
+            created_at    TEXT    NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS saved_words (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            word          TEXT    NOT NULL,
+            definition    TEXT    NOT NULL,
+            dict_name     TEXT,
+            book_id       INTEGER REFERENCES books(id) ON DELETE SET NULL,
+            chapter_index INTEGER,
+            context_text  TEXT,
+            created_at    TEXT    NOT NULL
+        );
+        """
+    )
+
+    author = "Ada Meridian"
+
+    def norm(s: str) -> str:
+        # Mirrors normalize_bits in src/author.rs: lowercase, alphanumerics only.
+        return "".join(c for c in s.lower() if c.isalnum())
+
+    assert norm(author) == "adameridian"
+
+    # Standalones the reader owns: one finished (the highlight's home),
+    # one barely begun. Either may or may not appear in the
+    # bibliography below; both match it by title (decision 110).
+    standalone = [
+        ("Chart of Small Hours", 1992, 100, "2026-09-12T00:00:00Z"),
+        ("The Wintering Harbour", 2010, 12, None),
+    ]
+    covers_written = 0
+    highlight_book = None
+    for offset, (title, year, progress, finished_at) in enumerate(standalone):
+        book_uuid = str(uuid.uuid4())
+        bdir = library / book_folder_name(author, title, book_uuid)
+        bdir.mkdir(parents=True, exist_ok=True)
+        (bdir / "book.epub").write_bytes(epub_bytes(title, author))
+        (bdir / "cover.png").write_bytes(
+            png(600, 960, cover_colour(first_index + offset))
+        )
+        covers_written += 1
+        added = (now - timedelta(days=60 - offset)).isoformat()
+        cur = conn.execute(
+            "INSERT INTO books (uuid, title, sort_title, authors, series, "
+            "description, format, file_name, file_hash, cover_name, added_at, "
+            "progress, published, series_index, finished_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                book_uuid,
+                title,
+                title.lower(),
+                author,
+                None,
+                "",
+                "epub",
+                "book.epub",
+                f"hash-author-{offset:06d}",
+                "cover.png",
+                added,
+                progress,
+                str(year),
+                0.0,
+                finished_at,
+            ),
+        )
+        if highlight_book is None:
+            highlight_book = cur.lastrowid
+
+    # (title, year, series_name, series_position) — the cached
+    # bibliography. Owned: both standalones and Meridian 1–3 (from the
+    # series fixture). Missing: Meridian 4, one standalone, and both
+    # "Signal Books" — so the Not-in-library group holds exactly one
+    # series card, standalone-first.
+    works = [
+        ("Chart of Small Hours", 1992, "", ""),
+        ("The Wintering Harbour", 2010, "", ""),
+        ("The Glass Meridian", 1998, "The Glass Meridian", "1"),
+        ("The Salt Meridian", 2001, "The Glass Meridian", "2"),
+        ("The Iron Meridian", 2004, "The Glass Meridian", "3"),
+        ("The Last Meridian", 2008, "The Glass Meridian", "4"),
+        ("A Field Guide to Leaving", 2015, "", ""),
+        ("Signals in the Static", 2018, "The Signal Books", "1"),
+        ("The Quiet Frequency", 2021, "The Signal Books", "2"),
+    ]
+    works_json = json.dumps(
+        [
+            {
+                "title": title,
+                "first_publish_year": year,
+                "subjects": [],
+                "cover_id": None,
+                "cover_file": None,
+                "work_key": "",
+                "series_key": "",
+                "series_name": series_name,
+                "series_position": position,
+                "rating_average": None,
+            }
+            for title, year, series_name, position in works
+        ]
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO author_profiles (canonical_name, sort_name, "
+        "normalized_name, bio, birth_date, death_date, top_work, "
+        "top_subjects_json, openlibrary_key, photo_file, work_count, "
+        "works_json, fetched_at, source_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            author,
+            "Meridian, Ada",
+            norm(author),
+            "Ada Meridian (born 1962) writes seafaring fiction about maps, "
+            "debts, and the harbours people leave behind. Chart of Small "
+            "Hours, her first novel, began a career of quiet crossings; "
+            "The Glass Meridian followed its charts to a coastline that "
+            "would not sit still. She lives in Reykjavík and is said to "
+            "draft every first chapter on a boat, in pencil, badly.",
+            "1962-03-14",
+            "",
+            "The Glass Meridian",
+            '["Sea voyages", "Maps", "Fiction"]',
+            "/authors/OL0000000A",
+            None,
+            len(works),
+            works_json,
+            "2026-10-20T00:00:00Z",
+            "https://openlibrary.org/authors/OL0000000A",
+        ),
+    )
+
+    stamp = "2026-03-14T00:00:00Z"
+    conn.execute(
+        "INSERT INTO annotations (book_id, kind, chapter_index, start_path, "
+        "start_offset, end_path, end_offset, color, style, text_excerpt, "
+        "note, cfi, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            highlight_book,
+            "highlight",
+            3,
+            "p[1]",
+            0,
+            "p[1]",
+            0,
+            "yellow",
+            "solid",
+            "The chart only lies to those who insist the harbour stay put.",
+            "",
+            None,
+            stamp,
+            stamp,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, "
+        "label, created_at) VALUES (?,?,?,?,?)",
+        (highlight_book, 2, 0.5, "The tolling bell", stamp),
+    )
+    conn.execute(
+        "INSERT INTO saved_words (word, definition, dict_name, book_id, "
+        "chapter_index, context_text, created_at) VALUES (?,?,?,?,?,?,?)",
+        (
+            "fathom",
+            "A unit of depth: six feet; also, to understand fully.",
+            None,
+            highlight_book,
+            3,
+            "She could not fathom the chart's patience.",
+            stamp,
+        ),
+    )
+    return covers_written
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--books", type=int, default=139)
@@ -529,6 +763,11 @@ def main() -> int:
         "--series-fixture",
         action="store_true",
         help="add the coherent 3-of-4 series the series-page screenshot opens",
+    )
+    ap.add_argument(
+        "--author-fixture",
+        action="store_true",
+        help="add the cached bibliography + marks the author-page screenshot opens",
     )
     args = ap.parse_args()
 
@@ -665,6 +904,12 @@ def main() -> int:
     if args.series_fixture:
         covers_written += seed_series_fixture(conn, library, now, args.books)
         total_books += 3
+
+    if args.author_fixture:
+        covers_written += seed_author_fixture(
+            conn, library, now, args.books + (3 if args.series_fixture else 0)
+        )
+        total_books += 2
 
     conn.commit()
     conn.close()

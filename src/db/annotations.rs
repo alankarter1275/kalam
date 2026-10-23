@@ -70,6 +70,86 @@ impl Catalog {
         Ok(out)
     }
 
+    /// Annotations for many books at once — the author page's version of
+    /// [`Catalog::get_annotations_for_book`], one statement per 500-id
+    /// chunk so the page's statement count stays flat in the book count.
+    pub fn annotations_for_books(&self, ids: &[i64]) -> Result<Vec<Annotation>> {
+        let mut out = Vec::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                        color, style, text_excerpt, note, cfi, created_at, updated_at
+                 FROM annotations WHERE book_id IN ({holders})
+                 ORDER BY created_at DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), row_to_annotation)?;
+            for row in rows {
+                out.push(row?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Reading bookmarks for many books at once; see
+    /// [`Catalog::annotations_for_books`] for the chunking rationale.
+    pub fn reading_bookmarks_for_books(&self, ids: &[i64]) -> Result<Vec<ReadingBookmark>> {
+        let mut out = Vec::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id, book_id, chapter_index, fraction, label, created_at
+                 FROM reading_bookmarks
+                 WHERE book_id IN ({holders})
+                 ORDER BY chapter_index ASC, fraction ASC, created_at DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(
+                rusqlite::params_from_iter(chunk.iter()),
+                row_to_reading_bookmark,
+            )?;
+            for row in rows {
+                out.push(row?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Saved words drawn from many books at once (words with no book are
+    /// nobody's, so they cannot appear here); see
+    /// [`Catalog::annotations_for_books`].
+    pub fn saved_words_for_books(&self, ids: &[i64]) -> Result<Vec<SavedWord>> {
+        let mut out = Vec::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                 FROM saved_words
+                 WHERE book_id IN ({holders})
+                 ORDER BY created_at DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), row_to_saved_word)?;
+            for row in rows {
+                out.push(row?);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn get_annotations_for_chapter(
         &self,
         book_id: i64,

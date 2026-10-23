@@ -195,6 +195,14 @@ pub fn missing_cover(title: &str, width: i32, height: i32) -> gtk::Box {
     missing_cover_inner(title, width, height, None)
 }
 
+/// The missing face with §28's fetch button present but disabled — the
+/// state until online sources exist (decision 109): visible, labelled for
+/// accessibility, and inert with the not-yet tooltip.
+pub fn missing_cover_with_disabled_fetch(title: &str, width: i32, height: i32) -> gtk::Box {
+    let fetch = fetch_cover_button(title, false, || {});
+    missing_cover_inner(title, width, height, Some(fetch))
+}
+
 /// The missing face with §28's centred fetch affordance below its caption.
 pub fn missing_cover_with_fetch(
     title: &str,

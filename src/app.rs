@@ -3,7 +3,7 @@
 use crate::db::Catalog;
 use crate::models::{LibrarySection, NavItem, Route};
 use crate::pages::{downloads::DownloadsModel, 
-    all_books::{AllBooksModel, AllBooksOut},
+    all_books::{AllBooksModel, AllBooksMsg, AllBooksOut},
     analytics::AnalyticsModel,
     author::{AuthorPageModel, AuthorPageOut},
     book::{BookPageModel, BookPageOut},
@@ -46,6 +46,11 @@ const TASK_TICK: std::time::Duration = std::time::Duration::from_millis(500);
 pub enum AppMsg {
     Navigate(NavItem),
     Push(Route),
+    /// "Show books in library" (author page, decision 112): push the
+    /// All Books section with the author search already typed in.
+    ShowInLibrary {
+        query: String,
+    },
     Back,
     OpenBookDialog {
         book_id: i64,
@@ -600,11 +605,27 @@ impl AppModel {
                         AuthorPageOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
-                        AuthorPageOut::OpenBookDialog { book_id } => {
-                            AppMsg::OpenBookDialog { book_id }
-                        }
                         AuthorPageOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
+                        }
+                        AuthorPageOut::OpenSeries {
+                            series,
+                            first_author,
+                        } => AppMsg::Push(Route::SeriesPage {
+                            series,
+                            first_author,
+                        }),
+                        AuthorPageOut::OpenShelf { shelf_id } => {
+                            AppMsg::Push(Route::ShelfDetail { shelf_id })
+                        }
+                        AuthorPageOut::OpenReaderAt { book_id, chapter } => {
+                            AppMsg::OpenReaderAt {
+                                book_id,
+                                chapter: Some(chapter),
+                            }
+                        }
+                        AuthorPageOut::ShowInLibrary { query } => {
+                            AppMsg::ShowInLibrary { query }
                         }
                     });
                 PageSlot::Author(ctrl)
@@ -1560,6 +1581,7 @@ impl Component for AppModel {
         if let Some(name) = std::env::var_os("KALAM_ROUTE") {
             let name = name.to_string_lossy().to_string();
             match series_route_for_book(&model.catalog, &name)
+                .or_else(|| author_route_for_book(&model.catalog, &name))
                 .or_else(|| route_by_name(&name))
             {
                 Some(route) => {
@@ -1610,6 +1632,18 @@ impl Component for AppModel {
             AppMsg::Push(route) => {
                 self.close_floating();
                 self.swap_page(&widgets.content_host, route, true, &sender);
+            }
+            AppMsg::ShowInLibrary { query } => {
+                self.close_floating();
+                self.swap_page(
+                    &widgets.content_host,
+                    Route::LibrarySection(LibrarySection::AllBooks),
+                    true,
+                    &sender,
+                );
+                if let Some(PageSlot::AllBooks(ctrl)) = &self.page {
+                    let _ = ctrl.sender().send(AllBooksMsg::SetQuery(query));
+                }
             }
             AppMsg::Back => {
                 if let Some(prev) = self.history.pop() {
@@ -2012,6 +2046,30 @@ fn series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
     })
 }
 
+/// The author route a `KALAM_ROUTE=author-book-<id>` value refers to: the
+/// anchor book's first author, exactly what its own author link opens.
+/// Same catalog-dependent reasoning as [`series_route_for_book`].
+fn author_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
+    let normalized = name.trim().to_ascii_lowercase();
+    let book_id = normalized
+        .strip_prefix("author-book-")?
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)?;
+    let book = catalog.get_book(book_id).ok().flatten()?;
+    let author = book
+        .authors
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if author.is_empty() {
+        return None;
+    }
+    Some(Route::AuthorPage { author })
+}
+
 /// The route a `KALAM_ROUTE=<name>` value refers to, if any.
 ///
 /// Names are the lowercase page names a person would say out loud, not the
@@ -2087,7 +2145,12 @@ fn known_route_names() -> Vec<&'static str> {
 
 /// The names that take an id, for the error message only. They are not in
 /// `known_route_names` because that list is asserted to resolve as it stands.
-const ROUTE_ID_FORMS: [&str; 3] = ["book-<id>", "read-<id>", "series-book-<id>"];
+const ROUTE_ID_FORMS: [&str; 4] = [
+    "book-<id>",
+    "read-<id>",
+    "series-book-<id>",
+    "author-book-<id>",
+];
 
 /// A short static label per route, for the `route_open:` timing span and the
 /// stall watchdog's activity stack (`timing::activity`). Every route gets

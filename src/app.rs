@@ -25,7 +25,7 @@ use crate::pages::{downloads::DownloadsModel,
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
     series::{SeriesPageInit, SeriesPageModel, SeriesPageOut},
-    settings::SettingsPageModel,
+    settings::{SettingsMsg, SettingsPageModel, SettingsTab},
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
     tags::{TagBooksModel, TagBooksOut, TagsModel, TagsOut},
@@ -52,6 +52,13 @@ pub enum AppMsg {
         query: String,
     },
     Back,
+    /// One app-wide shortcut from the decision-155 registry. The root
+    /// key handler resolves the chord; this dispatch owns the route.
+    Shortcut(crate::shortcuts::ShortcutAction),
+    /// A shortcut-started import finished. Routed through the model so
+    /// completion can refresh a listing without rebuilding a reader
+    /// or resetting the Settings page that launched it.
+    ShortcutImportFinished(crate::pages::all_books::ImportTally),
     OpenBookDialog {
         book_id: i64,
     },
@@ -1448,6 +1455,79 @@ impl Component for AppModel {
         });
         root.add_controller(tasks_key);
 
+        // The rebindable app shortcuts (decision 155). This remains a
+        // bubble-phase handler on the window: page and reader handlers
+        // get first claim on the keys they own (notably Ctrl+F inside a
+        // book), and only an unclaimed press reaches the shell table.
+        // The table is the same shared copy Settings edits, so a
+        // successful recording changes this handler's next keypress.
+        let app_shortcut_key = gtk::EventControllerKey::new();
+        let shortcut_bindings = crate::shortcuts::shared(&model.catalog);
+        let s_shortcuts = sender.clone();
+        let key_root_shortcuts = root.clone();
+        let notifications_shortcuts = notifications.clone();
+        let float_host_shortcuts = float_host.clone();
+        app_shortcut_key.connect_key_pressed(move |_, keyval, _, state| {
+            use crate::shortcuts::ShortcutAction;
+
+            let (action, binding) = {
+                let table = shortcut_bindings.borrow();
+                let Some(action) = table.action_for(keyval, state) else {
+                    return gtk::glib::Propagation::Proceed;
+                };
+                (action, table.binding(action))
+            };
+
+            // There is no app-wide undo stack yet. Leaving the press
+            // unclaimed also preserves the local Ctrl+Z undo that does
+            // exist (for example, the Tag dialog's own history).
+            if action == ShortcutAction::UndoDelete {
+                return gtk::glib::Propagation::Proceed;
+            }
+
+            let focused = gtk::prelude::GtkWindowExt::focus(&key_root_shortcuts);
+            let typing = focused
+                .map(|w| {
+                    w.is::<gtk::Editable>()
+                        || w.is::<gtk::Text>()
+                        || w.is::<gtk::TextView>()
+                })
+                .unwrap_or(false);
+            if typing && !binding.fires_while_typing() {
+                return gtk::glib::Propagation::Proceed;
+            }
+
+            match action {
+                ShortcutAction::Notifications => {
+                    notifications_shortcuts.toggle();
+                    return gtk::glib::Propagation::Stop;
+                }
+                ShortcutAction::ClosePanel => {
+                    if notifications_shortcuts.is_open() {
+                        notifications_shortcuts.close();
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    if float_host_shortcuts.is_visible() {
+                        s_shortcuts.input(AppMsg::CloseBookDialog);
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    // Reader and page panels own their close keys for
+                    // now; do not swallow a press the shell cannot use.
+                    return gtk::glib::Propagation::Proceed;
+                }
+                _ => {}
+            }
+
+            // A shell action replaces the bell panel rather than
+            // navigating underneath its outside-click catcher.
+            if notifications_shortcuts.is_open() {
+                notifications_shortcuts.close();
+            }
+            s_shortcuts.input(AppMsg::Shortcut(action));
+            gtk::glib::Propagation::Stop
+        });
+        root.add_controller(app_shortcut_key);
+
         // From here on, any notify::* call lands on screen.
         crate::notify::attach(widgets.toast_host.clone());
 
@@ -1633,7 +1713,7 @@ impl Component for AppModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
             AppMsg::Navigate(item) => {
@@ -1689,6 +1769,135 @@ impl Component for AppModel {
                     widgets.content_host.append(&page.widget());
                     self.page = Some(page);
                     sync_content_classes(&widgets.content_host, &self.route, self.show_back_chip());
+                }
+            }
+            AppMsg::Shortcut(action) => {
+                use crate::shortcuts::ShortcutAction;
+
+                match action {
+                    ShortcutAction::GoHome => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Home),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::GoLibrary => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Library),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::OpenSettings => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Settings),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::Back => {
+                        if self.floating.is_some() {
+                            sender.input(AppMsg::CloseBookDialog);
+                        } else {
+                            sender.input(AppMsg::Back);
+                        }
+                    }
+                    ShortcutAction::SearchLibrary => {
+                        // In a book, Ctrl+F remains Find in book; the
+                        // reader's handlers normally claim it before
+                        // this shell dispatch can run.
+                        if !self.route.is_reader() {
+                            self.close_floating();
+                            if self.route
+                                != Route::LibrarySection(LibrarySection::AllBooks)
+                            {
+                                self.swap_page(
+                                    &widgets.content_host,
+                                    Route::LibrarySection(LibrarySection::AllBooks),
+                                    true,
+                                    &sender,
+                                );
+                            }
+                            if let Some(PageSlot::AllBooks(ctrl)) = &self.page {
+                                let _ = ctrl.sender().send(AllBooksMsg::FocusSearch);
+                            }
+                        }
+                    }
+                    ShortcutAction::ImportFiles => {
+                        open_shortcut_import_files(root, &self.catalog, &sender);
+                    }
+                    ShortcutAction::ImportFolder => {
+                        open_shortcut_import_folder(root, &self.catalog, &sender);
+                    }
+                    ShortcutAction::Fullscreen => {
+                        if root.is_fullscreen() {
+                            root.unfullscreen();
+                        } else {
+                            root.fullscreen();
+                        }
+                    }
+                    ShortcutAction::ShowShortcuts => {
+                        // The cheat-sheet overlay is not drawn yet; the
+                        // editable pane is the same registry and is the
+                        // useful interim surface for this binding.
+                        self.close_floating();
+                        if self.route != Route::Module(NavItem::Settings) {
+                            self.swap_page(
+                                &widgets.content_host,
+                                Route::Module(NavItem::Settings),
+                                false,
+                                &sender,
+                            );
+                        }
+                        if let Some(PageSlot::Settings(ctrl)) = &self.page {
+                            let _ = ctrl
+                                .sender()
+                                .send(SettingsMsg::SelectTab(SettingsTab::Shortcuts));
+                        }
+                    }
+                    ShortcutAction::Quit => root.close(),
+                    // Notifications and ClosePanel are handled in the
+                    // key handler, where their widgets live; UndoDelete
+                    // is stored ahead of a global undo stack.
+                    ShortcutAction::Notifications
+                    | ShortcutAction::UndoDelete
+                    | ShortcutAction::ClosePanel => {}
+                }
+            }
+            AppMsg::ShortcutImportFinished(tally) => {
+                if let Some(PageSlot::AllBooks(ctrl)) = &self.page {
+                    // All Books already knows how to reload and report
+                    // an import; hand it the tally rather than rebuild
+                    // the page and lose its search state.
+                    let _ = ctrl.sender().send(AllBooksMsg::ImportFinished(tally));
+                } else {
+                    if tally.imported > 0 {
+                        crate::notify::success(
+                            "Import finished",
+                            &crate::pages::all_books::import_summary(&tally),
+                        );
+                    }
+                    let refresh_listing = matches!(
+                        self.route,
+                        Route::Module(
+                            NavItem::Home
+                                | NavItem::Library
+                                | NavItem::Shelves
+                                | NavItem::Comics,
+                        ) | Route::ShelvesGrid
+                            | Route::LibrarySection(_)
+                            | Route::ComicSeries { .. }
+                    );
+                    if refresh_listing {
+                        self.refresh_if_stale(&widgets.content_host, &sender);
+                    }
                 }
             }
             AppMsg::OpenBookDialog { book_id } => {
@@ -1825,6 +2034,150 @@ impl Component for AppModel {
         update_nav_styles(&widgets.bottom_nav, active);
         self.update_view(widgets, sender);
     }
+}
+
+/// The file half of the shell's Import EPUB shortcut. The native
+/// chooser itself is undesigned and stays native; importing reuses
+/// All Books' worker so duplicates, failures and task reporting do
+/// not acquire a second implementation at the window level.
+fn open_shortcut_import_files(
+    root: &gtk::Window,
+    catalog: &Arc<Catalog>,
+    sender: &ComponentSender<AppModel>,
+) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Import EPUB books")
+        .modal(true)
+        .build();
+
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("Books, Comics, & PDFs (*.epub, *.cbz, *.cbr, *.pdf)"));
+    filter.add_suffix("epub");
+    filter.add_suffix("cbz");
+    filter.add_suffix("cbr");
+    filter.add_suffix("pdf");
+    filter.add_mime_type("application/epub+zip");
+    filter.add_mime_type("application/x-cbz");
+    filter.add_mime_type("application/x-cbr");
+    filter.add_mime_type("application/pdf");
+    let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&filter);
+    dialog.set_filters(Some(&filters));
+
+    let catalog = catalog.clone();
+    let sender = sender.clone();
+    dialog.open_multiple(
+        Some(root),
+        gtk::gio::Cancellable::NONE,
+        move |result| {
+            if let Ok(files) = result {
+                let mut paths = Vec::new();
+                for i in 0..files.n_items() {
+                    if let Some(file) =
+                        files.item(i).and_then(|obj| obj.downcast::<gtk::gio::File>().ok())
+                    {
+                        if let Some(path) = file.path() {
+                            paths.push(path);
+                        }
+                    }
+                }
+                if !paths.is_empty() {
+                    start_shortcut_import(catalog, paths, sender);
+                }
+            }
+        },
+    );
+}
+
+/// The folder half of the Import shortcut pair. Scanning the chosen
+/// folder is disk work, so it runs as a task; the import starts only
+/// when the supported-file list lands back on the main thread.
+fn open_shortcut_import_folder(
+    root: &gtk::Window,
+    catalog: &Arc<Catalog>,
+    sender: &ComponentSender<AppModel>,
+) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Import books from a folder")
+        .modal(true)
+        .build();
+
+    let catalog = catalog.clone();
+    let sender = sender.clone();
+    dialog.select_folder(
+        Some(root),
+        gtk::gio::Cancellable::NONE,
+        move |result| {
+            if let Ok(folder) = result {
+                if let Some(path) = folder.path() {
+                    let scan_catalog = catalog.clone();
+                    let scan_sender = sender.clone();
+                    crate::tasks::spawn(
+                        "Scanning folder for books",
+                        move |_| collect_shortcut_import_files(path),
+                        |_| {},
+                        move |paths| {
+                            if paths.is_empty() {
+                                crate::notify::info(
+                                    "No books found in that folder",
+                                    "Choose a folder containing EPUB, PDF, CBZ or CBR files.",
+                                );
+                            } else {
+                                start_shortcut_import(scan_catalog, paths, scan_sender);
+                            }
+                        },
+                    );
+                }
+            }
+        },
+    );
+}
+
+fn start_shortcut_import(
+    catalog: Arc<Catalog>,
+    paths: Vec<std::path::PathBuf>,
+    sender: ComponentSender<AppModel>,
+) {
+    crate::pages::all_books::spawn_import(
+        catalog,
+        paths,
+        |_, _, _| {},
+        move |tally| {
+            sender.input(AppMsg::ShortcutImportFinished(tally));
+        },
+    );
+}
+
+fn collect_shortcut_import_files(root: std::path::PathBuf) -> Vec<std::path::PathBuf> {
+    let mut pending = vec![root];
+    let mut files = Vec::new();
+
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                pending.push(path);
+            } else if file_type.is_file() {
+                let extension = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.to_ascii_lowercase())
+                    .unwrap_or_default();
+                if matches!(extension.as_str(), "epub" | "pdf" | "cbz" | "cbr") {
+                    files.push(path);
+                }
+            }
+        }
+    }
+
+    files.sort();
+    files
 }
 
 /// The sidebar wordmark: the Kalam logo (calligraphic K, one SVG path,

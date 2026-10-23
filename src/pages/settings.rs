@@ -838,7 +838,11 @@ impl SettingsPageModel {
             }
             SettingsTab::Shortcuts => {
                 clear_box(&widgets.shortcuts_content);
-                build_shortcuts(&widgets.shortcuts_content);
+                let save_catalog = self.catalog.clone();
+                let save: ShortcutSave = Rc::new(move |action, binding| {
+                    save_catalog.set_pref(&action.pref_key(), &binding.to_pref());
+                });
+                build_shortcuts(&widgets.shortcuts_content, &self.catalog, save);
             }
             SettingsTab::About => {
                 clear_box(&widgets.about_content);
@@ -1756,120 +1760,233 @@ fn build_integrations(host: &gtk::Box) {
     pane_row_with(&rows, "Downloads at once", None, &at_once);
 }
 
-// ---------------------------------------------------------------------------
-// Shortcuts (decision 155). This table is the registry the rebinding
-// UI and the app-wide wiring will read; the pane renders it now and
-// learns recording when the actions are wired.
+//---------------------------------------------------------------------------
+// Shortcuts (decision 155): the app-wide registry in `src/shortcuts.rs`,
+// rendered as four outlined groups of 40-high key rows. The chip cluster
+// is a button; clicking it arms a capture controller on that button.
+// One recording at a time, a conflict is refused in the accent line
+// under its group, and a successful press updates the shell's shared
+// table before the preference is saved.
 // ---------------------------------------------------------------------------
 
-struct ShortcutDef {
-    id: &'static str,
-    label: &'static str,
-    keys: &'static [&'static str],
+use crate::shortcuts::{ShortcutAction, ShortcutBinding, ShortcutBindings, SHORTCUT_GROUPS};
+
+type ShortcutSave = Rc<dyn Fn(ShortcutAction, ShortcutBinding)>;
+type ShortcutControls = Rc<RefCell<Vec<ShortcutControl>>>;
+type ShortcutConflicts = Rc<RefCell<Vec<gtk::Label>>>;
+
+struct ShortcutControl {
+    action: ShortcutAction,
+    button: gtk::Button,
 }
 
-const SHORTCUT_GROUPS: &[(&str, &[ShortcutDef])] = &[
-    (
-        "Navigation",
-        &[
-            ShortcutDef {
-                id: "nav-home",
-                label: "Go to Home",
-                keys: &["Alt", "1"],
-            },
-            ShortcutDef {
-                id: "nav-library",
-                label: "Go to Library",
-                keys: &["Alt", "2"],
-            },
-            ShortcutDef {
-                id: "nav-settings",
-                label: "Open Settings",
-                keys: &["Ctrl", ","],
-            },
-            ShortcutDef {
-                id: "nav-back",
-                label: "Back",
-                keys: &["Alt", "←"],
-            },
-            ShortcutDef {
-                id: "nav-notifications",
-                label: "Notification history",
-                keys: &["Ctrl", "Shift", "N"],
-            },
-        ],
-    ),
-    (
-        "Library",
-        &[
-            ShortcutDef {
-                id: "library-search",
-                label: "Search the library",
-                keys: &["Ctrl", "F"],
-            },
-            ShortcutDef {
-                id: "library-import",
-                label: "Import EPUB",
-                keys: &["Ctrl", "I"],
-            },
-            ShortcutDef {
-                id: "library-import-folder",
-                label: "Import from a folder",
-                keys: &["Ctrl", "Shift", "I"],
-            },
-        ],
-    ),
-    (
-        "Window",
-        &[
-            ShortcutDef {
-                id: "window-fullscreen",
-                label: "Full screen",
-                keys: &["F11"],
-            },
-            ShortcutDef {
-                id: "window-shortcuts",
-                label: "Show shortcuts",
-                keys: &["Ctrl", "/"],
-            },
-            ShortcutDef {
-                id: "window-quit",
-                label: "Quit",
-                keys: &["Ctrl", "Q"],
-            },
-        ],
-    ),
-    (
-        "Everywhere",
-        &[
-            ShortcutDef {
-                id: "app-undo-delete",
-                label: "Undo the last delete",
-                keys: &["Ctrl", "Z"],
-            },
-            ShortcutDef {
-                id: "app-close-panel",
-                label: "Close the open panel",
-                keys: &["Esc"],
-            },
-        ],
-    ),
-];
+fn build_shortcuts(host: &gtk::Box, catalog: &Catalog, save: ShortcutSave) {
+    let bindings = crate::shortcuts::shared(catalog);
+    let recording = Rc::new(Cell::new(None::<ShortcutAction>));
+    let controls: ShortcutControls = Rc::new(RefCell::new(Vec::new()));
+    let conflicts: ShortcutConflicts = Rc::new(RefCell::new(Vec::new()));
 
-fn build_shortcuts(host: &gtk::Box) {
-    for (group, defs) in SHORTCUT_GROUPS {
+    for (group_index, (group, actions)) in SHORTCUT_GROUPS.iter().enumerate() {
         let rows = pane_section(host, group);
-        for def in *defs {
-            let row = pane_row(&rows, def.label, None);
+        for action in *actions {
+            let row = pane_row(&rows, action.label(), None);
             row.add_css_class("key");
-            row.set_widget_name(&format!("shortcut-{}", def.id));
-            let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            chips.set_valign(gtk::Align::Center);
-            for key in def.keys {
-                chips.append(&crate::widgets::chip::key_chip(key, false));
+            row.set_widget_name(&format!("shortcut-{}", action.id()));
+
+            let button = gtk::Button::new();
+            button.add_css_class("kalam-settings-key-bind");
+            button.set_widget_name(&format!("shortcut-bind-{}", action.id()));
+            button.set_valign(gtk::Align::Center);
+            button.set_can_focus(true);
+            let binding = bindings.borrow().binding(action);
+            set_shortcut_face(&button, action, &binding, false);
+            controls.borrow_mut().push(ShortcutControl {
+                action,
+                button: button.clone(),
+            });
+
+            {
+                let bindings_click = bindings.clone();
+                let recording_click = recording.clone();
+                let controls_click = controls.clone();
+                let conflicts_click = conflicts.clone();
+                button.connect_clicked(move |button| {
+                    if recording_click.get() == Some(action) {
+                        recording_click.set(None);
+                    } else {
+                        recording_click.set(Some(action));
+                        button.grab_focus();
+                    }
+                    clear_shortcut_conflicts(&conflicts_click);
+                    refresh_shortcut_faces(
+                        &controls_click.borrow(),
+                        &bindings_click.borrow(),
+                        recording_click.get(),
+                    );
+                });
             }
-            row.append(&chips);
+
+            let keys = gtk::EventControllerKey::new();
+            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+            {
+                let bindings_key = bindings.clone();
+                let recording_key = recording.clone();
+                let controls_key = controls.clone();
+                let conflicts_key = conflicts.clone();
+                let save_key = save.clone();
+                keys.connect_key_pressed(move |_, keyval, _, state| {
+                    if recording_key.get() != Some(action) {
+                        return gtk::glib::Propagation::Proceed;
+                    }
+                    // Escape is the cancel gesture for every row except
+                    // the one whose job is Escape itself; that row can
+                    // still be cancelled by clicking its chips again.
+                    if keyval == gtk::gdk::Key::Escape && action != ShortcutAction::ClosePanel {
+                        recording_key.set(None);
+                        clear_shortcut_conflicts(&conflicts_key);
+                        refresh_shortcut_faces(
+                            &controls_key.borrow(),
+                            &bindings_key.borrow(),
+                            recording_key.get(),
+                        );
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    // A lone modifier yields no binding and leaves the
+                    // recorder armed for the rest of the chord.
+                    let Some(candidate) = ShortcutBinding::capture(keyval, state) else {
+                        return gtk::glib::Propagation::Stop;
+                    };
+                    let conflict = {
+                        let mut table = bindings_key.borrow_mut();
+                        table.try_bind(action, candidate.clone()).err()
+                    };
+                    if let Some(owner) = conflict {
+                        show_shortcut_conflict(
+                            &conflicts_key,
+                            group_index,
+                            &format!(
+                                "{} is already used by {}.",
+                                candidate.display_label(),
+                                owner.label()
+                            ),
+                        );
+                        refresh_shortcut_faces(
+                            &controls_key.borrow(),
+                            &bindings_key.borrow(),
+                            recording_key.get(),
+                        );
+                        return gtk::glib::Propagation::Stop;
+                    }
+
+                    recording_key.set(None);
+                    save_key(action, candidate);
+                    clear_shortcut_conflicts(&conflicts_key);
+                    refresh_shortcut_faces(
+                        &controls_key.borrow(),
+                        &bindings_key.borrow(),
+                        recording_key.get(),
+                    );
+                    gtk::glib::Propagation::Stop
+                });
+            }
+            button.add_controller(keys);
+
+            let focus = gtk::EventControllerFocus::new();
+            {
+                let bindings_focus = bindings.clone();
+                let recording_focus = recording.clone();
+                let controls_focus = controls.clone();
+                let conflicts_focus = conflicts.clone();
+                focus.connect_leave(move || {
+                    if recording_focus.get() == Some(action) {
+                        recording_focus.set(None);
+                        clear_shortcut_conflicts(&conflicts_focus);
+                        refresh_shortcut_faces(
+                            &controls_focus.borrow(),
+                            &bindings_focus.borrow(),
+                            recording_focus.get(),
+                        );
+                    }
+                });
+            }
+            button.add_controller(focus);
+
+            row.append(&button);
         }
+
+        let conflict = gtk::Label::new(None);
+        conflict.add_css_class("kalam-settings-shortcut-conflict");
+        conflict.set_widget_name(&format!("shortcut-conflict-{group_index}"));
+        conflict.set_halign(gtk::Align::Start);
+        conflict.set_xalign(0.0);
+        conflict.set_wrap(true);
+        conflict.set_visible(false);
+        host.append(&conflict);
+        conflicts.borrow_mut().push(conflict);
+    }
+}
+
+fn set_shortcut_face(
+    button: &gtk::Button,
+    action: ShortcutAction,
+    binding: &ShortcutBinding,
+    recording: bool,
+) {
+    let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    chips.set_valign(gtk::Align::Center);
+    chips.set_can_target(false);
+    if recording {
+        chips.append(&crate::widgets::chip::key_chip("Press a key…", true));
+    } else {
+        for part in binding.display_parts() {
+            chips.append(&crate::widgets::chip::key_chip(&part, false));
+        }
+    }
+    button.set_child(Some(&chips));
+    button.set_tooltip_text(Some(if recording {
+        "Press a key, or Escape to cancel"
+    } else {
+        "Click, then press the key you want"
+    }));
+    let accessible = if recording {
+        format!("Recording a key for {}", action.label())
+    } else {
+        format!(
+            "Rebind {} (currently {})",
+            action.label(),
+            binding.display_label()
+        )
+    };
+    button.update_property(&[gtk::accessible::Property::Label(&accessible)]);
+}
+
+fn refresh_shortcut_faces(
+    controls: &[ShortcutControl],
+    bindings: &ShortcutBindings,
+    recording: Option<ShortcutAction>,
+) {
+    for control in controls {
+        set_shortcut_face(
+            &control.button,
+            control.action,
+            &bindings.binding(control.action),
+            recording == Some(control.action),
+        );
+    }
+}
+
+fn clear_shortcut_conflicts(conflicts: &ShortcutConflicts) {
+    for label in conflicts.borrow().iter() {
+        label.set_label("");
+        label.set_visible(false);
+    }
+}
+
+fn show_shortcut_conflict(conflicts: &ShortcutConflicts, group_index: usize, text: &str) {
+    clear_shortcut_conflicts(conflicts);
+    if let Some(label) = conflicts.borrow().get(group_index) {
+        label.set_label(text);
+        label.set_visible(true);
     }
 }
 

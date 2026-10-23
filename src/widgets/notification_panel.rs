@@ -153,6 +153,11 @@ impl NotificationPanel {
         }
     }
 
+    /// The keyboard equivalent of clicking the bell (decision 155).
+    pub fn toggle(&self) {
+        self.set_open(!self.open.get());
+    }
+
     /// Close on Esc while open (decisions 20 and 35). The shell adds
     /// this to the window next to its other permanent key handlers;
     /// it is inert while the panel is shut.

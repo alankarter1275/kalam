@@ -37,6 +37,7 @@ mod perf;
 mod preload;
 mod service;
 mod shelf_rules;
+mod shortcuts;
 mod sidecar;
 mod sources;
 mod splash;

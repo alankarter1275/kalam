@@ -31,6 +31,8 @@ pub enum AllBooksMsg {
     /// library"): the entry text and the query move together, so what
     /// the reader sees is a search they can keep editing.
     SetQuery(String),
+    /// Put keyboard focus in the library search (the shell's Ctrl+F).
+    FocusSearch,
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
@@ -511,6 +513,10 @@ impl Component for AllBooksModel {
                         }
                     }
                 }
+            }
+            AllBooksMsg::FocusSearch => {
+                widgets.search.grab_focus();
+                return;
             }
             AllBooksMsg::SetQuery(q) => {
                 // Setting the entry text fires search-changed, which

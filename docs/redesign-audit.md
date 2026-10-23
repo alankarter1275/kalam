@@ -551,6 +551,15 @@ Deltas:
   shelf-routing choice itself as enabling that format. Removing the
   extra row to match the board exactly first needs a drawn answer
   for how a paused folder is represented.
+- Implementation note (Settings tranche 4): the drawn Ctrl+/
+  cheat-sheet overlay is still undesigned, so **Show shortcuts**
+  opens the editable Shortcuts pane (the same registry) as the
+  interim surface. **Undo the last delete** is stored and rebindable
+  but deliberately left unclaimed by the shell — there is no global
+  undo stack, and claiming Ctrl+Z would break the local undo that
+  does exist. A rebound **Close the open panel** key closes the
+  bell and the shell's floats; reader/page panels keep their own
+  handlers until the reader phases unify them.
 
 ## 6. Verified inventory of everything else (not yet designed)
 

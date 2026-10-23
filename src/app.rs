@@ -1536,35 +1536,25 @@ impl Component for AppModel {
         // show. `notifications` seeds three ordinary events through the
         // real notify path; `notifications-empty` clears any startup
         // housekeeping entry. Both then toggle the actual panel.
-        match std::env::var("KALAM_DIALOG").as_deref() {
-            Ok(state @ ("notifications" | "notifications-empty")) => {
-                let panel = notifications.clone();
-                let with_events = state == "notifications";
-                gtk::glib::timeout_add_local_once(
-                    std::time::Duration::from_millis(900),
-                    move || {
-                        crate::notify::clear_history();
-                        if with_events {
-                            crate::notify::success(
-                                "Imported 3 books",
-                                "Added to New arrivals.",
-                            );
-                            crate::notify::info(
-                                "Library backed up",
-                                "kalam-backup.db",
-                            );
-                            crate::notify::error(
-                                "Could not import one file",
-                                "broken.epub is not a readable EPUB.",
-                            );
-                        }
-                        if !panel.is_open() {
-                            panel.toggle();
-                        }
-                    },
-                );
-            }
-            _ => {}
+        if let Ok(state @ ("notifications" | "notifications-empty")) =
+            std::env::var("KALAM_DIALOG").as_deref()
+        {
+            let panel = notifications.clone();
+            let with_events = state == "notifications";
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+                crate::notify::clear_history();
+                if with_events {
+                    crate::notify::success("Imported 3 books", "Added to New arrivals.");
+                    crate::notify::info("Library backed up", "kalam-backup.db");
+                    crate::notify::error(
+                        "Could not import one file",
+                        "broken.epub is not a readable EPUB.",
+                    );
+                }
+                if !panel.is_open() {
+                    panel.toggle();
+                }
+            });
         }
 
         // Any reading session still marked open belongs to a previous process

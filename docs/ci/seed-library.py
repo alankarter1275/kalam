@@ -492,12 +492,22 @@ def seed_series_fixture(conn, library: pathlib.Path, now: datetime, first_index:
             )
 
     # Mirrors `src/db/series.rs::series_key`: the leading article drops
-    # from the series, then both halves keep alphanumerics only.
+    # from the series, then both halves (series, full first author)
+    # keep alphanumerics only, lowercased.
+    def _norm(s: str) -> str:
+        return "".join(c for c in s.lower() if c.isalnum())
+
+    series_no_article = series
+    first_word, _, rest = series.partition(" ")
+    if rest and first_word.lower() in ("the", "a", "an"):
+        series_no_article = rest
+    series_key = f"{_norm(series_no_article)}|{_norm(author)}"
+    assert series_key == "glassmeridian|adameridian", series_key
     conn.execute(
         "INSERT OR REPLACE INTO series_cache (series_key, source, "
         "fetched_at, works_json) VALUES (?,?,?,?)",
         (
-            "glassmeridian|melark",
+            series_key,
             "openlibrary",
             "2026-10-20T00:00:00Z",
             json.dumps(works),

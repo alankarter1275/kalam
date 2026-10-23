@@ -377,6 +377,7 @@ impl Component for SeriesPageModel {
                     })
                     .unwrap_or_else(|| default_focus(&snap.entries));
 
+                let mut hook_flipped_view = false;
                 if first_load {
                     // CI screenshot hook, the series counterpart of
                     // KALAM_DIALOG: `KALAM_SERIES_VIEW=list|strip` picks the
@@ -387,11 +388,18 @@ impl Component for SeriesPageModel {
                         Ok("strip") => false,
                         _ => snap.view_list,
                     };
+                    hook_flipped_view = self.view_list != snap.view_list;
                     grab_root = true;
                 }
 
                 let needs_fetch = snap.listed_total.is_none();
                 self.snapshot = Some(snap);
+                if hook_flipped_view {
+                    // The worker decoded covers for the remembered view;
+                    // warm the hook's view too so its deferred covers
+                    // swap in instead of sitting on generated faces.
+                    self.warm_all_covers();
+                }
                 if needs_fetch && !self.auto_fetch_tried && !self.fetching {
                     self.auto_fetch_tried = true;
                     self.start_fetch(&sender, false);
@@ -968,6 +976,10 @@ impl SeriesPageModel {
                 button.add_css_class("kalam-seriespage-cover-button");
                 button.set_size_request(width, height);
                 button.set_halign(gtk::Align::Start);
+                // vexpand makes the valign actually land: without the
+                // extra allocation a box packs its child at the top and
+                // bottom-alignment inside the slot never happens.
+                button.set_vexpand(true);
                 button.set_valign(gtk::Align::End);
                 button.set_can_focus(true);
                 button.set_child(Some(&strip_cover(entry, width, height)));

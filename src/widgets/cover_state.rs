@@ -124,6 +124,30 @@ pub fn fallback_cover(title: &str, author: &str, kind: &str, width: i32, height:
     cover.set_vexpand(false);
     cover.set_overflow(gtk::Overflow::Hidden);
 
+    // Micro sizes (36×50 row thumbnails) cannot hold kind/title/author:
+    // three lines of copy have a minimum height past 100px, which would
+    // override the requested height and inflate the row around the
+    // thumbnail — exactly what the series list's first capture showed.
+    // Like the missing face at this size, keep one centred token (the
+    // kind) and let the surrounding row carry the title at readable size.
+    if width < 80 || height < 110 {
+        let top_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        top_spacer.set_vexpand(true);
+        cover.append(&top_spacer);
+
+        let kind_label =
+            gtk::Label::new(Some(&display_text(kind, "BOOK").to_ascii_uppercase()));
+        kind_label.add_css_class("kalam-ui-cover-kind");
+        kind_label.set_halign(gtk::Align::Center);
+        kind_label.set_xalign(0.5);
+        cover.append(&kind_label);
+
+        let bottom_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        bottom_spacer.set_vexpand(true);
+        cover.append(&bottom_spacer);
+        return cover;
+    }
+
     let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     spacer.set_vexpand(true);
     cover.append(&spacer);

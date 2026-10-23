@@ -3026,7 +3026,7 @@ fn build_dictionaries_pane(
     dicts: &[crate::db::Dictionary],
     sender: &ComponentSender<SettingsPageModel>,
 ) {
-    use gtk::glib::{StaticType, ToValue};
+    use gtk::glib::prelude::{StaticType, ToValue};
 
     clear_box(host);
 

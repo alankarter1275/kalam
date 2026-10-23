@@ -278,6 +278,21 @@ pub const TEAL_DARK: Theme = Theme {
     info: "#8ab4e8",
 };
 
+/// Every resolved theme, Light then Dark per palette. Production code
+/// walks `Palette::ALL` and asks each palette for its pair; this flat
+/// list exists for the tests that pin that ordering and the id set.
+#[cfg(test)]
+const ALL: &[Theme] = &[
+    TERRACOTTA_LIGHT,
+    TERRACOTTA_DARK,
+    FOREST_LIGHT,
+    FOREST_DARK,
+    PLUM_LIGHT,
+    PLUM_DARK,
+    TEAL_LIGHT,
+    TEAL_DARK,
+];
+
 /// The theme used on first run and whenever a stored id is unrecognised
 /// (including every id from the previous thirteen-theme system).
 pub const DEFAULT: Theme = TERRACOTTA_DARK;

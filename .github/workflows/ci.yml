@@ -841,7 +841,10 @@ jobs:
             ci-logs/author-annotations-terracotta-dark.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt \
+          git add -f ci-logs/reader-latest.txt \
+            ci-logs/reader-chrome-light-latest.txt \
+            ci-logs/reader-chrome-dark-latest.txt \
+            ci-logs/tasks-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
             ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
             ci-logs/book-tags-light-latest.txt ci-logs/book-tags-dark-latest.txt \
@@ -869,7 +872,9 @@ jobs:
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done
-          for shot in ci-logs/components-terracotta-light.png \
+          for shot in ci-logs/reader-chrome-terracotta-light.png \
+                      ci-logs/reader-chrome-terracotta-dark.png \
+                      ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \
                       ci-logs/book-terracotta-dark.png \

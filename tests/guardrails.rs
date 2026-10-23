@@ -425,16 +425,6 @@ const ALLOWED_UI_THREAD_SITES: &[(&str, &str, &str)] = &[
         "micro-op stat: does this row's cover file exist before the widget shows it",
     ),
     (
-        "src/pages/author.rs",
-        "if path.is_file() {",
-        "micro-op stat: the author avatar photo (the 7.1 step-2a allowlist question)",
-    ),
-    (
-        "src/pages/author.rs",
-        "path.is_file().then_some(path)",
-        "micro-op stat: an author-work cover before the widget shows it",
-    ),
-    (
         "src/pages/comics.rs",
         "fn expand_comic_paths(paths",
         "expansion helper definition; it runs only from the scanning task",

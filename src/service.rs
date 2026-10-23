@@ -1026,11 +1026,19 @@ impl LibraryService {
         // One card per comic series, never per chapter — the author's shelf
         // obeys the same rule as every other list.
         self.catalog.collapse_comic_chapters(&mut owned_books);
-        let profile = self
+        let mut profile = self
             .catalog
             .get_author_profile_by_name(author_name)
             .ok()
             .flatten();
+        // The photo path is a blind join in the row mapper; whether the
+        // download still exists is settled here, on the worker, so the
+        // page never stats a file to draw the portrait (7.7).
+        if let Some(profile) = &mut profile {
+            if profile.photo_path.as_ref().is_some_and(|p| !p.is_file()) {
+                profile.photo_path = None;
+            }
+        }
         let groups = author_groups(profile.as_ref(), &owned_books);
 
         let ids: Vec<i64> = owned_books.iter().map(|book| book.id).collect();

@@ -1124,9 +1124,9 @@ fn facts_panel(snap: &AuthorPageSnapshot, name: &str) -> gtk::Box {
     let top = gtk::Box::new(gtk::Orientation::Horizontal, 16);
     top.set_valign(gtk::Align::Start);
 
-    let photo = profile
-        .and_then(|p| p.photo_path.as_deref())
-        .filter(|path| path.is_file());
+    // Existence was settled on the worker (service::author_page); the
+    // path is either a real file or already None.
+    let photo = profile.and_then(|p| p.photo_path.as_deref());
     let portrait: gtk::Widget = match photo {
         Some(path) => {
             let widget = cover_widget(Some(path), PORTRAIT, PORTRAIT);

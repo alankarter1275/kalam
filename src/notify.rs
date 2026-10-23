@@ -73,15 +73,6 @@ impl Kind {
             _ => DISMISS_MS_INFO,
         }
     }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Kind::Success => "Success",
-            Kind::Error => "Error",
-            Kind::Info => "Info",
-            Kind::Progress => "Activity",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

@@ -2100,7 +2100,7 @@ fn present_tags_dialog(
                 .list_tags_with_counts()
                 .unwrap_or_default();
             if sort_az.get() {
-                library.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+                library.sort_by_cached_key(|(name, _)| name.to_lowercase());
             }
             let has = |name: &str| on_book.iter().any(|t| t.eq_ignore_ascii_case(name));
 

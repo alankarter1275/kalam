@@ -574,9 +574,17 @@ labels' one-line natural width. Items 3 and 5 remain, done per page/reader
 as scheduled above. The shell phase is also complete (`9870baf`): the rail
 is 68px with 44px circular items and the accent-fill active state, the Back
 pill matches the page specs, and the brand mark re-rasterizes on theme
-changes via `theme::on_theme_applied` — verified in capture at 32px in both
-modes, where the logo's hairline loop survives but stays delicate (the §5
-check; strengthening it would be an artwork change, not a builder one).
+changes via `theme::on_theme_applied`. Its infinity loop was then
+strengthened slightly (`fb75f9d`) and verified in capture at 32px in both
+modes. Book details is complete and CI-green: the page (`b786ab6`, layout
+correction `29db77b`), the Annotations dialog (`ffcee6a`), and the Tag
+dialog (`bad84b8`). The screenshot loop now photographs the page plus both
+dialogs in Terracotta Light and Dark — populated tag chips/ticked rows on
+seeded book 4 and the Annotations empty states — and `9417679` fixed the
+oval highlight-filter dots those first dialog captures exposed. The
+impression feature remains separately scheduled, the series link still
+opens the old series float pending the series-page phase, and the app-level
+shelves float remains for its book-float entry point.
 
 ## 8. Designed-but-unbuilt features (inventory only — ruling 4)
 

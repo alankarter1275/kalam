@@ -64,15 +64,15 @@ A route-accepted log line proves only that the route was parsed; it does not
 prove that the reader opened its book or that the UI is visually correct.
 
 Screenshots and run logs are kept only in the Actions job workspace. The
-workflow does not upload PNG screenshots. It commits the text summaries to
-`ci-logs/reader-latest.txt`, `ci-logs/tasks-latest.txt`,
-`ci-logs/components-light-latest.txt` and
-`ci-logs/components-dark-latest.txt`, including on successful runs. The
-settled gallery frame of each mode is the one exception to the no-PNG rule:
-it is committed as `ci-logs/components-terracotta-light.png` and
-`ci-logs/components-terracotta-dark.png`, because an artboard exists to be
-looked at and the agent cannot download Actions artifacts from its
-sandbox. The build job also
+workflow does not upload PNG screenshots. It commits the text summaries
+to `ci-logs/*-latest.txt`, including on successful runs. The settled
+frames of the redesigned surfaces are the exception to the no-PNG rule:
+the component gallery, the book page and its dialogs, the series page,
+the author page and its dialogs, and the 23 Settings/notification
+captures are committed as `ci-logs/*.png`, because a redesign nobody can
+look at is not verified and the agent cannot download Actions artifacts
+from its sandbox. See [`README-screenshots.md`](README-screenshots.md)
+for the full list. The build job also
 publishes rustfmt, Clippy, test and OCR-probe output under `ci-logs/`.
 
 The summaries are evidence to inspect, not a visual approval. See

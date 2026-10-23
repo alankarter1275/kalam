@@ -560,6 +560,25 @@ Deltas:
   does exist. A rebound **Close the open panel** key closes the
   bell and the shell's floats; reader/page panels keep their own
   handlers until the reader phases unify them.
+- Implementation note (Settings tranche 5): the screenshot loop now
+  photographs all eleven panes plus their drawn states — 23
+  committed `ci-logs/settings-*.png` frames with matching reports,
+  driven by `KALAM_SETTINGS_PANE` / `KALAM_SETTINGS_ACTION` hooks
+  and seeder fixtures for libraries, watch folders, dictionaries
+  and backups. The first captures exposed, and the fix batch
+  closed: a run-only `KALAM_THEME` override invisible to the
+  Appearance tick (the applied choice is now recorded in
+  `theme.rs`), the engine's compiled-in reader faces unregistered
+  with Pango (Reading preview/dropdown fell back to a sans at
+  point size), bundled-dictionary marker seeding racing the first
+  snapshot (rows are seeded directly instead), the runner's real
+  `~/.config` leaking into captures (`screenshot.sh` now always
+  resets `XDG_CONFIG_HOME`), invalid GTK CSS `cursor:` rules, and
+  confirmation dialogs measuring up to 509px against the 420 spec
+  (a wrap label's natural width is `max_width_chars` × Pango's
+  approximate char width, ~8.7px here — the cap now divides by 9).
+  Dictionary reorder remains mouse/touch drag only; no keyboard
+  path is drawn.
 
 ## 6. Verified inventory of everything else (not yet designed)
 
@@ -634,7 +653,7 @@ data) → series page (new route, retires float) → author page → EPUB reader
 (panel surgery + theme/prefs migration) → comic reader chrome → PDF reader
 chrome. Settings' Appearance tab lands with the token phase (it *is* the
 palette picker); the rest of Settings waited for its design, which
-arrived in chat 8 (decisions 144–158) and is now the active phase (§5.8).
+arrived in chat 8 (decisions 144–158) and was then built (§5.8).
 
 **Status (2026-10-23):** items 1 and 2 are complete and CI-green (tokens
 `5fbd12b`; component library through `c9d43cb`, exercised by the hidden
@@ -706,6 +725,25 @@ retry cap before the first frame, so both waits now ride the frame
 clock. Comics credits still open the comics page's own author
 handling; routing them here (decision 116) belongs to the comics
 chrome phase. Next in the order above is the EPUB reader.
+Settings — taken next by owner choice, ahead of the reader — is
+complete and CI-green (foundations `9a7d54a`; panes `7c66bb3`,
+`2889fb2`, `3bd9f8b`; rail bell `3c14d86`; shortcuts `1fbe8d4`;
+screenshot tranche `7784b47` and its visual-fix batch). The old
+six-tab page is rebuilt as the eleven-pane §41 layout: the
+palette/mode picker (§42 Cairo mini-pages), Reading over the
+existing `reader.*` prefs with a live preview, libraries/data/
+book-files/watch-folders/dictionaries over their existing
+backends, metadata sources with the Google rejected-key state,
+Integrations fully disabled per decision 154, the rebindable
+shortcut registry (`src/shortcuts.rs`, global `ui.shortcut.*`
+prefs), and the rail bell with its Today/Earlier panel replacing
+the Notifications pane. The screenshot loop photographs all
+eleven panes plus dialogs, drag, recording and notification
+states — 23 committed frames; its findings and fixes are the
+tranche-5 note in §5.8. Two tranche-2b deviations still want
+owner confirmation (the extra “Watch this folder” pause switch;
+dropped legacy per-format `import_*` toggles). Next is the EPUB
+reader.
 
 ## 8. Designed-but-unbuilt features (inventory only — ruling 4)
 

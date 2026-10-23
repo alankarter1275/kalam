@@ -18,10 +18,15 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 | `book-4` + `DIALOG=tags` | The book page's Tag dialog opened over it (`KALAM_DIALOG`), twice: Light and Dark. Book 4 is the first seeded book carrying three tags, so chips and ticked library rows render for real. |
 | `book-1` + `DIALOG=annotations` | The Annotations dialog the same way, twice. The seeder writes no annotations, so these photograph the empty states. |
 | `series-book-21` + `SERIES_FIXTURE=1` | The series page over the seeder's coherent fixture series (Book 1 finished, Book 2 at 42%, Book 3 unread, Book 4 only in the seeded listing cache): the strip in Light and Dark, plus the list view in Light via `SERIES_VIEW=list`. The route anchors on a book id because a series route's name/author do not belong in a shell variable. |
+| `author-book-21` + `SERIES_FIXTURE=1` | The author page for the fixture series' author (`--author-fixture` in the seeder: cached bibliography plus one mark of each kind): the page in Light and Dark, the open-series panel, the Create shelf dialog and the author-scope Annotations dialog. |
+| `settings` | The redesigned Settings page, 23 captures alternating Terracotta Light/Dark. `SETTINGS_PANE` picks the pane and `SETTINGS_ACTION` stages a drawn state (typeface dropdown open, restart/delete/remove confirms, shelf dropdown, dictionary drag, shortcut recording, notification panel with seeded events / empty / closed-bell unseen dot). The seeder's Settings fixtures supply the library registry, a watch folder (or none with `SETTINGS_EMPTY_WATCH=1`), Google Books key/country/rejected state, EPUB `.orig` backups, and the four bundled dictionary rows (or none with `SETTINGS_EMPTY_DICTS=1`). |
 
 The seeder writes real EPUBs and covers under readable author/title folders
 with short-id suffixes. It creates a minimal schema-version-1 catalog; Kalam
-runs migrations when it opens the library.
+runs migrations when it opens the library. Every capture runs under a fresh
+disposable `XDG_CONFIG_HOME` (`screenshot.sh` force-assigns it), so prefs
+and fixture writes can never leak between routes or from the runner's own
+`~/.config`.
 
 For each route, the script captures the requested page, waits, captures it
 again, and then launches Home for comparison. The repeated captures should be
@@ -51,20 +56,28 @@ The job commits text reports to:
 - `ci-logs/series-light-latest.txt`
 - `ci-logs/series-dark-latest.txt`
 - `ci-logs/series-list-light-latest.txt`
+- `ci-logs/author-{light,dark,panel-light,shelf-light,annotations-dark}-latest.txt`
+- `ci-logs/settings-*-latest.txt` (one per Settings capture, 23 today)
 
 The report includes route checks, timing spans, main-loop stalls, pixel
 samples, screenshot fingerprints, app output and peak RSS. PNG images and
 compositor logs stay in the temporary Actions workspace; the workflow does not
 upload them as artifacts. The only uploaded artifact is the release binary
-used by the smoke job. The exceptions are the gallery, the book page, its
-two dialogs and the series page: their settled frames in each mode are
-committed as
+used by the smoke job. The exceptions are the redesigned surfaces: the
+gallery, the book page and its two dialogs, the series page, the author
+page and its dialogs, and the Settings captures. Their settled frames
+are committed as
 `ci-logs/components-terracotta-{light,dark}.png`,
 `ci-logs/book-terracotta-{light,dark}.png`,
 `ci-logs/book-tags-terracotta-{light,dark}.png`,
 `ci-logs/book-annotations-terracotta-{light,dark}.png`,
-`ci-logs/series-terracotta-{light,dark}.png` and
-`ci-logs/series-list-terracotta-light.png`, because a redesign
+`ci-logs/series-terracotta-{light,dark}.png`,
+`ci-logs/series-list-terracotta-light.png`,
+`ci-logs/author-terracotta-{light,dark}.png`,
+`ci-logs/author-panel-terracotta-light.png`,
+`ci-logs/author-shelf-terracotta-light.png`,
+`ci-logs/author-annotations-terracotta-dark.png` and
+`ci-logs/settings-*.png`, because a redesign
 nobody can look at is not verified and the agent cannot download artifacts.
 
 A passing route check is not a visual verdict. Compare the app's logs and
@@ -87,8 +100,11 @@ The script reports measurements and does not set a pass threshold.
   This is not the same rendering path as a desktop with hardware acceleration.
   It is useful for launch and broad layout smoke checks, not pixel-perfect
   approval.
-- **Fonts:** the runner has DejaVu fonts; a user's installed fonts and bundled
-  font configuration can change line wrapping.
+- **Fonts:** Kalam registers its bundled faces (DM Sans, Playfair Display,
+  and the reader's Literata/Noto files) with fontconfig at startup, so the
+  captures render in the designed faces; the runner's fallback chain still
+  differs from a desktop's, and a user's installed fonts can change line
+  wrapping.
 - **Input:** synthetic pointer taps are not part of the required workflow.
   Headless input delivery has not been reliable enough to treat it as proof of
   reader gestures.
@@ -97,8 +113,8 @@ The script reports measurements and does not set a pass threshold.
   is reported as a diagnostic.
 - **Screenshots:** because PNGs are not uploaded, the committed report is what
   an agent can inspect from the repository for most routes: fingerprints and
-  metrics, not the image itself. The gallery and book-page frames are
-  committed as PNGs (above), so those can and should be eyeballed directly —
+  metrics, not the image itself. The redesign frames listed above are
+  committed as PNGs, so those can and should be eyeballed directly —
   remembering the gallery's 1600×3400 software-rendered output is a shape
   no user has.
 

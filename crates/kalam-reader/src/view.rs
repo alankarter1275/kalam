@@ -695,9 +695,18 @@ impl ReaderView {
         self.area.queue_draw();
     }
 
+    /// Apply one of the legacy preset themes. The app resolves its own
+    /// palettes and calls [`Self::set_palette`]; this stays for callers
+    /// (the demo) that think in the old quartet.
     pub fn set_theme(&self, theme: crate::prefs::KalamTheme) {
+        self.set_palette(theme.reader_palette());
+    }
+
+    /// Repaint the book in a newly resolved palette — the app palette
+    /// changed, or a per-book override was switched on or off.
+    pub fn set_palette(&self, palette: crate::prefs::ReaderPalette) {
         self.set_prefs(KalamPrefs {
-            theme,
+            palette,
             ..self.prefs()
         });
     }
@@ -1706,7 +1715,7 @@ impl ReaderView {
                         let ph = (height as f32 * scale) as u32;
                         let mut combined = tiny_skia::Pixmap::new(pw, ph);
                         if let Some(ref mut comb) = combined {
-                            let bg = prefs.theme.background();
+                            let bg = prefs.palette.background;
                             comb.fill(tiny_skia::Color::from_rgba8(bg.r, bg.g, bg.b, bg.a));
 
                             if let Some(left) = left_pixmap {
@@ -1734,7 +1743,7 @@ impl ReaderView {
                             // Subtle spine divider line down center
                             let spine_x = single_w * scale;
                             let mut spine_paint = tiny_skia::Paint::default();
-                            let spine_color = if prefs.theme.is_dark() {
+                            let spine_color = if prefs.palette.dark {
                                 chapbook_core::Rgba::new(255, 255, 255, 25)
                             } else {
                                 chapbook_core::Rgba::new(0, 0, 0, 30)
@@ -1745,7 +1754,7 @@ impl ReaderView {
                             }
 
                             if let Some(handles) = view.place_handles(&mut s) {
-                                handles::paint(comb, &handles, prefs.theme.handle(), scale);
+                                handles::paint(comb, &handles, prefs.palette.accent, scale);
                             }
                         }
                         combined
@@ -1753,7 +1762,7 @@ impl ReaderView {
                         s.set_metrics(metrics);
                         let mut pixmap = s.render();
                         if let (Some(out), Some(handles)) = (pixmap.as_mut(), view.place_handles(&mut s)) {
-                            handles::paint(out, &handles, prefs.theme.handle(), scale);
+                            handles::paint(out, &handles, prefs.palette.accent, scale);
                         }
                         pixmap
                     }
@@ -1963,7 +1972,7 @@ impl ReaderView {
             handles::paint(
                 &mut out,
                 &handles,
-                self.inner.prefs.borrow().theme.handle(),
+                self.inner.prefs.borrow().palette.accent,
                 scale,
             );
         }

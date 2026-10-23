@@ -58,7 +58,7 @@ pub(crate) fn engine_prefs(
     publisher_styles: bool,
 ) -> KalamPrefs {
     KalamPrefs {
-        theme: engine_theme(theme),
+        palette: engine_theme(theme).reader_palette(),
         font_px: font_px as f32,
         line_height,
         column_px: column_px as f32,

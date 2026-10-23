@@ -138,6 +138,10 @@ pub struct Palette {
     pub selection: Rgba,
     /// Stored-highlight fill when a highlight names no colour of its own.
     pub highlight: Rgba,
+    /// kalam: the shell's accent — what selection handles, search-match
+    /// outlines and saved-word dots paint in. The page itself never
+    /// paints it into book text.
+    pub accent: Rgba,
 }
 
 impl Palette {
@@ -150,6 +154,9 @@ impl Palette {
             link: theme.link(),
             selection: theme.selection(),
             highlight: theme.highlight(),
+            // The presets have no accent of their own; the link colour is
+            // the closest thing they carry.
+            accent: theme.link(),
         }
     }
 }

@@ -71,7 +71,10 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v17 = purge comic bubble-OCR rows from page_ocr_cache (feature removed in 2.17;
 ///          the table itself stays because scanned-PDF OCR still uses it)
 /// · v18 = legacy EPUB edit-patch rows (retained for sidecar compatibility)
-pub const SCHEMA_VERSION: i64 = 18;
+/// · v19 = the "underline" highlight *colour* retires into the underline
+///          *style* (decision 28): colour='underline' rows become
+///          style='underline' in the default yellow
+pub const SCHEMA_VERSION: i64 = 19;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -1142,6 +1145,25 @@ impl Catalog {
                 if v < 17 {
                     conn.execute(
                         "DELETE FROM page_ocr_cache WHERE file_fingerprint LIKE '%:%:%'",
+                        [],
+                    )?;
+                }
+                // v19 (decision 28): "underline" was a sixth highlight
+                // *colour*; the underline *style* covers it, and the
+                // chip now offers five colours × four styles. Rows whose
+                // style never said anything of its own take the style;
+                // a row that deliberately paired the colour with another
+                // style keeps that style and only loses the colour name.
+                if v < 19 {
+                    conn.execute(
+                        "UPDATE annotations SET style = 'underline', color = 'yellow' \
+                         WHERE lower(color) = 'underline' \
+                           AND (style = '' OR lower(style) = 'solid')",
+                        [],
+                    )?;
+                    conn.execute(
+                        "UPDATE annotations SET color = 'yellow' \
+                         WHERE lower(color) = 'underline'",
                         [],
                     )?;
                 }
@@ -2620,6 +2642,39 @@ mod tests {
             })
             .unwrap();
         assert_eq!(v, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn v19_retires_the_underline_colour_into_the_style() {
+        // Decision 28: "underline" the colour becomes underline the
+        // style in the default yellow — unless the row already carried
+        // a deliberate style of its own, which it keeps.
+        let cat = Catalog::open_in_memory().unwrap();
+        let book = seed(&cat, "Underline Migration", "A", &[]);
+        {
+            let conn = cat.conn();
+            for (style, text) in [("solid", "plain"), ("squiggly", "wavy")] {
+                conn.execute(
+                    "INSERT INTO annotations \
+                     (book_id, kind, chapter_index, start_path, start_offset, \
+                      end_path, end_offset, color, style, text_excerpt, note, \
+                      created_at, updated_at) \
+                     VALUES (?1, 'highlight', 0, '', 0, '', 1, 'underline', ?2, ?3, '', '', '')",
+                    params![book, style, text],
+                )
+                .unwrap();
+            }
+            conn.execute("UPDATE schema_version SET version = 18", [])
+                .unwrap();
+        }
+        cat.migrate().unwrap();
+        let rows = cat.get_annotations_for_book(book).unwrap();
+        let plain = rows.iter().find(|r| r.text_excerpt == "plain").unwrap();
+        assert_eq!(plain.style, "underline");
+        assert_eq!(plain.color, "yellow");
+        let wavy = rows.iter().find(|r| r.text_excerpt == "wavy").unwrap();
+        assert_eq!(wavy.style, "squiggly", "a deliberate style survives");
+        assert_eq!(wavy.color, "yellow");
     }
 
     #[test]

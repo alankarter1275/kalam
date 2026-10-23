@@ -163,7 +163,8 @@ impl Session {
         // kalam: colours come from the effective palette (a shell's exact
         // colours if it set them, else the theme's presets). The
         // highlights are the host's (`host_highlights.rs`).
-        let highlight_color = self.settings.palette().highlight;
+        let palette = self.settings.palette();
+        let highlight_color = palette.highlight;
         // A stored color keeps the theme's transparency unless it states
         // its own; an unparseable one falls back rather than vanishing.
         let paint = |h: &Highlight| {
@@ -183,14 +184,23 @@ impl Session {
                     }
                 }
             };
+            let mut color = h
+                .color
+                .as_deref()
+                .and_then(|hex| Rgba::from_hex(hex, highlight_color.a))
+                .unwrap_or(highlight_color);
+            // kalam (design-system §9): a stored colour carries the solid
+            // band's ~30% alpha, but the line styles — underline,
+            // squiggly, strikeout — paint the same hue at full strength.
+            // One stored string cannot say both, so the alpha is forced
+            // here, at the one place style and colour meet.
+            if style != chapbook_paint::SelectionStyle::Band {
+                color.a = 255;
+            }
             Selection {
                 start: h.start,
                 end: h.end,
-                color: h
-                    .color
-                    .as_deref()
-                    .and_then(|hex| Rgba::from_hex(hex, highlight_color.a))
-                    .unwrap_or(highlight_color),
+                color,
                 blend: Blend::Normal,
                 style,
             }
@@ -198,10 +208,13 @@ impl Session {
         let mut selections: Vec<Selection> =
             self.host_highlights(spine).iter().map(paint).collect();
 
-        // Word Memory: Subtle dotted underlines for saved vocabulary words
+        // Word Memory: dotted underlines for saved vocabulary words —
+        // the palette's accent at ~75% (design-system §9), not a fixed
+        // blue that fights the page.
         if !self.word_memory.is_empty() {
             if let Some(speakable) = self.speakable_unit_page(spine, page_idx) {
-                let dot_color = Rgba::new(89, 140, 242, 180);
+                let a = palette.accent;
+                let dot_color = Rgba::new(a.r, a.g, a.b, 191);
                 let chars: Vec<char> = speakable.text.chars().collect();
                 for w in &speakable.words {
                     let s = w.text_start as usize;

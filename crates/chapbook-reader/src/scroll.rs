@@ -411,7 +411,7 @@ impl Session {
     /// page that need not be current.
     pub fn image_at_page(&mut self, spine: usize, page: usize, x: f32, y: f32) -> Option<(u32, u32, Vec<u8>)> {
         let pt = Point::new(x, y);
-        let bg = self.settings.theme.background();
+        let bg = self.settings.palette().background;
         let _ = self.layout_unit(spine)?;
         let unit = self.unit(spine)?;
         let layout = unit.layout.as_ref()?;

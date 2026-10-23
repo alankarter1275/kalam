@@ -601,7 +601,37 @@ view hook — all fixed in `288eed5` (the cover fix is a micro form of
 missing face). No series summary or missing-book descriptions are shown:
 no source exists — the §5.6 build-time decision, taken as graceful
 absence. Next in the order above is the author page, whose "Open series ›"
-entry (decision 108) now has its target route.
+entry (decision 108) now has its target route. The author page is
+complete and CI-green (`8dc632b`, fixes to `029cdd6`): `src/pages/
+author.rs` is rebuilt on `LibraryService::author_page`, whose snapshot
+merges the cached bibliography with owned books into standalone-first
+groups (duplicate editions collapse; unmatched owned books join their
+file-metadata series), plus chunked author-scope marks (annotations,
+bookmarks, words at 500-id batches) and finished ids. Opening the page
+never fetches (decision 110) — the bibliography is whatever Find
+metadata last cached, the photo's existence is settled on the worker,
+and a missing bibliography degrades to the quiet notice, not an empty
+chart. The old `works_not_in_library` / `series_progress` /
+`status_counts` chain and `charts::stars_label` are deleted with their
+last caller. Both this page's dialogs are built: Create shelf (§31,
+author-linked name via the `author.shelf.<normalized>` pref) and the
+author-scope Annotations dialog (decision 115, grouped by book). Edit
+author and Merge stay out of the ⋯ menu — their dialogs are undesigned
+(§5.5), following the Edit book precedent. The screenshot loop gained
+`--author-fixture` (the series fixture's author, cached bibliography
+plus one mark of each kind) and the `author-book-<id>` route; five
+captures (page Light/Dark, panel, shelf, annotations) exposed and
+closed: GTK4 clamping the ⋯ host's negative margin (now a CSS
+`translateY` into the Back band — the popover's anchoring under that
+transform is the one thing headless shots cannot verify), the plain
+ghost pill kind being borderless by design (boxed ghost instead), a
+lone grid card stretching full-width, a phantom bio "More" from
+measuring ellipsis before the label's width settled, and the panel
+anchoring to an unallocated card — idle callbacks burn through any
+retry cap before the first frame, so both waits now ride the frame
+clock. Comics credits still open the comics page's own author
+handling; routing them here (decision 116) belongs to the comics
+chrome phase. Next in the order above is the EPUB reader.
 
 ## 8. Designed-but-unbuilt features (inventory only — ruling 4)
 

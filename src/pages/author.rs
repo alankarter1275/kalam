@@ -647,16 +647,29 @@ impl AuthorPageModel {
 
                     // The More toggle exists only when the three lines
                     // actually cut the bio short — asked of the laid-out
-                    // text on map, not guessed from a character count
-                    // (a count misjudges at real font metrics, CI caught
-                    // a More under a fully-shown bio).
+                    // text, not guessed from a character count (a count
+                    // misjudges at real font metrics). The ask waits for
+                    // the label's width to hold still across two frames:
+                    // at map time the layout may still be computed for a
+                    // transient narrow allocation and report a phantom
+                    // ellipsis (CI caught a More under a complete bio).
                     let more = gtk::Button::with_label("More");
                     more.add_css_class("kalam-authorpage-more");
                     more.set_halign(gtk::Align::Start);
                     more.set_visible(false);
-                    let more_for_map = more.clone();
-                    bio_label.connect_map(move |label| {
-                        more_for_map.set_visible(label.layout().is_ellipsized());
+                    let more_for_tick = more.clone();
+                    let label_for_tick = bio_label.clone();
+                    let stable = Rc::new(Cell::new((-1i32, 0u32)));
+                    bio_label.add_tick_callback(move |_widget, _clock| {
+                        let (last_w, tries) = stable.get();
+                        let w = label_for_tick.width();
+                        if (w <= 1 || w != last_w) && tries < 180 {
+                            stable.set((w, tries + 1));
+                            return gtk::glib::ControlFlow::Continue;
+                        }
+                        more_for_tick
+                            .set_visible(label_for_tick.layout().is_ellipsized());
+                        gtk::glib::ControlFlow::Break
                     });
                     let expanded = Rc::new(Cell::new(false));
                     let bio_for_toggle = bio_label.clone();
@@ -1091,28 +1104,29 @@ impl AuthorPageModel {
         scroller.set_child(Some(&row));
         self.panel_box.append(&scroller);
 
-        // Anchor under the card once it has a real allocation: a single
-        // idle is not enough on first load, when the fill that built the
-        // card hasn't been allocated yet and compute_point would read
-        // the unallocated origin (panel over the header, CI caught it).
-        // Capped so a card torn down by a rebuild in between cannot spin
-        // forever; the next rebuild re-anchors anyway.
+        // Anchor under the card once it has a real allocation. This
+        // waits on the frame clock, not an idle: idles can burn through
+        // any retry cap before the first frame is even allocated, and
+        // compute_point on an unallocated card reads the origin (the
+        // panel landed over the header twice before CI taught us).
+        // Capped in frames; a rebuild destroys the old card and this
+        // callback with it, then re-anchors from the new one.
         if let Some(card) = self.card_buttons.get(index).cloned().flatten() {
             let revealer = self.panel_revealer.clone();
             let overlay = root.clone();
-            let mut tries = 0;
-            gtk::glib::idle_add_local(move || {
-                tries += 1;
-                let ready = card.is_mapped() && card.width() > 1;
-                if !ready && tries < 90 {
+            let tries = Rc::new(Cell::new(0u32));
+            card.add_tick_callback(move |widget, _clock| {
+                tries.set(tries.get() + 1);
+                let ready = widget.is_mapped() && widget.width() > 1;
+                if !ready && tries.get() < 180 {
                     return gtk::glib::ControlFlow::Continue;
                 }
                 if let Some(point) =
-                    card.compute_point(&overlay, &gtk::graphene::Point::new(0.0, 0.0))
+                    widget.compute_point(&overlay, &gtk::graphene::Point::new(0.0, 0.0))
                 {
                     revealer.set_margin_start(point.x() as i32);
-                    revealer.set_margin_top(point.y() as i32 + card.height());
-                    revealer.set_size_request(card.width(), -1);
+                    revealer.set_margin_top(point.y() as i32 + widget.height());
+                    revealer.set_size_request(widget.width(), -1);
                 }
                 revealer.set_visible(true);
                 revealer.set_reveal_child(true);

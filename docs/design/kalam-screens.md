@@ -3,8 +3,8 @@
 A checklist of everything that needs designing, from full pages down to right-click menus.
 
 **How to read this**
-- `[x]` = designed and approved (Terracotta light and dark; Forest, Plum and Teal still to check). `[~]` = partly designed; the note says what is missing. `[ ]` = still to do. Last updated after design chat 7.
-- `[ ]` = still to do. Items tagged **draft** have an incomplete mockup in the uploaded files (Home and Library in `kalam-mockup.html`, Author, Settings); the rest have none.
+- `[x]` = designed and approved (Terracotta light and dark; Forest, Plum and Teal still to check). `[~]` = partly designed; the note says what is missing. `[ ]` = still to do. Last updated after design chat 8.
+- `[ ]` = still to do. Items tagged **draft** have an incomplete mockup in the uploaded files (Home and Library in `kalam-mockup.html`); the rest have none.
 - **(R)** = confirmed in the repo README. **(?)** = my inference; please confirm or strike.
 - Sources: the README's feature list and `pages/` listing, plus your four mockups. I couldn't open `src/` or `docs/offline-roadmap.md`, so this was not checked against the code. Run `ls src/pages src/widgets` and diff it against this list.
 - Part 2 (online sources, downloads, plugins) is listed last and is not built yet.
@@ -16,10 +16,10 @@ A checklist of everything that needs designing, from full pages down to right-cl
 
 - [x] Splash screen (R)  ← approved, good to go
 - [ ] First-run / library check: choose a library folder when none exists (R)
-- [ ] Navigation rail: Home, Library, Editor, Settings (R). Downloads is hidden. An **Authors** entry is proposed (decision 117). **Draft**; more entries will be added later.
+- [ ] Navigation rail: Home, Library, Editor, Settings (R). Downloads is hidden. An **Authors** entry is proposed (decision 117). **Draft**; more entries will be added later. A **bell** (notification history) sits at the bottom, above Settings (decision 148); the Settings boards draw it with placeholder icons.
 - [ ] Window chrome and title bar (?)
 - [ ] Toast notifications (R)
-- [ ] Notification history panel (R)
+- [x] Notification history: a bell in the rail opens a floating panel; events and empty state drawn (chat 8, decision 148; `settings-spec.md`)
 - [ ] Page transition behaviour (?)
 - [ ] Global empty state, loading state, and error state patterns (?)
 - [ ] Keyboard focus ring and focus trap in dialogs (R: `focus trap` widget)
@@ -107,32 +107,37 @@ A checklist of everything that needs designing, from full pages down to right-cl
 
 ## 6. Settings
 
-Mockup panes: Appearance, Reading, Library, Integrations, Keyboard Shortcuts. The readers' own settings panes (Reading, Image, Shortcuts) are done inside each reader's right panel.
+Full page with a pane list and one 640 wide column (chat 8, decisions 144 to 158; `settings-spec.md`). The readers' own settings panes (Reading, Image, Shortcuts) are done inside each reader's right panel.
 
-- [ ] Settings: Appearance (theme palettes, light/dark) **draft**
-- [ ] Settings: Reading (typeface, size, spacing, margins, alignment) **draft**
-- [ ] Settings: Library (folder, catalog DB, metadata writeback, original backups, EPUB sanitizer) **draft**
-- [ ] Settings: Integrations **draft**
-- [ ] Settings: Keyboard Shortcuts **draft**
-- [ ] Settings: Dictionaries: import, list, remove, priority reorder (R)
-- [ ] Settings: Storage / Libraries: add, switch (restart), copy to another machine (R)
-- [ ] Settings: watch folders (multi-folder import) (R)
-- [ ] Settings: data paths (R)
+- [x] Settings: Appearance, one choice of palette and mode, plus Text and motion (decisions 145, 146)
+- [~] Settings: Reading, global defaults with a preview (decision 147). The Settings pane is drawn; the reader-side "Settings for this book" switch, "Use these settings as my defaults" and "Reset to my defaults" are not.
+- [x] Settings: Libraries and storage (libraries, recovery, backup and cache; restart prompt; folder missing) (decision 149)
+- [x] Settings: Data and export (locations and the two export buttons) (decision 149). The Export dialogs are not drawn.
+- [x] Settings: Book files (sanitizer, writeback, original backups) (decisions 149, 150)
+- [x] Settings: Watch folders, with the shelf dropdown and the empty state (decision 151)
+- [x] Settings: Dictionaries, priority list with drag, Import, Rescan, empty state and Restore bundled packs (decision 152)
+- [x] Settings: Metadata sources (decision 153)
+- [x] Settings: Integrations, a Part 2 pane with every row disabled (decision 154)
+- [~] Settings: Shortcuts, app-wide groups with rebinding and conflicts (decision 155). The reader's groups below them are not drawn.
+- [x] Settings: About (decision 156). Version, licence and links are placeholders.
+- [ ] Settings: storage and libraries first-run flow, Add library and Add watch folder choosers (see section 7)
+- ~~Settings: Library, Storage / Libraries, watch folders, data paths~~ replaced by the panes above.
+- ~~Settings: Notifications / Activity pane~~ replaced by the bell and panel in the rail (decision 148).
 
 ## 7. Dialogs & overlays
 
 - [ ] File chooser: import EPUB (R)
 - [ ] File chooser: import dictionary (StarDict, SQLite, TSV) (R)
 - [ ] Folder chooser: library folder and watch folders (?)
-- [~] Confirm dialogs: delete book, shelf, highlight, dictionary pack, tag (?). The dialog component is defined (decision 75); tag delete and PDF page delete are drawn.
-- [ ] Restart prompt after switching library (R)
+- [~] Confirm dialogs: delete book, shelf, highlight, dictionary pack, tag (?). The dialog component is defined (decision 75); tag delete and PDF page delete are drawn; Delete backups and Remove dictionary are drawn (chat 8, decision 150).
+- [x] Restart prompt after switching library (chat 8, decision 149)
 - [ ] Rename dialog (shelf, tag) (?). Tag rename from the Tag dialog row menu is not drawn.
 - [x] ~~Shelf checklist dialog~~ replaced by the Shelves submenu in the book ⋯ menu (decision 86)
 - [x] ~~Half-star rating popover~~ replaced by an inline half-star rating on the book page (decision 82)
 - [ ] Yearly reading goal dialog (R)
-- [ ] Export dialogs: quotes to Markdown, words to CSV/Anki (R)
+- [ ] Export dialogs: quotes to Markdown, words to CSV/Anki (R). The Export buttons are drawn in Settings, Data and export; the dialogs are not.
 - [~] Bulk tag edit dialog (R: "bulk metadata edits"). The Tag dialog for one book is drawn (decision 84); bulk editing across books is not.
-- [ ] Keyboard shortcut cheat sheet overlay (?)
+- [ ] Keyboard shortcut cheat sheet overlay (?). The list is agreed (decision 155); the overlay is a read-only view of it and is not drawn.
 - [ ] About dialog (?)
 
 ## 8. Menus & popovers
@@ -149,13 +154,13 @@ Mockup panes: Appearance, Reading, Library, Integrations, Keyboard Shortcuts. Th
 - [ ] Reader: right-click on blank page area (?)
 - [ ] Annotation row menu (?)
 - [ ] Smart-shelf rule dropdowns (field / operator / value) (R)
-- [ ] Dropdown and select styling in Settings (e.g. typeface, alignment) (R)
+- [x] Dropdown and select styling in Settings: closed and open, typeface and shelf lists (chat 8, decision 157)
 
 ## 9. Cross-cutting states
 
 Design these once, then reuse them on every screen.
 
-- [ ] Empty states: no books, no shelves, no quotes, no results
+- [~] Empty states: no books, no shelves, no quotes, no results. Drawn so far for Settings: no watch folders, no dictionaries, no notifications.
 - [~] Loading and skeleton states: reader thumbnails and page skeletons are drawn; library cover placeholders are not
 - [~] Error states: PDF, comic and book-page file-missing states are drawn; corrupt EPUB and import failure are not
 - [ ] Progress and cancellable background tasks (R: task manager)
@@ -177,12 +182,13 @@ Designed later; the routes and job queue exist but have no content behind them.
 
 ## Decisions so far
 
-Full list in `decisions.md` (numbered 1 to 143). In short:
+Full list in `decisions.md` (numbered 1 to 158). In short:
 - Splash screen is final. Home, Library, Author and the app Settings panes are still draft.
 - The readers (EPUB, PDF, comic), the book details and series pages, the Author page and the deep editor are designed in Terracotta light and dark. Forest, Plum and Teal are still to check.
 - The PDF reader and EPUB reader have different appearance panels. Bubbles / split-screen gets its own design pass.
 - The navigation rail will gain more entries. The Editor is a top-level entry and is also reachable from a book. The deep editor is HTML, CSS and XML only (Markdown was dropped, decision 120).
 - No scrollbars are visible anywhere (decision 90).
+- Settings is a full page with five groups of panes. Appearance is one palette-and-mode choice (no System option); Reading holds global defaults and every format can override per book; notification history is a bell in the rail; Integrations is designed early and disabled (decisions 144 to 158).
 - New screens will be added to this list as they turn up in `src/pages/`.
 
 ## Open questions
@@ -198,3 +204,7 @@ Full list in `decisions.md` (numbered 1 to 143). In short:
 9. The in-reader editor (decision 118): Edit on the chip, the floating format bar, reflow while typing, how edits are saved. Own chat with the EPUB reader boards.
 10. What does the Book edits badge count, and what does Proofread do in the Tools menu? (decisions 86, 129)
 11. Editor export folder (`~/Kalam/Editing/`), the monospace font, and click-to-jump between preview and source need confirming with the code (decisions 123, 127, 140).
+12. The reader's Theme card and the reader-side Reading controls (decisions 145, 147) are not redrawn: the EPUB, PDF and comic reader boards need a pass.
+13. Alt+3 for the Editor is missing from the Shortcuts list; add or drop? (decision 155)
+14. Restore bundled packs restores all at once; per pack? Where does the Google Books API key live? (decisions 152, 153)
+15. Do Content sources and Plugins merge once sources become plugins? (decision 154)

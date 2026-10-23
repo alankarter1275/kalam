@@ -1,4 +1,4 @@
-# Kalam design system (v0.7)
+# Kalam design system (v0.8)
 
 Status key: **Final** = approved. **Proposed** = my suggestion, not yet confirmed. **TBD** = undecided.
 
@@ -74,6 +74,8 @@ From the EPUB reader (Terracotta dark, some light): floating side panel, inset s
 From the Author page (chat 6): facts panel, series card with cover fan, open series panel, fetch button, highlight card and its sliding row, quiet notice line, Create shelf dialog (sections 25 to 31).
 
 From the deep editor (chat 7): workspace layout, flat tabs and ghost buttons, file tree, editor tabs, source editor, diff tints, problem rows, command palette, option rows, after-tool pill, picker row (sections 32 to 40).
+
+From Settings (chat 8): settings page layout, palette and mode picker, dropdown field and list, rows and chips, rail bell and notification panel, control states (sections 41 to 46).
 
 ## 7. Not yet designed (TBD)
 
@@ -166,7 +168,7 @@ Text on a filled accent surface is white and must reach 4.5:1. Use `accent-fill`
 Only Terracotta is applied in the boards. The other palettes' values are computed here and not yet drawn.
 
 ## 12. Control states (new)
-Hover: `border` colour as fill (primary: 10% white overlay on `accent-fill`). Focus: 2px `accent` ring, 2px offset. Disabled: 40% opacity. Switch hover: 5px `border` halo. Thumbnail hover: 2px `text-2` ring.
+Hover: `border` colour as fill (primary: 10% white overlay on `accent-fill`). Focus: 2px `accent` ring, 2px offset. Disabled: 40% opacity. Switch hover: 5px `border` halo. Thumbnail hover: 2px `text-2` ring. Drawn for the Settings controls in section 46.
 
 ---
 
@@ -235,7 +237,7 @@ Row 64 high, left padding 44. Node 24 circle at left 0; connecting line 2px at l
 Five stars, 20px, letter spacing 3, half steps. Set: `accent`; empty: `border` colour. The half star is painted (a custom-drawn widget in GTK). Hover previews the value at 60% opacity; clicking the current value clears it; keyboard arrows step by half. Empty label "Not rated yet" in Meta.
 
 ## 17. Menu and submenu (popover)
-`card` fill, 1px `border`, radius 14, padding 6, no arrow. Items 40 high, radius 8, 12 side padding. Dividers: 1px `border`, margins 6 and 8. Widths: 210 (short menus), 240 (the ⋯ menus on the book and Author pages, and the Shelves submenu). Destructive item: `accent` text. A trailing chevron marks a submenu; the open parent item has the `border` fill. **Count badge:** a 22 high chip with an accent border and accent text. Tick circles in a checklist: 22 circle, `accent-fill` with a white tick when on, 1.5px `text-2` ring when off.
+`card` fill, 1px `border`, radius 14, padding 6, no arrow. Items 40 high, radius 8, 12 side padding. Dividers: 1px `border`, margins 6 and 8. Widths: 210 (short menus), 240 (the ⋯ menus on the book and Author pages, and the Shelves submenu), 220 (dropdown lists, section 43). Destructive item: `accent` text. A trailing chevron marks a submenu; the open parent item has the `border` fill. **Count badge:** a 22 high chip with an accent border and accent text. Tick circles in a checklist: 22 circle, `accent-fill` with a white tick when on, 1.5px `text-2` ring when off.
 
 ## 18. Dialog sizes (extends decision 75 and section 13)
 420 wide for forms and confirmations. **560 wide** for list dialogs (the Annotations dialog; 660 high, padding 24). Everything else about dialogs is unchanged.
@@ -359,3 +361,43 @@ Row 72 high, hairline above, a 40 x 56 cover (radius 4; the cover fallback of se
 - The `diff-add` value for the other palettes.
 - Forest, Plum and Teal versions of the editor boards.
 - The 36 high tree row and 48 high tab row are new sizes.
+
+---
+
+# Additions v0.8 (settings chat)
+
+All Proposed unless stated; applied to Terracotta only (Forest, Plum and Teal not checked). No new colour tokens. New sizes: 640 settings column, 240 pane list, 34 pane list row, 220 dropdown list, 36 dropdown field (the field reuses the 36 high control size), 18 selection tick badge on cards (as section 13).
+
+## 41. Settings page
+A full page on plain `bg`. Pane list: 240 wide with 56 left and top padding; Label-style group headings (20 above, 6 below); items 34 high, 13px, `text-2`, 12 left padding. The active item is `text` at weight 700 with a 3px `accent` bar (radius 2, 8 in from the top and bottom). Content column: 640 wide, 64 right of the list, 56 from the top. Title in Display, a Meta line 12 below it and 28 above the first heading. Each group is a Label heading and then an outlined section (section 14) with padding 0 20 and rows 48 high separated by hairlines; a row has its label (14) over an optional caption (Caption, `text-2`) at the left and its control at the right. Rows nested under a switch row (Google Books) keep the same hairlines and add 20 left padding; the parent row carries a chevron beside its switch (two icons, up and down). 24 between sections.
+
+## 42. Palette and mode picker
+An outlined box (radius 14, padding 16) per palette in a 2 x 2 grid, gap 16. Inside: the palette name in Label style, then two mini-page cards side by side (gap 12), each 64 high with radius 10, a 1px `border`, padding 10 and that palette's `bg` for the mode, three 4px lines (the palette `text` at 50% and 30%, then `accent` at 30% width), and a Caption "Light" or "Dark" in `text-2` below. Selected: a 2px `accent` outline with 2 offset and an 18 tick badge (`accent-fill`, white 11 tick) 7 outside the top-right corner. Hover: a 2px `text-2` ring (section 12). The mini-page card is a custom-drawn widget (Cairo), because it draws other palettes' colours.
+
+## 43. Dropdown field and list
+Field: 36 high, 1px `border`, radius 10, `bg` fill, padding 0 12, 13px `text`, a 12 chevron 12 after the text. Hover: `border` fill. Focus: 2px `accent` ring with 2 offset. Open: `accent` border. List: the popover of section 17 (no arrow), 220 wide, right-aligned to the field and 4 below it, rows 40 high with radius 8 and 12 side padding. The current choice has a 14 `accent` tick at the right. The hovered row has the `border` fill. A typeface option is set in its own font. A divider and an `accent` "New shelf…" row can close a list. Long lists scroll without a visible bar and end with a 48 high fade (section 24).
+
+## 44. Rows, chips and key chips in Settings
+- **Not available yet:** a 28 high chip (section 10), 11px `text-2`; the row's switch or button is at 40%.
+- **Accent chip** ("Open", "Speaks first"): the same chip with an `accent` border and `accent` text.
+- **Key row:** 40 high; label 14; key chips (section 13: 24 high, radius 6, 12px) at the right, 6 apart. Recording: an `accent` border and text, "Press a key…". A conflict message sits under the group: 12px `accent`, 24 below, naming the action that owns the key.
+- **Dictionary row:** 56 high; a 16 drag handle in `text-2` with 12 gap, name (14) over a Meta count, the accent chip, a ghost Remove. Dragging: the original at 40% opacity and a 3px `accent` drop bar (section 4's drop bar, as sections 13 and 38).
+- **Missing state:** dashed state cards (section 10) in Watch folders and Dictionaries; an `accent` Meta line ("Folder not found") in the Libraries row.
+- **Error line under a field:** 12px `accent`, with an `accent` border on the field.
+
+## 45. Rail bell and notification panel
+Rail item: 44 circle, 22 icon, `text-2`; the panel-open item is `accent-fill` with a white icon. New-event dot: 8 `accent`, top-right of the item (not drawn). Panel: the side panel of section 9 (340 wide, radius 22, `card`, 1px `border`) at 16 from the rail, top and bottom, padding 20. Heading in Section style with an `accent` 12.5px link, 16 below. Group headings in Label style. Event row: top hairline, 12 vertical padding, 12 gap, 13px message over a Meta time, an 8 circle marker (`accent` problem, `text-2` otherwise) 6 down. Empty: a hairline and a 12.5px `text-2` line.
+
+## 46. Control states (Settings)
+Rules as section 12, drawn for the ghost button, primary button, dropdown field, switch (hover halo), key chip, palette card, pane list item and segmented option (idle, hover, focus, selected, disabled). Hover on the pane list item uses the `border` fill with radius 6. A selected palette card adds the tick badge of section 42 so selected and focused differ.
+
+## Updates to existing sections
+- **Section 6:** extended in place with the Settings components (sections 41 to 46).
+- **Section 7 (TBD):** the placeholder icons also include home, book, editor, gear and bell in the rail, and the chevron up. Cover fallback, Feature surface and Progress ring are unchanged.
+- **Section 12 and section 17:** extended in place (Settings controls; the dropdown list width).
+- **Section 3 and the Text size setting (decision 146):** the type table values are the Default; Small and Large scale all of them together, interface only.
+
+## Open (design system)
+- Confirm the 640 settings column, the 220 dropdown list and the Text size percentages.
+- Forest, Plum and Teal versions of the Settings boards.
+- The reader's Theme card should use the section 42 picker.

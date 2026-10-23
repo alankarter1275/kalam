@@ -1,4 +1,9 @@
-(no lines matched; last 100 lines of output)
+src/pages/author.rs:1086:44: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::translate_coordinates`: Since 4.12
+src/service.rs:305:9: [1m[91merror[0m: field `work_cover` is never read
+src/widgets/charts.rs:165:8: [1m[91merror[0m: function `stars_label` is never used
+src/pages/author.rs:1000:20: [1m[91merror[0m: manual implementation of `Option::zip`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -11,7 +16,13 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m cc v1.10.0
+[1m[92m  Downloaded[0m webpki-roots v1.0.11
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m   Compiling[0m cc v1.10.0
+[1m[92m    Checking[0m webpki-roots v1.0.11
+[1m[92m    Checking[0m webpki-roots v0.26.11
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
@@ -19,8 +30,24 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 8.85s
---- run 39908625310 ---
+[1m[92m   Compiling[0m ring v0.17.14
+[1m[92m   Compiling[0m freetype-sys v0.20.1
+[1m[92m   Compiling[0m mupdf-sys v0.8.0
+[1m[92m   Compiling[0m libsqlite3-sys v0.30.1
+[1m[92m   Compiling[0m font-kit v0.14.3
+[1m[92m   Compiling[0m rustls v0.23.46
+[1m[92m    Checking[0m rustls-webpki v0.103.16
+[1m[92m    Checking[0m ureq v2.12.1
+[1m[92m    Checking[0m rusqlite v0.32.1
+[1m[92m    Checking[0m mupdf v0.8.0
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/pages/author.rs:1086:44: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::translate_coordinates`: Since 4.12
+src/service.rs:305:9: [1m[91merror[0m: field `work_cover` is never read
+src/widgets/charts.rs:165:8: [1m[91merror[0m: function `stars_label` is never used
+src/pages/author.rs:1000:20: [1m[91merror[0m: manual implementation of `Option::zip`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+--- run 39927021578 ---

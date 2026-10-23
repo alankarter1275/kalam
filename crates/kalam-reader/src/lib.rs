@@ -47,7 +47,7 @@ pub use chapbook_core::{
     ChapbookError, LayeredLocator, Point, Quote, Rect, Size, TocEntry, LOCATOR_VERSION,
 };
 pub use chapbook_reader::Highlight;
-pub use fonts::{font_source, SANS_FONT};
+pub use fonts::{available_font_families, font_source, SANS_FONT};
 pub use prefs::{HighlightColor, KalamPrefs, KalamTheme, BODY_FONT};
 pub use view::{
     NewHighlight, ReaderOptions, ReaderView, ReadingMode, ReadingPosition,

@@ -6151,3 +6151,146 @@ menubutton.kalam-ui-dropdown:disabled {
 button.kalam-ui-menu-item.accent {
   color: @kalam_accent;
 }
+
+/* Settings page (§41): the Meta line sits 12 under the Display title,
+   the first heading 28 below that (the pane host's margin). About
+   hides the title pair and sits flush instead. */
+.kalam-settings-Meta {
+  margin-top: 12px;
+}
+.kalam-settings-pane {
+  margin-top: 28px;
+}
+.kalam-settings-pane.flush {
+  margin-top: 0;
+}
+
+/* Pane list (§41): Label group headings (20 above, 6 below), 34-high
+   items, the active one bold text with a 3px accent bar standing 8
+   in from the top and bottom. Hover takes the border fill (§46). */
+.kalam-settings-group-label {
+  margin: 20px 0 6px 12px;
+}
+.kalam-settings-panes > .kalam-settings-group-label:first-child {
+  margin-top: 0;
+}
+button.kalam-settings-pane-item {
+  min-height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  transition: background-color 120ms ease;
+}
+button.kalam-settings-pane-item:hover {
+  background: @kalam_hover;
+}
+button.kalam-settings-pane-item:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-settings-pane-bar {
+  min-width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  margin: 8px 0;
+}
+button.kalam-settings-pane-item.active .kalam-settings-pane-bar {
+  background: @kalam_accent;
+}
+.kalam-settings-pane-item-label {
+  font-size: 13px;
+  color: @kalam_text_dim;
+  margin-left: 9px;
+}
+button.kalam-settings-pane-item:hover .kalam-settings-pane-item-label {
+  color: @kalam_text;
+}
+button.kalam-settings-pane-item.active .kalam-settings-pane-item-label {
+  color: @kalam_text;
+  font-weight: 700;
+}
+
+/* Sections and rows (§§14, 41): outlined box padded 0 20, 48-high
+   rows split by hairlines; key rows (§44) are 40. */
+.kalam-settings-section {
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  background: @kalam_bg;
+  padding: 0 20px;
+}
+.kalam-settings-row {
+  min-height: 48px;
+}
+.kalam-settings-row + .kalam-settings-row {
+  border-top: 1px solid @kalam_border;
+}
+.kalam-settings-row.key {
+  min-height: 40px;
+}
+.kalam-settings-row-label {
+  font-size: 14px;
+  color: @kalam_text;
+}
+
+/* Palette boxes (§42): the outlined 2 x 2 grid cells; the mini-page
+   cards themselves are custom-drawn, and their focus/hover/selected
+   rings are painted with them, so the button chrome stays bare. */
+.kalam-settings-palette-box {
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  background: @kalam_bg;
+  padding: 16px;
+}
+button.kalam-settings-palette-card {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+button.kalam-settings-palette-card:focus {
+  outline: none;
+}
+
+/* Reading preview and the §44 chip. */
+.kalam-settings-preview {
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  background: @kalam_bg;
+  padding: 20px;
+}
+.kalam-settings-chip {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid @kalam_border;
+  border-radius: 999px;
+  font-size: 11px;
+  color: @kalam_text_dim;
+}
+.kalam-settings-chip.accent {
+  border-color: @kalam_accent;
+  color: @kalam_accent;
+}
+
+/* About: the accent source link and the licences text. */
+button.kalam-settings-link {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-size: 13px;
+  color: @kalam_accent;
+}
+button.kalam-settings-link > label {
+  color: @kalam_accent;
+}
+button.kalam-settings-link:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-settings-licences {
+  font-size: 13px;
+  line-height: 1.5;
+  color: @kalam_text;
+}

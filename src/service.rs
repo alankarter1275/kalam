@@ -287,6 +287,18 @@ pub struct SettingsSnapshot {
     /// EPUB polish-on-import and metadata writeback toggles (Book Files).
     pub clean_on_import: bool,
     pub writeback_enabled: bool,
+    /// Reading defaults (the Reading pane): the typeface picker's list
+    /// and the current global `reader.*` values, read with the reader's
+    /// own defaults and clamps so the pane opens on what a book would
+    /// actually get.
+    pub typefaces: Vec<String>,
+    pub reader_font_family: Option<String>,
+    pub reader_font_px: i64,
+    pub reader_line_height: f32,
+    pub reader_column_px: i64,
+    pub reader_justify: bool,
+    pub reader_word_memory_scope: String,
+    pub reader_ask_impression: bool,
 }
 
 /// One work on the author page: a cached bibliography entry, an owned book
@@ -1013,6 +1025,28 @@ impl LibraryService {
                 .unwrap_or_else(crate::metadata::google_books::detect_country),
             clean_on_import: crate::epub_sanitizer::clean_on_import_enabled(&self.catalog),
             writeback_enabled: crate::epub_metadata::write_enabled(&self.catalog),
+            // The Reading pane's data. The typeface list builds a font
+            // system just to enumerate it (bundled faces plus the user's
+            // fonts folder) — worker-only work, which is where this runs.
+            typefaces: kalam_reader::available_font_families(Some(crate::paths::fonts_dir())),
+            reader_font_family: self.catalog.get_pref("reader.font_family"),
+            reader_font_px: self.catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24),
+            reader_line_height: self
+                .catalog
+                .get_pref("reader.line_height")
+                .and_then(|v| v.parse::<f32>().ok())
+                .unwrap_or(1.8)
+                .clamp(1.3, 2.5),
+            reader_column_px: self
+                .catalog
+                .get_pref_i64("reader.column_px", 620)
+                .clamp(400, 860),
+            reader_justify: self.catalog.get_pref_i64("reader.justify", 0) != 0,
+            reader_word_memory_scope: self
+                .catalog
+                .get_pref("reader.word_memory_scope")
+                .unwrap_or_else(|| "library".into()),
+            reader_ask_impression: self.catalog.get_pref_i64("reader.ask_impression", 1) != 0,
         }
     }
 

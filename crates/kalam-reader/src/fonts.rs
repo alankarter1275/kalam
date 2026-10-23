@@ -84,3 +84,31 @@ pub fn font_source(host_fonts: bool, fonts_dir: Option<std::path::PathBuf>) -> F
         locale: None,
     }
 }
+
+/// Every typeface a picker may offer when no book is open: the bundled
+/// faces plus whatever the user has dropped into `fonts_dir`, matching
+/// the session's own list (`Session::font_families`) minus the
+/// families only a book's `@font-face` rules can add.
+///
+/// This builds the same font system a session would open with, just
+/// to enumerate it — directory scan included — so call it off the UI
+/// thread. A build failure falls back to the two bundled names: a
+/// picker with the defaults beats an empty one.
+pub fn available_font_families(fonts_dir: Option<std::path::PathBuf>) -> Vec<String> {
+    let source = font_source(false, fonts_dir);
+    let Ok((system, _report)) = chapbook_layout::build_font_system(&source) else {
+        return vec![crate::prefs::BODY_FONT.to_string(), SANS_FONT.to_string()];
+    };
+    let mut families: Vec<String> = system
+        .db()
+        .faces()
+        .filter_map(|face| face.families.first().map(|(name, _)| name.clone()))
+        .collect();
+    // The embedded math face is a rendering resource, not a reading
+    // typeface: a family picker must not offer it (the session's list
+    // filters it the same way).
+    families.retain(|name| name != chapbook_layout::MATH_FONT_FAMILY);
+    families.sort_unstable();
+    families.dedup();
+    families
+}

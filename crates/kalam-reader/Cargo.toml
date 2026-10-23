@@ -10,6 +10,9 @@ repository = "https://github.com/alankarter1275/kalam-engine"
 
 [dependencies]
 chapbook-core = { workspace = true }
+# For `build_font_system`: the session-free typeface list Settings
+# offers before any book is open (`available_font_families`).
+chapbook-layout = { workspace = true }
 # `svg` and `mathml` because books carry both and Kalam keeps MathML.
 chapbook-reader = { workspace = true, features = ["svg", "mathml"] }
 # Same gtk4-rs line as chapbook-viewer-gtk, and for the same reason: one

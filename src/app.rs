@@ -1846,7 +1846,8 @@ fn brand_logo(accent: &str) -> gtk::Image {
 
 /// Rasterize the logo in one accent colour. `None` only when the embedded
 /// asset is corrupt; the app should still start, just without its mark.
-fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
+/// Shared with the Settings About pane, which shows the same mark larger.
+pub(crate) fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
     const LOGO_SVG: &str = include_str!("../assets/logo.svg");
 
     let svg = LOGO_SVG.replace("currentColor", accent);

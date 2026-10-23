@@ -551,7 +551,15 @@ pub const PREF_KEY: &str = "ui.theme";
 
 /// Install one resolved theme's colours as the application's CSS.
 fn install_css(theme: &Theme) {
-    let css = format!("{}{}", css_variables(theme), crate::style::APP_CSS);
+    // The appearance override rides last: the Appearance pane's font
+    // choices (decision 146) are generated rules appended after the app
+    // sheet, where equal specificity means the later rule wins.
+    let css = format!(
+        "{}{}{}",
+        css_variables(theme),
+        crate::style::APP_CSS,
+        crate::appearance::override_css()
+    );
     relm4::set_global_css(&css);
     notify_theme_applied(theme);
 }

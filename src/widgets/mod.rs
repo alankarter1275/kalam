@@ -6,6 +6,7 @@ pub mod charts;
 pub mod chip;
 pub mod cover_state;
 pub mod dialog;
+pub mod dropdown;
 pub mod focus_trap;
 pub mod in_app_dialog;
 pub mod menu;

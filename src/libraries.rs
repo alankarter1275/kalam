@@ -453,8 +453,13 @@ pub fn is_global_pref(key: &str) -> bool {
     }
     // Prefixes, so new reader settings, new bundled dictionaries and new
     // metadata or source providers are global without anyone having to
-    // remember to come back here.
-    key.starts_with("reader.")
+    // remember to come back here. `ui.` joined them with the Settings
+    // redesign (decisions 144-158): `ui.theme` was its only member and
+    // already global by name above, and the Appearance / Shortcuts prefs
+    // under it are app settings, shared by every library (settings-spec
+    // section 7) - a library must never change how the app looks.
+    key.starts_with("ui.")
+        || key.starts_with("reader.")
         || key.starts_with("bundled_dictionary_")
         || key.starts_with("meta.")
         || key.starts_with("source.")

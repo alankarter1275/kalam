@@ -6100,3 +6100,54 @@ button.kalam-authorpage-hl-card:focus-visible {
   line-height: 1.55;
   color: @kalam_text;
 }
+
+/* Dropdown (§43, decision 157): 36-high field, 1px border, radius 10,
+   bg fill, 13px value text; the menubutton node is a bare wrapper and
+   the inner button carries the field. Open takes an accent border;
+   keyboard focus takes a 2px accent ring at 2 offset. */
+menubutton.kalam-ui-dropdown {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+menubutton.kalam-ui-dropdown > button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid @kalam_border;
+  border-radius: 10px;
+  background: @kalam_bg;
+  color: @kalam_text;
+  box-shadow: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+menubutton.kalam-ui-dropdown > button:hover {
+  background: @kalam_hover;
+}
+menubutton.kalam-ui-dropdown > button:checked {
+  border-color: @kalam_accent;
+}
+menubutton.kalam-ui-dropdown > button:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+menubutton.kalam-ui-dropdown:disabled {
+  opacity: 0.4;
+}
+.kalam-ui-dropdown-value {
+  font-size: 13px;
+  color: inherit;
+}
+.kalam-ui-dropdown-chevron {
+  color: @kalam_text_dim;
+}
+.kalam-ui-dropdown-row-content {
+  padding: 0 6px;
+}
+.kalam-ui-dropdown-tick {
+  font-size: 14px;
+  font-weight: 700;
+  color: @kalam_accent;
+}
+button.kalam-ui-menu-item.accent {
+  color: @kalam_accent;
+}

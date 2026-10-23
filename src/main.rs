@@ -4,6 +4,7 @@
 //! top of the P1 catalog, P2 reader, P3 annotations and P4 library depth.
 
 mod app;
+mod appearance;
 mod author;
 pub mod bubbles;
 mod comic_folders;
@@ -240,6 +241,11 @@ fn main() {
             }
             _ => theme::current_choice(&catalog),
         };
+        // Load the Appearance pane's font / text-size / motion choices
+        // before the first theme install (decision 146): the font half
+        // rides the theme's CSS channel, so its cache must be warm
+        // before `install_css` asks for the override block.
+        appearance::init(&catalog);
         theme::apply_choice(&choice);
         // A "System" choice must track the desktop while the app runs,
         // not just at startup. The handler re-reads the saved choice and

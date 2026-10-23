@@ -582,9 +582,26 @@ dialog (`bad84b8`). The screenshot loop now photographs the page plus both
 dialogs in Terracotta Light and Dark — populated tag chips/ticked rows on
 seeded book 4 and the Annotations empty states — and `9417679` fixed the
 oval highlight-filter dots those first dialog captures exposed. The
-impression feature remains separately scheduled, the series link still
-opens the old series float pending the series-page phase, and the app-level
-shelves float remains for its book-float entry point.
+impression feature remains separately scheduled, and the app-level shelves
+float remains for its book-float entry point. The series page is complete
+and CI-green (`a8f7e1f`): `Route::SeriesPage` and `src/pages/series.rs`
+replace the retired series float, fed by `LibraryService::series_page`
+merging the cached Open Library listing with owned books — missing books
+and the "of M" total come only from the listing, never from counting the
+library, and the book page's series link now routes to it (comic series
+keep `Route::ComicSeries`). The screenshot loop photographs the Strip in
+Light and Dark and the List in Light on a seeded four-book fixture
+(finished / 42% / unread / missing, `--series-fixture` in the seeder); its
+first captures exposed a wrong seeded `series_cache` key, covers
+top-aligned instead of bottom-aligned (no `vexpand` for the strip slot's
+align to act on), the compact generated cover's ~107px minimum height
+inflating 36×50 list thumbnails, and cold deferred thumbnails under the
+view hook — all fixed in `288eed5` (the cover fix is a micro form of
+`fallback_cover`: kind token only below 80×110, same threshold as the
+missing face). No series summary or missing-book descriptions are shown:
+no source exists — the §5.6 build-time decision, taken as graceful
+absence. Next in the order above is the author page, whose "Open series ›"
+entry (decision 108) now has its target route.
 
 ## 8. Designed-but-unbuilt features (inventory only — ruling 4)
 

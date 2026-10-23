@@ -58,9 +58,10 @@ pub struct SeriesPageInit {
 
 /// What the snapshot worker delivers: the snapshot plus the covers it
 /// decoded on the same thread, so the fill finds them cached (the book
-/// page's 7.1 step 2a.2 pattern).
+/// page's 7.1 step 2a.2 pattern). `pub(crate)` because the message enum
+/// that carries it is.
 #[derive(Debug)]
-struct PageLoad {
+pub(crate) struct PageLoad {
     snap: SeriesPageSnapshot,
     covers: Vec<crate::preload::DecodedCover>,
 }
@@ -735,7 +736,15 @@ impl SeriesPageModel {
         label.set_xalign(0.0);
         widgets.header_host.append(&label);
 
-        let title = gtk::Label::new(Some(&self.series_name));
+        // The snapshot's name is the service-trimmed one; before it
+        // lands, the route's own name stands in.
+        let display_name = self
+            .snapshot
+            .as_ref()
+            .map(|snap| snap.series_name.clone())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| self.series_name.clone());
+        let title = gtk::Label::new(Some(&display_name));
         title.add_css_class("kalam-seriespage-title");
         title.set_halign(gtk::Align::Start);
         title.set_xalign(0.0);

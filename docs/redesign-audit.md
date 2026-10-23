@@ -488,6 +488,61 @@ is inert. Editor-only design tokens (`diff-add`, flat tabs §33, DM Mono) are
 not adopted by other screens unless a designed screen references them.
 `Proofread` (decision 129) has no entry point anywhere until then.
 
+### 5.8 Settings — `settings-spec.md`, decisions 144–158 (added 2026-10-23, design chat 8)
+
+Code: `src/pages/settings.rs` (2,587 lines, 6 tabs) over
+`SettingsSnapshot` + a page-owned FS worker. Data readiness is high — the
+spec's facts were taken from this file, and every pane's backend already
+exists: theme choice (`ui.theme`, palette + Light/Dark/System) in
+`theme.rs`; libraries registry + `restart_now` in `libraries.rs`; sidecar
+survey/backfill; `catalog.backup_to`; reader cache size/clear in
+`paths.rs`; exports in `export.rs`; sanitizer/writeback toggles; EPUB
+backup list/delete in `epub_metadata.rs`; dictionary priority column,
+`move_dictionary_priority`, bundled-pack markers (`bundled_dictionary_*`
+prefs) and `install_bundled_dictionaries`; metadata source toggles and
+Google Books key/country prefs; notification history (`notify::history`,
+200 entries, `HH:MM` stamps). Prefs split per-library (DB `app_prefs`)
+vs global (`~/.config/kalam/prefs.json`) by `is_global_pref`; `ui.theme`
+is the only `ui.*` key today, so `ui.` joins the global prefixes for the
+new Appearance/Shortcuts prefs.
+
+Deltas:
+
+- `UI` Page rebuilt: 11 panes in 5 groups, 240 pane list + 640 column
+  (§41). New components: dropdown (§43 — built on the codebase's §17
+  popover machinery rather than `Gtk.DropDown`, whose list cannot do
+  own-font rows plus a footer action; the visual spec is what binds),
+  palette mini-page cards (§42, Cairo), key-recording rows (§44;
+  `key_chip` already exists). Existing `setting_row`/`segmented` widgets
+  are reused.
+- `UI`/`DATA` Appearance (144–146): palette+mode is one choice — the
+  picker stops offering System (stored `*-system` prefs keep parsing and
+  display as their resolved mode). Interface/heading font and text size
+  ride the theme CSS channel (`install_css` gains a generated override
+  block: base family, display-class families, the `.kalam-ui-*` type
+  table scaled). Page-specific literal sizes outside the type table do
+  not scale in this pass. Reduce motion stores System/On/Off and drives
+  `gtk-enable-animations` plus a helper for new transitions; existing
+  revealers are not retrofitted in this phase.
+- `DATA` Reading (147): the pane edits the existing global `reader.*`
+  prefs (typeface/size/line-height/column/justify/word-memory) with a
+  live preview; "Ask for an impression" stores a new pref ahead of the
+  impression feature. The reader-side per-book switch is not drawn and
+  belongs to the reader phases, as the spec itself defers it.
+- `UI` Rail bell + notification panel (148): `notify::Entry` gains a day
+  stamp (Today/Earlier) and an unseen counter for the dot; the Settings
+  Notifications pane is removed, per the decision.
+- `UI`/`FEATURE` Shortcuts (155): the binding registry, recording and
+  conflict rules are new; actions that exist (navigation, Back,
+  Settings, bell, fullscreen, quit, search, import) wire to the shell,
+  the rest store bindings ahead of their features (no global undo stack
+  exists for Ctrl+Z). Keys are placeholders until built (decision 76's
+  precedent).
+- `GAP` by design: file/folder choosers and Export dialogs are not
+  drawn (existing flows keep working behind the new buttons);
+  Integrations ships fully disabled (154); the reader Theme card
+  redraw (145) waits for the reader boards.
+
 ## 6. Verified inventory of everything else (not yet designed)
 
 `kalam-screens.md` was written without code access; the table below is the
@@ -514,7 +569,7 @@ trust it. "Snapshot" = a `LibraryService` snapshot already feeds the page.
 | Lookup history | `lookup_history.rs` | `LookupHistorySnapshot` | Includes misses (`dict_lookups`). |
 | Comics hub | `comics.rs` (1,301) | comic series queries | Groups local series + remote placeholders; `Route::ComicSeries`. |
 | Metadata editor | `metadata_editor.rs` (1,156) | Open Library + Google Books (`src/metadata/`) | MyAnimeList / Comic Vine providers do **not** exist — inventory's metadata-chat sources list is aspirational (`FEATURE` if pursued). Locked hand-edited fields: `metadata_overrides` table exists. |
-| Settings | `settings.rs` (2,552), 6 tabs: Appearance, Storage & Backup, Dictionaries, Book Files, Metadata Sources, Notifications | `SettingsSnapshot` + FS worker | Inventory's draft panes (Reading, Integrations, Keyboard Shortcuts) don't exist as app settings — Reading/Shortcuts live inside readers; watch folders & libraries live under Storage/Book Files. |
+| Settings | `settings.rs` (2,552), 6 tabs: Appearance, Storage & Backup, Dictionaries, Book Files, Metadata Sources, Notifications | `SettingsSnapshot` + FS worker | Designed in chat 8 (decisions 144–158) — see §5.8. The old draft-pane names (Reading, Integrations, Keyboard Shortcuts) are now real panes; watch folders & libraries move out of Storage/Book Files into their own. |
 | Dialogs | `widgets/in_app_dialog.rs` (scrim, focus trap `focus_trap.rs`), 23 present-sites | — | The designed dialog (420/560, decision 75) maps onto this component + tokens; one restyle propagates widely. Native file choosers remain native. |
 | Browse / Downloads / Remote | `browse.rs`, `downloads.rs`, `remote_detail.rs`, `sources/` scaffolding | remote tables | Part 2: routes and queue exist, no registered source (README/ARCH agree). Stay hidden. |
 | Placeholder | `placeholder.rs` | — | For hidden modules; disappears with Part 2 decisions, not redesign. |
@@ -560,7 +615,8 @@ not screen importance): shell → book details (proves components on ready
 data) → series page (new route, retires float) → author page → EPUB reader
 (panel surgery + theme/prefs migration) → comic reader chrome → PDF reader
 chrome. Settings' Appearance tab lands with the token phase (it *is* the
-palette picker); the rest of Settings waits for its design.
+palette picker); the rest of Settings waited for its design, which
+arrived in chat 8 (decisions 144–158) and is now the active phase (§5.8).
 
 **Status (2026-10-23):** items 1 and 2 are complete and CI-green (tokens
 `5fbd12b`; component library through `c9d43cb`, exercised by the hidden

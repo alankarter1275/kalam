@@ -10,14 +10,14 @@
 //! "Your impression" (decision 91) is a designed-but-unbuilt feature with
 //! no storage yet, scheduled separately: the right column is built to
 //! work without that box, exactly as the spec's unfinished state does.
-//! The Tag and Annotations dialogs still open today's floating panels
-//! until their redesign tranche; the ⋯ menu and cover popover are the
-//! designed popovers already.
+//! The Tag dialog still opens today's floating panel until its redesign
+//! tranche; the ⋯ menu, cover popover and Annotations dialog are the
+//! designed forms already.
 //!
 //! The series link opens the series float (`series_float.rs`) until the
 //! series-page phase replaces it (decision 94).
 
-use crate::db::{Catalog, ShelfKind};
+use crate::db::{Catalog, HighlightColor, ShelfKind};
 use crate::models::{Book, BookFormat};
 use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
@@ -36,14 +36,15 @@ use crate::widgets::{
     pill_button::{boxed_ghost_button, icon_button, primary_button},
     progress::linear_progress,
     rating::rating_control,
+    segmented::{segmented_control, SegmentedSize},
     slide_out_pill::slide_out_pill,
     surface::{hairline, outlined_section, quiet_notice, state_card},
     timeline::{timeline, timeline_row, TimelineEntry, TimelineLinks, TimelineState},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -63,8 +64,6 @@ pub enum BookPageOut {
         series: String,
         first_author: String,
     },
-    /// Open the highlights & quotes panel (in-app float).
-    ViewHighlights,
     /// Open the tags panel (in-app float) from the hero's "+" chip.
     ShowTags,
     Deleted {
@@ -631,7 +630,7 @@ impl Component for BookPageModel {
                 self.contents_expanded = !self.contents_expanded;
             }
             BookPageMsg::ViewHighlights => {
-                sender.output(BookPageOut::ViewHighlights).ok();
+                present_annotations_dialog(root, self, self.chapter_titles.clone(), &sender);
             }
             BookPageMsg::Refresh => {
                 // After a metadata save or a remaster the page needs fresh
@@ -1833,6 +1832,483 @@ fn fill_annotations(
     host.append(&count_line);
 }
 
+/// The designed Annotations dialog (decision 92): a 560×660 list dialog
+/// with Highlights / Bookmarks / Words tabs. It replaces the old
+/// highlights-only floating panel — the page's "See all N" counts all
+/// three kinds, so the thing it opens has to show all three.
+///
+/// The lists are built from the page snapshot's rows (cloned into local
+/// state); a delete removes the row locally and in the catalog, and
+/// Done sends the page a Refresh so its counts catch up.
+fn present_annotations_dialog(
+    anchor: &gtk::Box,
+    model: &BookPageModel,
+    chapters: Vec<String>,
+    sender: &ComponentSender<BookPageModel>,
+) {
+    let Some(book) = &model.book else {
+        return;
+    };
+    let service = model.service.clone();
+    let shell = dialog_shell(DialogSize::List, Some(&book.title));
+
+    let stack = gtk::Stack::new();
+    stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+    stack.set_hexpand(true);
+    stack.set_vexpand(true);
+    stack.add_named(
+        &annotations_highlights_page(
+            service.clone(),
+            Rc::new(RefCell::new(model.annotations.clone())),
+            chapters.clone(),
+        ),
+        Some("highlights"),
+    );
+    stack.add_named(
+        &annotations_bookmarks_page(
+            service.clone(),
+            Rc::new(RefCell::new(model.bookmarks.clone())),
+            chapters.clone(),
+        ),
+        Some("bookmarks"),
+    );
+    stack.add_named(
+        &annotations_words_page(
+            service,
+            Rc::new(RefCell::new(model.saved_words.clone())),
+            chapters,
+        ),
+        Some("words"),
+    );
+
+    let labels = [
+        format!("Highlights {}", model.annotations.len()),
+        format!("Bookmarks {}", model.bookmarks.len()),
+        format!("Words {}", model.saved_words.len()),
+    ];
+    let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let stack_for_tabs = stack.clone();
+    let tabs = segmented_control(&label_refs, 0, SegmentedSize::Panel, move |index| {
+        stack_for_tabs.set_visible_child_name(match index {
+            1 => "bookmarks",
+            2 => "words",
+            _ => "highlights",
+        });
+    });
+    let tabs_widget = tabs.widget();
+    tabs_widget.set_halign(gtk::Align::Center);
+    shell.body().append(&tabs_widget);
+    shell.body().append(&stack);
+
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    let slot_for_done = slot.clone();
+    let s = sender.input_sender().clone();
+    shell.footer().append(&primary_button("Done", move || {
+        if let Some(dialog) = slot_for_done.borrow().clone() {
+            dialog.close();
+        }
+        let _ = s.send(BookPageMsg::Refresh);
+    }));
+
+    match present_dialog(anchor, "Annotations", DialogExit::OwnButtons, &shell) {
+        Some(dialog) => *slot.borrow_mut() = Some(dialog),
+        None => crate::notify::error(
+            "Could not open annotations",
+            "The dialog could not be opened.",
+        ),
+    }
+}
+
+fn dialog_scroll(child: &gtk::Box) -> gtk::ScrolledWindow {
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::External);
+    scroll.set_hexpand(true);
+    scroll.set_vexpand(true);
+    scroll.set_child(Some(child));
+    scroll
+}
+
+fn annotations_empty_note(host: &gtk::Box, text: &str) {
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("kalam-ui-meta");
+    label.set_halign(gtk::Align::Start);
+    label.set_wrap(true);
+    label.set_xalign(0.0);
+    label.set_max_width_chars(58);
+    host.append(&label);
+}
+
+fn annotations_highlights_page(
+    service: LibraryService,
+    annotations: Rc<RefCell<Vec<crate::db::Annotation>>>,
+    chapters: Vec<String>,
+) -> gtk::Box {
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    root.set_vexpand(true);
+    let filter = Rc::new(Cell::new(None::<HighlightColor>));
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 10);
+
+    // Self-referential rebuild, the panels' established pattern: delete
+    // buttons and the colour filter re-run it through the holder slot.
+    let holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+    let rebuild: Rc<dyn Fn()> = Rc::new({
+        let host = list_host.clone();
+        let annotations = annotations.clone();
+        let filter = filter.clone();
+        let chapters = chapters.clone();
+        let service = service.clone();
+        let holder = holder.clone();
+        move || {
+            clear_box(&host);
+            let current = annotations.borrow();
+            let shown: Vec<&crate::db::Annotation> = current
+                .iter()
+                .filter(|a| {
+                    filter
+                        .get()
+                        .is_none_or(|c| HighlightColor::from_str_lossy(&a.color) == c)
+                })
+                .collect();
+            if shown.is_empty() {
+                annotations_empty_note(
+                    &host,
+                    if filter.get().is_some() {
+                        "No highlights in this colour."
+                    } else {
+                        "No highlights yet — select some text in the reader."
+                    },
+                );
+                return;
+            }
+            let mut by_chapter: BTreeMap<i64, Vec<&crate::db::Annotation>> = BTreeMap::new();
+            for anno in shown {
+                by_chapter.entry(anno.chapter_index).or_default().push(anno);
+            }
+            for (chapter_index, items) in by_chapter {
+                let heading = gtk::Label::new(Some(
+                    &chapter_label(&chapters, chapter_index).to_uppercase(),
+                ));
+                heading.add_css_class("kalam-ui-label");
+                heading.set_halign(gtk::Align::Start);
+                heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                host.append(&heading);
+
+                for anno in items {
+                    host.append(&hairline());
+                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                    let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                    bar.add_css_class("kalam-hl-bar");
+                    bar.add_css_class(hl_color_class(&anno.color));
+                    bar.set_valign(gtk::Align::Fill);
+                    row.append(&bar);
+
+                    let info = gtk::Box::new(gtk::Orientation::Vertical, 3);
+                    info.set_hexpand(true);
+                    let text = gtk::Label::new(Some(anno.text_excerpt.trim()));
+                    text.add_css_class("kalam-bookpage-annotation-quote");
+                    text.set_halign(gtk::Align::Start);
+                    text.set_wrap(true);
+                    text.set_xalign(0.0);
+                    text.set_max_width_chars(58);
+                    info.append(&text);
+                    let kind = match anno.kind.as_str() {
+                        "quote" => "Quote",
+                        "note" => "Note",
+                        _ => "Highlight",
+                    };
+                    let mut meta_parts = vec![
+                        kind.to_string(),
+                        pretty_imported(&anno.created_at),
+                    ];
+                    let note = anno.note.trim();
+                    if !note.is_empty() {
+                        meta_parts.push(shorten_title(note, 90));
+                    }
+                    let meta = gtk::Label::new(Some(&meta_parts.join(" · ")));
+                    meta.add_css_class("kalam-ui-meta");
+                    meta.set_halign(gtk::Align::Start);
+                    meta.set_wrap(true);
+                    meta.set_xalign(0.0);
+                    meta.set_max_width_chars(58);
+                    info.append(&meta);
+                    row.append(&info);
+
+                    let id = anno.id;
+                    let service = service.clone();
+                    let annotations = annotations.clone();
+                    let holder = holder.clone();
+                    row.append(&icon_button(
+                        "user-trash-symbolic",
+                        "Delete highlight",
+                        32,
+                        false,
+                        move || {
+                            match service.catalog().delete_annotation(id) {
+                                Ok(()) => {
+                                    annotations.borrow_mut().retain(|a| a.id != id);
+                                    crate::notify::compact("Annotation deleted", "");
+                                }
+                                Err(err) => crate::notify::error(
+                                    "Could not delete the annotation",
+                                    &err.to_string(),
+                                ),
+                            }
+                            if let Some(refresh) = holder.borrow().clone() {
+                                refresh();
+                            }
+                        },
+                    ));
+                    host.append(&row);
+                }
+            }
+        }
+    });
+    *holder.borrow_mut() = Some(rebuild.clone());
+
+    // Five colour dots as the filter (decision 92); tapping the active
+    // dot again clears back to all colours.
+    let filter_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let filter_label = gtk::Label::new(Some("Filter"));
+    filter_label.add_css_class("kalam-ui-meta");
+    filter_row.append(&filter_label);
+    for &color in HighlightColor::SOFT_FIVE {
+        let dot = gtk::Button::new();
+        dot.add_css_class("k-color-dot");
+        dot.add_css_class(&format!("k-color-dot-{}", color.as_str()));
+        dot.set_size_request(24, 24);
+        dot.set_tooltip_text(Some(&format!("Show {} highlights", color.as_str())));
+        let filter = filter.clone();
+        let holder = holder.clone();
+        dot.connect_clicked(move |clicked| {
+            let next = if filter.get() == Some(color) {
+                None
+            } else {
+                Some(color)
+            };
+            filter.set(next);
+            if let Some(parent) = clicked.parent() {
+                let mut child = parent.first_child();
+                while let Some(widget) = child {
+                    let next_sibling = widget.next_sibling();
+                    if let Ok(btn) = widget.downcast::<gtk::Button>() {
+                        btn.remove_css_class("active");
+                    }
+                    child = next_sibling;
+                }
+            }
+            if next.is_some() {
+                clicked.add_css_class("active");
+            }
+            if let Some(refresh) = holder.borrow().clone() {
+                refresh();
+            }
+        });
+        filter_row.append(&dot);
+    }
+    root.append(&filter_row);
+    root.append(&dialog_scroll(&list_host));
+
+    rebuild();
+    root
+}
+
+fn annotations_bookmarks_page(
+    service: LibraryService,
+    bookmarks: Rc<RefCell<Vec<crate::db::ReadingBookmark>>>,
+    chapters: Vec<String>,
+) -> gtk::Box {
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+    let rebuild: Rc<dyn Fn()> = Rc::new({
+        let host = list_host.clone();
+        let bookmarks_state = bookmarks.clone();
+        let chapters = chapters.clone();
+        let service = service.clone();
+        let holder = holder.clone();
+        move || {
+            clear_box(&host);
+            let current = bookmarks_state.borrow();
+            if current.is_empty() {
+                annotations_empty_note(&host, "No bookmarks in this book yet.");
+                return;
+            }
+            for bookmark in current.iter() {
+                host.append(&hairline());
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                let icon = gtk::Image::from_icon_name("bookmark-new-symbolic");
+                icon.set_pixel_size(15);
+                icon.set_valign(gtk::Align::Center);
+                row.append(&icon);
+
+                let chapter = chapter_label(&chapters, bookmark.chapter_index);
+                let label = bookmark.label.trim();
+                let info = gtk::Box::new(gtk::Orientation::Vertical, 3);
+                info.set_hexpand(true);
+                let title = gtk::Label::new(Some(if label.is_empty() {
+                    chapter.as_str()
+                } else {
+                    label
+                }));
+                title.add_css_class("kalam-ui-body");
+                title.set_halign(gtk::Align::Start);
+                title.set_wrap(true);
+                title.set_xalign(0.0);
+                title.set_max_width_chars(58);
+                info.append(&title);
+                let pct = (bookmark.fraction.clamp(0.0, 1.0) * 100.0).round() as i64;
+                let meta_text = if label.is_empty() {
+                    format!("{} · {pct}%", pretty_imported(&bookmark.created_at))
+                } else {
+                    format!(
+                        "{chapter} · {} · {pct}%",
+                        pretty_imported(&bookmark.created_at)
+                    )
+                };
+                let meta = gtk::Label::new(Some(&meta_text));
+                meta.add_css_class("kalam-ui-meta");
+                meta.set_halign(gtk::Align::Start);
+                meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                info.append(&meta);
+                row.append(&info);
+
+                let id = bookmark.id;
+                let service = service.clone();
+                let bookmarks_state = bookmarks_state.clone();
+                let holder = holder.clone();
+                row.append(&icon_button(
+                    "user-trash-symbolic",
+                    "Delete bookmark",
+                    32,
+                    false,
+                    move || {
+                        match service.catalog().delete_reading_bookmark(id) {
+                            Ok(()) => {
+                                bookmarks_state.borrow_mut().retain(|b| b.id != id);
+                                crate::notify::compact("Bookmark deleted", "");
+                            }
+                            Err(err) => crate::notify::error(
+                                "Could not delete the bookmark",
+                                &err.to_string(),
+                            ),
+                        }
+                        if let Some(refresh) = holder.borrow().clone() {
+                            refresh();
+                        }
+                    },
+                ));
+                host.append(&row);
+            }
+        }
+    });
+    *holder.borrow_mut() = Some(rebuild.clone());
+    rebuild();
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.set_vexpand(true);
+    root.append(&dialog_scroll(&list_host));
+    root
+}
+
+fn annotations_words_page(
+    service: LibraryService,
+    words: Rc<RefCell<Vec<crate::db::SavedWord>>>,
+    chapters: Vec<String>,
+) -> gtk::Box {
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+    let rebuild: Rc<dyn Fn()> = Rc::new({
+        let host = list_host.clone();
+        let words_state = words.clone();
+        let chapters = chapters.clone();
+        let service = service.clone();
+        let holder = holder.clone();
+        move || {
+            clear_box(&host);
+            let current = words_state.borrow();
+            if current.is_empty() {
+                annotations_empty_note(&host, "No saved words from this book yet.");
+                return;
+            }
+            for word in current.iter() {
+                host.append(&hairline());
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                let info = gtk::Box::new(gtk::Orientation::Vertical, 3);
+                info.set_hexpand(true);
+                let headword = gtk::Label::new(Some(&word.word));
+                headword.add_css_class("kalam-ui-card-title");
+                headword.set_halign(gtk::Align::Start);
+                headword.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                info.append(&headword);
+
+                let meaning = word
+                    .definition
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .unwrap_or("");
+                if !meaning.is_empty() {
+                    let meaning_label = gtk::Label::new(Some(meaning));
+                    meaning_label.add_css_class("kalam-ui-meta");
+                    meaning_label.set_halign(gtk::Align::Start);
+                    meaning_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    meaning_label.set_max_width_chars(58);
+                    info.append(&meaning_label);
+                }
+                let mut meta_parts: Vec<String> = Vec::new();
+                if let Some(chapter_index) = word.chapter_index {
+                    meta_parts.push(chapter_label(&chapters, chapter_index));
+                }
+                if word.known {
+                    meta_parts.push("Known".to_string());
+                }
+                if !meta_parts.is_empty() {
+                    let meta = gtk::Label::new(Some(&meta_parts.join(" · ")));
+                    meta.add_css_class("kalam-ui-caption");
+                    meta.set_halign(gtk::Align::Start);
+                    meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    info.append(&meta);
+                }
+                row.append(&info);
+
+                let id = word.id;
+                let word_text = word.word.clone();
+                let service = service.clone();
+                let words_state = words_state.clone();
+                let holder = holder.clone();
+                row.append(&icon_button(
+                    "user-trash-symbolic",
+                    "Delete saved word",
+                    32,
+                    false,
+                    move || {
+                        match service.catalog().delete_saved_word(id) {
+                            Ok(()) => {
+                                words_state.borrow_mut().retain(|w| w.id != id);
+                                crate::notify::compact("Saved word deleted", &word_text);
+                            }
+                            Err(err) => crate::notify::error(
+                                "Could not delete the saved word",
+                                &err.to_string(),
+                            ),
+                        }
+                        if let Some(refresh) = holder.borrow().clone() {
+                            refresh();
+                        }
+                    },
+                ));
+                host.append(&row);
+            }
+        }
+    });
+    *holder.borrow_mut() = Some(rebuild.clone());
+    rebuild();
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.set_vexpand(true);
+    root.append(&dialog_scroll(&list_host));
+    root
+}
+
 fn fill_file_line(host: &gtk::Box, model: &BookPageModel) {
     clear_box(host);
     let Some(book) = &model.book else {
@@ -1915,119 +2391,6 @@ pub(crate) fn panel_title(text: &str) -> gtk::Box {
     label.set_xalign(0.0);
     head.append(&label);
     head
-}
-
-/// Full list of a book's highlights/quotes, with per-row delete.
-/// The highlights & quotes panel, hosted in the app's in-app float layer
-/// (see AppModel::open_annotations_floating) instead of a separate window,
-/// so the compositor can't tile it onto another workspace.
-pub fn build_annotations_panel(
-    catalog: Arc<Catalog>,
-    book_id: i64,
-    on_done: impl Fn() + 'static,
-) -> gtk::Box {
-    let on_done = std::rc::Rc::new(on_done);
-
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    root.add_css_class("kalam-annotations-float");
-    root.set_overflow(gtk::Overflow::Hidden);
-    root.append(&panel_title("Highlights & quotes"));
-
-    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    list_host.set_margin_all(16);
-
-    let scroll = gtk::ScrolledWindow::builder()
-        .vexpand(true)
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .child(&list_host)
-        .build();
-    root.append(&scroll);
-
-    let done = gtk::Button::with_label("Done");
-    done.add_css_class("kalam-primary-btn");
-    done.set_halign(gtk::Align::End);
-    done.set_margin_all(12);
-    let done_fn = on_done.clone();
-    done.connect_clicked(move |_| done_fn());
-    root.append(&done);
-
-    // Self-referential refresh: the delete buttons need to re-run it, so the
-    // closure finds itself through a slot it fills in after construction.
-    let holder: crate::pages::SelfRebuild = Rc::new(std::cell::RefCell::new(None));
-    let closure: Rc<dyn Fn()> = Rc::new({
-        let host = list_host.clone();
-        let catalog = catalog.clone();
-        let holder = holder.clone();
-        move || {
-            while let Some(child) = host.first_child() {
-                host.remove(&child);
-            }
-            let annos = catalog
-                .get_annotations_for_book(book_id)
-                .unwrap_or_default();
-            if annos.is_empty() {
-                let none = gtk::Label::new(Some("No highlights or quotes for this book yet."));
-                none.add_css_class("kalam-placeholder");
-                none.set_wrap(true);
-                host.append(&none);
-                return;
-            }
-            for a in annos {
-                let row = gtk::Box::new(gtk::Orientation::Horizontal, 9);
-                row.set_margin_top(8);
-                row.set_margin_bottom(8);
-                let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                bar.add_css_class("kalam-hl-bar");
-                bar.add_css_class(hl_color_class(&a.color));
-                row.append(&bar);
-                let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
-                info.set_hexpand(true);
-                let text = gtk::Label::new(Some(&a.text_excerpt));
-                text.add_css_class("kalam-hl-text");
-                text.set_halign(gtk::Align::Start);
-                text.set_wrap(true);
-                text.set_xalign(0.0);
-                info.append(&text);
-                let kind = match a.kind.as_str() {
-                    "quote" => "Quote",
-                    "note" => "Note",
-                    _ => "Highlight",
-                };
-                let meta = gtk::Label::new(Some(&format!(
-                    "{kind} · {}",
-                    a.created_at.get(..10).unwrap_or("")
-                )));
-                meta.add_css_class("kalam-hl-meta");
-                meta.set_halign(gtk::Align::Start);
-                info.append(&meta);
-                row.append(&info);
-
-                let del = gtk::Button::new();
-                del.add_css_class("kalam-icon-btn");
-                del.set_focus_on_click(false);
-                del.set_tooltip_text(Some("Delete"));
-                del.set_child(Some(&crate::icons::symbolic("user-trash-symbolic", 15)));
-                let id = a.id;
-                let catalog = catalog.clone();
-                let holder = holder.clone();
-                del.connect_clicked(move |_| {
-                    if let Err(err) = catalog.delete_annotation(id) {
-                        crate::notify::error("Could not delete the annotation", &err.to_string());
-                    } else {
-                        crate::notify::compact("Annotation deleted", "");
-                    }
-                    if let Some(refresh) = holder.borrow().clone() {
-                        refresh();
-                    }
-                });
-                row.append(&del);
-                host.append(&row);
-            }
-        }
-    });
-    *holder.borrow_mut() = Some(closure.clone());
-    closure();
-    root
 }
 
 /// Checklist of manual shelves for one book, hosted in the app's in-app

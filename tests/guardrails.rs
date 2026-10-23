@@ -58,10 +58,12 @@ const MAX_ARC_CATALOG_IN_PAGES: usize = 44;
 /// Colours are meant to live in `theme.rs`, with the stylesheet holding shape
 /// only, so that a theme change is one file. The redesign's token phase cut
 /// the stylesheet's literal colours from 184, and every redesigned surface
-/// since has held the line; the shell phase took it to 147. The remaining
-/// literals live on pages the redesign has not rebuilt yet and leave with
-/// them, page by page.
-const MAX_HEX_IN_CSS: usize = 147;
+/// since has held the line; the shell phase took it to 147. The EPUB T2
+/// tranche took the reader's highlight hues into `kalam_hl_*` tokens and
+/// deleted the theme-dot rules, landing at 121. The remaining literals
+/// live on pages the redesign has not rebuilt yet and leave with them,
+/// page by page.
+const MAX_HEX_IN_CSS: usize = 121;
 
 // ---------------------------------------------------------------------------
 // The checks

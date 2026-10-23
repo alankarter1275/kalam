@@ -89,7 +89,7 @@ impl ReaderAction {
             ReaderAction::Settings => "Settings",
             ReaderAction::Highlights => "Highlights",
             ReaderAction::Words => "Saved words",
-            ReaderAction::Bookmark => "Add a bookmark",
+            ReaderAction::Bookmark => "Toggle the bookmark ribbon",
             ReaderAction::JumpBack => "Jump back",
             ReaderAction::Search => "Search the book",
         }
@@ -129,7 +129,7 @@ impl ReaderAction {
             ReaderAction::Settings => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Settings),
             ReaderAction::Highlights => ReaderMsg::SwitchRightTab(RightSidebarTab::Highlights),
             ReaderAction::Words => ReaderMsg::SwitchRightTab(RightSidebarTab::Words),
-            ReaderAction::Bookmark => ReaderMsg::AddBookmark,
+            ReaderAction::Bookmark => ReaderMsg::ToggleBookmark,
             ReaderAction::JumpBack => ReaderMsg::JumpBack,
             ReaderAction::Search => ReaderMsg::ToggleSearch,
         }

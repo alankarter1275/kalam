@@ -500,6 +500,8 @@ fn set_color_scheme(scheme: relm4::adw::ColorScheme) {
 pub fn css_variables(t: &Theme) -> String {
     // Derived alpha tokens (design-system §2, §9): computed from the core
     // colours here so each palette states its core values exactly once.
+    // The five highlight hues are the exception — §9 fixes them across
+    // every palette (decision 27), so they are stated literally.
     let selection_alpha = if t.dark { 0.16 } else { 0.14 };
     let match_alpha = if t.dark { 0.10 } else { 0.08 };
     let hover_alpha = if t.dark { 0.08 } else { 0.06 };
@@ -522,6 +524,11 @@ pub fn css_variables(t: &Theme) -> String {
          @define-color kalam_selection alpha({text}, {selection_alpha});\n\
          @define-color kalam_search_match alpha({text}, {match_alpha});\n\
          @define-color kalam_search_current alpha({accent}, 0.38);\n\
+         @define-color kalam_hl_yellow #e8b93a;\n\
+         @define-color kalam_hl_green #6fb36f;\n\
+         @define-color kalam_hl_blue #5b9bd5;\n\
+         @define-color kalam_hl_pink #d97ba8;\n\
+         @define-color kalam_hl_orange #e08a4b;\n\
          @define-color kalam_paper {paper};\n\
          @define-color kalam_paper_ink #2a2420;\n\
          @define-color kalam_danger {danger};\n\

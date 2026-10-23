@@ -2,9 +2,8 @@
 
 use super::types::*;
 use crate::db::{Annotation, DictEntry, ReadingBookmark, SavedWord};
-use crate::epub_book::ReadingTheme;
 use crate::service::LibraryService;
-use gtk::glib;
+use kalam_reader::ReaderPalette;
 use std::path::PathBuf;
 
 pub struct ReaderModel {
@@ -20,7 +19,9 @@ pub struct ReaderModel {
     pub(crate) chapter_titles: Vec<String>,
     pub(crate) chapter: usize,
     pub(crate) fraction: f64,
-    pub(crate) theme: ReadingTheme,
+    /// The page's resolved palette (decisions 19/145): the app theme by
+    /// default; the per-book override will resolve here instead.
+    pub(crate) palette: ReaderPalette,
     pub(crate) font_px: u32,
     pub(crate) line_height: f32,
     pub(crate) column_px: u32,
@@ -102,19 +103,21 @@ pub struct ReaderModel {
     pub(crate) highlight_filter: HighlightFilter,
     pub(crate) word_scope: WordScope,
     pub(crate) settings_pane: ReaderSettingsPane,
-    pub(crate) ui_prefs: ReaderUiPrefs,
+    /// The Back+Bubble unit's shown state (decision 15).
     pub(crate) show_back_button: bool,
-    pub(crate) show_bottom_pill: bool,
-    pub(crate) left_close_timer: Option<glib::SourceId>,
-    pub(crate) right_close_timer: Option<glib::SourceId>,
-    pub(crate) left_close_token: u64,
-    pub(crate) right_close_token: u64,
+    /// Pointer resting in the top-left zone or on the unit itself.
+    pub(crate) back_hover: bool,
+    /// Generation for the Back unit's reveal/hide timers; a timer only
+    /// acts while its generation is still current.
+    pub(crate) back_gen: u64,
+    /// The Back pill with its Bubble slide-out, built at open.
+    pub(crate) back_unit: Option<crate::widgets::slide_out_pill::SlideOutPill>,
+    /// Pointer over the location text: it names the chapter (17).
+    pub(crate) location_hover: bool,
     pub(crate) left_sidebar_shell: Option<gtk::Revealer>,
     pub(crate) right_sidebar_shell: Option<gtk::Revealer>,
     pub(crate) left_sidebar_box: Option<gtk::Box>,
     pub(crate) right_sidebar_box: Option<gtk::Box>,
-    pub(crate) back_dock: Option<gtk::Box>,
-    pub(crate) bottom_dock: Option<gtk::Box>,
     pub(crate) left_stack: gtk::Stack,
     pub(crate) right_stack: gtk::Stack,
     pub(crate) toc_scroll: gtk::ScrolledWindow,
@@ -127,11 +130,8 @@ pub struct ReaderModel {
     pub(crate) font_size_label: gtk::Label,
     pub(crate) line_height_label: gtk::Label,
     pub(crate) column_width_label: gtk::Label,
-    pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
-    pub(crate) ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
     pub(crate) highlight_filter_buttons: Vec<(HighlightFilter, gtk::Button)>,
     pub(crate) word_scope_buttons: Vec<(WordScope, gtk::Button)>,
-    pub(crate) ui_css_provider: gtk::CssProvider,
     pub(crate) search_active: bool,
     pub(crate) search_query: String,
     pub(crate) search_results: Vec<kalam_reader::SearchResult>,
@@ -144,10 +144,6 @@ pub struct ReaderModel {
     pub(crate) lightbox_pixbuf: Option<gdk_pixbuf::Pixbuf>,
     pub(crate) lightbox_zoom: f64,
     pub(crate) lightbox_rotation: f64,
-    pub(crate) back_hide_timer: Option<glib::SourceId>,
-    pub(crate) bottom_hide_timer: Option<glib::SourceId>,
-    pub(crate) mouse_in_top_edge: bool,
-    pub(crate) mouse_in_bottom_edge: bool,
 }
 
 impl ReaderModel {

@@ -408,6 +408,23 @@ jobs:
           BOOKS=139 OUT=ci-shots-reader SETTLE=25 ROUTE=read-1 \
             docs/ci/screenshot.sh
 
+      # EPUB T2 (decisions 14-20, 145): the pure page with its summoned
+      # chrome stood up on request — Back+Bubble unit, bookmark ribbon,
+      # location percentage — in both modes. The page ground is the app
+      # palette's own bg now, so the two frames also prove the page
+      # follows the app theme rather than a reading theme.
+      - name: open a book with its chrome up (light) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-chrome-light SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=chrome THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open a book with its chrome up (dark) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-chrome-dark SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=chrome THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # The task manager's whole job is showing state that only exists while
       # something is running, so a shot of it over a quiet library proves
       # little about the interesting case. What it does prove is the part no
@@ -698,6 +715,12 @@ jobs:
           cp ci-shots-reader/report.txt ci-logs/reader-latest.txt 2>/dev/null \
             || echo "(no reader report produced)" > ci-logs/reader-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-latest.txt
+          cp ci-shots-reader-chrome-light/report.txt ci-logs/reader-chrome-light-latest.txt 2>/dev/null \
+            || echo "(no reader-chrome-light report produced)" > ci-logs/reader-chrome-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chrome-light-latest.txt
+          cp ci-shots-reader-chrome-dark/report.txt ci-logs/reader-chrome-dark-latest.txt 2>/dev/null \
+            || echo "(no reader-chrome-dark report produced)" > ci-logs/reader-chrome-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chrome-dark-latest.txt
           cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
             || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
@@ -780,6 +803,10 @@ jobs:
           # download artifacts (see above). Only the settled frame of each
           # mode is committed, under a stable name, to bound the history
           # churn; every other route's PNGs still stay uncommitted.
+          cp ci-shots-reader-chrome-light/03-read-1-settled.png \
+            ci-logs/reader-chrome-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-reader-chrome-dark/03-read-1-settled.png \
+            ci-logs/reader-chrome-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-components-light/03-components-settled.png \
             ci-logs/components-terracotta-light.png 2>/dev/null || true
           cp ci-shots-components-dark/03-components-settled.png \

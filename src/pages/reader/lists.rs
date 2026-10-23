@@ -1,7 +1,7 @@
 //! Sidebar list rebuilders (TOC, Highlights, Notes, Bookmarks, Words) and note editing.
 
 use super::chapter::chapter_label;
-use super::chrome::connect_hover_zone;
+use super::chrome::connect_hover_open;
 use super::dictionary_popover::truncate_def;
 use super::mod_model::ReaderModel;
 use super::types::*;
@@ -59,6 +59,46 @@ impl ReaderModel {
         self.view.as_ref().map(|view| view.toc()).unwrap_or_default()
     }
 
+    /// The chapter the location text names (decision 17): the last TOC
+    /// row whose target sits at or before the reading position, so a
+    /// nested section names itself rather than its part. Part headings
+    /// carry no target and never win past the first real entry; with no
+    /// usable TOC the spine title stands in.
+    pub(crate) fn current_toc_title(&self) -> String {
+        let entries = self.toc_entries();
+        let rows = toc_rows(&entries, &self.chapter_titles);
+        let mut label: Option<&str> = None;
+        for row in &rows {
+            if let Some(spine) = row.spine_index {
+                if spine <= self.chapter {
+                    label = Some(row.label.as_str());
+                }
+            }
+        }
+        match label {
+            Some(label) if !label.trim().is_empty() => label.to_string(),
+            _ => self.current_chapter_title().to_string(),
+        }
+    }
+
+    /// Whether a bookmark sits at the reading position — the ribbon's
+    /// set state, and the toggle's remove branch. "Here" is the same
+    /// chapter within 3% of its length, the tolerance the toggle has
+    /// always used.
+    pub(crate) fn bookmark_here(&self) -> bool {
+        self.bookmark_here_id().is_some()
+    }
+
+    pub(crate) fn bookmark_here_id(&self) -> Option<i64> {
+        self.bookmarks
+            .iter()
+            .find(|b| {
+                b.chapter_index == self.chapter as i64
+                    && (b.fraction - self.fraction).abs() < 0.03
+            })
+            .map(|b| b.id)
+    }
+
     /// Which entry the TOC scroll should centre on, as (position, total)
     /// in the list `rebuild_toc` builds from the same entries.
     pub(crate) fn toc_display_position(&self) -> Option<(usize, usize)> {
@@ -97,8 +137,6 @@ impl ReaderModel {
     pub(crate) fn close_sidebars(&mut self) {
         self.left_sidebar_open = false;
         self.right_sidebar_open = false;
-        self.cancel_left_close();
-        self.cancel_right_close();
     }
 
     pub(crate) fn flush_annotation_note_draft(&mut self) {
@@ -440,12 +478,7 @@ fn annotation_recolor_button(
             let _ = tx.send(ReaderMsg::OpenRightSidebar);
         }
     });
-    connect_hover_zone(
-        &popover,
-        sender,
-        ReaderMsg::OpenRightSidebar,
-        ReaderMsg::ScheduleCloseRight,
-    );
+    connect_hover_open(&popover, sender, ReaderMsg::OpenRightSidebar);
     recolor
 }
 

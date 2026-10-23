@@ -1,28 +1,29 @@
-//! Left sidebar Settings panel builder and UI setting stepper rows.
+//! The reader's Settings panel builder (Reading and Shortcuts panes).
 
 use super::keybinds::{KeyBinding, KeyBindings, ReaderAction};
 use super::mod_model::ReaderModel;
 use super::types::*;
-use super::ui_prefs::{
-    parse_reader_ui_input, reader_settings_pane_name, reader_ui_presets,
-    reader_ui_step, reader_ui_unit,
-};
-use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use relm4::RelmWidgetExt;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// The stack child name each settings pane is filed under.
+pub(crate) fn reader_settings_pane_name(pane: ReaderSettingsPane) -> &'static str {
+    match pane {
+        ReaderSettingsPane::Reading => "reading",
+        ReaderSettingsPane::Shortcuts => "shortcuts",
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_reader_settings_panel(
     sender: &ComponentSender<ReaderModel>,
-    theme: ReadingTheme,
     font_px: u32,
     line_height: f32,
     column_px: u32,
     scrolled: bool,
-    ui_prefs: ReaderUiPrefs,
     dict_sense_hint: bool,
     dict_history_enabled: bool,
     font_family: Option<String>,
@@ -45,7 +46,6 @@ pub(crate) fn build_reader_settings_panel(
     let mut pane_buttons = Vec::new();
     for (label, pane) in [
         ("Reading", ReaderSettingsPane::Reading),
-        ("UI", ReaderSettingsPane::Ui),
         ("Shortcuts", ReaderSettingsPane::Shortcuts),
     ] {
         let btn = gtk::Button::with_label(label);
@@ -66,32 +66,11 @@ pub(crate) fn build_reader_settings_panel(
 
     let reading_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
-    // 1. Reading theme palette
-    let theme_section = reader_settings_section("Theme");
-    let dots_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let mut dots = Vec::new();
-    for (label, value, class_name) in [
-        ("Sepia", ReadingTheme::Sepia, "kalam-reader-theme-dot-sepia"),
-        ("Light", ReadingTheme::Light, "kalam-reader-theme-dot-light"),
-        ("Dark", ReadingTheme::Dark, "kalam-reader-theme-dot-dark"),
-        ("Ink", ReadingTheme::Ink, "kalam-reader-theme-dot-ink"),
-    ] {
-        let btn = gtk::Button::new();
-        btn.add_css_class("kalam-reader-theme-dot");
-        btn.add_css_class(class_name);
-        btn.set_tooltip_text(Some(label));
-        let tx = sender.input_sender().clone();
-        btn.connect_clicked(move |_| {
-            let _ = tx.send(ReaderMsg::Theme(value));
-        });
-        dots_row.append(&btn);
-        dots.push((value, btn));
-    }
-    theme_section.append(&dots_row);
-    reading_page.append(&theme_section);
-    reading_page.append(&reader_panel_divider());
+    // No Theme card here yet: the reader follows the app theme
+    // (decision 145) until the per-book override lands with the panel
+    // rebuild, and a dead card in between would only lie.
 
-    // 2. Typography: font choice, sizing, spacing, alignment, styles
+    // 1. Typography: font choice, sizing, spacing, alignment, styles
     let type_section = reader_settings_section("Typography");
     if !families.is_empty() {
         let default_label = "Default";
@@ -384,63 +363,6 @@ pub(crate) fn build_reader_settings_panel(
         Some(reader_settings_pane_name(ReaderSettingsPane::Shortcuts)),
     );
 
-    let ui_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let mut ui_controls = Vec::new();
-
-    let sidebar_section = reader_settings_section("Sidebars");
-    for (title, setting) in [
-        ("Edge gap", ReaderUiSetting::SidebarGap),
-        ("Left width", ReaderUiSetting::LeftSidebarWidth),
-        ("Right width", ReaderUiSetting::RightSidebarWidth),
-        ("Corner radius", ReaderUiSetting::SidebarRadius),
-        ("Inner padding", ReaderUiSetting::SidebarPadding),
-        ("Shadow depth", ReaderUiSetting::SidebarShadow),
-    ] {
-        let (row, controls) =
-            reader_ui_setting_block(title, setting, ui_prefs.get(setting), sender);
-        sidebar_section.append(&row);
-        ui_controls.push((setting, controls));
-    }
-    ui_page.append(&sidebar_section);
-    ui_page.append(&reader_panel_divider());
-
-    let controls_section = reader_settings_section("Floating controls");
-    for (title, setting) in [
-        ("Bottom pill size", ReaderUiSetting::BottomPillSize),
-        ("Bottom gap", ReaderUiSetting::BottomPillGap),
-        ("Back chip size", ReaderUiSetting::BackChipSize),
-        ("Back top gap", ReaderUiSetting::BackTopGap),
-        ("Back side gap", ReaderUiSetting::BackSideGap),
-    ] {
-        let (row, controls) =
-            reader_ui_setting_block(title, setting, ui_prefs.get(setting), sender);
-        controls_section.append(&row);
-        ui_controls.push((setting, controls));
-    }
-    ui_page.append(&controls_section);
-    ui_page.append(&reader_panel_divider());
-
-    let overlay_section = reader_settings_section("Overlay");
-    let (dim_row, dim_controls) = reader_ui_setting_block(
-        "Background dim",
-        ReaderUiSetting::DimStrength,
-        ui_prefs.get(ReaderUiSetting::DimStrength),
-        sender,
-    );
-    overlay_section.append(&dim_row);
-    ui_controls.push((ReaderUiSetting::DimStrength, dim_controls));
-    ui_page.append(&overlay_section);
-    stack.add_named(
-        &ui_page,
-        Some(reader_settings_pane_name(ReaderSettingsPane::Ui)),
-    );
-
-    if theme == ReadingTheme::Sepia {
-        for (_, dot) in &dots {
-            dot.remove_css_class("active");
-        }
-    }
-
     wrap.append(&stack);
 
     ReaderSettingsControls {
@@ -455,8 +377,6 @@ pub(crate) fn build_reader_settings_panel(
         arrow_step_row,
         keybind_buttons,
         dual_page_switch,
-        theme_dots: dots,
-        ui_controls,
     }
 }
 
@@ -533,143 +453,6 @@ fn keybind_row(
     }
 
     button
-}
-
-pub(crate) fn reader_ui_setting_block(
-    label: &str,
-    setting: ReaderUiSetting,
-    value: i32,
-    sender: &ComponentSender<ReaderModel>,
-) -> (gtk::Box, ReaderUiSettingControls) {
-    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    wrap.add_css_class("kalam-reader-ui-setting");
-
-    let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    head.add_css_class("kalam-reader-ui-setting-head");
-    let label_widget = gtk::Label::new(Some(label));
-    label_widget.add_css_class("kalam-reader-ui-setting-label");
-    label_widget.set_hexpand(true);
-    label_widget.set_halign(gtk::Align::Start);
-    head.append(&label_widget);
-    wrap.append(&head);
-
-    let presets = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    presets.add_css_class("kalam-reader-ui-preset-row");
-    presets.set_homogeneous(true);
-    let preset_size_group = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
-    let mut preset_buttons = Vec::new();
-    for &(preset_label, preset_value) in reader_ui_presets(setting) {
-        let btn = gtk::Button::with_label(preset_label);
-        btn.add_css_class("kalam-reader-filter-chip");
-        btn.add_css_class("kalam-reader-ui-preset");
-        preset_size_group.add_widget(&btn);
-        let tx = sender.input_sender().clone();
-        btn.connect_clicked(move |_| {
-            let _ = tx.send(ReaderMsg::SetUiSetting(setting, preset_value));
-        });
-        presets.append(&btn);
-        preset_buttons.push((preset_value, btn));
-    }
-    wrap.append(&presets);
-
-    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    controls.add_css_class("kalam-reader-ui-control-row");
-
-    let value_entry = gtk::Entry::new();
-    value_entry.add_css_class("kalam-reader-ui-value-entry");
-    value_entry.set_input_purpose(gtk::InputPurpose::Digits);
-    value_entry.set_width_chars(4);
-    value_entry.set_max_length(4);
-    value_entry.set_text(&value.to_string());
-    let last_value = Rc::new(RefCell::new(value));
-
-    let custom_button = gtk::Button::with_label("Custom");
-    custom_button.add_css_class("kalam-reader-filter-chip");
-    custom_button.add_css_class("kalam-reader-ui-preset");
-    custom_button.add_css_class("kalam-reader-ui-preset-custom");
-    custom_button.set_focus_on_click(false);
-    preset_size_group.add_widget(&custom_button);
-    let value_entry_for_focus = value_entry.clone();
-    custom_button.connect_clicked(move |_| {
-        value_entry_for_focus.grab_focus();
-    });
-    controls.append(&custom_button);
-
-    let minus = gtk::Button::new();
-    minus.add_css_class("kalam-reader-stepper-btn");
-    minus.set_size_request(30, 30);
-    minus.set_halign(gtk::Align::Center);
-    minus.set_valign(gtk::Align::Center);
-    minus.set_child(Some(&crate::icons::symbolic_with_classes(
-        "list-remove-symbolic",
-        14,
-        &["kalam-inline-icon"],
-    )));
-    let tx = sender.input_sender().clone();
-    minus.connect_clicked(move |_| {
-        let _ = tx.send(ReaderMsg::AdjustUiSetting(
-            setting,
-            -reader_ui_step(setting),
-        ));
-    });
-    controls.append(&minus);
-
-    let value_inline = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    value_inline.append(&value_entry);
-    let unit_label = gtk::Label::new(Some(reader_ui_unit(setting)));
-    unit_label.add_css_class("kalam-reader-ui-unit");
-    value_inline.append(&unit_label);
-    controls.append(&value_inline);
-
-    let plus = gtk::Button::new();
-    plus.add_css_class("kalam-reader-stepper-btn");
-    plus.set_size_request(30, 30);
-    plus.set_halign(gtk::Align::Center);
-    plus.set_valign(gtk::Align::Center);
-    plus.set_child(Some(&crate::icons::symbolic_with_classes(
-        "list-add-symbolic",
-        14,
-        &["kalam-inline-icon"],
-    )));
-    let tx = sender.input_sender().clone();
-    plus.connect_clicked(move |_| {
-        let _ = tx.send(ReaderMsg::AdjustUiSetting(setting, reader_ui_step(setting)));
-    });
-    controls.append(&plus);
-    wrap.append(&controls);
-
-    let tx = sender.input_sender().clone();
-    let last_value_for_activate = last_value.clone();
-    value_entry.connect_activate(move |entry| {
-        if let Some(next) = parse_reader_ui_input(entry.text().as_str()) {
-            let _ = tx.send(ReaderMsg::SetUiSetting(setting, next));
-        } else {
-            entry.set_text(&last_value_for_activate.borrow().to_string());
-        }
-    });
-
-    let tx = sender.input_sender().clone();
-    let last_value_for_focus = last_value.clone();
-    value_entry.connect_has_focus_notify(move |entry| {
-        if entry.has_focus() {
-            return;
-        }
-        if let Some(next) = parse_reader_ui_input(entry.text().as_str()) {
-            let _ = tx.send(ReaderMsg::SetUiSetting(setting, next));
-        } else {
-            entry.set_text(&last_value_for_focus.borrow().to_string());
-        }
-    });
-
-    (
-        wrap,
-        ReaderUiSettingControls {
-            value_entry,
-            last_value,
-            preset_buttons,
-            custom_button,
-        },
-    )
 }
 
 pub(crate) fn reader_settings_section(label: &str) -> gtk::Box {

@@ -270,6 +270,11 @@ say "requested series view: ${SERIES_VIEW:-<remembered>}"
 # eleven redesigned panes could never be photographed.
 SETTINGS_PANE="${SETTINGS_PANE:-}"
 say "requested settings pane: ${SETTINGS_PANE:-<default>}"
+# READER_ACTION asks the EPUB reader to stand its summoned chrome up at
+# open (KALAM_READER_ACTION=chrome): the redesigned page opens bare, so
+# a proof frame of the Back+Bubble unit would otherwise need a pointer.
+READER_ACTION="${READER_ACTION:-}"
+say "requested reader action: ${READER_ACTION:-<none>}"
 say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
@@ -297,7 +302,7 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
-KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do

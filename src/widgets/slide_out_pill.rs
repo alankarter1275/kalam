@@ -69,13 +69,25 @@ pub fn slide_out_pill(
     secondary_label: &str,
     on_secondary: impl Fn() + 'static,
 ) -> SlideOutPill {
+    let secondary = gtk::Button::with_label(secondary_label);
+    slide_out_pill_with_button(primary, secondary, on_secondary)
+}
+
+/// The same pairing with a caller-built secondary button — the reader's
+/// Bubble peek (decision 15) is icon-only, where the book page's pill
+/// carries a label. The button gets the `kalam-ui-slideout-pill` class
+/// and the shared height; its content and tooltip are the caller's.
+pub fn slide_out_pill_with_button(
+    primary: &impl IsA<gtk::Widget>,
+    secondary: gtk::Button,
+    on_secondary: impl Fn() + 'static,
+) -> SlideOutPill {
     let primary_widget: gtk::Widget = primary.as_ref().clone();
     primary_widget.add_css_class("kalam-ui-slideout-primary");
     primary_widget.set_size_request(-1, HEIGHT);
     primary_widget.set_halign(gtk::Align::Start);
     primary_widget.set_valign(gtk::Align::Center);
 
-    let secondary = gtk::Button::with_label(secondary_label);
     secondary.add_css_class("kalam-ui-slideout-pill");
     secondary.set_size_request(-1, HEIGHT);
     secondary.set_halign(gtk::Align::End);
@@ -95,7 +107,12 @@ pub fn slide_out_pill(
     exposed_spacer.set_size_request(exposed_width, HEIGHT);
 
     let revealer = gtk::Revealer::new();
-    revealer.set_transition_type(gtk::RevealerTransitionType::SlideRight);
+    // Reduced motion turns slides into fades (decision 15, system §9).
+    revealer.set_transition_type(if crate::appearance::reduce_motion() {
+        gtk::RevealerTransitionType::Crossfade
+    } else {
+        gtk::RevealerTransitionType::SlideRight
+    });
     revealer.set_transition_duration(TRANSITION_MS);
     revealer.set_reveal_child(false);
     revealer.set_child(Some(&exposed_spacer));

@@ -1081,19 +1081,13 @@ button.kalam-float-icon-btn.kalam-float-icon-btn-danger:hover {
 }
 
 .kalam-reader,
-.kalam-reader-stage,
-.kalam-reader-stage.kalam-reader-paper-light,
-.kalam-reader-stage.kalam-reader-paper-sepia,
-.kalam-reader-stage.kalam-reader-paper-dark,
-.kalam-reader-stage.kalam-reader-paper-ink {
+.kalam-reader-stage {
     background: @kalam_bg;
 }
 
-/* No top padding on the stage: the reading surface runs flush to the
-   top edge exactly as it does left, right and bottom. The 12px of app
-   background this rule used to add showed up as a dark band along the
-   upper edge whenever the reading theme's paper did not match the app
-   background (2026-10-05 field run #2 report). */
+/* The page is painted in the palette's own bg (decisions 19/145) and
+   runs flush to every edge, so the stage and the paper agree by
+   construction — no per-theme paper classes, no banding. */
 
 button.kalam-reader-dim {
     background: alpha(@kalam_bg, 0.22);
@@ -1106,18 +1100,80 @@ button.kalam-reader-dim {
     background: transparent;
 }
 
-.kalam-reader-sidebar {
-    background: alpha(@kalam_sidebar, 0.97);
-    border: 1px solid alpha(@kalam_border, 0.95);
-    border-radius: 20px;
-    box-shadow: 0 22px 52px alpha(#000, 0.42);
+/* The bookmark ribbon (decision 16): hangs from the top edge, always
+   there. Idle it is an outline in the line colour over the page; set,
+   it is accent-filled and a touch longer. The V-notch is the icon. */
+button.kalam-reader-ribbon {
+    background: transparent;
+    border: none;
+    box-shadow: none;
     padding: 0;
-    min-width: 340px;
+    min-width: 0;
+    min-height: 0;
+    color: @kalam_border;
 }
 
-.kalam-reader-sidebar-left,
-.kalam-reader-sidebar-right {
-    border-radius: 20px;
+button.kalam-reader-ribbon:hover {
+    background: transparent;
+    color: @kalam_text_dim;
+}
+
+button.kalam-reader-ribbon.set {
+    color: @kalam_accent;
+}
+
+button.kalam-reader-ribbon.set:hover {
+    color: @kalam_accent_fill;
+}
+
+.kalam-reader-ribbon image {
+    -gtk-icon-size: 26px;
+}
+
+button.kalam-reader-ribbon.set image {
+    -gtk-icon-size: 30px;
+}
+
+/* The location text (decision 17): small, text-2, bottom-right; on
+   hover it grows leftwards into `Chapter · NN%` at full ink. */
+label.kalam-reader-location {
+    color: @kalam_text_dim;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+label.kalam-reader-location.hover {
+    color: @kalam_text;
+}
+
+/* Keyboard focus gets the 2px accent ring on every piece of reader
+   chrome (system §9: focus is never invisible here). */
+button.kalam-reader-ribbon:focus-visible,
+button.kalam-reader-tab:focus-visible,
+button.kalam-reader-pill-nav:focus-visible,
+button.kalam-reader-filter-chip:focus-visible,
+button.kalam-reader-toc-item:focus-visible,
+button.kalam-reader-stepper-btn:focus-visible,
+button.kalam-reader-keycap:focus-visible,
+button.kalam-reader-seg-btn:focus-visible,
+button.kalam-reader-seg-item:focus-visible,
+button.kalam-reader-option-row:focus-visible,
+button.kalam-reader-color-choice:focus-visible,
+button.kalam-reader-list-hit:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 1px;
+}
+
+/* Reader panels (decision 20): 340 wide, floating 16 from every edge
+   (margins in the view), radius 22, solid card ground, a hairline —
+   and no shadow, anywhere in the app. */
+.kalam-reader-sidebar {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 22px;
+    box-shadow: none;
+    padding: 0;
+    min-width: 340px;
 }
 
 .kalam-reader-book-head {
@@ -1467,88 +1523,6 @@ button.kalam-reader-settings-switch.active {
     color: @kalam_accent;
 }
 
-.kalam-reader-ui-setting {
-    padding-top: 2px;
-}
-
-.kalam-reader-ui-setting-head {
-    min-height: 20px;
-}
-
-.kalam-reader-ui-setting-label {
-    font-size: 0.82rem;
-    color: @kalam_text;
-}
-
-button.kalam-reader-ui-preset {
-    min-width: 64px;
-    min-height: 28px;
-    padding: 4px 0;
-    font-size: 0.68rem;
-}
-
-button.kalam-reader-ui-preset.kalam-reader-ui-preset-custom.active {
-    color: @kalam_text;
-}
-
-.kalam-reader-ui-control-row {
-    padding-top: 2px;
-}
-
-entry.kalam-reader-ui-value-entry {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    color: @kalam_text;
-    min-width: 0;
-    padding: 4px 0;
-}
-
-entry.kalam-reader-ui-value-entry:focus,
-entry.kalam-reader-ui-value-entry:focus-within {
-    border: none;
-    box-shadow: none;
-}
-
-entry.kalam-reader-ui-value-entry > text {
-    color: @kalam_text;
-}
-
-.kalam-reader-ui-unit {
-    color: @kalam_text_dim;
-    font-size: 0.76rem;
-    font-weight: 600;
-}
-
-button.kalam-reader-theme-dot {
-    min-width: 24px;
-    min-height: 24px;
-    padding: 0;
-    border: 2px solid transparent;
-    border-radius: 999px;
-    box-shadow: none;
-}
-
-button.kalam-reader-theme-dot.active {
-    border-color: @kalam_accent;
-}
-
-button.kalam-reader-theme-dot.kalam-reader-theme-dot-light {
-    background: #faf8f5;
-}
-
-button.kalam-reader-theme-dot.kalam-reader-theme-dot-sepia {
-    background: #f4ecd8;
-}
-
-button.kalam-reader-theme-dot.kalam-reader-theme-dot-dark {
-    background: #1a1b1e;
-}
-
-button.kalam-reader-theme-dot.kalam-reader-theme-dot-ink {
-    background: #0d0d0d;
-}
-
 .kalam-reader-filter-row {
     padding: 10px 12px;
     border-bottom: 1px solid alpha(@kalam_border, 0.9);
@@ -1575,33 +1549,33 @@ button.kalam-reader-filter-chip.active {
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-yellow.active {
-    background: alpha(#e5c07b, 0.18);
-    border-color: #e5c07b;
-    color: #e5c07b;
+    background: alpha(@kalam_hl_yellow, 0.18);
+    border-color: @kalam_hl_yellow;
+    color: @kalam_hl_yellow;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-green.active {
-    background: alpha(#98c379, 0.18);
-    border-color: #98c379;
-    color: #98c379;
+    background: alpha(@kalam_hl_green, 0.18);
+    border-color: @kalam_hl_green;
+    color: @kalam_hl_green;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-blue.active {
-    background: alpha(#61afef, 0.18);
-    border-color: #61afef;
-    color: #61afef;
+    background: alpha(@kalam_hl_blue, 0.18);
+    border-color: @kalam_hl_blue;
+    color: @kalam_hl_blue;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-pink.active {
-    background: alpha(#e06c75, 0.18);
-    border-color: #e06c75;
-    color: #e06c75;
+    background: alpha(@kalam_hl_pink, 0.18);
+    border-color: @kalam_hl_pink;
+    color: @kalam_hl_pink;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-orange.active {
-    background: alpha(#d19a66, 0.18);
-    border-color: #d19a66;
-    color: #d19a66;
+    background: alpha(@kalam_hl_orange, 0.18);
+    border-color: @kalam_hl_orange;
+    color: @kalam_hl_orange;
 }
 
 button.kalam-reader-toc-item {
@@ -1645,23 +1619,189 @@ button.kalam-reader-list-hit:hover {
 }
 
 .kalam-reader-bar-yellow {
-    background: #e5c07b;
+    background: @kalam_hl_yellow;
 }
 
 .kalam-reader-bar-green {
-    background: #98c379;
+    background: @kalam_hl_green;
 }
 
 .kalam-reader-bar-blue {
-    background: #61afef;
+    background: @kalam_hl_blue;
 }
 
 .kalam-reader-bar-pink {
-    background: #e06c75;
+    background: @kalam_hl_pink;
 }
 
 .kalam-reader-bar-orange {
-    background: #d19a66;
+    background: @kalam_hl_orange;
+}
+
+/* Annotation cards and the note editor — ported from the retired
+   generated reader-UI stylesheet when `ui_prefs` went (decision 18);
+   the five hues are the §9 tokens now. */
+.kalam-reader-annotation-wrap {
+    padding: 12px 14px;
+}
+
+.kalam-reader-annotation-card {
+    border: 1px solid transparent;
+    border-radius: 10px;
+}
+
+.kalam-reader-annotation-card-yellow {
+    background: alpha(@kalam_hl_yellow, 0.08);
+    border-color: alpha(@kalam_hl_yellow, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_yellow, 0.55);
+}
+
+.kalam-reader-annotation-card-green {
+    background: alpha(@kalam_hl_green, 0.08);
+    border-color: alpha(@kalam_hl_green, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_green, 0.55);
+}
+
+.kalam-reader-annotation-card-blue {
+    background: alpha(@kalam_hl_blue, 0.08);
+    border-color: alpha(@kalam_hl_blue, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_blue, 0.55);
+}
+
+.kalam-reader-annotation-card-pink {
+    background: alpha(@kalam_hl_pink, 0.08);
+    border-color: alpha(@kalam_hl_pink, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_pink, 0.55);
+}
+
+.kalam-reader-annotation-card-orange {
+    background: alpha(@kalam_hl_orange, 0.08);
+    border-color: alpha(@kalam_hl_orange, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_orange, 0.55);
+}
+
+.kalam-reader-annotation-body {
+    padding: 11px 12px 10px 13px;
+}
+
+.kalam-reader-annotation-card button.kalam-reader-list-hit:hover {
+    background: transparent;
+    box-shadow: none;
+}
+
+.kalam-reader-annotation-card button.kalam-btn-icon,
+.kalam-reader-annotation-card menubutton.kalam-btn-icon {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: @kalam_danger;
+    opacity: 0;
+}
+
+.kalam-reader-annotation-card:hover button.kalam-btn-icon,
+.kalam-reader-annotation-card.open button.kalam-btn-icon,
+.kalam-reader-annotation-card:hover menubutton.kalam-btn-icon,
+.kalam-reader-annotation-card.open menubutton.kalam-btn-icon {
+    opacity: 1;
+}
+
+.kalam-reader-annotation-note-preview {
+    background: transparent;
+    border: none;
+    border-top: 1px solid alpha(@kalam_border, 0.4);
+    border-radius: 0;
+    padding: 6px 13px 8px;
+    color: @kalam_text_dim;
+}
+
+.kalam-reader-annotation-note-preview:hover {
+    background: alpha(@kalam_surface_2, 0.4);
+}
+
+label.kalam-reader-note-preview-text {
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+.kalam-reader-annotation-note-wrap {
+    border-top: 1px solid alpha(@kalam_border, 0.4);
+    padding: 8px 13px 10px;
+}
+
+label.kalam-reader-note-label {
+    color: @kalam_text_dim;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+}
+
+scrolledwindow.kalam-reader-note-scroll {
+    min-height: 52px;
+    background: alpha(@kalam_bg, 0.2);
+    border: 1px solid alpha(@kalam_border, 0.55);
+    border-radius: 7px;
+}
+
+textview.kalam-reader-note-view {
+    min-height: 52px;
+    padding: 7px 10px;
+    background: transparent;
+    color: @kalam_text;
+}
+
+textview.kalam-reader-note-view text {
+    background: transparent;
+    color: @kalam_text;
+}
+
+popover.kalam-reader-color-popover {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+}
+
+box.kalam-reader-color-palette {
+    padding: 6px;
+}
+
+button.kalam-reader-color-choice {
+    min-width: 92px;
+    min-height: 30px;
+    padding: 5px 10px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 7px;
+    color: @kalam_text;
+}
+
+button.kalam-reader-color-choice:hover,
+button.kalam-reader-color-choice.active {
+    background: alpha(@kalam_surface_2, 0.9);
+    border-color: @kalam_accent;
+}
+
+button.kalam-reader-color-choice-yellow {
+    color: @kalam_hl_yellow;
+}
+
+button.kalam-reader-color-choice-green {
+    color: @kalam_hl_green;
+}
+
+button.kalam-reader-color-choice-blue {
+    color: @kalam_hl_blue;
+}
+
+button.kalam-reader-color-choice-pink {
+    color: @kalam_hl_pink;
+}
+
+button.kalam-reader-color-choice-orange {
+    color: @kalam_hl_orange;
 }
 
 .kalam-reader-annotation-text,

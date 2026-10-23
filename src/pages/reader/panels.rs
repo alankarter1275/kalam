@@ -123,7 +123,7 @@ pub(crate) fn build_bookmarks_panel(sender: &ComponentSender<ReaderModel>, list:
     )));
     add_btn.add_css_class("kalam-btn-tonal");
     let s = sender.clone();
-    add_btn.connect_clicked(move |_| s.input(ReaderMsg::AddBookmark));
+    add_btn.connect_clicked(move |_| s.input(ReaderMsg::ToggleBookmark));
     actions.append(&add_btn);
     wrap.append(&actions);
 

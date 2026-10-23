@@ -1,10 +1,7 @@
 //! Reader component messages, payload types, preference structures, and sidebar enums.
 
 use crate::db::HighlightColor;
-use crate::epub_book::ReadingTheme;
 use relm4::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum ReaderOut {
@@ -48,47 +45,7 @@ pub enum WordScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReaderSettingsPane {
     Reading,
-    Ui,
     Shortcuts,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReaderUiSetting {
-    SidebarGap,
-    LeftSidebarWidth,
-    RightSidebarWidth,
-    SidebarRadius,
-    SidebarPadding,
-    SidebarShadow,
-    BottomPillSize,
-    BottomPillGap,
-    BackChipSize,
-    BackTopGap,
-    BackSideGap,
-    DimStrength,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ReaderUiPrefs {
-    pub(crate) sidebar_gap: i32,
-    pub(crate) left_sidebar_width: i32,
-    pub(crate) right_sidebar_width: i32,
-    pub(crate) sidebar_radius: i32,
-    pub(crate) sidebar_padding: i32,
-    pub(crate) sidebar_shadow: i32,
-    pub(crate) bottom_pill_size: i32,
-    pub(crate) bottom_pill_gap: i32,
-    pub(crate) back_chip_size: i32,
-    pub(crate) back_top_gap: i32,
-    pub(crate) back_side_gap: i32,
-    pub(crate) dim_strength: i32,
-}
-
-pub(crate) struct ReaderUiSettingControls {
-    pub(crate) value_entry: gtk::Entry,
-    pub(crate) last_value: Rc<RefCell<i32>>,
-    pub(crate) preset_buttons: Vec<(i32, gtk::Button)>,
-    pub(crate) custom_button: gtk::Button,
 }
 
 pub(crate) struct ReaderSettingsControls {
@@ -103,22 +60,7 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) arrow_step_row: gtk::Box,
     pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
     pub(crate) dual_page_switch: gtk::Switch,
-    pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
-    pub(crate) ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
 }
-
-pub(crate) const UI_PRESETS_SIDEBAR_GAP: [(&str, i32); 3] = [("Tight", 8), ("Normal", 14), ("Airy", 20)];
-pub(crate) const UI_PRESETS_LEFT_WIDTH: [(&str, i32); 3] = [("Narrow", 220), ("Normal", 248), ("Wide", 280)];
-pub(crate) const UI_PRESETS_RIGHT_WIDTH: [(&str, i32); 3] = [("Narrow", 180), ("Normal", 212), ("Wide", 252)];
-pub(crate) const UI_PRESETS_RADIUS: [(&str, i32); 3] = [("Soft", 14), ("Round", 20), ("Full", 26)];
-pub(crate) const UI_PRESETS_PADDING: [(&str, i32); 3] = [("Tight", 0), ("Normal", 4), ("Airy", 8)];
-pub(crate) const UI_PRESETS_SHADOW: [(&str, i32); 3] = [("Low", 18), ("Normal", 22), ("Deep", 28)];
-pub(crate) const UI_PRESETS_PILL_SIZE: [(&str, i32); 3] = [("Compact", 30), ("Normal", 34), ("Large", 40)];
-pub(crate) const UI_PRESETS_PILL_GAP: [(&str, i32); 3] = [("Tight", 12), ("Normal", 18), ("Airy", 26)];
-pub(crate) const UI_PRESETS_BACK_SIZE: [(&str, i32); 3] = [("Compact", 28), ("Normal", 32), ("Large", 38)];
-pub(crate) const UI_PRESETS_BACK_TOP: [(&str, i32); 3] = [("Tight", 10), ("Normal", 14), ("Airy", 20)];
-pub(crate) const UI_PRESETS_BACK_SIDE: [(&str, i32); 3] = [("Tight", 12), ("Normal", 16), ("Airy", 22)];
-pub(crate) const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 22), ("Strong", 32)];
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // reader->app messages; some variants are not yet emitted
@@ -128,7 +70,6 @@ pub enum ReaderMsg {
     TocSelect(usize),
     PrevChapter,
     NextChapter,
-    Theme(ReadingTheme),
     FontDelta(i32),
     LineHeightDelta(i32),
     ColumnWidthDelta(i32),
@@ -165,8 +106,6 @@ pub enum ReaderMsg {
     /// The note card closed on its own.
     ClearNote,
     SwitchSettingsPane(ReaderSettingsPane),
-    SetUiSetting(ReaderUiSetting, i32),
-    AdjustUiSetting(ReaderUiSetting, i32),
     SetDictSenseHint(bool),
     /// Phase 10: `dict_history_enabled` — records every dictionary lookup.
     SetDictHistory(bool),
@@ -217,7 +156,9 @@ pub enum ReaderMsg {
     DictSearchSelect(String),
     SaveCurrentWord,
     ClearDict,
-    AddBookmark,
+    /// The ribbon and the B key: set the mark here, or take it away
+    /// (decision 16). Quiet either way — the ribbon is the feedback.
+    ToggleBookmark,
     OpenAuthor(String),
     OpenLeftSidebar,
     OpenRightSidebar,
@@ -227,15 +168,19 @@ pub enum ReaderMsg {
     /// Write the book's highlights/quotes/notes to ~/Highlights.md.
     ExportAnnotations,
     SetWordScope(WordScope),
-    ScheduleCloseLeft,
-    ScheduleCloseRight,
-    ForceCloseLeft(u64),
-    ForceCloseRight(u64),
     CloseSidebars,
-    HideChrome,
+    /// One Escape, layered (decisions 14, 20, 31): the frontmost open
+    /// thing closes; only a bare page exits the book.
+    Escape,
     ShowBackChrome,
-    ShowBottomChrome,
-    ShowAllChrome,
+    /// The pointer entered or left the top-left rest zone (decision 15).
+    BackZoneHover(bool),
+    /// The 250 ms rest elapsed; reveal if the generation still stands.
+    BackRevealDue(u64),
+    /// The 300 ms grace elapsed; hide if the generation still stands.
+    BackHideDue(u64),
+    /// Hover over the location text: it names the chapter (decision 17).
+    LocationHover(bool),
     ToggleSearch,
     UpdateSearchQuery(String),
     NextSearchResult,
@@ -249,9 +194,5 @@ pub enum ReaderMsg {
     LightboxReset,
     LightboxRotateLeft,
     LightboxRotateRight,
-    BackChromeTimerTick,
-    BottomChromeTimerTick,
     UserScrolled,
-    TopEdgeHover(bool),
-    BottomEdgeHover(bool),
 }

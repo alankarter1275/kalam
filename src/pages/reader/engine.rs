@@ -24,11 +24,10 @@
 use super::mod_model::ReaderModel;
 use super::types::*;
 use crate::db::{Annotation, AnnotationStyle, HighlightColor as DbColor};
-use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use kalam_reader::{
     HighlightColor, KalamPrefs, KalamTheme, LayeredLocator, NewHighlight, Quote, ReaderOptions,
-    ReaderView, ReadingMode, ReadingPosition, SelectedText, LOCATOR_VERSION,
+    ReaderPalette, ReaderView, ReadingMode, ReadingPosition, SelectedText, LOCATOR_VERSION,
 };
 use relm4::ComponentSender;
 use std::path::Path;
@@ -37,10 +36,23 @@ use std::path::Path;
 // Preferences: Kalam's stored values → the engine's
 // ---------------------------------------------------------------------
 
-/// Kalam's four reading theme names are the engine's four; the engine
-/// took its colours from `ReadingTheme::swatch()`, so they match.
-pub(crate) fn engine_theme(theme: ReadingTheme) -> KalamTheme {
-    KalamTheme::from_name(theme.as_str()).unwrap_or_default()
+/// The app's resolved theme as the engine's palette (decisions 19 and
+/// 145): the page is painted in the palette's own `bg`/`text`/`accent`,
+/// in whichever mode the app is in. Token values are `#rrggbb` literals
+/// from `theme.rs`; anything else (a token table edited into a shape
+/// this does not know) falls back per-channel rather than failing the
+/// open — a wrong colour is a bug, a refused book is a disaster.
+pub(crate) fn reader_palette(theme: &crate::theme::Theme) -> ReaderPalette {
+    ReaderPalette {
+        background: token_rgba(theme.bg, KalamTheme::Sepia.background()),
+        foreground: token_rgba(theme.text, KalamTheme::Sepia.foreground()),
+        accent: token_rgba(theme.accent, KalamTheme::Sepia.reader_palette().accent),
+        dark: theme.dark,
+    }
+}
+
+fn token_rgba(token: &str, fallback: kalam_reader::Rgba) -> kalam_reader::Rgba {
+    kalam_reader::Rgba::from_hex(token, 255).unwrap_or(fallback)
 }
 
 // Nine knobs, one purpose: the persisted reading preferences the engine
@@ -48,7 +60,7 @@ pub(crate) fn engine_theme(theme: ReadingTheme) -> KalamTheme {
 // call. Same allow as `settings_panel` and `db`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn engine_prefs(
-    theme: ReadingTheme,
+    palette: ReaderPalette,
     font_px: u32,
     line_height: f32,
     column_px: u32,
@@ -58,7 +70,7 @@ pub(crate) fn engine_prefs(
     publisher_styles: bool,
 ) -> KalamPrefs {
     KalamPrefs {
-        palette: engine_theme(theme).reader_palette(),
+        palette,
         font_px: font_px as f32,
         line_height,
         column_px: column_px as f32,

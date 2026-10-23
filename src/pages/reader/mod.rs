@@ -11,24 +11,21 @@ mod panels;
 mod session;
 mod settings_panel;
 mod types;
-mod ui_prefs;
 
 pub use mod_model::ReaderModel;
 pub use types::ReaderOut;
 
 use chrome::{
-    connect_hover_zone, find_overlay_by_class, overlay_child_box, rebuild_cover_host,
-    reader_sidebar_tab_content, sync_reader_controls, sync_reader_stage_theme, sync_reader_stacks,
-    sync_sidebar_tabs, update_chrome_labels, update_sidebar_header,
+    connect_hover_open, overlay_child_box, rebuild_cover_host, reader_sidebar_tab_content,
+    sync_reader_controls, sync_reader_stacks, sync_ribbon, sync_sidebar_tabs,
+    update_chrome_labels, update_sidebar_header,
 };
 use lists::{rebuild_bookmarks_list, rebuild_highlights_list, rebuild_toc, rebuild_words_list};
 use panels::{build_bookmarks_panel, build_highlights_panel, build_words_panel};
 use settings_panel::build_reader_settings_panel;
 use types::*;
-use ui_prefs::{apply_reader_ui_prefs, register_reader_ui_provider, update_reader_ui_setting};
 
 use crate::db::Catalog;
-use crate::epub_book::ReadingTheme;
 use crate::models::Book;
 use crate::service::LibraryService;
 use gtk::glib;
@@ -44,25 +41,6 @@ fn report_errors(errors: &[String]) {
     }
 }
 
-
-/// Any visible `gtk::Popover` under `widget`? An open dropdown list or
-/// menu is one, so this is how a close-on-leave timer can tell "still
-/// engaged" from "genuinely left" without touching platform grab APIs.
-fn popover_visible_in(widget: &gtk::Widget) -> bool {
-    if let Some(pop) = widget.downcast_ref::<gtk::Popover>() {
-        if pop.is_visible() {
-            return true;
-        }
-    }
-    let mut child = widget.first_child();
-    while let Some(c) = child {
-        if popover_visible_in(&c) {
-            return true;
-        }
-        child = c.next_sibling();
-    }
-    false
-}
 
 /// Install (or replace) the window-global shortcut for jump-back from the
 /// current binding (roadmaps 2.6 and 2.9). There is deliberately no
@@ -132,7 +110,6 @@ impl Component for ReaderModel {
         #[root]
         gtk::Overlay {
             add_css_class: "kalam-reader",
-            add_css_class: "kalam-reader-ui-live",
             set_hexpand: true,
             set_vexpand: true,
 
@@ -142,7 +119,6 @@ impl Component for ReaderModel {
                 set_hexpand: true,
                 set_vexpand: true,
 
-                #[name = "reader_stage"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_hexpand: true,
@@ -158,16 +134,8 @@ impl Component for ReaderModel {
                 },
             },
 
-            add_overlay = &gtk::Button {
-                add_css_class: "kalam-reader-dim",
-                #[watch]
-                set_visible: model.left_sidebar_open || model.right_sidebar_open,
-                set_hexpand: true,
-                set_vexpand: true,
-                set_halign: gtk::Align::Fill,
-                set_valign: gtk::Align::Fill,
-                connect_clicked => ReaderMsg::CloseSidebars,
-            },
+            // No dim layer (decision 20): panels float over a live page,
+            // and a click on the page — caught in init — puts them away.
 
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
@@ -189,126 +157,72 @@ impl Component for ReaderModel {
                 set_valign: gtk::Align::Fill,
             },
 
+            // The Back pill with its Bubble slide-out (decision 15),
+            // hidden until the pointer rests in the top-left zone. The
+            // unit itself is built in init (the shared slide-out pill)
+            // and appended into `back_host`.
+            #[name = "back_revealer"]
             add_overlay = &gtk::Revealer {
                 #[watch]
                 set_reveal_child: model.show_back_button && !model.left_sidebar_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideDown,
+                set_transition_duration: 220,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
 
+                #[name = "back_host"]
                 gtk::Box {
-                    add_css_class: "kalam-reader-back-dock",
                     set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 6,
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
-                        add_css_class: "kalam-reader-back",
-                        connect_clicked => ReaderMsg::Close,
-                    },
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("bookmark-new-symbolic", 16, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-reader-back",
-                        set_tooltip_text: Some("Bookmark (B)"),
-                        connect_clicked => ReaderMsg::AddBookmark,
-                    },
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("edit-find-symbolic", 16, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-reader-back",
-                        set_tooltip_text: Some("Search in book (Ctrl+F)"),
-                        connect_clicked => ReaderMsg::ToggleSearch,
-                    },
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("window-minimize-symbolic", 16, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-reader-back",
-                        set_tooltip_text: Some("Minimize to Bubble"),
-                        connect_clicked => ReaderMsg::MinimizeToBubble,
-                    },
+                    set_margin_start: 18,
+                    set_margin_top: 14,
                 },
             },
 
-            add_overlay = &gtk::Box {
-                add_css_class: "kalam-reader-bottom-right-dock",
+            // The bookmark ribbon (decision 16): always there, hanging
+            // from the top edge; the icon and the `.set` class carry
+            // the state (chrome::sync_ribbon).
+            #[name = "ribbon_button"]
+            add_overlay = &gtk::Button {
+                add_css_class: "kalam-reader-ribbon",
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Start,
+                set_margin_end: 48,
+                connect_clicked => ReaderMsg::ToggleBookmark,
+
+                #[name = "ribbon_image"]
+                gtk::Image {
+                    set_icon_name: Some("kalam-ribbon-outline-symbolic"),
+                    set_pixel_size: 26,
+                },
+            },
+
+            // The location text (decision 17): `NN%`, naming the
+            // chapter while hovered. The bottom pill is gone entirely
+            // (decisions 17/18) — this is the page's only furniture
+            // besides the ribbon.
+            #[name = "location_label"]
+            add_overlay = &gtk::Label {
+                add_css_class: "kalam-reader-location",
                 set_halign: gtk::Align::End,
                 set_valign: gtk::Align::End,
-
-                gtk::Box {
-                    add_css_class: "kalam-reader-location-pill",
-                    set_valign: gtk::Align::Center,
-
-                    #[name = "location_pill_label"]
-                    gtk::Label {
-                        add_css_class: "kalam-reader-location-text",
-                        set_valign: gtk::Align::Center,
-                    },
-                },
+                set_margin_end: 24,
+                set_margin_bottom: 16,
             },
 
-            add_overlay = &gtk::Revealer {
-                #[watch]
-                set_reveal_child: model.show_bottom_pill,
-                set_transition_type: gtk::RevealerTransitionType::SlideUp,
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::End,
-
-                gtk::Box {
-                    add_css_class: "kalam-reader-bottom-dock",
-
-                    gtk::Box {
-                        add_css_class: "kalam-reader-bottom-pill",
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 4,
-                        set_valign: gtk::Align::Center,
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("go-previous-symbolic", 15, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-reader-pill-nav",
-                        set_tooltip_text: Some("Previous chapter (P)"),
-                        connect_clicked => ReaderMsg::PrevChapter,
-                    },
-
-                    gtk::Box {
-                        add_css_class: "kalam-reader-pill-info",
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 10,
-                        set_valign: gtk::Align::Center,
-
-                        #[name = "progress_label"]
-                        gtk::Label {
-                            add_css_class: "kalam-reader-pill-pages",
-                            set_valign: gtk::Align::Center,
-                        },
-
-                        #[name = "pill_chapter_label"]
-                        gtk::Label {
-                            add_css_class: "kalam-reader-pill-chapter",
-                            set_max_width_chars: 36,
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                            set_valign: gtk::Align::Center,
-                        },
-                    },
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("go-next-symbolic", 15, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-reader-pill-nav",
-                        set_tooltip_text: Some("Next chapter (N)"),
-                        connect_clicked => ReaderMsg::NextChapter,
-                    },
-                },
-            },
-        },
-
+            #[name = "left_revealer"]
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-sidebar-shell",
                 add_css_class: "kalam-reader-sidebar-shell-left",
                 #[watch]
                 set_reveal_child: model.left_sidebar_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideRight,
+                set_transition_duration: 220,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Fill,
+                // Panels float 16 from every edge (decision 20).
+                set_margin_start: 16,
+                set_margin_top: 16,
+                set_margin_bottom: 16,
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
@@ -395,14 +309,19 @@ impl Component for ReaderModel {
                 },
             },
 
+            #[name = "right_revealer"]
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-sidebar-shell",
                 add_css_class: "kalam-reader-sidebar-shell-right",
                 #[watch]
                 set_reveal_child: model.right_sidebar_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideLeft,
+                set_transition_duration: 220,
                 set_halign: gtk::Align::End,
                 set_valign: gtk::Align::Fill,
+                set_margin_end: 16,
+                set_margin_top: 16,
+                set_margin_bottom: 16,
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
@@ -644,10 +563,12 @@ impl Component for ReaderModel {
         report_errors(&snap.errors);
         let book = snap.book.clone();
 
-        let catalog_theme = catalog
-            .get_pref("reader.theme")
-            .map(|v| ReadingTheme::from_str_lossy(&v))
-            .unwrap_or(ReadingTheme::Sepia);
+        // The page follows the app theme (decisions 19/145): palette and
+        // mode, resolved once here. The retired `reader.theme` pref is
+        // deliberately not mapped — a leftover value must not keep the
+        // page off the app's colours. When the per-book override lands
+        // it will resolve into this same `palette`.
+        let palette = engine::reader_palette(&crate::theme::current(catalog));
         let catalog_font = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
         let catalog_line_height = catalog
             .get_pref("reader.line_height")
@@ -667,7 +588,7 @@ impl Component for ReaderModel {
         let mut open_failure: Option<String> = None;
         let (book_meta, view, chapter, fraction) = if let Some(book) = book.clone() {
             let prefs = engine::engine_prefs(
-                catalog_theme,
+                palette,
                 catalog_font,
                 catalog_line_height,
                 catalog_column,
@@ -746,10 +667,6 @@ impl Component for ReaderModel {
         let bookmarks = snap.bookmarks;
         let saved_words = snap.saved_words;
 
-        let catalog_theme = catalog
-            .get_pref("reader.theme")
-            .map(|v| ReadingTheme::from_str_lossy(&v))
-            .unwrap_or(ReadingTheme::Sepia);
         let catalog_font = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
         let catalog_line_height = catalog
             .get_pref("reader.line_height")
@@ -779,9 +696,6 @@ impl Component for ReaderModel {
             .as_ref()
             .map(|v| v.font_families())
             .unwrap_or_default();
-        let ui_prefs = ReaderUiPrefs::load(catalog);
-        let ui_css_provider = gtk::CssProvider::new();
-        register_reader_ui_provider(&ui_css_provider);
 
         let toc_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
         toc_list.set_hexpand(true);
@@ -821,16 +735,12 @@ impl Component for ReaderModel {
             arrow_step_row,
             keybind_buttons,
             dual_page_switch,
-            theme_dots,
-            ui_controls,
         } = build_reader_settings_panel(
             &sender,
-            catalog_theme,
             catalog_font,
             catalog_line_height,
             catalog_column,
             scrolled,
-            ui_prefs,
             catalog.get_pref_i64("dict_sense_hint", 1) != 0,
             catalog.get_pref_i64("dict_history_enabled", 1) != 0,
             catalog_family.clone(),
@@ -887,7 +797,7 @@ impl Component for ReaderModel {
             chapter_titles,
             chapter,
             fraction,
-            theme: catalog_theme,
+            palette,
             font_px: catalog_font,
             line_height: catalog_line_height,
             column_px: catalog_column,
@@ -934,19 +844,16 @@ impl Component for ReaderModel {
             highlight_filter: HighlightFilter::All,
             word_scope: WordScope::Chapter,
             settings_pane: ReaderSettingsPane::Reading,
-            ui_prefs,
-            show_back_button: true,
-            show_bottom_pill: true,
-            left_close_timer: None,
-            right_close_timer: None,
-            left_close_token: 0,
-            right_close_token: 0,
+            // The page opens bare (decision 15): no 5-second courtesy.
+            show_back_button: false,
+            back_hover: false,
+            back_gen: 0,
+            back_unit: None,
+            location_hover: false,
             left_sidebar_shell: None,
             right_sidebar_shell: None,
             left_sidebar_box: None,
             right_sidebar_box: None,
-            back_dock: None,
-            bottom_dock: None,
             left_stack,
             right_stack,
             toc_scroll,
@@ -964,11 +871,8 @@ impl Component for ReaderModel {
             arrow_step_row,
             keybind_buttons,
             dual_page_switch,
-            theme_dots,
-            ui_controls,
             highlight_filter_buttons,
             word_scope_buttons,
-            ui_css_provider,
             search_active: false,
             search_query: String::new(),
             search_results: Vec::new(),
@@ -981,10 +885,6 @@ impl Component for ReaderModel {
             lightbox_pixbuf: None,
             lightbox_zoom: 1.0,
             lightbox_rotation: 0.0,
-            back_hide_timer: None,
-            bottom_hide_timer: None,
-            mouse_in_top_edge: false,
-            mouse_in_bottom_edge: false,
         };
 
         let mut model = model;
@@ -1062,8 +962,6 @@ impl Component for ReaderModel {
             .right_panel_host
             .parent()
             .and_then(|w| w.downcast::<gtk::Box>().ok());
-        model.back_dock = find_overlay_by_class(&root, "kalam-reader-back-dock");
-        model.bottom_dock = find_overlay_by_class(&root, "kalam-reader-bottom-dock");
         model.left_sidebar_shell = left_sidebar_box
             .as_ref()
             .and_then(|sidebar| sidebar.parent())
@@ -1075,11 +973,10 @@ impl Component for ReaderModel {
         model.left_sidebar_box = left_sidebar_box.clone();
         model.right_sidebar_box = right_sidebar_box.clone();
         rebuild_cover_host(&widgets.left_cover_host, model.book_cover_path.as_deref());
-        sync_reader_stage_theme(&widgets.reader_stage, model.theme);
         update_chrome_labels(&widgets, &model);
+        sync_ribbon(&widgets, &model);
         update_sidebar_header(&widgets, &model, &sender);
         sync_sidebar_tabs(&widgets, &model);
-        apply_reader_ui_prefs(&model);
         sync_reader_stacks(&model);
         sync_reader_controls(&model);
         let toc_entries = model.toc_entries();
@@ -1094,6 +991,130 @@ impl Component for ReaderModel {
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
 
+        // The Back+Bubble unit (decision 15): the shell's own Back pill
+        // — same classes, same placement (18 from the left, 14 from the
+        // top, in `back_host`) — with the shared slide-out carrying an
+        // icon-only Bubble behind it. Focus entering the unit reveals
+        // it too, so keyboard readers meet it by tabbing.
+        {
+            let back_button = gtk::Button::new();
+            back_button.set_child(Some(&crate::icons::labelled(
+                "go-previous-symbolic",
+                16,
+                "Back",
+                6,
+            )));
+            back_button.add_css_class("kalam-back-btn");
+            back_button.add_css_class("kalam-back-float");
+            back_button.set_can_focus(true);
+            let tx = sender.input_sender().clone();
+            back_button.connect_clicked(move |_| {
+                let _ = tx.send(ReaderMsg::Close);
+            });
+            let tx = sender.input_sender().clone();
+            back_button.connect_has_focus_notify(move |btn| {
+                if btn.has_focus() {
+                    let _ = tx.send(ReaderMsg::ShowBackChrome);
+                }
+            });
+
+            let bubble_button = gtk::Button::new();
+            bubble_button.set_child(Some(&crate::icons::symbolic_with_classes(
+                "view-dual-symbolic",
+                16,
+                &["kalam-inline-icon"],
+            )));
+            bubble_button.set_tooltip_text(Some("Minimize to Bubble"));
+            bubble_button.update_property(&[gtk::accessible::Property::Label(
+                "Minimize to Bubble",
+            )]);
+            bubble_button.set_size_request(44, 44);
+
+            let tx = sender.input_sender().clone();
+            let unit = crate::widgets::slide_out_pill::slide_out_pill_with_button(
+                &back_button,
+                bubble_button,
+                move || {
+                    let _ = tx.send(ReaderMsg::MinimizeToBubble);
+                },
+            );
+            widgets.back_host.append(&unit.widget());
+            model.back_unit = Some(unit);
+        }
+
+        // Reduced motion turns the panel slides into fades (decision 15,
+        // system §9) — decided once at open, like the other surfaces.
+        if crate::appearance::reduce_motion() {
+            widgets
+                .back_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+            widgets
+                .left_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+            widgets
+                .right_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+        }
+
+        // The location text names the chapter under the pointer (17).
+        {
+            let motion = gtk::EventControllerMotion::new();
+            let tx = sender.input_sender().clone();
+            motion.connect_enter(move |_, _, _| {
+                let _ = tx.send(ReaderMsg::LocationHover(true));
+            });
+            let tx = sender.input_sender().clone();
+            motion.connect_leave(move |_| {
+                let _ = tx.send(ReaderMsg::LocationHover(false));
+            });
+            widgets.location_label.add_controller(motion);
+        }
+
+        // A click on the page while a panel stands puts the panel away
+        // and is spent doing it (decision 20) — the page does not also
+        // turn or select. Capture phase, so the claim lands before the
+        // engine's own click handling; the point is tested against the
+        // open panel's bounds, and clicks on other chrome pass through.
+        {
+            let click = gtk::GestureClick::new();
+            click.set_propagation_phase(gtk::PropagationPhase::Capture);
+            let tx = sender.input_sender().clone();
+            let left_box = model.left_sidebar_box.clone();
+            let right_box = model.right_sidebar_box.clone();
+            click.connect_pressed(move |gesture, _, x, y| {
+                let Some(widget) = gesture.widget() else { return };
+                let point = gtk::graphene::Point::new(x as f32, y as f32);
+                let on_panel = [left_box.as_ref(), right_box.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|panel| {
+                        panel.is_visible()
+                            && widget
+                                .compute_point(panel, &point)
+                                .is_some_and(|p| {
+                                    p.x() >= 0.0
+                                        && p.y() >= 0.0
+                                        && p.x() <= panel.width() as f32
+                                        && p.y() <= panel.height() as f32
+                                })
+                    });
+                if !on_panel {
+                    let _ = tx.send(ReaderMsg::CloseSidebars);
+                    // Claim only when there was something to close: the
+                    // message handler reports through the model, so here
+                    // we claim only if a panel was visible at all.
+                    let any_visible = [left_box.as_ref(), right_box.as_ref()]
+                        .into_iter()
+                        .flatten()
+                        .any(|panel| panel.is_visible());
+                    if any_visible {
+                        gesture.set_state(gtk::EventSequenceState::Claimed);
+                    }
+                }
+            });
+            root.add_controller(click);
+        }
+
         // Root scroll controller: hide chrome immediately when the user starts scrolling
         let scroll_ctrl = gtk::EventControllerScroll::new(
             gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::BOTH_AXES,
@@ -1106,95 +1127,37 @@ impl Component for ReaderModel {
         });
         root.add_controller(scroll_ctrl);
 
-        // Root motion controller to independently detect hover near top and bottom edges
-        let root_motion = gtk::EventControllerMotion::new();
-        let tx = sender.input_sender().clone();
-        let root_clone = root.clone();
-        let was_top = std::rc::Rc::new(std::cell::Cell::new(false));
-        let was_bottom = std::rc::Rc::new(std::cell::Cell::new(false));
-        let was_top_clone = was_top.clone();
-        let was_bottom_clone = was_bottom.clone();
-        root_motion.connect_motion(move |_, _, y| {
-            let h = root_clone.height() as f64;
-            let top = y < 50.0;
-            let bottom = y > (h - 60.0) && h > 60.0;
-            if top != was_top_clone.get() {
-                was_top_clone.set(top);
-                let _ = tx.send(ReaderMsg::TopEdgeHover(top));
-            }
-            if bottom != was_bottom_clone.get() {
-                was_bottom_clone.set(bottom);
-                let _ = tx.send(ReaderMsg::BottomEdgeHover(bottom));
-            }
-        });
-        let tx_leave = sender.input_sender().clone();
-        root_motion.connect_leave(move |_| {
-            if was_top.get() {
-                was_top.set(false);
-                let _ = tx_leave.send(ReaderMsg::TopEdgeHover(false));
-            }
-            if was_bottom.get() {
-                was_bottom.set(false);
-                let _ = tx_leave.send(ReaderMsg::BottomEdgeHover(false));
-            }
-        });
-        root.add_controller(root_motion);
-
-        if let Some(back_dock) = &model.back_dock {
-            let motion = gtk::EventControllerMotion::new();
+        // The Back unit's rest zone (decision 15): the top-left
+        // 180 × 68. Enter/leave transitions are reported once each; the
+        // 250 ms rest and the 300 ms grace live in the update arms.
+        {
+            let root_motion = gtk::EventControllerMotion::new();
             let tx = sender.input_sender().clone();
-            motion.connect_enter(move |_, _, _| {
-                let _ = tx.send(ReaderMsg::TopEdgeHover(true));
+            let was_in_zone = std::rc::Rc::new(std::cell::Cell::new(false));
+            let was_in_zone_move = was_in_zone.clone();
+            root_motion.connect_motion(move |_, x, y| {
+                let in_zone = x < 180.0 && y < 68.0;
+                if in_zone != was_in_zone_move.get() {
+                    was_in_zone_move.set(in_zone);
+                    let _ = tx.send(ReaderMsg::BackZoneHover(in_zone));
+                }
             });
-            let tx = sender.input_sender().clone();
-            motion.connect_leave(move |_| {
-                let _ = tx.send(ReaderMsg::TopEdgeHover(false));
+            let tx_leave = sender.input_sender().clone();
+            root_motion.connect_leave(move |_| {
+                if was_in_zone.get() {
+                    was_in_zone.set(false);
+                    let _ = tx_leave.send(ReaderMsg::BackZoneHover(false));
+                }
             });
-            back_dock.add_controller(motion);
+            root.add_controller(root_motion);
         }
-        if let Some(bottom_dock) = &model.bottom_dock {
-            let motion = gtk::EventControllerMotion::new();
-            let tx = sender.input_sender().clone();
-            motion.connect_enter(move |_, _, _| {
-                let _ = tx.send(ReaderMsg::BottomEdgeHover(true));
-            });
-            let tx = sender.input_sender().clone();
-            motion.connect_leave(move |_| {
-                let _ = tx.send(ReaderMsg::BottomEdgeHover(false));
-            });
-            bottom_dock.add_controller(motion);
+        // Hover still summons the panels (decision 20 keeps it); the
+        // edge strips are overlay children 1 and 2 (the stage is 0).
+        if let Some(left_hover) = overlay_child_box(&root, 1) {
+            connect_hover_open(&left_hover, &sender, ReaderMsg::OpenLeftSidebar);
         }
-        if let Some(left_hover) = overlay_child_box(&root, 2) {
-            connect_hover_zone(
-                &left_hover,
-                &sender,
-                ReaderMsg::OpenLeftSidebar,
-                ReaderMsg::ScheduleCloseLeft,
-            );
-        }
-        if let Some(right_hover) = overlay_child_box(&root, 3) {
-            connect_hover_zone(
-                &right_hover,
-                &sender,
-                ReaderMsg::OpenRightSidebar,
-                ReaderMsg::ScheduleCloseRight,
-            );
-        }
-        if let Some(left_sidebar) = left_sidebar_box {
-            connect_hover_zone(
-                &left_sidebar,
-                &sender,
-                ReaderMsg::OpenLeftSidebar,
-                ReaderMsg::ScheduleCloseLeft,
-            );
-        }
-        if let Some(right_sidebar) = right_sidebar_box {
-            connect_hover_zone(
-                &right_sidebar,
-                &sender,
-                ReaderMsg::OpenRightSidebar,
-                ReaderMsg::ScheduleCloseRight,
-            );
+        if let Some(right_hover) = overlay_child_box(&root, 2) {
+            connect_hover_open(&right_hover, &sender, ReaderMsg::OpenRightSidebar);
         }
 
         if let Some(view) = &model.view {
@@ -1231,23 +1194,18 @@ impl Component for ReaderModel {
                 .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
 
             if keyval == Key::Escape {
-                s.input(ReaderMsg::CloseSearch);
-                s.input(ReaderMsg::CloseImageLightbox);
+                // One layered Escape (decisions 14, 20, 31): the arm
+                // closes the frontmost thing and only exits the book
+                // from a bare page. It must not leave focus typing
+                // either way — hand it back to the page.
+                s.input(ReaderMsg::Escape);
                 if let Some(view) = &view_for_keys {
                     let w = view.widget().clone();
                     w.grab_focus();
                     glib::idle_add_local_once(move || {
                         w.grab_focus();
                     });
-                    if view.selected_text().is_some() {
-                        view.clear_selection();
-                        return gtk::glib::Propagation::Stop;
-                    }
                 }
-                if is_typing {
-                    return gtk::glib::Propagation::Stop;
-                }
-                s.input(ReaderMsg::Close);
                 return gtk::glib::Propagation::Stop;
             }
 
@@ -1320,6 +1278,12 @@ impl Component for ReaderModel {
         });
         widgets.search_entry.add_controller(entry_key);
 
+        // Screenshot loop: the page opens bare (decision 15), so a
+        // proof frame of the summoned chrome has to ask for it.
+        if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "chrome") {
+            sender.input(ReaderMsg::ShowBackChrome);
+        }
+
         ComponentParts { model, widgets }
     }
 
@@ -1337,7 +1301,6 @@ impl Component for ReaderModel {
         let mut refresh_words = false;
         let mut refresh_controls = false;
         let mut refresh_chrome = false;
-        let mut refresh_stage = false;
         let mut refresh_tabs = false;
 
         match msg {
@@ -1482,7 +1445,6 @@ impl Component for ReaderModel {
                     self.flush_annotation_note_draft();
                     self.right_tab = RightSidebarTab::Highlights;
                     self.right_sidebar_open = true;
-                    self.cancel_right_close();
                     self.editing_annotation = Some(annotation.id);
                     // A row the engine painted is a place as well as a row:
                     // jump straight to the highlight. A WebKit-era row has no
@@ -1525,16 +1487,6 @@ impl Component for ReaderModel {
                 self.flush_annotation_note_draft();
                 self.editing_annotation = None;
                 self.with_view(|v| v.next_chapter());
-            }
-            ReaderMsg::Theme(theme) => {
-                self.close_annotation_editor();
-                self.theme = theme;
-                self.service
-                    .catalog()
-                    .set_pref("reader.theme", theme.as_str());
-                self.with_view(|v| v.set_theme(engine::engine_theme(theme)));
-                refresh_controls = true;
-                refresh_stage = true;
             }
             ReaderMsg::FontDelta(delta) => {
                 let next = (self.font_px as i32 + delta).clamp(13, 24) as u32;
@@ -1748,19 +1700,6 @@ impl Component for ReaderModel {
                     refresh_controls = true;
                 }
             }
-            ReaderMsg::SetUiSetting(setting, value) => {
-                if update_reader_ui_setting(self, setting, value) {
-                    apply_reader_ui_prefs(self);
-                    refresh_controls = true;
-                }
-            }
-            ReaderMsg::AdjustUiSetting(setting, delta) => {
-                let next = self.ui_prefs.get(setting) + delta;
-                if update_reader_ui_setting(self, setting, next) {
-                    apply_reader_ui_prefs(self);
-                    refresh_controls = true;
-                }
-            }
             ReaderMsg::SetDictSenseHint(on) => {
                 self.service
                     .catalog()
@@ -1807,18 +1746,13 @@ impl Component for ReaderModel {
                 self.fraction = fraction.clamp(0.0, 1.0);
                 self.save_progress();
                 self.checkpoint_session();
-                if moved {
-                    if self.show_back_button {
-                        if let Some(timer) = self.back_hide_timer.take() {
-                            timer.remove();
-                        }
-                        self.show_back_button = false;
-                    }
-                    if self.show_bottom_pill {
-                        if let Some(timer) = self.bottom_hide_timer.take() {
-                            timer.remove();
-                        }
-                        self.show_bottom_pill = false;
+                if moved && self.show_back_button && !self.back_hover {
+                    // A page turn takes the Back unit with it — unless
+                    // the pointer is resting on it.
+                    self.back_gen += 1;
+                    self.show_back_button = false;
+                    if let Some(unit) = &self.back_unit {
+                        unit.hide();
                     }
                 }
                 if changed {
@@ -2237,44 +2171,44 @@ impl Component for ReaderModel {
                 self.dict_lookup_def = None;
                 self.dict_context = None;
             }
-            ReaderMsg::AddBookmark => {
-                self.right_tab = RightSidebarTab::Bookmarks;
-                self.right_sidebar_open = true;
-                self.cancel_right_close();
+            ReaderMsg::ToggleBookmark => {
+                // The ribbon (decision 16): set or take away the mark
+                // here, quietly — no panel pulled open, no toast; the
+                // ribbon filling in is the whole reply. The Marks list
+                // stays true underneath for when it is next opened.
                 if self.chapter_count > 0 {
-                    let existing_id = self.bookmarks.iter().find(|b| {
-                        b.chapter_index == self.chapter as i64 && (b.fraction - self.fraction).abs() < 0.03
-                    }).map(|b| b.id);
-                    if let Some(id) = existing_id {
-                        match self.service.catalog().delete_reading_bookmark(id) {
-                            Ok(_) => crate::notify::compact("Bookmark removed", ""),
-                            Err(e) => crate::notify::error("Could not remove bookmark", &e.to_string()),
+                    if let Some(id) = self.bookmark_here_id() {
+                        if let Err(e) = self.service.catalog().delete_reading_bookmark(id) {
+                            crate::notify::error(
+                                "Could not remove the bookmark",
+                                &e.to_string(),
+                            );
                         }
                     } else {
                         let label = self.current_chapter_title().to_string();
-                        match self.service.catalog().insert_reading_bookmark(
+                        if let Err(e) = self.service.catalog().insert_reading_bookmark(
                             self.book_id,
                             self.chapter as i64,
                             self.fraction,
                             &label,
                         ) {
-                            Ok(_) => crate::notify::compact("Mark saved", &label),
-                            Err(e) => crate::notify::error("Could not save the mark", &e.to_string()),
+                            crate::notify::error(
+                                "Could not save the bookmark",
+                                &e.to_string(),
+                            );
                         }
                     }
                     self.reload_bookmarks();
                     refresh_bookmarks = true;
+                    refresh_chrome = true;
                 }
-                refresh_tabs = true;
             }
             ReaderMsg::OpenAuthor(name) => {
                 sender.output(ReaderOut::OpenAuthor { name }).ok();
             }
             ReaderMsg::OpenLeftSidebar => {
                 self.close_annotation_editor();
-                self.cancel_left_close();
                 self.right_sidebar_open = false;
-                self.cancel_right_close();
                 if self.left_tab == LeftSidebarTab::Toc {
                     self.position_toc_scroll();
                 }
@@ -2282,18 +2216,14 @@ impl Component for ReaderModel {
                 refresh_tabs = true;
             }
             ReaderMsg::OpenRightSidebar => {
-                self.cancel_right_close();
                 self.left_sidebar_open = false;
-                self.cancel_left_close();
                 self.right_sidebar_open = true;
                 refresh_tabs = true;
             }
             ReaderMsg::SwitchLeftTab(tab) => {
                 self.close_annotation_editor();
                 self.left_tab = tab;
-                self.cancel_left_close();
                 self.right_sidebar_open = false;
-                self.cancel_right_close();
                 if matches!(tab, LeftSidebarTab::Toc) {
                     self.position_toc_scroll();
                 }
@@ -2309,9 +2239,7 @@ impl Component for ReaderModel {
                 }
                 self.right_tab = tab;
                 self.right_sidebar_open = true;
-                self.cancel_right_close();
                 self.left_sidebar_open = false;
-                self.cancel_left_close();
                 refresh_tabs = true;
                 match tab {
                     RightSidebarTab::Highlights => refresh_highlights = true,
@@ -2344,85 +2272,79 @@ impl Component for ReaderModel {
                     Err(err) => crate::notify::error("Could not export highlights", &err),
                 }
             }
-            ReaderMsg::ScheduleCloseLeft => {
-                self.schedule_left_close(sender.clone());
-            }
-            ReaderMsg::ScheduleCloseRight => {
-                self.schedule_right_close(sender.clone());
-            }
-            ReaderMsg::ForceCloseLeft(token) => {
-                if token == self.left_close_token {
-                    // THIS is the sidebar that hosts Settings — and its
-                    // dropdowns. Three previous fixes all patched the right
-                    // sidebar while the Typeface picker's list kept dying
-                    // over here. Same approach as the right: an open popup
-                    // shows up as a visible GtkPopover inside the tree;
-                    // hold and re-judge. (A pointer that simply comes back
-                    // sends OpenLeftSidebar and cancels this timer itself.)
-                    let hold = self
-                        .left_sidebar_box
-                        .as_ref()
-                        .is_some_and(|sb| popover_visible_in(sb.upcast_ref()));
-                    if hold {
-                        self.schedule_left_close(sender.clone());
-                    } else {
-                        self.left_sidebar_open = false;
-                        self.left_close_timer = None;
-                        refresh_tabs = true;
-                    }
-                }
-            }
-            ReaderMsg::ForceCloseRight(token) => {
-                if token == self.right_close_token {
-                    // A dropdown's list (the Typeface picker) is a separate
-                    // surface: chasing the pointer into it fires the
-                    // sidebar's leave and starts this timer, while the
-                    // reader is very much still engaged. An open popup does
-                    // NOT reliably make the window inactive — the first fix
-                    // assumed it did and Wayland said no — but it always
-                    // takes a grab on a descendant of the sidebar. That
-                    // walk for a visible GtkPopover is the only hold
-                    // signal that survives the toolkit version churn.
-                    // (A pointer that comes back inside needs no check:
-                    // re-entering sends Open* and cancels this timer.)
-                    let hold = self
-                        .right_sidebar_box
-                        .as_ref()
-                        .is_some_and(|sb| {
-                            let sb = sb.upcast_ref::<gtk::Widget>();
-                            popover_visible_in(sb)
-                        });
-                    if hold {
-                        self.schedule_right_close(sender.clone());
-                    } else {
-                        self.close_annotation_editor();
-                        self.right_sidebar_open = false;
-                        self.right_close_timer = None;
-                        refresh_tabs = true;
-                    }
-                }
-            }
             ReaderMsg::CloseSidebars => {
                 self.close_annotation_editor();
                 self.close_sidebars();
                 refresh_tabs = true;
             }
-            ReaderMsg::HideChrome => {
-                self.show_back_button = false;
-                self.show_bottom_pill = false;
-                refresh_chrome = true;
+            ReaderMsg::Escape => {
+                // The layers, front to back (decisions 14, 20, 31):
+                // dictionary popover → annotation chip (its note
+                // preview rides with it) → selection → search →
+                // lightbox → panels → exit the book. Each press takes
+                // exactly one layer.
+                if self.dict_popover.as_ref().is_some_and(|p| p.is_visible()) {
+                    sender.input(ReaderMsg::ClearDict);
+                } else if self.selection_chip.as_ref().is_some_and(|p| p.is_visible()) {
+                    engine::dismiss(self.selection_chip.take());
+                } else if self.view.as_ref().is_some_and(|v| v.selected_text().is_some()) {
+                    self.with_view(|v| v.clear_selection());
+                } else if self.search_active {
+                    sender.input(ReaderMsg::CloseSearch);
+                } else if self.lightbox_active {
+                    sender.input(ReaderMsg::CloseImageLightbox);
+                } else if self.left_sidebar_open || self.right_sidebar_open {
+                    sender.input(ReaderMsg::CloseSidebars);
+                } else {
+                    sender.input(ReaderMsg::Close);
+                }
             }
             ReaderMsg::ShowBackChrome => {
+                self.back_hover = true;
+                self.back_gen += 1;
                 self.show_back_button = true;
                 refresh_chrome = true;
             }
-            ReaderMsg::ShowBottomChrome => {
-                self.show_bottom_pill = true;
+            ReaderMsg::BackZoneHover(hovering) => {
+                if !hovering && !self.back_hover {
+                    // Already accounted away (a focus reveal never
+                    // entered the zone) — nothing to schedule.
+                    return;
+                }
+                self.back_hover = hovering;
+                self.back_gen += 1;
+                let gen = self.back_gen;
+                let tx = sender.input_sender().clone();
+                if hovering {
+                    // The 250 ms rest before the unit drops in.
+                    glib::timeout_add_local_once(Duration::from_millis(250), move || {
+                        let _ = tx.send(ReaderMsg::BackRevealDue(gen));
+                    });
+                } else {
+                    if let Some(unit) = &self.back_unit {
+                        unit.hide();
+                    }
+                    // The 300 ms grace, then the whole unit goes.
+                    glib::timeout_add_local_once(Duration::from_millis(300), move || {
+                        let _ = tx.send(ReaderMsg::BackHideDue(gen));
+                    });
+                }
                 refresh_chrome = true;
             }
-            ReaderMsg::ShowAllChrome => {
-                self.show_back_button = true;
-                self.show_bottom_pill = true;
+            ReaderMsg::BackRevealDue(gen) => {
+                if gen == self.back_gen && self.back_hover && !self.left_sidebar_open {
+                    self.show_back_button = true;
+                }
+                refresh_chrome = true;
+            }
+            ReaderMsg::BackHideDue(gen) => {
+                if gen == self.back_gen && !self.back_hover {
+                    self.show_back_button = false;
+                }
+                refresh_chrome = true;
+            }
+            ReaderMsg::LocationHover(hovering) => {
+                self.location_hover = hovering;
                 refresh_chrome = true;
             }
             ReaderMsg::LightboxZoomIn => {
@@ -2446,78 +2368,26 @@ impl Component for ReaderModel {
                 self.lightbox_rotation = (self.lightbox_rotation + 90.0) % 360.0;
                 self.update_lightbox_image(widgets);
             }
-            ReaderMsg::BackChromeTimerTick => {
-                if let Some(timer) = self.back_hide_timer.take() {
-                    timer.remove();
-                }
-                if !self.mouse_in_top_edge {
-                    self.show_back_button = false;
-                    refresh_chrome = true;
-                }
-            }
-            ReaderMsg::BottomChromeTimerTick => {
-                if let Some(timer) = self.bottom_hide_timer.take() {
-                    timer.remove();
-                }
-                if !self.mouse_in_bottom_edge {
-                    self.show_bottom_pill = false;
-                    refresh_chrome = true;
-                }
-            }
-            ReaderMsg::TopEdgeHover(hovering) => {
-                self.mouse_in_top_edge = hovering;
-                if hovering {
-                    if let Some(timer) = self.back_hide_timer.take() {
-                        timer.remove();
-                    }
-                    self.show_back_button = true;
-                } else if self.show_back_button {
-                    self.schedule_back_auto_hide(sender.clone());
-                }
-                refresh_chrome = true;
-            }
-            ReaderMsg::BottomEdgeHover(hovering) => {
-                self.mouse_in_bottom_edge = hovering;
-                if hovering {
-                    if let Some(timer) = self.bottom_hide_timer.take() {
-                        timer.remove();
-                    }
-                    self.show_bottom_pill = true;
-                } else if self.show_bottom_pill {
-                    self.schedule_bottom_auto_hide(sender.clone());
-                }
-                refresh_chrome = true;
-            }
             ReaderMsg::UserScrolled => {
-                let mut changed = false;
+                // Reading again: the Back unit goes away at once.
                 if self.show_back_button {
-                    if let Some(timer) = self.back_hide_timer.take() {
-                        timer.remove();
-                    }
+                    self.back_gen += 1;
+                    self.back_hover = false;
                     self.show_back_button = false;
-                    changed = true;
-                }
-                if self.show_bottom_pill {
-                    if let Some(timer) = self.bottom_hide_timer.take() {
-                        timer.remove();
+                    if let Some(unit) = &self.back_unit {
+                        unit.hide();
                     }
-                    self.show_bottom_pill = false;
-                    changed = true;
-                }
-                if changed {
                     refresh_chrome = true;
                 }
             }
         }
 
-        if refresh_stage {
-            sync_reader_stage_theme(&widgets.reader_stage, self.theme);
-        }
         if refresh_sidebar_header {
             update_sidebar_header(widgets, self, &sender);
         }
         if refresh_chrome {
             update_chrome_labels(widgets, self);
+            sync_ribbon(widgets, self);
         }
         if refresh_controls || refresh_tabs {
             sync_reader_stacks(self);
@@ -2558,14 +2428,6 @@ impl Component for ReaderModel {
         self.close_annotation_editor();
         self.save_progress();
         self.close_session();
-        self.cancel_left_close();
-        self.cancel_right_close();
-        if let Some(timer) = self.back_hide_timer.take() {
-            timer.remove();
-        }
-        if let Some(timer) = self.bottom_hide_timer.take() {
-            timer.remove();
-        }
         engine::dismiss(self.selection_chip.take());
         engine::dismiss(self.dict_popover.take());
         engine::dismiss(self.word_preview_popover.take());
@@ -2642,42 +2504,6 @@ impl ReaderModel {
                 .unwrap_or((0, 0));
             gtk::gdk::Rectangle::new(w / 2, h / 2, 1, 1)
         })
-    }
-
-    pub(crate) fn cancel_left_close(&mut self) {
-        self.left_close_token = self.left_close_token.wrapping_add(1);
-        self.left_close_timer = None;
-    }
-
-    pub(crate) fn cancel_right_close(&mut self) {
-        self.right_close_token = self.right_close_token.wrapping_add(1);
-        self.right_close_timer = None;
-    }
-
-    pub(crate) fn schedule_left_close(&mut self, sender: ComponentSender<Self>) {
-        self.cancel_left_close();
-        let token = self.left_close_token;
-        let tx = sender.input_sender().clone();
-        self.left_close_timer = Some(glib::timeout_add_local(
-            Duration::from_millis(320),
-            move || {
-                let _ = tx.send(ReaderMsg::ForceCloseLeft(token));
-                glib::ControlFlow::Break
-            },
-        ));
-    }
-
-    pub(crate) fn schedule_right_close(&mut self, sender: ComponentSender<Self>) {
-        self.cancel_right_close();
-        let token = self.right_close_token;
-        let tx = sender.input_sender().clone();
-        self.right_close_timer = Some(glib::timeout_add_local(
-            Duration::from_millis(320),
-            move || {
-                let _ = tx.send(ReaderMsg::ForceCloseRight(token));
-                glib::ControlFlow::Break
-            },
-        ));
     }
 
     fn highlight_current_search_match(&self) {
@@ -2791,34 +2617,6 @@ impl ReaderModel {
             more_lbl.set_margin_all(8);
             list_box.append(&more_lbl);
         }
-    }
-
-    pub(crate) fn schedule_back_auto_hide(&mut self, sender: ComponentSender<Self>) {
-        if let Some(timer) = self.back_hide_timer.take() {
-            timer.remove();
-        }
-        let tx = sender.input_sender().clone();
-        self.back_hide_timer = Some(glib::timeout_add_local(
-            Duration::from_secs(3),
-            move || {
-                let _ = tx.send(ReaderMsg::BackChromeTimerTick);
-                glib::ControlFlow::Continue
-            },
-        ));
-    }
-
-    pub(crate) fn schedule_bottom_auto_hide(&mut self, sender: ComponentSender<Self>) {
-        if let Some(timer) = self.bottom_hide_timer.take() {
-            timer.remove();
-        }
-        let tx = sender.input_sender().clone();
-        self.bottom_hide_timer = Some(glib::timeout_add_local(
-            Duration::from_secs(3),
-            move || {
-                let _ = tx.send(ReaderMsg::BottomChromeTimerTick);
-                glib::ControlFlow::Continue
-            },
-        ));
     }
 
     fn show_image_lightbox(&mut self, widgets: &mut <Self as relm4::Component>::Widgets, w: u32, h: u32, rgba: &[u8]) {

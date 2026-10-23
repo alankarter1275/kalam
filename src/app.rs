@@ -1356,6 +1356,20 @@ impl Component for AppModel {
         widgets.content_overlay.add_overlay(model.bubbles.window_widget());
         widgets.content_overlay.add_overlay(model.bubbles.bubble_widget());
 
+        // The rail bell (decision 148): its panel and outside-click
+        // catcher float over the whole window beside the rail, so
+        // they live on the root overlay. The button joins the rail's
+        // bottom stack below, once it exists.
+        let notifications = crate::widgets::notification_panel::NotificationPanel::new();
+        widgets.root_overlay.add_overlay(&notifications.catcher());
+        widgets.root_overlay.add_overlay(&notifications.revealer());
+        notifications.attach_escape(&root);
+        crate::notify::on_history_changed(std::rc::Rc::new({
+            let notifications = notifications.clone();
+            move || notifications.refresh()
+        }));
+        notifications.refresh();
+
         // Clicking the dimmed area closes the float. The scrim already
         // swallowed those clicks so they could not reach the page behind it;
         // the handler was simply empty, which made the dim look interactive
@@ -1515,8 +1529,8 @@ impl Component for AppModel {
         });
 
         // Above Settings, on the same end of the rail. Prepended rather than
-        // appended so the order is Tasks then Settings; `bottom_nav` holds
-        // nothing else since Downloads was hidden.
+        // appended so the order is Tasks, then the bell, then Settings;
+        // `bottom_nav` holds nothing else since Downloads was hidden.
         {
             let btn = model.tasks_btn.clone();
             let s = sender.clone();
@@ -1525,6 +1539,7 @@ impl Component for AppModel {
             ))));
             widgets.bottom_nav.prepend(&btn);
         }
+        widgets.bottom_nav.append(&notifications.button());
 
         for item in NavItem::ALL {
             let btn = make_nav_button(*item, *item == NavItem::Home);

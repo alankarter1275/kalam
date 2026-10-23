@@ -169,6 +169,79 @@ scrollbar slider:active {
     min-height: 0;
 }
 
+/* Rail bell and notification panel (§45, decision 148): the bell is a
+   nav disc whose open state takes the active item's accent-fill; the
+   8px dot is plain accent. The panel itself is the §9 side-panel
+   shell — only its rows and link need shapes here. */
+.kalam-bell-icon {
+    color: inherit;
+    -gtk-icon-size: 22px;
+}
+
+.kalam-nav-btn.open {
+    background: @kalam_accent_fill;
+    color: white;
+}
+
+.kalam-nav-btn.open:hover {
+    background: shade(@kalam_accent_fill, 1.08);
+}
+
+.kalam-bell-dot {
+    background: @kalam_accent;
+    border-radius: 999px;
+}
+
+.kalam-notify-catcher {
+    background: transparent;
+}
+
+button.kalam-notify-clear {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    font-size: 12.5px;
+    color: @kalam_accent;
+}
+
+button.kalam-notify-clear > label {
+    color: @kalam_accent;
+}
+
+button.kalam-notify-clear:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+.kalam-notify-group {
+    margin-bottom: 4px;
+}
+
+.kalam-notify-row {
+    border-top: 1px solid @kalam_border;
+    padding: 12px 0;
+}
+
+.kalam-notify-marker {
+    background: @kalam_text_dim;
+    border-radius: 999px;
+}
+
+.kalam-notify-marker.problem {
+    background: @kalam_accent;
+}
+
+.kalam-notify-message {
+    font-size: 13px;
+    color: @kalam_text;
+}
+
+.kalam-notify-empty {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
 /* ── main column ────────────────────────────────────── */
 .kalam-main {
     background: @kalam_bg;

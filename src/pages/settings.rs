@@ -23,10 +23,6 @@ pub enum SettingsTab {
     Integrations,
     Shortcuts,
     About,
-    /// Temporary home for the notification log: decision 148 moves it
-    /// to the rail bell, and until the bell lands the pane keeps the
-    /// history reachable so the surface never loses it mid-phase.
-    Notifications,
 }
 
 impl SettingsTab {
@@ -45,7 +41,6 @@ impl SettingsTab {
             Self::Integrations => "integrations",
             Self::Shortcuts => "shortcuts",
             Self::About => "about",
-            Self::Notifications => "notifications",
         }
     }
 
@@ -62,7 +57,6 @@ impl SettingsTab {
             Self::Integrations,
             Self::Shortcuts,
             Self::About,
-            Self::Notifications,
         ]
         .into_iter()
         .find(|tab| tab.id() == id)
@@ -81,7 +75,6 @@ impl SettingsTab {
             Self::Integrations => "Integrations",
             Self::Shortcuts => "Shortcuts",
             Self::About => "About",
-            Self::Notifications => "Notifications",
         }
     }
 
@@ -108,7 +101,6 @@ impl SettingsTab {
             Self::Integrations => "Downloads, sources and plugins arrive in a later release.",
             Self::Shortcuts => "Every key can be rebound. A key already taken is refused.",
             Self::About => "",
-            Self::Notifications => "History log of recent activity, alerts, and toasts.",
         }
     }
 }
@@ -136,7 +128,6 @@ const PANE_GROUPS: &[(&str, &[SettingsTab])] = &[
         &[
             SettingsTab::Shortcuts,
             SettingsTab::About,
-            SettingsTab::Notifications,
         ],
     ),
 ];
@@ -144,7 +135,6 @@ const PANE_GROUPS: &[(&str, &[SettingsTab])] = &[
 #[derive(Debug)]
 pub enum SettingsMsg {
     SelectTab(SettingsTab),
-    ClearNotifications,
     ImportDict,
     DeleteDict(i64),
     /// Reorder the merged-store priority after a drag: id, signed distance.
@@ -358,14 +348,6 @@ impl Component for SettingsPageModel {
                         #[watch]
                         set_visible: model.active_tab == SettingsTab::About,
                     },
-
-                    #[name = "notify_list"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        add_css_class: "kalam-settings-pane",
-                        #[watch]
-                        set_visible: model.active_tab == SettingsTab::Notifications,
-                    },
                 },
             },
         }
@@ -436,7 +418,6 @@ impl Component for SettingsPageModel {
             &widgets.integrations_content,
             &widgets.shortcuts_content,
             &widgets.about_content,
-            &widgets.notify_list,
         ] {
             host.append(&loading_label());
         }
@@ -465,27 +446,18 @@ impl Component for SettingsPageModel {
                 widgets.tab_title.set_visible(chrome);
                 widgets.tab_meta.set_visible(chrome);
                 update_tab_styles(&widgets.nav_list, tab);
-                // The notifications log is in-memory session state, so it
-                // rebuilds on every visit (its old behavior); every other
-                // pane builds once from the snapshot already in the model.
-                if tab == SettingsTab::Notifications {
-                    build_notifications(&widgets.notify_list, &sender);
-                } else if !self.built_tabs.contains(&tab) && self.snapshot.is_some() {
+                // Every pane builds once from the snapshot already in
+                // the model.
+                if !self.built_tabs.contains(&tab) && self.snapshot.is_some() {
                     self.build_tab(tab, widgets, &sender);
                     self.mark_built(tab);
                 }
                 widgets.scroller.vadjustment().set_value(0.0);
             }
-            SettingsMsg::ClearNotifications => {
-                crate::notify::clear_history();
-                build_notifications(&widgets.notify_list, &sender);
-            }
             SettingsMsg::Refresh => {
-                // A dictionary import finished: re-read on the worker (the
-                // old path re-read `list_dictionaries` inline) and refresh
-                // the activity log while we are here, exactly as before.
+                // A dictionary import finished: re-read on the worker
+                // (the old path re-read `list_dictionaries` inline).
                 request_snapshot(&self.service, &sender);
-                build_notifications(&widgets.notify_list, &sender);
             }
             SettingsMsg::ReloadFs => {
                 request_fs(&self.catalog, &sender);
@@ -781,7 +753,6 @@ fn settings_fill_label(tab: SettingsTab) -> &'static str {
         SettingsTab::Integrations => "settings_fill:integrations",
         SettingsTab::Shortcuts => "settings_fill:shortcuts",
         SettingsTab::About => "settings_fill:about",
-        SettingsTab::Notifications => "settings_fill:notifications",
     }
 }
 
@@ -872,9 +843,6 @@ impl SettingsPageModel {
             SettingsTab::About => {
                 clear_box(&widgets.about_content);
                 build_about(&widgets.about_content, &self.catalog);
-            }
-            SettingsTab::Notifications => {
-                build_notifications(&widgets.notify_list, sender);
             }
         }
     }
@@ -3448,44 +3416,6 @@ fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &Settings
     }
 }
 
-/// One card with an accent icon, a title, an optional description, a hairline
-/// divider, and a body host the caller fills with rows. Appended to `host`.
-fn section_card(host: &gtk::Box, icon_name: &str, title: &str, desc: Option<&str>) -> gtk::Box {
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    card.add_css_class("kalam-section-card");
-
-    let head = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    head.add_css_class("kalam-section-head");
-    let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let icon = crate::icons::symbolic_with_classes(icon_name, 16, &["kalam-section-icon"]);
-    title_row.append(&icon);
-    let title_label = gtk::Label::new(Some(title));
-    title_label.add_css_class("kalam-section-title");
-    title_label.set_halign(gtk::Align::Start);
-    title_row.append(&title_label);
-    head.append(&title_row);
-    if let Some(text) = desc {
-        let desc_label = gtk::Label::new(Some(text));
-        desc_label.add_css_class("kalam-section-desc");
-        desc_label.set_wrap(true);
-        desc_label.set_xalign(0.0);
-        desc_label.set_halign(gtk::Align::Start);
-        head.append(&desc_label);
-    }
-    card.append(&head);
-
-    let divider = gtk::Separator::new(gtk::Orientation::Horizontal);
-    divider.add_css_class("kalam-section-divider");
-    card.append(&divider);
-
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    body.add_css_class("kalam-section-body");
-    card.append(&body);
-
-    host.append(&card);
-    body
-}
-
 /// The app's pill switch. `on_toggle` fires only for user changes: the
 /// initial state is set before the handler is attached.
 pub(crate) fn toggle_switch(initial: bool, on_toggle: impl Fn(bool) + 'static) -> gtk::Switch {
@@ -3497,92 +3427,10 @@ pub(crate) fn toggle_switch(initial: bool, on_toggle: impl Fn(bool) + 'static) -
     sw
 }
 
-/// A pill chip label: `kalam-chip` plus one colour class.
-fn chip_label(text: &str, class: &str) -> gtk::Label {
-    let label = gtk::Label::new(Some(text));
-    label.add_css_class("kalam-chip");
-    label.add_css_class(class);
-    label.set_valign(gtk::Align::Center);
-    label
-}
-
 /// `2026-07-28`, for backup filenames.
 fn today_stamp() -> String {
     gtk::glib::DateTime::now_local()
         .and_then(|d| d.format("%Y-%m-%d"))
         .map(|s| s.to_string())
         .unwrap_or_default()
-}
-
-/// Recent notifications, so a toast that faded can still be read.
-fn build_notifications(host: &gtk::Box, sender: &ComponentSender<SettingsPageModel>) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    let body = section_card(
-        host,
-        "preferences-system-notifications-symbolic",
-        "Activity log",
-        Some("The last 25 events this session. Toasts fade; this keeps the record."),
-    );
-
-    let entries = crate::notify::history();
-    if entries.is_empty() {
-        let empty = gtk::Label::new(Some("Nothing yet this session."));
-        empty.add_css_class("kalam-muted");
-        empty.set_halign(gtk::Align::Start);
-        body.append(&empty);
-    } else {
-        for entry in entries.iter().take(25) {
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-            row.add_css_class("kalam-setting-row");
-
-            let badge_class = match entry.kind {
-                crate::notify::Kind::Success => "kalam-chip-success",
-                crate::notify::Kind::Error => "kalam-chip-danger",
-                crate::notify::Kind::Info => "kalam-chip-info",
-                crate::notify::Kind::Progress => "kalam-chip-neutral",
-            };
-            row.append(&chip_label(entry.kind.label(), badge_class));
-
-            let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
-            text.set_hexpand(true);
-            let title = gtk::Label::new(Some(&entry.title));
-            title.add_css_class("kalam-setting-label");
-            title.set_halign(gtk::Align::Start);
-            title.set_xalign(0.0);
-            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            text.append(&title);
-            if !entry.detail.trim().is_empty() {
-                let detail = gtk::Label::new(Some(entry.detail.trim()));
-                detail.add_css_class("kalam-setting-desc");
-                detail.set_halign(gtk::Align::Start);
-                detail.set_xalign(0.0);
-                detail.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                detail.set_tooltip_text(Some(&entry.detail));
-                text.append(&detail);
-            }
-            row.append(&text);
-
-            let at = gtk::Label::new(Some(&entry.at));
-            at.add_css_class("kalam-muted");
-            at.set_valign(gtk::Align::Center);
-            row.append(&at);
-
-            body.append(&row);
-        }
-    }
-
-    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    footer.set_halign(gtk::Align::End);
-    footer.add_css_class("kalam-card-footer");
-    let clear = gtk::Button::with_label("Clear history");
-    clear.add_css_class("kalam-btn-ghost");
-    clear.add_css_class("kalam-btn-sm");
-    {
-        let s = sender.clone();
-        clear.connect_clicked(move |_| s.input(SettingsMsg::ClearNotifications));
-    }
-    footer.append(&clear);
-    body.append(&footer);
 }

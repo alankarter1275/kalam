@@ -10,6 +10,7 @@ pub mod dropdown;
 pub mod focus_trap;
 pub mod in_app_dialog;
 pub mod menu;
+pub mod notification_panel;
 pub mod paint;
 pub mod pill_button;
 pub mod progress;

@@ -3031,7 +3031,14 @@ menubutton.kalam-ui-menu-trigger.kalam-bookpage-cover-edit > button {
     border-radius: 999px;
 }
 
-menubutton.kalam-ui-menu-trigger.kalam-bookpage-more,
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-more {
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: transparent;
+}
+
 menubutton.kalam-ui-menu-trigger.kalam-bookpage-more > button {
     min-width: 44px;
     min-height: 44px;

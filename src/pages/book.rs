@@ -217,6 +217,11 @@ impl Component for BookPageModel {
                         set_orientation: gtk::Orientation::Vertical,
                         set_spacing: 14,
                         set_width_request: 200,
+                        // Explicit, not computed: the progress bar's own
+                        // hexpand would otherwise propagate up and the
+                        // hero row would split its extra width with this
+                        // rail (seen in the first CI captures).
+                        set_hexpand: false,
                         set_valign: gtk::Align::Start,
 
                         #[name = "cover_host"]
@@ -1155,7 +1160,11 @@ fn fill_progress_rail(host: &gtk::Box, model: &BookPageModel, chapters: &[String
     } else {
         f64::from(book.progress) / 100.0
     };
-    host.append(&linear_progress(fraction));
+    let bar = linear_progress(fraction);
+    // The rail is exactly the cover's 200px; the bar fills it without
+    // asking the hero row for more width.
+    bar.set_hexpand(false);
+    host.append(&bar);
 
     if !model.finished && started {
         if let Some(first) = &model.stats.first_opened {
@@ -1632,7 +1641,10 @@ fn contents_entries(model: &BookPageModel, chapters: &[String]) -> Vec<TimelineE
             )
             .with_subtitle_first()
             .with_bookmarks(bookmark_counts.get(&i).copied().unwrap_or(0));
-            if !title.is_empty() {
+            // A spine whose titles are literally "Chapter N" would read
+            // the same line twice; the kicker only earns its place over
+            // a real chapter title.
+            if !title.is_empty() && !title.eq_ignore_ascii_case(&format!("Chapter {}", i + 1)) {
                 entry = entry.with_subtitle(format!("Chapter {}", i + 1));
             }
             if state == TimelineState::Current {
@@ -1842,7 +1854,6 @@ fn fill_file_line(host: &gtk::Box, model: &BookPageModel) {
     let label = gtk::Label::new(Some(&text));
     label.add_css_class("kalam-ui-caption");
     label.set_halign(gtk::Align::Start);
-    label.set_hexpand(true);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     host.append(&label);
 

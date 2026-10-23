@@ -101,6 +101,18 @@ impl LibraryRegistry {
         self.active = Some(index);
         true
     }
+
+    /// Point an entry at a different folder — the Locate flow, for a
+    /// library whose folder moved (a renamed disk, a new machine).
+    /// The name stays: it is still the same library. False if out of
+    /// range.
+    pub fn relocate(&mut self, index: usize, path: &Path) -> bool {
+        let Some(entry) = self.libraries.get_mut(index) else {
+            return false;
+        };
+        entry.path = path.to_path_buf();
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +332,22 @@ mod tests {
 /// the normal way to start a new one.
 pub fn looks_like_a_library(path: &Path) -> bool {
     path.join("catalog.db").is_file()
+}
+
+/// How many books a library folder's database holds, read without
+/// opening the library: a read-only connection, so no migrations run
+/// and nothing is written into a library that is not in use. The
+/// number the Settings list shows beside a library's path; `None`
+/// when the folder holds no readable database. Touches the disk —
+/// call it from a worker.
+pub fn library_book_count(path: &Path) -> Option<i64> {
+    let conn = rusqlite::Connection::open_with_flags(
+        path.join("catalog.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    conn.query_row("SELECT COUNT(*) FROM books", [], |row| row.get(0))
+        .ok()
 }
 
 /// On first run, put the existing library into the list.

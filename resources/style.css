@@ -6234,6 +6234,11 @@ button.kalam-settings-pane-item.active .kalam-settings-pane-item-label {
   color: @kalam_text;
 }
 
+/* The accent caption: the row's warning line (§44's missing state). */
+.kalam-ui-caption.accent {
+  color: @kalam_accent;
+}
+
 /* Palette boxes (§42): the outlined 2 x 2 grid cells; the mini-page
    cards themselves are custom-drawn, and their focus/hover/selected
    rings are painted with them, so the button chrome stays bare. */

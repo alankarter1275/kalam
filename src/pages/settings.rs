@@ -1,6 +1,6 @@
 use crate::db::Catalog;
 use crate::dict;
-use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
+use crate::paths::{catalog_db, data_dir, dictionaries_dir};
 use crate::service::{LibraryService, SettingsSnapshot};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -150,6 +150,10 @@ pub enum SettingsMsg {
     /// Reorder the merged-store priority (Phase 9): id, delta (−1 up / +1 down).
     MoveDict(i64, i64),
     Refresh,
+    /// A library-list or backups change needs the disk reads redone:
+    /// the FS worker runs again and `FsLoaded` rebuilds the panes
+    /// that show them.
+    ReloadFs,
     /// The DB snapshot arrived from the worker (7.1 step 2c). Boxed because
     /// it carries the dictionary list; it is sent once at open and again
     /// after a dict import / delete / move.
@@ -164,10 +168,22 @@ pub enum SettingsMsg {
 /// them: the per-book sidecar survey, the libraries registry file, and the
 /// EPUB backup listing. The same split `BookPageSnapshot::file_size` made —
 /// `LibraryService` stays DB-pure, the FS question rides with the page.
+/// One known library's on-disk state, gathered with the registry by
+/// the FS worker so the Libraries pane never stats the disk itself.
+#[derive(Debug)]
+pub struct LibraryState {
+    /// The folder is not there (decision 149's missing state).
+    pub folder_missing: bool,
+    /// Book count read from the folder's own database, when it has one.
+    pub books: Option<i64>,
+}
+
 #[derive(Debug)]
 pub struct SettingsFs {
     pub survey: crate::sidecar::SidecarSurvey,
     pub registry: crate::libraries::LibraryRegistry,
+    /// Aligned by index with `registry.libraries`.
+    pub library_states: Vec<LibraryState>,
     pub epub_backups: Vec<(std::path::PathBuf, u64)>,
 }
 
@@ -469,6 +485,9 @@ impl Component for SettingsPageModel {
                 request_snapshot(&self.service, &sender);
                 build_notifications(&widgets.notify_list, &sender);
             }
+            SettingsMsg::ReloadFs => {
+                request_fs(&self.catalog, &sender);
+            }
             SettingsMsg::Loaded(snap) => {
                 let snap = *snap;
                 // A failed read used to render as "no dictionaries
@@ -689,10 +708,26 @@ fn request_fs(catalog: &Arc<Catalog>, sender: &ComponentSender<SettingsPageModel
     let s = sender.input_sender().clone();
     crate::tasks::spawn_internal(
         "Checking storage",
-        move |_reporter| SettingsFs {
-            survey: crate::sidecar::survey(&catalog),
-            registry: crate::libraries::load_registry(),
-            epub_backups: crate::epub_metadata::list_backups(),
+        move |_reporter| {
+            let registry = crate::libraries::load_registry();
+            // Each known library's folder state and book count ride
+            // along: both are disk reads (the count opens that
+            // library's database read-only), and the pane's rows are
+            // built from them without touching the disk.
+            let library_states = registry
+                .libraries
+                .iter()
+                .map(|lib| LibraryState {
+                    folder_missing: !lib.path.is_dir(),
+                    books: crate::libraries::library_book_count(&lib.path),
+                })
+                .collect();
+            SettingsFs {
+                survey: crate::sidecar::survey(&catalog),
+                registry,
+                library_states,
+                epub_backups: crate::epub_metadata::list_backups(),
+            }
         },
         |_| {},
         move |fs| {
@@ -756,32 +791,26 @@ impl SettingsPageModel {
                 build_reading(&widgets.reading_content, &self.catalog, snap);
             }
             SettingsTab::Libraries => {
-                // Until this pane is rebuilt in the section-41 style it
-                // hosts the previous Storage builders: data locations,
-                // libraries, sidecar recovery and backup.
                 clear_box(&widgets.libraries_content);
-                let paths = legacy_subhost(&widgets.libraries_content);
-                build_paths(
-                    &paths,
+                build_libraries_pane(
+                    &widgets.libraries_content,
                     &self.catalog,
-                    self.fs.as_ref().map(|fs| &fs.registry),
-                    self.fs.as_ref().map(|fs| &fs.survey),
+                    self.fs.as_ref(),
+                    sender,
                 );
-                let backup = legacy_subhost(&widgets.libraries_content);
-                build_backup(&backup, &self.catalog);
             }
             SettingsTab::DataExport => {
                 clear_box(&widgets.data_content);
-                let export = legacy_subhost(&widgets.data_content);
-                build_export(&export, &self.catalog);
+                build_data_pane(&widgets.data_content, &self.catalog);
             }
             SettingsTab::BookFiles => {
                 clear_box(&widgets.book_files_content);
-                build_file_write(
+                build_book_files_pane(
                     &widgets.book_files_content,
                     &self.catalog,
                     snap,
                     self.fs.as_ref().map(|fs| fs.epub_backups.as_slice()),
+                    sender,
                 );
             }
             SettingsTab::WatchFolders => {
@@ -827,19 +856,6 @@ impl SettingsPageModel {
     }
 }
 
-/// A fresh vertical host for one of the legacy builders that still
-/// owns its own heading cards, spaced the way the old content column
-/// spaced them. Goes away pane by pane as the builders are rebuilt
-/// in the section-41 row style.
-fn legacy_subhost(host: &gtk::Box) -> gtk::Box {
-    let sub = gtk::Box::new(gtk::Orientation::Vertical, 16);
-    if host.first_child().is_some() {
-        sub.set_margin_top(16);
-    }
-    host.append(&sub);
-    sub
-}
-
 fn update_tab_styles(container: &gtk::Box, active: SettingsTab) {
     let mut child = container.first_child();
     while let Some(widget) = child {
@@ -861,7 +877,9 @@ fn update_tab_styles(container: &gtk::Box, active: SettingsTab) {
 // ---------------------------------------------------------------------------
 
 use crate::appearance::{HeadingFont, InterfaceFont, ReduceMotion, TextSize};
-use crate::widgets::dialog::{dialog_shell, present_dialog, DialogSize};
+use crate::widgets::dialog::{
+    confirmation_dialog, dialog_shell, present_dialog, ConfirmationKind, DialogSize,
+};
 use crate::widgets::dropdown::{dropdown, DropdownOption};
 use crate::widgets::in_app_dialog::DialogExit;
 use crate::widgets::pill_button::{boxed_ghost_button, icon_button};
@@ -903,6 +921,22 @@ fn pane_section_bare(host: &gtk::Box) -> gtk::Box {
 /// One 48-high row: label over an optional caption at the left,
 /// expanding so the caller's control lands at the right.
 fn pane_row(rows: &gtk::Box, label: &str, caption: Option<&str>) -> gtk::Box {
+    pane_row_inner(rows, label, caption.map(|text| (text, false))).0
+}
+
+/// A row whose caption is a warning in the accent — section 44's
+/// missing state ("Folder not found").
+fn pane_row_alert(rows: &gtk::Box, label: &str, caption: &str) -> gtk::Box {
+    pane_row_inner(rows, label, Some((caption, true))).0
+}
+
+/// The row builder behind both, returning the caption label as well
+/// for rows whose caption changes in place (the reader-cache size).
+fn pane_row_inner(
+    rows: &gtk::Box,
+    label: &str,
+    caption: Option<(&str, bool)>,
+) -> (gtk::Box, Option<gtk::Label>) {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     row.add_css_class("kalam-settings-row");
 
@@ -915,17 +949,21 @@ fn pane_row(rows: &gtk::Box, label: &str, caption: Option<&str>) -> gtk::Box {
     text.set_xalign(0.0);
     text.set_wrap(true);
     copy.append(&text);
-    if let Some(caption) = caption {
+    let caption_label = caption.map(|(caption, accent)| {
         let cap = gtk::Label::new(Some(caption));
         cap.add_css_class("kalam-ui-caption");
+        if accent {
+            cap.add_css_class("accent");
+        }
         cap.set_halign(gtk::Align::Start);
         cap.set_xalign(0.0);
         cap.set_wrap(true);
         copy.append(&cap);
-    }
+        cap
+    });
     row.append(&copy);
     rows.append(&row);
-    row
+    (row, caption_label)
 }
 
 /// A row with its control appended, vertically centred.
@@ -1215,34 +1253,34 @@ fn palette_card(
 
     let motion = gtk::EventControllerMotion::new();
     {
-        let hovered = hovered.clone();
-        let area = area.clone();
+        let hovered_enter = hovered.clone();
+        let area_enter = area.clone();
         motion.connect_enter(move |_, _, _| {
-            hovered.set(true);
-            area.queue_draw();
+            hovered_enter.set(true);
+            area_enter.queue_draw();
         });
-        let hovered = hovered.clone();
-        let area = area.clone();
+        let hovered_leave = hovered.clone();
+        let area_leave = area.clone();
         motion.connect_leave(move |_| {
-            hovered.set(false);
-            area.queue_draw();
+            hovered_leave.set(false);
+            area_leave.queue_draw();
         });
     }
     area.add_controller(motion);
 
     let focus = gtk::EventControllerFocus::new();
     {
-        let focused = focused.clone();
-        let area = area.clone();
+        let focused_enter = focused.clone();
+        let area_enter = area.clone();
         focus.connect_enter(move |_| {
-            focused.set(true);
-            area.queue_draw();
+            focused_enter.set(true);
+            area_enter.queue_draw();
         });
-        let focused = focused.clone();
-        let area = area.clone();
+        let focused_leave = focused.clone();
+        let area_leave = area.clone();
         focus.connect_leave(move |_| {
-            focused.set(false);
-            area.queue_draw();
+            focused_leave.set(false);
+            area_leave.queue_draw();
         });
     }
     button.add_controller(focus);
@@ -1910,6 +1948,631 @@ fn show_licences_dialog(anchor: &gtk::Box) {
         ),
     }
 }
+// ---------------------------------------------------------------------------
+// Libraries and storage, Data and export, Book files (decision 149).
+// ---------------------------------------------------------------------------
+
+/// The switches in the new rows: plain `Gtk.Switch`, the initial state
+/// set before the handler attaches so it only ever reports changes.
+fn row_switch(label: &str, initial: bool, on_toggle: impl Fn(bool) + 'static) -> gtk::Switch {
+    let sw = gtk::Switch::new();
+    sw.set_active(initial);
+    sw.set_valign(gtk::Align::Center);
+    sw.set_tooltip_text(Some(label));
+    sw.update_property(&[gtk::accessible::Property::Label(label)]);
+    sw.connect_active_notify(move |sw| on_toggle(sw.is_active()));
+    sw
+}
+
+fn build_libraries_pane(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    fs: Option<&SettingsFs>,
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    let rows = pane_section(host, "Libraries");
+    match fs {
+        None => {
+            // The registry file rides the slow worker; until it lands
+            // the section says so rather than guessing "no libraries".
+            let _ = pane_row(&rows, "Libraries", Some("Reading the library list…"));
+        }
+        Some(fs) if fs.registry.libraries.is_empty() => {
+            let path = crate::paths::legacy_data_dir()
+                .to_string_lossy()
+                .into_owned();
+            let row = pane_row(&rows, "Default library", Some(&path));
+            row.set_tooltip_text(Some(&path));
+            row.append(&settings_chip("Open", true));
+        }
+        Some(fs) => {
+            for (index, lib) in fs.registry.libraries.iter().enumerate() {
+                library_row(&rows, lib, index, fs, sender);
+            }
+        }
+    }
+
+    let add = {
+        let s = sender.clone();
+        let anchor = rows.clone();
+        boxed_ghost_button("Add library…", move || add_library_flow(&anchor, &s))
+    };
+    add.set_halign(gtk::Align::Start);
+    add.set_margin_top(12);
+    host.append(&add);
+
+    // Recovery: how much of this library could be rebuilt from its
+    // book folders alone. The number is on screen because the promise
+    // is only worth something if it can be checked.
+    let rows = pane_section(host, "Recovery");
+    let (caption, can_write) = match fs.map(|f| &f.survey) {
+        None => ("Checking your books' backup coverage…".to_string(), false),
+        Some(survey) if survey.books == 0 => ("No books yet.".to_string(), false),
+        Some(survey) => {
+            let mut text = if survey.missing() == 0 && survey.damaged == 0 {
+                format!("All {} books have a backup copy.", survey.books)
+            } else {
+                format!(
+                    "{} of {} books have a backup copy.",
+                    survey.recoverable, survey.books
+                )
+            };
+            if survey.damaged > 0 {
+                text += &format!(
+                    " {} backup copies cannot be read.",
+                    survey.damaged
+                );
+            }
+            (text, survey.missing() > 0)
+        }
+    };
+    let write = {
+        let catalog = catalog.clone();
+        let s = sender.clone();
+        boxed_ghost_button("Write missing copies", move || {
+            let written = crate::sidecar::backfill_missing(&catalog);
+            crate::notify::info(
+                "Backup copies written",
+                &format!("{written} book folders updated."),
+            );
+            s.input(SettingsMsg::ReloadFs);
+        })
+    };
+    write.set_sensitive(can_write);
+    pane_row_with(
+        &rows,
+        "Books with a backup copy",
+        Some(&caption),
+        &write,
+    );
+
+    // Backup and cache.
+    let rows = pane_section(host, "Backup and cache");
+    let backup = {
+        let catalog = catalog.clone();
+        let anchor = rows.clone();
+        boxed_ghost_button("Back up library…", move || {
+            let dialog = gtk::FileDialog::builder()
+                .title("Save library backup")
+                .modal(true)
+                .initial_name(format!("kalam-backup-{}.db", today_stamp()))
+                .build();
+            let window = anchor
+                .root()
+                .and_then(|r| r.downcast::<gtk::Window>().ok());
+            let catalog = catalog.clone();
+            dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+                let Ok(file) = res else { return };
+                let Some(path) = file.path() else { return };
+                match catalog.backup_to(&path) {
+                    Ok(size) => crate::notify::success(
+                        "Library backed up",
+                        &format!(
+                            "{} · {}",
+                            crate::epub_metadata::human_size(size),
+                            path.display()
+                        ),
+                    ),
+                    Err(err) => {
+                        crate::notify::error("Backup failed", &err.to_string());
+                    }
+                }
+            });
+        })
+    };
+    pane_row_with(
+        &rows,
+        "Back up library",
+        Some("A snapshot of the catalog database: metadata, annotations, shelves and reading history."),
+        &backup,
+    );
+    cache_row(&rows);
+}
+
+/// One library's row: name over path and book count, the open one
+/// carrying the accent chip and the rest their Open/Forget pair — or
+/// the missing-folder state with Locate folder in place of Open.
+fn library_row(
+    rows: &gtk::Box,
+    lib: &crate::libraries::LibraryEntry,
+    index: usize,
+    fs: &SettingsFs,
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    let state = fs.library_states.get(index);
+    let missing = state.is_some_and(|s| s.folder_missing);
+    let open_now = fs.registry.active == Some(index);
+    let path_text = lib.path.display().to_string();
+
+    if missing {
+        let row = pane_row_alert(rows, &lib.name, "Folder not found");
+        row.set_tooltip_text(Some(&path_text));
+        let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        controls.set_valign(gtk::Align::Center);
+        controls.append(&locate_library_button(index, &lib.name, rows, sender));
+        controls.append(&forget_library_button(index, &lib.name, sender));
+        row.append(&controls);
+        return;
+    }
+
+    let caption = match state.and_then(|s| s.books) {
+        Some(n) => format!(
+            "{path_text} · {n} book{}",
+            if n == 1 { "" } else { "s" }
+        ),
+        None => path_text.clone(),
+    };
+    let row = pane_row(rows, &lib.name, Some(&caption));
+    row.set_tooltip_text(Some(&path_text));
+    if open_now {
+        row.append(&settings_chip("Open", true));
+        return;
+    }
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    controls.set_valign(gtk::Align::Center);
+    controls.append(&open_library_button(index, &lib.name, rows));
+    controls.append(&forget_library_button(index, &lib.name, sender));
+    row.append(&controls);
+}
+
+/// Open another library, behind the restart prompt (decision 149).
+/// Switching re-launches rather than swapping underneath a running
+/// UI: pages hold open database handles and half-drawn covers, so
+/// repointing mid-session would leave them reading one library and
+/// writing to another.
+fn open_library_button(index: usize, name: &str, anchor: &gtk::Box) -> gtk::Button {
+    let name = name.to_string();
+    let anchor = anchor.clone();
+    boxed_ghost_button("Open", move || {
+        let confirm_name = name.clone();
+        let _ = confirmation_dialog(
+            &anchor,
+            &format!("Open {name}?"),
+            "Kalam restarts to open this library. Your books are not changed.",
+            "Cancel",
+            "Restart and open",
+            ConfirmationKind::Primary,
+            move || {
+                let mut reg = crate::libraries::load_registry();
+                if !reg.select(index) {
+                    // The registry changed under us — another window, or
+                    // a hand edit. Saying so beats doing nothing.
+                    crate::notify::error(
+                        "Could not switch library",
+                        "The library list changed. Reopen Settings and try again.",
+                    );
+                    return;
+                }
+                if let Err(err) = crate::libraries::save_registry(&reg) {
+                    crate::notify::error(
+                        "Could not save the library list",
+                        &err.to_string(),
+                    );
+                    return;
+                }
+                // Only restart once the choice is safely on disk;
+                // restarting first would reopen the old library and
+                // look like the click did nothing.
+                let err = crate::libraries::restart_now();
+                crate::notify::error(
+                    "Could not restart",
+                    &format!(
+                        "“{confirm_name}” will open next time you start Kalam. ({err})"
+                    ),
+                );
+            },
+        );
+    })
+}
+
+/// Forget a library: direct, no confirm (decision 150) — it only
+/// edits the list, and the toast says the books are untouched so
+/// "forget" and "delete my library" are never confusable.
+fn forget_library_button(
+    index: usize,
+    name: &str,
+    sender: &ComponentSender<SettingsPageModel>,
+) -> gtk::Button {
+    let name = name.to_string();
+    let s = sender.clone();
+    boxed_ghost_button("Forget", move || {
+        let mut reg = crate::libraries::load_registry();
+        if !reg.forget(index) {
+            crate::notify::error(
+                "Could not remove that library",
+                "The library list changed. Reopen Settings and try again.",
+            );
+            return;
+        }
+        match crate::libraries::save_registry(&reg) {
+            Ok(()) => {
+                crate::notify::info(
+                    "Library removed from the list",
+                    &format!("“{name}” — the folder and its books were not touched."),
+                );
+                s.input(SettingsMsg::ReloadFs);
+            }
+            Err(err) => {
+                crate::notify::error("Could not save the library list", &err.to_string())
+            }
+        }
+    })
+}
+
+/// Locate folder: point the entry at the library's new home. The
+/// picked folder must actually hold a library — repointing at a
+/// random folder would trade a clear "not found" for a silent empty
+/// library on next launch.
+fn locate_library_button(
+    index: usize,
+    name: &str,
+    anchor: &gtk::Box,
+    sender: &ComponentSender<SettingsPageModel>,
+) -> gtk::Button {
+    let name = name.to_string();
+    let anchor = anchor.clone();
+    let s = sender.clone();
+    boxed_ghost_button("Locate folder…", move || {
+        let dialog = gtk::FileDialog::builder()
+            .title("Locate the library folder")
+            .modal(true)
+            .build();
+        let window = anchor
+            .root()
+            .and_then(|r| r.downcast::<gtk::Window>().ok());
+        let name = name.clone();
+        let s = s.clone();
+        dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+            let Ok(folder) = res else { return };
+            let Some(path) = folder.path() else { return };
+            if !crate::libraries::looks_like_a_library(&path) {
+                crate::notify::error(
+                    "Not a Kalam library",
+                    "That folder does not hold a library. Pick the folder the library moved to.",
+                );
+                return;
+            }
+            let mut reg = crate::libraries::load_registry();
+            if !reg.relocate(index, &path) {
+                crate::notify::error(
+                    "Could not update that library",
+                    "The library list changed. Reopen Settings and try again.",
+                );
+                return;
+            }
+            match crate::libraries::save_registry(&reg) {
+                Ok(()) => {
+                    crate::notify::success("Library located", &name);
+                    s.input(SettingsMsg::ReloadFs);
+                }
+                Err(err) => {
+                    crate::notify::error("Could not save the library list", &err.to_string())
+                }
+            }
+        });
+    })
+}
+
+/// Add library: pick a folder — an empty one starts a new library,
+/// an existing Kalam library folder is reopened — named after the
+/// folder, because the user already chose a meaningful name when
+/// they picked where to put it.
+fn add_library_flow(anchor: &gtk::Box, sender: &ComponentSender<SettingsPageModel>) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Choose a folder for the library")
+        .modal(true)
+        .build();
+    let window = anchor
+        .root()
+        .and_then(|r| r.downcast::<gtk::Window>().ok());
+    let s = sender.clone();
+    dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+        let Ok(folder) = res else { return };
+        let Some(path) = folder.path() else { return };
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Library".to_string());
+        // Say which of the two things just happened: "added a library"
+        // is ambiguous between "started an empty one" and "found my
+        // books", and getting that wrong alarms in one direction.
+        let existing = crate::libraries::looks_like_a_library(&path);
+        let mut reg = crate::libraries::load_registry();
+        reg.add_or_select(&name, &path);
+        match crate::libraries::save_registry(&reg) {
+            Ok(()) => {
+                crate::notify::info(
+                    if existing {
+                        "Existing library found"
+                    } else {
+                        "New library created"
+                    },
+                    &format!("“{name}” — restart Kalam to open it."),
+                );
+                s.input(SettingsMsg::ReloadFs);
+            }
+            Err(err) => {
+                crate::notify::error("Could not save the library list", &err.to_string());
+            }
+        }
+    });
+}
+
+/// The reader-cache row. Its caption is the size, which changes in
+/// place when the cache is cleared — hence building through
+/// `pane_row_inner` for the caption label.
+fn cache_row(rows: &gtk::Box) {
+    let size = crate::paths::reader_cache_size();
+    let size_text = crate::epub_metadata::human_size(size);
+    let (row, caption) = pane_row_inner(
+        rows,
+        "Reader cache",
+        Some((&size_text, false)),
+    );
+
+    let clear = boxed_ghost_button("Clear", {
+        let caption = caption.clone();
+        move || {
+            let (files, freed) = crate::paths::clear_reader_cache();
+            if let Some(caption) = &caption {
+                caption.set_label(&crate::epub_metadata::human_size(
+                    crate::paths::reader_cache_size(),
+                ));
+            }
+            crate::notify::info(
+                "Reader cache cleared",
+                &format!(
+                    "Removed {files} file{} · freed {}",
+                    if files == 1 { "" } else { "s" },
+                    crate::epub_metadata::human_size(freed)
+                ),
+            );
+        }
+    });
+    // The ghost button's own handler runs first (it connected first);
+    // this one then re-reads the size for the end stop.
+    clear.connect_clicked(move |btn| {
+        btn.set_sensitive(crate::paths::reader_cache_size() > 0);
+    });
+    clear.set_sensitive(size > 0);
+    clear.set_valign(gtk::Align::Center);
+    row.append(&clear);
+}
+
+fn build_data_pane(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    // The four places Kalam keeps things (decision 149): read-only
+    // rows, each with a Show that opens the file manager there. The
+    // bool is whether the path is itself a folder (Show opens it) or
+    // a file (Show opens the folder holding it).
+    let rows = pane_section(host, "Locations");
+    let locations: [(&str, std::path::PathBuf, bool); 4] = [
+        ("Library folder", data_dir(), true),
+        ("Catalog database", catalog_db(), false),
+        ("Dictionaries", dictionaries_dir(), true),
+        (
+            "App settings",
+            crate::libraries::global_prefs_path(),
+            false,
+        ),
+    ];
+    for (label, path, is_dir) in locations {
+        let show = {
+            let path = path.clone();
+            boxed_ghost_button("Show", move || show_location(&path, is_dir))
+        };
+        pane_row_with(&rows, label, Some(&path.to_string_lossy()), &show);
+    }
+
+    let rows = pane_section(host, "Export");
+    let export_all = {
+        let catalog = catalog.clone();
+        boxed_ghost_button("Export…", move || {
+            let catalog = catalog.clone();
+            crate::tasks::spawn(
+                "Exporting reading data",
+                {
+                    let catalog = catalog.clone();
+                    move |_| {
+                        let out_path = crate::paths::home_dir()
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                            .join("Kalam-Export.md");
+                        catalog
+                            .export_reading_data_markdown(&out_path)
+                            .map(|count| (count, out_path))
+                            .map_err(|e| e.to_string())
+                    }
+                },
+                |_| {},
+                |res| match res {
+                    Ok((count, path)) => crate::notify::success(
+                        &format!(
+                            "{count} item{} exported",
+                            if count == 1 { "" } else { "s" }
+                        ),
+                        &path.display().to_string(),
+                    ),
+                    Err(err) => {
+                        crate::notify::error("Could not export reading data", &err)
+                    }
+                },
+            );
+        })
+    };
+    pane_row_with(
+        &rows,
+        "Export all data",
+        Some("Vocabulary, quotes and highlights to a Markdown file."),
+        &export_all,
+    );
+
+    let export_quotes = {
+        let catalog = catalog.clone();
+        boxed_ghost_button("Export…", move || {
+            let catalog = catalog.clone();
+            crate::tasks::spawn(
+                "Exporting quotes",
+                {
+                    let catalog = catalog.clone();
+                    move |_| crate::pages::saved_quotes::export_all_quotes_markdown(&catalog)
+                },
+                |_| {},
+                |res| match res {
+                    Ok((count, path)) => crate::notify::success(
+                        &format!(
+                            "{count} quote{} exported",
+                            if count == 1 { "" } else { "s" }
+                        ),
+                        &path.display().to_string(),
+                    ),
+                    Err(err) => crate::notify::error("Could not export quotes", &err),
+                },
+            );
+        })
+    };
+    pane_row_with(
+        &rows,
+        "Export quotes",
+        Some("Saved quotes to a Markdown file."),
+        &export_quotes,
+    );
+}
+
+/// Open the file manager at a data location: the folder itself for
+/// folders, the containing folder for files.
+fn show_location(path: &std::path::Path, is_dir: bool) {
+    let file = gtk::gio::File::for_path(path);
+    let launcher = gtk::FileLauncher::new(Some(&file));
+    let done = |res: Result<(), gtk::glib::Error>| {
+        if let Err(err) = res {
+            crate::notify::error("Could not show that location", &err.to_string());
+        }
+    };
+    if is_dir {
+        launcher.launch(
+            None::<&gtk::Window>,
+            None::<&gtk::gio::Cancellable>,
+            done,
+        );
+    } else {
+        launcher.open_containing_folder(
+            None::<&gtk::Window>,
+            None::<&gtk::gio::Cancellable>,
+            done,
+        );
+    }
+}
+
+fn build_book_files_pane(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    snap: &SettingsSnapshot,
+    epub_backups: Option<&[(std::path::PathBuf, u64)]>,
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    let rows = pane_section_bare(host);
+
+    let clean = row_switch(
+        "Clean EPUBs on import",
+        snap.clean_on_import,
+        {
+            let catalog = catalog.clone();
+            move |on| crate::epub_sanitizer::set_clean_on_import(&catalog, on)
+        },
+    );
+    pane_row_with(
+        &rows,
+        "Clean EPUBs on import",
+        Some("Removes forced fonts and colours and repairs the markup as books arrive."),
+        &clean,
+    );
+
+    let write = row_switch(
+        "Write edits into the EPUB",
+        snap.writeback_enabled,
+        {
+            let catalog = catalog.clone();
+            move |on| crate::epub_metadata::set_write_enabled(&catalog, on)
+        },
+    );
+    pane_row_with(
+        &rows,
+        "Write edits into the EPUB",
+        Some("Edit metadata also updates the book file, so other readers see your changes. The original is kept once."),
+        &write,
+    );
+
+    let (caption, count, total) = match epub_backups {
+        None => ("Checking…".to_string(), 0usize, 0u64),
+        Some(backups) if backups.is_empty() => ("No backups kept".to_string(), 0, 0),
+        Some(backups) => {
+            let total: u64 = backups.iter().map(|(_, size)| size).sum();
+            (
+                format!(
+                    "{} file{} · {}",
+                    backups.len(),
+                    if backups.len() == 1 { "" } else { "s" },
+                    crate::epub_metadata::human_size(total)
+                ),
+                backups.len(),
+                total,
+            )
+        }
+    };
+    let delete = {
+        let s = sender.clone();
+        let anchor = rows.clone();
+        boxed_ghost_button("Delete backups…", move || {
+            let s = s.clone();
+            let _ = confirmation_dialog(
+                &anchor,
+                "Delete original backups?",
+                &format!(
+                    "{count} file{} ({}) will be deleted. The books in your library are not changed. This cannot be undone.",
+                    if count == 1 { "" } else { "s" },
+                    crate::epub_metadata::human_size(total)
+                ),
+                "Cancel",
+                "Delete backups",
+                ConfirmationKind::Destructive,
+                move || {
+                    let (count, freed) = crate::epub_metadata::delete_backups();
+                    crate::notify::info(
+                        "Original backups deleted",
+                        &format!(
+                            "Removed {count} backup{} · freed {}",
+                            if count == 1 { "" } else { "s" },
+                            crate::epub_metadata::human_size(freed)
+                        ),
+                    );
+                    s.input(SettingsMsg::ReloadFs);
+                },
+            );
+        })
+    };
+    delete.set_sensitive(count > 0);
+    pane_row_with(&rows, "Original backups", Some(&caption), &delete);
+}
+
 /// One card with an accent icon, a title, an optional description, a hairline
 /// divider, and a body host the caller fills with rows. Appended to `host`.
 fn section_card(host: &gtk::Box, icon_name: &str, title: &str, desc: Option<&str>) -> gtk::Box {
@@ -1995,523 +2658,6 @@ fn chip_label(text: &str, class: &str) -> gtk::Label {
     label.add_css_class(class);
     label.set_valign(gtk::Align::Center);
     label
-}
-
-/// Data locations: four label/desc rows with mono path boxes.
-fn build_paths(
-    host: &gtk::Box,
-    catalog: &Arc<Catalog>,
-    registry: Option<&crate::libraries::LibraryRegistry>,
-    survey: Option<&crate::sidecar::SidecarSurvey>,
-) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    build_libraries(host, registry);
-    build_recovery(host, catalog, survey);
-
-    let body = section_card(
-        host,
-        "folder-symbolic",
-        "Data locations",
-        Some("These paths are set at first run. Moving data requires copying the files manually."),
-    );
-    let items = [
-        (
-            "Data Directory",
-            "Base folder for Kalam application data",
-            data_dir().to_string_lossy().into_owned(),
-        ),
-        (
-            "Catalog Database",
-            "SQLite database storing library books, shelves, tags, and reading progress",
-            catalog_db().to_string_lossy().into_owned(),
-        ),
-        (
-            "Library Files",
-            "Directory where EPUB books and extracted covers are stored",
-            library_dir().to_string_lossy().into_owned(),
-        ),
-        (
-            "Dictionaries Directory",
-            "Location for offline StarDict, SQLite, and TSV dictionary packs",
-            dictionaries_dir().to_string_lossy().into_owned(),
-        ),
-    ];
-    for (title, sub, path) in items {
-        setting_row(&body, title, sub, &path_box(&path));
-    }
-}
-
-/// P6.5 — the libraries card: which library is open, and the ones you know.
-///
-/// Deliberately a plain list plus "Add", not a full manager. Switching
-/// re-launches rather than swapping underneath a running UI: pages hold open
-/// database handles and half-drawn covers, so repointing mid-session would
-/// leave them reading one library and writing to another.
-fn build_libraries(host: &gtk::Box, reg: Option<&crate::libraries::LibraryRegistry>) {
-    // The registry file is read by the page's slow worker (2c); until it
-    // lands this card says so rather than guessing "no libraries".
-    let Some(reg) = reg else {
-        let body = section_card(
-            host,
-            "library-symbolic",
-            "Libraries",
-            Some("A library is a folder holding its own books, covers and database."),
-        );
-        setting_row(&body, "Libraries", "Reading the library list…", &loading_label());
-        return;
-    };
-    let body = section_card(
-        host,
-        "library-symbolic",
-        "Libraries",
-        Some(concat!(
-            "A library is a folder holding its own books, covers and database. ",
-            "Books in one library do not appear in another. Copy the folder to ",
-            "another machine and it opens there."
-        )),
-    );
-
-    if reg.libraries.is_empty() {
-        setting_row(
-            &body,
-            "Default library",
-            "No library has been chosen, so Kalam is using its original folder.",
-            &path_box(&crate::paths::legacy_data_dir().to_string_lossy()),
-        );
-    } else {
-        let active = reg.active;
-        for (i, lib) in reg.libraries.iter().enumerate() {
-            let open_now = active == Some(i);
-
-            // Path, then Open / Forget. Grouped in one row so a long path
-            // cannot push the buttons off the edge.
-            let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            controls.set_valign(gtk::Align::Center);
-            controls.append(&path_box(&lib.path.to_string_lossy()));
-
-            if !open_now {
-                let open = gtk::Button::with_label("Open");
-                open.add_css_class("kalam-btn-outlined");
-                open.set_valign(gtk::Align::Center);
-                let name = lib.name.clone();
-                open.connect_clicked(move |btn| {
-                    // Ask first. Switching restarts the app, which closes
-                    // whatever the user is reading -- doing that from a single
-                    // unlabelled click would be rude.
-                    let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
-                    let dialog = gtk::AlertDialog::builder()
-                        .modal(true)
-                        .message(format!("Open “{name}”?"))
-                        .detail(concat!(
-                            "Kalam will restart to open the other library. ",
-                            "Anything you are reading will be closed; your ",
-                            "place is saved."
-                        ))
-                        .buttons(vec![
-                            "Cancel".to_string(),
-                            "Restart and open".to_string(),
-                        ])
-                        .cancel_button(0)
-                        .default_button(1)
-                        .build();
-
-                    let name = name.clone();
-                    dialog.choose(
-                        window.as_ref(),
-                        gtk::gio::Cancellable::NONE,
-                        move |answer| {
-                            // Escape and the Cancel button both land here as
-                            // an error or index 0. `glib::Error` is not
-                            // comparable, so match rather than `!= Ok(1)`.
-                            if !matches!(answer, Ok(1)) {
-                                return;
-                            }
-                            let mut reg = crate::libraries::load_registry();
-                            if !reg.select(i) {
-                                // The registry changed under us -- another
-                                // window, or a hand edit. Saying so beats
-                                // silently doing nothing.
-                                crate::notify::error(
-                                    "Could not switch library",
-                                    "The library list changed. Reopen Settings and try again.",
-                                );
-                                return;
-                            }
-                            if let Err(err) = crate::libraries::save_registry(&reg) {
-                                crate::notify::error(
-                                    "Could not save the library list",
-                                    &err.to_string(),
-                                );
-                                return;
-                            }
-                            // Only restart once the choice is safely on disk;
-                            // restarting first would reopen the old library
-                            // and look like the click did nothing.
-                            let err = crate::libraries::restart_now();
-                            crate::notify::error(
-                                "Could not restart",
-                                &format!("“{name}” will open next time you start Kalam. ({err})"),
-                            );
-                        },
-                    );
-                });
-                controls.append(&open);
-            }
-
-            let forget = gtk::Button::with_label("Forget");
-            forget.add_css_class("kalam-btn-outlined");
-            forget.set_valign(gtk::Align::Center);
-            let fname = lib.name.clone();
-            forget.connect_clicked(move |_| {
-                let mut reg = crate::libraries::load_registry();
-                if !reg.forget(i) {
-                    crate::notify::error(
-                        "Could not remove that library",
-                        "The library list changed. Reopen Settings and try again.",
-                    );
-                    return;
-                }
-                match crate::libraries::save_registry(&reg) {
-                    // Say plainly that the books are untouched. "Forget" and
-                    // "delete my library" must never be confusable.
-                    Ok(()) => crate::notify::info(
-                        "Library removed from the list",
-                        &format!("“{fname}” — the folder and its books were not touched."),
-                    ),
-                    Err(err) => {
-                        crate::notify::error("Could not save the library list", &err.to_string())
-                    }
-                }
-            });
-            controls.append(&forget);
-
-            setting_row(
-                &body,
-                &lib.name,
-                if open_now {
-                    "Open now"
-                } else {
-                    "Opens on next launch when selected"
-                },
-                &controls,
-            );
-        }
-    }
-
-    // Adding a library is the one action wired up so far. Switching and
-    // forgetting need the relaunch flow and a confirmation, which come next.
-    let add = gtk::Button::with_label("Add library…");
-    add.add_css_class("kalam-btn-outlined");
-    add.set_valign(gtk::Align::Center);
-    add.connect_clicked(move |btn| {
-        // `FileDialog`, matching the rest of this file -- the older
-        // `FileChooserNative` needs the dialog kept alive by hand.
-        let dialog = gtk::FileDialog::builder()
-            .title("Choose a folder for the library")
-            .modal(true)
-            .build();
-        let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
-        dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
-            let Ok(folder) = res else { return };
-            let Some(path) = folder.path() else { return };
-
-            // Named after the folder: the user already chose a meaningful name
-            // when they picked where to put it, and asking twice for the same
-            // information is a step nobody wants.
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Library".to_string());
-
-            // Say which of the two things just happened. "Added a library" is
-            // ambiguous between "started an empty one" and "found my books",
-            // and getting that wrong is alarming in one direction and
-            // confusing in the other.
-            let existing = crate::libraries::looks_like_a_library(&path);
-
-            let mut reg = crate::libraries::load_registry();
-            reg.add_or_select(&name, &path);
-            match crate::libraries::save_registry(&reg) {
-                Ok(()) => crate::notify::info(
-                    if existing {
-                        "Existing library found"
-                    } else {
-                        "New library created"
-                    },
-                    &format!("“{name}” — restart Kalam to open it."),
-                ),
-                Err(err) => {
-                    crate::notify::error("Could not save the library list", &err.to_string());
-                }
-            }
-        });
-    });
-    setting_row(
-        &body,
-        "Add a library",
-        concat!(
-            "Pick a folder. An empty folder starts a new library; ",
-            "an existing Kalam library folder is reopened."
-        ),
-        &add,
-    );
-}
-
-/// How much of this library could be rebuilt from its folders alone.
-///
-/// The point of `kalam.json` is that losing `catalog.db` should not lose your
-/// tags, highlights and reading positions. That promise is only worth
-/// something if it is checkable — the backups are written on code paths that
-/// could quietly stop running, and nobody would notice until the day they
-/// mattered. So the number is on screen.
-fn build_recovery(
-    host: &gtk::Box,
-    catalog: &Arc<Catalog>,
-    survey: Option<&crate::sidecar::SidecarSurvey>,
-) {
-    // The survey reads one sidecar file per book — the heaviest read on the
-    // whole page, which is exactly why it runs on the page's slow worker
-    // (2c). Until it lands the row says so instead of claiming "No books".
-    let Some(survey) = survey else {
-        let body = section_card(
-            host,
-            "document-save-symbolic",
-            "Recovery",
-            Some(concat!(
-                "Each book folder keeps a kalam.json copy of its details, tags, ",
-                "highlights and reading position. If the catalog database is ever ",
-                "lost, this is what a rebuild would use."
-            )),
-        );
-        setting_row(
-            &body,
-            "Books with a backup copy",
-            "Checking your books' backup coverage…",
-            &loading_label(),
-        );
-        return;
-    };
-    let body = section_card(
-        host,
-        "document-save-symbolic",
-        "Recovery",
-        Some(concat!(
-            "Each book folder keeps a kalam.json copy of its details, tags, ",
-            "highlights and reading position. If the catalog database is ever ",
-            "lost, this is what a rebuild would use."
-        )),
-    );
-
-    let missing = survey.missing();
-    let summary = if survey.books == 0 {
-        "No books yet.".to_string()
-    } else if missing == 0 && survey.damaged == 0 {
-        format!("All {} books have a backup copy.", survey.books)
-    } else {
-        let mut parts = vec![format!("{} of {} covered", survey.recoverable, survey.books)];
-        if missing > 0 {
-            parts.push(format!("{missing} missing"));
-        }
-        if survey.damaged > 0 {
-            parts.push(format!("{} unreadable", survey.damaged));
-        }
-        parts.join(" · ")
-    };
-
-    let backfill = gtk::Button::with_label("Write missing copies");
-    backfill.add_css_class("kalam-btn-outlined");
-    backfill.set_valign(gtk::Align::Center);
-    backfill.set_sensitive(missing > 0);
-    {
-        let catalog = catalog.clone();
-        backfill.connect_clicked(move |btn| {
-            let written = crate::sidecar::backfill_missing(&catalog);
-            btn.set_sensitive(false);
-            crate::notify::info(
-                "Backup copies written",
-                &format!("{written} book folders updated."),
-            );
-        });
-    }
-    setting_row(&body, "Books with a backup copy", &summary, &backfill);
-}
-
-/// A mono path box; long paths ellipsize but stay selectable and have the
-/// full path as a tooltip.
-fn path_box(path: &str) -> gtk::Box {
-    let wrap = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    wrap.add_css_class("kalam-settings-path-box");
-    let label = gtk::Label::new(Some(path));
-    label.set_selectable(true);
-    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    label.set_max_width_chars(34);
-    label.set_tooltip_text(Some(path));
-    wrap.append(&label);
-    wrap
-}
-
-/// Back up the catalog, and clear the reader cache.
-fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    let body = section_card(host, "folder-download-symbolic", "Backup & cache", None);
-
-    let backup_btn = gtk::Button::with_label("Back up library…");
-    backup_btn.add_css_class("kalam-btn-outlined");
-    backup_btn.set_valign(gtk::Align::Center);
-    {
-        let catalog = catalog.clone();
-        backup_btn.connect_clicked(move |btn| {
-            let dialog = gtk::FileDialog::builder()
-                .title("Save library backup")
-                .modal(true)
-                .initial_name(format!("kalam-backup-{}.db", today_stamp()))
-                .build();
-            let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
-            let catalog = catalog.clone();
-            dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
-                let Ok(file) = res else { return };
-                let Some(path) = file.path() else { return };
-                match catalog.backup_to(&path) {
-                    Ok(size) => crate::notify::success(
-                        "Library backed up",
-                        &format!(
-                            "{} · {}",
-                            crate::epub_metadata::human_size(size),
-                            path.display()
-                        ),
-                    ),
-                    Err(err) => {
-                        crate::notify::error("Backup failed", &err.to_string());
-                    }
-                }
-            });
-        });
-    }
-    setting_row(
-        &body,
-        "Back up library database",
-        "Creates a snapshot of catalog.db containing all metadata, annotations, shelves, ratings, and reading history.",
-        &backup_btn,
-    );
-
-    let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    right.set_valign(gtk::Align::Center);
-    let size = crate::paths::reader_cache_size();
-    let cache_badge = chip_label(&crate::epub_metadata::human_size(size), "kalam-chip-neutral");
-    right.append(&cache_badge);
-    let clear = gtk::Button::with_label("Clear cache");
-    clear.add_css_class("kalam-btn-danger");
-    clear.set_sensitive(size > 0);
-    {
-        let cache_badge = cache_badge.clone();
-        clear.connect_clicked(move |btn| {
-            let (files, freed) = crate::paths::clear_reader_cache();
-            cache_badge.set_label(&format!("Freed {}", crate::epub_metadata::human_size(freed)));
-            crate::notify::info(
-                "Reader cache cleared",
-                &format!(
-                    "Removed {files} file{} · freed {}",
-                    if files == 1 { "" } else { "s" },
-                    crate::epub_metadata::human_size(freed)
-                ),
-            );
-            btn.set_sensitive(false);
-        });
-    }
-    right.append(&clear);
-    setting_row(
-        &body,
-        "Extracted EPUB cache",
-        "Unzipped copies of your books, kept so chapter lists and book details do not re-open the same EPUB every time. Safe to clear; they are rebuilt when a page needs them.",
-        &right,
-    );
-}
-
-/// Export saved reading data and quotes to Markdown, from Settings.
-fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    let body = section_card(host, "document-save-symbolic", "Export", None);
-
-    let export_all_btn = gtk::Button::with_label("Export All Data");
-    export_all_btn.add_css_class("kalam-btn-outlined");
-    export_all_btn.set_valign(gtk::Align::Center);
-    {
-        let catalog = catalog.clone();
-        export_all_btn.connect_clicked(move |_| {
-            // Same rule as the quotes export above.
-            crate::tasks::spawn(
-                "Exporting reading data",
-                {
-                    let catalog = catalog.clone();
-                    move |_| {
-                        let out_path = crate::paths::home_dir()
-                            .unwrap_or_else(|| std::path::PathBuf::from("."))
-                            .join("Kalam-Export.md");
-                        catalog
-                            .export_reading_data_markdown(&out_path)
-                            .map(|count| (count, out_path))
-                            .map_err(|e| e.to_string())
-                    }
-                },
-                |_| {},
-                |res| match res {
-                    Ok((count, path)) => crate::notify::success(
-                        &format!("{count} item{} exported", if count == 1 { "" } else { "s" }),
-                        &path.display().to_string(),
-                    ),
-                    Err(err) => crate::notify::error("Could not export reading data", &err),
-                },
-            );
-        });
-    }
-    setting_row(
-        &body,
-        "Export All Data to Markdown",
-        "Saves vocabulary, quotes, and highlights to ~/Kalam-Export.md",
-        &export_all_btn,
-    );
-
-    let export_btn = gtk::Button::with_label("Export quotes");
-    export_btn.add_css_class("kalam-btn-outlined");
-    export_btn.set_valign(gtk::Align::Center);
-    {
-        let catalog = catalog.clone();
-        export_btn.connect_clicked(move |_| {
-            // The export reads the catalog and writes a file: on a task,
-            // per ARCH.md. `catalog` is cloned per click because the
-            // handler can fire more than once.
-            crate::tasks::spawn(
-                "Exporting quotes",
-                {
-                    let catalog = catalog.clone();
-                    move |_| crate::pages::saved_quotes::export_all_quotes_markdown(&catalog)
-                },
-                |_| {},
-                |res| match res {
-                    Ok((count, path)) => crate::notify::success(
-                        &format!(
-                            "{count} quote{} exported",
-                            if count == 1 { "" } else { "s" }
-                        ),
-                        &path.display().to_string(),
-                    ),
-                    Err(err) => crate::notify::error("Could not export quotes", &err),
-                },
-            );
-        });
-    }
-    setting_row(
-        &body,
-        "Export quotes to Markdown",
-        "Saves all saved quotes to ~/Quotes.md",
-        &export_btn,
-    );
 }
 
 /// Installed dictionary packs: icon, name, mono meta, Remove — plus the
@@ -2970,166 +3116,6 @@ fn render_watch_cards_with(
         card.append(&options_box);
         container.append(&card);
     }
-}
-
-/// Toggle for writing metadata back into the EPUB itself, and deleting backups.
-fn build_file_write(
-    host: &gtk::Box,
-    catalog: &Arc<Catalog>,
-    snap: &SettingsSnapshot,
-    epub_backups: Option<&[(std::path::PathBuf, u64)]>,
-) {
-    use crate::epub_metadata::set_write_enabled;
-
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-
-    // 1. EPUB Sanitizer / Polish Engine. Every initial state below comes
-    // from the snapshot (7.1 step 2c); the catalog stays for the
-    // click-time writes.
-    let polish_body = section_card(
-        host,
-        "edit-clear-symbolic",
-        "EPUB polish & sanitizer",
-        Some("Clean, repair, and normalize EPUB files when importing into Kalam."),
-    );
-    {
-        let catalog = catalog.clone();
-        let sw = toggle_switch(snap.clean_on_import, move |on| {
-            crate::epub_sanitizer::set_clean_on_import(&catalog, on);
-        });
-        setting_row(
-            &polish_body,
-            "Sanitize and polish EPUBs on import",
-            "On: automatically removes toxic styles (tiny fonts, forced black/white colors, fixed margins), repairs malformed XML tags, and regenerates missing Table of Contents (toc.ncx) so books look consistent and readable. Off: EPUBs are stored untouched as imported.",
-            &sw,
-        );
-    }
-
-    // 2. Auto-Import Watch Folders (Multi-folder routing)
-    let watch_body = section_card(
-        host,
-        "folder-download-symbolic",
-        "Auto-import watch folders",
-        Some("Automatically import and organize new books and comics added to folders on your computer."),
-    );
-    {
-        let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        top_row.set_valign(gtk::Align::Center);
-
-        let add_btn = gtk::Button::with_label("+ Add Watch Folder");
-        add_btn.add_css_class("kalam-btn-subtle");
-
-        let cards_container = gtk::Box::new(gtk::Orientation::Vertical, 10);
-
-        let catalog_add = catalog.clone();
-        let cc_add = cards_container.clone();
-        add_btn.connect_clicked(move |btn| {
-            let root = btn.root();
-            let window = root.and_then(|r| r.downcast::<gtk::Window>().ok());
-            let dialog = gtk::FileDialog::builder()
-                .title("Select Folder to Watch")
-                .modal(true)
-                .build();
-
-            let cat = catalog_add.clone();
-            let cc = cc_add.clone();
-            dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
-                let Ok(folder) = res else { return };
-                let Some(path) = folder.path() else { return };
-                let mut rules = crate::watch_folder::load_watch_rules(&cat);
-                if rules.iter().any(|r| r.path == path) {
-                    crate::notify::info("Watch Folder", "This folder is already in your watch list.");
-                    return;
-                }
-                rules.push(crate::watch_folder::WatchFolderRule::new(path));
-                crate::watch_folder::save_watch_rules(&cat, &rules);
-                crate::watch_folder::request_reload();
-                render_watch_cards(&cc, &cat);
-            });
-        });
-        top_row.append(&add_btn);
-
-        watch_body.append(&top_row);
-
-        render_watch_cards_with(
-            &cards_container,
-            catalog,
-            &snap.watch_rules,
-            &snap.shelves,
-        );
-        watch_body.append(&cards_container);
-    }
-
-    // 3. EPUB writeback & backups
-    let body = section_card(host, "text-x-generic-symbolic", "EPUB writeback", None);
-
-    {
-        let catalog = catalog.clone();
-        let sw = toggle_switch(snap.writeback_enabled, move |on| {
-            set_write_enabled(&catalog, on);
-        });
-        setting_row(
-            &body,
-            "Also write metadata into the EPUB file",
-            "On: saving in Edit metadata also updates the book file, so Calibre and other readers see your changes. The untouched original is kept once as <name>.epub.orig, and the new file is only swapped in after it is verified. Off: edits stay inside Kalam and your files are never modified.",
-            &sw,
-        );
-    }
-
-    let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    right.set_valign(gtk::Align::Center);
-    // The backup listing is a directory walk, so it rides the page's slow
-    // worker (2c); until it lands the chip says so and delete stays off.
-    let summary_text = match epub_backups {
-        None => "Checking…".to_string(),
-        Some(backups) => {
-            let total: u64 = backups.iter().map(|(_, size)| size).sum();
-            if backups.is_empty() {
-                "No originals kept".to_string()
-            } else {
-                format!(
-                    "{} original{} · {}",
-                    backups.len(),
-                    if backups.len() == 1 { "" } else { "s" },
-                    crate::epub_metadata::human_size(total)
-                )
-            }
-        }
-    };
-    let summary = chip_label(&summary_text, "kalam-chip-neutral");
-    right.append(&summary);
-    let clean = gtk::Button::with_label("Delete backups");
-    clean.add_css_class("kalam-btn-danger");
-    clean.set_sensitive(epub_backups.is_some_and(|b| !b.is_empty()));
-    {
-        let summary = summary.clone();
-        clean.connect_clicked(move |btn| {
-            let (count, freed) = crate::epub_metadata::delete_backups();
-            summary.set_label(&format!(
-                "Deleted {count} backup{}, freed {}.",
-                if count == 1 { "" } else { "s" },
-                crate::epub_metadata::human_size(freed)
-            ));
-            crate::notify::info(
-                "Original backups deleted",
-                &format!(
-                    "Removed {count} backup{} · freed {}",
-                    if count == 1 { "" } else { "s" },
-                    crate::epub_metadata::human_size(freed)
-                ),
-            );
-            btn.set_sensitive(false);
-        });
-    }
-    right.append(&clean);
-    setting_row(
-        &body,
-        "Original backups",
-        "Kept once per book when writeback is on. Deleting is permanent: you lose the ability to undo metadata written into those files.",
-        &right,
-    );
 }
 
 /// `2026-07-28`, for backup filenames.

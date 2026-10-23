@@ -2946,6 +2946,9 @@ fn annotations_highlights_page(
         dot.add_css_class("k-color-dot");
         dot.add_css_class(&format!("k-color-dot-{}", color.as_str()));
         dot.set_size_request(24, 24);
+        dot.set_hexpand(false);
+        dot.set_halign(gtk::Align::Start);
+        dot.set_valign(gtk::Align::Center);
         dot.set_tooltip_text(Some(&format!("Show {} highlights", color.as_str())));
         let filter = filter.clone();
         let holder = holder.clone();

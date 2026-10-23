@@ -453,19 +453,20 @@ jobs:
             docs/ci/screenshot.sh
 
       # The book page's two dialogs, opened over the same page via
-      # KALAM_DIALOG (no route reaches a dialog). The seeded book carries
-      # tags, so the Tag dialog photographs with real chips and rows; the
+      # KALAM_DIALOG (no route reaches a dialog). Book 4 is the first
+      # seeded book carrying three tags (the seeder assigns `i % 4`), so
+      # the Tag dialog photographs real chips and ticked rows; the
       # Annotations dialog photographs its empty states, which are the
       # states the seeder can honestly produce.
       - name: open the tag dialog (light) and report
         run: |
-          BOOKS=20 OUT=ci-shots-book-tags-light SETTLE=20 ROUTE=book-1 \
+          BOOKS=20 OUT=ci-shots-book-tags-light SETTLE=20 ROUTE=book-4 \
             DIALOG=tags THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the tag dialog (dark) and report
         run: |
-          BOOKS=20 OUT=ci-shots-book-tags-dark SETTLE=20 ROUTE=book-1 \
+          BOOKS=20 OUT=ci-shots-book-tags-dark SETTLE=20 ROUTE=book-4 \
             DIALOG=tags THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
@@ -535,9 +536,9 @@ jobs:
             ci-logs/book-terracotta-light.png 2>/dev/null || true
           cp ci-shots-book-dark/03-book-1-settled.png \
             ci-logs/book-terracotta-dark.png 2>/dev/null || true
-          cp ci-shots-book-tags-light/03-book-1-settled.png \
+          cp ci-shots-book-tags-light/03-book-4-settled.png \
             ci-logs/book-tags-terracotta-light.png 2>/dev/null || true
-          cp ci-shots-book-tags-dark/03-book-1-settled.png \
+          cp ci-shots-book-tags-dark/03-book-4-settled.png \
             ci-logs/book-tags-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-book-annotations-light/03-book-1-settled.png \
             ci-logs/book-annotations-terracotta-light.png 2>/dev/null || true

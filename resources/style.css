@@ -4252,7 +4252,9 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-color-bar { padding: 0 4px; }
 
 .k-color-dot {
-  min-width: 20px; min-height: 20px; border-radius: 50%;
+  /* Adwaita's default button padding otherwise stretches the 20px dots
+     into ovals (seen in the Annotations dialog captures). */
+  min-width: 20px; min-height: 20px; padding: 0; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.2);
   transition: transform 150ms ease, border-color 150ms ease;
 }

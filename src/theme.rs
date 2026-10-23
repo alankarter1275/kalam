@@ -295,6 +295,9 @@ const ALL: &[Theme] = &[
 
 /// The theme used on first run and whenever a stored id is unrecognised
 /// (including every id from the previous thirteen-theme system).
+/// Production reaches it through `ThemeChoice::DEFAULT`; this resolved
+/// alias exists for the tests that pin the two together.
+#[cfg(test)]
 pub const DEFAULT: Theme = TERRACOTTA_DARK;
 
 /// One palette family.
@@ -466,7 +469,10 @@ pub fn choice_by_id(id: &str) -> ThemeChoice {
 }
 
 /// Look up a resolved theme by stored id (`-system` ids resolve against
-/// the current system mode), falling back to the default.
+/// the current system mode), falling back to the default. Production
+/// resolves the choice in force (`current_choice`); this one-step form
+/// is kept for the tests that round-trip every stored id.
+#[cfg(test)]
 pub fn by_id(id: &str) -> Theme {
     choice_by_id(id).resolve()
 }

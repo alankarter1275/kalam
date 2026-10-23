@@ -1730,11 +1730,12 @@ fn fill_contents(
     }
 
     if entries.len() > 5 {
-        let toggle = gtk::Button::with_label(if model.contents_expanded {
-            "Show less"
+        let toggle_label = if model.contents_expanded {
+            "Show less".to_string()
         } else {
-            &format!("Show all {}", entries.len())
-        });
+            format!("Show all {}", entries.len())
+        };
+        let toggle = gtk::Button::with_label(&toggle_label);
         toggle.add_css_class("kalam-detail-card-link");
         toggle.set_focus_on_click(false);
         toggle.set_halign(gtk::Align::Start);

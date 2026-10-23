@@ -207,6 +207,12 @@ say "requested route: $ROUTE"
 # evidence of which theme was photographed.
 THEME="${THEME:-}"
 say "requested theme: ${THEME:-<saved/default>}"
+# DIALOG asks the book page to open one of its dialogs over itself once
+# loaded (KALAM_DIALOG=tags|annotations). No route reaches a dialog, so
+# without this the loop could photograph every page and still never see
+# the two dialogs the book page owns.
+DIALOG="${DIALOG:-}"
+say "requested dialog: ${DIALOG:-<none>}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
 # negative one, KALAM_NO_WINDOWED_GRID.
@@ -233,7 +239,7 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
-KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do

@@ -10,9 +10,10 @@
 //! "Your impression" (decision 91) is a designed-but-unbuilt feature with
 //! no storage yet, scheduled separately: the right column is built to
 //! work without that box, exactly as the spec's unfinished state does.
-//! The Tag dialog still opens today's floating panel until its redesign
-//! tranche; the ⋯ menu, cover popover and Annotations dialog are the
-//! designed forms already.
+//! The ⋯ menu, cover popover, Annotations dialog and Tag dialog are the
+//! designed forms; the shelves checklist in the ⋯ submenu is designed
+//! too, while the app-level shelves float (opened from the book float)
+//! still uses the older panel below.
 //!
 //! The series link opens the series float (`series_float.rs`) until the
 //! series-page phase replaces it (decision 94).
@@ -64,8 +65,6 @@ pub enum BookPageOut {
         series: String,
         first_author: String,
     },
-    /// Open the tags panel (in-app float) from the hero's "+" chip.
-    ShowTags,
     Deleted {
         #[allow(dead_code)] // carried for the open/delete round-trip; some arms ignore it
         book_id: i64,
@@ -110,7 +109,7 @@ pub enum BookPageMsg {
     },
     EditMetadata,
     Refresh,
-    /// Open the tags panel (in-app float) — tags are managed there.
+    /// Open the Tag dialog from the hero's "+" chip.
     ShowTags,
     /// Toggle the journey between 6 chapters and the full list.
     ToggleJourney,
@@ -403,7 +402,7 @@ impl Component for BookPageModel {
                 // The worker's snapshot is the only source of page state.
                 // Every read the old sync path did inline — including the
                 // two `book_detail` calls — is this one arrival.
-                self.loading = false;
+                let first_load = std::mem::replace(&mut self.loading, false);
                 let PageLoad { snap, covers } = *load;
                 // The covers were decoded on the snapshot's own worker.
                 // Into the cache now, before the rebuild below builds any
@@ -448,6 +447,20 @@ impl Component for BookPageModel {
                 self.series_position = series_position;
                 self.series_total = series_total;
                 self.file_size = file_size;
+
+                // CI screenshot hook, the dialog counterpart of
+                // KALAM_ROUTE: `KALAM_DIALOG=tags|annotations` opens that
+                // dialog over the loaded page so the headless run can
+                // photograph it — no route reaches a dialog, and a dialog
+                // the screenshot loop cannot open is a dialog it cannot
+                // check. First load only, so a Refresh never reopens it.
+                if first_load {
+                    match std::env::var("KALAM_DIALOG").as_deref() {
+                        Ok("tags") => sender.input(BookPageMsg::ShowTags),
+                        Ok("annotations") => sender.input(BookPageMsg::ViewHighlights),
+                        _ => {}
+                    }
+                }
 
                 // Chapter titles are the expensive half (an EPUB open and
                 // spine walk): parsed on their own worker and filled in
@@ -624,7 +637,7 @@ impl Component for BookPageModel {
                 }
             }
             BookPageMsg::ShowTags => {
-                sender.output(BookPageOut::ShowTags).ok();
+                present_tags_dialog(root, self, &sender);
             }
             BookPageMsg::ToggleJourney => {
                 self.contents_expanded = !self.contents_expanded;
@@ -1832,6 +1845,863 @@ fn fill_annotations(
     host.append(&count_line);
 }
 
+/// What one Ctrl+Z in the Tag dialog walks back (decision 84's "instant
+/// apply, Ctrl+Z undoes"): this book's own tag adds and removes from this
+/// sitting. Library-wide rename/merge/delete are confirmed up front with
+/// their book counts instead, and clear this history — a deleted tag's
+/// inverse is not this dialog's to promise.
+enum TagUndo {
+    Added(String),
+    Removed(String),
+}
+
+fn books_noun(count: i64) -> &'static str {
+    if count == 1 {
+        "book"
+    } else {
+        "books"
+    }
+}
+
+fn tags_on_book(service: &LibraryService, book_id: i64) -> Vec<String> {
+    service
+        .catalog()
+        .get_book(book_id)
+        .ok()
+        .flatten()
+        .map(|b| b.tags)
+        .unwrap_or_default()
+}
+
+fn tags_section_label(text: &str) -> gtk::Label {
+    let label = gtk::Label::new(Some(&text.to_ascii_uppercase()));
+    label.add_css_class("kalam-ui-field-label");
+    label.set_halign(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label
+}
+
+fn tags_meta_note(text: &str) -> gtk::Label {
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("kalam-ui-meta");
+    label.set_halign(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_wrap(true);
+    label.set_max_width_chars(53);
+    label
+}
+
+fn tags_flow() -> gtk::FlowBox {
+    let flow = gtk::FlowBox::new();
+    flow.set_selection_mode(gtk::SelectionMode::None);
+    flow.set_homogeneous(false);
+    flow.set_row_spacing(6);
+    flow.set_column_spacing(6);
+    flow
+}
+
+/// Chips scroll inside the dialog past three rows (28px chips, 6px row
+/// spacing) instead of growing the 420 form off the bottom of the window.
+fn tags_flow_scroll(flow: &gtk::FlowBox) -> gtk::ScrolledWindow {
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::External);
+    scroll.set_propagate_natural_height(true);
+    scroll.set_max_content_height(3 * 28 + 2 * 6);
+    scroll.set_child(Some(flow));
+    scroll
+}
+
+/// An "On this book" chip: the standard chip with its remove × (decision 84).
+fn tag_remove_chip(name: &str, on_remove: impl Fn() + 'static) -> gtk::Button {
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    content.append(&gtk::Label::new(Some(name)));
+    content.append(&gtk::Label::new(Some("×")));
+    let chip = gtk::Button::new();
+    chip.add_css_class("kalam-ui-chip");
+    chip.set_child(Some(&content));
+    chip.set_halign(gtk::Align::Start);
+    chip.set_valign(gtk::Align::Center);
+    chip.set_tooltip_text(Some("Remove tag"));
+    chip.set_focus_on_click(false);
+    chip.connect_clicked(move |_| on_remove());
+    chip
+}
+
+/// A "Suggested from the file" chip: one tap puts the subject on the book.
+fn tag_add_chip(name: &str, on_add: impl Fn() + 'static) -> gtk::Button {
+    let chip = gtk::Button::with_label(&format!("+ {name}"));
+    chip.add_css_class("kalam-ui-chip");
+    chip.set_halign(gtk::Align::Start);
+    chip.set_valign(gtk::Align::Center);
+    chip.set_tooltip_text(Some("Add tag"));
+    chip.set_focus_on_click(false);
+    chip.connect_clicked(move |_| on_add());
+    chip
+}
+
+/// The designed Tag dialog (decision 84): a 420 form dialog that applies
+/// instantly — type to add (with library autocomplete and a Create row),
+/// tap a chip's × to remove, tick a library row to toggle. Each library
+/// row's ⋯ carries the library-wide actions (rename, merge, delete),
+/// each confirmed with its book count first.
+///
+/// Like the panel it replaces, the dialog re-reads the catalog on every
+/// rebuild: with instant apply the database *is* the state, and a rename
+/// or merge then shows up without any local bookkeeping.
+fn present_tags_dialog(
+    anchor: &gtk::Box,
+    model: &BookPageModel,
+    sender: &ComponentSender<BookPageModel>,
+) {
+    let Some(book) = &model.book else {
+        return;
+    };
+    let book_id = book.id;
+    let service = model.service.clone();
+    // The subjects the file itself declares, read once on open; only
+    // EPUBs expose them today. Which of them still need offering is
+    // decided per rebuild, against the tags the book currently carries.
+    let file_subjects: Rc<Vec<String>> = Rc::new(if book.format == BookFormat::Epub {
+        crate::epub::epub_subjects(&book.file_path)
+    } else {
+        Vec::new()
+    });
+
+    let shell = dialog_shell(DialogSize::Form, Some(&book.title));
+    let body = shell.body();
+    let anchor_widget: gtk::Widget = shell.widget().upcast();
+
+    let entry = gtk::Entry::new();
+    entry.add_css_class("kalam-ui-field");
+    entry.set_placeholder_text(Some("Add a tag…"));
+    entry.set_hexpand(true);
+    body.append(&entry);
+
+    // Sections group their label with their content at XS spacing; the
+    // shell body's own MD spacing then separates the sections.
+    let on_book_section = gtk::Box::new(
+        gtk::Orientation::Vertical,
+        crate::style::spacing::XS,
+    );
+    on_book_section.append(&tags_section_label("On this book"));
+    let on_book_flow = tags_flow();
+    let on_book_scroll = tags_flow_scroll(&on_book_flow);
+    on_book_section.append(&on_book_scroll);
+    let on_book_empty = tags_meta_note("No tags yet — add one above.");
+    on_book_section.append(&on_book_empty);
+    body.append(&on_book_section);
+
+    let suggested_section = gtk::Box::new(
+        gtk::Orientation::Vertical,
+        crate::style::spacing::XS,
+    );
+    suggested_section.append(&tags_section_label("Suggested from the file"));
+    let suggested_flow = tags_flow();
+    let suggested_scroll = tags_flow_scroll(&suggested_flow);
+    suggested_section.append(&suggested_scroll);
+    body.append(&suggested_section);
+
+    let library_section = gtk::Box::new(
+        gtk::Orientation::Vertical,
+        crate::style::spacing::XS,
+    );
+    let library_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let library_label = tags_section_label("Your library");
+    library_label.set_hexpand(true);
+    library_label.set_valign(gtk::Align::Center);
+    library_head.append(&library_label);
+    library_section.append(&library_head);
+
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let list_scroll = gtk::ScrolledWindow::new();
+    list_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::External);
+    list_scroll.set_propagate_natural_height(true);
+    // Six 44px rows; a long library scrolls here, not by growing the form.
+    list_scroll.set_max_content_height(6 * 44);
+    list_scroll.set_child(Some(&list_host));
+    library_section.append(&list_scroll);
+    let library_empty = tags_meta_note("No tags in your library yet.");
+    library_section.append(&library_empty);
+    body.append(&library_section);
+
+    let sort_az = Rc::new(Cell::new(false));
+    let undo_stack: Rc<RefCell<Vec<TagUndo>>> = Rc::new(RefCell::new(Vec::new()));
+    let holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+
+    // The one write path for this book's tags: apply, remember the inverse
+    // for Ctrl+Z (unless this call *is* the undo), rebuild.
+    let apply_membership: Rc<dyn Fn(String, bool, bool)> = Rc::new({
+        let service = service.clone();
+        let undo_stack = undo_stack.clone();
+        let holder = holder.clone();
+        move |name: String, add: bool, record: bool| {
+            let result = if add {
+                service.catalog().add_book_tag(book_id, &name)
+            } else {
+                service.catalog().remove_book_tag(book_id, &name)
+            };
+            match result {
+                Ok(()) => {
+                    if record {
+                        undo_stack.borrow_mut().push(if add {
+                            TagUndo::Added(name)
+                        } else {
+                            TagUndo::Removed(name)
+                        });
+                    }
+                }
+                Err(err) => crate::notify::error(
+                    if add {
+                        "Could not add the tag"
+                    } else {
+                        "Could not remove the tag"
+                    },
+                    &err.to_string(),
+                ),
+            }
+            if let Some(rebuild) = holder.borrow().clone() {
+                rebuild();
+            }
+        }
+    });
+
+    // After a library-wide rename/merge/delete: the undo history may name
+    // tags that no longer exist, so it goes, and the dialog re-reads.
+    let after_library_op: Rc<dyn Fn()> = Rc::new({
+        let undo_stack = undo_stack.clone();
+        let holder = holder.clone();
+        move || {
+            undo_stack.borrow_mut().clear();
+            if let Some(rebuild) = holder.borrow().clone() {
+                rebuild();
+            }
+        }
+    });
+
+    let rebuild: Rc<dyn Fn()> = Rc::new({
+        let service = service.clone();
+        let on_book_flow = on_book_flow.clone();
+        let on_book_scroll = on_book_scroll.clone();
+        let on_book_empty = on_book_empty.clone();
+        let suggested_section = suggested_section.clone();
+        let suggested_flow = suggested_flow.clone();
+        let list_host = list_host.clone();
+        let list_scroll = list_scroll.clone();
+        let library_empty = library_empty.clone();
+        let sort_az = sort_az.clone();
+        let file_subjects = file_subjects.clone();
+        let apply = apply_membership.clone();
+        let after_library_op = after_library_op.clone();
+        let anchor_widget = anchor_widget.clone();
+        move || {
+            let on_book = tags_on_book(&service, book_id);
+            let mut library = service
+                .catalog()
+                .list_tags_with_counts()
+                .unwrap_or_default();
+            if sort_az.get() {
+                library.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+            }
+            let has = |name: &str| on_book.iter().any(|t| t.eq_ignore_ascii_case(name));
+
+            while let Some(child) = on_book_flow.first_child() {
+                on_book_flow.remove(&child);
+            }
+            for tag in &on_book {
+                let apply = apply.clone();
+                let name = tag.clone();
+                on_book_flow.append(&tag_remove_chip(tag, move || {
+                    apply(name.clone(), false, true);
+                }));
+            }
+            on_book_scroll.set_visible(!on_book.is_empty());
+            on_book_empty.set_visible(on_book.is_empty());
+
+            let mut suggested: Vec<String> = Vec::new();
+            for subject in file_subjects.iter() {
+                let subject = subject.trim();
+                if subject.is_empty()
+                    || has(subject)
+                    || suggested.iter().any(|s: &String| s.eq_ignore_ascii_case(subject))
+                {
+                    continue;
+                }
+                suggested.push(subject.to_string());
+            }
+            while let Some(child) = suggested_flow.first_child() {
+                suggested_flow.remove(&child);
+            }
+            for subject in &suggested {
+                let apply = apply.clone();
+                let name = subject.clone();
+                suggested_flow.append(&tag_add_chip(subject, move || {
+                    apply(name.clone(), true, true);
+                }));
+            }
+            suggested_section.set_visible(!suggested.is_empty());
+
+            clear_box(&list_host);
+            for (name, count) in &library {
+                let on = has(name);
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+
+                let toggle = gtk::Button::new();
+                toggle.add_css_class("kalam-bookpage-tag-row");
+                toggle.set_hexpand(true);
+                toggle.set_halign(gtk::Align::Fill);
+                let content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                let tick = gtk::Label::new(Some("✓"));
+                tick.add_css_class("kalam-ui-menu-check");
+                if on {
+                    tick.add_css_class("checked");
+                }
+                tick.set_size_request(22, 22);
+                tick.set_halign(gtk::Align::Center);
+                tick.set_valign(gtk::Align::Center);
+                tick.set_xalign(0.5);
+                tick.set_yalign(0.5);
+                content.append(&tick);
+                let name_label = gtk::Label::new(Some(name));
+                name_label.set_halign(gtk::Align::Start);
+                name_label.set_hexpand(true);
+                name_label.set_xalign(0.0);
+                name_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                content.append(&name_label);
+                let count_label = gtk::Label::new(Some(&count.to_string()));
+                count_label.add_css_class("kalam-ui-meta");
+                count_label.set_valign(gtk::Align::Center);
+                content.append(&count_label);
+                toggle.set_child(Some(&content));
+                let apply = apply.clone();
+                let tag_name = name.clone();
+                toggle.connect_clicked(move |_| {
+                    apply(tag_name.clone(), !on, true);
+                });
+                row.append(&toggle);
+
+                let menu = menu_popover(MenuWidth::Short);
+                let count = *count;
+                menu.add_item("Rename everywhere", {
+                    let anchor = anchor_widget.clone();
+                    let service = service.clone();
+                    let tag_name = name.clone();
+                    let done = after_library_op.clone();
+                    move || {
+                        present_tag_rename_dialog(
+                            &anchor,
+                            service.clone(),
+                            tag_name.clone(),
+                            count,
+                            done.clone(),
+                        );
+                    }
+                });
+                menu.add_item("Merge into…", {
+                    let anchor = anchor_widget.clone();
+                    let service = service.clone();
+                    let tag_name = name.clone();
+                    let done = after_library_op.clone();
+                    move || {
+                        present_tag_merge_picker(
+                            &anchor,
+                            service.clone(),
+                            tag_name.clone(),
+                            count,
+                            done.clone(),
+                        );
+                    }
+                });
+                menu.add_separator();
+                menu.add_destructive_item("Delete from library", {
+                    let anchor = anchor_widget.clone();
+                    let service = service.clone();
+                    let tag_name = name.clone();
+                    let done = after_library_op.clone();
+                    move || {
+                        present_tag_delete_confirm(
+                            &anchor,
+                            service.clone(),
+                            tag_name.clone(),
+                            count,
+                            done.clone(),
+                        );
+                    }
+                });
+                let more = menu_button("view-more-symbolic", "Tag actions", menu);
+                more.set_valign(gtk::Align::Center);
+                row.append(&more);
+                list_host.append(&row);
+            }
+            list_scroll.set_visible(!library.is_empty());
+            library_empty.set_visible(library.is_empty());
+        }
+    });
+    *holder.borrow_mut() = Some(rebuild.clone());
+
+    let sort_switch = segmented_control(&["Most used", "A–Z"], 0, SegmentedSize::Small, {
+        let sort_az = sort_az.clone();
+        let holder = holder.clone();
+        move |index| {
+            sort_az.set(index == 1);
+            if let Some(rebuild) = holder.borrow().clone() {
+                rebuild();
+            }
+        }
+    });
+    library_head.append(&sort_switch.widget());
+
+    // Autocomplete: the menu popover reused as a completion list under the
+    // field. `autohide` stays off so typing never loses the field; the
+    // list is rebuilt per keystroke and dismissed by choosing, clearing
+    // the field, or activating it.
+    let completion = menu_popover(MenuWidth::Wide);
+    completion.popover().set_autohide(false);
+    completion.popover().set_parent(&entry);
+    let refresh_completion: Rc<dyn Fn()> = Rc::new({
+        let entry = entry.clone();
+        let completion = completion.clone();
+        let service = service.clone();
+        let apply = apply_membership.clone();
+        move || {
+            let query = entry.text().to_string();
+            let query = query.trim().to_string();
+            let list = completion.list();
+            while let Some(child) = list.first_child() {
+                list.remove(&child);
+            }
+            if query.is_empty() {
+                completion.popover().popdown();
+                return;
+            }
+            let on_book = tags_on_book(&service, book_id);
+            let library = service
+                .catalog()
+                .list_tags_with_counts()
+                .unwrap_or_default();
+            let query_lc = query.to_lowercase();
+            let exact = library.iter().any(|(n, _)| n.eq_ignore_ascii_case(&query));
+            let matches: Vec<(String, i64)> = library
+                .iter()
+                .filter(|(n, _)| {
+                    n.to_lowercase().contains(&query_lc)
+                        && !on_book.iter().any(|t| t.eq_ignore_ascii_case(n))
+                })
+                .take(8)
+                .cloned()
+                .collect();
+            if matches.is_empty() && exact {
+                // The typed tag exists and is already on this book (or no
+                // suggestion would add anything): nothing to offer.
+                completion.popover().popdown();
+                return;
+            }
+            let width = entry.width();
+            if width > 0 {
+                list.set_size_request(width, -1);
+            }
+            for (name, count) in &matches {
+                let apply = apply.clone();
+                let entry = entry.clone();
+                let tag_name = name.to_string();
+                completion.add_item_with_count(
+                    name,
+                    usize::try_from(*count).unwrap_or(0),
+                    move || {
+                        apply(tag_name.clone(), true, true);
+                        entry.set_text("");
+                    },
+                );
+            }
+            if !exact {
+                let apply = apply.clone();
+                let entry = entry.clone();
+                let new_name = query.clone();
+                completion.add_item(&format!("Create \"{query}\""), move || {
+                    apply(new_name.clone(), true, true);
+                    entry.set_text("");
+                });
+            }
+            completion.popover().popup();
+        }
+    });
+    entry.connect_changed({
+        let refresh = refresh_completion.clone();
+        move |_| refresh()
+    });
+    entry.connect_activate({
+        let service = service.clone();
+        let apply = apply_membership.clone();
+        let completion = completion.clone();
+        move |entry| {
+            let query = entry.text().to_string();
+            let query = query.trim();
+            if query.is_empty() {
+                return;
+            }
+            let on_book = tags_on_book(&service, book_id);
+            if on_book.iter().any(|t| t.eq_ignore_ascii_case(query)) {
+                completion.popover().popdown();
+                return;
+            }
+            // An existing tag keeps its library casing; a new one is
+            // created as typed.
+            let name = service
+                .catalog()
+                .list_tags_with_counts()
+                .unwrap_or_default()
+                .into_iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(query))
+                .map(|(n, _)| n)
+                .unwrap_or_else(|| query.to_string());
+            apply(name, true, true);
+            entry.set_text("");
+        }
+    });
+
+    // Ctrl+Z (decision 84), capture-phase so it answers wherever focus is
+    // in the dialog — except the field, where it stays the entry's own
+    // text undo.
+    let keys = gtk::EventControllerKey::new();
+    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    keys.connect_key_pressed({
+        let entry = entry.clone();
+        let undo_stack = undo_stack.clone();
+        let apply = apply_membership.clone();
+        move |_, keyval, _, state| {
+            let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            if !ctrl || (keyval != gtk::gdk::Key::z && keyval != gtk::gdk::Key::Z) {
+                return gtk::glib::Propagation::Proceed;
+            }
+            if entry.has_focus() {
+                return gtk::glib::Propagation::Proceed;
+            }
+            if let Some(op) = undo_stack.borrow_mut().pop() {
+                match op {
+                    TagUndo::Added(name) => apply(name, false, false),
+                    TagUndo::Removed(name) => apply(name, true, false),
+                }
+            }
+            gtk::glib::Propagation::Stop
+        }
+    });
+    shell.widget().add_controller(keys);
+
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    shell.footer().append(&primary_button("Done", {
+        let slot = slot.clone();
+        move || {
+            if let Some(dialog) = slot.borrow().clone() {
+                dialog.close();
+            }
+        }
+    }));
+
+    rebuild();
+    match present_dialog(anchor, "Tags", DialogExit::OwnButtons, &shell) {
+        Some(dialog) => {
+            *slot.borrow_mut() = Some(dialog);
+            entry.grab_focus();
+        }
+        None => {
+            crate::notify::error("Could not open tags", "The dialog could not be opened.");
+            return;
+        }
+    }
+
+    // Every exit — Done, Esc, backdrop click — unmaps the shell. Refresh
+    // the page once on the way out so its chips match what instant apply
+    // already wrote. Sent on the raw channel: if the page went away under
+    // the dialog, the message drops quietly instead of panicking.
+    let input = sender.input_sender().clone();
+    let refreshed = Rc::new(Cell::new(false));
+    shell.widget().connect_unmap(move |_| {
+        if !refreshed.replace(true) {
+            let _ = input.send(BookPageMsg::Refresh);
+        }
+    });
+}
+
+/// Rename a tag on every book that carries it. Renaming onto a name that
+/// already exists is a merge in disguise, so that path detours through
+/// the merge confirmation (decision 84: library-wide actions confirm
+/// with counts).
+fn present_tag_rename_dialog(
+    anchor: &gtk::Widget,
+    service: LibraryService,
+    old_name: String,
+    count: i64,
+    on_done: Rc<dyn Fn()>,
+) {
+    let shell = dialog_shell(DialogSize::Form, None);
+    let field = text_field("Tag name", "Tag name", &old_name);
+    shell.body().append(&field.widget());
+    shell.body().append(&tags_meta_note(&format!(
+        "On {} {} — the new name applies to all of them.",
+        count,
+        books_noun(count),
+    )));
+
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    let close: Rc<dyn Fn()> = Rc::new({
+        let slot = slot.clone();
+        move || {
+            if let Some(dialog) = slot.borrow().clone() {
+                dialog.close();
+            }
+        }
+    });
+    shell.footer().append(&boxed_ghost_button("Cancel", {
+        let close = close.clone();
+        move || close()
+    }));
+    let save: Rc<dyn Fn()> = Rc::new({
+        let field = field.clone();
+        let service = service.clone();
+        let anchor = anchor.clone();
+        let old_name = old_name.clone();
+        let on_done = on_done.clone();
+        let close = close.clone();
+        move || {
+            let new_name = field.value();
+            let new_name = new_name.trim().to_string();
+            if new_name.is_empty() || new_name == old_name {
+                close();
+                return;
+            }
+            let existing = service
+                .catalog()
+                .list_tags_with_counts()
+                .unwrap_or_default()
+                .into_iter()
+                .find(|(n, _)| {
+                    !n.eq_ignore_ascii_case(&old_name) && n.eq_ignore_ascii_case(&new_name)
+                });
+            close();
+            if let Some((target, _)) = existing {
+                present_tag_merge_confirm(
+                    &anchor,
+                    service.clone(),
+                    old_name.clone(),
+                    target,
+                    count,
+                    on_done.clone(),
+                );
+                return;
+            }
+            match service.catalog().rename_tag(&old_name, &new_name) {
+                Ok(()) => {
+                    crate::notify::compact(
+                        "Tag renamed",
+                        &format!("\"{old_name}\" is now \"{new_name}\"."),
+                    );
+                    on_done();
+                }
+                Err(err) => {
+                    crate::notify::error("Could not rename the tag", &err.to_string());
+                }
+            }
+        }
+    });
+    shell.footer().append(&primary_button("Rename", {
+        let save = save.clone();
+        move || save()
+    }));
+    field.entry().connect_activate(move |_| save());
+
+    match present_dialog(anchor, "Rename tag", DialogExit::OwnButtons, &shell) {
+        Some(dialog) => {
+            *slot.borrow_mut() = Some(dialog);
+            field.entry().grab_focus();
+            field.entry().select_region(0, -1);
+        }
+        None => crate::notify::error(
+            "Could not rename the tag",
+            "The dialog could not be opened.",
+        ),
+    }
+}
+
+/// Pick which tag `source` merges into. (The picker was not drawn; this
+/// is the library list at its plainest — name and count, most used
+/// first.) Choosing one still asks through the merge confirmation.
+fn present_tag_merge_picker(
+    anchor: &gtk::Widget,
+    service: LibraryService,
+    source: String,
+    source_count: i64,
+    on_done: Rc<dyn Fn()>,
+) {
+    let others: Vec<(String, i64)> = service
+        .catalog()
+        .list_tags_with_counts()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(n, _)| !n.eq_ignore_ascii_case(&source))
+        .collect();
+    let shell = dialog_shell(
+        DialogSize::Form,
+        Some(&format!(
+            "\"{source}\" · on {} {}",
+            source_count,
+            books_noun(source_count),
+        )),
+    );
+
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    let close: Rc<dyn Fn()> = Rc::new({
+        let slot = slot.clone();
+        move || {
+            if let Some(dialog) = slot.borrow().clone() {
+                dialog.close();
+            }
+        }
+    });
+
+    if others.is_empty() {
+        shell
+            .body()
+            .append(&tags_meta_note("There are no other tags to merge into."));
+    } else {
+        let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        for (name, count) in &others {
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-bookpage-tag-row");
+            row.set_hexpand(true);
+            row.set_halign(gtk::Align::Fill);
+            let content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            let name_label = gtk::Label::new(Some(name));
+            name_label.set_halign(gtk::Align::Start);
+            name_label.set_hexpand(true);
+            name_label.set_xalign(0.0);
+            name_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            content.append(&name_label);
+            let count_label = gtk::Label::new(Some(&count.to_string()));
+            count_label.add_css_class("kalam-ui-meta");
+            count_label.set_valign(gtk::Align::Center);
+            content.append(&count_label);
+            row.set_child(Some(&content));
+            row.connect_clicked({
+                let anchor = anchor.clone();
+                let service = service.clone();
+                let source = source.clone();
+                let target = name.clone();
+                let on_done = on_done.clone();
+                let close = close.clone();
+                move |_| {
+                    close();
+                    present_tag_merge_confirm(
+                        &anchor,
+                        service.clone(),
+                        source.clone(),
+                        target.clone(),
+                        source_count,
+                        on_done.clone(),
+                    );
+                }
+            });
+            list_host.append(&row);
+        }
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::External);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(6 * 44);
+        scroll.set_child(Some(&list_host));
+        shell.body().append(&scroll);
+    }
+
+    shell.footer().append(&boxed_ghost_button("Cancel", {
+        let close = close.clone();
+        move || close()
+    }));
+    match present_dialog(anchor, "Merge into…", DialogExit::OwnButtons, &shell) {
+        Some(dialog) => *slot.borrow_mut() = Some(dialog),
+        None => crate::notify::error(
+            "Could not merge the tag",
+            "The dialog could not be opened.",
+        ),
+    }
+}
+
+fn present_tag_merge_confirm(
+    anchor: &gtk::Widget,
+    service: LibraryService,
+    source: String,
+    target: String,
+    source_count: i64,
+    on_done: Rc<dyn Fn()>,
+) {
+    let title = format!("Merge \"{source}\" into \"{target}\"?");
+    let message = format!(
+        "{} {} tagged \"{}\". They will be tagged \"{}\" instead, and \"{}\" will be removed.",
+        source_count,
+        if source_count == 1 {
+            "book is"
+        } else {
+            "books are"
+        },
+        source,
+        target,
+        source,
+    );
+    let _ = confirmation_dialog(
+        anchor,
+        &title,
+        &message,
+        "Cancel",
+        "Merge",
+        ConfirmationKind::Primary,
+        move || match service.catalog().merge_tags(&source, &target) {
+            Ok(()) => {
+                crate::notify::compact(
+                    "Tags merged",
+                    &format!("\"{source}\" merged into \"{target}\"."),
+                );
+                on_done();
+            }
+            Err(err) => {
+                crate::notify::error("Could not merge the tags", &err.to_string());
+            }
+        },
+    );
+}
+
+/// The designed delete-tag confirmation: the count in the body, ghost
+/// Cancel, accent-fill Delete tag (decision 84's wording).
+fn present_tag_delete_confirm(
+    anchor: &gtk::Widget,
+    service: LibraryService,
+    name: String,
+    count: i64,
+    on_done: Rc<dyn Fn()>,
+) {
+    let title = format!("Delete \"{name}\"?");
+    let message = format!(
+        "It will be removed from {} {}. The books themselves are not changed.",
+        count,
+        books_noun(count),
+    );
+    let _ = confirmation_dialog(
+        anchor,
+        &title,
+        &message,
+        "Cancel",
+        "Delete tag",
+        ConfirmationKind::Primary,
+        move || match service.catalog().delete_tag(&name) {
+            Ok(()) => {
+                crate::notify::compact(
+                    "Tag deleted",
+                    &format!("\"{name}\" removed from the library."),
+                );
+                on_done();
+            }
+            Err(err) => {
+                crate::notify::error("Could not delete the tag", &err.to_string());
+            }
+        },
+    );
+}
+
 /// The designed Annotations dialog (decision 92): a 560×660 list dialog
 /// with Highlights / Bookmarks / Words tabs. It replaces the old
 /// highlights-only floating panel — the page's "See all N" counts all
@@ -2492,146 +3362,5 @@ pub fn build_shelves_panel(
         }
     }
 
-    root
-}
-
-/// All of a book's tags in one place: add new ones, remove existing. Hosted
-/// in the app's in-app float layer (see AppModel::open_tags_floating).
-pub fn build_tags_panel(
-    catalog: Arc<Catalog>,
-    book_id: i64,
-    on_done: impl Fn() + 'static,
-) -> gtk::Box {
-    let on_done = std::rc::Rc::new(on_done);
-
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    root.add_css_class("kalam-tags-float");
-    root.set_overflow(gtk::Overflow::Hidden);
-    root.append(&panel_title("Tags"));
-
-    let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    add_row.set_margin_top(4);
-    add_row.set_margin_start(16);
-    add_row.set_margin_end(16);
-    add_row.set_margin_bottom(4);
-
-    let entry = gtk::Entry::builder()
-        .placeholder_text("e.g. fantasy")
-        .build();
-    entry.set_hexpand(true);
-    add_row.append(&entry);
-
-    let add_btn = gtk::Button::with_label("Add");
-    add_btn.add_css_class("kalam-primary-btn");
-    add_row.append(&add_btn);
-    root.append(&add_row);
-
-    let section = gtk::Label::new(Some("Current tags"));
-    section.add_css_class("kalam-section-label");
-    section.set_halign(gtk::Align::Start);
-    section.set_margin_top(8);
-    section.set_margin_start(16);
-    root.append(&section);
-
-    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    list_host.set_margin_start(16);
-    list_host.set_margin_end(16);
-    list_host.set_margin_bottom(8);
-
-    let scroll = gtk::ScrolledWindow::builder()
-        .vexpand(true)
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .child(&list_host)
-        .build();
-    root.append(&scroll);
-
-    let done = gtk::Button::with_label("Done");
-    done.add_css_class("kalam-primary-btn");
-    done.set_halign(gtk::Align::End);
-    done.set_margin_all(12);
-    let done_fn = on_done.clone();
-    done.connect_clicked(move |_| done_fn());
-    root.append(&done);
-
-    // Self-referential refresh: add/remove need to re-run it, so the
-    // closure finds itself through a slot it fills in after construction.
-    let holder: crate::pages::SelfRebuild = Rc::new(std::cell::RefCell::new(None));
-    let closure: Rc<dyn Fn()> = Rc::new({
-        let host = list_host.clone();
-        let catalog = catalog.clone();
-        let holder = holder.clone();
-        move || {
-            while let Some(child) = host.first_child() {
-                host.remove(&child);
-            }
-            let tags = catalog
-                .get_book(book_id)
-                .ok()
-                .flatten()
-                .map(|b| b.tags)
-                .unwrap_or_default();
-            if tags.is_empty() {
-                let none = gtk::Label::new(Some("No tags yet \u{2014} add one above."));
-                none.add_css_class("kalam-placeholder");
-                none.set_xalign(0.0);
-                host.append(&none);
-                return;
-            }
-            for tag in tags {
-                let row = gtk::Box::new(gtk::Orientation::Horizontal, 9);
-                row.set_margin_top(4);
-                row.set_margin_bottom(4);
-                let text = gtk::Label::new(Some(&tag));
-                text.add_css_class("kalam-hl-text");
-                text.set_halign(gtk::Align::Start);
-                text.set_hexpand(true);
-                text.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                row.append(&text);
-
-                let del = gtk::Button::new();
-                del.add_css_class("kalam-icon-btn");
-                del.set_focus_on_click(false);
-                del.set_tooltip_text(Some("Remove tag"));
-                del.set_child(Some(&crate::icons::symbolic("user-trash-symbolic", 15)));
-                let catalog = catalog.clone();
-                let holder = holder.clone();
-                del.connect_clicked(move |_| {
-                    if let Err(err) = catalog.remove_book_tag(book_id, &tag) {
-                        crate::notify::error("Could not remove the tag", &err.to_string());
-                    } else {
-                        crate::notify::compact("Tag removed", &tag);
-                    }
-                    if let Some(refresh) = holder.borrow().clone() {
-                        refresh();
-                    }
-                });
-                row.append(&del);
-                host.append(&row);
-            }
-        }
-    });
-    *holder.borrow_mut() = Some(closure.clone());
-
-    let entry_add = entry.clone();
-    let add_catalog = catalog.clone();
-    let holder_add = holder.clone();
-    add_btn.connect_clicked(move |_| {
-        let text = entry_add.text().to_string();
-        let text = text.trim().to_string();
-        if text.is_empty() {
-            return;
-        }
-        if let Err(err) = add_catalog.add_book_tag(book_id, &text) {
-            crate::notify::error("Could not add the tag", &err.to_string());
-        } else {
-            crate::notify::compact("Tag added", &text);
-            entry_add.set_text("");
-        }
-        if let Some(refresh) = holder_add.borrow().clone() {
-            refresh();
-        }
-    });
-
-    closure();
     root
 }

@@ -466,6 +466,18 @@ fn parse_epub_meta(path: &Path) -> Result<OpfMeta> {
     Ok(meta)
 }
 
+/// The subjects an EPUB file declares for itself (`dc:subject`), in file
+/// order; empty when the file cannot be read or declares none. Import
+/// already turns subjects into tags, so the Tag dialog's "Suggested from
+/// the file" section (decision 84) is this list minus the tags the book
+/// carries — usually empty, and useful exactly when a subject tag was
+/// removed by hand and wants a one-tap way back.
+pub fn epub_subjects(path: &Path) -> Vec<String> {
+    parse_epub_meta(path)
+        .map(|meta| meta.subjects)
+        .unwrap_or_default()
+}
+
 /// Locate the OPF inside an EPUB. Exposed for the writer in `epub_metadata`.
 pub fn find_opf_path_pub<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>) -> Result<String> {
     find_opf_path(archive)

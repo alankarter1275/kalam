@@ -71,10 +71,6 @@ pub enum AppMsg {
         /// True when opened from the book float — closing returns there.
         from_book_float: bool,
     },
-    /// Open the tags panel (in-app float) from the book page.
-    OpenTagsFloat {
-        book_id: i64,
-    },
     /// Rebuild the page on screen if the catalog changed under it.
     RefreshCurrentPage,
     /// Open immersive reader for book_id.
@@ -192,8 +188,6 @@ enum Floating {
     Shelves {
         return_to: Option<i64>,
     },
-    /// Tags panel — a plain widget panel, nothing to keep alive.
-    Tags,
     /// The `w` task dialog. Holds the box its rows are drawn into so the
     /// app-wide tick can repaint it.
     Tasks,
@@ -432,29 +426,6 @@ impl AppModel {
         self.floating = Some(Floating::Shelves {
             return_to: from_book_float.then_some(book_id),
         });
-    }
-
-    fn open_tags_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
-        let _span = crate::timing::measure("dialog_open:tags_float");
-        let _activity = crate::timing::activity("dialog_open:tags_float");
-        self.close_floating();
-
-        let s = sender.clone();
-        let panel =
-            crate::pages::book::build_tags_panel(self.catalog.clone(), book_id, move || {
-                s.input(AppMsg::CloseBookDialog)
-            });
-        panel.set_size_request(380, 420);
-        panel.set_hexpand(false);
-        panel.set_vexpand(false);
-        panel.set_halign(gtk::Align::Center);
-        panel.set_valign(gtk::Align::Center);
-        self.float_host.append(&panel);
-        self.float_scrim.set_visible(true);
-        self.float_host.set_visible(true);
-        panel.grab_focus();
-
-        self.floating = Some(Floating::Tags);
     }
 
     fn build_page(
@@ -697,7 +668,6 @@ impl AppModel {
                                 }
                             }
                         }
-                        BookPageOut::ShowTags => AppMsg::OpenTagsFloat { book_id: id },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
@@ -1693,7 +1663,6 @@ impl Component for AppModel {
                 book_id,
                 from_book_float,
             } => self.open_shelves_floating(book_id, from_book_float, &sender),
-            AppMsg::OpenTagsFloat { book_id } => self.open_tags_floating(book_id, &sender),
             AppMsg::FloatOpenFull { book_id } => {
                 self.close_floating();
                 self.swap_page(

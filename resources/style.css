@@ -3044,6 +3044,29 @@ menubutton.kalam-ui-menu-trigger.kalam-bookpage-more > button {
     min-height: 44px;
 }
 
+/* Tag dialog rows (decision 84): the menu item's shape at the dialog's
+   44px row height — tick circle, name, count, with the row ⋯ beside it. */
+button.kalam-bookpage-tag-row {
+    min-height: 44px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: @kalam_text;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+button.kalam-bookpage-tag-row:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-bookpage-tag-row:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: -2px;
+}
+
 /* Cover face with the page-edge behind it. */
 .kalam-cover-face {
     border-radius: 4px;
@@ -3488,15 +3511,11 @@ button.kalam-journey-more:hover {
     box-shadow: 0 18px 44px alpha(#000, 0.40);
 }
 
-/* ── in-app highlights & quotes panel ─────────────────── */
-/* The three book-page panels: highlights, shelves checklist, tags. One rule
- * for all three — they were three byte-identical copies, and they now match
- * the A1 dialog shell (.kalam-float) so the app has one panel look, not two.
- * Kept as separate selectors because each is addressed elsewhere by name. */
-.kalam-annotations-float,
-.kalam-shelves-float,
-.kalam-tags-float,
-.kalam-edits-float {
+/* ── in-app shelves checklist panel ─────────────────── */
+/* The last of the old book-page float panels still standing: highlights
+ * and tags became designed dialogs, so only the shelves checklist (the
+ * app-level float opened from the book float) keeps this shell. */
+.kalam-shelves-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;

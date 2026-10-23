@@ -452,6 +452,35 @@ jobs:
             THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      # The book page's two dialogs, opened over the same page via
+      # KALAM_DIALOG (no route reaches a dialog). The seeded book carries
+      # tags, so the Tag dialog photographs with real chips and rows; the
+      # Annotations dialog photographs its empty states, which are the
+      # states the seeder can honestly produce.
+      - name: open the tag dialog (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-book-tags-light SETTLE=20 ROUTE=book-1 \
+            DIALOG=tags THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the tag dialog (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-book-tags-dark SETTLE=20 ROUTE=book-1 \
+            DIALOG=tags THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the annotations dialog (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-book-annotations-light SETTLE=20 ROUTE=book-1 \
+            DIALOG=annotations THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the annotations dialog (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-book-annotations-dark SETTLE=20 ROUTE=book-1 \
+            DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -480,12 +509,24 @@ jobs:
           cp ci-shots-book-dark/report.txt ci-logs/book-dark-latest.txt 2>/dev/null \
             || echo "(no book-dark report produced)" > ci-logs/book-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-dark-latest.txt
-          # The two settled gallery frames are the one deliberate exception
-          # to "PNGs stay in the job workspace": an artboard nobody can see
-          # is not an artboard, and the agent cannot download artifacts
-          # (see above). Only the settled frame of each mode is committed,
-          # under a stable name, to bound the history churn; every other
-          # route's PNGs still stay uncommitted.
+          cp ci-shots-book-tags-light/report.txt ci-logs/book-tags-light-latest.txt 2>/dev/null \
+            || echo "(no book-tags-light report produced)" > ci-logs/book-tags-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-tags-light-latest.txt
+          cp ci-shots-book-tags-dark/report.txt ci-logs/book-tags-dark-latest.txt 2>/dev/null \
+            || echo "(no book-tags-dark report produced)" > ci-logs/book-tags-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-tags-dark-latest.txt
+          cp ci-shots-book-annotations-light/report.txt ci-logs/book-annotations-light-latest.txt 2>/dev/null \
+            || echo "(no book-annotations-light report produced)" > ci-logs/book-annotations-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-annotations-light-latest.txt
+          cp ci-shots-book-annotations-dark/report.txt ci-logs/book-annotations-dark-latest.txt 2>/dev/null \
+            || echo "(no book-annotations-dark report produced)" > ci-logs/book-annotations-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-annotations-dark-latest.txt
+          # The settled gallery/book/dialog frames are the one deliberate
+          # exception to "PNGs stay in the job workspace": an artboard
+          # nobody can see is not an artboard, and the agent cannot
+          # download artifacts (see above). Only the settled frame of each
+          # mode is committed, under a stable name, to bound the history
+          # churn; every other route's PNGs still stay uncommitted.
           cp ci-shots-components-light/03-components-settled.png \
             ci-logs/components-terracotta-light.png 2>/dev/null || true
           cp ci-shots-components-dark/03-components-settled.png \
@@ -494,15 +535,29 @@ jobs:
             ci-logs/book-terracotta-light.png 2>/dev/null || true
           cp ci-shots-book-dark/03-book-1-settled.png \
             ci-logs/book-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-book-tags-light/03-book-1-settled.png \
+            ci-logs/book-tags-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-book-tags-dark/03-book-1-settled.png \
+            ci-logs/book-tags-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-book-annotations-light/03-book-1-settled.png \
+            ci-logs/book-annotations-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-book-annotations-dark/03-book-1-settled.png \
+            ci-logs/book-annotations-terracotta-dark.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
-            ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt
+            ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
+            ci-logs/book-tags-light-latest.txt ci-logs/book-tags-dark-latest.txt \
+            ci-logs/book-annotations-light-latest.txt ci-logs/book-annotations-dark-latest.txt
           for shot in ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \
-                      ci-logs/book-terracotta-dark.png; do
+                      ci-logs/book-terracotta-dark.png \
+                      ci-logs/book-tags-terracotta-light.png \
+                      ci-logs/book-tags-terracotta-dark.png \
+                      ci-logs/book-annotations-terracotta-light.png \
+                      ci-logs/book-annotations-terracotta-dark.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

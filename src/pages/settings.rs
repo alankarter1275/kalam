@@ -1788,7 +1788,7 @@ fn build_shortcuts(host: &gtk::Box, catalog: &Catalog, save: ShortcutSave) {
 
     for (group_index, (group, actions)) in SHORTCUT_GROUPS.iter().enumerate() {
         let rows = pane_section(host, group);
-        for action in *actions {
+        for action in actions.iter().copied() {
             let row = pane_row(&rows, action.label(), None);
             row.add_css_class("key");
             row.set_widget_name(&format!("shortcut-{}", action.id()));
@@ -1897,7 +1897,7 @@ fn build_shortcuts(host: &gtk::Box, catalog: &Catalog, save: ShortcutSave) {
                 let recording_focus = recording.clone();
                 let controls_focus = controls.clone();
                 let conflicts_focus = conflicts.clone();
-                focus.connect_leave(move || {
+                focus.connect_leave(move |_| {
                     if recording_focus.get() == Some(action) {
                         recording_focus.set(None);
                         clear_shortcut_conflicts(&conflicts_focus);

@@ -1466,7 +1466,7 @@ impl Component for AppModel {
         let s_shortcuts = sender.clone();
         let key_root_shortcuts = root.clone();
         let notifications_shortcuts = notifications.clone();
-        let float_host_shortcuts = float_host.clone();
+        let float_host_shortcuts = model.float_host.clone();
         app_shortcut_key.connect_key_pressed(move |_, keyval, _, state| {
             use crate::shortcuts::ShortcutAction;
 

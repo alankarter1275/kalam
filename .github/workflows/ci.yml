@@ -535,6 +535,13 @@ jobs:
             THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      - name: open the comic reading panel in long strip (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-reading-strip-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=reading-strip \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       - name: open the comic shortcuts panel (dark) and report
         run: |
           BOOKS=20 OUT=ci-shots-comics-shortcuts-dark SETTLE=20 \
@@ -953,8 +960,8 @@ jobs:
           # on the comic route.
           for shot in comics-chrome-light comics-chrome-dark \
                       comics-chapters-dark comics-pages-dark \
-                      comics-reading-dark comics-shortcuts-dark \
-                      comics-jump-range-dark; do
+                      comics-reading-dark comics-reading-strip-dark \
+                      comics-shortcuts-dark comics-jump-range-dark; do
             cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
               || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
@@ -1065,8 +1072,8 @@ jobs:
           done
           for shot in comics-chrome-light comics-chrome-dark \
                       comics-chapters-dark comics-pages-dark \
-                      comics-reading-dark comics-shortcuts-dark \
-                      comics-jump-range-dark; do
+                      comics-reading-dark comics-reading-strip-dark \
+                      comics-shortcuts-dark comics-jump-range-dark; do
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done

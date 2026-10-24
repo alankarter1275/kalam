@@ -4673,8 +4673,11 @@ button.kalam-comics-tile image {
     margin: 0;
 }
 
-button.kalam-comics-direction-btn {
-    min-height: 28px;
+button.kalam-reader-seg-btn.kalam-comics-direction-btn {
+    /* The board's 28-high segmented option: GTK min-height is the
+       content box, so the shared seg padding comes off entirely. */
+    min-height: 26px;
+    padding: 0 10px;
     border-radius: 999px;
     font-size: 0.82rem;
 }
@@ -4684,6 +4687,16 @@ button.kalam-comics-direction-btn.active {
     border-color: @kalam_accent_fill;
     color: white;
     font-weight: 600;
+}
+
+.kalam-comics-direction-row {
+    min-height: 48px;
+    border-bottom: 1px solid alpha(@kalam_border, 0.6);
+    color: @kalam_text;
+}
+
+.kalam-comics-setting-divider {
+    border-bottom: 1px solid alpha(@kalam_border, 0.6);
 }
 
 /* Chapters tab: the series head, then plain 44px rows. */

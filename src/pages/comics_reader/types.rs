@@ -1,6 +1,8 @@
 //! Types and message definitions for the comics reader component.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ReadingDirection {
     #[default]
     Ltr,
@@ -35,7 +37,7 @@ impl ReadingDirection {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PageStyle {
     Single,
     Double,
@@ -56,7 +58,7 @@ impl PageStyle {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum FitMode {
     #[default]
     Width,
@@ -155,6 +157,20 @@ pub enum ComicsReaderMsg {
     ToggleFitMode,
     SetFitMode(FitMode),
     SetSpreadGap(i32),
+    SetStripGap(bool),
+    /// Zoom as a percentage of the selected fit's size (100 = fit).
+    SetZoomPercent(u32),
+    ZoomBy(i32),
+    /// Double-click: fit ↔ original size (decision 42).
+    ToggleZoom100,
+    SetAutoNextChapter(bool),
+    SetMarkReadOnAdvance(bool),
+    /// "Settings for this series" (decisions 40/147): on stores the
+    /// standing choices as this series' own; off forgets the record
+    /// and the global comic defaults come back.
+    SetSeriesOverride(bool),
+    /// Copy the standing choices over the global comic defaults.
+    UseSettingsAsDefaults,
     ToggleLeftPanel,
     ToggleRightPanel,
     OpenLeftPanel,

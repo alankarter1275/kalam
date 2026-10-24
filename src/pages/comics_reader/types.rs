@@ -49,9 +49,9 @@ impl PageStyle {
     pub fn label(self) -> &'static str {
         match self {
             PageStyle::Single => "Single",
-            PageStyle::Double => "Double",
+            PageStyle::Double => "Spread",
             PageStyle::Fade => "Fade",
-            PageStyle::LongStrip => "Long Strip",
+            PageStyle::LongStrip => "Long strip",
         }
     }
 }
@@ -95,17 +95,51 @@ impl FitMode {
     }
 }
 
+/// The left floating panel's two tabs (decision 38).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ComicSidebarTab {
-    Chapters,
+pub enum ComicLeftTab {
     #[default]
-    Settings,
-    Bookmarks,
+    Chapters,
+    Pages,
+}
+
+/// The right floating panel's tabs (decision 39). The Image pane joins
+/// this enum with its draw-time adjustment engine; until then the panel
+/// carries the two panes that already have behaviour behind them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ComicRightTab {
+    #[default]
+    Reading,
+    Shortcuts,
+}
+
+/// What the page-jump field counts in (decision 50): a series-wide page
+/// number, or a chapter by its position in the series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JumpMode {
+    #[default]
+    Page,
+    Chapter,
+}
+
+/// The chapter hierarchy's own facts about one chapter book: its printed
+/// number and volume, and the chapter's title when the file or the
+/// catalog knows one. Kept beside the `Book` rows so the Chapters tab
+/// can group by volume without losing them to `Book`'s flat shape.
+#[derive(Debug, Clone, Default)]
+pub struct ChapterMeta {
+    pub number: Option<f32>,
+    pub volume: Option<f32>,
+    pub title: String,
 }
 
 #[derive(Debug)]
 pub enum ComicsReaderMsg {
-    PageLoaded(usize, Option<gtk::gdk::Texture>),
+    /// A decoded page, tagged with the load generation that asked for
+    /// it so a chapter switch can disown late arrivals from the chapter
+    /// that has already been left.
+    PageLoaded(u64, usize, Option<gtk::gdk::Texture>),
+    ThumbnailLoaded(u64, usize, Option<gtk::gdk::Texture>),
     SetPage(usize),
     UpdateScrollPage(f64),
     ScrollDelta(f64),
@@ -117,32 +151,35 @@ pub enum ComicsReaderMsg {
     ToggleDirection,
     SetDirection(ReadingDirection),
     SetPageStyle(PageStyle),
+    ToggleSpread,
     ToggleFitMode,
     SetFitMode(FitMode),
     SetSpreadGap(i32),
-    ToggleSidebar,
-    CloseSidebar,
-    SetSidebarTab(ComicSidebarTab),
+    ToggleLeftPanel,
+    ToggleRightPanel,
+    OpenLeftPanel,
+    OpenRightPanel,
+    ClosePanels,
+    SetLeftTab(ComicLeftTab),
+    SetRightTab(ComicRightTab),
     ToggleBookmark,
-    DeleteBookmark(i64),
-    SwitchChapter(i64),
+    SwitchChapterAt(i64, Option<usize>),
     NextChapter,
     #[allow(dead_code)]
     PrevChapter,
-    TopEdgeHover(bool),
-    BottomEdgeHover(bool),
-    LeftEdgeHover(bool),
-    SidebarHover(bool),
-    BackHideTimerTick(u64),
-    BottomHideTimerTick(u64),
-    SidebarCloseTimerTick(u64),
+    ShowBackChrome,
+    BackZoneHover(bool),
+    BackRevealDue(u64),
+    BackHideDue(u64),
+    OpenJump(Option<String>),
+    CloseJump,
+    SetJumpMode(JumpMode),
+    JumpTextChanged(String),
+    SubmitJump,
     UserScrolled,
     HideOsd(u64),
     ViewportResized,
-    #[allow(dead_code)]
-    ToggleSettings,
-    #[allow(dead_code)]
-    CloseSettings,
+    Escape,
     Close,
     MinimizeToBubble,
 }

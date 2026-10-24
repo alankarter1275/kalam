@@ -105,6 +105,13 @@ READER_FIXTURE="${READER_FIXTURE:-}"
 if [ -n "$READER_FIXTURE" ]; then
   SEED_ARGS+=(--reader-fixture)
 fi
+# COMIC_FIXTURE adds the seeder's two-chapter CBZ series after the
+# generic books, so `comic-read-$((BOOKS+2))` opens chapter 2 at
+# page 4 with a bookmark on it — the comics reader's drawn state.
+COMIC_FIXTURE="${COMIC_FIXTURE:-}"
+if [ -n "$COMIC_FIXTURE" ]; then
+  SEED_ARGS+=(--comic-fixture)
+fi
 # SETTINGS_FIXTURE gives the Settings panes the populated states a bare
 # library cannot show: known/missing libraries, shelves and a watch rule,
 # rejected Google Books key state, EPUB original backups, and the four
@@ -282,6 +289,11 @@ say "requested settings pane: ${SETTINGS_PANE:-<default>}"
 # a proof frame of the Back+Bubble unit would otherwise need a pointer.
 READER_ACTION="${READER_ACTION:-}"
 say "requested reader action: ${READER_ACTION:-<none>}"
+# COMIC_ACTION is the same ask for the comics reader
+# (KALAM_COMIC_ACTION: chrome, chapters, pages, reading, shortcuts,
+# jump, jump-range).
+COMIC_ACTION="${COMIC_ACTION:-}"
+say "requested comic action: ${COMIC_ACTION:-<none>}"
 say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
@@ -309,7 +321,7 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
-KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_COMIC_ACTION="$COMIC_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do

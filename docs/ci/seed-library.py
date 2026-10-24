@@ -370,6 +370,173 @@ def _add_column_if_missing(conn, table: str, column: str, declaration: str) -> N
         )
 
 
+def comic_page_png(page: int, chapter: int) -> bytes:
+    """One comic page drawn the way the design boards draw them: a
+    cream sheet with bordered colour panels. Enough structure that a
+    screenshot can tell a page from a placeholder and one page from
+    the next — the panel colours rotate with the page. Scanlines are
+    assembled by slice assignment, so no Pillow is needed."""
+    width, height = 800, 1200
+    base = (234, 224, 205)
+    ink = (28, 25, 22)
+    palette = [
+        (73, 83, 101),
+        (122, 92, 73),
+        (73, 103, 105),
+        (84, 88, 105),
+        (105, 84, 96),
+    ]
+    shift = page + chapter
+    panels = [
+        (40, 40, 760, 430, palette[(shift + 0) % len(palette)]),
+        (40, 470, 380, 820, palette[(shift + 1) % len(palette)]),
+        (420, 470, 760, 820, palette[(shift + 2) % len(palette)]),
+        (40, 860, 760, 1160, palette[(shift + 3) % len(palette)]),
+    ]
+
+    raw = bytearray()
+    base_row = bytes(base) * width
+    for y in range(height):
+        row = bytearray(base_row)
+        for x1, y1, x2, y2, colour in panels:
+            if y1 <= y < y2:
+                if y - y1 < 4 or y2 - y <= 4:
+                    row[x1 * 3:x2 * 3] = bytes(ink) * (x2 - x1)
+                else:
+                    row[x1 * 3:x2 * 3] = bytes(colour) * (x2 - x1)
+                    row[x1 * 3:(x1 + 4) * 3] = bytes(ink) * 4
+                    row[(x2 - 4) * 3:x2 * 3] = bytes(ink) * 4
+        raw.append(0)
+        raw.extend(row)
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+        + chunk(b"IEND", b"")
+    )
+
+
+def cbz_bytes(series: str, author: str, number: int, pages: int = 12) -> bytes:
+    """A genuinely readable CBZ: a ComicInfo.xml plus numbered pages."""
+    buf = io.BytesIO()
+    info = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        "<ComicInfo>\n"
+        f"<Series>{escape(series)}</Series>\n"
+        f"<Number>{number}</Number>\n"
+        f"<Writer>{escape(author)}</Writer>\n"
+        "</ComicInfo>\n"
+    )
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("ComicInfo.xml", info)
+        for page in range(pages):
+            z.writestr(f"page{page + 1:03d}.png", comic_page_png(page, number))
+    return buf.getvalue()
+
+
+def seed_comic_fixture(conn, library: pathlib.Path, now: datetime) -> int:
+    """Add the comics reader's drawn state: one series of two real
+    CBZ chapters, the first read, the second open at page 4 of 12
+    with a bookmark on it — so one route (`comic-read-<second id>`)
+    shows the filled ribbon, the series-wide `16 / 24` location,
+    chapter states and a Pages grid with the current page ringed.
+
+    The files live where the importer puts comics (item 2.22):
+    `library/<Series>/0001.cbz` with the cover beside them, and the
+    stored names carry the slash that says so. The comic series /
+    chapter rows are left to the app's own startup migration, which
+    is the path a real library takes. Returns covers written.
+    """
+    _add_column_if_missing(conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reading_bookmarks (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            chapter_index INTEGER NOT NULL,
+            fraction      REAL    NOT NULL DEFAULT 0.0,
+            label         TEXT    NOT NULL DEFAULT '',
+            created_at    TEXT    NOT NULL
+        )
+        """
+    )
+
+    series = "The Paper Meridian"
+    author = "Ada Meridian"
+    series_dir = library / series
+    covers_dir = series_dir / "covers"
+    covers_dir.mkdir(parents=True, exist_ok=True)
+
+    chapters = [
+        (1, "The Harbour Bell", 100),
+        (2, "The Salt Road", 33),
+    ]
+    covers_written = 0
+    second_id = None
+    for number, chapter_title, progress in chapters:
+        stem = f"{number:04d}"
+        (series_dir / f"{stem}.cbz").write_bytes(
+            cbz_bytes(series, author, number)
+        )
+        (covers_dir / f"{stem}.png").write_bytes(comic_page_png(0, number))
+        covers_written += 1
+        title = f"{series} - c{number:03d} - {chapter_title}"
+        added = (now - timedelta(days=10 - number)).isoformat()
+        cur = conn.execute(
+            "INSERT INTO books (uuid, title, sort_title, authors, series, "
+            "description, format, file_name, file_hash, cover_name, added_at, "
+            "progress, series_index) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                str(uuid.uuid4()),
+                title,
+                title.lower(),
+                author,
+                series,
+                "",
+                # The catalog stores formats uppercase (`BookFormat::as_str`),
+                # and the comic-series migration matches on that spelling.
+                "CBZ",
+                f"{series}/{stem}.cbz",
+                f"hash-comic-{number:06d}",
+                f"{series}/covers/{stem}.png",
+                added,
+                progress,
+                float(number),
+            ),
+        )
+        if number == 1:
+            conn.execute(
+                "INSERT INTO reading_progress (book_id, chapter_index, "
+                "fraction, updated_at) VALUES (?,?,?,?)",
+                (cur.lastrowid, 11, 1.0, added),
+            )
+        else:
+            second_id = cur.lastrowid
+
+    # Chapter 2 stands open at page 4 (index 3), bookmarked there.
+    stamp = now.isoformat()
+    conn.execute(
+        "INSERT INTO reading_progress (book_id, chapter_index, fraction, "
+        "updated_at) VALUES (?,?,?,?)",
+        (second_id, 3, 4 / 12, stamp),
+    )
+    conn.execute(
+        "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, "
+        "label, created_at) VALUES (?,?,?,?,?)",
+        (second_id, 3, 4 / 12, "Page 4", stamp),
+    )
+    return covers_written
+
+
 def seed_series_fixture(conn, library: pathlib.Path, now: datetime, first_index: int) -> int:
     """Add one coherent series for the series-page screenshot.
 
@@ -1064,6 +1231,11 @@ def main() -> int:
         help="add the cached bibliography + marks the author-page screenshot opens",
     )
     ap.add_argument(
+        "--comic-fixture",
+        action="store_true",
+        help="add the two-chapter CBZ series the comics reader screenshots open",
+    )
+    ap.add_argument(
         "--reader-fixture",
         action="store_true",
         help="seed the tiny dictionary the reader popover screenshots look up",
@@ -1218,6 +1390,10 @@ def main() -> int:
         covers_written += seed_author_fixture(
             conn, library, now, args.books + (3 if args.series_fixture else 0)
         )
+        total_books += 2
+
+    if args.comic_fixture:
+        covers_written += seed_comic_fixture(conn, library, now)
         total_books += 2
 
     if args.reader_fixture:

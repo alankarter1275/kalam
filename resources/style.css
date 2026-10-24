@@ -4434,13 +4434,17 @@ button.kalam-lib-play {
     color: @kalam_accent;
 }
 
-/* ── Moku-style Comics Reader Stage ──────────────────── */
+/* ── Comics reader stage ─────────────────────────────── */
+/* The ground is the palette's own bg (decision 35 inherits the EPUB
+   page): the Image pane's background choices will override it when
+   they land, per series. Hard-coding a black here made every light
+   palette open its comics on a stranger's stage. */
 .kalam-comics-overlay {
-    background: #090a0d;
+    background: @kalam_bg;
 }
 
 .kalam-comics-viewport {
-    background: #090a0d;
+    background: @kalam_bg;
 }
 
 .kalam-comics-topbar {
@@ -4622,6 +4626,263 @@ button.kalam-lib-play {
 .kalam-comics-seg-label {
     font-size: 0.72rem;
     font-weight: 500;
+}
+
+/* ── Comics reader, pure-page chrome (decisions 35–43, 50) ── */
+/* The panels share the reader sidebar shell (340, radius 22, card,
+   hairline); their own padding and tab furniture live here. */
+.kalam-comics-panel {
+    padding-bottom: 4px;
+}
+
+.kalam-comics-panel .kalam-ui-segmented.panel {
+    border-radius: 999px;
+}
+
+/* Reading pane: headings sit on the panel, tiles in their rows. */
+.kalam-comics-panel .kalam-reader-section {
+    background: transparent;
+    padding: 0;
+    margin: 14px 16px 0;
+}
+
+button.kalam-comics-tile {
+    min-height: 68px;
+    border-radius: 10px;
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    color: @kalam_text_dim;
+    padding: 10px 4px;
+    font-size: 0.82rem;
+}
+
+button.kalam-comics-tile:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-comics-tile.active {
+    background: @kalam_bg;
+    border-color: @kalam_accent;
+    color: @kalam_text;
+    font-weight: 700;
+}
+
+button.kalam-comics-tile image {
+    -gtk-icon-size: 20px;
+    margin: 0;
+}
+
+button.kalam-comics-direction-btn {
+    min-height: 28px;
+    border-radius: 999px;
+    font-size: 0.82rem;
+}
+
+button.kalam-comics-direction-btn.active {
+    background: @kalam_accent_fill;
+    border-color: @kalam_accent_fill;
+    color: white;
+    font-weight: 600;
+}
+
+/* Chapters tab: the series head, then plain 44px rows. */
+.kalam-comics-chapters-head {
+    padding: 2px 0 14px;
+}
+
+.kalam-comics-series-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-comics-series-meta,
+.kalam-comics-chapter-state,
+.kalam-comics-pages-meta {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-comics-volume-heading {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: @kalam_text_dim;
+    padding: 16px 0 6px;
+}
+
+button.kalam-comics-chapter-row {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    box-shadow: none;
+    padding: 0 8px 0 0;
+    color: @kalam_text;
+}
+
+button.kalam-comics-chapter-row:hover {
+    background: @kalam_hover;
+}
+
+.kalam-comics-current-bar {
+    background: transparent;
+    border-radius: 999px;
+    min-width: 3px;
+}
+
+.kalam-comics-current-bar.current {
+    background: @kalam_accent;
+}
+
+.kalam-comics-chapter-num {
+    color: @kalam_text_dim;
+    min-width: 46px;
+    font-size: 0.86rem;
+}
+
+.kalam-comics-chapter-title {
+    font-size: 0.92rem;
+    color: @kalam_text;
+}
+
+.kalam-comics-chapter-title.current {
+    font-weight: 700;
+}
+
+/* Pages tab: sticky heading over a 3-column thumbnail grid. */
+.kalam-comics-pages-heading {
+    min-height: 40px;
+    border-bottom: 1px solid alpha(@kalam_border, 0.75);
+    padding-bottom: 8px;
+}
+
+button.kalam-comics-page-thumb {
+    background: @kalam_border;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    box-shadow: none;
+    padding: 0;
+    min-width: 86px;
+    min-height: 112px;
+    color: @kalam_text_dim;
+}
+
+button.kalam-comics-page-thumb:hover {
+    border-color: @kalam_text_dim;
+}
+
+button.kalam-comics-page-thumb.current {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+button.kalam-comics-page-thumb.failed {
+    background: transparent;
+    border: 1.5px dashed @kalam_text_dim;
+}
+
+.kalam-comics-page-num {
+    font-size: 11px;
+    font-weight: 600;
+    color: @kalam_text;
+    background: alpha(@kalam_card, 0.88);
+    border-radius: 999px;
+    padding: 1px 7px;
+}
+
+.kalam-comics-page-status {
+    font-size: 11px;
+    color: @kalam_text_dim;
+    padding: 0 8px;
+}
+
+/* Shortcuts pane: inset groups of 48px rows with key chips. */
+.kalam-comics-inset-card {
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 2px 14px;
+}
+
+.kalam-comics-shortcut-row {
+    border-bottom: 1px solid alpha(@kalam_border, 0.6);
+    color: @kalam_text;
+    font-size: 0.9rem;
+}
+
+/* The page-jump field (decision 50): a 52-high pill at the top
+   centre in the search bar's shape, the number underlined in the
+   accent, and the whole field in accent ink out of range. */
+.kalam-comics-jump {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 6px 10px 6px 20px;
+    min-height: 38px;
+}
+
+.kalam-comics-jump-label {
+    color: @kalam_text_dim;
+    font-size: 0.9rem;
+}
+
+entry.kalam-comics-jump-entry {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid @kalam_accent;
+    border-radius: 0;
+    box-shadow: none;
+    color: @kalam_text;
+    font-size: 1rem;
+    font-weight: 600;
+    min-height: 30px;
+    padding: 0 2px 3px;
+}
+
+entry.kalam-comics-jump-entry:focus-within {
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+}
+
+entry.kalam-comics-jump-entry.error {
+    color: @kalam_accent;
+}
+
+.kalam-comics-jump-hint {
+    color: @kalam_text_dim;
+    font-size: 0.86rem;
+}
+
+.kalam-comics-jump-hint.error {
+    color: @kalam_accent;
+}
+
+button.kalam-comics-jump-close {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 999px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    color: @kalam_text_dim;
+}
+
+button.kalam-comics-jump-close:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-comics-chapter-row:focus-visible,
+button.kalam-comics-page-thumb:focus-visible,
+button.kalam-comics-tile:focus-visible,
+button.kalam-comics-jump-close:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 1px;
 }
 
 /* ---------------------------------------------------------------------------

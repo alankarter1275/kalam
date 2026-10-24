@@ -494,6 +494,61 @@ jobs:
             READER_ACTION=search-missing THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      # Comics reader (decisions 35-43, 50): the pure page with its
+      # summoned chrome in both modes, then each floating panel and
+      # the page-jump field's out-of-range state. The comic fixture's
+      # chapter 2 is id BOOKS+2 and stands at page 4 of 12 with a
+      # bookmark, so the frames also prove the filled ribbon and the
+      # series-wide location text (`16 / 24`).
+      - name: open a comic with its chrome up (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-chrome-light SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=chrome \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open a comic with its chrome up (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-chrome-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=chrome \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic chapters panel (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-chapters-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=chapters \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic pages panel (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-pages-dark SETTLE=25 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=pages \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic reading panel (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-reading-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=reading \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic shortcuts panel (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-shortcuts-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=shortcuts \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic page-jump out of range (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-jump-range-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=jump-range \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # The task manager's whole job is showing state that only exists while
       # something is running, so a shot of it over a quiet library proves
       # little about the interesting case. What it does prove is the part no
@@ -893,6 +948,19 @@ jobs:
             cp "ci-shots-$shot/03-settings-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true
           done
+          # The comics reader frames, by the same slug rule: the OUT
+          # suffix is the published basename, and every frame settled
+          # on the comic route.
+          for shot in comics-chrome-light comics-chrome-dark \
+                      comics-chapters-dark comics-pages-dark \
+                      comics-reading-dark comics-shortcuts-dark \
+                      comics-jump-range-dark; do
+            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
+              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
+            cp "ci-shots-$shot/03-comic-read-22-settled.png" \
+              "ci-logs/$shot.png" 2>/dev/null || true
+          done
           # The settled gallery/book/dialog frames are the one deliberate
           # exception to "PNGs stay in the job workspace": an artboard
           # nobody can see is not an artboard, and the agent cannot
@@ -992,6 +1060,13 @@ jobs:
                       settings-notifications-events-dark \
                       settings-notifications-empty-light \
                       settings-notifications-dot-dark; do
+            git add -f "ci-logs/$shot-latest.txt"
+            if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
+          done
+          for shot in comics-chrome-light comics-chrome-dark \
+                      comics-chapters-dark comics-pages-dark \
+                      comics-reading-dark comics-shortcuts-dark \
+                      comics-jump-range-dark; do
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done

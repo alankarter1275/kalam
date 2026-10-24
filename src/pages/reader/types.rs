@@ -93,7 +93,7 @@ pub(crate) struct ReaderSettingsControls {
 /// The search bar's Chapter / Book switch (decision 34): Chapter is
 /// the standing choice every time the bar opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SearchScope {
+pub enum SearchScope {
     Chapter,
     Book,
 }

@@ -723,10 +723,7 @@ impl Component for ReaderModel {
             .build();
         toc_scroll.add_css_class("kalam-reader-panel-scroll");
         // The scroll sits inside a plain page box, the same shape as
-        // the Notes page (and the Settings scroll in its host box):
-        // a scrolled window as the stack's direct child rendered its
-        // list at natural width in the T3 captures, where the boxed
-        // shape takes the panel's full width.
+        // the Notes page, so both stack pages are built alike.
         let contents_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
         contents_page.append(&toc_scroll);
         left_stack.add_named(&contents_page, Some("contents"));
@@ -1018,52 +1015,6 @@ impl Component for ReaderModel {
             &sender,
         );
         rebuild_notes_list(&model, &sender);
-
-        // Temporary T3 diagnostic (KALAM_TIMING only, which the CI
-        // screenshot script sets): the Contents list renders ~86px
-        // wide in the captures while Notes takes the panel. Dump
-        // both allocation chains shortly after the lists map so the
-        // report shows exactly which link allocates narrow.
-        if std::env::var_os("KALAM_TIMING").is_some() {
-            let dump = |label: &'static str, list: gtk::Box| {
-                gtk::glib::timeout_add_local(std::time::Duration::from_secs(12), move || {
-                    let mut cur: Option<gtk::Widget> =
-                        Some(list.clone().upcast::<gtk::Widget>());
-                    let mut depth = 0;
-                    while let Some(w) = cur {
-                        eprintln!(
-                            "[timing] alloc {label} d{depth} {} mapped={} w={} h={}",
-                            w.widget_name(),
-                            w.is_mapped(),
-                            w.width(),
-                            w.height()
-                        );
-                        cur = w.parent();
-                        depth += 1;
-                        if depth > 14 {
-                            break;
-                        }
-                    }
-                    if let Some(row) = list.first_child() {
-                        eprintln!(
-                            "[timing] alloc {label} row0 {} w={}",
-                            row.widget_name(),
-                            row.width()
-                        );
-                        if let Some(inner) = row.first_child() {
-                            eprintln!(
-                                "[timing] alloc {label} row0/inner {} w={}",
-                                inner.widget_name(),
-                                inner.width()
-                            );
-                        }
-                    }
-                    gtk::glib::ControlFlow::Break
-                });
-            };
-            dump("toc", model.toc_list.clone());
-            dump("notes", model.notes_list.clone());
-        }
 
         // The Back+Bubble unit (decision 15): the shell's own Back pill
         // — same classes, same placement (18 from the left, 14 from the

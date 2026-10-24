@@ -317,7 +317,7 @@ pub(crate) fn rebuild_toc(
 fn append_toc_heading(list: &gtk::Box, row: &TocRow) {
     let label = gtk::Label::new(Some(&row.label));
     label.add_css_class("kalam-reader-toc-part");
-    label.set_halign(gtk::Align::Start);
+    label.set_halign(gtk::Align::Fill);
     label.set_xalign(0.0);
     label.set_wrap(true);
     label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
@@ -360,7 +360,11 @@ fn append_toc_btn(
     // a top-level row and a chapter of the same book do not look switched.
     btn.set_margin_start(row.depth as i32 * 16);
     let title = gtk::Label::new(Some(&row.label));
-    title.set_halign(gtk::Align::Start);
+    // Fill, not Start: a wrapping label measures at its longest word,
+    // so a Start label inside the button is allocated that sliver and
+    // wraps mid-word ("Cha-pter"). The text itself stays left via
+    // xalign. Every row label in this file follows the same rule.
+    title.set_halign(gtk::Align::Fill);
     title.set_hexpand(true);
     title.set_wrap(true);
     title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
@@ -510,7 +514,7 @@ fn highlight_color_choice_class(color: HighlightColor) -> &'static str {
 fn notes_chapter_heading(model: &ReaderModel, chapter_index: usize) -> gtk::Label {
     let heading = gtk::Label::new(Some(&chapter_label(model, chapter_index)));
     heading.add_css_class("kalam-reader-notes-heading");
-    heading.set_halign(gtk::Align::Start);
+    heading.set_halign(gtk::Align::Fill);
     heading.set_xalign(0.0);
     heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
     heading
@@ -557,7 +561,7 @@ fn annotation_card(
     text.add_css_class("kalam-reader-annotation-text");
     text.set_wrap(true);
     text.set_xalign(0.0);
-    text.set_halign(gtk::Align::Start);
+    text.set_halign(gtk::Align::Fill);
     text_col.append(&text);
     // Under a chapter heading the chapter names itself; the meta line
     // only remains to flag a WebKit-era row the engine cannot place.
@@ -574,7 +578,7 @@ fn annotation_card(
     if let Some(meta_str) = meta_str {
         let meta = gtk::Label::new(Some(&meta_str));
         meta.add_css_class("kalam-reader-annotation-meta");
-        meta.set_halign(gtk::Align::Start);
+        meta.set_halign(gtk::Align::Fill);
         meta.set_xalign(0.0);
         text_col.append(&meta);
     }
@@ -616,7 +620,7 @@ fn annotation_card(
 
         let note_label = gtk::Label::new(Some("Note"));
         note_label.add_css_class("kalam-reader-note-label");
-        note_label.set_halign(gtk::Align::Start);
+        note_label.set_halign(gtk::Align::Fill);
         note_label.set_xalign(0.0);
         note_wrap.append(&note_label);
 
@@ -668,7 +672,7 @@ fn annotation_card(
         let preview_text = gtk::Label::new(Some(&format!("Note: {}", anno.note.trim())));
         preview_text.add_css_class("kalam-reader-note-preview-text");
         preview_text.set_wrap(true);
-        preview_text.set_halign(gtk::Align::Start);
+        preview_text.set_halign(gtk::Align::Fill);
         preview_text.set_xalign(0.0);
         preview.set_child(Some(&preview_text));
         let s = sender.clone();
@@ -717,7 +721,7 @@ fn bookmark_row(
         &mark.label
     }));
     title.add_css_class("kalam-reader-bookmark-title");
-    title.set_halign(gtk::Align::Start);
+    title.set_halign(gtk::Align::Fill);
     title.set_xalign(0.0);
     text_col.append(&title);
     let meta_str = if show_chapter {
@@ -731,7 +735,7 @@ fn bookmark_row(
     };
     let meta = gtk::Label::new(Some(&meta_str));
     meta.add_css_class("kalam-reader-annotation-meta");
-    meta.set_halign(gtk::Align::Start);
+    meta.set_halign(gtk::Align::Fill);
     meta.set_xalign(0.0);
     text_col.append(&meta);
     row.append(&text_col);
@@ -770,18 +774,18 @@ fn saved_word_row(
     let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let title = gtk::Label::new(Some(&word.word));
     title.add_css_class("kalam-reader-word-name");
-    title.set_halign(gtk::Align::Start);
+    title.set_halign(gtk::Align::Fill);
     title.set_xalign(0.0);
     body.append(&title);
     let def = gtk::Label::new(Some(&truncate_def(&word.definition, 180)));
     def.add_css_class("kalam-reader-word-def");
     def.set_wrap(true);
     def.set_xalign(0.0);
-    def.set_halign(gtk::Align::Start);
+    def.set_halign(gtk::Align::Fill);
     body.append(&def);
     let meta = gtk::Label::new(Some(&saved_word_meta(model, word)));
     meta.add_css_class("kalam-reader-word-meta");
-    meta.set_halign(gtk::Align::Start);
+    meta.set_halign(gtk::Align::Fill);
     meta.set_xalign(0.0);
     body.append(&meta);
     btn.set_child(Some(&body));
@@ -922,7 +926,7 @@ fn append_notes_items(
                 None => {
                     let heading = gtk::Label::new(Some("Saved words"));
                     heading.add_css_class("kalam-reader-notes-heading");
-                    heading.set_halign(gtk::Align::Start);
+                    heading.set_halign(gtk::Align::Fill);
                     heading.set_xalign(0.0);
                     model.notes_list.append(&heading);
                 }
@@ -965,18 +969,18 @@ fn rebuild_notes_words(model: &ReaderModel, sender: &ComponentSender<ReaderModel
             let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
             let title = gtk::Label::new(Some(&entry.word));
             title.add_css_class("kalam-reader-word-name");
-            title.set_halign(gtk::Align::Start);
+            title.set_halign(gtk::Align::Fill);
             title.set_xalign(0.0);
             body.append(&title);
             let def = gtk::Label::new(Some(&truncate_def(&entry.definition, 180)));
             def.add_css_class("kalam-reader-word-def");
             def.set_wrap(true);
             def.set_xalign(0.0);
-            def.set_halign(gtk::Align::Start);
+            def.set_halign(gtk::Align::Fill);
             body.append(&def);
             let meta = gtk::Label::new(Some("Dictionary match"));
             meta.add_css_class("kalam-reader-word-meta");
-            meta.set_halign(gtk::Align::Start);
+            meta.set_halign(gtk::Align::Fill);
             meta.set_xalign(0.0);
             body.append(&meta);
             btn.set_child(Some(&body));

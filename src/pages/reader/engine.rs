@@ -1140,7 +1140,14 @@ fn append_definitions(body: &gtk::Box, card: &DictCard) {
             }
 
             let revealer = gtk::Revealer::new();
-            revealer.set_transition_type(gtk::RevealerTransitionType::None);
+            // SlideDown, not None: GTK measures a None/Crossfade
+            // revealer at its child's full height even while hidden
+            // (`get_child_size_scale` returns 1.0 for those types),
+            // which left a blank gap above "Show N more". A vertical
+            // slide scales the measured height by the reveal
+            // position, so the folded senses take no room at all.
+            revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
+            revealer.set_transition_duration(180);
             revealer.set_reveal_child(false);
             revealer.set_child(Some(&hidden));
             defs_box.append(&revealer);

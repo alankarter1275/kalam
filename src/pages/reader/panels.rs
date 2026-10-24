@@ -9,7 +9,6 @@ use super::mod_model::ReaderModel;
 use super::types::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use relm4::RelmWidgetExt;
 
 pub(crate) struct NotesPanelControls {
     pub(crate) root: gtk::Box,

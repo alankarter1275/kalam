@@ -1697,30 +1697,34 @@ impl Component for ReaderModel {
                 // A key does one thing (decision 24): one already
                 // owned elsewhere refuses and says whose it is; it is
                 // never stolen from under the other action.
-                if let Some(owner) = self.keybinds.borrow().owner_of(&binding) {
-                    if owner != action {
-                        self.keybind_hint.set_label(&format!(
-                            "“{}” already belongs to “{}” — unbind it there first.",
-                            binding.label(),
-                            owner.label()
-                        ));
-                        self.keybind_hint.set_visible(true);
-                        refresh_controls = true;
-                        return;
+                let refused_owner = self
+                    .keybinds
+                    .borrow()
+                    .owner_of(&binding)
+                    .filter(|owner| *owner != action);
+                if let Some(owner) = refused_owner {
+                    self.keybind_hint.set_label(&format!(
+                        "“{}” already belongs to “{}” — unbind it there first.",
+                        binding.label(),
+                        owner.label()
+                    ));
+                    self.keybind_hint.set_visible(true);
+                } else {
+                    self.keybind_hint.set_visible(false);
+                    {
+                        let mut bindings = self.keybinds.borrow_mut();
+                        bindings.bind(action, binding);
+                        bindings.save(self.service.catalog(), action);
                     }
+                    install_jump_back_shortcut(
+                        _root,
+                        &self.jump_back_shortcut,
+                        &self.keybinds,
+                        &sender,
+                    );
                 }
-                self.keybind_hint.set_visible(false);
-                {
-                    let mut bindings = self.keybinds.borrow_mut();
-                    bindings.bind(action, binding);
-                    bindings.save(self.service.catalog(), action);
-                }
-                install_jump_back_shortcut(
-                    _root,
-                    &self.jump_back_shortcut,
-                    &self.keybinds,
-                    &sender,
-                );
+                // Sync restores a refused keycap to the standing
+                // binding, or shows the key that just landed.
                 refresh_controls = true;
             }
             ReaderMsg::ResetKeyBindings => {

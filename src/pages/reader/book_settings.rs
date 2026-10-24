@@ -11,6 +11,7 @@
 use super::engine;
 use super::mod_model::ReaderModel;
 use crate::db::Catalog;
+use gtk::prelude::WidgetExt;
 use serde::{Deserialize, Serialize};
 
 /// Everything the reader's Reading pane edits, in one value. The

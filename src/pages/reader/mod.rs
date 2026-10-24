@@ -697,6 +697,15 @@ impl Component for ReaderModel {
         let catalog_wheel = effective.wheel_step;
         let catalog_arrow = effective.arrow_step;
         let word_memory_scope = effective.word_memory_scope.clone();
+        // A fresh highlight's colour and style (decision 26): plain
+        // global prefs, written whenever the chip or the annotation
+        // popover leaves them somewhere new.
+        let last_highlight_color = crate::db::HighlightColor::from_str_lossy(
+            catalog.get_pref("reader.last_highlight_color").as_deref().unwrap_or("yellow"),
+        );
+        let last_highlight_style = crate::db::AnnotationStyle::from_str_lossy(
+            catalog.get_pref("reader.last_highlight_style").as_deref().unwrap_or("solid"),
+        );
         if let Some(v) = &view {
             let wm_words = catalog
                 .get_saved_words_for_scope(book_id, &word_memory_scope)
@@ -830,6 +839,7 @@ impl Component for ReaderModel {
             can_jump_back: false,
             back_depth: 0,
             selection_chip: None,
+            annotation_popover: None,
             word_preview_popover: None,
             word_memory_scope,
             note_popover: None,
@@ -851,6 +861,8 @@ impl Component for ReaderModel {
             dict_lookup_def: None,
             dict_context: None,
             last_selection: None,
+            last_highlight_color,
+            last_highlight_style,
             session_id: None,
             session_start: std::time::Instant::now(),
             session_start_pct: 0,
@@ -1331,6 +1343,81 @@ impl Component for ReaderModel {
         if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "settings") {
             sender.input(ReaderMsg::OpenSettingsPanel);
         }
+        // The T4 popover frames. The chip stands over a selection, so
+        // the frame fakes the engine's report of one (the handler and
+        // the surface are the real ones); the annotation frame makes
+        // a real highlight on the opening chapter, then taps it the
+        // way the pointer would. Both wait out the first paint.
+        if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "chip") {
+            if let Some(view) = model.view.clone() {
+                let tx = sender.input_sender().clone();
+                gtk::glib::timeout_add_local_once(std::time::Duration::from_secs(9), move || {
+                    let w = view.widget().width();
+                    let rect = gtk::gdk::Rectangle::new((w / 2 - 130).max(24), 230, 260, 26);
+                    let _ = tx.send(ReaderMsg::EngineSelection(Some((
+                        "the river".to_string(),
+                        rect,
+                    ))));
+                });
+            }
+        }
+        if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "annotation") {
+            let made = model.view.clone().and_then(|view| {
+                let res = view
+                    .search(" the ")
+                    .into_iter()
+                    .find(|r| r.chapter == model.chapter)?;
+                // The match is "the": the search code's own arithmetic
+                // (start at the match, end a trimmed query later).
+                let end = kalam_reader::LayeredLocator {
+                    char_offset: res.locator.char_offset + 3,
+                    ..res.locator.clone()
+                };
+                let h = kalam_reader::NewHighlight {
+                    color: kalam_reader::HighlightColor::Pink,
+                    style: "squiggly".to_string(),
+                    text: res.locator.quote.exact.clone(),
+                    start: res.locator.clone(),
+                    end,
+                };
+                let cfi = engine::range_to_json(&h.start, &h.end);
+                let id = model
+                    .service
+                    .catalog()
+                    .insert_annotation(
+                        model.book_id,
+                        "highlight",
+                        h.start.spine_index as i64,
+                        "",
+                        0,
+                        "",
+                        0,
+                        "pink",
+                        "squiggly",
+                        &h.text,
+                        "The turn the whole chapter hangs on.",
+                    )
+                    .ok()?;
+                let _ = model.service.catalog().update_annotation_cfi(id, &cfi);
+                view.show_highlight(id, &h);
+                Some((view, id, res.chapter, res.locator.spine_fraction))
+            });
+            if let Some((view, id, chapter, frac)) = made {
+                model.reload_annotations();
+                let tx = sender.input_sender().clone();
+                gtk::glib::timeout_add_local_once(std::time::Duration::from_secs(9), move || {
+                    let _ = tx.send(ReaderMsg::JumpToLocation(chapter, frac));
+                    let tx2 = tx.clone();
+                    gtk::glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(1200),
+                        move || {
+                            let w = view.widget().width() as f64;
+                            let _ = tx2.send(ReaderMsg::HighlightTapped(id, w * 0.42, 210.0));
+                        },
+                    );
+                });
+            }
+        }
 
         ComponentParts { model, widgets }
     }
@@ -1446,14 +1533,14 @@ impl Component for ReaderModel {
                     self.close_sidebars();
                     refresh_tabs = true;
                 } else {
-                    engine::dismiss(self.selection_chip.take());
+                    self.dismiss_chip_surfaces();
                     engine::dismiss(self.dict_popover.take());
                     self.save_progress();
                     sender.output(ReaderOut::Close).ok();
                 }
             }
             ReaderMsg::MinimizeToBubble => {
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 engine::dismiss(self.dict_popover.take());
                 self.save_progress();
                 sender.output(ReaderOut::MinimizeToBubble { book_id: self.book_id }).ok();
@@ -1593,7 +1680,7 @@ impl Component for ReaderModel {
             ReaderMsg::ShowNote { href, text, x, y } => {
                 // A note is worth more than a stale selection chip under
                 // the reader's finger.
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 engine::dismiss(self.note_popover.take());
                 let Some(view) = &self.view else { return };
                 let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
@@ -1820,7 +1907,7 @@ impl Component for ReaderModel {
                 // the page it was pointing at. A tap in the middle band
                 // clears the selection too, but the widget says nothing on
                 // that path; that one is with the engine.
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 // Roadmap 2.6: the engine keeps its own trail of jumps. A
                 // depth that grew means something just moved the reader —
                 // including a tap on a link the engine followed itself —
@@ -1855,13 +1942,17 @@ impl Component for ReaderModel {
                 refresh_chrome = true;
             }
             ReaderMsg::EngineSelection(sel) => {
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 self.last_selection = sel.as_ref().map(|(text, _)| text.clone());
                 self.dict_anchor = sel.as_ref().map(|(_, rect)| *rect);
                 if let Some((_, rect)) = &sel {
                     let Some(view) = &self.view else { return };
-                    let chip =
-                        engine::build_selection_chip(view.widget().upcast_ref(), rect, &sender);
+                    let chip = engine::build_selection_chip(
+                        view.widget().upcast_ref(),
+                        rect,
+                        self.last_highlight_color,
+                        &sender,
+                    );
                     chip.popup();
                     self.selection_chip = Some(chip);
                 }
@@ -1871,81 +1962,100 @@ impl Component for ReaderModel {
                     self.dict_anchor = Some(rect);
                 }
             }
-            ReaderMsg::SaveAnnotationDetails { color, style, note } => {
-                engine::dismiss(self.selection_chip.take());
-                let Some(view) = self.view.clone() else {
-                    return;
-                };
-                let color_val = engine::engine_color(&color);
-                let Some(h) = view.capture_highlight_with_style(color_val, &style) else {
-                    return;
-                };
-                let cfi = engine::range_to_json(&h.start, &h.end);
-                let inserted = self.service.catalog().insert_annotation(
-                    self.book_id,
-                    "highlight",
-                    h.start.spine_index as i64,
-                    "",
-                    0,
-                    "",
-                    0,
-                    color_val.name(),
-                    &style,
-                    &h.text,
-                    &note,
-                );
-                match inserted {
-                    Ok(id) => {
-                        crate::notify::report(
-                            self.service.catalog().update_annotation_cfi(id, &cfi),
-                            "Could not place the highlight",
-                        );
-                        view.show_highlight(id, &h);
-                        self.reload_annotations();
-                        refresh_notes = true;
+            ReaderMsg::NoteSelection => {
+                // Decision 26: Note highlights first (last-used colour
+                // and style), then opens the note box on the result.
+                self.dismiss_chip_surfaces();
+                let color = self.last_highlight_color;
+                let style = self.last_highlight_style;
+                if let Some(id) = self.create_highlight(color, style) {
+                    refresh_notes = true;
+                    if let Some(anno) =
+                        self.all_book_annotations.iter().find(|a| a.id == id).cloned()
+                    {
+                        let rect = self.dict_anchor_rect();
+                        self.open_annotation_popover(&anno, rect, true, &sender);
                     }
-                    Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
                 }
             }
-            ReaderMsg::EditAnnotationDetails { id, color, style, note } => {
-                engine::dismiss(self.selection_chip.take());
-                let color_val = engine::engine_color(&color);
+            ReaderMsg::RestyleAnnotation { id, color, style } => {
+                // Live from the standing popover: the page behind it
+                // shows the new face at once. The note keeps its
+                // stored text; the popover's close lands the draft.
+                let color_val = crate::db::HighlightColor::from_str_lossy(&color);
+                let style_val = crate::db::AnnotationStyle::from_str_lossy(&style);
+                let note = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|a| a.id == id)
+                    .map(|a| a.note.clone())
+                    .unwrap_or_default();
                 let res = self.service.catalog().update_annotation_details(
                     id,
-                    color_val.name(),
-                    &style,
+                    color_val.as_str(),
+                    style_val.as_str(),
                     &note,
                 );
                 match res {
                     Ok(()) => {
+                        let eng = engine::engine_color(&color);
                         if let Some(view) = self.view.clone() {
-                            view.update_highlight(id, color_val, &style);
+                            view.update_highlight(id, eng, style_val.as_str());
                         }
                         self.reload_annotations();
                         refresh_notes = true;
+                        self.remember_highlight_choice(color_val, style_val);
                     }
                     Err(e) => crate::notify::error("Could not update highlight", &e.to_string()),
                 }
             }
+            ReaderMsg::AnnotationEditClosed { id, color, style, note } => {
+                // Autosave on close (decision 29). The popover that
+                // sent this is already down; clear only its own slot,
+                // so a chip raised after it is never taken down here.
+                engine::dismiss(self.annotation_popover.take());
+                let color_val = crate::db::HighlightColor::from_str_lossy(&color);
+                let style_val = crate::db::AnnotationStyle::from_str_lossy(&style);
+                let unchanged = self.all_book_annotations.iter().find(|a| a.id == id).is_some_and(|a| {
+                    a.color.eq_ignore_ascii_case(color_val.as_str())
+                        && a.style.eq_ignore_ascii_case(style_val.as_str())
+                        && a.note == note
+                });
+                if !unchanged {
+                    let res = self.service.catalog().update_annotation_details(
+                        id,
+                        color_val.as_str(),
+                        style_val.as_str(),
+                        &note,
+                    );
+                    match res {
+                        Ok(()) => {
+                            let eng = engine::engine_color(&color);
+                            if let Some(view) = self.view.clone() {
+                                view.update_highlight(id, eng, style_val.as_str());
+                            }
+                            self.reload_annotations();
+                            refresh_notes = true;
+                        }
+                        Err(e) => {
+                            crate::notify::error("Could not update highlight", &e.to_string())
+                        }
+                    }
+                }
+                self.remember_highlight_choice(color_val, style_val);
+            }
             ReaderMsg::HighlightTapped(id, x, y) => {
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 engine::dismiss(self.dict_popover.take());
                 engine::dismiss(self.word_preview_popover.take());
                 let anno_opt = self.service.catalog().get_annotation_by_id(id).ok().flatten();
-                if let (Some(anno), Some(view)) = (anno_opt, self.view.clone()) {
+                if let Some(anno) = anno_opt {
                     let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
-                    let popover = engine::build_annotation_edit_popover(
-                        view.widget().upcast_ref(),
-                        &rect,
-                        &anno,
-                        &sender,
-                    );
-                    popover.popup();
-                    self.selection_chip = Some(popover);
+                    self.open_annotation_popover(&anno, rect, false, &sender);
                 }
             }
             ReaderMsg::WordMemoryTapped(word, x, y) => {
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 engine::dismiss(self.dict_popover.take());
                 engine::dismiss(self.word_preview_popover.take());
                 let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
@@ -1957,7 +2067,10 @@ impl Component for ReaderModel {
                     return;
                 }
                 let word = word_opt.unwrap_or_default();
-                if self.dict_popover.is_some() || self.selection_chip.is_some() {
+                if self.dict_popover.is_some()
+                    || self.selection_chip.is_some()
+                    || self.annotation_popover.is_some()
+                {
                     return;
                 }
                 let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
@@ -1988,43 +2101,18 @@ impl Component for ReaderModel {
                 refresh_controls = true;
             }
             ReaderMsg::HighlightSelection(color_name) => {
-                engine::dismiss(self.selection_chip.take());
-                let Some(view) = self.view.clone() else {
-                    return;
-                };
-                let color = engine::engine_color(&color_name);
-                let Some(h) = view.capture_highlight(color) else {
-                    return;
-                };
-                let cfi = engine::range_to_json(&h.start, &h.end);
-                let inserted = self.service.catalog().insert_annotation(
-                    self.book_id,
-                    "highlight",
-                    h.start.spine_index as i64,
-                    "",
-                    0,
-                    "",
-                    0,
-                    color.name(),
-                    "solid",
-                    &h.text,
-                    "",
-                );
-                match inserted {
-                    Ok(id) => {
-                        crate::notify::report(
-                            self.service.catalog().update_annotation_cfi(id, &cfi),
-                            "Could not place the highlight",
-                        );
-                        view.show_highlight(id, &h);
-                        self.reload_annotations();
-                        refresh_notes = true;
-                    }
-                    Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
+                // One tap on a dot (decision 26): the tapped colour,
+                // the last-used style, no questions asked.
+                self.dismiss_chip_surfaces();
+                let color = crate::db::HighlightColor::from_str_lossy(&color_name);
+                let style = self.last_highlight_style;
+                if self.create_highlight(color, style).is_some() {
+                    refresh_notes = true;
                 }
+                self.remember_highlight_choice(color, style);
             }
             ReaderMsg::QuoteSelection => {
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 let Some(view) = self.view.clone() else {
                     return;
                 };
@@ -2061,7 +2149,7 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::CopySelection => {
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 if let Some(view) = self.view.clone() {
                     if let Some(text) = view.selected_text() {
                         view.widget().clipboard().set_text(&text);
@@ -2070,7 +2158,7 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::LookUpSelection => {
-                engine::dismiss(self.selection_chip.take());
+                self.dismiss_chip_surfaces();
                 let Some(view) = self.view.clone() else {
                     return;
                 };
@@ -2185,6 +2273,16 @@ impl Component for ReaderModel {
                     "Could not delete the mark",
                 );
                 self.reload_bookmarks();
+                refresh_notes = true;
+            }
+            ReaderMsg::DeleteSavedWord(id) => {
+                crate::notify::report(
+                    self.service.catalog().delete_saved_word(id),
+                    "Could not forget the word",
+                );
+                // reload_saved_words re-pushes the word-memory set, so
+                // the dotted underline goes with the row.
+                self.reload_saved_words();
                 refresh_notes = true;
             }
             ReaderMsg::DictSearch(q) => {
@@ -2413,12 +2511,13 @@ impl Component for ReaderModel {
             }
             ReaderMsg::Escape => {
                 // The layers, front to back (decisions 14, 20, 31):
-                // dictionary popover → annotation chip (its note
-                // preview rides with it) → selection → search →
-                // lightbox → panels → exit the book. Each press takes
-                // exactly one layer.
+                // dictionary popover → annotation popover → selection
+                // chip → selection → search → lightbox → panels →
+                // exit the book. Each press takes exactly one layer.
                 if self.dict_popover.as_ref().is_some_and(|p| p.is_visible()) {
                     sender.input(ReaderMsg::ClearDict);
+                } else if self.annotation_popover.as_ref().is_some_and(|p| p.is_visible()) {
+                    engine::dismiss(self.annotation_popover.take());
                 } else if self.selection_chip.as_ref().is_some_and(|p| p.is_visible()) {
                     engine::dismiss(self.selection_chip.take());
                 } else if self.view.as_ref().is_some_and(|v| v.selected_text().is_some()) {
@@ -2440,6 +2539,8 @@ impl Component for ReaderModel {
                 // the book — reassigning it must not become a way out.
                 if self.dict_popover.as_ref().is_some_and(|p| p.is_visible()) {
                     sender.input(ReaderMsg::ClearDict);
+                } else if self.annotation_popover.as_ref().is_some_and(|p| p.is_visible()) {
+                    engine::dismiss(self.annotation_popover.take());
                 } else if self.selection_chip.as_ref().is_some_and(|p| p.is_visible()) {
                     engine::dismiss(self.selection_chip.take());
                 } else if self.search_active {
@@ -2573,7 +2674,7 @@ impl Component for ReaderModel {
         self.close_annotation_editor();
         self.save_progress();
         self.close_session();
-        engine::dismiss(self.selection_chip.take());
+        self.dismiss_chip_surfaces();
         engine::dismiss(self.dict_popover.take());
         engine::dismiss(self.word_preview_popover.take());
         if let Some(view) = self.view.take() {
@@ -2583,6 +2684,100 @@ impl Component for ReaderModel {
 }
 
 impl ReaderModel {
+    /// Take the selection chip and the annotation popover down
+    /// together. The popover's autosave rides its `closed`, so a
+    /// dismiss here still lands any note typed into it.
+    fn dismiss_chip_surfaces(&mut self) {
+        engine::dismiss(self.selection_chip.take());
+        engine::dismiss(self.annotation_popover.take());
+    }
+
+    /// Where the chip and the annotation popover last left the
+    /// marker (decision 26): a fresh highlight takes this colour and
+    /// style. Plain global prefs, like the dictionary-history one.
+    fn remember_highlight_choice(
+        &mut self,
+        color: crate::db::HighlightColor,
+        style: crate::db::AnnotationStyle,
+    ) {
+        if self.last_highlight_color != color {
+            self.last_highlight_color = color;
+            self.service
+                .catalog()
+                .set_pref("reader.last_highlight_color", color.as_str());
+        }
+        if self.last_highlight_style != style {
+            self.last_highlight_style = style;
+            self.service
+                .catalog()
+                .set_pref("reader.last_highlight_style", style.as_str());
+        }
+    }
+
+    /// Capture the standing selection as a highlight of `color` and
+    /// `style`, place it, paint it and reload. The new row's id, or
+    /// `None` when there was nothing to capture or the save failed.
+    fn create_highlight(
+        &mut self,
+        color: crate::db::HighlightColor,
+        style: crate::db::AnnotationStyle,
+    ) -> Option<i64> {
+        let view = self.view.clone()?;
+        let eng = engine::engine_color(color.as_str());
+        let h = view.capture_highlight_with_style(eng, style.as_str())?;
+        let cfi = engine::range_to_json(&h.start, &h.end);
+        let inserted = self.service.catalog().insert_annotation(
+            self.book_id,
+            "highlight",
+            h.start.spine_index as i64,
+            "",
+            0,
+            "",
+            0,
+            color.as_str(),
+            style.as_str(),
+            &h.text,
+            "",
+        );
+        match inserted {
+            Ok(id) => {
+                crate::notify::report(
+                    self.service.catalog().update_annotation_cfi(id, &cfi),
+                    "Could not place the highlight",
+                );
+                view.show_highlight(id, &h);
+                self.reload_annotations();
+                Some(id)
+            }
+            Err(e) => {
+                crate::notify::error("Could not save the highlight", &e.to_string());
+                None
+            }
+        }
+    }
+
+    /// Raise the annotation popover (decision 29) over `rect`.
+    /// `focus_note` is the chip's Note path: the reader asked for
+    /// the note box by name, so the typing starts there.
+    fn open_annotation_popover(
+        &mut self,
+        anno: &crate::db::Annotation,
+        rect: gtk::gdk::Rectangle,
+        focus_note: bool,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(view) = &self.view else { return };
+        let popover = engine::build_annotation_edit_popover(
+            view.widget().upcast_ref(),
+            &rect,
+            anno,
+            focus_note,
+            sender,
+        );
+        popover.popup();
+        self.annotation_popover = Some(popover);
+    }
+
     /// The dictionary lookup every word-tap and chip-lookup goes through:
     /// find the entry, work out which sense the sentence points at, log it,
     /// and show the popover. `sentence` is `None` when the lookup came from

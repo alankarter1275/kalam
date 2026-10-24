@@ -145,14 +145,22 @@ pub enum ReaderMsg {
     EngineSelection(Option<(String, gtk::gdk::Rectangle)>),
     /// From the engine, after layout moved the selected text's visible rect.
     EngineSelectionMoved(Option<gtk::gdk::Rectangle>),
-    /// From the selection chip.
+    /// From the selection chip: one tap on a colour dot highlights
+    /// with the last-used style (decision 26).
     HighlightSelection(String),
-    SaveAnnotationDetails {
+    /// The chip's Note: highlight in the last-used colour and style,
+    /// then open the annotation popover on its note box (decision 26).
+    NoteSelection,
+    /// A colour dot or style sample in the standing annotation
+    /// popover: restyle at once, the page behind shows it (29).
+    RestyleAnnotation {
+        id: i64,
         color: String,
         style: String,
-        note: String,
     },
-    EditAnnotationDetails {
+    /// The annotation popover went away: its final colour, style and
+    /// note land together (autosave on close, decision 29).
+    AnnotationEditClosed {
         id: i64,
         color: String,
         style: String,
@@ -183,6 +191,8 @@ pub enum ReaderMsg {
     DictSearch(String),
     DictSearchSelect(String),
     SaveCurrentWord,
+    /// A saved word's delete in the Notes list (decision 22).
+    DeleteSavedWord(i64),
     ClearDict,
     /// The ribbon and the B key: set the mark here, or take it away
     /// (decision 16). Quiet either way — the ribbon is the feedback.

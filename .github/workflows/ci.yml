@@ -448,6 +448,22 @@ jobs:
             READER_ACTION=settings THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      # EPUB T4 (decisions 26, 29): the selection chip and the
+      # annotation popover. The chip frame raises the chip over a
+      # synthetic selection report; the annotation frame makes a real
+      # highlight on the opening chapter and taps it.
+      - name: raise the selection chip (dark) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-chip SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=chip THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the annotation popover (dark) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-annotation SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=annotation THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # The task manager's whole job is showing state that only exists while
       # something is running, so a shot of it over a quiet library proves
       # little about the interesting case. What it does prove is the part no
@@ -753,6 +769,12 @@ jobs:
           cp ci-shots-reader-settings/report.txt ci-logs/reader-settings-latest.txt 2>/dev/null \
             || echo "(no reader-settings report produced)" > ci-logs/reader-settings-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-settings-latest.txt
+          cp ci-shots-reader-chip/report.txt ci-logs/reader-chip-latest.txt 2>/dev/null \
+            || echo "(no reader-chip report produced)" > ci-logs/reader-chip-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chip-latest.txt
+          cp ci-shots-reader-annotation/report.txt ci-logs/reader-annotation-latest.txt 2>/dev/null \
+            || echo "(no reader-annotation report produced)" > ci-logs/reader-annotation-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-annotation-latest.txt
           cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
             || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
@@ -845,6 +867,10 @@ jobs:
             ci-logs/reader-notes-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-reader-settings/03-read-1-settled.png \
             ci-logs/reader-settings-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-chip/03-read-1-settled.png \
+            ci-logs/reader-chip-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-annotation/03-read-1-settled.png \
+            ci-logs/reader-annotation-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-components-light/03-components-settled.png \
             ci-logs/components-terracotta-light.png 2>/dev/null || true
           cp ci-shots-components-dark/03-components-settled.png \
@@ -885,6 +911,8 @@ jobs:
             ci-logs/reader-contents-latest.txt \
             ci-logs/reader-notes-latest.txt \
             ci-logs/reader-settings-latest.txt \
+            ci-logs/reader-chip-latest.txt \
+            ci-logs/reader-annotation-latest.txt \
             ci-logs/tasks-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
             ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
@@ -918,6 +946,8 @@ jobs:
                       ci-logs/reader-contents-terracotta-dark.png \
                       ci-logs/reader-notes-terracotta-dark.png \
                       ci-logs/reader-settings-terracotta-dark.png \
+                      ci-logs/reader-chip-terracotta-dark.png \
+                      ci-logs/reader-annotation-terracotta-dark.png \
                       ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \

@@ -208,16 +208,20 @@ fn highlight_label(color: HighlightColor) -> &'static str {
     }
 }
 
-/// RGBA values mirror `kalam_reader::HighlightColor::css`. They are fixed
-/// annotation colours, not theme tokens, and painting them here keeps five
-/// one-off hex literals out of the application stylesheet's ratchet.
+/// RGBA values carry design decision 27's five hues — the same hues
+/// `kalam_reader::HighlightColor::css` paints — at full strength, the
+/// way the Notes tab's filter dots carry them: a swatch names its
+/// colour, where the band on the page is the translucent thing. They
+/// are fixed annotation colours, not theme tokens, and painting them
+/// here keeps five one-off hex literals out of the application
+/// stylesheet's ratchet.
 fn highlight_rgba(color: HighlightColor) -> (f64, f64, f64, f64) {
     match color {
-        HighlightColor::Yellow => (244.0 / 255.0, 211.0 / 255.0, 94.0 / 255.0, 0.64),
-        HighlightColor::Green => (138.0 / 255.0, 203.0 / 255.0, 156.0 / 255.0, 0.64),
-        HighlightColor::Blue => (139.0 / 255.0, 183.0 / 255.0, 242.0 / 255.0, 0.64),
-        HighlightColor::Pink => (233.0 / 255.0, 155.0 / 255.0, 189.0 / 255.0, 0.68),
-        HighlightColor::Orange => (242.0 / 255.0, 174.0 / 255.0, 114.0 / 255.0, 0.64),
+        HighlightColor::Yellow => (232.0 / 255.0, 185.0 / 255.0, 58.0 / 255.0, 1.0),
+        HighlightColor::Green => (111.0 / 255.0, 179.0 / 255.0, 111.0 / 255.0, 1.0),
+        HighlightColor::Blue => (91.0 / 255.0, 155.0 / 255.0, 213.0 / 255.0, 1.0),
+        HighlightColor::Pink => (217.0 / 255.0, 123.0 / 255.0, 168.0 / 255.0, 1.0),
+        HighlightColor::Orange => (224.0 / 255.0, 138.0 / 255.0, 75.0 / 255.0, 1.0),
         HighlightColor::Underline => (59.0 / 255.0, 130.0 / 255.0, 246.0 / 255.0, 1.0),
     }
 }
@@ -229,13 +233,15 @@ mod tests {
 
     #[test]
     fn painted_dots_match_the_reader_highlight_palette() {
+        // Decision 27's #E8B93A / #D97BA8, full strength like the Notes
+        // tab's filter dots.
         assert_eq!(
             highlight_rgba(HighlightColor::Yellow),
-            (244.0 / 255.0, 211.0 / 255.0, 94.0 / 255.0, 0.64)
+            (232.0 / 255.0, 185.0 / 255.0, 58.0 / 255.0, 1.0)
         );
         assert_eq!(
             highlight_rgba(HighlightColor::Pink),
-            (233.0 / 255.0, 155.0 / 255.0, 189.0 / 255.0, 0.68)
+            (217.0 / 255.0, 123.0 / 255.0, 168.0 / 255.0, 1.0)
         );
         assert_eq!(highlight_label(HighlightColor::Blue), "Blue");
     }

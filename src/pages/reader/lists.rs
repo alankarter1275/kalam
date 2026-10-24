@@ -763,14 +763,20 @@ fn bookmark_row(
 }
 
 /// One saved word as the Notes list draws it (decision 22): the
-/// headword over a one-line meaning; the row is the lookup.
+/// headword over a one-line meaning; the row is the lookup, and
+/// hover shows the delete the bookmark rows already carry.
 fn saved_word_row(
     model: &ReaderModel,
     word: &SavedWord,
     sender: &ComponentSender<ReaderModel>,
-) -> gtk::Button {
+) -> gtk::Box {
+    let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    outer.add_css_class("kalam-reader-word-row-wrap");
+
     let btn = gtk::Button::new();
     btn.add_css_class("kalam-reader-word-row");
+    btn.set_hexpand(true);
+    btn.set_halign(gtk::Align::Fill);
     let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let title = gtk::Label::new(Some(&word.word));
     title.add_css_class("kalam-reader-word-name");
@@ -792,7 +798,23 @@ fn saved_word_row(
     let text = word.word.clone();
     let s = sender.clone();
     btn.connect_clicked(move |_| s.input(ReaderMsg::DictSearchSelect(text.clone())));
-    btn
+    outer.append(&btn);
+
+    let delete = gtk::Button::new();
+    delete.add_css_class("kalam-btn-icon");
+    delete.add_css_class("danger");
+    delete.set_tooltip_text(Some("Forget this word"));
+    delete.set_child(Some(&crate::icons::symbolic_with_classes(
+        "user-trash-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
+    let id = word.id;
+    let s = sender.clone();
+    delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteSavedWord(id)));
+    outer.append(&delete);
+
+    outer
 }
 
 /// What fills the Notes list under each filter. Items sit in book

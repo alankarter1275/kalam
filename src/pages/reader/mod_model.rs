@@ -1,7 +1,7 @@
 //! ReaderModel struct definition.
 
 use super::types::*;
-use crate::db::{Annotation, DictEntry, ReadingBookmark, SavedWord};
+use crate::db::{Annotation, AnnotationStyle, DictEntry, HighlightColor, ReadingBookmark, SavedWord};
 use crate::service::LibraryService;
 use kalam_reader::ReaderPalette;
 use std::path::PathBuf;
@@ -65,6 +65,10 @@ pub struct ReaderModel {
     /// the number going up.
     pub(crate) back_depth: usize,
     pub(crate) selection_chip: Option<gtk::Popover>,
+    /// The open annotation editor (decision 29), in its own slot: its
+    /// closed-autosave lands by message, and that message must only
+    /// ever clear this popover, never a chip raised after it.
+    pub(crate) annotation_popover: Option<gtk::Popover>,
     pub(crate) word_preview_popover: Option<gtk::Popover>,
     pub(crate) word_memory_scope: String,
     /// Roadmap 2.5: the footnote card, while it stands.
@@ -93,6 +97,11 @@ pub struct ReaderModel {
     pub(crate) dict_lookup_def: Option<String>,
     pub(crate) dict_context: Option<String>,
     pub(crate) last_selection: Option<String>,
+    /// The colour and style a fresh highlight takes (decision 26):
+    /// wherever the selection chip's dots and the annotation popover
+    /// last left them, kept across sessions as plain prefs.
+    pub(crate) last_highlight_color: HighlightColor,
+    pub(crate) last_highlight_style: AnnotationStyle,
     pub(crate) session_id: Option<i64>,
     pub(crate) session_start: std::time::Instant,
     pub(crate) session_start_pct: i64,

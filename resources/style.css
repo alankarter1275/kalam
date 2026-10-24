@@ -1781,8 +1781,10 @@ button.kalam-reader-list-hit:hover {
 
 .kalam-reader-annotation-card:hover button.kalam-btn-icon,
 .kalam-reader-annotation-card.open button.kalam-btn-icon,
+.kalam-reader-annotation-card:focus-within button.kalam-btn-icon,
 .kalam-reader-annotation-card:hover menubutton.kalam-btn-icon,
-.kalam-reader-annotation-card.open menubutton.kalam-btn-icon {
+.kalam-reader-annotation-card.open menubutton.kalam-btn-icon,
+.kalam-reader-annotation-card:focus-within menubutton.kalam-btn-icon {
     opacity: 1;
 }
 
@@ -1835,6 +1837,86 @@ textview.kalam-reader-note-view {
 textview.kalam-reader-note-view text {
     background: transparent;
     color: @kalam_text;
+}
+
+/* The annotation popover (decision 29): one card over the tapped
+   highlight — dots, style samples, note, delete. Popup shape per
+   spec §2 (card fill, 1px border, radius 14). */
+popover.kalam-reader-annotation-popover {
+    background: transparent;
+}
+
+popover.kalam-reader-annotation-popover > contents {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: none;
+}
+
+/* Bigger dots than the Notes filter row's: these are the control. */
+.kalam-reader-annotation-editor button.kalam-reader-color-dot {
+    min-width: 24px;
+    min-height: 24px;
+}
+
+button.kalam-reader-style-sample {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    min-height: 36px;
+    padding: 2px 0;
+    color: @kalam_text;
+    box-shadow: none;
+}
+
+button.kalam-reader-style-sample:hover {
+    background: alpha(@kalam_surface_2, 0.85);
+}
+
+button.kalam-reader-style-sample.active {
+    border-color: @kalam_accent;
+    background: alpha(@kalam_accent, 0.08);
+}
+
+label.kalam-reader-style-sample-text {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1rem;
+}
+
+button.kalam-reader-annotation-delete {
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    box-shadow: none;
+    padding: 6px 10px;
+    color: @kalam_danger;
+    font-weight: 500;
+}
+
+button.kalam-reader-annotation-delete:hover {
+    background: alpha(@kalam_danger, 0.1);
+}
+
+/* Row deletes ride hover and keyboard arrival alike (decisions 20,
+   22), the shape the annotation cards already use. */
+.kalam-reader-bookmark-row button.kalam-btn-icon,
+.kalam-reader-word-row-wrap button.kalam-btn-icon {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: @kalam_danger;
+    opacity: 0;
+}
+
+.kalam-reader-bookmark-row:hover button.kalam-btn-icon,
+.kalam-reader-bookmark-row:focus-within button.kalam-btn-icon,
+.kalam-reader-word-row-wrap:hover button.kalam-btn-icon,
+.kalam-reader-word-row-wrap:focus-within button.kalam-btn-icon {
+    opacity: 1;
 }
 
 popover.kalam-reader-color-popover {

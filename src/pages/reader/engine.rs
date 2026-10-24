@@ -342,19 +342,6 @@ pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
 ///
 /// Returns a popover already pointed at the selection; the caller keeps it
 /// in the model so `None` (selection cleared) can pop it down.
-fn action_button(icon_name: &str, tooltip: &str, accent: bool) -> gtk::Button {
-    let btn = gtk::Button::from_icon_name(icon_name);
-    btn.add_css_class("k-sel-action");
-    if accent {
-        btn.add_css_class("accent");
-    }
-    btn.set_tooltip_text(Some(tooltip));
-    btn.set_size_request(26, 26);
-    btn.set_valign(gtk::Align::Center);
-    btn.set_halign(gtk::Align::Center);
-    btn
-}
-
 pub(crate) fn build_calibre_drawer_box(
     initial_color: DbColor,
     initial_style: AnnotationStyle,
@@ -508,11 +495,10 @@ pub(crate) fn build_calibre_drawer_box(
 pub(crate) fn build_selection_chip(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
+    last_color: DbColor,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
     crate::icons::init();
-
-    let root_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let popover = gtk::Popover::new();
     popover.set_parent(host);
@@ -524,60 +510,61 @@ pub(crate) fn build_selection_chip(
     anchor.set_y(anchor.y() - HANDLE_HEADROOM);
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
-    popover.add_css_class("k-sel-toolbar-popover");
+    popover.add_css_class("kalam-ui-selection-popover");
 
-    let pill = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    pill.add_css_class("k-sel-toolbar");
-
-    // 1. Highlight button
-    let highlight_btn = action_button("kalam-highlight-symbolic", "Highlight", true);
-    let root_ref = root_box.clone();
-    let pill_ref = pill.clone();
-    let pop_ref = popover.clone();
-    let tx_save = sender.input_sender().clone();
-    highlight_btn.connect_clicked(move |_| {
-        pill_ref.set_visible(false);
-        let tx = tx_save.clone();
-        let drawer = build_calibre_drawer_box(
-            DbColor::Yellow,
-            AnnotationStyle::Solid,
-            "",
-            None,
-            move |color, style, note| {
-                let _ = tx.send(ReaderMsg::SaveAnnotationDetails {
-                    color: color.as_str().to_string(),
-                    style: style.as_str().to_string(),
-                    note,
-                });
-            },
-            None,
-        );
-        root_ref.append(&drawer);
-        pop_ref.present();
-    });
-    pill.append(&highlight_btn);
-
-    let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    sep.add_css_class("k-sel-divider");
-    pill.append(&sep);
-
-    // 2. Define button
-    let define_btn = action_button("accessories-dictionary-symbolic", "Define", false);
-    let tx_def = sender.input_sender().clone();
-    define_btn.connect_clicked(move |_| {
-        let _ = tx_def.send(ReaderMsg::LookUpSelection);
-    });
-    pill.append(&define_btn);
-
-    root_box.append(&pill);
-    popover.set_child(Some(&root_box));
+    // The shared shell (decision 26): five one-tap colours, a divider,
+    // Note, Define. Fix typo is the deferred editor's (spec §6), and
+    // Copy stays Ctrl+C. The ring opens on the colour the last
+    // highlight took.
+    let tx = sender.input_sender().clone();
+    let chip = crate::widgets::selection_chip::selection_chip_with_colors(
+        DbColor::SOFT_FIVE,
+        last_color,
+        move |action| {
+            use crate::widgets::selection_chip::SelectionChipAction;
+            let _ = tx.send(match action {
+                SelectionChipAction::Highlight(color) => {
+                    ReaderMsg::HighlightSelection(color.as_str().to_string())
+                }
+                SelectionChipAction::Note => ReaderMsg::NoteSelection,
+                SelectionChipAction::Define => ReaderMsg::LookUpSelection,
+            });
+        },
+    );
+    popover.set_child(Some(&chip.widget()));
     popover
 }
 
+/// The "Aa" a style sample wears, in the standing colour (decision
+/// 29's four style samples): the solid band at its painted alpha, the
+/// line styles at full strength — the same split the page itself uses.
+fn style_sample_markup(style: AnnotationStyle, color: DbColor) -> String {
+    let band = HighlightColor::from_name(color.as_str())
+        .unwrap_or_default()
+        .css();
+    let line = &band[..band.len().min(7)];
+    match style {
+        AnnotationStyle::Solid => format!("<span background=\"{band}\">Aa</span>"),
+        AnnotationStyle::Underline => {
+            format!("<span underline=\"single\" underline_color=\"{line}\">Aa</span>")
+        }
+        AnnotationStyle::Squiggly => {
+            format!("<span underline=\"error\" underline_color=\"{line}\">Aa</span>")
+        }
+        AnnotationStyle::Strikeout => "<s>Aa</s>".to_string(),
+    }
+}
+
+/// One popover for one highlight (decision 29): colour dots, the four
+/// style samples, the note box and delete. Colour and style land the
+/// moment they are picked, so the page behind shows them; the note
+/// (and anything left) autosaves when the popover closes. There is
+/// no Save button to forget.
 pub(crate) fn build_annotation_edit_popover(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
     anno: &Annotation,
+    focus_note: bool,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
     crate::icons::init();
@@ -585,41 +572,198 @@ pub(crate) fn build_annotation_edit_popover(
     let popover = gtk::Popover::new();
     popover.set_parent(host);
     popover.set_autohide(true);
-    popover.set_has_arrow(true);
+    popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Top);
 
     let mut anchor = *rect;
     anchor.set_y(anchor.y() - HANDLE_HEADROOM);
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
-    popover.add_css_class("k-sel-toolbar-popover");
+    popover.add_css_class("kalam-reader-annotation-popover");
 
-    let tx_save = sender.input_sender().clone();
-    let tx_del = sender.input_sender().clone();
     let id = anno.id;
+    let cur_color = std::rc::Rc::new(std::cell::Cell::new(DbColor::from_str_lossy(&anno.color)));
+    let cur_style =
+        std::rc::Rc::new(std::cell::Cell::new(AnnotationStyle::from_str_lossy(&anno.style)));
+    let deleted = std::rc::Rc::new(std::cell::Cell::new(false));
 
-    let initial_color = DbColor::from_str_lossy(&anno.color);
-    let initial_style = AnnotationStyle::from_str_lossy(&anno.style);
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    card.add_css_class("kalam-reader-annotation-editor");
 
-    let drawer = build_calibre_drawer_box(
-        initial_color,
-        initial_style,
-        &anno.note,
-        Some(id),
-        move |color, style, note| {
-            let _ = tx_save.send(ReaderMsg::EditAnnotationDetails {
+    // The five colours.
+    let colors_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let mut dots: Vec<(DbColor, gtk::Button)> = Vec::new();
+    for color in DbColor::SOFT_FIVE {
+        let dot = gtk::Button::new();
+        dot.add_css_class("kalam-reader-color-dot");
+        dot.add_css_class(&format!("kalam-reader-dot-{}", color.as_str()));
+        if *color == cur_color.get() {
+            dot.add_css_class("active");
+        }
+        dot.set_tooltip_text(Some(&format!("Highlight {}", color.as_str())));
+        dot.set_valign(gtk::Align::Center);
+        colors_row.append(&dot);
+        dots.push((*color, dot));
+    }
+    card.append(&colors_row);
+    let dots = std::rc::Rc::new(dots);
+
+    // The four styles, as samples wearing the standing colour.
+    let styles_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let mut samples: Vec<(AnnotationStyle, gtk::Button, gtk::Label)> = Vec::new();
+    for style in AnnotationStyle::ALL {
+        let label = gtk::Label::new(None);
+        label.set_markup(&style_sample_markup(*style, cur_color.get()));
+        label.add_css_class("kalam-reader-style-sample-text");
+        let btn = gtk::Button::new();
+        btn.add_css_class("kalam-reader-style-sample");
+        if *style == cur_style.get() {
+            btn.add_css_class("active");
+        }
+        btn.set_child(Some(&label));
+        btn.set_tooltip_text(Some(style.label()));
+        btn.set_hexpand(true);
+        styles_row.append(&btn);
+        samples.push((*style, btn, label));
+    }
+    card.append(&styles_row);
+    let samples = std::rc::Rc::new(samples);
+
+    // Picking a colour or a style restyles at once.
+    let restyle = {
+        let tx = sender.input_sender().clone();
+        let cur_color = cur_color.clone();
+        let cur_style = cur_style.clone();
+        std::rc::Rc::new(move || {
+            let _ = tx.send(ReaderMsg::RestyleAnnotation {
                 id,
-                color: color.as_str().to_string(),
-                style: style.as_str().to_string(),
+                color: cur_color.get().as_str().to_string(),
+                style: cur_style.get().as_str().to_string(),
+            });
+        })
+    };
+    for (color, dot) in dots.iter() {
+        let c = *color;
+        let cur_color = cur_color.clone();
+        let dots = dots.clone();
+        let samples = samples.clone();
+        let restyle = restyle.clone();
+        dot.connect_clicked(move |_| {
+            cur_color.set(c);
+            for (dot_c, btn) in dots.iter() {
+                if *dot_c == c {
+                    btn.add_css_class("active");
+                } else {
+                    btn.remove_css_class("active");
+                }
+            }
+            for (style, _, label) in samples.iter() {
+                label.set_markup(&style_sample_markup(*style, c));
+            }
+            restyle();
+        });
+    }
+    for (style, btn, _) in samples.iter() {
+        let st = *style;
+        let cur_style = cur_style.clone();
+        let samples = samples.clone();
+        let restyle = restyle.clone();
+        btn.connect_clicked(move |_| {
+            cur_style.set(st);
+            for (btn_s, b, _) in samples.iter() {
+                if *btn_s == st {
+                    b.add_css_class("active");
+                } else {
+                    b.remove_css_class("active");
+                }
+            }
+            restyle();
+        });
+    }
+
+    // The note box.
+    let note_view = gtk::TextView::new();
+    note_view.add_css_class("kalam-reader-note-view");
+    note_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    note_view.set_hexpand(true);
+    let buffer = note_view.buffer();
+    if !anno.note.is_empty() {
+        buffer.set_text(&anno.note);
+    }
+    let note_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .min_content_width(280)
+        .min_content_height(64)
+        .max_content_height(120)
+        .hexpand(true)
+        .child(&note_view)
+        .build();
+    note_scroll.add_css_class("kalam-reader-note-scroll");
+    card.append(&note_scroll);
+
+    // Delete, alone in the footer: everything else already saved.
+    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let del_btn = gtk::Button::new();
+    del_btn.add_css_class("kalam-reader-annotation-delete");
+    del_btn.set_child(Some(&crate::icons::labelled(
+        "user-trash-symbolic",
+        14,
+        "Delete",
+        6,
+    )));
+    del_btn.set_tooltip_text(Some("Delete this highlight"));
+    {
+        let tx = sender.input_sender().clone();
+        let deleted = deleted.clone();
+        // Weakly: the button lives inside the popover, so a strong
+        // handle here would keep the whole tree alive for good.
+        let pop = popover.downgrade();
+        del_btn.connect_clicked(move |_| {
+            deleted.set(true);
+            let _ = tx.send(ReaderMsg::DeleteAnnotation(id));
+            if let Some(pop) = pop.upgrade() {
+                pop.popdown();
+            }
+        });
+    }
+    footer.append(&del_btn);
+    card.append(&footer);
+
+    popover.set_child(Some(&card));
+
+    // Autosave on close: whatever the popover holds when it goes away
+    // is the annotation, unless Delete already took it.
+    {
+        let tx = sender.input_sender().clone();
+        let cur_color = cur_color.clone();
+        let cur_style = cur_style.clone();
+        let buffer = buffer.clone();
+        popover.connect_closed(move |_| {
+            if deleted.get() {
+                return;
+            }
+            let note = buffer
+                .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                .to_string();
+            let _ = tx.send(ReaderMsg::AnnotationEditClosed {
+                id,
+                color: cur_color.get().as_str().to_string(),
+                style: cur_style.get().as_str().to_string(),
                 note,
             });
-        },
-        Some(Box::new(move |del_id| {
-            let _ = tx_del.send(ReaderMsg::DeleteAnnotation(del_id));
-        })),
-    );
+        });
+    }
 
-    popover.set_child(Some(&drawer));
+    if focus_note {
+        let view = note_view.clone();
+        let buffer = buffer.clone();
+        gtk::glib::idle_add_local_once(move || {
+            buffer.place_cursor(&buffer.end_iter());
+            view.grab_focus();
+        });
+    }
+
     popover
 }
 

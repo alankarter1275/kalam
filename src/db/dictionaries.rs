@@ -885,7 +885,6 @@ fn split_example(def: &str) -> Option<(String, String)> {
 }
 
 
-
 pub(crate) fn dictionary_query_variants(term: &str) -> Vec<String> {
     let trimmed = term.trim();
     let normalized = normalize_dictionary_term(trimmed);
@@ -938,15 +937,6 @@ fn dictionary_possessive_base(term: &str) -> Option<&str> {
         .or_else(|| term.strip_suffix("’s"))
         .or_else(|| term.strip_suffix('\''))
         .or_else(|| term.strip_suffix('’'))
-}
-
-// ---------------------------------------------------------------------------
-// P5.5: Lesk-style likely-sense ranking
-// ---------------------------------------------------------------------------
-
-
-fn has_vowel(s: &str) -> bool {
-    s.chars().any(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u'))
 }
 
 fn simple_inflection_variants(term: &str) -> Vec<String> {
@@ -1557,29 +1547,6 @@ mod tests {
         assert_eq!(senses[2].def, "plain row");
         assert_eq!(senses[2].pos, None);
     }
-
-
-    // -----------------------------------------------------------------------
-    // P5.5: Lesk-style likely-sense ranking
-    // -----------------------------------------------------------------------
-
-    fn test_sense(def: &str, example: Option<&str>) -> Sense {
-        Sense {
-            number: 1,
-            pos: None,
-            def: def.to_string(),
-            example: example.map(|s| s.to_string()),
-        }
-    }
-
-
-
-
-
-
-
-
-
 
 
 }

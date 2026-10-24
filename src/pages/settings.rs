@@ -1526,7 +1526,7 @@ fn build_appearance(host: &gtk::Box, catalog: &Arc<Catalog>, active_theme_id: &s
 // with, and the preview card answers as they move.
 // ---------------------------------------------------------------------------
 
-const PREVIEW_TEXT: &str = "The train slowed as it crossed the river, and for a moment the whole \
+pub(crate) const PREVIEW_TEXT: &str = "The train slowed as it crossed the river, and for a moment the whole \
 valley seemed to hold its breath. Mara marked her page with one finger and watched the water \
 move below, dark and unhurried, carrying the last of the evening light toward the sea.";
 

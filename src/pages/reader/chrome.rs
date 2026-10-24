@@ -12,19 +12,41 @@ pub(crate) fn sync_reader_stacks(model: &ReaderModel) {
     model
         .left_stack
         .set_visible_child_name(match model.left_tab {
-            LeftSidebarTab::Toc => "toc",
-            LeftSidebarTab::Settings => "settings",
-        });
-    model
-        .right_stack
-        .set_visible_child_name(match model.right_tab {
-            RightSidebarTab::Highlights => "highlights",
-            RightSidebarTab::Bookmarks => "bookmarks",
-            RightSidebarTab::Words => "words",
+            LeftSidebarTab::Contents => "contents",
+            LeftSidebarTab::Notes => "notes",
         });
     model
         .settings_stack
         .set_visible_child_name(reader_settings_pane_name(model.settings_pane));
+}
+
+/// The Reading pane's preview card: the current page's own words set
+/// in the standing choices (spec §3). Same Pango rendering as the
+/// Settings preview, in the panel's narrower column.
+pub(crate) fn refresh_reading_preview(model: &ReaderModel) {
+    let family = model
+        .font_family
+        .clone()
+        .unwrap_or_else(|| kalam_reader::BODY_FONT.to_string());
+    model.preview_body.set_markup(&format!(
+        "<span font_family=\"{}\" size=\"{}\" line_height=\"{:.1}\">{}</span>",
+        gtk::glib::markup_escape_text(&family),
+        model.font_px * 750,
+        model.line_height,
+        gtk::glib::markup_escape_text(&model.preview_text),
+    ));
+    model.preview_body.set_justify(if model.justify {
+        gtk::Justification::Fill
+    } else {
+        gtk::Justification::Left
+    });
+    // The card's text column, capped the way a narrow window caps
+    // the book: 340 panel − panel padding − card padding.
+    let width = (model.column_px as i32).min(276);
+    model
+        .preview_body
+        .set_max_width_chars(((width * 2) / (model.font_px as i32).max(1)).clamp(20, 120));
+    model.preview_column.set_size_request(width, -1);
 }
 
 pub(crate) fn sync_reader_controls(model: &ReaderModel) {
@@ -68,25 +90,42 @@ pub(crate) fn sync_reader_controls(model: &ReaderModel) {
     for (scope, btn) in &model.word_scope_buttons {
         toggle_active(btn, *scope == model.word_scope);
     }
+    for (filter, btn) in &model.notes_filter_buttons {
+        toggle_active(btn, *filter == model.notes_filter);
+    }
+    model
+        .notes_highlights_controls
+        .set_visible(model.notes_filter == NotesFilter::Highlights);
+    model
+        .notes_bookmarks_controls
+        .set_visible(model.notes_filter == NotesFilter::Bookmarks);
+    model
+        .notes_words_controls
+        .set_visible(model.notes_filter == NotesFilter::Words);
+
+    // The per-book override (decision 147): the switch, the book's
+    // theme choice, and whether anything differs from the defaults
+    // for the pill to copy over.
+    (model.set_book_override_switch)(model.book_override.is_some());
+    (model.set_book_theme_choice)(model.theme_override.as_deref());
+    let differs = model.settings_differ_from_defaults();
+    model.use_defaults_btn.set_sensitive(differs);
+    model.use_defaults_btn.set_label(if differs {
+        "Use these settings as my defaults"
+    } else {
+        "Matches your defaults"
+    });
+    refresh_reading_preview(model);
 }
 
 pub(crate) fn sync_sidebar_tabs(widgets: &super::ReaderModelWidgets, model: &ReaderModel) {
-    toggle_active(&widgets.left_toc_tab, model.left_tab == LeftSidebarTab::Toc);
     toggle_active(
-        &widgets.left_settings_tab,
-        model.left_tab == LeftSidebarTab::Settings,
+        &widgets.left_contents_tab,
+        model.left_tab == LeftSidebarTab::Contents,
     );
     toggle_active(
-        &widgets.right_highlights_tab,
-        model.right_tab == RightSidebarTab::Highlights,
-    );
-    toggle_active(
-        &widgets.right_bookmarks_tab,
-        model.right_tab == RightSidebarTab::Bookmarks,
-    );
-    toggle_active(
-        &widgets.right_words_tab,
-        model.right_tab == RightSidebarTab::Words,
+        &widgets.left_notes_tab,
+        model.left_tab == LeftSidebarTab::Notes,
     );
 }
 
@@ -120,9 +159,8 @@ pub(crate) fn update_sidebar_header(
             let _ = tx.send(ReaderMsg::OpenAuthor(name));
         }),
     );
-    widgets
-        .sidebar_progress
-        .set_fraction(model.progress_pct() as f64 / 100.0);
+    // No progress bar in the head (decision 20): the percentage
+    // already lives on the page.
 }
 
 /// The bottom-right location text (decision 17): `NN%` at rest; on

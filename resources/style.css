@@ -1335,8 +1335,13 @@ button.kalam-reader-pill-nav:hover {
     background: transparent;
 }
 
+/* Settings sections are inset cards (spec §3): the fill tone set
+   into the panel card, no dividers between them. */
 .kalam-reader-section {
-    padding: 14px 16px 8px;
+    background: @kalam_surface_2;
+    border-radius: 14px;
+    padding: 14px 16px 16px;
+    margin: 0 12px 12px;
 }
 
 .kalam-reader-section-label {
@@ -1347,9 +1352,42 @@ button.kalam-reader-pill-nav:hover {
     color: @kalam_text_dim;
 }
 
-.kalam-reader-panel-divider {
-    background: alpha(@kalam_border, 0.9);
-    margin: 4px 16px;
+/* The Settings preview sheet, in the reader's narrower column. */
+.kalam-reader-sidebar .kalam-settings-preview {
+    margin: 0 12px 12px;
+    padding: 16px;
+}
+
+/* The reader panels' titled heads (Settings, decision 23). */
+.kalam-reader-panel-head {
+    padding: 16px 16px 2px;
+}
+
+.kalam-reader-panel-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+button.kalam-reader-use-defaults {
+    margin: 0 12px 14px;
+}
+
+.kalam-reader-keybind-conflict {
+    color: @kalam_danger;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+/* Notes: a chapter's items gather under its name (decision 20). */
+.kalam-reader-notes-heading {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: @kalam_text_dim;
+    padding: 16px 14px 6px;
 }
 
 .kalam-reader-setting-row {
@@ -1578,12 +1616,17 @@ button.kalam-reader-filter-chip.kalam-reader-filter-orange.active {
     color: @kalam_hl_orange;
 }
 
+/* Contents (decision 20): 44px rows, the current chapter marked by
+   a 3px accent bar and bold type, parts standing bold. The bar is
+   always drawn (transparently when inactive) so titles never shift. */
 button.kalam-reader-toc-item {
     background: transparent;
     border: none;
+    border-left: 3px solid transparent;
     border-radius: 0;
     color: @kalam_text_dim;
-    padding: 9px 16px;
+    min-height: 44px;
+    padding: 9px 16px 9px 13px;
 }
 
 button.kalam-reader-toc-item:hover {
@@ -1592,8 +1635,36 @@ button.kalam-reader-toc-item:hover {
 }
 
 button.kalam-reader-toc-item.active {
-    background: @kalam_accent_dim;
-    color: @kalam_accent;
+    border-left-color: @kalam_accent;
+    color: @kalam_text;
+    font-weight: 700;
+}
+
+.kalam-reader-toc-part {
+    font-weight: 700;
+    color: @kalam_text;
+    padding: 14px 16px 4px 0;
+}
+
+/* The Highlights view's colour dots (decision 21): the ringed dot is
+   the standing filter. */
+button.kalam-reader-color-dot {
+    min-width: 18px;
+    min-height: 18px;
+    border-radius: 999px;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+button.kalam-reader-dot-yellow { background: @kalam_hl_yellow; }
+button.kalam-reader-dot-green  { background: @kalam_hl_green; }
+button.kalam-reader-dot-blue   { background: @kalam_hl_blue; }
+button.kalam-reader-dot-pink   { background: @kalam_hl_pink; }
+button.kalam-reader-dot-orange { background: @kalam_hl_orange; }
+
+button.kalam-reader-color-dot.active {
+    box-shadow: 0 0 0 2px @kalam_accent;
 }
 
 .kalam-reader-annotation-row,
@@ -1678,6 +1749,12 @@ button.kalam-reader-list-hit:hover {
     background: alpha(@kalam_hl_orange, 0.08);
     border-color: alpha(@kalam_hl_orange, 0.16);
     border-left: 3px solid alpha(@kalam_hl_orange, 0.55);
+}
+
+.kalam-reader-annotation-card-underline {
+    background: alpha(@kalam_text, 0.04);
+    border-color: alpha(@kalam_text, 0.12);
+    border-left: 3px solid alpha(@kalam_text, 0.4);
 }
 
 .kalam-reader-annotation-body {
@@ -1811,7 +1888,8 @@ button.kalam-reader-color-choice-orange {
 }
 
 .kalam-reader-annotation-text {
-    font-size: 0.84rem;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 0.875rem;
     line-height: 1.55;
     font-style: italic;
 }
@@ -1838,10 +1916,14 @@ button.kalam-reader-color-choice-orange {
     border-bottom: 1px solid alpha(@kalam_border, 0.9);
 }
 
+/* The Notes searches stand alone as pills (decision 22). */
 entry.kalam-reader-search {
-    background: transparent;
-    border: none;
+    background: @kalam_surface_2;
+    border: 1px solid alpha(@kalam_border, 0.9);
+    border-radius: 999px;
     box-shadow: none;
+    min-height: 44px;
+    padding: 0 14px;
     color: @kalam_text;
 }
 
@@ -1861,8 +1943,9 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-reader-word-name {
-    font-size: 0.92rem;
-    font-weight: 700;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1rem;
+    font-weight: 600;
 }
 
 .kalam-reader-word-def {

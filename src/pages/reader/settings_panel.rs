@@ -24,7 +24,10 @@ pub(crate) fn build_reader_settings_panel(
     line_height: f32,
     column_px: u32,
     scrolled: bool,
-    dict_sense_hint: bool,
+    book_override_on: bool,
+    book_theme: Option<String>,
+    preview_heading: String,
+    preview_text: String,
     dict_history_enabled: bool,
     font_family: Option<String>,
     families: Vec<String>,
@@ -66,12 +69,73 @@ pub(crate) fn build_reader_settings_panel(
 
     let reading_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
-    // No Theme card here yet: the reader follows the app theme
-    // (decision 145) until the per-book override lands with the panel
-    // rebuild, and a dead card in between would only lie.
+    // This book: the per-book override (decision 147). Off, the book
+    // reads with the app defaults; on, everything below is this
+    // book's own — including a theme of its own (decision 145).
+    // Editing anything below while off turns it on, so these two
+    // controls answer to the model either way.
+    let book_card = reader_settings_card("book-open-symbolic", "This book");
+    let (book_row, set_book_override_switch) =
+        book_override_row(book_override_on, sender);
+    book_card.append(&book_row);
+    let book_hint = gtk::Label::new(Some(
+        "Settings changed here apply to this book alone.",
+    ));
+    book_hint.add_css_class("kalam-reader-setting-hint");
+    book_hint.set_wrap(true);
+    book_hint.set_xalign(0.0);
+    book_card.append(&book_hint);
+    let (theme_row, set_book_theme_choice) = book_theme_row(book_theme, sender);
+    book_card.append(&theme_row);
+    reading_page.append(&book_card);
+
+    // The preview card: this book's own words, set in the standing
+    // choices — the same sheet the Settings page draws, narrower.
+    // The markup is refreshed from chrome's control sync.
+    let preview_card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    preview_card.add_css_class("kalam-settings-preview");
+    let preview_column = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    preview_column.set_halign(gtk::Align::Center);
+    let preview_heading_label = gtk::Label::new(Some(&preview_heading));
+    preview_heading_label.add_css_class("kalam-ui-section-title");
+    preview_heading_label.set_halign(gtk::Align::Start);
+    preview_heading_label.set_xalign(0.0);
+    preview_column.append(&preview_heading_label);
+    let preview_body = gtk::Label::new(None);
+    preview_body.set_wrap(true);
+    // The Settings preview's sizing lesson: a wrap label's natural
+    // width is its one-line width, which would force the whole 340
+    // panel open. Ask for one character and cap with max-width below.
+    preview_body.set_width_chars(1);
+    preview_body.set_use_markup(true);
+    preview_body.set_xalign(0.0);
+    {
+        let family = font_family
+            .clone()
+            .unwrap_or_else(|| kalam_reader::BODY_FONT.to_string());
+        preview_body.set_markup(&format!(
+            "<span font_family=\"{}\" size=\"{}\" line_height=\"{:.1}\">{}</span>",
+            gtk::glib::markup_escape_text(&family),
+            font_px * 750,
+            line_height,
+            gtk::glib::markup_escape_text(&preview_text),
+        ));
+        preview_body.set_justify(if justify {
+            gtk::Justification::Fill
+        } else {
+            gtk::Justification::Left
+        });
+        let width = (column_px as i32).min(276);
+        preview_body
+            .set_max_width_chars(((width * 2) / (font_px as i32).max(1)).clamp(20, 120));
+        preview_column.set_size_request(width, -1);
+    }
+    preview_column.append(&preview_body);
+    preview_card.append(&preview_column);
+    reading_page.append(&preview_card);
 
     // 1. Typography: font choice, sizing, spacing, alignment, styles
-    let type_section = reader_settings_section("Typography");
+    let type_section = reader_settings_card("insert-text-symbolic", "Typography");
     if !families.is_empty() {
         let default_label = "Default";
         let current = font_family.clone().unwrap_or_default();
@@ -172,10 +236,9 @@ pub(crate) fn build_reader_settings_panel(
         ReaderMsg::SetPublisherStyles,
     );
     reading_page.append(&type_section);
-    reading_page.append(&reader_panel_divider());
 
     // 3. Layout: column width, continuous strip vs paged spread
-    let layout_section = reader_settings_section("Layout");
+    let layout_section = reader_settings_card("view-paged-symbolic", "Layout");
     let column_width_label = gtk::Label::new(Some(&column_px.to_string()));
     column_width_label.add_css_class("kalam-reader-stepper-value");
     layout_section.append(&reader_stepper_row(
@@ -209,10 +272,9 @@ pub(crate) fn build_reader_settings_panel(
     );
     dual_page_switch.set_sensitive(!scrolled);
     reading_page.append(&layout_section);
-    reading_page.append(&reader_panel_divider());
 
     // 4. Navigation & Scrolling: speeds, pointer behaviour
-    let nav_section = reader_settings_section("Navigation & Scrolling");
+    let nav_section = reader_settings_card("go-next-symbolic", "Navigation & Scrolling");
 
     let wheel_step_label = gtk::Label::new(Some(&wheel_step.to_string()));
     wheel_step_label.add_css_class("kalam-reader-stepper-value");
@@ -252,17 +314,10 @@ pub(crate) fn build_reader_settings_panel(
     nav_section.append(&pointer_hint);
 
     reading_page.append(&nav_section);
-    reading_page.append(&reader_panel_divider());
 
-    // 5. Dictionary
-    let dict_section = reader_settings_section("Dictionary");
-    setting_toggle(
-        &dict_section,
-        "Sense hint",
-        dict_sense_hint,
-        input_tx,
-        ReaderMsg::SetDictSenseHint,
-    );
+    // 5. Dictionary. No Sense hint toggle (decision 33): the badge
+    // is going; its pref and handler stay dormant.
+    let dict_section = reader_settings_card("accessories-dictionary-symbolic", "Dictionary");
     setting_toggle(
         &dict_section,
         "Lookup history",
@@ -324,6 +379,23 @@ pub(crate) fn build_reader_settings_panel(
     dict_section.append(&wm_box);
 
     reading_page.append(&dict_section);
+
+    // The pill that promotes this book's standing choices to the app
+    // defaults (decision 147); greyed out, reading "Matches your
+    // defaults", while there is nothing to promote.
+    let use_defaults_btn = {
+        let tx = sender.input_sender().clone();
+        crate::widgets::pill_button::boxed_ghost_button(
+            "Matches your defaults",
+            move || {
+                let _ = tx.send(ReaderMsg::UseSettingsAsDefaults);
+            },
+        )
+    };
+    use_defaults_btn.add_css_class("kalam-reader-use-defaults");
+    use_defaults_btn.set_sensitive(false);
+    reading_page.append(&use_defaults_btn);
+
     stack.add_named(
         &reading_page,
         Some(reader_settings_pane_name(ReaderSettingsPane::Reading)),
@@ -334,16 +406,24 @@ pub(crate) fn build_reader_settings_panel(
     // the tab layout is how the panel already says "a different kind of
     // setting".
     let shortcuts_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let key_section = reader_settings_section("Keyboard");
+    let key_section = reader_settings_card("emblem-system-symbolic", "Keyboard");
     let mut keybind_buttons = Vec::new();
     for action in ReaderAction::ALL {
         let binding = keybinds.borrow().binding(action);
         let button = keybind_row(&key_section, action, binding, sender);
         keybind_buttons.push((action, button));
     }
+    // The conflict answer (decision 24): a taken key refuses and names
+    // its owner here. Hidden until there is something to say.
+    let keybind_hint = gtk::Label::new(None);
+    keybind_hint.add_css_class("kalam-reader-keybind-conflict");
+    keybind_hint.set_wrap(true);
+    keybind_hint.set_xalign(0.0);
+    keybind_hint.set_visible(false);
+    key_section.append(&keybind_hint);
     let key_hint = gtk::Label::new(Some(
         "Click a key, then press the one you want; Escape cancels. A key does one \
-         thing, so binding it elsewhere moves it.",
+         thing — one already taken refuses and names its owner.",
     ));
     key_hint.add_css_class("kalam-reader-setting-hint");
     key_hint.set_wrap(true);
@@ -377,6 +457,12 @@ pub(crate) fn build_reader_settings_panel(
         arrow_step_row,
         keybind_buttons,
         dual_page_switch,
+        set_book_override_switch,
+        set_book_theme_choice,
+        use_defaults_btn,
+        keybind_hint,
+        preview_column,
+        preview_body,
     }
 }
 
@@ -455,14 +541,127 @@ fn keybind_row(
     button
 }
 
-pub(crate) fn reader_settings_section(label: &str) -> gtk::Box {
+/// One settings section as an inset card (spec §3): the app's fill
+/// under the standing card, a header icon beside the Label-style
+/// name, then the rows.
+pub(crate) fn reader_settings_card(icon_name: &'static str, label: &str) -> gtk::Box {
     let section = gtk::Box::new(gtk::Orientation::Vertical, 10);
     section.add_css_class("kalam-reader-section");
+    let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    head.append(&crate::icons::symbolic_with_classes(
+        icon_name,
+        16,
+        &["kalam-inline-icon"],
+    ));
     let heading = gtk::Label::new(Some(label));
     heading.add_css_class("kalam-reader-section-label");
     heading.set_halign(gtk::Align::Start);
-    section.append(&heading);
+    head.append(&heading);
+    section.append(&head);
     section
+}
+
+/// The This-book switch row (decision 147) and the setter that keeps
+/// it in step when an edit below creates the override on its own or
+/// resetting deletes it — the guard cell keeps that from echoing
+/// back as a user flip.
+fn book_override_row(
+    on: bool,
+    sender: &ComponentSender<ReaderModel>,
+) -> (gtk::Box, Rc<dyn Fn(bool)>) {
+    use std::cell::Cell;
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.add_css_class("kalam-reader-setting-row");
+    let label = gtk::Label::new(Some("Use different settings for this book"));
+    label.add_css_class("kalam-reader-setting-name");
+    label.set_hexpand(true);
+    label.set_halign(gtk::Align::Start);
+    label.set_wrap(true);
+    row.append(&label);
+
+    let switching = Rc::new(Cell::new(false));
+    let sw = gtk::Switch::new();
+    sw.set_active(on);
+    sw.set_valign(gtk::Align::Center);
+    sw.add_css_class("kalam-switch");
+    let tx = sender.input_sender().clone();
+    let switching_cb = switching.clone();
+    sw.connect_active_notify(move |sw| {
+        if !switching_cb.get() {
+            let _ = tx.send(ReaderMsg::SetBookOverride(sw.is_active()));
+        }
+    });
+    row.append(&sw);
+
+    let set: Rc<dyn Fn(bool)> = {
+        let switching = switching.clone();
+        let sw = sw.clone();
+        Rc::new(move |on| {
+            switching.set(true);
+            sw.set_active(on);
+            switching.set(false);
+        })
+    };
+    (row, set)
+}
+
+/// The book's own theme (decision 145): the app's, or any palette in
+/// either mode. Only the page follows it — the chrome stays the
+/// app's. Comes back with the silent setter the model syncs through:
+/// the custom dropdown's `set_selected` never fires its change
+/// callback, so a sync cannot echo back as a user choice.
+fn book_theme_row(
+    current: Option<String>,
+    sender: &ComponentSender<ReaderModel>,
+) -> (gtk::Box, Rc<dyn Fn(Option<&str>)>) {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.add_css_class("kalam-reader-setting-row");
+    let label = gtk::Label::new(Some("Theme"));
+    label.add_css_class("kalam-reader-setting-name");
+    label.set_hexpand(true);
+    label.set_halign(gtk::Align::Start);
+    row.append(&label);
+
+    let mut ids: Vec<Option<String>> = vec![None];
+    let mut display: Vec<String> = vec!["App theme".to_string()];
+    for palette in crate::theme::Palette::ALL.iter().copied() {
+        for mode in [crate::theme::ModePref::Light, crate::theme::ModePref::Dark] {
+            let choice = crate::theme::ThemeChoice { palette, mode };
+            ids.push(Some(choice.id()));
+            display.push(choice.label());
+        }
+    }
+    let selected = ids.iter().position(|id| *id == current).unwrap_or(0);
+
+    let options: Vec<crate::widgets::dropdown::DropdownOption> = display
+        .into_iter()
+        .map(crate::widgets::dropdown::DropdownOption::new)
+        .collect();
+    let tx = sender.input_sender().clone();
+    let choices = ids.clone();
+    // The handle must outlive the row (the silent setter drives it),
+    // so it rides inside an Rc the setter closure keeps.
+    let drop = Rc::new(crate::widgets::dropdown::dropdown(
+        "Theme",
+        options,
+        selected,
+        None,
+        move |index| {
+            let chosen = choices.get(index).cloned().unwrap_or(None);
+            let _ = tx.send(ReaderMsg::SetBookTheme(chosen));
+        },
+        || {},
+    ));
+    row.append(&drop.widget());
+
+    let set: Rc<dyn Fn(Option<&str>)> = Rc::new(move |id: Option<&str>| {
+        let idx = ids
+            .iter()
+            .position(|entry| entry.as_deref() == id)
+            .unwrap_or(0);
+        drop.set_selected(idx);
+    });
+    (row, set)
 }
 
 pub(crate) fn reader_stepper_row(
@@ -516,12 +715,6 @@ pub(crate) fn reader_stepper_row(
 
     row.append(&stepper);
     row
-}
-
-pub(crate) fn reader_panel_divider() -> gtk::Separator {
-    let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
-    sep.add_css_class("kalam-reader-panel-divider");
-    sep
 }
 
 fn setting_toggle(

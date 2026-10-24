@@ -1,5 +1,6 @@
 //! Immersive EPUB reader module.
 
+mod book_settings;
 mod chapter;
 mod chrome;
 pub(crate) mod engine;
@@ -20,8 +21,8 @@ use chrome::{
     sync_reader_controls, sync_reader_stacks, sync_ribbon, sync_sidebar_tabs,
     update_chrome_labels, update_sidebar_header,
 };
-use lists::{rebuild_bookmarks_list, rebuild_highlights_list, rebuild_toc, rebuild_words_list};
-use panels::{build_bookmarks_panel, build_highlights_panel, build_words_panel};
+use lists::{rebuild_notes_list, rebuild_toc};
+use panels::build_notes_panel;
 use settings_panel::build_reader_settings_panel;
 use types::*;
 
@@ -267,13 +268,17 @@ impl Component for ReaderModel {
                                 set_orientation: gtk::Orientation::Vertical,
                                 set_halign: gtk::Align::Start,
                             },
+                        },
 
-                            #[name = "sidebar_progress"]
-                            gtk::ProgressBar {
-                                add_css_class: "kalam-reader-progress",
-                                set_show_text: false,
-                                set_fraction: 0.0,
-                            },
+                        // The pencil leaves the book for its library
+                        // page (decision 20) — metadata edits live
+                        // there.
+                        gtk::Button {
+                            add_css_class: "kalam-btn-icon",
+                            set_valign: gtk::Align::Start,
+                            set_tooltip_text: Some("Book details"),
+                            set_child: Some(&crate::icons::symbolic_with_classes("document-edit-symbolic", 16, &["kalam-inline-icon"])),
+                            connect_clicked => ReaderMsg::OpenBookDetails,
                         },
                     },
 
@@ -290,20 +295,20 @@ impl Component for ReaderModel {
                         set_spacing: 2,
                         set_homogeneous: true,
 
-                        #[name = "left_toc_tab"]
+                        #[name = "left_contents_tab"]
                         gtk::Button {
-                            set_child: Some(&reader_sidebar_tab_content("view-list-bullet-symbolic", "TOC")),
+                            set_child: Some(&reader_sidebar_tab_content("view-list-bullet-symbolic", "Contents")),
                             add_css_class: "kalam-reader-tab",
                             set_hexpand: true,
-                            connect_clicked => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Toc),
+                            connect_clicked => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Contents),
                         },
 
-                        #[name = "left_settings_tab"]
+                        #[name = "left_notes_tab"]
                         gtk::Button {
-                            set_child: Some(&reader_sidebar_tab_content("preferences-system-symbolic", "Settings")),
+                            set_child: Some(&reader_sidebar_tab_content("highlight-symbolic", "Notes")),
                             add_css_class: "kalam-reader-tab",
                             set_hexpand: true,
-                            connect_clicked => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Settings),
+                            connect_clicked => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Notes),
                         },
                     },
                 },
@@ -330,42 +335,33 @@ impl Component for ReaderModel {
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-right",
 
+                    // The right panel is Settings now (decision 23):
+                    // a titled head over its Reading | Shortcuts tabs.
+                    gtk::Box {
+                        add_css_class: "kalam-reader-panel-head",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
+
+                        gtk::Label {
+                            add_css_class: "kalam-reader-panel-title",
+                            set_label: "Settings",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                        },
+
+                        gtk::Button {
+                            add_css_class: "kalam-btn-icon",
+                            set_tooltip_text: Some("Close (Esc)"),
+                            set_child: Some(&crate::icons::symbolic_with_classes("window-close-symbolic", 14, &["kalam-inline-icon"])),
+                            connect_clicked => ReaderMsg::ToggleRightSidebar,
+                        },
+                    },
+
                     #[name = "right_panel_host"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_hexpand: true,
                         set_vexpand: true,
-                    },
-
-                    gtk::Box {
-                        add_css_class: "kalam-reader-tabbar",
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 2,
-                        set_homogeneous: true,
-
-                        #[name = "right_highlights_tab"]
-                        gtk::Button {
-                            set_child: Some(&reader_sidebar_tab_content("highlight-symbolic", "Highlights")),
-                            add_css_class: "kalam-reader-tab",
-                            set_hexpand: true,
-                            connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Highlights),
-                        },
-
-                        #[name = "right_bookmarks_tab"]
-                        gtk::Button {
-                            set_child: Some(&reader_sidebar_tab_content("bookmark-new-symbolic", "Marks")),
-                            add_css_class: "kalam-reader-tab",
-                            set_hexpand: true,
-                            connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Bookmarks),
-                        },
-
-                        #[name = "right_words_tab"]
-                        gtk::Button {
-                            set_child: Some(&reader_sidebar_tab_content("accessories-dictionary-symbolic", "Words")),
-                            add_css_class: "kalam-reader-tab",
-                            set_hexpand: true,
-                            connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Words),
-                        },
                     },
                 },
             },
@@ -563,25 +559,34 @@ impl Component for ReaderModel {
         report_errors(&snap.errors);
         let book = snap.book.clone();
 
-        // The page follows the app theme (decisions 19/145): palette and
-        // mode, resolved once here. The retired `reader.theme` pref is
+        // Reading settings: the app defaults, or this book's own
+        // record where one is kept (decision 147). The page follows
+        // the app theme (decisions 19/145) unless the book's record
+        // carries a theme. The retired `reader.theme` pref is
         // deliberately not mapped — a leftover value must not keep the
-        // page off the app's colours. When the per-book override lands
-        // it will resolve into this same `palette`.
-        let palette = engine::reader_palette(&crate::theme::current(catalog));
-        let catalog_font = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
-        let catalog_line_height = catalog
-            .get_pref("reader.line_height")
-            .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(1.8)
-            .clamp(1.3, 2.5);
-        let catalog_column = catalog
-            .get_pref_i64("reader.column_px", 620)
-            .clamp(400, 860) as u32;
-        let catalog_family = catalog.get_pref("reader.font_family");
-        let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
-        let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
-        let scrolled = catalog.get_pref_i64(engine::PREF_SCROLLED, 0) != 0;
+        // page off the app's colours.
+        let global_settings = book_settings::BookReadingSettings::load_globals(catalog);
+        let book_override = book_settings::BookReadingSettings::load_book(catalog, book_id);
+        let effective = book_override.clone().unwrap_or(global_settings);
+        let theme_override = effective.theme.clone();
+        // The same resolution refresh_palette does from here on:
+        // a stored id counts only when it round-trips.
+        let palette = {
+            let theme = theme_override
+                .as_deref()
+                .map(|id| (id, crate::theme::choice_by_id(id).resolve()))
+                .filter(|(id, theme)| theme.id == *id)
+                .map(|(_, theme)| theme)
+                .unwrap_or_else(|| crate::theme::current(catalog));
+            engine::reader_palette(&theme)
+        };
+        let catalog_font = effective.font_px;
+        let catalog_line_height = effective.line_height;
+        let catalog_column = effective.column_px;
+        let catalog_family = effective.font_family.clone();
+        let catalog_justify = effective.justify;
+        let catalog_publisher = effective.publisher_styles;
+        let scrolled = effective.scrolled;
 
         // The engine opens the EPUB itself: one widget holds the book, and
         // its failure is the only thing that leaves the page without text.
@@ -656,6 +661,24 @@ impl Component for ReaderModel {
             None => Vec::new(),
         };
 
+        // The Reading pane's preview (spec §3): this chapter's own
+        // words where a search can find a decent run of them, the
+        // app's sample otherwise.
+        let preview_heading = chapter_titles
+            .get(chapter)
+            .cloned()
+            .unwrap_or_else(|| "Preview".to_string());
+        let preview_text = view
+            .as_ref()
+            .and_then(|v| {
+                v.search(" the ")
+                    .into_iter()
+                    .find(|r| r.chapter == chapter)
+                    .map(|r| r.snippet)
+            })
+            .filter(|t| t.chars().count() > 120)
+            .unwrap_or_else(|| crate::pages::settings::PREVIEW_TEXT.to_string());
+
         let chapter_annotations = if chapter_count > 0 {
             catalog
                 .get_annotations_for_chapter(book_id, chapter as i64)
@@ -667,25 +690,13 @@ impl Component for ReaderModel {
         let bookmarks = snap.bookmarks;
         let saved_words = snap.saved_words;
 
-        let catalog_font = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
-        let catalog_line_height = catalog
-            .get_pref("reader.line_height")
-            .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(1.8)
-            .clamp(1.3, 2.5);
-        let catalog_column = catalog
-            .get_pref_i64("reader.column_px", 620)
-            .clamp(400, 860) as u32;
-        let catalog_family = catalog.get_pref("reader.font_family");
-        let catalog_justify = catalog.get_pref_i64("reader.justify", 0) != 0;
-        let catalog_publisher = catalog.get_pref_i64("reader.publisher_styles", 1) != 0;
-        let catalog_dual_page = catalog.get_pref_i64("reader.dual_page", 1) != 0;
-        let catalog_autohide = catalog.get_pref_i64("reader.autohide_cursor", 1) != 0;
-        let catalog_wheel = catalog.get_pref_i64("reader.wheel_step", 92).clamp(20, 400) as i32;
-        let catalog_arrow = catalog.get_pref_i64("reader.arrow_step", 45).clamp(10, 200) as i32;
-        let word_memory_scope = catalog
-            .get_pref("reader.word_memory_scope")
-            .unwrap_or_else(|| "library".into());
+        // The standing choices resolved above, under their working
+        // names (the "catalog" ones are the effective values now).
+        let catalog_dual_page = effective.dual_page;
+        let catalog_autohide = effective.autohide_cursor;
+        let catalog_wheel = effective.wheel_step;
+        let catalog_arrow = effective.arrow_step;
+        let word_memory_scope = effective.word_memory_scope.clone();
         if let Some(v) = &view {
             let wm_words = catalog
                 .get_saved_words_for_scope(book_id, &word_memory_scope)
@@ -711,7 +722,7 @@ impl Component for ReaderModel {
             .child(&toc_list)
             .build();
         toc_scroll.add_css_class("kalam-reader-panel-scroll");
-        left_stack.add_named(&toc_scroll, Some("toc"));
+        left_stack.add_named(&toc_scroll, Some("contents"));
 
         // Roadmap 2.9: the reader's keys. One table, shared with the key
         // controller below, so a change in settings takes effect at once.
@@ -735,13 +746,22 @@ impl Component for ReaderModel {
             arrow_step_row,
             keybind_buttons,
             dual_page_switch,
+            set_book_override_switch,
+            set_book_theme_choice,
+            use_defaults_btn,
+            keybind_hint,
+            preview_column,
+            preview_body,
         } = build_reader_settings_panel(
             &sender,
             catalog_font,
             catalog_line_height,
             catalog_column,
             scrolled,
-            catalog.get_pref_i64("dict_sense_hint", 1) != 0,
+            book_override.is_some(),
+            theme_override.clone(),
+            preview_heading,
+            preview_text.clone(),
             catalog.get_pref_i64("dict_history_enabled", 1) != 0,
             catalog_family.clone(),
             font_families,
@@ -762,29 +782,22 @@ impl Component for ReaderModel {
             .child(&settings_panel)
             .build();
         settings_scroll.add_css_class("kalam-reader-panel-scroll");
-        left_stack.add_named(&settings_scroll, Some("settings"));
 
-        let highlights_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        highlights_list.set_hexpand(true);
-        highlights_list.set_vexpand(true);
-        let (highlights_panel, highlight_filter_buttons) =
-            build_highlights_panel(&sender, HighlightFilter::All, &highlights_list);
-        let bookmarks_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        bookmarks_list.set_hexpand(true);
-        bookmarks_list.set_vexpand(true);
-        let bookmarks_panel = build_bookmarks_panel(&sender, &bookmarks_list);
-        let words_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        words_list.set_hexpand(true);
-        words_list.set_vexpand(true);
-        let (words_panel, word_scope_buttons, _words_search_entry) =
-            build_words_panel(&sender, WordScope::Chapter, &words_list);
-
-        let right_stack = gtk::Stack::new();
-        right_stack.set_hexpand(true);
-        right_stack.set_vexpand(true);
-        right_stack.add_named(&highlights_panel, Some("highlights"));
-        right_stack.add_named(&bookmarks_panel, Some("bookmarks"));
-        right_stack.add_named(&words_panel, Some("words"));
+        // The Notes page (decisions 20–22): one list under the four
+        // chips, beside Contents in the left panel.
+        let notes_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        notes_list.set_hexpand(true);
+        notes_list.set_vexpand(true);
+        let panels::NotesPanelControls {
+            root: notes_panel,
+            filter_buttons: notes_filter_buttons,
+            highlight_filter_buttons,
+            word_scope_buttons,
+            highlights_controls: notes_highlights_controls,
+            bookmarks_controls: notes_bookmarks_controls,
+            words_controls: notes_words_controls,
+        } = build_notes_panel(&sender, &notes_list);
+        left_stack.add_named(&notes_panel, Some("notes"));
 
         let model = ReaderModel {
             service,
@@ -837,8 +850,10 @@ impl Component for ReaderModel {
             session_id: None,
             session_start: std::time::Instant::now(),
             session_start_pct: 0,
-            left_tab: LeftSidebarTab::Toc,
-            right_tab: RightSidebarTab::Highlights,
+            left_tab: LeftSidebarTab::Contents,
+            notes_filter: NotesFilter::All,
+            book_override,
+            theme_override,
             left_sidebar_open: false,
             right_sidebar_open: false,
             highlight_filter: HighlightFilter::All,
@@ -855,12 +870,13 @@ impl Component for ReaderModel {
             left_sidebar_box: None,
             right_sidebar_box: None,
             left_stack,
-            right_stack,
             toc_scroll,
             toc_list,
-            highlights_list,
-            bookmarks_list,
-            words_list,
+            notes_list,
+            notes_filter_buttons,
+            notes_highlights_controls,
+            notes_bookmarks_controls,
+            notes_words_controls,
             settings_stack,
             settings_pane_buttons,
             font_size_label,
@@ -871,6 +887,13 @@ impl Component for ReaderModel {
             arrow_step_row,
             keybind_buttons,
             dual_page_switch,
+            set_book_override_switch,
+            set_book_theme_choice,
+            use_defaults_btn,
+            keybind_hint,
+            preview_column,
+            preview_body,
+            preview_text,
             highlight_filter_buttons,
             word_scope_buttons,
             search_active: false,
@@ -953,7 +976,7 @@ impl Component for ReaderModel {
             widgets.web_host.append(&label);
         }
         widgets.left_panel_host.append(&model.left_stack);
-        widgets.right_panel_host.append(&model.right_stack);
+        widgets.right_panel_host.append(&settings_scroll);
         let left_sidebar_box = widgets
             .left_panel_host
             .parent()
@@ -987,9 +1010,7 @@ impl Component for ReaderModel {
             model.chapter,
             &sender,
         );
-        rebuild_highlights_list(&model, &sender);
-        rebuild_bookmarks_list(&model, &sender);
-        rebuild_words_list(&model, &sender);
+        rebuild_notes_list(&model, &sender);
 
         // The Back+Bubble unit (decision 15): the shell's own Back pill
         // — same classes, same placement (18 from the left, 14 from the
@@ -1172,6 +1193,9 @@ impl Component for ReaderModel {
         key.set_propagation_phase(gtk::PropagationPhase::Capture);
         let s = sender.clone();
         let keys = model.keybinds.clone();
+        // The shell's own key table: its Close-panel key closes the
+        // reader's frontmost layer too (decision 158).
+        let shell_keys = crate::shortcuts::shared(model.service.catalog());
         key.connect_key_pressed(move |controller, keyval, _, state| {
             use gtk::gdk::Key;
             let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
@@ -1211,6 +1235,16 @@ impl Component for ReaderModel {
 
             if is_typing {
                 return gtk::glib::Propagation::Proceed;
+            }
+
+            // The shell's rebindable Close-panel key (decision 158):
+            // hardwired Escape above keeps its full layered behaviour;
+            // this only ever closes a layer, never the book.
+            if shell_keys.borrow().action_for(keyval, state)
+                == Some(crate::shortcuts::ShortcutAction::ClosePanel)
+            {
+                s.input(ReaderMsg::ClosePanelKey);
+                return gtk::glib::Propagation::Stop;
             }
 
             // Roadmap 2.9: what a key does is the reader's to decide.
@@ -1283,6 +1317,16 @@ impl Component for ReaderModel {
         if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "chrome") {
             sender.input(ReaderMsg::ShowBackChrome);
         }
+        // The panel frames: summon each side the way a key would.
+        if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "contents") {
+            sender.input(ReaderMsg::OpenContents);
+        }
+        if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "notes") {
+            sender.input(ReaderMsg::OpenNotes(NotesFilter::All));
+        }
+        if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "settings") {
+            sender.input(ReaderMsg::OpenSettingsPanel);
+        }
 
         ComponentParts { model, widgets }
     }
@@ -1296,9 +1340,7 @@ impl Component for ReaderModel {
     ) {
         let mut refresh_sidebar_header = false;
         let mut refresh_toc = false;
-        let mut refresh_highlights = false;
-        let mut refresh_bookmarks = false;
-        let mut refresh_words = false;
+        let mut refresh_notes = false;
         let mut refresh_controls = false;
         let mut refresh_chrome = false;
         let mut refresh_tabs = false;
@@ -1417,9 +1459,7 @@ impl Component for ReaderModel {
                     self.go_chapter(idx, 0.0);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
-                    refresh_highlights = true;
-                    refresh_bookmarks = true;
-                    refresh_words = true;
+                    refresh_notes = true;
                     refresh_chrome = true;
                 }
             }
@@ -1439,12 +1479,14 @@ impl Component for ReaderModel {
                 if self.editing_annotation == Some(annotation.id) {
                     self.flush_annotation_note_draft();
                     self.editing_annotation = None;
-                    refresh_highlights = true;
+                    refresh_notes = true;
                     refresh_tabs = true;
                 } else {
                     self.flush_annotation_note_draft();
-                    self.right_tab = RightSidebarTab::Highlights;
-                    self.right_sidebar_open = true;
+                    // Notes lives in the left panel now (decision 20).
+                    self.left_tab = LeftSidebarTab::Notes;
+                    self.left_sidebar_open = true;
+                    self.right_sidebar_open = false;
                     self.editing_annotation = Some(annotation.id);
                     // A row the engine painted is a place as well as a row:
                     // jump straight to the highlight. A WebKit-era row has no
@@ -1459,12 +1501,10 @@ impl Component for ReaderModel {
                         self.go_chapter(idx, 0.0);
                         refresh_sidebar_header = true;
                         refresh_toc = true;
-                        refresh_bookmarks = true;
-                        refresh_words = true;
                         refresh_chrome = true;
                     }
                     refresh_tabs = true;
-                    refresh_highlights = true;
+                    refresh_notes = true;
                 }
             }
             ReaderMsg::JumpToLocation(idx, frac) => {
@@ -1472,9 +1512,7 @@ impl Component for ReaderModel {
                     self.go_chapter(idx, frac);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
-                    refresh_highlights = true;
-                    refresh_bookmarks = true;
-                    refresh_words = true;
+                    refresh_notes = true;
                     refresh_chrome = true;
                 }
             }
@@ -1493,9 +1531,7 @@ impl Component for ReaderModel {
                 if next != self.font_px {
                     self.close_annotation_editor();
                     self.font_px = next;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.font_px", &next.to_string());
+                    self.store_book_setting();
                     self.with_view(|v| v.set_font_px(next as f32));
                     refresh_controls = true;
                 }
@@ -1506,9 +1542,7 @@ impl Component for ReaderModel {
                 if (next - self.line_height).abs() > f32::EPSILON {
                     self.close_annotation_editor();
                     self.line_height = next;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.line_height", &format!("{next:.1}"));
+                    self.store_book_setting();
                     self.with_view(|v| v.set_line_height(next));
                     refresh_controls = true;
                 }
@@ -1518,9 +1552,7 @@ impl Component for ReaderModel {
                 if next != self.column_px {
                     self.close_annotation_editor();
                     self.column_px = next;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.column_px", &next.to_string());
+                    self.store_book_setting();
                     self.with_view(|v| v.set_column_px(next as f32));
                     refresh_controls = true;
                 }
@@ -1533,28 +1565,25 @@ impl Component for ReaderModel {
                 };
                 if family != self.font_family {
                     self.font_family = family.clone();
-                    self.service
-                        .catalog()
-                        .set_pref("reader.font_family", family.as_deref().unwrap_or(""));
+                    self.store_book_setting();
                     self.with_view(move |v| v.set_font_family(family));
+                    refresh_controls = true;
                 }
             }
             ReaderMsg::SetJustify(on) => {
                 if on != self.justify {
                     self.justify = on;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.justify", if on { "1" } else { "0" });
+                    self.store_book_setting();
                     self.with_view(move |v| v.set_justify(on));
+                    refresh_controls = true;
                 }
             }
             ReaderMsg::SetPublisherStyles(on) => {
                 if on != self.publisher_styles {
                     self.publisher_styles = on;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.publisher_styles", if on { "1" } else { "0" });
+                    self.store_book_setting();
                     self.with_view(move |v| v.set_publisher_styles(on));
+                    refresh_controls = true;
                 }
             }
             ReaderMsg::ShowNote { href, text, x, y } => {
@@ -1601,10 +1630,9 @@ impl Component for ReaderModel {
             ReaderMsg::SetDualPage(on) => {
                 if on != self.dual_page {
                     self.dual_page = on;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.dual_page", if on { "1" } else { "0" });
+                    self.store_book_setting();
                     self.with_view(move |v| v.set_dual_page(on));
+                    refresh_controls = true;
                 }
             }
             ReaderMsg::OpenFontsFolder => {
@@ -1639,19 +1667,16 @@ impl Component for ReaderModel {
             ReaderMsg::SetAutohideCursor(on) => {
                 if on != self.autohide_cursor {
                     self.autohide_cursor = on;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.autohide_cursor", if on { "1" } else { "0" });
+                    self.store_book_setting();
                     self.with_view(move |v| v.set_autohide_cursor(on));
+                    refresh_controls = true;
                 }
             }
             ReaderMsg::WheelStepDelta(delta) => {
                 let next = (self.wheel_step + delta).clamp(20, 400);
                 if next != self.wheel_step {
                     self.wheel_step = next;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.wheel_step", &next.to_string());
+                    self.store_book_setting();
                     self.with_view(move |v| v.set_wheel_step(next as f32));
                     refresh_controls = true;
                 }
@@ -1660,9 +1685,7 @@ impl Component for ReaderModel {
                 let next = (self.arrow_step + delta).clamp(10, 200);
                 if next != self.arrow_step {
                     self.arrow_step = next;
-                    self.service
-                        .catalog()
-                        .set_pref("reader.arrow_step", &next.to_string());
+                    self.store_book_setting();
                     self.with_view(move |v| v.set_arrow_step(next as f32));
                     refresh_controls = true;
                 }
@@ -1671,6 +1694,22 @@ impl Component for ReaderModel {
                 let Some(binding) = keybinds::KeyBinding::capture(key, ctrl) else {
                     return;
                 };
+                // A key does one thing (decision 24): one already
+                // owned elsewhere refuses and says whose it is; it is
+                // never stolen from under the other action.
+                if let Some(owner) = self.keybinds.borrow().owner_of(&binding) {
+                    if owner != action {
+                        self.keybind_hint.set_label(&format!(
+                            "“{}” already belongs to “{}” — unbind it there first.",
+                            binding.label(),
+                            owner.label()
+                        ));
+                        self.keybind_hint.set_visible(true);
+                        refresh_controls = true;
+                        return;
+                    }
+                }
+                self.keybind_hint.set_visible(false);
                 {
                     let mut bindings = self.keybinds.borrow_mut();
                     bindings.bind(action, binding);
@@ -1706,16 +1745,58 @@ impl Component for ReaderModel {
                     .set_pref("dict_sense_hint", if on { "1" } else { "0" });
             }
             ReaderMsg::SetDictHistory(on) => {
+                // A library-wide privacy pref, deliberately outside the
+                // per-book record: it writes the shared pref directly.
                 self.service
                     .catalog()
                     .set_pref("dict_history_enabled", if on { "1" } else { "0" });
             }
+            ReaderMsg::SetBookOverride(on) => {
+                // Decision 147: off forgets the book's record and the
+                // app defaults come back; on keeps the standing
+                // choices as this book's own from here on.
+                if on {
+                    self.store_book_setting();
+                } else {
+                    book_settings::BookReadingSettings::clear_book(
+                        self.service.catalog(),
+                        self.book_id,
+                    );
+                    self.book_override = None;
+                    let globals =
+                        book_settings::BookReadingSettings::load_globals(self.service.catalog());
+                    self.apply_settings(&globals);
+                }
+                refresh_controls = true;
+            }
+            ReaderMsg::UseSettingsAsDefaults => {
+                // Copy the standing choices over the defaults
+                // (decision 147) — never the book's theme, which has
+                // no global counterpart. If the book's record now
+                // says nothing the defaults don't, it can go; the
+                // book just follows them, theme and all.
+                let current = self.current_settings();
+                current.write_globals(self.service.catalog());
+                if self.book_override.is_some() && current.theme.is_none() {
+                    book_settings::BookReadingSettings::clear_book(
+                        self.service.catalog(),
+                        self.book_id,
+                    );
+                    self.book_override = None;
+                }
+                refresh_controls = true;
+            }
+            ReaderMsg::SetBookTheme(theme) => {
+                if theme != self.theme_override {
+                    self.theme_override = theme;
+                    self.store_book_setting();
+                    self.refresh_palette();
+                    refresh_controls = true;
+                }
+            }
             ReaderMsg::SetScrolled(on) => {
                 self.scrolled = on;
-                self.service.catalog().set_pref(
-                    engine::PREF_SCROLLED,
-                    if on { "1" } else { "0" },
-                );
+                self.store_book_setting();
                 self.with_view(|v| v.set_mode(engine::mode_from_pref(on as i64)));
                 if let Some(bar) = &self.strip_scrollbar {
                     bar.set_visible(on);
@@ -1759,9 +1840,7 @@ impl Component for ReaderModel {
                     self.reload_annotations();
                     self.reload_bookmarks();
                     self.reload_saved_words();
-                    refresh_highlights = true;
-                    refresh_bookmarks = true;
-                    refresh_words = true;
+                    refresh_notes = true;
                     refresh_toc = true;
                 }
                 refresh_sidebar_header = true;
@@ -1815,7 +1894,7 @@ impl Component for ReaderModel {
                         );
                         view.show_highlight(id, &h);
                         self.reload_annotations();
-                        refresh_highlights = true;
+                        refresh_notes = true;
                     }
                     Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
                 }
@@ -1835,7 +1914,7 @@ impl Component for ReaderModel {
                             view.update_highlight(id, color_val, &style);
                         }
                         self.reload_annotations();
-                        refresh_highlights = true;
+                        refresh_notes = true;
                     }
                     Err(e) => crate::notify::error("Could not update highlight", &e.to_string()),
                 }
@@ -1889,7 +1968,7 @@ impl Component for ReaderModel {
             }
             ReaderMsg::SetWordMemoryScope(scope) => {
                 self.word_memory_scope = scope.clone();
-                self.service.catalog().set_pref("reader.word_memory_scope", &scope);
+                self.store_book_setting();
                 if let Some(view) = &self.view {
                     let wm_words = self
                         .service
@@ -1898,6 +1977,7 @@ impl Component for ReaderModel {
                         .unwrap_or_default();
                     view.set_word_memory(wm_words.into_iter().map(|w| w.word));
                 }
+                refresh_controls = true;
             }
             ReaderMsg::HighlightSelection(color_name) => {
                 engine::dismiss(self.selection_chip.take());
@@ -1930,7 +2010,7 @@ impl Component for ReaderModel {
                         );
                         view.show_highlight(id, &h);
                         self.reload_annotations();
-                        refresh_highlights = true;
+                        refresh_notes = true;
                     }
                     Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
                 }
@@ -1967,7 +2047,7 @@ impl Component for ReaderModel {
                         );
                         crate::notify::compact("Quote saved", "");
                         self.reload_annotations();
-                        refresh_highlights = true;
+                        refresh_notes = true;
                     }
                     Err(e) => crate::notify::error("Could not save the quote", &e.to_string()),
                 }
@@ -2006,9 +2086,7 @@ impl Component for ReaderModel {
                 if let Some(view) = &self.view {
                     engine::show_all_highlights(view, &self.all_book_annotations);
                 }
-                refresh_highlights = true;
-                refresh_bookmarks = true;
-                refresh_words = true;
+                refresh_notes = true;
                 refresh_sidebar_header = true;
                 refresh_chrome = true;
                 refresh_toc = true;
@@ -2049,7 +2127,7 @@ impl Component for ReaderModel {
                             }
                         }
                         self.with_view(|v| v.recolor_highlight(id, engine::engine_color(color_name)));
-                        refresh_highlights = true;
+                        refresh_notes = true;
                     }
                     Err(err) => {
                         crate::notify::error("Could not recolor the highlight", &err.to_string());
@@ -2061,7 +2139,7 @@ impl Component for ReaderModel {
                 let query = query.trim().to_string();
                 if query != self.annotation_search_query {
                     self.annotation_search_query = query;
-                    refresh_highlights = true;
+                    refresh_notes = true;
                 }
             }
             ReaderMsg::DeleteAnnotation(id) => {
@@ -2076,7 +2154,7 @@ impl Component for ReaderModel {
                 }
                 self.reload_annotations();
                 self.with_view(|v| v.remove_highlight(id));
-                refresh_highlights = true;
+                refresh_notes = true;
             }
             ReaderMsg::AnnotationNoteChanged(id, note) => {
                 if self.editing_annotation == Some(id) {
@@ -2099,7 +2177,7 @@ impl Component for ReaderModel {
                     "Could not delete the mark",
                 );
                 self.reload_bookmarks();
-                refresh_bookmarks = true;
+                refresh_notes = true;
             }
             ReaderMsg::DictSearch(q) => {
                 self.dict_query = q.clone();
@@ -2108,7 +2186,7 @@ impl Component for ReaderModel {
                 } else {
                     self.dict_results = self.lookup_dict(&q, 30);
                 }
-                refresh_words = true;
+                refresh_notes = true;
             }
             ReaderMsg::DictSearchSelect(word) => {
                 let data = self
@@ -2132,9 +2210,9 @@ impl Component for ReaderModel {
                     .unwrap_or(false);
                 let rect = self.dict_anchor_rect();
                 self.show_dict(&data, saved, None, rect, &sender);
-                self.right_tab = RightSidebarTab::Words;
-                self.right_sidebar_open = true;
-                refresh_tabs = true;
+                // The lookup came from the Notes panel's Words view;
+                // the popover opens over the page and the list stays
+                // exactly as it is.
             }
             ReaderMsg::SaveCurrentWord => {
                 if let (Some(word), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
@@ -2153,7 +2231,7 @@ impl Component for ReaderModel {
                             // The toast is the confirmation; the popover has
                             // nothing left to say.
                             engine::dismiss(self.dict_popover.take());
-                            refresh_words = true;
+                            refresh_notes = true;
                         }
                         Err(e) => crate::notify::error("Could not save the word", &e.to_string()),
                     }
@@ -2199,17 +2277,24 @@ impl Component for ReaderModel {
                         }
                     }
                     self.reload_bookmarks();
-                    refresh_bookmarks = true;
+                    refresh_notes = true;
                     refresh_chrome = true;
                 }
             }
             ReaderMsg::OpenAuthor(name) => {
                 sender.output(ReaderOut::OpenAuthor { name }).ok();
             }
+            ReaderMsg::OpenBookDetails => {
+                sender
+                    .output(ReaderOut::OpenBook {
+                        book_id: self.book_id,
+                    })
+                    .ok();
+            }
             ReaderMsg::OpenLeftSidebar => {
-                self.close_annotation_editor();
+                // Popover keep-alive: only ever opens, never toggles.
                 self.right_sidebar_open = false;
-                if self.left_tab == LeftSidebarTab::Toc {
+                if self.left_tab == LeftSidebarTab::Contents {
                     self.position_toc_scroll();
                 }
                 self.left_sidebar_open = true;
@@ -2220,43 +2305,84 @@ impl Component for ReaderModel {
                 self.right_sidebar_open = true;
                 refresh_tabs = true;
             }
+            ReaderMsg::ToggleRightSidebar => {
+                self.right_sidebar_open = !self.right_sidebar_open;
+                if self.right_sidebar_open {
+                    self.left_sidebar_open = false;
+                }
+                refresh_tabs = true;
+            }
+            ReaderMsg::OpenContents => {
+                // The summon key (decision 19): second press closes.
+                if self.left_sidebar_open && self.left_tab == LeftSidebarTab::Contents {
+                    self.close_annotation_editor();
+                    self.left_sidebar_open = false;
+                } else {
+                    self.left_tab = LeftSidebarTab::Contents;
+                    self.right_sidebar_open = false;
+                    self.position_toc_scroll();
+                    self.left_sidebar_open = true;
+                }
+                refresh_tabs = true;
+            }
+            ReaderMsg::OpenNotes(filter) => {
+                if self.left_sidebar_open
+                    && self.left_tab == LeftSidebarTab::Notes
+                    && self.notes_filter == filter
+                {
+                    self.close_annotation_editor();
+                    self.left_sidebar_open = false;
+                } else {
+                    if self.notes_filter != filter {
+                        self.close_annotation_editor();
+                    }
+                    self.left_tab = LeftSidebarTab::Notes;
+                    self.notes_filter = filter;
+                    self.right_sidebar_open = false;
+                    self.left_sidebar_open = true;
+                    refresh_controls = true;
+                    refresh_notes = true;
+                }
+                refresh_tabs = true;
+            }
+            ReaderMsg::OpenSettingsPanel => {
+                if self.right_sidebar_open {
+                    self.right_sidebar_open = false;
+                } else {
+                    self.left_sidebar_open = false;
+                    self.right_sidebar_open = true;
+                    refresh_controls = true;
+                }
+                refresh_tabs = true;
+            }
             ReaderMsg::SwitchLeftTab(tab) => {
                 self.close_annotation_editor();
                 self.left_tab = tab;
                 self.right_sidebar_open = false;
-                if matches!(tab, LeftSidebarTab::Toc) {
+                if matches!(tab, LeftSidebarTab::Contents) {
                     self.position_toc_scroll();
                 }
                 self.left_sidebar_open = true;
                 refresh_tabs = true;
-                if matches!(tab, LeftSidebarTab::Settings) {
-                    refresh_controls = true;
-                }
             }
-            ReaderMsg::SwitchRightTab(tab) => {
-                if !matches!(tab, RightSidebarTab::Highlights) {
+            ReaderMsg::SetNotesFilter(filter) => {
+                if filter != self.notes_filter {
                     self.close_annotation_editor();
+                    self.notes_filter = filter;
                 }
-                self.right_tab = tab;
-                self.right_sidebar_open = true;
-                self.left_sidebar_open = false;
-                refresh_tabs = true;
-                match tab {
-                    RightSidebarTab::Highlights => refresh_highlights = true,
-                    RightSidebarTab::Bookmarks => refresh_bookmarks = true,
-                    RightSidebarTab::Words => refresh_words = true,
-                }
+                refresh_controls = true;
+                refresh_notes = true;
             }
             ReaderMsg::SetHighlightFilter(filter) => {
                 self.close_annotation_editor();
                 self.highlight_filter = filter;
                 refresh_controls = true;
-                refresh_highlights = true;
+                refresh_notes = true;
             }
             ReaderMsg::SetWordScope(scope) => {
                 self.word_scope = scope;
                 refresh_controls = true;
-                refresh_words = true;
+                refresh_notes = true;
             }
             ReaderMsg::ExportAnnotations => {
                 let catalog = self.service.catalog();
@@ -2297,6 +2423,23 @@ impl Component for ReaderModel {
                     sender.input(ReaderMsg::CloseSidebars);
                 } else {
                     sender.input(ReaderMsg::Close);
+                }
+            }
+            ReaderMsg::ClosePanelKey => {
+                // The shell's rebindable Close-panel key (decision
+                // 158): the same layers as Escape, minus the selection
+                // (a text gesture, not a panel) and minus ever leaving
+                // the book — reassigning it must not become a way out.
+                if self.dict_popover.as_ref().is_some_and(|p| p.is_visible()) {
+                    sender.input(ReaderMsg::ClearDict);
+                } else if self.selection_chip.as_ref().is_some_and(|p| p.is_visible()) {
+                    engine::dismiss(self.selection_chip.take());
+                } else if self.search_active {
+                    sender.input(ReaderMsg::CloseSearch);
+                } else if self.lightbox_active {
+                    sender.input(ReaderMsg::CloseImageLightbox);
+                } else if self.left_sidebar_open || self.right_sidebar_open {
+                    sender.input(ReaderMsg::CloseSidebars);
                 }
             }
             ReaderMsg::ShowBackChrome => {
@@ -2407,18 +2550,12 @@ impl Component for ReaderModel {
                 self.chapter,
                 &sender,
             );
-            if self.left_sidebar_open && self.left_tab == LeftSidebarTab::Toc {
+            if self.left_sidebar_open && self.left_tab == LeftSidebarTab::Contents {
                 self.position_toc_scroll();
             }
         }
-        if refresh_highlights {
-            rebuild_highlights_list(self, &sender);
-        }
-        if refresh_bookmarks {
-            rebuild_bookmarks_list(self, &sender);
-        }
-        if refresh_words {
-            rebuild_words_list(self, &sender);
+        if refresh_notes {
+            rebuild_notes_list(self, &sender);
         }
 
         self.update_view(widgets, sender);

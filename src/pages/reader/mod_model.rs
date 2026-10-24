@@ -19,9 +19,8 @@ pub struct ReaderModel {
     pub(crate) chapter_titles: Vec<String>,
     pub(crate) chapter: usize,
     pub(crate) fraction: f64,
-    /// The page's resolved palette (decisions 19/145): the app theme by
-    /// default; the per-book override will resolve here instead.
-    #[allow(dead_code)] // read once the per-book override lands (EPUB T3)
+    /// The page's resolved palette (decisions 19/145): the app theme,
+    /// or the book's own theme when it keeps one.
     pub(crate) palette: ReaderPalette,
     pub(crate) font_px: u32,
     pub(crate) line_height: f32,
@@ -98,12 +97,19 @@ pub struct ReaderModel {
     pub(crate) session_start: std::time::Instant,
     pub(crate) session_start_pct: i64,
     pub(crate) left_tab: LeftSidebarTab,
-    pub(crate) right_tab: RightSidebarTab,
     pub(crate) left_sidebar_open: bool,
     pub(crate) right_sidebar_open: bool,
+    pub(crate) notes_filter: NotesFilter,
     pub(crate) highlight_filter: HighlightFilter,
     pub(crate) word_scope: WordScope,
     pub(crate) settings_pane: ReaderSettingsPane,
+    /// The book's own reading settings, when it keeps them (decision
+    /// 147). `Some` is the "Settings for this book" switch; the rest
+    /// of the settings fields mirror it while it stands.
+    pub(crate) book_override: Option<super::book_settings::BookReadingSettings>,
+    /// The book's own theme id, when its page does not follow the
+    /// app theme (decision 145).
+    pub(crate) theme_override: Option<String>,
     /// The Back+Bubble unit's shown state (decision 15).
     pub(crate) show_back_button: bool,
     /// Pointer resting in the top-left zone or on the unit itself.
@@ -120,12 +126,16 @@ pub struct ReaderModel {
     pub(crate) left_sidebar_box: Option<gtk::Box>,
     pub(crate) right_sidebar_box: Option<gtk::Box>,
     pub(crate) left_stack: gtk::Stack,
-    pub(crate) right_stack: gtk::Stack,
     pub(crate) toc_scroll: gtk::ScrolledWindow,
     pub(crate) toc_list: gtk::Box,
-    pub(crate) highlights_list: gtk::Box,
-    pub(crate) bookmarks_list: gtk::Box,
-    pub(crate) words_list: gtk::Box,
+    /// The one list the Notes tab renders into, whatever its filter.
+    pub(crate) notes_list: gtk::Box,
+    pub(crate) notes_filter_buttons: Vec<(NotesFilter, gtk::Button)>,
+    /// The contextual control rows under the Notes chips, shown one
+    /// at a time by the standing filter.
+    pub(crate) notes_highlights_controls: gtk::Box,
+    pub(crate) notes_bookmarks_controls: gtk::Box,
+    pub(crate) notes_words_controls: gtk::Box,
     pub(crate) settings_stack: gtk::Stack,
     pub(crate) settings_pane_buttons: Vec<(ReaderSettingsPane, gtk::Button)>,
     pub(crate) font_size_label: gtk::Label,
@@ -133,6 +143,15 @@ pub struct ReaderModel {
     pub(crate) column_width_label: gtk::Label,
     pub(crate) highlight_filter_buttons: Vec<(HighlightFilter, gtk::Button)>,
     pub(crate) word_scope_buttons: Vec<(WordScope, gtk::Button)>,
+    pub(crate) preview_body: gtk::Label,
+    pub(crate) preview_column: gtk::Box,
+    /// The preview's words: this book's own where the chapter could
+    /// be read, the app's sample otherwise.
+    pub(crate) preview_text: String,
+    pub(crate) set_book_override_switch: std::rc::Rc<dyn Fn(bool)>,
+    pub(crate) set_book_theme_choice: std::rc::Rc<dyn Fn(Option<&str>)>,
+    pub(crate) use_defaults_btn: gtk::Button,
+    pub(crate) keybind_hint: gtk::Label,
     pub(crate) search_active: bool,
     pub(crate) search_query: String,
     pub(crate) search_results: Vec<kalam_reader::SearchResult>,

@@ -702,6 +702,11 @@ impl AppModel {
                         ReaderOut::OpenAuthor { name } => {
                             AppMsg::Push(Route::AuthorPage { author: name })
                         }
+                        // The book head's pencil (decision 20): out to
+                        // the book's own page, the book left in place.
+                        ReaderOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
                     });
                 PageSlot::Reader(ctrl)
             }

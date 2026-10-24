@@ -425,6 +425,29 @@ jobs:
             READER_ACTION=chrome THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      # EPUB T3 (decisions 20-24, 145, 147): the left panel as Contents
+      # + Notes and the right as Settings alone. The seeded book has
+      # nothing annotated, so the Notes frame proves the chips and the
+      # empty state rather than items; the Settings frame proves the
+      # This-book card, the preview and the inset sections.
+      - name: open the contents panel (dark) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-contents SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=contents THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the notes panel (dark) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-notes SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=notes THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the reader settings panel (dark) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-settings SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=settings THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # The task manager's whole job is showing state that only exists while
       # something is running, so a shot of it over a quiet library proves
       # little about the interesting case. What it does prove is the part no
@@ -721,6 +744,15 @@ jobs:
           cp ci-shots-reader-chrome-dark/report.txt ci-logs/reader-chrome-dark-latest.txt 2>/dev/null \
             || echo "(no reader-chrome-dark report produced)" > ci-logs/reader-chrome-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chrome-dark-latest.txt
+          cp ci-shots-reader-contents/report.txt ci-logs/reader-contents-latest.txt 2>/dev/null \
+            || echo "(no reader-contents report produced)" > ci-logs/reader-contents-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-contents-latest.txt
+          cp ci-shots-reader-notes/report.txt ci-logs/reader-notes-latest.txt 2>/dev/null \
+            || echo "(no reader-notes report produced)" > ci-logs/reader-notes-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-notes-latest.txt
+          cp ci-shots-reader-settings/report.txt ci-logs/reader-settings-latest.txt 2>/dev/null \
+            || echo "(no reader-settings report produced)" > ci-logs/reader-settings-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-settings-latest.txt
           cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
             || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
@@ -807,6 +839,12 @@ jobs:
             ci-logs/reader-chrome-terracotta-light.png 2>/dev/null || true
           cp ci-shots-reader-chrome-dark/03-read-1-settled.png \
             ci-logs/reader-chrome-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-contents/03-read-1-settled.png \
+            ci-logs/reader-contents-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-notes/03-read-1-settled.png \
+            ci-logs/reader-notes-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-settings/03-read-1-settled.png \
+            ci-logs/reader-settings-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-components-light/03-components-settled.png \
             ci-logs/components-terracotta-light.png 2>/dev/null || true
           cp ci-shots-components-dark/03-components-settled.png \
@@ -844,6 +882,9 @@ jobs:
           git add -f ci-logs/reader-latest.txt \
             ci-logs/reader-chrome-light-latest.txt \
             ci-logs/reader-chrome-dark-latest.txt \
+            ci-logs/reader-contents-latest.txt \
+            ci-logs/reader-notes-latest.txt \
+            ci-logs/reader-settings-latest.txt \
             ci-logs/tasks-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
             ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
@@ -874,6 +915,9 @@ jobs:
           done
           for shot in ci-logs/reader-chrome-terracotta-light.png \
                       ci-logs/reader-chrome-terracotta-dark.png \
+                      ci-logs/reader-contents-terracotta-dark.png \
+                      ci-logs/reader-notes-terracotta-dark.png \
+                      ci-logs/reader-settings-terracotta-dark.png \
                       ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \

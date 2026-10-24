@@ -8,16 +8,24 @@ pub enum ReaderOut {
     Close,
     MinimizeToBubble { book_id: i64 },
     OpenAuthor { name: String },
+    /// The book head's edit pencil (decision 20): the book's own page,
+    /// pushed over the reader so Back returns to the page.
+    OpenBook { book_id: i64 },
 }
 
+/// The left panel's two tabs (decision 20). Settings lives alone in
+/// the right panel now (decision 23), so there is no right tab enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeftSidebarTab {
-    Toc,
-    Settings,
+    Contents,
+    Notes,
 }
 
+/// The Notes tab's filter chips (decision 20): one list holding the
+/// book's highlights, bookmarks and saved words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RightSidebarTab {
+pub enum NotesFilter {
+    All,
     Highlights,
     Bookmarks,
     Words,
@@ -60,6 +68,21 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) arrow_step_row: gtk::Box,
     pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
     pub(crate) dual_page_switch: gtk::Switch,
+    /// The Reading preview's page text and its column, repainted by
+    /// `chrome::sync_reader_controls` as the choices move.
+    pub(crate) preview_body: gtk::Label,
+    pub(crate) preview_column: gtk::Box,
+    /// Set the "Settings for this book" switch without re-firing it:
+    /// editing a value turns the override on from *inside* the model
+    /// (decision 147), so the switch must be settable from sync.
+    pub(crate) set_book_override_switch: std::rc::Rc<dyn Fn(bool)>,
+    /// Same for the book-theme dropdown's standing choice.
+    pub(crate) set_book_theme_choice: std::rc::Rc<dyn Fn(Option<&str>)>,
+    /// "Use these settings as my defaults" / "Matches your defaults".
+    pub(crate) use_defaults_btn: gtk::Button,
+    /// The Shortcuts pane's hint line: where a refused key names its
+    /// owner (decision 24).
+    pub(crate) keybind_hint: gtk::Label,
 }
 
 #[derive(Debug, Clone)]
@@ -160,11 +183,35 @@ pub enum ReaderMsg {
     /// (decision 16). Quiet either way — the ribbon is the feedback.
     ToggleBookmark,
     OpenAuthor(String),
+    /// The book head's edit pencil: out to the shell as
+    /// `ReaderOut::OpenBook`.
+    OpenBookDetails,
     OpenLeftSidebar,
     OpenRightSidebar,
+    ToggleRightSidebar,
+    /// The right panel holds Settings only (decision 23). Summoning
+    /// it while it stands puts it away again.
+    OpenSettingsPanel,
+    /// The Contents summon key: a toggle, where `SwitchLeftTab`
+    /// (the tab buttons) only ever switches.
+    OpenContents,
     SwitchLeftTab(LeftSidebarTab),
-    SwitchRightTab(RightSidebarTab),
+    /// Open Notes on one of its filters (the H and W keys); asking
+    /// for the view already standing closes the panel.
+    OpenNotes(NotesFilter),
+    SetNotesFilter(NotesFilter),
     SetHighlightFilter(HighlightFilter),
+    /// "Settings for this book" (decision 147): on snapshots the
+    /// standing choices as the book's own; off returns to the
+    /// defaults (Reset to my defaults is the same gesture).
+    SetBookOverride(bool),
+    /// Copy the standing choices over the global `reader.*` defaults.
+    UseSettingsAsDefaults,
+    /// The book's own theme, or `None` to follow the app (145).
+    SetBookTheme(Option<String>),
+    /// The shell's configurable Close-panel key, when it is not
+    /// Escape: Escape's layering minus leaving the book.
+    ClosePanelKey,
     /// Write the book's highlights/quotes/notes to ~/Highlights.md.
     ExportAnnotations,
     SetWordScope(WordScope),

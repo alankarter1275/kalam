@@ -74,4 +74,19 @@ impl Catalog {
     pub fn set_pref_i64(&self, key: &str, value: i64) {
         self.set_pref(key, &value.to_string());
     }
+
+    /// Forget a preference entirely, so `get_pref` reports it absent
+    /// rather than empty. Per-library keys only so far (the reader's
+    /// per-book settings, whose *presence* is the meaning): the global
+    /// prefs file has no removal path yet, and inventing one here for a
+    /// key that never lands there would be a lie about what was tested.
+    pub fn delete_pref(&self, key: &str) {
+        debug_assert!(
+            !crate::libraries::is_global_pref(key),
+            "delete_pref does not reach the global prefs file"
+        );
+        if let Ok(conn) = self.conn.lock() {
+            let _ = conn.execute("DELETE FROM app_prefs WHERE key = ?1", params![key]);
+        }
+    }
 }

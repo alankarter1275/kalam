@@ -1500,10 +1500,16 @@ fn update_pages_heading(widgets: &ComicsReaderModelWidgets, model: &ComicsReader
     let chapter = model
         .current_chapter_idx
         .and_then(|idx| {
-            model
-                .series_chapters
-                .get(idx)
-                .map(|book| chapter_display(model, idx, book).0)
+            model.series_chapters.get(idx).map(|book| {
+                // The heading spells the word out (`CHAPTER 2`, in
+                // the section label's uppercase) where the chapter
+                // rows abbreviate it to `Ch. 2`.
+                let number = chapter_display(model, idx, book).0;
+                match number.strip_prefix("Ch. ") {
+                    Some(n) => format!("Chapter {n}"),
+                    None => number,
+                }
+            })
         })
         .unwrap_or_else(|| "Chapter".to_string());
     widgets.pages_chapter_label.set_label(&chapter);
@@ -1887,7 +1893,10 @@ impl Component for ComicsReaderModel {
                         #[name = "pages_chapter_label"]
                         gtk::Label {
                             add_css_class: "kalam-reader-section-label",
-                            set_halign: gtk::Align::Start,
+                            // Fill + xalign, not Start: an ellipsizing
+                            // label aligned Start is allocated its
+                            // minimum (one glyph and the ellipsis).
+                            set_xalign: 0.0,
                             set_hexpand: true,
                             set_ellipsize: gtk::pango::EllipsizeMode::End,
                         },

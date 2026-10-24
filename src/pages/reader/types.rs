@@ -90,6 +90,48 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) keybind_hint: gtk::Label,
 }
 
+/// The search bar's Chapter / Book switch (decision 34): Chapter is
+/// the standing choice every time the bar opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SearchScope {
+    Chapter,
+    Book,
+}
+
+/// Indices into the whole-book result list that the standing scope
+/// can see: every result for Book, only the current chapter's for
+/// Chapter. The engine only ever searches the whole book, so the
+/// scope is a view over its results, not a second search.
+pub(crate) fn scoped_search_indices(
+    chapters: impl Iterator<Item = usize>,
+    scope: SearchScope,
+    current_chapter: usize,
+) -> Vec<usize> {
+    chapters
+        .enumerate()
+        .filter(|(_, chapter)| scope == SearchScope::Book || *chapter == current_chapter)
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// A typed query the scope cannot satisfy (decision 34): the bar
+/// answers in the accent and the arrows go away.
+pub(crate) fn search_has_no_matches(query: &str, scoped_len: usize) -> bool {
+    !query.trim().is_empty() && scoped_len == 0
+}
+
+/// The bar's count text: blank before anything is typed, the
+/// decision-34 "No matches" for an empty scope, `n of N` otherwise.
+pub(crate) fn search_count_text(query: &str, scoped_len: usize, search_index: usize) -> String {
+    if query.trim().is_empty() {
+        String::new()
+    } else if scoped_len == 0 {
+        "No matches".to_string()
+    } else {
+        format!("{} of {}", search_index.min(scoped_len - 1) + 1, scoped_len)
+    }
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // reader->app messages; some variants are not yet emitted
 pub enum ReaderMsg {
@@ -251,7 +293,7 @@ pub enum ReaderMsg {
     UpdateSearchQuery(String),
     NextSearchResult,
     PrevSearchResult,
-    JumpToSearchResult(usize),
+    SetSearchScope(SearchScope),
     CloseSearch,
     OpenImageLightbox(u32, u32, Vec<u8>),
     CloseImageLightbox,
@@ -261,4 +303,36 @@ pub enum ReaderMsg {
     LightboxRotateLeft,
     LightboxRotateRight,
     UserScrolled,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chapter_scope_sees_only_the_current_chapter() {
+        let chapters = [0usize, 1, 1, 2, 1];
+        assert_eq!(
+            scoped_search_indices(chapters.into_iter(), SearchScope::Chapter, 1),
+            vec![1, 2, 4]
+        );
+        assert_eq!(
+            scoped_search_indices(chapters.into_iter(), SearchScope::Book, 1),
+            vec![0, 1, 2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn count_text_names_the_no_match_state() {
+        assert_eq!(search_count_text("", 0, 0), "");
+        assert_eq!(search_count_text("   ", 3, 0), "");
+        assert_eq!(search_count_text("river", 0, 0), "No matches");
+        assert_eq!(search_count_text("river", 5, 1), "2 of 5");
+        // A standing index past the end (the chapter changed under
+        // the bar) still reads as a position inside the scope.
+        assert_eq!(search_count_text("river", 5, 9), "5 of 5");
+        assert!(search_has_no_matches("river", 0));
+        assert!(!search_has_no_matches("", 0));
+        assert!(!search_has_no_matches("river", 2));
+    }
 }

@@ -480,6 +480,20 @@ jobs:
             READER_ACTION=dict-missing READER_FIXTURE=1 THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      # EPUB search (decision 34): the floating pill over a query
+      # with chapter matches, and the accent no-match state.
+      - name: open reader search (dark) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-search SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=search THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open reader search missing (dark) and report
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-search-missing SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=search-missing THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # The task manager's whole job is showing state that only exists while
       # something is running, so a shot of it over a quiet library proves
       # little about the interesting case. What it does prove is the part no
@@ -797,6 +811,12 @@ jobs:
           cp ci-shots-reader-dict-missing/report.txt ci-logs/reader-dict-missing-latest.txt 2>/dev/null \
             || echo "(no reader-dict-missing report produced)" > ci-logs/reader-dict-missing-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-dict-missing-latest.txt
+          cp ci-shots-reader-search/report.txt ci-logs/reader-search-latest.txt 2>/dev/null \
+            || echo "(no reader-search report produced)" > ci-logs/reader-search-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-search-latest.txt
+          cp ci-shots-reader-search-missing/report.txt ci-logs/reader-search-missing-latest.txt 2>/dev/null \
+            || echo "(no reader-search-missing report produced)" > ci-logs/reader-search-missing-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-search-missing-latest.txt
           cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
             || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
@@ -897,6 +917,10 @@ jobs:
             ci-logs/reader-dict-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-reader-dict-missing/03-read-1-settled.png \
             ci-logs/reader-dict-missing-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-search/03-read-1-settled.png \
+            ci-logs/reader-search-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-search-missing/03-read-1-settled.png \
+            ci-logs/reader-search-missing-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-components-light/03-components-settled.png \
             ci-logs/components-terracotta-light.png 2>/dev/null || true
           cp ci-shots-components-dark/03-components-settled.png \
@@ -941,6 +965,8 @@ jobs:
             ci-logs/reader-annotation-latest.txt \
             ci-logs/reader-dict-latest.txt \
             ci-logs/reader-dict-missing-latest.txt \
+            ci-logs/reader-search-latest.txt \
+            ci-logs/reader-search-missing-latest.txt \
             ci-logs/tasks-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
             ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
@@ -978,6 +1004,8 @@ jobs:
                       ci-logs/reader-annotation-terracotta-dark.png \
                       ci-logs/reader-dict-terracotta-dark.png \
                       ci-logs/reader-dict-missing-terracotta-dark.png \
+                      ci-logs/reader-search-terracotta-dark.png \
+                      ci-logs/reader-search-missing-terracotta-dark.png \
                       ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \

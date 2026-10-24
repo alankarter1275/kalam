@@ -5313,6 +5313,61 @@ popover.kalam-reader-dict-popover > contents {
     margin-left: 4px;
 }
 
+/* The EPUB search pill (decision 34): a 52px floating pill at the
+   top centre of the page. The PDF bar keeps the shared shape above
+   until its own phase. */
+.kalam-reader-search-bar.epub-search {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 6px 8px 6px 18px;
+    box-shadow: 0 16px 40px alpha(#000, 0.35);
+}
+
+entry.k-reader-search-entry {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: @kalam_text;
+    font-size: 14px;
+    min-height: 36px;
+    padding: 0;
+}
+
+entry.k-reader-search-entry:focus-within {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    outline: none;
+}
+
+entry.k-reader-search-entry image {
+    color: @kalam_text_dim;
+}
+
+.kalam-reader-search-bar.epub-search .kalam-reader-search-count {
+    color: @kalam_text_dim;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.kalam-reader-search-bar.epub-search .kalam-reader-search-count.no-matches {
+    color: @kalam_accent;
+}
+
+.k-reader-search-divider {
+    background: @kalam_border;
+    min-width: 1px;
+    margin: 0 2px;
+}
+
+.kalam-reader-search-bar.epub-search .kalam-reader-search-btn {
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 999px;
+    padding: 0;
+}
+
 /* ── "Matches at a Glance" Popover ────────────────────────────── */
 
 .kalam-search-snippet-popover {

@@ -167,11 +167,15 @@ pub struct ReaderModel {
     pub(crate) keybind_hint: gtk::Label,
     pub(crate) search_active: bool,
     pub(crate) search_query: String,
+    /// The engine's whole-book results; the Chapter / Book switch
+    /// (decision 34) is a view over them, never a second search.
     pub(crate) search_results: Vec<kalam_reader::SearchResult>,
+    /// Position inside the *scoped* results, not the raw list.
     pub(crate) search_index: usize,
-    pub(crate) search_popover: Option<gtk::Popover>,
-    pub(crate) search_list_box: Option<gtk::ListBox>,
-    pub(crate) search_popover_badge: Option<gtk::Label>,
+    pub(crate) search_scope: SearchScope,
+    /// The bar's Chapter / Book switch, kept so closing the bar can
+    /// put it back on Chapter (the standing choice, decision 34).
+    pub(crate) search_scope_control: Option<crate::widgets::segmented::SegmentedControl>,
     pub(crate) lightbox_active: bool,
     pub(crate) lightbox_popover: Option<gtk::Popover>,
     pub(crate) lightbox_pixbuf: Option<gdk_pixbuf::Pixbuf>,
@@ -184,6 +188,49 @@ impl ReaderModel {
     pub(crate) fn with_view(&self, f: impl FnOnce(&kalam_reader::ReaderView)) {
         if let Some(view) = &self.view {
             f(view);
+        }
+    }
+
+    /// The whole-book results the standing Chapter / Book scope can
+    /// see, as indices into `search_results` (decision 34).
+    pub(crate) fn scoped_search_indices(&self) -> Vec<usize> {
+        scoped_search_indices(
+            self.search_results.iter().map(|res| res.chapter),
+            self.search_scope,
+            self.chapter,
+        )
+    }
+
+    pub(crate) fn scoped_search_len(&self) -> usize {
+        self.scoped_search_indices().len()
+    }
+
+    /// The current match's index into the raw result list, if the
+    /// scoped position still lands on one.
+    pub(crate) fn current_search_result_index(&self) -> Option<usize> {
+        self.scoped_search_indices()
+            .get(self.search_index)
+            .copied()
+    }
+
+    pub(crate) fn search_no_matches(&self) -> bool {
+        search_has_no_matches(&self.search_query, self.scoped_search_len())
+    }
+
+    pub(crate) fn search_count_label(&self) -> String {
+        search_count_text(
+            &self.search_query,
+            self.scoped_search_len(),
+            self.search_index,
+        )
+    }
+
+    /// Back to Chapter, switch included (decision 34): every fresh
+    /// bar starts there, whatever the last one was left on.
+    pub(crate) fn reset_search_scope(&mut self) {
+        self.search_scope = SearchScope::Chapter;
+        if let Some(control) = &self.search_scope_control {
+            control.set_selected(0);
         }
     }
 }

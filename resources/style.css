@@ -1625,8 +1625,10 @@ button.kalam-reader-toc-item {
     border-left: 3px solid transparent;
     border-radius: 0;
     color: @kalam_text_dim;
-    min-height: 44px;
-    padding: 9px 16px 9px 13px;
+    /* 36 + 4 + 4 = the spec's 44px row (GTK min-height is the
+       content box, so the padding counts on top of it). */
+    min-height: 36px;
+    padding: 4px 16px 4px 13px;
 }
 
 button.kalam-reader-toc-item:hover {

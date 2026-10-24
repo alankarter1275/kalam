@@ -49,7 +49,13 @@ impl BookReadingSettings {
     pub(crate) fn load_globals(catalog: &Catalog) -> Self {
         Self {
             theme: None,
-            font_family: catalog.get_pref("reader.font_family"),
+            // An empty stored family is the "Default" choice spelled
+            // out (the old reader wrote "" for it): canonicalize to
+            // None here so a written-and-read-back value compares
+            // equal to itself in `differs_from`.
+            font_family: catalog
+                .get_pref("reader.font_family")
+                .filter(|f| !f.trim().is_empty()),
             font_px: catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32,
             line_height: catalog
                 .get_pref("reader.line_height")

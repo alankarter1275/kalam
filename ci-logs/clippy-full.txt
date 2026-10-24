@@ -19,10 +19,10 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/reader/panels.rs:12:5: [1m[91merror[0m: unused import: `relm4::RelmWidgetExt`
-src/pages/reader/book_settings.rs:211:17: [1m[91merror[E0599][0m: no method named `set_visible` found for reference `&gtk4::Scrollbar` in the current scope
-src/bubbles.rs:871:75: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::reader::types::ReaderOut::OpenBook { .. }` not covered: pattern `pages::reader::types::ReaderOut::OpenBook { .. }` not covered
-src/pages/reader/mod.rs:1708:25: [1m[91merror[0m: value assigned to `refresh_controls` is never read
+src/pages/reader/mod_model.rs:152:39: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/reader/settings_panel.rs:616:6: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/reader/settings_panel.rs:657:14: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/reader/types.rs:80:39: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors

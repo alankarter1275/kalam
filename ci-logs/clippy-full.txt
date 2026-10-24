@@ -16,7 +16,13 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.62s
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/pages/reader/panels.rs:12:5: [1m[91merror[0m: unused import: `relm4::RelmWidgetExt`
+src/pages/reader/book_settings.rs:211:17: [1m[91merror[E0599][0m: no method named `set_visible` found for reference `&gtk4::Scrollbar` in the current scope
+src/bubbles.rs:871:75: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::reader::types::ReaderOut::OpenBook { .. }` not covered: pattern `pages::reader::types::ReaderOut::OpenBook { .. }` not covered
+src/pages/reader/mod.rs:1708:25: [1m[91merror[0m: value assigned to `refresh_controls` is never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors

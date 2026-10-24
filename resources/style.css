@@ -4838,7 +4838,7 @@ button.kalam-lightbox-tool-btn.close:hover {
   background: alpha(@kalam_accent, 0.85);
 }
 
-/* ── Word Memory preview tooltip ──────────────────────── */
+/* ── Word Memory preview tooltip (decision 33) ────────── */
 .k-word-preview-popover {
   background: transparent;
   padding: 0;
@@ -4853,30 +4853,37 @@ button.kalam-lightbox-tool-btn.close:hover {
 }
 
 .k-word-preview-card {
-  background: rgba(24, 27, 34, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  padding: 8px 12px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  background: @kalam_card;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 12px 32px alpha(#000, 0.30);
 }
 
 .k-word-preview-head {
   font-family: "Playfair Display", "Literata", Georgia, serif;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 15px;
+  color: @kalam_text;
+}
+
+.k-word-preview-tick { color: @kalam_accent; }
+
+.k-word-preview-saved {
+  font-size: 11px;
+  font-weight: 600;
   color: @kalam_accent;
 }
 
 .k-word-preview-def {
-  font-family: "DM Sans", sans-serif;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.85);
-  line-height: 1.35;
+  font-size: 12.5px;
+  color: @kalam_text_dim;
+  line-height: 1.4;
 }
 
-/* ── dictionary popup (v3 design) ─────────────────────── */
-/* Palette + type from docs/design/kalam_dictionary_popup_v3.html. Playfair Display and DM Sans are bundled
-   (src/fonts.rs); the named fallbacks cover a failed registration. */
+/* ── dictionary popup (decision 31) ───────────────────── */
+/* One card family with the annotation popover: card fill, 1px border,
+   radius 14, no arrow. Type and colour come from the tokens alone. */
 popover.kalam-reader-dict-popover { background: transparent; }
 popover.kalam-reader-dict-popover > contents {
   background-color: transparent;
@@ -4886,90 +4893,90 @@ popover.kalam-reader-dict-popover > contents {
 }
 
 .k-popup {
-  background-color: #1b1e24;
-  border: 1px solid #343842;
-  border-radius: 18px;
-  box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3);
+  background-color: @kalam_card;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px alpha(#000, 0.35);
 }
 
 .k-header {
-  background-color: #1b1e24;
-  border-bottom: 1px solid #343842;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-  padding: 20px 20px 16px;
+  border-bottom: 1px solid @kalam_border;
+  padding: 14px 14px 12px 18px;
 }
 
 .k-word {
   font-family: "Playfair Display", "Literata", Georgia, serif;
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 600;
-  color: #e6e9ef;
+  color: @kalam_text;
 }
 
 .k-pronunciation {
-  font-family: monospace;
-  font-size: 11px;
-  color: #6b7280;
+  font-size: 12px;
+  color: @kalam_text_dim;
 }
 
-.k-pos {
-  font-size: 10px;
-  font-style: italic;
-  color: #c678dd;
-  background-color: rgba(198,120,221,0.14);
+.k-save-btn, .k-audio-btn, .k-back-btn {
+  background: transparent;
+  border: 1px solid @kalam_border;
   border-radius: 999px;
-  padding: 2px 9px;
-}
-
-.k-save-btn, .k-audio-btn {
-  background-color: #282c34;
-  border: 1px solid #343842;
-  border-radius: 999px;
-  color: #6b7280;
+  color: @kalam_text_dim;
   min-width: 30px;
   min-height: 30px;
+  padding: 0;
 }
-.k-save-btn:hover, .k-audio-btn:hover { background-color: #343842; color: #abb2bf; }
+.k-save-btn:hover, .k-audio-btn:hover, .k-back-btn:hover {
+  background-color: @kalam_hover;
+  color: @kalam_text;
+}
 .k-save-btn.saved {
-  color: #61afef;
-  border-color: #61afef;
-  background-color: rgba(97,175,239,0.15);
+  background-color: @kalam_accent;
+  border-color: @kalam_accent;
+  color: @kalam_paper;
 }
+.k-save-btn.saved:hover { filter: brightness(1.08); }
+.k-save-btn:disabled, .k-audio-btn:disabled { opacity: 0.45; }
 
-.k-body { padding: 4px 20px 24px; }
+.k-body { padding: 6px 18px 20px; }
 
 .k-section-label {
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #6b7280;
-  margin-top: 20px;
-  margin-bottom: 10px;
+  color: @kalam_text_3;
+  margin-top: 18px;
+  margin-bottom: 8px;
+}
+
+.k-pos-divider { margin-top: 14px; }
+.k-pos-divider:first-child { margin-top: 6px; }
+
+.k-pos-name {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: @kalam_text_dim;
 }
 
 .k-def-num {
-  font-family: monospace;
-  font-size: 10px;
-  color: #61afef;
+  font-size: 12px;
+  color: @kalam_text_3;
+  padding-top: 2px;
 }
-.k-def-text { font-size: 13px; color: #abb2bf; }
+.k-def-text {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: @kalam_text;
+}
 .k-def-example {
   font-family: "Playfair Display", "Literata", Georgia, serif;
   font-style: italic;
-  font-size: 12px;
-  color: #6b7280;
-}
-.k-def-badge {
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  color: #61afef;
-  background-color: rgba(97,175,239,0.15);
-  border-radius: 999px;
-  padding: 1px 8px;
+  font-size: 12.5px;
+  color: @kalam_text_dim;
 }
 .k-show-more {
-  font-size: 11px;
-  color: #61afef;
+  font-size: 12px;
+  color: @kalam_accent;
   background: transparent;
   border: none;
   box-shadow: none;
@@ -4978,53 +4985,48 @@ popover.kalam-reader-dict-popover > contents {
 .k-show-more:hover { text-decoration: underline; }
 
 .k-chip {
-  font-size: 12px;
+  font-size: 12.5px;
+  color: @kalam_text;
+  background-color: @kalam_hover;
   border-radius: 999px;
-  border: 1px solid;
+  border: 1px solid @kalam_border;
   padding: 4px 12px;
   box-shadow: none;
 }
-.k-chip-syn {
-  color: #61afef;
-  background-color: rgba(97,175,239,0.15);
-  border-color: rgba(97,175,239,0.3);
+.k-chip:hover {
+  border-color: @kalam_accent;
+  color: @kalam_accent;
 }
-.k-chip-syn:hover { background-color: rgba(97,175,239,0.25); border-color: #61afef; }
-.k-chip-ant {
-  color: #e06c75;
-  background-color: rgba(224,108,117,0.14);
-  border-color: rgba(224,108,117,0.3);
-}
-.k-chip-ant:hover { background-color: rgba(224,108,117,0.25); border-color: #e06c75; }
 
 .k-idiom-item {
-  background-color: #282c34;
-  border: 1px solid #343842;
+  background-color: @kalam_hover;
   border-radius: 10px;
   padding: 10px 12px;
 }
 .k-idiom-phrase {
   font-family: "Playfair Display", "Literata", Georgia, serif;
   font-style: italic;
-  font-size: 13px;
-  color: #e6e9ef;
+  font-size: 13.5px;
+  color: @kalam_text;
 }
-.k-idiom-def { font-size: 12px; color: #abb2bf; }
+.k-idiom-def { font-size: 12.5px; color: @kalam_text_dim; }
 
 .k-fade-bottom {
-  background-image: linear-gradient(to bottom, transparent, #1b1e24);
-  border-radius: 0 0 18px 18px;
+  background-image: linear-gradient(to bottom, transparent, @kalam_card);
+  border-radius: 0 0 14px 14px;
 }
 
 /* Roadmap 2.5: a footnote read in place. No new colours — the note card is
    the dictionary card, so the two read as the same kind of thing. */
 .k-note-text {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.55;
-  padding: 14px 20px 2px;
+  color: @kalam_text;
+  padding: 14px 18px 2px;
 }
 
 .k-note-go {
+  color: @kalam_accent;
   margin: 8px 14px 14px;
 }
 

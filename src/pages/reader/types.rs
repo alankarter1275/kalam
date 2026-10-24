@@ -134,7 +134,6 @@ pub enum ReaderMsg {
     /// The note card closed on its own.
     ClearNote,
     SwitchSettingsPane(ReaderSettingsPane),
-    SetDictSenseHint(bool),
     /// Phase 10: `dict_history_enabled` — records every dictionary lookup.
     SetDictHistory(bool),
     /// Single-tap word lookup setting preference.
@@ -190,7 +189,12 @@ pub enum ReaderMsg {
     JumpToLocation(usize, f64),
     DictSearch(String),
     DictSearchSelect(String),
-    SaveCurrentWord,
+    /// In-popup navigation (decision 31): back to the word the reader
+    /// came from. The stack resets on every fresh lookup.
+    DictGoBack,
+    /// The header's circular toggle (decision 31): save the standing
+    /// word, or forget it. The popover stays up either way.
+    ToggleSaveWord,
     /// A saved word's delete in the Notes list (decision 22).
     DeleteSavedWord(i64),
     ClearDict,

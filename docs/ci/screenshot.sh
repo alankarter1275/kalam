@@ -98,6 +98,13 @@ AUTHOR_FIXTURE="${AUTHOR_FIXTURE:-}"
 if [ -n "$AUTHOR_FIXTURE" ]; then
   SEED_ARGS+=(--author-fixture)
 fi
+# READER_FIXTURE plants the three-word dictionary (bank/river/shore) the
+# reader popover frames look up; the bundled packs install at startup
+# and land after the snapshot, so a capture cannot wait for them.
+READER_FIXTURE="${READER_FIXTURE:-}"
+if [ -n "$READER_FIXTURE" ]; then
+  SEED_ARGS+=(--reader-fixture)
+fi
 # SETTINGS_FIXTURE gives the Settings panes the populated states a bare
 # library cannot show: known/missing libraries, shelves and a watch rule,
 # rejected Google Books key state, EPUB original backups, and the four

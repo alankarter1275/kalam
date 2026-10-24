@@ -86,14 +86,14 @@ pub struct Sense {
     pub example: Option<String>,
 }
 
-/// Everything the popup shows for one lookup: the winning entry's senses,
-/// the word-level POS list, the auxiliary chips and idiom cards, and
-/// did-you-mean / phrase-breakdown suggestions when there is no headword.
+/// Everything the popup shows for one lookup: the winning entry's senses
+/// (each carrying its own part of speech), the auxiliary chips and idiom
+/// cards, and did-you-mean / phrase-breakdown suggestions when there is
+/// no headword.
 #[derive(Debug, Clone, Default)]
 pub struct EntryData {
     pub word: String,
     pub senses: Vec<Sense>,
-    pub pos: Vec<String>,
     pub synonyms: Vec<String>,
     pub antonyms: Vec<String>,
     pub idioms: Vec<(String, String)>,
@@ -513,10 +513,10 @@ impl Catalog {
     }
 
     /// The full popup entry for a lookup: senses from the merged store
-    /// (parsed into numbered senses with POS), the word-level POS list,
-    /// synonym/antonym chips and idiom cards from the auxiliary packs, and
-    /// suggestions when there is no headword (phrase breakdown tokens, or
-    /// did-you-mean prefix matches).
+    /// (parsed into numbered senses with POS), synonym/antonym chips and
+    /// idiom cards from the auxiliary packs, and suggestions when there
+    /// is no headword (phrase breakdown tokens, or did-you-mean prefix
+    /// matches).
     pub fn lookup_entry(&self, query: &str) -> Result<EntryData> {
         let clean = query.trim();
         let mut entry = EntryData {
@@ -532,7 +532,6 @@ impl Catalog {
             if let Some(raw) = self.combined_raw(&fold_key(&variant))? {
                 entry.word = raw.0;
                 entry.senses = parse_senses(&raw.1);
-                entry.pos = distinct_pos(&entry.senses);
                 break;
             }
         }
@@ -547,7 +546,6 @@ impl Catalog {
                         if let Some(raw) = self.combined_raw(&fold_key(&candidate))? {
                             entry.word = raw.0;
                             entry.senses = parse_senses(&raw.1);
-                            entry.pos = distinct_pos(&entry.senses);
                             break 'outer;
                         }
                     }
@@ -886,18 +884,7 @@ fn split_example(def: &str) -> Option<(String, String)> {
     None
 }
 
-/// Distinct POS values in first-seen order — the header pill ("noun · verb").
-fn distinct_pos(senses: &[Sense]) -> Vec<String> {
-    let mut out = Vec::new();
-    for s in senses {
-        if let Some(p) = &s.pos {
-            if !out.iter().any(|x| x == p) {
-                out.push(p.clone());
-            }
-        }
-    }
-    out
-}
+
 
 pub(crate) fn dictionary_query_variants(term: &str) -> Vec<String> {
     let trimmed = term.trim();
@@ -957,194 +944,6 @@ fn dictionary_possessive_base(term: &str) -> Option<&str> {
 // P5.5: Lesk-style likely-sense ranking
 // ---------------------------------------------------------------------------
 
-/// Stopwords ignored when scoring gloss overlap against the context sentence.
-/// Small fixed list (the brief: "ship a tiny stopword list"); closed-class
-/// English words plus a few very frequent verbs. Never include sense/gloss
-/// content words — only function words.
-const STOPWORDS: &[&str] = &[
-    "a", "an", "the", "and", "or", "but", "nor", "if", "so", "yet", "for", "of", "to", "in", "on",
-    "at", "by", "with", "from", "up", "down", "into", "out", "over", "under", "as", "than", "that",
-    "this", "these", "those", "which", "who", "whom", "whose", "what", "when", "where", "why",
-    "how", "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did", "have",
-    "has", "had", "will", "would", "can", "could", "shall", "should", "may", "might", "must",
-    "not", "no", "yes", "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us",
-    "them", "my", "your", "his", "its", "our", "their", "there", "here", "then", "now", "just",
-    "very", "too", "also", "only", "such", "same", "some", "any", "all", "both", "each", "few",
-    "more", "most", "other", "another", "one", "two",
-];
-
-/// Score a context sentence against a sense's gloss, using Lesk-style set
-/// overlap on content words. Returns the number of shared content tokens;
-/// a token counts once no matter how often it appears on either side.
-fn gloss_overlap(context_tokens: &[String], gloss_tokens: &[String]) -> usize {
-    context_tokens
-        .iter()
-        .filter(|t| gloss_tokens.contains(t))
-        .count()
-}
-
-/// Which sense index is most likely given the sentence around the lookup.
-///
-/// Simplified Lesk (the brief's algorithm): lowercase + tokenize the context
-/// sentence into a set; for each sense, build a bag of words from its gloss
-/// and examples; score by overlap, ignoring stopwords; return the top-scoring
-/// sense index — or `None` when every sense scores zero (no evidence, no
-/// hint) or when two or more senses tie for the top score (no hint rather
-/// than an arbitrary one).
-///
-/// Two refinements keep the hint honest on real WordNet data:
-///
-/// - `headword` (the canonical looked-up word) is excluded from the context
-///   bag. It is in the sentence by definition and appears in many of the
-///   word's own glosses ("put into a bank account"), so counting it would
-///   manufacture ties and drown out real evidence such as "deposit".
-/// - Tokens are lightly stemmed on both sides so inflected sentence words
-///   match the gloss's base forms ("deposits" ≈ "deposit", "running" ≈
-///   "run"). Both sides go through the same stemmer, so it can be lossy.
-///
-/// The hint never hides or misrepresents the entry: a wrong guess costs at
-/// most a misplaced highlight.
-pub fn likely_sense_index(
-    context_sentence: &str,
-    headword: &str,
-    senses: &[Sense],
-) -> Option<usize> {
-    if context_sentence.trim().is_empty() {
-        return None;
-    }
-    let context_tokens = tokenize_context(context_sentence);
-    let headword_stem = stem_token(&headword.to_ascii_lowercase());
-    let context_tokens: Vec<String> = context_tokens
-        .into_iter()
-        .filter(|t| *t != headword_stem)
-        .collect();
-    if context_tokens.is_empty() {
-        return None;
-    }
-    let mut best_score = 0usize;
-    let mut best_index: Option<usize> = None;
-    let mut tied = false;
-    for (i, sense) in senses.iter().enumerate() {
-        let gloss_tokens = tokenize_context(&sense.def);
-        let mut score = gloss_overlap(&context_tokens, &gloss_tokens);
-        if let Some(example) = &sense.example {
-            let example_tokens = tokenize_context(example);
-            score += gloss_overlap(&context_tokens, &example_tokens);
-        }
-        if score > best_score {
-            best_score = score;
-            best_index = Some(i);
-            tied = false;
-        } else if score == best_score && score > 0 {
-            tied = true;
-        }
-    }
-    if tied {
-        None
-    } else {
-        best_index
-    }
-}
-
-/// Lowercase a sentence, split on non-alphanumeric runs, drop stopwords and
-/// one-character tokens, and stem each surviving token. Returns owned tokens
-/// so case is normalized on both sides of the overlap check.
-fn tokenize_context(sentence: &str) -> Vec<String> {
-    sentence
-        .split(|ch: char| !ch.is_alphanumeric())
-        .map(|t| t.to_ascii_lowercase())
-        .filter(|t| t.len() > 1)
-        .filter(|t| !STOPWORDS.contains(&t.as_str()))
-        .map(|t| stem_token(&t))
-        .collect()
-}
-
-/// Tiny rule-based stemmer for the Lesk overlap: strips common English
-/// suffixes so inflected words match base forms. Deliberately lossy — both
-/// sides of the comparison go through it, so consistent "wrong" stems still
-/// match each other. Suffixes are only stripped when a meaningful stem
-/// remains (3+ letters), and the "ing"/"ed"/"ly" rules require a vowel in
-/// the remainder so roots like "bring" and "need" survive untouched.
-// Several suffix rules share an identical body ("ies"/"ied" -> y, "ed"/"ly"
-// -> truncate 2). clippy::if_same_then_else wants them merged, but each arm is
-// a distinct linguistic rule that will diverge as the stemmer is refined, and
-// collapsing them into one condition makes the rule set unreadable.
-#[allow(clippy::if_same_then_else)]
-fn stem_token(token: &str) -> String {
-    let mut t = token;
-    for suffix in ["'s", "’s"] {
-        if let Some(base) = t.strip_suffix(suffix) {
-            t = base;
-            break;
-        }
-    }
-    let mut out = t.to_string();
-    let mut stripped = false;
-    let n = out.len();
-    if n >= 4 {
-        if out.ends_with("ies") {
-            out.truncate(n - 3);
-            out.push('y');
-            stripped = true;
-        } else if out.ends_with("ied") {
-            out.truncate(n - 3);
-            out.push('y');
-            stripped = true;
-        } else if out.ends_with("ying") && n >= 6 {
-            out.truncate(n - 3);
-            stripped = true;
-        } else if out.ends_with("es")
-            && n >= 5
-            && out[..n - 2].len() >= 3
-            && !out[..n - 2].ends_with("us")
-        {
-            out.truncate(n - 2);
-            stripped = true;
-        } else if out.ends_with('s')
-            && n >= 4
-            && out[..n - 1].len() >= 3
-            && !out.ends_with("ss")
-            && !out.ends_with("us")
-            && !out.ends_with("is")
-        {
-            out.truncate(n - 1);
-            stripped = true;
-        } else if out.ends_with("ing")
-            && n >= 5
-            && out[..n - 3].len() >= 3
-            && has_vowel(&out[..n - 3])
-        {
-            out.truncate(n - 3);
-            stripped = true;
-        } else if out.ends_with("ed")
-            && n >= 4
-            && out[..n - 2].len() >= 3
-            && has_vowel(&out[..n - 2])
-        {
-            out.truncate(n - 2);
-            stripped = true;
-        } else if out.ends_with("ly")
-            && n >= 5
-            && out[..n - 2].len() >= 3
-            && has_vowel(&out[..n - 2])
-        {
-            out.truncate(n - 2);
-            stripped = true;
-        } else if out.ends_with('e') && n >= 4 && out[..n - 1].len() >= 3 && !out.ends_with("ee") {
-            out.truncate(n - 1);
-            stripped = true;
-        }
-    }
-    // Suffix stripping can leave a doubled consonant ("running" -> "runn").
-    if stripped && out.len() >= 3 && !out.ends_with("ss") {
-        let len = out.len();
-        let bytes = out.as_bytes();
-        if bytes[len - 1] == bytes[len - 2] {
-            out.truncate(len - 1);
-        }
-    }
-    out
-}
 
 fn has_vowel(s: &str) -> bool {
     s.chars().any(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u'))
@@ -1759,11 +1558,6 @@ mod tests {
         assert_eq!(senses[2].pos, None);
     }
 
-    #[test]
-    fn distinct_pos_preserves_first_seen_order() {
-        let senses = parse_senses(&["verb:; 1. v1; noun:; 1. n1; verb:; 2. v2".to_string()]);
-        assert_eq!(distinct_pos(&senses), vec!["verb", "noun"]);
-    }
 
     // -----------------------------------------------------------------------
     // P5.5: Lesk-style likely-sense ranking
@@ -1778,144 +1572,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn likely_sense_prefers_the_gloss_matching_the_sentence() {
-        let senses = vec![
-            test_sense("a financial institution that accepts deposits", None),
-            test_sense("land alongside a river or lake", None),
-        ];
-        assert_eq!(
-            likely_sense_index("We walked along the river bank at sunset.", "bank", &senses),
-            Some(1)
-        );
-    }
 
-    #[test]
-    fn likely_sense_uses_example_overlap_too() {
-        // The context shares no word with either gloss, but the first
-        // sense's example contains "savings", so the example overlap wins.
-        let senses = vec![
-            test_sense(
-                "a financial institution",
-                Some("she keeps her savings at the bank"),
-            ),
-            test_sense("rising ground bordering a waterway", None),
-        ];
-        assert_eq!(
-            likely_sense_index("She opened a savings account at the bank.", "bank", &senses),
-            Some(0)
-        );
-    }
 
-    #[test]
-    fn likely_sense_neutral_context_returns_none() {
-        let senses = vec![
-            test_sense("a financial institution that accepts deposits", None),
-            test_sense("land alongside a river or lake", None),
-        ];
-        assert_eq!(
-            likely_sense_index(
-                "The quick brown fox jumps over the lazy dog.",
-                "bank",
-                &senses
-            ),
-            None
-        );
-    }
 
-    #[test]
-    fn likely_sense_empty_context_returns_none() {
-        let senses = vec![test_sense("a financial institution", None)];
-        assert_eq!(likely_sense_index("", "bank", &senses), None);
-        assert_eq!(likely_sense_index("   ", "bank", &senses), None);
-        assert_eq!(likely_sense_index("the and of or", "bank", &senses), None);
-    }
 
-    #[test]
-    fn likely_sense_tie_returns_none_not_an_arbitrary_guess() {
-        let senses = vec![
-            test_sense("financial institution", None),
-            test_sense("financial matters", None),
-        ];
-        assert_eq!(likely_sense_index("financial", "bank", &senses), None);
-    }
 
-    #[test]
-    fn likely_sense_matching_is_case_insensitive() {
-        let senses = vec![
-            test_sense("a financial institution", None),
-            test_sense("land alongside a river", None),
-        ];
-        assert_eq!(likely_sense_index("RIVER BANK", "bank", &senses), Some(1));
-    }
 
-    #[test]
-    fn likely_sense_ignores_the_looked_up_word_itself() {
-        // Every gloss contains the headword, and the sentence contains it
-        // too — without exclusion that would be a tie; with exclusion there
-        // is no evidence, so no arbitrary hint.
-        let senses = vec![
-            test_sense("a bank that accepts deposits", None),
-            test_sense("a bank beside a river", None),
-        ];
-        assert_eq!(
-            likely_sense_index("The bank was crowded this morning.", "bank", &senses),
-            None
-        );
-    }
 
-    #[test]
-    fn likely_sense_stems_inflected_context_words() {
-        // "deposits" in the gloss and "deposit" in the sentence both stem
-        // to "deposit"; the other sense shares no word with the sentence.
-        let senses = vec![
-            test_sense("an institution that accepts deposits", None),
-            test_sense("land alongside a river", None),
-        ];
-        assert_eq!(
-            likely_sense_index("I will deposit the cheque tomorrow.", "bank", &senses),
-            Some(0)
-        );
-    }
 
-    #[test]
-    fn tokenize_context_keeps_content_words_only() {
-        let tokens = tokenize_context("The bank by the river was muddy.");
-        assert!(tokens.contains(&"bank".to_string()));
-        assert!(tokens.contains(&"river".to_string()));
-        assert!(tokens.contains(&"muddy".to_string()));
-        assert!(!tokens.contains(&"the".to_string()));
-        assert!(!tokens.contains(&"by".to_string()));
-        assert!(!tokens.contains(&"was".to_string()));
-    }
 
-    #[test]
-    fn stem_token_strips_common_inflections() {
-        assert_eq!(stem_token("running"), "run");
-        assert_eq!(stem_token("played"), "play");
-        assert_eq!(stem_token("scored"), "scor");
-        assert_eq!(stem_token("score"), "scor");
-        assert_eq!(stem_token("studies"), "study");
-        assert_eq!(stem_token("tried"), "try");
-        assert_eq!(stem_token("boxes"), "box");
-        assert_eq!(stem_token("deposits"), "deposit");
-        assert_eq!(stem_token("bank's"), "bank");
-    }
 
-    #[test]
-    fn stem_token_leaves_roots_alone() {
-        // Guards: a root that merely ends in a suffix must survive.
-        assert_eq!(stem_token("need"), "need");
-        assert_eq!(stem_token("sing"), "sing");
-        assert_eq!(stem_token("bring"), "bring");
-        assert_eq!(stem_token("gas"), "gas");
-        assert_eq!(stem_token("kiss"), "kiss");
-        assert_eq!(stem_token("class"), "class");
-        assert_eq!(stem_token("bus"), "bus");
-        assert_eq!(stem_token("this"), "this");
-        assert_eq!(stem_token("use"), "use");
-        assert_eq!(stem_token("bank"), "bank");
-    }
 }
 
 #[test]

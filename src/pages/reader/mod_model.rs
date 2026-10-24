@@ -96,6 +96,10 @@ pub struct ReaderModel {
     pub(crate) dict_lookup_word: Option<String>,
     pub(crate) dict_lookup_def: Option<String>,
     pub(crate) dict_context: Option<String>,
+    /// In-popup navigation (decision 31): words the reader wandered
+    /// from via synonym/antonym/did-you-mean chips, most recent last.
+    /// A fresh lookup from the page empties it.
+    pub(crate) dict_back_stack: Vec<String>,
     pub(crate) last_selection: Option<String>,
     /// The colour and style a fresh highlight takes (decision 26):
     /// wherever the selection chip's dots and the annotation popover

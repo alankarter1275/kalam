@@ -860,6 +860,7 @@ impl Component for ReaderModel {
             dict_lookup_word: None,
             dict_lookup_def: None,
             dict_context: None,
+            dict_back_stack: Vec::new(),
             last_selection: None,
             last_highlight_color,
             last_highlight_style,
@@ -1347,7 +1348,20 @@ impl Component for ReaderModel {
         // the frame fakes the engine's report of one (the handler and
         // the surface are the real ones); the annotation frame makes
         // a real highlight on the opening chapter, then taps it the
-        // way the pointer would. Both wait out the first paint.
+        // way the pointer would; the dictionary frames look up the
+        // seeder's fixture words. All wait out the first paint.
+        if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "dict") {
+            let tx = sender.input_sender().clone();
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_secs(9), move || {
+                let _ = tx.send(ReaderMsg::DictSearchSelect("bank".to_string()));
+            });
+        }
+        if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "dict-missing") {
+            let tx = sender.input_sender().clone();
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_secs(9), move || {
+                let _ = tx.send(ReaderMsg::DictSearchSelect("riv".to_string()));
+            });
+        }
         if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "chip") {
             if let Some(view) = model.view.clone() {
                 let tx = sender.input_sender().clone();
@@ -1834,11 +1848,6 @@ impl Component for ReaderModel {
                     refresh_controls = true;
                 }
             }
-            ReaderMsg::SetDictSenseHint(on) => {
-                self.service
-                    .catalog()
-                    .set_pref("dict_sense_hint", if on { "1" } else { "0" });
-            }
             ReaderMsg::SetDictHistory(on) => {
                 // A library-wide privacy pref, deliberately outside the
                 // per-book record: it writes the shared pref directly.
@@ -2295,51 +2304,65 @@ impl Component for ReaderModel {
                 refresh_notes = true;
             }
             ReaderMsg::DictSearchSelect(word) => {
-                let data = self
-                    .service
-                    .catalog()
-                    .lookup_entry(&word)
-                    .unwrap_or_else(|_| crate::db::EntryData {
-                        word: word.clone(),
-                        ..Default::default()
-                    });
-                self.dict_lookup_word = Some(data.word.clone());
-                self.dict_lookup_def = data
-                    .senses
-                    .first()
-                    .map(|s| s.def.clone())
-                    .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
-                let saved = self
-                    .service
-                    .catalog()
-                    .saved_word_exists(&data.word, self.book_id)
-                    .unwrap_or(false);
-                let rect = self.dict_anchor_rect();
-                self.show_dict(&data, saved, None, rect, &sender);
-                // The lookup came from the Notes panel's Words view;
-                // the popover opens over the page and the list stays
-                // exactly as it is.
-            }
-            ReaderMsg::SaveCurrentWord => {
-                if let (Some(word), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
-                    let saved = self.service.catalog().insert_saved_word(
-                        word,
-                        def,
-                        None,
-                        Some(self.book_id),
-                        Some(self.chapter as i64),
-                        self.dict_context.as_deref(),
-                    );
-                    match saved {
-                        Ok(_) => {
-                            crate::notify::compact("Word saved", word);
-                            self.reload_saved_words();
-                            // The toast is the confirmation; the popover has
-                            // nothing left to say.
-                            engine::dismiss(self.dict_popover.take());
-                            refresh_notes = true;
+                // In-popup navigation (decision 31): following a chip
+                // while the popover is up leaves a way back. A select
+                // with no popover up — a row in the Notes panel's Words
+                // view — starts a fresh lookup instead.
+                if self.dict_popover.is_some() {
+                    if let Some(cur) = self.dict_lookup_word.clone() {
+                        if !cur.eq_ignore_ascii_case(&word) {
+                            self.dict_back_stack.push(cur);
                         }
-                        Err(e) => crate::notify::error("Could not save the word", &e.to_string()),
+                    }
+                } else {
+                    self.dict_back_stack.clear();
+                }
+                self.dict_show_word(&word, &sender);
+            }
+            ReaderMsg::DictGoBack => {
+                if let Some(word) = self.dict_back_stack.pop() {
+                    self.dict_show_word(&word, &sender);
+                }
+            }
+            ReaderMsg::ToggleSaveWord => {
+                // The toggle (decision 31) flips its own face the
+                // moment it is tapped; this lands the same answer in
+                // the store and keeps the Words list true. The popover
+                // stays up either way.
+                if let Some(word) = self.dict_lookup_word.clone() {
+                    let catalog = self.service.catalog();
+                    let saved = catalog.saved_word_exists(&word, self.book_id).unwrap_or(false);
+                    if saved {
+                        match catalog.delete_saved_word_for(&word, self.book_id) {
+                            Ok(()) => {
+                                crate::notify::compact("Word forgotten", &word);
+                                self.reload_saved_words();
+                                refresh_notes = true;
+                            }
+                            Err(e) => crate::notify::error(
+                                "Could not forget the word",
+                                &e.to_string(),
+                            ),
+                        }
+                    } else if let Some(def) = self.dict_lookup_def.clone() {
+                        match catalog.insert_saved_word(
+                            &word,
+                            &def,
+                            None,
+                            Some(self.book_id),
+                            Some(self.chapter as i64),
+                            self.dict_context.as_deref(),
+                        ) {
+                            Ok(_) => {
+                                crate::notify::compact("Word saved", &word);
+                                self.reload_saved_words();
+                                refresh_notes = true;
+                            }
+                            Err(e) => crate::notify::error(
+                                "Could not save the word",
+                                &e.to_string(),
+                            ),
+                        }
                     }
                 }
             }
@@ -2354,6 +2377,7 @@ impl Component for ReaderModel {
                 self.dict_lookup_word = None;
                 self.dict_lookup_def = None;
                 self.dict_context = None;
+                self.dict_back_stack.clear();
             }
             ReaderMsg::ToggleBookmark => {
                 // The ribbon (decision 16): set or take away the mark
@@ -2778,10 +2802,37 @@ impl ReaderModel {
         self.annotation_popover = Some(popover);
     }
 
+    /// Show `word`'s entry at the standing anchor without touching the
+    /// back stack — the shared tail of chip navigation and DictGoBack.
+    fn dict_show_word(&mut self, word: &str, sender: &ComponentSender<Self>) {
+        let data = self
+            .service
+            .catalog()
+            .lookup_entry(word)
+            .unwrap_or_else(|_| crate::db::EntryData {
+                word: word.to_string(),
+                ..Default::default()
+            });
+        self.dict_lookup_word = Some(data.word.clone());
+        self.dict_lookup_def = data
+            .senses
+            .first()
+            .map(|s| s.def.clone())
+            .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
+        let saved = self
+            .service
+            .catalog()
+            .saved_word_exists(&data.word, self.book_id)
+            .unwrap_or(false);
+        let rect = self.dict_anchor_rect();
+        self.show_dict(&data, saved, rect, sender);
+    }
+
     /// The dictionary lookup every word-tap and chip-lookup goes through:
-    /// find the entry, work out which sense the sentence points at, log it,
-    /// and show the popover. `sentence` is `None` when the lookup came from
-    /// the Words sidebar instead of from a tap.
+    /// find the entry, log it, and show the popover. A fresh lookup from
+    /// the page, so the in-popup way back starts empty. `sentence` is
+    /// `None` when the lookup came from the Words sidebar instead of
+    /// from a tap.
     fn dict_lookup(
         &mut self,
         word: String,
@@ -2794,6 +2845,7 @@ impl ReaderModel {
         }
         self.dict_context = sentence.clone();
         self.dict_anchor = Some(rect);
+        self.dict_back_stack.clear();
         let data = self
             .service
             .catalog()
@@ -2808,15 +2860,6 @@ impl ReaderModel {
             .first()
             .map(|s| s.def.clone())
             .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
-        let hint_index = sentence.as_deref().and_then(|sentence| {
-            if self.service.catalog().get_pref_i64("dict_sense_hint", 1) == 0 {
-                return None;
-            }
-            if !data.senses.iter().any(|s| s.pos.is_some()) {
-                return None;
-            }
-            crate::db::likely_sense_index(sentence, &data.word, &data.senses)
-        });
         let _ = self.service.catalog().log_dict_lookup(
             &word,
             Some(self.book_id),
@@ -2829,7 +2872,7 @@ impl ReaderModel {
             .catalog()
             .saved_word_exists(&data.word, self.book_id)
             .unwrap_or(false);
-        self.show_dict(&data, saved, hint_index, rect, sender);
+        self.show_dict(&data, saved, rect, sender);
     }
 
     /// Where to point a popover when the message did not carry a spot on

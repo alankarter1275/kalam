@@ -767,6 +767,10 @@ pub(crate) fn build_annotation_edit_popover(
     popover
 }
 
+/// The saved-word hover card (decision 33). Only words Kalam keeps are
+/// ever hovered, so the card says so — headword, the saved tick, and
+/// every meaning the entry has, not just the first. It is a reminder,
+/// not a lookup: no chips, no buttons; a tap opens the full card.
 pub(crate) fn build_word_preview_tooltip(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
@@ -778,48 +782,76 @@ pub(crate) fn build_word_preview_tooltip(
         return None;
     }
     let data = catalog.lookup_entry(&clean).ok()?;
-    let def = data.senses.first().map(|s| s.def.as_str())?;
+    if data.senses.is_empty() {
+        return None;
+    }
 
     let popover = gtk::Popover::new();
     popover.set_parent(host);
     popover.set_autohide(true);
-    popover.set_has_arrow(true);
+    popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Top);
     popover.set_pointing_to(Some(rect));
     popover.add_css_class("k-word-preview-popover");
 
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
     card.add_css_class("k-word-preview-card");
+    card.set_size_request(300, -1);
 
-    let head = gtk::Label::new(Some(&clean));
+    let head_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let head = gtk::Label::new(Some(&data.word));
     head.add_css_class("k-word-preview-head");
     head.set_xalign(0.0);
-    card.append(&head);
+    head.set_hexpand(true);
+    head_row.append(&head);
+    let tick = gtk::Image::from_icon_name("object-select-symbolic");
+    tick.add_css_class("k-word-preview-tick");
+    tick.set_valign(gtk::Align::Center);
+    head_row.append(&tick);
+    let saved = gtk::Label::new(Some("Saved"));
+    saved.add_css_class("k-word-preview-saved");
+    saved.set_valign(gtk::Align::Center);
+    head_row.append(&saved);
+    card.append(&head_row);
 
-    let preview = if def.len() > 120 {
-        format!("{}…", &def[..118])
-    } else {
-        def.to_string()
-    };
-    let body = gtk::Label::new(Some(&preview));
-    body.add_css_class("k-word-preview-def");
-    body.set_wrap(true);
-    body.set_xalign(0.0);
-    card.append(&body);
+    let senses_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    for (i, sense) in data.senses.iter().enumerate() {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let num = gtk::Label::new(Some(&format!("{}.", i + 1)));
+        num.add_css_class("k-def-num");
+        num.set_valign(gtk::Align::Start);
+        row.append(&num);
+        let def = gtk::Label::new(Some(&sense.def));
+        def.add_css_class("k-word-preview-def");
+        def.set_wrap(true);
+        def.set_xalign(0.0);
+        def.set_halign(gtk::Align::Fill);
+        def.set_hexpand(true);
+        row.append(&def);
+        senses_box.append(&row);
+    }
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .propagate_natural_height(true)
+        .overlay_scrolling(true)
+        .max_content_height(220)
+        .build();
+    scroll.set_child(Some(&senses_box));
+    card.append(&scroll);
 
     popover.set_child(Some(&card));
     Some(popover)
 }
 
 const HANDLE_HEADROOM: i32 = 8;
-/// One sense as the card draws it.
-///
-/// `hinted` is the Lesk "likely here" sense, which keeps its index into
-/// the *flat* sense list however the card then groups them.
+/// One sense as the card draws it. `pos` rides along so the card can
+/// group senses under part-of-speech dividers (decision 31) instead
+/// of numbering straight through the whole entry.
 pub(crate) struct DictSense {
+    pub(crate) pos: Option<String>,
     pub(crate) def: String,
     pub(crate) example: Option<String>,
-    pub(crate) hinted: bool,
 }
 
 /// What the dictionary card shows — the same fields the JS popup was fed,
@@ -828,48 +860,39 @@ pub(crate) struct DictSense {
 pub(crate) struct DictCard {
     pub(crate) word: String,
     pub(crate) pronunciation: Option<String>,
-    /// The word-level part-of-speech list, already joined with middots.
-    pub(crate) pos: Option<String>,
     pub(crate) senses: Vec<DictSense>,
     pub(crate) synonyms: Vec<String>,
     pub(crate) antonyms: Vec<String>,
     pub(crate) idioms: Vec<(String, String)>,
     pub(crate) suggestions: Vec<String>,
     pub(crate) saved: bool,
+    /// The reader wandered here through the card's own chips, so the
+    /// header grows a way back (decision 31).
+    pub(crate) can_go_back: bool,
 }
 
 impl DictCard {
     /// `Sense.example` is an `Option<String>` in this tree, so the empty
     /// filter applies to it directly; wrapping it in `Option::<String>::from`
     /// is a useless conversion, which `-D warnings` rejects.
-    /// `EntryData.pos` is a `Vec<String>`, joined with middots below.
     pub(crate) fn from_entry(
         data: &crate::db::EntryData,
         pronunciation: Option<String>,
         saved: bool,
-        hint: Option<usize>,
+        can_go_back: bool,
     ) -> DictCard {
         let senses: Vec<DictSense> = data
             .senses
             .iter()
-            .enumerate()
-            .map(|(i, s)| DictSense {
+            .map(|s| DictSense {
+                pos: s.pos.clone(),
                 def: s.def.clone(),
                 example: s.example.clone().filter(|e| !e.is_empty()),
-                hinted: hint == Some(i),
             })
             .collect();
         DictCard {
             word: data.word.clone(),
             pronunciation,
-            // Kalam's `EntryData.pos` is the word-level list (`Vec<String>`),
-            // not a lone `String`/`Option<String>`; the old WebKit popup
-            // showed it joined with a middot, so this does too.
-            pos: if data.pos.is_empty() {
-                None
-            } else {
-                Some(data.pos.join(" \u{00b7} "))
-            },
             senses,
             synonyms: data.synonyms.iter().map(|s| s.to_string()).collect(),
             antonyms: data.antonyms.iter().map(|s| s.to_string()).collect(),
@@ -880,6 +903,7 @@ impl DictCard {
                 .collect(),
             suggestions: data.suggestions.iter().map(|s| s.to_string()).collect(),
             saved,
+            can_go_back,
         }
     }
 }
@@ -910,25 +934,43 @@ fn speak_word(word: String) {
     });
 }
 
-/// The parts of speech the old popup listed first, in this order. Anything
-/// else keeps its first-seen order; senses with no part of speech land last
-/// and get no divider row at all.
+/// The card's head (decision 31): back arrow when the reader wandered
+/// here, Playfair headword with its IPA, the speaker, and the circular
+/// save toggle — ring and plus while unsaved, filled and ticked once
+/// the word is kept. Parts of speech no longer ride here; they divide
+/// the senses below.
 fn dict_header(
     _host: &gtk::Widget,
     card: &DictCard,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Box {
-    let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     header.add_css_class("k-header");
 
-    let left = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    if card.can_go_back {
+        let back = gtk::Button::new();
+        back.add_css_class("k-back-btn");
+        back.set_child(Some(&gtk::Image::from_icon_name(
+            "go-previous-symbolic",
+        )));
+        back.set_valign(gtk::Align::Center);
+        back.set_tooltip_text(Some("Back to the word you came from"));
+        let tx = sender.input_sender().clone();
+        back.connect_clicked(move |_| {
+            let _ = tx.send(ReaderMsg::DictGoBack);
+        });
+        header.append(&back);
+    }
+
+    let left = gtk::Box::new(gtk::Orientation::Vertical, 2);
     left.add_css_class("k-header-left");
     left.set_hexpand(true);
+    left.set_valign(gtk::Align::Center);
 
     let word = gtk::Label::new(Some(&card.word));
     word.add_css_class("k-word");
     word.set_xalign(0.0);
-    word.set_halign(gtk::Align::Start);
+    word.set_halign(gtk::Align::Fill);
     word.set_wrap(true);
     left.append(&word);
 
@@ -939,13 +981,6 @@ fn dict_header(
         pron.set_halign(gtk::Align::Start);
         left.append(&pron);
     }
-
-    if let Some(pos) = &card.pos {
-        let pill = gtk::Label::new(Some(pos));
-        pill.add_css_class("k-pos");
-        pill.set_halign(gtk::Align::Start);
-        left.append(&pill);
-    }
     header.append(&left);
 
     // Audio pronunciation — best-effort via a system speech engine.
@@ -954,6 +989,7 @@ fn dict_header(
     audio.set_child(Some(&gtk::Image::from_icon_name(
         "audio-volume-high-symbolic",
     )));
+    audio.set_valign(gtk::Align::Center);
     audio.set_tooltip_text(Some("Hear it"));
     {
         let w = card.word.clone();
@@ -961,22 +997,35 @@ fn dict_header(
     }
     header.append(&audio);
 
+    // The save toggle flips its own face on the tap and lets the model
+    // land the same answer in the store; the popover stays up.
     let save = gtk::Button::new();
     save.add_css_class("k-save-btn");
-    let icon = gtk::Image::from_icon_name("bookmark-new-symbolic");
+    let icon = gtk::Image::from_icon_name("list-add-symbolic");
     save.set_child(Some(&icon));
-    save.set_valign(gtk::Align::Start);
-    save.set_halign(gtk::Align::Center);
-    save.set_size_request(24, 24);
-    save.set_tooltip_text(Some(if card.saved { "Saved" } else { "Save word" }));
-    if card.saved {
-        save.add_css_class("saved");
-    }
-    save.set_sensitive(!card.saved && !card.senses.is_empty());
-    if !card.saved {
+    save.set_valign(gtk::Align::Center);
+    save.set_sensitive(!card.senses.is_empty());
+    let apply = |btn: &gtk::Button, icon: &gtk::Image, saved: bool| {
+        if saved {
+            icon.set_icon_name(Some("object-select-symbolic"));
+            btn.add_css_class("saved");
+            btn.set_tooltip_text(Some("Saved — tap to forget"));
+        } else {
+            icon.set_icon_name(Some("list-add-symbolic"));
+            btn.remove_css_class("saved");
+            btn.set_tooltip_text(Some("Save word"));
+        }
+    };
+    apply(&save, &icon, card.saved);
+    let is_saved = std::rc::Rc::new(std::cell::Cell::new(card.saved));
+    {
         let tx = sender.input_sender().clone();
-        save.connect_clicked(move |_| {
-            let _ = tx.send(ReaderMsg::SaveCurrentWord);
+        let icon = icon.clone();
+        save.connect_clicked(move |btn| {
+            let next = !is_saved.get();
+            is_saved.set(next);
+            apply(btn, &icon, next);
+            let _ = tx.send(ReaderMsg::ToggleSaveWord);
         });
     }
     header.append(&save);
@@ -1004,19 +1053,11 @@ fn sense_row(sense: &DictSense, number: usize) -> gtk::Box {
     let text_box = gtk::Box::new(gtk::Orientation::Vertical, 3);
     text_box.set_hexpand(true);
 
-    if sense.hinted {
-        let badge = gtk::Label::new(Some("LIKELY HERE"));
-        badge.add_css_class("k-def-badge");
-        badge.set_valign(gtk::Align::Start);
-        badge.set_halign(gtk::Align::Start);
-        text_box.append(&badge);
-    }
-
     let def = gtk::Label::new(Some(&sense.def));
     def.add_css_class("k-def-text");
     def.set_wrap(true);
     def.set_xalign(0.0);
-    def.set_halign(gtk::Align::Start);
+    def.set_halign(gtk::Align::Fill);
     text_box.append(&def);
 
     if let Some(example) = &sense.example {
@@ -1024,55 +1065,104 @@ fn sense_row(sense: &DictSense, number: usize) -> gtk::Box {
         ex.add_css_class("k-def-example");
         ex.set_wrap(true);
         ex.set_xalign(0.0);
-        ex.set_halign(gtk::Align::Start);
+        ex.set_halign(gtk::Align::Fill);
         text_box.append(&ex);
     }
     row.append(&text_box);
     row
 }
 
+/// Senses grouped by part of speech (decision 31): WordNet's four in
+/// their usual order, anything else first-seen, senses with no part of
+/// speech last — that group gets no divider row at all.
+fn pos_groups(senses: &[DictSense]) -> Vec<(Option<String>, Vec<&DictSense>)> {
+    const ORDER: [&str; 4] = ["noun", "adjective", "verb", "adverb"];
+    let mut names: Vec<Option<String>> = Vec::new();
+    for sense in senses {
+        if !names.contains(&sense.pos) {
+            names.push(sense.pos.clone());
+        }
+    }
+    names.sort_by_key(|name| match name {
+        Some(pos) => ORDER.iter().position(|o| o == pos).unwrap_or(ORDER.len()),
+        None => ORDER.len() + 1,
+    });
+    names
+        .into_iter()
+        .map(|name| {
+            let group = senses.iter().filter(|s| s.pos == name).collect();
+            (name, group)
+        })
+        .collect()
+}
+
+fn pos_divider(name: &str) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.add_css_class("k-pos-divider");
+    let label = gtk::Label::new(Some(&name.to_uppercase()));
+    label.add_css_class("k-pos-name");
+    label.set_valign(gtk::Align::Center);
+    row.append(&label);
+    let rule = gtk::Separator::new(gtk::Orientation::Horizontal);
+    rule.set_hexpand(true);
+    rule.set_valign(gtk::Align::Center);
+    row.append(&rule);
+    row
+}
+
 fn append_definitions(body: &gtk::Box, card: &DictCard) {
-    body.append(&section_label("Definitions"));
+    let groups = pos_groups(&card.senses);
+    // Senses that carry no part of speech at all keep the plain heading;
+    // once groups are named, the dividers speak for themselves.
+    if groups.iter().all(|(name, _)| name.is_none()) {
+        body.append(&section_label("Definitions"));
+    }
 
     let defs_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
     defs_box.add_css_class("k-defs");
 
-    let shown = card.senses.len().min(3);
-    for (i, sense) in card.senses.iter().take(shown).enumerate() {
-        defs_box.append(&sense_row(sense, i + 1));
-    }
-
-    let extra = &card.senses[shown..];
-    if !extra.is_empty() {
-        let hidden = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        hidden.add_css_class("k-extra-defs");
-        for (offset, sense) in extra.iter().enumerate() {
-            hidden.append(&sense_row(sense, shown + offset + 1));
+    for (name, group) in &groups {
+        if let Some(name) = name {
+            defs_box.append(&pos_divider(name));
         }
+        // Three senses to a group, then the fold (decision 31);
+        // numbering restarts with each part of speech.
+        let shown = group.len().min(3);
+        for (i, sense) in group.iter().take(shown).enumerate() {
+            defs_box.append(&sense_row(sense, i + 1));
+        }
+        let extra = &group[shown..];
+        if !extra.is_empty() {
+            let hidden = gtk::Box::new(gtk::Orientation::Vertical, 10);
+            hidden.add_css_class("k-extra-defs");
+            for (offset, sense) in extra.iter().enumerate() {
+                hidden.append(&sense_row(sense, shown + offset + 1));
+            }
 
-        let revealer = gtk::Revealer::new();
-        revealer.set_transition_type(gtk::RevealerTransitionType::None);
-        revealer.set_reveal_child(false);
-        revealer.set_child(Some(&hidden));
-        defs_box.append(&revealer);
+            let revealer = gtk::Revealer::new();
+            revealer.set_transition_type(gtk::RevealerTransitionType::None);
+            revealer.set_reveal_child(false);
+            revealer.set_child(Some(&hidden));
+            defs_box.append(&revealer);
 
-        let more = gtk::Button::with_label(&format!("Show {} more", extra.len()));
-        more.add_css_class("k-show-more");
-        more.set_halign(gtk::Align::Start);
-        let count = extra.len();
-        let showing = std::rc::Rc::new(std::cell::Cell::new(false));
-        more.connect_clicked(move |btn| {
-            let next = !showing.get();
-            showing.set(next);
-            revealer.set_reveal_child(next);
-            let label = if next {
-                "Show less".to_string()
-            } else {
-                format!("Show {} more", count)
-            };
-            btn.set_label(&label);
-        });
-        defs_box.append(&more);
+            let more = gtk::Button::with_label(&format!("Show {} more", extra.len()));
+            more.add_css_class("k-show-more");
+            more.set_halign(gtk::Align::Start);
+            let count = extra.len();
+            let showing = std::rc::Rc::new(std::cell::Cell::new(false));
+            more.connect_clicked(move |btn| {
+                let next = !showing.get();
+                showing.set(next);
+                revealer.set_reveal_child(next);
+                let label = if next {
+                    "Show less".to_string()
+                } else {
+                    format!("Show {} more", count)
+                };
+                btn.set_label(&label);
+            });
+            defs_box.append(&more);
+        }
     }
 
     body.append(&defs_box);
@@ -1124,13 +1214,13 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
             let phrase_label = gtk::Label::new(Some(phrase));
             phrase_label.add_css_class("k-idiom-phrase");
             phrase_label.set_xalign(0.0);
-            phrase_label.set_halign(gtk::Align::Start);
+            phrase_label.set_halign(gtk::Align::Fill);
             phrase_label.set_wrap(true);
             item.append(&phrase_label);
             let def_label = gtk::Label::new(Some(def));
             def_label.add_css_class("k-idiom-def");
             def_label.set_xalign(0.0);
-            def_label.set_halign(gtk::Align::Start);
+            def_label.set_halign(gtk::Align::Fill);
             def_label.set_wrap(true);
             item.append(&def_label);
             idioms_box.append(&item);
@@ -1150,7 +1240,7 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
         let empty = gtk::Label::new(Some(&format!("No entry for \u{2018}{}\u{2019}.", card.word)));
         empty.add_css_class("k-section-label");
         empty.set_xalign(0.0);
-        empty.set_halign(gtk::Align::Start);
+        empty.set_halign(gtk::Align::Fill);
         body.append(&empty);
     }
 }
@@ -1344,7 +1434,6 @@ mod tests {
                     example: Some(String::new()),
                 },
             ],
-            pos: vec!["noun".into(), "adjective".into()],
             synonyms: vec!["sorrow".into()],
             antonyms: vec!["joy".into()],
             idioms: vec![("in a mood".into(), "sad".into())],
@@ -1353,34 +1442,42 @@ mod tests {
     }
 
     #[test]
-    fn card_joins_word_level_pos_with_middots() {
-        let card = DictCard::from_entry(&entry("melancholy"), Some("/m/".into()), false, None);
+    fn card_carries_word_pronunciation_and_the_way_back() {
+        let card = DictCard::from_entry(&entry("melancholy"), Some("/m/".into()), false, true);
         assert_eq!(card.word, "melancholy");
-        assert_eq!(card.pos.as_deref(), Some("noun \u{00b7} adjective"));
         assert_eq!(card.pronunciation.as_deref(), Some("/m/"));
+        assert!(card.can_go_back);
     }
 
     #[test]
-    fn card_pos_is_none_when_entry_has_no_pos() {
-        let mut data = entry("x");
-        data.pos.clear();
-        let card = DictCard::from_entry(&data, None, false, None);
-        assert!(card.pos.is_none());
-    }
-
-    #[test]
-    fn card_maps_senses_drops_empty_examples_and_marks_hint() {
-        let card = DictCard::from_entry(&entry("m"), None, false, Some(1));
+    fn card_maps_senses_with_pos_and_drops_empty_examples() {
+        let card = DictCard::from_entry(&entry("m"), None, false, false);
         assert_eq!(card.senses.len(), 2);
+        assert_eq!(card.senses[0].pos.as_deref(), Some("noun"));
         assert_eq!(card.senses[0].example.as_deref(), Some("an air of it"));
-        assert!(!card.senses[0].hinted);
+        assert_eq!(card.senses[1].pos, None);
         assert_eq!(card.senses[1].example, None, "empty example is dropped");
-        assert!(card.senses[1].hinted, "hint index lands on sense 1");
+    }
+
+    #[test]
+    fn pos_groups_orders_wordnets_four_and_lands_unnamed_last() {
+        let senses = vec![
+            DictSense { pos: Some("verb".into()), def: "v".into(), example: None },
+            DictSense { pos: None, def: "bare".into(), example: None },
+            DictSense { pos: Some("noun".into()), def: "n1".into(), example: None },
+            DictSense { pos: Some("noun".into()), def: "n2".into(), example: None },
+        ];
+        let groups = pos_groups(&senses);
+        let shape: Vec<(Option<&str>, usize)> = groups
+            .iter()
+            .map(|(name, group)| (name.as_deref(), group.len()))
+            .collect();
+        assert_eq!(shape, vec![(Some("noun"), 2), (Some("verb"), 1), (None, 1)]);
     }
 
     #[test]
     fn card_carries_synonyms_antonyms_idioms_and_saved() {
-        let card = DictCard::from_entry(&entry("m"), None, true, None);
+        let card = DictCard::from_entry(&entry("m"), None, true, false);
         assert_eq!(card.synonyms, vec!["sorrow".to_string()]);
         assert_eq!(card.antonyms, vec!["joy".to_string()]);
         assert_eq!(card.idioms, vec![("in a mood".into(), "sad".into())]);

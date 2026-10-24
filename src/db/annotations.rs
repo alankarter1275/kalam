@@ -481,6 +481,18 @@ impl Catalog {
         Ok(())
     }
 
+    /// The dictionary toggle's off stroke: forget every row this book
+    /// holds for the word (one in practice — `saved_word_exists` is
+    /// what the toggle reads, and it counts any row).
+    pub fn delete_saved_word_for(&self, word: &str, book_id: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM saved_words WHERE word = ?1 COLLATE NOCASE AND book_id = ?2",
+            params![word, book_id],
+        )?;
+        Ok(())
+    }
+
     /// Fetch all saved words without display caps for data export.
     pub fn list_all_saved_words_unlimited(&self) -> Result<Vec<SavedWord>> {
         let conn = self.conn();

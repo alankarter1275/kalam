@@ -56,13 +56,12 @@ impl ReaderModel {
     /// Show an entry in the dictionary popover, pointed at `rect`.
     ///
     /// `saved` is Kalam's answer to "is this word already in the Words
-    /// sidebar", `hint` the sense the sentence around the tap suggests
-    /// (`None` when the hint preference is off).
+    /// sidebar"; the way back shows whenever the reader wandered here
+    /// through the card's own chips.
     pub(crate) fn show_dict(
         &mut self,
         data: &EntryData,
         saved: bool,
-        hint: Option<usize>,
         rect: gtk::gdk::Rectangle,
         sender: &ComponentSender<ReaderModel>,
     ) {
@@ -72,7 +71,8 @@ impl ReaderModel {
         engine::dismiss(self.dict_popover.take());
         let Some(view) = &self.view else { return };
         let pronunciation = crate::db::pronunciation_for(&data.word).map(|p| format!("/{p}"));
-        let card = engine::DictCard::from_entry(data, pronunciation, saved, hint);
+        let can_go_back = !self.dict_back_stack.is_empty();
+        let card = engine::DictCard::from_entry(data, pronunciation, saved, can_go_back);
         let popover = engine::build_dict_popover(view.widget().upcast_ref(), &rect, &card, sender);
         popover.popup();
         self.dict_anchor = Some(rect);

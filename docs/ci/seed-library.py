@@ -937,6 +937,113 @@ def seed_settings_fixture(
     )
 
 
+def seed_reader_fixture(conn, now: datetime) -> None:
+    """A three-word dictionary for the reader screenshots (EPUB T4).
+
+    The full packs install at startup and finish *after* a snapshot is
+    taken, so a capture cannot wait for them. This plants the four
+    bundled packs as catalog rows plus just enough entries for the
+    dictionary frames: "bank" carries two parts of speech, a fold of
+    extra noun senses, quoted examples, synonym/antonym chips and two
+    idiom cards; "river" exists so the missing frame's "riv" lookup
+    has a did-you-mean to offer; "shore" gives the bank chips a real
+    word to wander to. Sense blobs use the bundled WordNet shape the
+    parser in src/db/dictionaries.rs reads.
+    """
+    import json
+
+    stamp = now.isoformat()
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS dictionaries (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL UNIQUE,
+            lang        TEXT,
+            entry_count INTEGER NOT NULL DEFAULT 0,
+            added_at    TEXT    NOT NULL,
+            priority    INTEGER NOT NULL DEFAULT 100
+        );
+        CREATE TABLE IF NOT EXISTS dict_entries (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            dict_id    INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+            word       TEXT    NOT NULL COLLATE NOCASE,
+            definition TEXT    NOT NULL,
+            key        TEXT
+        );
+        CREATE TABLE IF NOT EXISTS combined_words (
+            key     TEXT    PRIMARY KEY COLLATE NOCASE,
+            word    TEXT    NOT NULL,
+            dict_id INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+            senses  TEXT    NOT NULL
+        );
+        """
+    )
+    packs = {}
+    for name, count, priority in (
+        ("English WordNet 2025", 127284, 10),
+        ("English Idioms and Expressions", 1024, 20),
+        ("English Synonyms (WordNet 3.0)", 110365, 30),
+        ("English Antonyms (WordNet 3.0)", 6621, 40),
+    ):
+        conn.execute(
+            "INSERT OR IGNORE INTO dictionaries (name, lang, entry_count, added_at, priority) "
+            "VALUES (?, 'en', ?, ?, ?)",
+            (name, count, stamp, priority),
+        )
+        packs[name] = conn.execute(
+            "SELECT id FROM dictionaries WHERE name = ?", (name,)
+        ).fetchone()[0]
+    wordnet = packs["English WordNet 2025"]
+
+    bank = (
+        'noun:; 1. the land alongside a river or lake '
+        '"they sat on the bank and watched the water"; '
+        "2. a financial institution that keeps money and lends it at interest "
+        '"she kept her savings in the local bank"; '
+        "3. a long raised mound of earth or snow; "
+        "4. an amount of something kept in reserve "
+        '"a bank of cloud was building in the west"; '
+        "5. a row of similar things, such as lights or dials; "
+        "verb:; 1. to put money into a bank; "
+        '2. to tilt sideways while turning "the plane banked into the cloud"'
+    )
+    river = (
+        "noun:; 1. a large natural stream of water flowing to the sea "
+        '"the river bends below the village"; '
+        "2. a large quantity of something flowing steadily"
+    )
+    shore = (
+        "noun:; 1. the land along the edge of a sea, lake or wide river "
+        '"they walked the shore at dusk"'
+    )
+    for word, blob in (("bank", bank), ("river", river), ("shore", shore)):
+        conn.execute(
+            "INSERT OR REPLACE INTO combined_words (key, word, dict_id, senses) "
+            "VALUES (?, ?, ?, ?)",
+            (word, word, wordnet, json.dumps([blob])),
+        )
+
+    # The auxiliary packs speak through dict_entries; chip lists hide in
+    # "synonyms: a, b, c" definitions, idioms are ordinary rows whose
+    # word contains the headword as a token.
+    entries = (
+        ("English Synonyms (WordNet 3.0)", "bank", "bank",
+         "synonyms: shore, edge, brink, reserve, savings"),
+        ("English Antonyms (WordNet 3.0)", "bank", "bank",
+         "antonyms: spend, borrow"),
+        ("English Idioms and Expressions", "bank on", "bank on",
+         "to rely on something happening or proving true"),
+        ("English Idioms and Expressions", "break the bank", "break the bank",
+         "to cost more than one can afford"),
+    )
+    for pack, word, key, definition in entries:
+        conn.execute(
+            "INSERT INTO dict_entries (dict_id, word, definition, key) "
+            "VALUES (?, ?, ?, ?)",
+            (packs[pack], word, definition, key),
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--books", type=int, default=139)
@@ -955,6 +1062,11 @@ def main() -> int:
         "--author-fixture",
         action="store_true",
         help="add the cached bibliography + marks the author-page screenshot opens",
+    )
+    ap.add_argument(
+        "--reader-fixture",
+        action="store_true",
+        help="seed the tiny dictionary the reader popover screenshots look up",
     )
     ap.add_argument(
         "--settings-fixture",
@@ -1107,6 +1219,9 @@ def main() -> int:
             conn, library, now, args.books + (3 if args.series_fixture else 0)
         )
         total_books += 2
+
+    if args.reader_fixture:
+        seed_reader_fixture(conn, now)
 
     if args.settings_fixture or args.settings_empty_dicts:
         seed_settings_fixture(

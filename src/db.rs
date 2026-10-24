@@ -28,8 +28,8 @@ mod tags;
 pub use tags::BulkMetadataEdit;
 pub(crate) use series::heuristic_series_key;
 pub use dictionaries::{
-    likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME,
-    BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
+    EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
+    BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
 };
 // Only the engine's tests name `Sense` directly; keep it out of the non-test
 // build so it is not an unused import.

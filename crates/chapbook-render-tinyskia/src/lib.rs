@@ -274,8 +274,10 @@ fn fill_band(
         paint.set_color_rgba8(outline.r, outline.g, outline.b, outline.a);
         paint.anti_alias = true;
         paint.blend_mode = blend_mode;
-        let mut stroke = tiny_skia::Stroke::default();
-        stroke.width = scale;
+        let stroke = tiny_skia::Stroke {
+            width: scale,
+            ..tiny_skia::Stroke::default()
+        };
         pixmap.stroke_path(&path, &paint, &stroke, tiny_skia::Transform::identity(), None);
     }
 }

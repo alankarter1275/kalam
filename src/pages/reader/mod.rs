@@ -722,7 +722,14 @@ impl Component for ReaderModel {
             .child(&toc_list)
             .build();
         toc_scroll.add_css_class("kalam-reader-panel-scroll");
-        left_stack.add_named(&toc_scroll, Some("contents"));
+        // The scroll sits inside a plain page box, the same shape as
+        // the Notes page (and the Settings scroll in its host box):
+        // a scrolled window as the stack's direct child rendered its
+        // list at natural width in the T3 captures, where the boxed
+        // shape takes the panel's full width.
+        let contents_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        contents_page.append(&toc_scroll);
+        left_stack.add_named(&contents_page, Some("contents"));
 
         // Roadmap 2.9: the reader's keys. One table, shared with the key
         // controller below, so a change in settings takes effect at once.

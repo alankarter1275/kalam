@@ -351,6 +351,8 @@ fn append_toc_btn(
 ) {
     let btn = gtk::Button::new();
     btn.add_css_class("kalam-reader-toc-item");
+    btn.set_hexpand(true);
+    btn.set_halign(gtk::Align::Fill);
     if Some(idx) == active_spine {
         btn.add_css_class("active");
     }
@@ -363,7 +365,6 @@ fn append_toc_btn(
     title.set_wrap(true);
     title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     title.set_lines(-1);
-    title.set_width_chars(1);
     title.set_xalign(0.0);
     btn.set_child(Some(&title));
     let s = sender.clone();

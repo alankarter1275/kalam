@@ -19,4 +19,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 8.69s
+src/pages/comics_reader/mod.rs:461:5: [1m[91merror[0m: type `pages::comics_reader::reading_settings::ComicReadingSettings` is more private than the item `pages::comics_reader::ComicsReaderModel::current_reading_settings`: method `pages::comics_reader::ComicsReaderModel::current_reading_settings` is reachable at visibility `pub`
+src/pages/comics_reader/mod.rs:496:5: [1m[91merror[0m: type `pages::comics_reader::reading_settings::ComicReadingSettings` is more private than the item `pages::comics_reader::ComicsReaderModel::apply_reading_settings`: method `pages::comics_reader::ComicsReaderModel::apply_reading_settings` is reachable at visibility `pub`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+src/pages/comics_reader/reading_settings.rs:297:9: [1m[91merror[0m: field assignment outside of initializer for an instance created with Default::default()
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors

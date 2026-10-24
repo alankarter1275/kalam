@@ -1,6 +1,6 @@
 //! Reader component messages, payload types, preference structures, and sidebar enums.
 
-use crate::db::HighlightColor;
+use crate::db::{Annotation, HighlightColor, ReadingBookmark, SavedWord};
 use relm4::prelude::*;
 
 /// Move the book-theme dropdown to a theme id without firing it
@@ -96,6 +96,17 @@ pub(crate) struct ReaderSettingsControls {
 pub enum SearchScope {
     Chapter,
     Book,
+}
+
+/// One deletion the reader can take back (decision 30): the row as
+/// it stood, kept for the session. Words travel as a set because
+/// the dictionary toggle forgets every row this book holds for a
+/// word in one stroke.
+#[derive(Debug, Clone)]
+pub(crate) enum DeletedMark {
+    Annotation(Box<Annotation>),
+    Bookmark(Box<ReadingBookmark>),
+    SavedWords(Vec<SavedWord>),
 }
 
 /// Indices into the whole-book result list that the standing scope
@@ -210,6 +221,9 @@ pub enum ReaderMsg {
     HighlightTapped(i64, f64, f64),
     WordMemoryTapped(String, f64, f64),
     WordMemoryHover(Option<String>, f64, f64),
+    /// Hover over a noted highlight's end dot (decision 29), or away
+    /// from it (`None`).
+    NoteDotHover(Option<i64>, f64, f64),
     SetWordMemoryScope(String),
     QuoteSelection,
     LookUpSelection,
@@ -239,6 +253,9 @@ pub enum ReaderMsg {
     ToggleSaveWord,
     /// A saved word's delete in the Notes list (decision 22).
     DeleteSavedWord(i64),
+    /// Ctrl+Z (decision 30): bring back the last deleted highlight,
+    /// bookmark or saved word.
+    UndoDelete,
     ClearDict,
     /// The ribbon and the B key: set the mark here, or take it away
     /// (decision 16). Quiet either way — the ribbon is the feedback.

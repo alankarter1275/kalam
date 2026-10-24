@@ -271,6 +271,7 @@ fn a_selection_lives_on_the_page_it_was_made_on() {
         color: None,
         style: None,
         text: Some(text),
+        has_note: false,
     };
     s.show_host_highlight(row);
     s.set_position(0, 0);

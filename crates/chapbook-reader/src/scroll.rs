@@ -176,10 +176,15 @@ impl Session {
                     .unwrap_or(highlight_color),
                 blend: Blend::Normal,
                 style,
+                outline: None,
+                note_dot: h.has_note,
             }
         };
         let mut selections: Vec<Selection> =
             self.host_highlights(spine).iter().map(paint).collect();
+        // Search matches wash over the stored marks (decision 34):
+        // for as long as the bar is up, they are what the eye is for.
+        selections.extend(self.search_selections(spine, palette));
 
         // Word Memory: Subtle dotted underlines for saved vocabulary words
         if !self.word_memory.is_empty() {
@@ -201,6 +206,8 @@ impl Session {
                                 color: dot_color,
                                 blend: Blend::Normal,
                                 style: chapbook_paint::SelectionStyle::Dotted,
+                                outline: None,
+                                note_dot: false,
                             });
                         }
                     }
@@ -215,6 +222,8 @@ impl Session {
                     color: palette.selection,
                     blend: self.selection_blend(),
                     style: chapbook_paint::SelectionStyle::Band,
+                    outline: None,
+                    note_dot: false,
                 });
             }
         }
@@ -448,6 +457,39 @@ impl Session {
             .iter()
             .find(|h| offset >= h.start && offset < h.end)
             .map(|h| h.id)
+    }
+
+    /// The noted highlight whose dot (decision 29) is under a point
+    /// on any page, if any. The dot is 6px across — a speck to aim a
+    /// pointer at — so the target breathes by 5px on every side.
+    pub fn host_highlight_note_at_page(
+        &mut self,
+        spine: usize,
+        page: usize,
+        x: f32,
+        y: f32,
+    ) -> Option<i64> {
+        let noted: Vec<(i64, u32, u32)> = self
+            .host_highlights(spine)
+            .iter()
+            .filter(|h| h.has_note)
+            .map(|h| (h.id, h.start, h.end))
+            .collect();
+        if noted.is_empty() {
+            return None;
+        }
+        let page = self.layout_unit(spine)?.pages.get(page)?;
+        let point = Point::new(x, y);
+        noted.iter().find_map(|(id, start, end)| {
+            let dot = page.note_dot_rect(*start, *end)?;
+            let target = Rect::new(
+                dot.origin.x - 5.0,
+                dot.origin.y - 5.0,
+                dot.size.w + 10.0,
+                dot.size.h + 10.0,
+            );
+            target.contains_point(point).then_some(*id)
+        })
     }
 
     /// The locator offset of the first line at or below a page-space `y`

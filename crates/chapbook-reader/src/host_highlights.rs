@@ -15,10 +15,10 @@
 //! [`Session::layered_locator_at`], writes its row, and calls
 //! [`Session::show_host_highlight`] with its own row id.
 
-use chapbook_core::{resolve_in_text, LayeredLocator, Locator};
-use chapbook_paint::FrameIntent;
+use chapbook_core::{resolve_in_text, LayeredLocator, Locator, Palette};
+use chapbook_paint::{Blend, FrameIntent, Selection, SelectionStyle};
 
-use crate::{Highlight, Session};
+use crate::{Highlight, SearchMatchRange, Session};
 
 /// A highlight as the host stores it: two layered locators and the
 /// host's own id. The text is optional and only carried back out in
@@ -34,6 +34,23 @@ pub struct HostHighlight {
     /// `solid`, `underline`, `squiggly`, `strikeout`.
     pub style: Option<String>,
     pub text: Option<String>,
+    /// kalam: the host's row carries a note, so the span wears the
+    /// note dot at its end (decision 29).
+    pub has_note: bool,
+}
+
+/// One transient search match to wash over the page (decision 34):
+/// two layered locators like a highlight's, and whether this is the
+/// match being read. Search paint is not a highlight — no id, no
+/// tap, no store — so it rides its own list and can be replaced or
+/// cleared without touching a mark the host keeps.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchMatch {
+    pub start: LayeredLocator,
+    pub end: LayeredLocator,
+    /// The one being read: accent tint and outline, where the rest
+    /// get the faint neutral wash. At most one match should say so.
+    pub current: bool,
 }
 
 impl Session {
@@ -118,6 +135,31 @@ impl Session {
         self.mark_highlight(range);
     }
 
+    /// Say whether a shown highlight carries a note now (decision
+    /// 29): the dot at the span's end comes or goes with the note,
+    /// without the host re-handing the whole row.
+    pub fn set_host_highlight_note(&mut self, id: i64, has_note: bool) {
+        let mut changed = false;
+        for highlight in self.host_highlights.iter_mut().filter(|h| h.id == id) {
+            changed |= highlight.has_note != has_note;
+            highlight.has_note = has_note;
+        }
+        if !changed {
+            return;
+        }
+        let range = self.host_highlight_range(id);
+        for resolved in self
+            .units
+            .values_mut()
+            .filter_map(|unit| unit.resolved_host_highlights.as_mut())
+        {
+            for highlight in resolved.iter_mut().filter(|h| h.id == id) {
+                highlight.has_note = has_note;
+            }
+        }
+        self.mark_highlight(range);
+    }
+
     /// Stop painting a highlight. The host has already deleted its row.
     pub fn hide_host_highlight(&mut self, id: i64) {
         if !self.host_highlights.iter().any(|h| h.id == id) {
@@ -162,6 +204,103 @@ impl Session {
         self.unit(spine)
             .and_then(|unit| unit.resolved_host_highlights.as_deref())
             .unwrap_or(&[])
+    }
+
+    /// Replace the transient search matches washed over the page
+    /// (decision 34). Resolution is lazy and per unit, exactly as
+    /// for host highlights, so a whole-book result list costs only
+    /// the units that actually paint.
+    pub fn set_search_matches(&mut self, matches: Vec<SearchMatch>) {
+        if self.search_matches == matches {
+            return;
+        }
+        self.search_matches = matches;
+        self.forget_resolved_search_matches();
+        self.mark(FrameIntent::Annotation);
+    }
+
+    /// Take the search wash off the page. Stored highlights are not
+    /// disturbed — the two lists never meet.
+    pub fn clear_search_matches(&mut self) {
+        if !self.search_matches.is_empty() {
+            self.set_search_matches(Vec::new());
+        }
+    }
+
+    /// The search matches that paint in `spine`, resolved into its
+    /// locator space and cached on the same terms as
+    /// [`Session::host_highlights`].
+    pub fn search_match_ranges(&mut self, spine: usize) -> &[SearchMatchRange] {
+        let attempted = self
+            .unit(spine)
+            .is_some_and(|unit| unit.resolved_search_matches.is_some());
+        if !attempted {
+            let any_here = self
+                .search_matches
+                .iter()
+                .any(|m| self.unit_for(&m.start) == Some(spine));
+            let resolved = if any_here {
+                let Some(text) = self.cached_unit_text(spine) else {
+                    return &[];
+                };
+                self.resolve_search_matches(spine, &text)
+            } else {
+                Vec::new()
+            };
+            self.unit_mut(spine).resolved_search_matches = Some(resolved);
+        }
+        self.unit(spine)
+            .and_then(|unit| unit.resolved_search_matches.as_deref())
+            .unwrap_or(&[])
+    }
+
+    /// The page-space selections for `spine`'s search matches, in the
+    /// palette's §9 tints: every match the faint neutral wash, the
+    /// current one the accent inside its ring.
+    pub(crate) fn search_selections(&mut self, spine: usize, palette: Palette) -> Vec<Selection> {
+        if self.search_matches.is_empty() {
+            return Vec::new();
+        }
+        self.search_match_ranges(spine)
+            .iter()
+            .map(|m| Selection {
+                start: m.start,
+                end: m.end,
+                color: if m.current {
+                    palette.search_current()
+                } else {
+                    palette.search_match()
+                },
+                blend: Blend::Normal,
+                style: SelectionStyle::Band,
+                outline: m.current.then(|| palette.search_current_outline()),
+                note_dot: false,
+            })
+            .collect()
+    }
+
+    fn resolve_search_matches(&self, spine: usize, text: &str) -> Vec<SearchMatchRange> {
+        self.search_matches
+            .iter()
+            .filter(|m| self.unit_for(&m.start) == Some(spine))
+            .filter_map(|m| {
+                let trusted = self.href_matches(spine, &m.start);
+                let start = resolve_in_text(text, &m.start, trusted).offset();
+                let end = resolve_in_text(text, &m.end, trusted).offset();
+                (end > start).then_some(SearchMatchRange {
+                    spine,
+                    start,
+                    end,
+                    current: m.current,
+                })
+            })
+            .collect()
+    }
+
+    fn forget_resolved_search_matches(&mut self) {
+        for unit in self.units.values_mut() {
+            unit.resolved_search_matches = None;
+        }
     }
 
     /// The host's highlight under a point in panel coordinates — for a tap
@@ -251,6 +390,7 @@ impl Session {
             text: h.text.clone(),
             color: h.color.clone(),
             style: h.style.clone(),
+            has_note: h.has_note,
         })
     }
 

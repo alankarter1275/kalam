@@ -203,10 +203,15 @@ impl Session {
                 color,
                 blend: Blend::Normal,
                 style,
+                outline: None,
+                note_dot: h.has_note,
             }
         };
         let mut selections: Vec<Selection> =
             self.host_highlights(spine).iter().map(paint).collect();
+        // Search matches wash over the stored marks (decision 34):
+        // for as long as the bar is up, they are what the eye is for.
+        selections.extend(self.search_selections(spine, palette));
 
         // Word Memory: dotted underlines for saved vocabulary words —
         // the palette's accent at ~75% (design-system §9), not a fixed
@@ -231,6 +236,8 @@ impl Session {
                                 color: dot_color,
                                 blend: Blend::Normal,
                                 style: chapbook_paint::SelectionStyle::Dotted,
+                                outline: None,
+                                note_dot: false,
                             });
                         }
                     }
@@ -244,6 +251,8 @@ impl Session {
                 color: self.settings.palette().selection,
                 blend: self.selection_blend(),
                 style: chapbook_paint::SelectionStyle::Band,
+                outline: None,
+                note_dot: false,
             });
         }
         let background = self.settings.palette().background;

@@ -856,6 +856,8 @@ impl Component for ReaderModel {
             selection_chip: None,
             annotation_popover: None,
             word_preview_popover: None,
+            note_preview_popover: None,
+            note_preview_id: None,
             word_memory_scope,
             note_popover: None,
             dict_popover: None,
@@ -870,6 +872,7 @@ impl Component for ReaderModel {
             annotation_note_draft: None,
             bookmarks,
             saved_words,
+            deleted_marks: Vec::new(),
             dict_query: String::new(),
             dict_results: Vec::new(),
             dict_lookup_word: None,
@@ -1246,7 +1249,9 @@ impl Component for ReaderModel {
                 .widget()
                 .and_then(|w| w.root())
                 .and_then(|r| r.focus())
-                .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
+                .is_some_and(|f| {
+                    f.is::<gtk::Editable>() || f.is::<gtk::Text>() || f.is::<gtk::TextView>()
+                });
 
             if keyval == Key::Escape {
                 // One layered Escape (decisions 14, 20, 31): the arm
@@ -1275,6 +1280,17 @@ impl Component for ReaderModel {
                 == Some(crate::shortcuts::ShortcutAction::ClosePanel)
             {
                 s.input(ReaderMsg::ClosePanelKey);
+                return gtk::glib::Propagation::Stop;
+            }
+
+            // The shell's "Undo the last delete" (Ctrl+Z by default)
+            // is deliberately unclaimed out there; in the reader it
+            // has a stack to answer with (decision 30). The typing
+            // guard above keeps a note box's own text undo its own.
+            if shell_keys.borrow().action_for(keyval, state)
+                == Some(crate::shortcuts::ShortcutAction::UndoDelete)
+            {
+                s.input(ReaderMsg::UndoDelete);
                 return gtk::glib::Propagation::Stop;
             }
 
@@ -1441,6 +1457,7 @@ impl Component for ReaderModel {
                     text: res.locator.quote.exact.clone(),
                     start: res.locator.clone(),
                     end,
+                    has_note: true,
                 };
                 let cfi = engine::range_to_json(&h.start, &h.end);
                 let id = model
@@ -1507,7 +1524,7 @@ impl Component for ReaderModel {
                     self.search_index = 0;
                     self.reset_search_scope();
                     if let Some(view) = &self.view {
-                        view.remove_highlight(-9999);
+                        view.clear_search_matches();
                         let w = view.widget().clone();
                         w.grab_focus();
                         glib::idle_add_local_once(move || {
@@ -1577,7 +1594,7 @@ impl Component for ReaderModel {
                 self.search_index = 0;
                 self.reset_search_scope();
                 if let Some(view) = &self.view {
-                    view.remove_highlight(-9999);
+                    view.clear_search_matches();
                     let w = view.widget().clone();
                     w.grab_focus();
                     glib::idle_add_local_once(move || {
@@ -1997,6 +2014,13 @@ impl Component for ReaderModel {
                     self.reload_annotations();
                     self.reload_bookmarks();
                     self.reload_saved_words();
+                    if self.search_active {
+                        // Chapter scope is named for the chapter
+                        // being read, so a manual turn into a new
+                        // one repaints the wash for it — in place,
+                        // never as a jump.
+                        self.paint_search_matches(false);
+                    }
                     refresh_notes = true;
                     refresh_toc = true;
                 }
@@ -2095,6 +2119,7 @@ impl Component for ReaderModel {
                             let eng = engine::engine_color(&color);
                             if let Some(view) = self.view.clone() {
                                 view.update_highlight(id, eng, style_val.as_str());
+                                view.set_highlight_note(id, !note.trim().is_empty());
                             }
                             self.reload_annotations();
                             refresh_notes = true;
@@ -2132,6 +2157,7 @@ impl Component for ReaderModel {
                 if self.dict_popover.is_some()
                     || self.selection_chip.is_some()
                     || self.annotation_popover.is_some()
+                    || self.note_preview_popover.is_some()
                 {
                     return;
                 }
@@ -2146,6 +2172,52 @@ impl Component for ReaderModel {
                     ) {
                         pop.popup();
                         self.word_preview_popover = Some(pop);
+                    }
+                }
+            }
+            ReaderMsg::NoteDotHover(id_opt, x, y) => {
+                let Some(id) = id_opt else {
+                    engine::dismiss(self.note_preview_popover.take());
+                    self.note_preview_id = None;
+                    return;
+                };
+                // Motion inside the same dot reports again and again;
+                // the card already standing is the answer.
+                if self.note_preview_id == Some(id) && self.note_preview_popover.is_some() {
+                    return;
+                }
+                if self.dict_popover.is_some()
+                    || self.selection_chip.is_some()
+                    || self.annotation_popover.is_some()
+                {
+                    engine::dismiss(self.note_preview_popover.take());
+                    self.note_preview_id = None;
+                    return;
+                }
+                let note = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|annotation| annotation.id == id)
+                    .map(|annotation| annotation.note.clone())
+                    .filter(|note| !note.trim().is_empty());
+                let Some(note) = note else {
+                    engine::dismiss(self.note_preview_popover.take());
+                    self.note_preview_id = None;
+                    return;
+                };
+                engine::dismiss(self.word_preview_popover.take());
+                engine::dismiss(self.note_preview_popover.take());
+                self.note_preview_id = None;
+                let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                if let Some(view) = self.view.clone() {
+                    if let Some(pop) = engine::build_annotation_note_preview(
+                        view.widget().upcast_ref(),
+                        &rect,
+                        &note,
+                    ) {
+                        pop.popup();
+                        self.note_preview_popover = Some(pop);
+                        self.note_preview_id = Some(id);
                     }
                 }
             }
@@ -2302,10 +2374,26 @@ impl Component for ReaderModel {
             }
             ReaderMsg::DeleteAnnotation(id) => {
                 self.flush_annotation_note_draft();
-                crate::notify::report(
+                // The row as it stands, before it goes: Ctrl+Z puts
+                // this back (decision 30).
+                let row = self
+                    .service
+                    .catalog()
+                    .get_annotation_by_id(id)
+                    .ok()
+                    .flatten();
+                if crate::notify::report(
                     self.service.catalog().delete_annotation(id),
                     "Could not delete the highlight",
-                );
+                ) {
+                    if self.note_preview_id == Some(id) {
+                        engine::dismiss(self.note_preview_popover.take());
+                        self.note_preview_id = None;
+                    }
+                    if let Some(row) = row {
+                        self.remember_deleted(DeletedMark::Annotation(Box::new(row)));
+                    }
+                }
                 if self.editing_annotation == Some(id) {
                     self.editing_annotation = None;
                     self.annotation_note_draft = None;
@@ -2330,22 +2418,103 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::DeleteBookmark(id) => {
-                crate::notify::report(
+                let row = self.bookmarks.iter().find(|m| m.id == id).cloned();
+                if crate::notify::report(
                     self.service.catalog().delete_reading_bookmark(id),
                     "Could not delete the mark",
-                );
+                ) {
+                    if let Some(row) = row {
+                        self.remember_deleted(DeletedMark::Bookmark(Box::new(row)));
+                    }
+                }
                 self.reload_bookmarks();
                 refresh_notes = true;
+                refresh_chrome = true;
             }
             ReaderMsg::DeleteSavedWord(id) => {
-                crate::notify::report(
+                let row = self.saved_words.iter().find(|w| w.id == id).cloned();
+                if crate::notify::report(
                     self.service.catalog().delete_saved_word(id),
                     "Could not forget the word",
-                );
+                ) {
+                    if let Some(row) = row {
+                        self.remember_deleted(DeletedMark::SavedWords(vec![row]));
+                    }
+                }
                 // reload_saved_words re-pushes the word-memory set, so
                 // the dotted underline goes with the row.
                 self.reload_saved_words();
                 refresh_notes = true;
+            }
+            ReaderMsg::UndoDelete => {
+                // Decision 30: deletions are direct because Ctrl+Z
+                // brings them back — the row as it stood, restored
+                // exactly. A failed restore keeps its place on the
+                // stack rather than being lost with the attempt.
+                if let Some(mark) = self.deleted_marks.pop() {
+                    let catalog = self.service.catalog();
+                    match mark {
+                        DeletedMark::Annotation(row) => {
+                            match catalog.restore_annotation(&row) {
+                                Ok(()) => {
+                                    self.reload_annotations();
+                                    if let Some(view) = &self.view {
+                                        if let Some(h) = engine::highlight_of(&row) {
+                                            view.show_highlight(row.id, &h);
+                                        }
+                                    }
+                                    refresh_notes = true;
+                                }
+                                Err(err) => {
+                                    self.deleted_marks
+                                        .push(DeletedMark::Annotation(row));
+                                    crate::notify::error(
+                                        "Could not bring the highlight back",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        DeletedMark::Bookmark(row) => {
+                            match catalog.restore_reading_bookmark(&row) {
+                                Ok(()) => {
+                                    self.reload_bookmarks();
+                                    refresh_notes = true;
+                                    refresh_chrome = true;
+                                }
+                                Err(err) => {
+                                    self.deleted_marks.push(DeletedMark::Bookmark(row));
+                                    crate::notify::error(
+                                        "Could not bring the bookmark back",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        DeletedMark::SavedWords(rows) => {
+                            let mut failed = Vec::new();
+                            let mut first_error = None;
+                            for row in rows {
+                                if let Err(err) = catalog.restore_saved_word(&row) {
+                                    first_error.get_or_insert(err);
+                                    failed.push(row);
+                                }
+                            }
+                            self.reload_saved_words();
+                            refresh_notes = true;
+                            if !failed.is_empty() {
+                                self.deleted_marks
+                                    .push(DeletedMark::SavedWords(failed));
+                                if let Some(err) = first_error {
+                                    crate::notify::error(
+                                        "Could not bring the word back",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
             }
             ReaderMsg::DictSearch(q) => {
                 self.dict_query = q.clone();
@@ -2386,8 +2555,22 @@ impl Component for ReaderModel {
                     let catalog = self.service.catalog();
                     let saved = catalog.saved_word_exists(&word, self.book_id).unwrap_or(false);
                     if saved {
+                        // Every row this stroke forgets, kept for
+                        // Ctrl+Z (decisions 30, 31).
+                        let rows: Vec<_> = self
+                            .saved_words
+                            .iter()
+                            .filter(|w| {
+                                w.book_id == Some(self.book_id)
+                                    && w.word.eq_ignore_ascii_case(&word)
+                            })
+                            .cloned()
+                            .collect();
                         match catalog.delete_saved_word_for(&word, self.book_id) {
                             Ok(()) => {
+                                if !rows.is_empty() {
+                                    self.remember_deleted(DeletedMark::SavedWords(rows));
+                                }
                                 crate::notify::compact("Word forgotten", &word);
                                 self.reload_saved_words();
                                 refresh_notes = true;
@@ -2439,11 +2622,17 @@ impl Component for ReaderModel {
                 // stays true underneath for when it is next opened.
                 if self.chapter_count > 0 {
                     if let Some(id) = self.bookmark_here_id() {
-                        if let Err(e) = self.service.catalog().delete_reading_bookmark(id) {
-                            crate::notify::error(
+                        let row = self.bookmarks.iter().find(|m| m.id == id).cloned();
+                        match self.service.catalog().delete_reading_bookmark(id) {
+                            Ok(()) => {
+                                if let Some(row) = row {
+                                    self.remember_deleted(DeletedMark::Bookmark(Box::new(row)));
+                                }
+                            }
+                            Err(e) => crate::notify::error(
                                 "Could not remove the bookmark",
                                 &e.to_string(),
-                            );
+                            ),
                         }
                     } else {
                         let label = self.current_chapter_title().to_string();
@@ -2767,6 +2956,8 @@ impl ReaderModel {
     fn dismiss_chip_surfaces(&mut self) {
         engine::dismiss(self.selection_chip.take());
         engine::dismiss(self.annotation_popover.take());
+        engine::dismiss(self.note_preview_popover.take());
+        self.note_preview_id = None;
     }
 
     /// Where the chip and the annotation popover last left the
@@ -2943,41 +3134,44 @@ impl ReaderModel {
     }
 
     fn highlight_current_search_match(&self) {
+        self.paint_search_matches(true);
+    }
+
+    /// Paint every match the standing scope can see (decision 34):
+    /// the rest in the faint neutral wash, the current one in the
+    /// accent inside its ring — the engine's transient search layer,
+    /// never a stored highlight. `navigate` also takes the reader
+    /// to the current match; a repaint after a manual page turn
+    /// must not.
+    fn paint_search_matches(&self, navigate: bool) {
         let Some(view) = &self.view else { return };
-        view.remove_highlight(-9999);
-        if !self.search_active {
+        view.clear_search_matches();
+        let query_trimmed = self.search_query.trim();
+        if !self.search_active || query_trimmed.is_empty() {
             return;
         }
         // The standing position counts inside the Chapter / Book
-        // scope (decision 34); the raw list is the engine's
-        // whole-book answer underneath it.
-        let Some(global_index) = self.current_search_result_index() else {
-            return;
-        };
-        let res = &self.search_results[global_index];
-        let query_trimmed = self.search_query.trim();
-        if query_trimmed.is_empty() {
+        // scope; the raw list is the engine's whole-book answer
+        // underneath it.
+        let scoped = self.scoped_search_indices();
+        if scoped.is_empty() {
             return;
         }
+        let current_pos = self.search_index.min(scoped.len() - 1);
         let query_len = query_trimmed.chars().count() as u32;
-        let end_locator = kalam_reader::LayeredLocator {
-            spine_href: res.locator.spine_href.clone(),
-            spine_index: res.locator.spine_index,
-            char_offset: res.locator.char_offset + query_len,
-            locator_version: res.locator.locator_version,
-            quote: res.locator.quote.clone(),
-            spine_fraction: res.locator.spine_fraction,
-            book_progression: res.locator.book_progression,
-        };
-        let hl = kalam_reader::NewHighlight {
-            color: kalam_reader::HighlightColor::Yellow,
-            style: "solid".to_string(),
-            text: res.locator.quote.exact.clone(),
-            start: res.locator.clone(),
-            end: end_locator,
-        };
-        view.show_highlight(-9999, &hl);
-        view.goto_locator(&res.locator, true);
+        let matches = scoped.iter().enumerate().map(|(pos, global)| {
+            let res = &self.search_results[*global];
+            let end_locator = kalam_reader::LayeredLocator {
+                char_offset: res.locator.char_offset + query_len,
+                ..res.locator.clone()
+            };
+            (res.locator.clone(), end_locator, pos == current_pos)
+        });
+        view.set_search_matches(matches);
+        if navigate {
+            let res = &self.search_results[scoped[current_pos]];
+            view.goto_locator(&res.locator, true);
+        }
     }
 
     fn show_image_lightbox(&mut self, widgets: &mut <Self as relm4::Component>::Widgets, w: u32, h: u32, rgba: &[u8]) {

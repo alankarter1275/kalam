@@ -56,7 +56,7 @@ use frame::PendingDamage;
 use loader::Loader;
 use open::OpenBook;
 
-pub use host_highlights::HostHighlight;
+pub use host_highlights::{HostHighlight, SearchMatch};
 pub use scroll::PageExtent;
 /// A host's highlight ([`HostHighlight`]) resolved into the open book's
 /// locator space — what a shell paints and lists.
@@ -75,6 +75,20 @@ pub struct Highlight {
     pub color: Option<String>,
     /// Stored style (`solid`, `underline`, `squiggly`, `strikeout`).
     pub style: Option<String>,
+    /// kalam: the row carries a note (decision 29's dot).
+    pub has_note: bool,
+}
+
+/// A transient search match ([`SearchMatch`]) resolved into the open
+/// book's locator space. Search paint is deliberately not a host
+/// highlight: it has no id, cannot be tapped or recoloured, and
+/// clearing it cannot disturb the marks the host stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SearchMatchRange {
+    pub spine: usize,
+    pub start: u32,
+    pub end: u32,
+    pub current: bool,
 }
 
 // Everything a shell needs to consume what the session produces, so it
@@ -318,6 +332,10 @@ pub struct Session {
     /// kalam: highlights the host stores in its own database and asked
     /// the session to paint. See `host_highlights.rs`.
     host_highlights: Vec<HostHighlight>,
+    /// kalam: the transient search matches to wash over the page
+    /// (decision 34). A separate list from the host's highlights so
+    /// search can come and go without touching a stored mark.
+    search_matches: Vec<SearchMatch>,
     /// Words for Word Memory dotted underlines (case-folded)
     pub word_memory: std::collections::HashSet<String>,
     /// Fragment to land on once the target unit has laid out — the
@@ -366,6 +384,9 @@ struct UnitState {
     /// theme changes. `Some(empty)` means resolution ran and found
     /// nothing — distinct from never having run.
     resolved_host_highlights: Option<Vec<Highlight>>,
+    /// Search matches resolved into the unit's locator space, cached
+    /// on the same terms as the highlights above.
+    resolved_search_matches: Option<Vec<SearchMatchRange>>,
     /// Last use, in [`Session::use_clock`] ticks, for eviction order.
     used_at: u64,
 }

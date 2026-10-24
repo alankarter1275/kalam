@@ -253,7 +253,52 @@ impl Page {
         }
         rects
     }
+
+    /// kalam: where the note dot for the range `[start, end)` sits
+    /// (decision 29): just past the span's final glyph in reading
+    /// order, high in its band like a superscript speck. The final
+    /// glyph is a locator fact, not a visual one — in an RTL run it
+    /// is the *leftmost* selected glyph, and the dot goes on its
+    /// left. One definition, shared by the painter and by hit
+    /// testing, so the dot a shell can hover is the dot it sees.
+    pub fn note_dot_rect(&self, start: u32, end: u32) -> Option<Rect> {
+        if end <= start {
+            return None;
+        }
+        let mut best: Option<(u32, Rect, &LineFragment, &Glyph)> = None;
+        for fragment in &self.fragments {
+            let (FragmentKind::Line(line) | FragmentKind::HiddenText(line)) = &fragment.kind else {
+                continue;
+            };
+            for glyph in line.runs.iter().flat_map(|run| &run.glyphs) {
+                if glyph.locator >= start
+                    && glyph.locator < end
+                    && best.is_none_or(|(locator, ..)| glyph.locator >= locator)
+                {
+                    best = Some((glyph.locator, fragment.rect, line, glyph));
+                }
+            }
+        }
+        let (_, rect, line, glyph) = best?;
+        let (top, _) = line.band_extent(rect.size.h);
+        let x = if glyph.rtl {
+            rect.origin.x + glyph.x - NOTE_DOT_GAP - NOTE_DOT_SIZE
+        } else {
+            rect.origin.x + glyph.x + glyph.advance + NOTE_DOT_GAP
+        };
+        Some(Rect::new(
+            x,
+            rect.origin.y + top + 1.0,
+            NOTE_DOT_SIZE,
+            NOTE_DOT_SIZE,
+        ))
+    }
 }
+
+/// kalam: the note dot's diameter and its breathing room past the
+/// final glyph (decision 29), CSS px.
+pub const NOTE_DOT_SIZE: f32 = 6.0;
+const NOTE_DOT_GAP: f32 = 1.5;
 
 /// kalam: breathing room a selection band gets above and below the glyph
 /// box, in CSS px — reduced so adjacent lines have distinct ribbons.

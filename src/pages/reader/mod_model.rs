@@ -70,6 +70,11 @@ pub struct ReaderModel {
     /// ever clear this popover, never a chip raised after it.
     pub(crate) annotation_popover: Option<gtk::Popover>,
     pub(crate) word_preview_popover: Option<gtk::Popover>,
+    /// The read-only note shown while a highlight's dot is hovered
+    /// (decision 29), and the annotation it belongs to — so motion
+    /// inside the same dot does not rebuild it.
+    pub(crate) note_preview_popover: Option<gtk::Popover>,
+    pub(crate) note_preview_id: Option<i64>,
     pub(crate) word_memory_scope: String,
     /// Roadmap 2.5: the footnote card, while it stands.
     pub(crate) note_popover: Option<gtk::Popover>,
@@ -91,6 +96,10 @@ pub struct ReaderModel {
     pub(crate) annotation_note_draft: Option<(i64, String)>,
     pub(crate) bookmarks: Vec<ReadingBookmark>,
     pub(crate) saved_words: Vec<SavedWord>,
+    /// The reading session's deletions, last several, for Ctrl+Z
+    /// (decision 30). Rows as they stood, so an undo is a restore,
+    /// not a fresh mark.
+    pub(crate) deleted_marks: Vec<DeletedMark>,
     pub(crate) dict_query: String,
     pub(crate) dict_results: Vec<DictEntry>,
     pub(crate) dict_lookup_word: Option<String>,
@@ -223,6 +232,16 @@ impl ReaderModel {
             self.scoped_search_len(),
             self.search_index,
         )
+    }
+
+    /// Keep a deletion for Ctrl+Z (decision 30): the last several,
+    /// for this reading session only.
+    pub(crate) fn remember_deleted(&mut self, mark: DeletedMark) {
+        const KEPT: usize = 20;
+        self.deleted_marks.push(mark);
+        if self.deleted_marks.len() > KEPT {
+            self.deleted_marks.remove(0);
+        }
     }
 
     /// Back to Chapter, switch included (decision 34): every fresh

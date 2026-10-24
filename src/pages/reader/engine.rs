@@ -191,6 +191,11 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
     view.connect_word_hover(move |word_opt: Option<&str>, x: f64, y: f64| {
         let _ = tx.send(ReaderMsg::WordMemoryHover(word_opt.map(str::to_string), x, y));
     });
+
+    let tx = sender.input_sender().clone();
+    view.connect_note_hover(move |id: Option<i64>, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::NoteDotHover(id, x, y));
+    });
 }
 
 /// An engine rect (widget coordinates, f32) as the rectangle a
@@ -223,6 +228,7 @@ pub(crate) fn highlight_of(annotation: &Annotation) -> Option<NewHighlight> {
         text: annotation.text_excerpt.clone(),
         start,
         end,
+        has_note: !annotation.note.trim().is_empty(),
     })
 }
 
@@ -838,6 +844,55 @@ pub(crate) fn build_word_preview_tooltip(
         .max_content_height(220)
         .build();
     scroll.set_child(Some(&senses_box));
+    card.append(&scroll);
+
+    popover.set_child(Some(&card));
+    Some(popover)
+}
+
+/// The note itself, read where it hangs (decision 29): hovering a
+/// highlight's end dot shows what was written, nothing to edit and
+/// nothing to click. It borrows the saved-word preview's card, so
+/// the two hovers read as the same kind of glance.
+pub(crate) fn build_annotation_note_preview(
+    host: &gtk::Widget,
+    rect: &gtk::gdk::Rectangle,
+    note: &str,
+) -> Option<gtk::Popover> {
+    let note = note.trim();
+    if note.is_empty() {
+        return None;
+    }
+
+    let popover = gtk::Popover::new();
+    popover.set_parent(host);
+    popover.set_autohide(true);
+    popover.set_has_arrow(false);
+    popover.set_position(gtk::PositionType::Top);
+    popover.set_pointing_to(Some(rect));
+    popover.add_css_class("k-word-preview-popover");
+
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    card.add_css_class("k-word-preview-card");
+    let width = 300.min((host.width() - 32).max(240));
+    card.set_size_request(width, -1);
+
+    let text = gtk::Label::new(Some(note));
+    text.add_css_class("k-word-preview-def");
+    text.set_wrap(true);
+    text.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    text.set_xalign(0.0);
+    text.set_halign(gtk::Align::Fill);
+    text.set_hexpand(true);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .propagate_natural_height(true)
+        .overlay_scrolling(true)
+        .max_content_height(220)
+        .build();
+    scroll.set_child(Some(&text));
     card.append(&scroll);
 
     popover.set_child(Some(&card));

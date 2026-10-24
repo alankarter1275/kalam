@@ -42,7 +42,7 @@ use chapbook_core::{
     Action, EdgeSizes, Key, KeyMap, LayeredLocator, PageMetrics, Rect, Rotation, Size, TapZones,
     TocEntry,
 };
-use chapbook_reader::{tiny_skia, HostHighlight, Session, SessionConfig, SessionEvent};
+use chapbook_reader::{tiny_skia, HostHighlight, SearchMatch, Session, SessionConfig, SessionEvent};
 
 use crate::divider::{DividerPainter, DividerPlace, DividerStyle};
 use crate::handles::{self, Edge, Handle};
@@ -201,6 +201,7 @@ type ImageTapCallback = dyn Fn(u32, u32, &[u8]);
 type HighlightTapCallback = dyn Fn(i64, f64, f64);
 type WordTapCallback = dyn Fn(&str, f64, f64);
 type WordHoverCallback = dyn Fn(Option<&str>, f64, f64);
+type NoteHoverCallback = dyn Fn(Option<i64>, f64, f64);
 
 /// Callbacks a shell installs. All run on the GTK main thread, from inside
 /// the widget's own handlers — keep them quick, or defer to an idle. A
@@ -218,6 +219,7 @@ struct Callbacks {
     highlight_tap: Option<Box<HighlightTapCallback>>,
     word_tap: Option<Box<WordTapCallback>>,
     word_hover: Option<Box<WordHoverCallback>>,
+    note_hover: Option<Box<NoteHoverCallback>>,
 }
 
 struct Inner {
@@ -662,6 +664,12 @@ impl ReaderView {
         self.inner.callbacks.borrow_mut().word_hover = Some(Box::new(f));
     }
 
+    /// Called when the pointer hovers over a noted highlight's dot
+    /// (`Some(id)`, Kalam's annotation id) or moves away (`None`).
+    pub fn connect_note_hover(&self, f: impl Fn(Option<i64>, f64, f64) + 'static) {
+        self.inner.callbacks.borrow_mut().note_hover = Some(Box::new(f));
+    }
+
     /// Set the vocabulary words list for Word Memory dotted underlines.
     pub fn set_word_memory(&self, words: impl IntoIterator<Item = String>) {
         self.inner.session.borrow_mut().set_word_memory(words);
@@ -1099,6 +1107,7 @@ impl ReaderView {
                 text,
                 start: start_locator,
                 end: end_locator,
+                has_note: false,
             }
         };
         self.notify_selection();
@@ -1133,6 +1142,36 @@ impl ReaderView {
         self.area.queue_draw();
     }
 
+    /// Wash the search matches over the page (decision 34): each is a
+    /// start/end locator pair and whether it is the match being
+    /// read. The tints are the palette's §9 pair — every match the
+    /// faint neutral wash, the current one the accent inside its
+    /// ring. Transient by construction: nothing is stored, nothing
+    /// can be tapped, and clearing them leaves Kalam's highlights
+    /// exactly as they were.
+    pub fn set_search_matches(
+        &self,
+        matches: impl IntoIterator<Item = (LayeredLocator, LayeredLocator, bool)>,
+    ) {
+        let list: Vec<SearchMatch> = matches
+            .into_iter()
+            .map(|(start, end, current)| SearchMatch {
+                start,
+                end,
+                current,
+            })
+            .collect();
+        self.inner.session.borrow_mut().set_search_matches(list);
+        self.area.queue_draw();
+    }
+
+    /// Take the search wash off the page (see
+    /// [`ReaderView::set_search_matches`]).
+    pub fn clear_search_matches(&self) {
+        self.inner.session.borrow_mut().clear_search_matches();
+        self.area.queue_draw();
+    }
+
     /// Repaint a shown highlight in another of Kalam's colours (Kalam has
     /// already updated its row).
     pub fn recolor_highlight(&self, id: i64, color: HighlightColor) {
@@ -1149,6 +1188,17 @@ impl ReaderView {
             .session
             .borrow_mut()
             .update_host_highlight(id, Some(color.css()), Some(style));
+        self.area.queue_draw();
+    }
+
+    /// Say whether a shown highlight carries a note now (Kalam has
+    /// already updated its row): the note dot at the span's end
+    /// follows the note in and out (decision 29).
+    pub fn set_highlight_note(&self, id: i64, has_note: bool) {
+        self.inner
+            .session
+            .borrow_mut()
+            .set_host_highlight_note(id, has_note);
         self.area.queue_draw();
     }
 
@@ -1176,6 +1226,26 @@ impl ReaderView {
             None if self.mode() == ReadingMode::Paged => {
                 if let Some((spine, page, px, py)) = self.paged_point(&mut s, x as f32, y as f32) {
                     s.host_highlight_at_page(spine, page, px, py)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
+
+    /// The noted highlight whose dot is under a point in widget
+    /// coordinates (decision 29) — for the hover preview. `None` off
+    /// any dot.
+    pub fn note_highlight_at(&self, x: f64, y: f64) -> Option<i64> {
+        let mut s = self.inner.session.borrow_mut();
+        match self.band_at(y as f32) {
+            Some((band, py)) => {
+                s.host_highlight_note_at_page(band.spine, band.page, x as f32, py)
+            }
+            None if self.mode() == ReadingMode::Paged => {
+                if let Some((spine, page, px, py)) = self.paged_point(&mut s, x as f32, y as f32) {
+                    s.host_highlight_note_at_page(spine, page, px, py)
                 } else {
                     None
                 }
@@ -2448,8 +2518,8 @@ impl ReaderView {
                 // count towards getting out of the way again.
                 view.arm_cursor_timer();
 
-                // Check hover over Word Memory words
-                let (hover_word, hx, hy) = {
+                // Check hover over Word Memory words and note dots.
+                let (hover_word, hover_note, hx, hy) = {
                     let mut s = view.inner.session.borrow_mut();
                     let band = view.band_at(y as f32);
                     let word_span = match band {
@@ -2457,6 +2527,21 @@ impl ReaderView {
                         None if view.mode() == ReadingMode::Paged => {
                             if let Some((spine, page, px, py)) = view.paged_point(&mut s, x as f32, y as f32) {
                                 s.word_at_page(spine, page, px, py)
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    };
+                    let note_found = match band {
+                        Some((band, py)) => {
+                            s.host_highlight_note_at_page(band.spine, band.page, x as f32, py)
+                        }
+                        None if view.mode() == ReadingMode::Paged => {
+                            if let Some((spine, page, px, py)) =
+                                view.paged_point(&mut s, x as f32, y as f32)
+                            {
+                                s.host_highlight_note_at_page(spine, page, px, py)
                             } else {
                                 None
                             }
@@ -2473,8 +2558,13 @@ impl ReaderView {
                         }
                         None
                     });
-                    (word_found, x, y)
+                    (word_found, note_found, x, y)
                 };
+                // The dot gets first say: it sits just past a word a
+                // saved-word hover might also claim.
+                if let Some(cb) = &view.inner.callbacks.borrow().note_hover {
+                    cb(hover_note, hx, hy);
+                }
                 if let Some(cb) = &view.inner.callbacks.borrow().word_hover {
                     cb(hover_word.as_deref(), hx, hy);
                 }
@@ -2485,6 +2575,9 @@ impl ReaderView {
             motion.connect_leave(move |_| {
                 view.disarm_cursor_timer();
                 view.set_cursor(None);
+                if let Some(cb) = &view.inner.callbacks.borrow().note_hover {
+                    cb(None, 0.0, 0.0);
+                }
                 if let Some(cb) = &view.inner.callbacks.borrow().word_hover {
                     cb(None, 0.0, 0.0);
                 }
@@ -2552,6 +2645,9 @@ pub struct NewHighlight {
     /// JSON for Kalam's `cfi` column, or two columns of its own.
     pub start: LayeredLocator,
     pub end: LayeredLocator,
+    /// The row carries a note: the span wears the note dot at its
+    /// end (decision 29). A fresh capture never does.
+    pub has_note: bool,
 }
 
 fn host_highlight(id: i64, h: &NewHighlight) -> HostHighlight {
@@ -2562,6 +2658,7 @@ fn host_highlight(id: i64, h: &NewHighlight) -> HostHighlight {
         color: Some(h.color.css().to_string()),
         style: Some(h.style.clone()),
         text: Some(h.text.clone()),
+        has_note: h.has_note,
     }
 }
 

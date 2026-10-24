@@ -190,6 +190,10 @@ impl ReaderModel {
                 annotation.note = saved_note.clone();
             }
         }
+        // The dot at the span's end follows the note in and out
+        // (decision 29).
+        let has_note = !saved_note.is_empty();
+        self.with_view(|view| view.set_highlight_note(id, has_note));
         true
     }
 

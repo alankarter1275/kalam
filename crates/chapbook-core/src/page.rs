@@ -145,6 +145,38 @@ pub struct Palette {
 }
 
 impl Palette {
+    /// kalam: a search match that is not the one being read (decision
+    /// 34, design-system §9) — the ink itself, washed to 10% on a dark
+    /// ground and 8% on a light one. Neutral on purpose: the page may
+    /// hold a dozen, and only the current one may shout.
+    pub fn search_match(self) -> Rgba {
+        let fg = self.foreground;
+        Rgba::new(fg.r, fg.g, fg.b, if self.is_dark_ground() { 26 } else { 20 })
+    }
+
+    /// kalam: the match being read (decision 34, design-system §9):
+    /// the accent at 38%, with [`Palette::search_current_outline`]
+    /// around it at full strength.
+    pub fn search_current(self) -> Rgba {
+        let accent = self.accent;
+        Rgba::new(accent.r, accent.g, accent.b, 97)
+    }
+
+    /// kalam: the 1px ring around the current search match (§9).
+    pub fn search_current_outline(self) -> Rgba {
+        let accent = self.accent;
+        Rgba::new(accent.r, accent.g, accent.b, 255)
+    }
+
+    /// Rec. 601 luma below 128 — the same test the paint crate makes
+    /// for image treatments, kept here because the tints above are
+    /// palette facts, not paint facts.
+    fn is_dark_ground(self) -> bool {
+        let bg = self.background;
+        let luma = 0.299 * f32::from(bg.r) + 0.587 * f32::from(bg.g) + 0.114 * f32::from(bg.b);
+        luma < 128.0
+    }
+
     /// The colours `theme` paints with by default, as a palette a caller
     /// can then adjust field by field.
     pub fn of(theme: Theme) -> Palette {
@@ -350,6 +382,29 @@ impl ReadingSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_tints_follow_the_palette_formulas() {
+        // Decision 34 / §9: matches are the ink at 10% (dark) or 8%
+        // (light); the current one is the accent at 38% inside a
+        // full-strength accent ring.
+        let dark = Palette {
+            background: Rgba::new(27, 30, 36, 255),
+            foreground: Rgba::new(171, 178, 191, 255),
+            accent: Rgba::new(212, 85, 42, 255),
+            ..Palette::of(Theme::Dark)
+        };
+        assert_eq!(dark.search_match(), Rgba::new(171, 178, 191, 26));
+        assert_eq!(dark.search_current(), Rgba::new(212, 85, 42, 97));
+        assert_eq!(dark.search_current_outline(), Rgba::new(212, 85, 42, 255));
+
+        let light = Palette {
+            background: Rgba::new(250, 248, 245, 255),
+            foreground: Rgba::new(28, 25, 23, 255),
+            ..dark
+        };
+        assert_eq!(light.search_match(), Rgba::new(28, 25, 23, 20));
+    }
 
     #[test]
     fn page_to_panel_inverts_panel_to_page() {

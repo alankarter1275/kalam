@@ -613,7 +613,7 @@ fn book_override_row(
 fn book_theme_row(
     current: Option<String>,
     sender: &ComponentSender<ReaderModel>,
-) -> (gtk::Box, Rc<dyn Fn(Option<&str>)>) {
+) -> (gtk::Box, BookThemeSetter) {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     row.add_css_class("kalam-reader-setting-row");
     let label = gtk::Label::new(Some("Theme"));

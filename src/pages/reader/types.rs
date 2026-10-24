@@ -82,7 +82,7 @@ pub(crate) struct ReaderSettingsControls {
     /// (decision 147), so the switch must be settable from sync.
     pub(crate) set_book_override_switch: std::rc::Rc<dyn Fn(bool)>,
     /// Same for the book-theme dropdown's standing choice.
-    pub(crate) set_book_theme_choice: std::rc::Rc<dyn Fn(Option<&str>)>,
+    pub(crate) set_book_theme_choice: BookThemeSetter,
     /// "Use these settings as my defaults" / "Matches your defaults".
     pub(crate) use_defaults_btn: gtk::Button,
     /// The Shortcuts pane's hint line: where a refused key names its

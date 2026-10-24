@@ -293,9 +293,11 @@ mod tests {
         let key = "comic.series.reading.42";
         assert!(ComicReadingSettings::load_series(&catalog, key).is_none());
 
-        let mut settings = ComicReadingSettings::default();
-        settings.direction = ReadingDirection::Rtl;
-        settings.zoom_percent = 45;
+        let settings = ComicReadingSettings {
+            direction: ReadingDirection::Rtl,
+            zoom_percent: 45,
+            ..ComicReadingSettings::default()
+        };
         settings.save_series(&catalog, key);
         assert_eq!(
             ComicReadingSettings::load_series(&catalog, key),

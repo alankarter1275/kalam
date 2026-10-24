@@ -458,7 +458,7 @@ impl ComicsReaderModel {
     }
 
     /// The effective Reading-pane choices as one settings value.
-    pub fn current_reading_settings(&self) -> ComicReadingSettings {
+    pub(crate) fn current_reading_settings(&self) -> ComicReadingSettings {
         ComicReadingSettings {
             direction: self.direction,
             page_style: self.page_style,
@@ -493,7 +493,7 @@ impl ComicsReaderModel {
 
     /// Take a settings value wholesale into the live fields. The
     /// caller rebuilds the viewport and syncs the pane.
-    pub fn apply_reading_settings(&mut self, settings: &ComicReadingSettings) {
+    pub(crate) fn apply_reading_settings(&mut self, settings: &ComicReadingSettings) {
         let settings = settings.clone().canonical();
         self.direction = settings.direction;
         self.page_style = settings.page_style;

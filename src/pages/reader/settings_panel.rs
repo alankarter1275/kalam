@@ -654,7 +654,7 @@ fn book_theme_row(
     ));
     row.append(&drop.widget());
 
-    let set: Rc<dyn Fn(Option<&str>)> = Rc::new(move |id: Option<&str>| {
+    let set: BookThemeSetter = Rc::new(move |id: Option<&str>| {
         let idx = ids
             .iter()
             .position(|entry| entry.as_deref() == id)

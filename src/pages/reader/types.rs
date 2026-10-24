@@ -3,6 +3,11 @@
 use crate::db::HighlightColor;
 use relm4::prelude::*;
 
+/// Move the book-theme dropdown to a theme id without firing it
+/// (`None` = follow the app theme) — the silent setter the model's
+/// control sync drives (decision 145).
+pub(crate) type BookThemeSetter = std::rc::Rc<dyn Fn(Option<&str>)>;
+
 #[derive(Debug)]
 pub enum ReaderOut {
     Close,

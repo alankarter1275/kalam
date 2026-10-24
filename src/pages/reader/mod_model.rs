@@ -149,7 +149,7 @@ pub struct ReaderModel {
     /// be read, the app's sample otherwise.
     pub(crate) preview_text: String,
     pub(crate) set_book_override_switch: std::rc::Rc<dyn Fn(bool)>,
-    pub(crate) set_book_theme_choice: std::rc::Rc<dyn Fn(Option<&str>)>,
+    pub(crate) set_book_theme_choice: super::types::BookThemeSetter,
     pub(crate) use_defaults_btn: gtk::Button,
     pub(crate) keybind_hint: gtk::Label,
     pub(crate) search_active: bool,

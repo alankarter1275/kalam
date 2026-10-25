@@ -1711,6 +1711,10 @@ button.kalam-reader-list-hit:hover {
     background: @kalam_hl_orange;
 }
 
+.kalam-reader-bar-underline {
+    background: @kalam_text_dim;
+}
+
 /* Annotation cards and the note editor — ported from the retired
    generated reader-UI stylesheet when `ui_prefs` went (decision 18);
    the five hues are the §9 tokens now. */
@@ -5260,6 +5264,138 @@ button.kalam-pdf-page-thumb.failed .kalam-pdf-page-thumb-image {
     color: @kalam_text_dim;
     font-size: 11px;
     padding: 0 8px;
+}
+
+/* Notes (decision 60): highlights keep only their colour bar,
+   bookmarks their accent ribbon, and saved words a headword over
+   one line of meaning. The contextual rows sit on the panel's
+   20px gutter, under the same filter chips every filter shares. */
+button.kalam-pdf-notes-search-toggle {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    box-shadow: none;
+    color: @kalam_text_dim;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
+}
+
+button.kalam-pdf-notes-search-toggle:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-notes-search-toggle.active {
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-pdf-notes-list {
+    padding-bottom: 18px;
+}
+
+.kalam-pdf-notes-heading {
+    padding: 18px 20px 6px;
+}
+
+.kalam-pdf-notes-highlight-row {
+    padding: 9px 20px;
+}
+
+.kalam-pdf-notes-bookmark-row {
+    padding: 8px 20px;
+}
+
+.kalam-pdf-notes-word-row-wrap {
+    border-bottom: 1px solid alpha(@kalam_border, 0.65);
+    padding: 11px 20px;
+}
+
+button.kalam-pdf-notes-row-hit {
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    box-shadow: none;
+    color: @kalam_text;
+    padding: 0;
+}
+
+button.kalam-pdf-notes-row-hit:hover {
+    background: @kalam_hover;
+}
+
+.kalam-pdf-notes-highlight-row button.kalam-btn-icon,
+.kalam-pdf-notes-bookmark-row button.kalam-btn-icon,
+.kalam-pdf-notes-word-row-wrap button.kalam-btn-icon {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: @kalam_danger;
+    min-width: 28px;
+    min-height: 28px;
+    opacity: 0;
+    padding: 0;
+}
+
+.kalam-pdf-notes-highlight-row:hover button.kalam-btn-icon,
+.kalam-pdf-notes-highlight-row:focus-within button.kalam-btn-icon,
+.kalam-pdf-notes-bookmark-row:hover button.kalam-btn-icon,
+.kalam-pdf-notes-bookmark-row:focus-within button.kalam-btn-icon,
+.kalam-pdf-notes-word-row-wrap:hover button.kalam-btn-icon,
+.kalam-pdf-notes-word-row-wrap:focus-within button.kalam-btn-icon {
+    opacity: 1;
+}
+
+.kalam-pdf-notes-excerpt {
+    color: @kalam_text;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 0.94rem;
+    font-style: italic;
+    line-height: 1.45;
+}
+
+.kalam-pdf-notes-meta {
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+}
+
+.kalam-pdf-notes-bookmark-icon {
+    color: @kalam_accent;
+    -gtk-icon-size: 15px;
+}
+
+.kalam-pdf-notes-word-meaning {
+    color: @kalam_text_dim;
+    font-size: 0.8rem;
+}
+
+separator.kalam-pdf-notes-separator {
+    background: alpha(@kalam_border, 0.65);
+    min-height: 1px;
+}
+
+.kalam-pdf-notes-empty-icon {
+    color: @kalam_text_dim;
+}
+
+.kalam-pdf-notes-empty-title {
+    color: @kalam_text;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.kalam-pdf-notes-empty-body {
+    color: @kalam_text_dim;
+    font-size: 0.84rem;
+    line-height: 1.5;
+}
+
+button.kalam-pdf-notes-search-toggle:focus-visible,
+button.kalam-pdf-notes-row-hit:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 1px;
 }
 
 button.kalam-pdf-pin:focus-visible,

@@ -671,6 +671,46 @@ jobs:
             THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      - name: open the PDF Notes panel on Highlights (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=notes \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel on Highlights (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=notes \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel on Words (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-words-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=notes-words \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel on Bookmarks (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-bookmarks-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=notes-bookmarks \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel empty (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-empty-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_NOTES_EMPTY=1 PDF_ACTION=notes-empty \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       - name: open the PDF shortcuts panel (dark) and report
         if: matrix.group == 'pdf'
         run: |
@@ -1214,6 +1254,9 @@ jobs:
                       pdf-pages-dark pdf-pages-pinned-light \
                       pdf-search-results-dark pdf-search-results-light \
                       pdf-search-no-matches-dark \
+                      pdf-notes-dark pdf-notes-light \
+                      pdf-notes-words-dark pdf-notes-bookmarks-dark \
+                      pdf-notes-empty-dark \
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark; do
@@ -1338,6 +1381,9 @@ jobs:
                       pdf-pages-dark pdf-pages-pinned-light \
                       pdf-search-results-dark pdf-search-results-light \
                       pdf-search-no-matches-dark \
+                      pdf-notes-dark pdf-notes-light \
+                      pdf-notes-words-dark pdf-notes-bookmarks-dark \
+                      pdf-notes-empty-dark \
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark; do

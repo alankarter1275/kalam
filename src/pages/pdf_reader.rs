@@ -24,11 +24,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::db::{Catalog, ReadingBookmark};
+use crate::db::{Annotation, Catalog, HighlightColor, ReadingBookmark, SavedWord};
 use crate::epub_book::ReadingTheme;
 use crate::pdf::{PdfDocument, PdfPageText, PdfSearchOutcome, PdfSearchResult, PdfTocEntry};
 
 mod image;
+mod notes;
 mod pages_grid;
 mod search_results;
 
@@ -1073,7 +1074,53 @@ pub struct CachedPageTexture {
 pub enum PdfLeftTab {
     Contents,
     Pages,
+    Notes,
+}
+
+/// The Notes tab's filter chips (decision 60): one list holding
+/// this book's highlights, bookmarks and saved words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfNotesFilter {
+    All,
+    Highlights,
     Bookmarks,
+    Words,
+}
+
+/// Whose saved words the Words filter lists (decision 60): the
+/// current top-level chapter, this book, or every book.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfWordScope {
+    Chapter,
+    Book,
+    All,
+}
+
+impl PdfWordScope {
+    pub fn toggle_index(self) -> usize {
+        match self {
+            Self::Chapter => 0,
+            Self::Book => 1,
+            Self::All => 2,
+        }
+    }
+
+    pub fn from_toggle_index(index: usize) -> Self {
+        match index {
+            1 => Self::Book,
+            2 => Self::All,
+            _ => Self::Chapter,
+        }
+    }
+}
+
+/// One deletion Ctrl+Z can take back (decision 30): the row as it
+/// stood, kept for this reading session.
+#[derive(Debug, Clone)]
+pub enum PdfDeletedMark {
+    Annotation(Box<Annotation>),
+    Bookmark(Box<ReadingBookmark>),
+    SavedWord(Box<SavedWord>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1164,6 +1211,9 @@ pub enum PdfReaderMsg {
     SetSpreadGap(i32),
     ToggleBookmark,
     DeleteBookmark(i64),
+    DeleteAnnotation(i64),
+    DeleteSavedWord(i64),
+    UndoDelete,
     JumpToPage(usize),
     SetSmartCrop(bool),
     ToggleSmartCrop,
@@ -1180,6 +1230,13 @@ pub enum PdfReaderMsg {
     OpenRightPanel,
     OpenContents,
     OpenPages,
+    OpenNotes,
+    SetNotesFilter(PdfNotesFilter),
+    ToggleHighlightColourFilter(HighlightColor),
+    ToggleHighlightSearch,
+    HighlightSearchChanged(String),
+    SetWordScope(PdfWordScope),
+    WordSearchChanged(String),
     SetPagesColumns(usize),
     OpenReadingPanel,
     OpenShortcutsPanel,
@@ -1349,6 +1406,16 @@ pub struct PdfReaderModel {
     pub collapsed_toc_entries: HashSet<usize>,
     pub toc_entries: Vec<PdfTocEntry>,
     pub bookmarks: Vec<ReadingBookmark>,
+    pub annotations: Vec<Annotation>,
+    pub saved_words: Vec<SavedWord>,
+    pub notes_filter: PdfNotesFilter,
+    pub highlight_colour_filter: Option<HighlightColor>,
+    pub highlight_search_open: bool,
+    pub highlight_search_query: String,
+    pub word_scope: PdfWordScope,
+    pub word_search_query: String,
+    pub deleted_marks: Vec<PdfDeletedMark>,
+    pub notes_words_page_synced: usize,
     pub textures: HashMap<usize, CachedPageTexture>,
     pub pending_loads: HashSet<usize>,
     pub arrow_step: f32,
@@ -1378,7 +1445,7 @@ pub struct PdfReaderModel {
     pub toc_rows: Vec<(usize, gtk::Box)>,
     pub toc_current_visible_row: Option<usize>,
     pub toc_current_page_synced: usize,
-    pub bookmarks_list_box: Option<gtk::Box>,
+    pub notes_widgets: Option<notes::PdfNotesWidgets>,
     pub pages_grid: Option<pages_grid::PdfPagesGrid>,
     pub pages_widgets: Option<PdfPagesWidgets>,
     pub pages_columns: usize,
@@ -1703,6 +1770,16 @@ impl PdfReaderModel {
             collapsed_toc_entries: HashSet::new(),
             toc_entries: Vec::new(),
             bookmarks: Vec::new(),
+            annotations: Vec::new(),
+            saved_words: Vec::new(),
+            notes_filter: PdfNotesFilter::Highlights,
+            highlight_colour_filter: None,
+            highlight_search_open: false,
+            highlight_search_query: String::new(),
+            word_scope: PdfWordScope::Book,
+            word_search_query: String::new(),
+            deleted_marks: Vec::new(),
+            notes_words_page_synced: 0,
             textures: HashMap::new(),
             pending_loads: HashSet::new(),
             arrow_step,
@@ -1729,7 +1806,7 @@ impl PdfReaderModel {
             toc_rows: Vec::new(),
             toc_current_visible_row: None,
             toc_current_page_synced: 0,
-            bookmarks_list_box: None,
+            notes_widgets: None,
             pages_grid: None,
             pages_widgets: None,
             pages_columns,
@@ -1782,6 +1859,8 @@ impl PdfReaderModel {
         };
 
         model.reload_bookmarks();
+        model.reload_annotations();
+        model.reload_saved_words();
 
         model
     }
@@ -1791,6 +1870,32 @@ impl PdfReaderModel {
             .catalog
             .list_reading_bookmarks(self.book_id)
             .unwrap_or_default();
+    }
+
+    pub fn reload_annotations(&mut self) {
+        self.annotations = self
+            .catalog
+            .get_annotations_for_book(self.book_id)
+            .unwrap_or_default();
+    }
+
+    pub fn reload_saved_words(&mut self) {
+        self.saved_words = self.catalog.list_saved_words("", None).unwrap_or_default();
+    }
+
+    /// Keep a deletion for Ctrl+Z (decision 30): the last
+    /// several, for this reading session only.
+    pub fn remember_deleted(&mut self, mark: PdfDeletedMark) {
+        const KEPT: usize = 20;
+        self.deleted_marks.push(mark);
+        if self.deleted_marks.len() > KEPT {
+            self.deleted_marks.remove(0);
+        }
+    }
+
+    pub fn refresh_notes_panel(&mut self, sender: &ComponentSender<Self>) {
+        self.notes_words_page_synced = self.current_page;
+        notes::populate_notes_panel(self, sender);
     }
 
     pub fn progress_fraction(&self) -> f64 {
@@ -4479,9 +4584,8 @@ impl Component for PdfReaderModel {
         let widgets = view_output!();
 
         // 1. The left panel stack: Contents (filter over the
-        // outline), the lazy Pages grid, and the stored Bookmarks
-        // list. Notes replaces neither list until its data model
-        // lands.
+        // outline), the lazy Pages grid, and Notes — highlights,
+        // bookmarks and saved words behind its filter chips.
         let left_stack = gtk::Stack::new();
         left_stack.set_hexpand(true);
         left_stack.set_vexpand(true);
@@ -4533,24 +4637,15 @@ impl Component for PdfReaderModel {
                 });
         }
 
-        let bookmarks_scroll = gtk::ScrolledWindow::builder()
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .vscrollbar_policy(gtk::PolicyType::Automatic)
-            .hexpand(true)
-            .vexpand(true)
-            .build();
-        bookmarks_scroll.add_css_class("kalam-reader-panel-scroll");
-        let bookmarks_list_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        bookmarks_list_box.set_hexpand(true);
-        bookmarks_list_box.set_vexpand(true);
-        bookmarks_scroll.set_child(Some(&bookmarks_list_box));
+        let (notes_pane, notes_widgets) =
+            notes::build_pdf_notes_pane(&sender, model.word_scope);
 
         let (search_results_pane, search_results_widgets) =
             build_pdf_search_results_pane(&sender);
 
         left_stack.add_named(&contents_pane, Some("contents"));
         left_stack.add_named(&pages_pane, Some("pages"));
-        left_stack.add_named(&bookmarks_scroll, Some("bookmarks"));
+        left_stack.add_named(&notes_pane, Some("notes"));
         left_stack.add_named(&search_results_pane, Some("search-results"));
         widgets.left_panel_host.append(&left_stack);
 
@@ -4606,7 +4701,7 @@ impl Component for PdfReaderModel {
         model.right_stack = Some(right_stack);
         model.toc_list_box = Some(toc_list_box);
         model.toc_scroll = Some(toc_scroll);
-        model.bookmarks_list_box = Some(bookmarks_list_box);
+        model.notes_widgets = Some(notes_widgets);
         model.pages_grid = Some(pages_grid);
         model.pages_widgets = Some(pages_widgets);
         model.search_results_widgets = Some(search_results_widgets);
@@ -4638,12 +4733,12 @@ impl Component for PdfReaderModel {
         {
             let tx = sender.input_sender().clone();
             model.left_tabs = Some(make_tabs(
-                &["Contents", "Pages", "Bookmarks"],
+                &["Contents", "Pages", "Notes"],
                 &widgets.left_tabs_host,
                 Rc::new(move |idx| {
                     let _ = tx.send(PdfReaderMsg::SetLeftTab(match idx {
                         1 => PdfLeftTab::Pages,
-                        2 => PdfLeftTab::Bookmarks,
+                        2 => PdfLeftTab::Notes,
                         _ => PdfLeftTab::Contents,
                     }));
                 }),
@@ -4878,7 +4973,11 @@ impl Component for PdfReaderModel {
                     gtk::glib::Propagation::Stop
                 }
                 Key::h | Key::H => {
-                    let _ = tx_key.send(PdfReaderMsg::OpenShortcutsPanel);
+                    let _ = tx_key.send(PdfReaderMsg::OpenNotes);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::z | Key::Z if ctrl => {
+                    let _ = tx_key.send(PdfReaderMsg::UndoDelete);
                     gtk::glib::Propagation::Stop
                 }
                 Key::g | Key::G => {
@@ -6059,9 +6158,19 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::ToggleBookmark => {
-                if let Some(mark) = self.bookmarks.iter().find(|b| b.chapter_index as usize == self.current_page) {
-                    let _ = self.catalog.delete_reading_bookmark(mark.id);
-                    crate::notify::compact("Bookmark removed", "");
+                let standing = self
+                    .bookmarks
+                    .iter()
+                    .find(|b| b.chapter_index as usize == self.current_page)
+                    .cloned();
+                if let Some(mark) = standing {
+                    if crate::notify::report(
+                        self.catalog.delete_reading_bookmark(mark.id),
+                        "Could not remove the bookmark",
+                    ) {
+                        self.remember_deleted(PdfDeletedMark::Bookmark(Box::new(mark)));
+                        crate::notify::compact("Bookmark removed", "");
+                    }
                 } else {
                     let _ = self.catalog.insert_reading_bookmark(
                         self.book_id,
@@ -6072,18 +6181,106 @@ impl Component for PdfReaderModel {
                     crate::notify::compact("Bookmark saved", &format!("Page {}", self.current_page));
                 }
                 self.reload_bookmarks();
-                if let Some(ref list) = self.bookmarks_list_box {
-                    populate_bookmarks_list(list, &self.bookmarks, &sender);
-                }
+                self.refresh_notes_panel(&sender);
                 self.update_bookmark_icon_state(widgets);
             }
             PdfReaderMsg::DeleteBookmark(id) => {
-                let _ = self.catalog.delete_reading_bookmark(id);
-                self.reload_bookmarks();
-                if let Some(ref list) = self.bookmarks_list_box {
-                    populate_bookmarks_list(list, &self.bookmarks, &sender);
+                let row = self.bookmarks.iter().find(|mark| mark.id == id).cloned();
+                if crate::notify::report(
+                    self.catalog.delete_reading_bookmark(id),
+                    "Could not delete the bookmark",
+                ) {
+                    if let Some(row) = row {
+                        self.remember_deleted(PdfDeletedMark::Bookmark(Box::new(row)));
+                    }
                 }
+                self.reload_bookmarks();
+                self.refresh_notes_panel(&sender);
                 self.update_bookmark_icon_state(widgets);
+            }
+            PdfReaderMsg::DeleteAnnotation(id) => {
+                let row = self
+                    .annotations
+                    .iter()
+                    .find(|anno| anno.id == id)
+                    .cloned()
+                    .or_else(|| self.catalog.get_annotation_by_id(id).ok().flatten());
+                if crate::notify::report(
+                    self.catalog.delete_annotation(id),
+                    "Could not delete the highlight",
+                ) {
+                    if let Some(row) = row {
+                        self.remember_deleted(PdfDeletedMark::Annotation(Box::new(row)));
+                    }
+                }
+                self.reload_annotations();
+                self.refresh_notes_panel(&sender);
+            }
+            PdfReaderMsg::DeleteSavedWord(id) => {
+                let row = self.saved_words.iter().find(|word| word.id == id).cloned();
+                if crate::notify::report(
+                    self.catalog.delete_saved_word(id),
+                    "Could not forget the word",
+                ) {
+                    if let Some(row) = row {
+                        self.remember_deleted(PdfDeletedMark::SavedWord(Box::new(row)));
+                    }
+                }
+                self.reload_saved_words();
+                self.refresh_notes_panel(&sender);
+            }
+            PdfReaderMsg::UndoDelete => {
+                // Decision 30: deletions are direct because Ctrl+Z
+                // brings them back — the row as it stood, restored
+                // exactly. A failed restore keeps its place on the
+                // stack rather than being lost with the attempt.
+                if let Some(mark) = self.deleted_marks.pop() {
+                    match mark {
+                        PdfDeletedMark::Annotation(row) => {
+                            match self.catalog.restore_annotation(&row) {
+                                Ok(()) => self.reload_annotations(),
+                                Err(err) => {
+                                    self.deleted_marks
+                                        .push(PdfDeletedMark::Annotation(row));
+                                    crate::notify::error(
+                                        "Could not bring the highlight back",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        PdfDeletedMark::Bookmark(row) => {
+                            match self.catalog.restore_reading_bookmark(&row) {
+                                Ok(()) => {
+                                    self.reload_bookmarks();
+                                    self.update_bookmark_icon_state(widgets);
+                                }
+                                Err(err) => {
+                                    self.deleted_marks
+                                        .push(PdfDeletedMark::Bookmark(row));
+                                    crate::notify::error(
+                                        "Could not bring the bookmark back",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        PdfDeletedMark::SavedWord(row) => {
+                            match self.catalog.restore_saved_word(&row) {
+                                Ok(()) => self.reload_saved_words(),
+                                Err(err) => {
+                                    self.deleted_marks
+                                        .push(PdfDeletedMark::SavedWord(row));
+                                    crate::notify::error(
+                                        "Could not bring the word back",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    self.refresh_notes_panel(&sender);
+                }
             }
             PdfReaderMsg::JumpToPage(target_page) => {
                 self.clear_selection();
@@ -6272,10 +6469,68 @@ impl Component for PdfReaderModel {
                     self.sync_panel_layout(widgets);
                 } else {
                     // Route through SetLeftTab so choosing Pages
-                    // from an already-open Contents or Bookmarks
+                    // from an already-open Contents or Notes
                     // panel also takes its opening scroll.
                     sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Pages));
                     sender.input(PdfReaderMsg::OpenLeftPanel);
+                }
+            }
+            PdfReaderMsg::OpenNotes => {
+                // H summons Notes on Highlights (decisions 60, 76);
+                // asking again from that exact place closes it.
+                if self.left_panel_open
+                    && self.left_tab == PdfLeftTab::Notes
+                    && self.notes_filter == PdfNotesFilter::Highlights
+                    && !self.search_results_open
+                {
+                    self.left_panel_open = false;
+                    self.sync_panel_layout(widgets);
+                } else {
+                    self.search_results_open = false;
+                    self.left_tab = PdfLeftTab::Notes;
+                    self.notes_filter = PdfNotesFilter::Highlights;
+                    sender.input(PdfReaderMsg::OpenLeftPanel);
+                }
+            }
+            PdfReaderMsg::SetNotesFilter(filter) => {
+                self.notes_filter = filter;
+                self.refresh_notes_panel(&sender);
+            }
+            PdfReaderMsg::ToggleHighlightColourFilter(colour) => {
+                self.highlight_colour_filter =
+                    if self.highlight_colour_filter == Some(colour) {
+                        None
+                    } else {
+                        Some(colour)
+                    };
+                self.refresh_notes_panel(&sender);
+            }
+            PdfReaderMsg::ToggleHighlightSearch => {
+                self.highlight_search_open = !self.highlight_search_open;
+                if !self.highlight_search_open {
+                    self.highlight_search_query.clear();
+                }
+                self.refresh_notes_panel(&sender);
+                if self.highlight_search_open {
+                    if let Some(notes) = &self.notes_widgets {
+                        notes.focus_highlight_search();
+                    }
+                }
+            }
+            PdfReaderMsg::HighlightSearchChanged(query) => {
+                if query != self.highlight_search_query {
+                    self.highlight_search_query = query;
+                    self.refresh_notes_panel(&sender);
+                }
+            }
+            PdfReaderMsg::SetWordScope(scope) => {
+                self.word_scope = scope;
+                self.refresh_notes_panel(&sender);
+            }
+            PdfReaderMsg::WordSearchChanged(query) => {
+                if query != self.word_search_query {
+                    self.word_search_query = query;
+                    self.refresh_notes_panel(&sender);
                 }
             }
             PdfReaderMsg::SetPagesColumns(columns) => {
@@ -7311,6 +7566,8 @@ impl Component for PdfReaderModel {
                         &note,
                     );
                     crate::notify::info("Highlight saved", "");
+                    self.reload_annotations();
+                    self.refresh_notes_panel(&sender);
                 }
                 self.clear_selection();
             }
@@ -7337,6 +7594,8 @@ impl Component for PdfReaderModel {
                         text
                     };
                     crate::notify::info("Quote saved", &preview);
+                    self.reload_annotations();
+                    self.refresh_notes_panel(&sender);
                 }
                 self.clear_selection();
             }
@@ -7423,6 +7682,13 @@ impl Component for PdfReaderModel {
         if self.left_tab == PdfLeftTab::Pages {
             self.update_pages_heading();
         }
+        if self.left_tab == PdfLeftTab::Notes
+            && self.notes_filter == PdfNotesFilter::Words
+            && self.word_scope == PdfWordScope::Chapter
+            && self.notes_words_page_synced != self.current_page
+        {
+            self.refresh_notes_panel(&sender);
+        }
 
         if let Some(ref sw) = self.settings_widgets {
             self.sync_settings_ui(sw);
@@ -7490,14 +7756,14 @@ impl PdfReaderModel {
             tabs.set_selected(match self.left_tab {
                 PdfLeftTab::Contents => 0,
                 PdfLeftTab::Pages => 1,
-                PdfLeftTab::Bookmarks => 2,
+                PdfLeftTab::Notes => 2,
             });
         }
         if let Some(stack) = &self.left_stack {
             stack.set_visible_child_name(match self.left_tab {
                 PdfLeftTab::Contents => "contents",
                 PdfLeftTab::Pages => "pages",
-                PdfLeftTab::Bookmarks => "bookmarks",
+                PdfLeftTab::Notes => "notes",
             });
         }
         match self.left_tab {
@@ -7520,10 +7786,8 @@ impl PdfReaderModel {
             PdfLeftTab::Pages => {
                 self.sync_pages_grid_document();
             }
-            PdfLeftTab::Bookmarks => {
-                if let Some(list) = &self.bookmarks_list_box {
-                    populate_bookmarks_list(list, &self.bookmarks, sender);
-                }
+            PdfLeftTab::Notes => {
+                self.refresh_notes_panel(sender);
             }
         }
         self.sync_panel_layout(widgets);
@@ -7613,8 +7877,18 @@ impl PdfReaderModel {
                     sender.input(PdfReaderMsg::ToggleLeftPin);
                 }
             }
-            Ok("bookmarks") => {
-                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Bookmarks));
+            Ok("notes") | Ok("notes-empty") => {
+                sender.input(PdfReaderMsg::OpenNotes);
+            }
+            Ok("notes-words") => {
+                sender.input(PdfReaderMsg::SetNotesFilter(PdfNotesFilter::Words));
+                sender.input(PdfReaderMsg::SetWordScope(PdfWordScope::Book));
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Notes));
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+            }
+            Ok("notes-bookmarks") | Ok("bookmarks") => {
+                sender.input(PdfReaderMsg::SetNotesFilter(PdfNotesFilter::Bookmarks));
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Notes));
                 sender.input(PdfReaderMsg::OpenLeftPanel);
             }
             Ok("pages") => {
@@ -8474,92 +8748,6 @@ fn populate_toc_list(
     (rows, current_visible)
 }
 
-fn populate_bookmarks_list(
-    list_box: &gtk::Box,
-    bookmarks: &[ReadingBookmark],
-    sender: &ComponentSender<PdfReaderModel>,
-) {
-    while let Some(child) = list_box.first_child() {
-        list_box.remove(&child);
-    }
-
-    if bookmarks.is_empty() {
-        let empty_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        empty_box.set_margin_top(32);
-        empty_box.set_margin_start(16);
-        empty_box.set_margin_end(16);
-
-        let icon = crate::icons::symbolic_with_classes("bookmark-new-symbolic", 32, &["dim-label"]);
-        icon.set_halign(gtk::Align::Center);
-        empty_box.append(&icon);
-
-        let label = gtk::Label::new(Some("No bookmarks yet."));
-        label.add_css_class("kalam-reader-section-label");
-        label.set_halign(gtk::Align::Center);
-        empty_box.append(&label);
-
-        let hint = gtk::Label::new(Some("Press B or tap the ribbon at the top of the page to bookmark any page."));
-        hint.add_css_class("dim-label");
-        hint.set_wrap(true);
-        hint.set_justify(gtk::Justification::Center);
-        empty_box.append(&hint);
-
-        list_box.append(&empty_box);
-        return;
-    }
-
-    for mark in bookmarks {
-        let page_num = mark.chapter_index as usize;
-        let mark_id = mark.id;
-
-        let row_btn = gtk::Button::new();
-        row_btn.add_css_class("flat");
-        row_btn.add_css_class("kalam-reader-bookmark-row");
-
-        let h_box = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-
-        let icon = crate::icons::symbolic_with_classes("bookmark-new-symbolic", 16, &["kalam-reader-bookmark-icon"]);
-        h_box.append(&icon);
-
-        let v_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        v_box.set_hexpand(true);
-
-        let title_lbl = gtk::Label::new(Some(&mark.label));
-        title_lbl.add_css_class("kalam-reader-bookmark-title");
-        title_lbl.set_halign(gtk::Align::Start);
-        title_lbl.set_wrap(true);
-        title_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-        title_lbl.set_width_chars(1);
-        title_lbl.set_lines(-1);
-        v_box.append(&title_lbl);
-
-        let progress_lbl = gtk::Label::new(Some(&format!("{:.0}% through book", mark.fraction * 100.0)));
-        progress_lbl.add_css_class("dim-label");
-        progress_lbl.set_halign(gtk::Align::Start);
-        v_box.append(&progress_lbl);
-
-        h_box.append(&v_box);
-
-        let del_btn = gtk::Button::new();
-        del_btn.set_child(Some(&crate::icons::symbolic_with_classes("edit-delete-symbolic", 14, &["dim-label"])));
-        del_btn.add_css_class("flat");
-        del_btn.set_tooltip_text(Some("Delete Bookmark"));
-        let tx_del = sender.input_sender().clone();
-        del_btn.connect_clicked(move |_| {
-            let _ = tx_del.send(PdfReaderMsg::DeleteBookmark(mark_id));
-        });
-        h_box.append(&del_btn);
-
-        row_btn.set_child(Some(&h_box));
-        let tx_jump = sender.input_sender().clone();
-        row_btn.connect_clicked(move |_| {
-            let _ = tx_jump.send(PdfReaderMsg::JumpToPage(page_num));
-        });
-
-        list_box.append(&row_btn);
-    }
-}
-
 fn pdf_shortcut_row(label: &str, keys: &[&str]) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     row.add_css_class("kalam-pdf-shortcut-row");
@@ -8620,6 +8808,7 @@ fn build_pdf_shortcuts_panel(host: &gtk::Box) {
             ("Actual size", &["0"][..]),
             ("Search", &["Ctrl", "F"][..]),
             ("Copy selection", &["Ctrl", "C"][..]),
+            ("Undo delete", &["Ctrl", "Z"][..]),
         ],
     );
     pdf_shortcut_group(
@@ -8628,8 +8817,8 @@ fn build_pdf_shortcuts_panel(host: &gtk::Box) {
         &[
             ("Contents", &["T"][..]),
             ("Pages", &["P"][..]),
+            ("Notes", &["H"][..]),
             ("Reading settings", &["S"][..]),
-            ("Shortcuts", &["H"][..]),
             ("Close layer or exit", &["Esc"][..]),
         ],
     );

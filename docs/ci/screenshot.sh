@@ -119,6 +119,12 @@ PDF_FIXTURE="${PDF_FIXTURE:-}"
 if [ -n "$PDF_FIXTURE" ]; then
   SEED_ARGS+=(--pdf-fixture)
 fi
+# PDF_NOTES_EMPTY photographs Notes before anything has been kept:
+# the same fixture with no highlights, bookmarks or saved words.
+PDF_NOTES_EMPTY="${PDF_NOTES_EMPTY:-}"
+if [ -n "$PDF_NOTES_EMPTY" ]; then
+  SEED_ARGS+=(--pdf-notes-empty)
+fi
 # COMIC_FIXTURE adds the seeder's two-chapter CBZ series after the
 # generic books, so `comic-read-$((BOOKS+2))` opens chapter 2 at
 # page 4 with a bookmark on it — the comics reader's drawn state.
@@ -407,7 +413,8 @@ say "requested reader action: ${READER_ACTION:-<none>}"
 COMIC_ACTION="${COMIC_ACTION:-}"
 say "requested comic action: ${COMIC_ACTION:-<none>}"
 # PDF_ACTION is the same ask for the PDF reader (KALAM_PDF_ACTION:
-# chrome, contents, contents-pinned, bookmarks, reading, shortcuts,
+# chrome, contents, contents-pinned, pages, notes, notes-words,
+# notes-bookmarks, notes-empty, search-results, reading, shortcuts,
 # jump, jump-range).
 PDF_ACTION="${PDF_ACTION:-}"
 say "requested PDF action: ${PDF_ACTION:-<none>}"

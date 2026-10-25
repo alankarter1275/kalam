@@ -628,7 +628,9 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
     return bytes(output)
 
 
-def seed_pdf_fixture(conn, library: pathlib.Path, now: datetime) -> int:
+def seed_pdf_fixture(
+    conn, library: pathlib.Path, now: datetime, notes_empty: bool = False
+) -> int:
     """Seed the book behind `pdf-read-21`. Returns covers written.
 
     The PDF route opens the file with MuPDF, so it needs a real
@@ -654,6 +656,41 @@ def seed_pdf_fixture(conn, library: pathlib.Path, now: datetime) -> int:
         CREATE TABLE IF NOT EXISTS app_prefs (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS annotations (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            kind          TEXT    NOT NULL,
+            chapter_index INTEGER NOT NULL,
+            start_path    TEXT    NOT NULL,
+            start_offset  INTEGER NOT NULL,
+            end_path      TEXT    NOT NULL,
+            end_offset    INTEGER NOT NULL,
+            color         TEXT    NOT NULL DEFAULT 'yellow',
+            style         TEXT    NOT NULL DEFAULT 'solid',
+            text_excerpt  TEXT    NOT NULL DEFAULT '',
+            note          TEXT    NOT NULL DEFAULT '',
+            cfi           TEXT,
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS saved_words (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            word          TEXT    NOT NULL,
+            definition    TEXT    NOT NULL,
+            dict_name     TEXT,
+            book_id       INTEGER REFERENCES books(id) ON DELETE SET NULL,
+            chapter_index INTEGER,
+            context_text  TEXT,
+            created_at    TEXT    NOT NULL
         )
         """
     )
@@ -696,11 +733,69 @@ def seed_pdf_fixture(conn, library: pathlib.Path, now: datetime) -> int:
         "updated_at) VALUES (?,?,?,?)",
         (book_id, 4, 4 / 12, stamp),
     )
-    conn.execute(
-        "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, "
-        "label, created_at) VALUES (?,?,?,?,?)",
-        (book_id, 4, 4 / 12, "Where the plates meet", stamp),
-    )
+    if not notes_empty:
+        conn.executemany(
+            "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, "
+            "label, created_at) VALUES (?,?,?,?,?)",
+            [
+                (book_id, 4, 4 / 12, "Where the plates meet", stamp),
+                (book_id, 6, 6 / 12, "Volcanoes", stamp),
+                (book_id, 9, 9 / 12, "Currents", stamp),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO annotations (book_id, kind, chapter_index, start_path, "
+            "start_offset, end_path, end_offset, color, style, text_excerpt, note, "
+            "cfi, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    book_id, "highlight", 4, "", 0, "", 0, "yellow", "solid",
+                    "Mountains rise where great plates meet and compress.",
+                    "Where the plates meet", None, stamp, stamp,
+                ),
+                (
+                    book_id, "highlight", 5, "", 0, "", 0, "green", "solid",
+                    "Heat below the crust drives a slow, patient motion.",
+                    "", None, stamp, stamp,
+                ),
+                (
+                    book_id, "highlight", 6, "", 0, "", 0, "blue", "solid",
+                    "Every landscape is a temporary agreement among forces.",
+                    "", None, stamp, stamp,
+                ),
+                (
+                    book_id, "highlight", 9, "", 0, "", 0, "pink", "solid",
+                    "Oceans store the warmth that softens coastal winters.",
+                    "", None, stamp, stamp,
+                ),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO saved_words (word, definition, dict_name, book_id, "
+            "chapter_index, context_text, created_at) VALUES (?,?,?,?,?,?,?)",
+            [
+                (
+                    "tectonic",
+                    "relating to the structure and movement of the Earth’s crust",
+                    None, book_id, 4, "Mountains rise where great plates meet", stamp,
+                ),
+                (
+                    "volcano",
+                    "an opening in the Earth’s crust through which lava, ash and gases erupt",
+                    None, book_id, 6, "Volcanoes", stamp,
+                ),
+                (
+                    "magma",
+                    "molten rock beneath the Earth’s surface",
+                    None, book_id, 6, "Heat below the crust", stamp,
+                ),
+                (
+                    "caldera",
+                    "a large crater formed when a volcano collapses after an eruption",
+                    None, book_id, 7, "Volcanoes", stamp,
+                ),
+            ],
+        )
     prefs = {
         f"book.{book_id}.pdf.scroll_mode": "page",
         f"book.{book_id}.pdf.spread_mode": "odd",
@@ -1508,6 +1603,11 @@ def main() -> int:
         help="add the real outlined PDF the PDF-reader screenshots open",
     )
     ap.add_argument(
+        "--pdf-notes-empty",
+        action="store_true",
+        help="with --pdf-fixture, seed no highlights, bookmarks or saved words",
+    )
+    ap.add_argument(
         "--comic-fixture",
         action="store_true",
         help="add the two-chapter CBZ series the comics reader screenshots open",
@@ -1670,7 +1770,9 @@ def main() -> int:
         total_books += 2
 
     if args.pdf_fixture:
-        covers_written += seed_pdf_fixture(conn, library, now)
+        covers_written += seed_pdf_fixture(
+            conn, library, now, notes_empty=args.pdf_notes_empty
+        )
         total_books += 1
 
     if args.comic_fixture:

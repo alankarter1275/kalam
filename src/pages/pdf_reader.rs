@@ -1934,12 +1934,12 @@ impl PdfReaderModel {
             return;
         }
 
-        let first_visible = self
+        let heading_anchor = self
             .pages_grid
             .as_ref()
-            .and_then(|grid| grid.first_visible_page(pages.scroll.vadjustment().value()))
+            .and_then(|grid| grid.heading_anchor_page(pages.scroll.vadjustment().value()))
             .unwrap_or(self.current_page);
-        let heading = self.pages_heading(first_visible);
+        let heading = self.pages_heading(heading_anchor);
         let page_word = if heading.page_count() == 1 {
             "page"
         } else {

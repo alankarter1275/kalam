@@ -80,6 +80,26 @@ pub fn first_visible_position(
     Some((row * columns).min(entry_count - 1))
 }
 
+/// The position that names a visible row for the sticky heading.
+/// A row can straddle a chapter boundary: in three columns its
+/// middle page gives the row to the section holding most of it,
+/// and in two columns the right-hand page settles the tie in
+/// favour of the section taking over the grid.
+pub fn heading_anchor_position(
+    entry_count: usize,
+    columns: usize,
+    aspect_height_for_width: f64,
+    scroll_value: f64,
+) -> Option<usize> {
+    let first = first_visible_position(
+        entry_count,
+        columns,
+        aspect_height_for_width,
+        scroll_value,
+    )?;
+    Some((first + sanitized_columns(columns) / 2).min(entry_count - 1))
+}
+
 /// Open with one row of context above the current spread where the
 /// book has one, as the comics Pages grid does.
 pub fn scroll_target_for_position(
@@ -666,6 +686,17 @@ impl PdfPagesGrid {
         state.entries.get(position).copied()
     }
 
+    pub fn heading_anchor_page(&self, scroll_value: f64) -> Option<usize> {
+        let state = self.state.borrow();
+        let position = heading_anchor_position(
+            state.entries.len(),
+            state.columns,
+            state.aspect_height_for_width,
+            scroll_value,
+        )?;
+        state.entries.get(position).copied()
+    }
+
     pub fn bound_pages(&self) -> Vec<usize> {
         self.state
             .borrow()
@@ -746,6 +777,16 @@ mod tests {
         );
         assert_eq!(first_visible_position(24, 3, aspect, 100_000.0), Some(23));
         assert_eq!(first_visible_position(0, 3, aspect, 0.0), None);
+
+        // A boundary row is named by its middle page in three
+        // columns and by its right-hand page in two.
+        assert_eq!(heading_anchor_position(24, 3, aspect, 0.0), Some(1));
+        assert_eq!(heading_anchor_position(24, 2, aspect, 0.0), Some(1));
+        assert_eq!(
+            heading_anchor_position(24, 3, aspect, GRID_TOP_MARGIN as f64 + pitch),
+            Some(4)
+        );
+        assert_eq!(heading_anchor_position(24, 3, aspect, 100_000.0), Some(23));
 
         assert_eq!(
             scroll_target_for_position(0, 3, aspect),

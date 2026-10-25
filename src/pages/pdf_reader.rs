@@ -7370,9 +7370,11 @@ fn build_pdf_settings_panel(
     rotate_row.append(&rotate_label);
 
     let rotate_buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    rotate_buttons.set_valign(gtk::Align::Center);
     let rotate_left_btn = gtk::Button::new();
     rotate_left_btn.add_css_class("kalam-pdf-rotate-btn");
     rotate_left_btn.set_size_request(36, 36);
+    rotate_left_btn.set_valign(gtk::Align::Center);
     rotate_left_btn.set_child(Some(&crate::icons::symbolic_with_classes(
         "object-rotate-left-symbolic",
         16,
@@ -7390,6 +7392,7 @@ fn build_pdf_settings_panel(
     let rotate_right_btn = gtk::Button::new();
     rotate_right_btn.add_css_class("kalam-pdf-rotate-btn");
     rotate_right_btn.set_size_request(36, 36);
+    rotate_right_btn.set_valign(gtk::Align::Center);
     rotate_right_btn.set_child(Some(&crate::icons::symbolic_with_classes(
         "object-rotate-right-symbolic",
         16,

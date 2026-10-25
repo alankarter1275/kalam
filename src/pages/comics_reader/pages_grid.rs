@@ -103,6 +103,34 @@ pub fn scroll_target_for_position(position: usize) -> f64 {
     (position / COLUMNS).saturating_sub(1) as f64 * ROW_PITCH
 }
 
+/// The opening scroll after the viewport's real limit is known. Near
+/// the end of a short series, clamping the row-aligned target to the
+/// adjustment maximum would leave the first row cut in half; prefer
+/// the last whole-row offset when it still shows the current cell in
+/// full, and only use the hard maximum when the current page is in
+/// the final row and needs that last partial-row travel.
+pub fn opening_scroll_target_for_position(
+    position: usize,
+    max_scroll: f64,
+    viewport_height: f64,
+) -> f64 {
+    let max_scroll = max_scroll.max(0.0);
+    let desired = scroll_target_for_position(position);
+    if desired <= max_scroll {
+        return desired;
+    }
+
+    let aligned_max = (max_scroll / ROW_PITCH).floor() * ROW_PITCH;
+    let current_row = position / COLUMNS;
+    let current_bottom =
+        current_row as f64 * ROW_PITCH + (CELL_GAP / 2 + CELL_HEIGHT) as f64;
+    if aligned_max + viewport_height.max(0.0) >= current_bottom {
+        aligned_max
+    } else {
+        max_scroll
+    }
+}
+
 struct PageThumbCell {
     list_item: gtk::ListItem,
     button: gtk::Button,
@@ -494,8 +522,14 @@ impl SeriesPagesGrid {
         }
     }
 
-    pub fn current_scroll_target(&self) -> Option<f64> {
-        self.current_position().map(scroll_target_for_position)
+    pub fn opening_scroll_target(
+        &self,
+        max_scroll: f64,
+        viewport_height: f64,
+    ) -> Option<f64> {
+        self.current_position().map(|position| {
+            opening_scroll_target_for_position(position, max_scroll, viewport_height)
+        })
     }
 
     pub fn first_visible_page(&self, scroll_value: f64) -> Option<SeriesPageRef> {
@@ -607,5 +641,18 @@ mod tests {
         assert_eq!(scroll_target_for_position(0), 0.0);
         assert_eq!(scroll_target_for_position(3), 0.0);
         assert_eq!(scroll_target_for_position(6), ROW_PITCH);
+
+        // A short series whose maximum falls mid-row still opens on
+        // a whole row when the current thumbnail remains in full.
+        assert_eq!(
+            opening_scroll_target_for_position(15, 187.0, 805.0),
+            ROW_PITCH
+        );
+        // In the final row, keeping the current page fully visible
+        // wins over row alignment.
+        assert_eq!(
+            opening_scroll_target_for_position(21, 187.0, 805.0),
+            187.0
+        );
     }
 }

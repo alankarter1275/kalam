@@ -1161,13 +1161,16 @@ impl ComicsReaderModel {
                 // 112 + 12 cell pitch.
                 if let Some(grid) = &self.page_grid {
                     grid.scroll_to_current();
-                    if let Some(target) = grid.current_scroll_target() {
-                        let vadj = widgets.pages_scroll.vadjustment();
-                        glib::idle_add_local_once(move || {
-                            let max = (vadj.upper() - vadj.page_size()).max(0.0);
-                            vadj.set_value(target.clamp(0.0, max));
-                        });
-                    }
+                    let grid = grid.clone();
+                    let vadj = widgets.pages_scroll.vadjustment();
+                    glib::idle_add_local_once(move || {
+                        let max = (vadj.upper() - vadj.page_size()).max(0.0);
+                        if let Some(target) =
+                            grid.opening_scroll_target(max, vadj.page_size())
+                        {
+                            vadj.set_value(target);
+                        }
+                    });
                 }
                 update_pages_heading(widgets, self);
             }

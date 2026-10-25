@@ -5036,7 +5036,7 @@ button.kalam-pdf-pin.active:hover {
 }
 
 button.kalam-pdf-pin image {
-    -gtk-icon-size: 16px;
+    -gtk-icon-size: 18px;
 }
 
 /* Contents (decision 58): the filter, then 44px rows with the

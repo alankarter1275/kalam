@@ -2877,7 +2877,7 @@ impl Component for PdfReaderModel {
                         gtk::Button {
                             set_child: Some(&crate::icons::symbolic_with_classes(
                                 "kalam-pin-symbolic",
-                                16,
+                                18,
                                 &["kalam-inline-icon"],
                             )),
                             add_css_class: "kalam-pdf-pin",
@@ -2938,7 +2938,7 @@ impl Component for PdfReaderModel {
                         gtk::Button {
                             set_child: Some(&crate::icons::symbolic_with_classes(
                                 "kalam-pin-symbolic",
-                                16,
+                                18,
                                 &["kalam-inline-icon"],
                             )),
                             add_css_class: "kalam-pdf-pin",
@@ -6011,6 +6011,12 @@ fn populate_toc_list(
             current_visible = Some(rows.len());
         }
         row_box.set_hexpand(true);
+        // The bar below expands inside the row; without an explicit
+        // false here, GTK lets the row inherit that expansion and a
+        // short outline stretches to fill the whole panel instead of
+        // keeping the spec's 44px rows.
+        row_box.set_vexpand(false);
+        row_box.set_valign(gtk::Align::Start);
         row_box.set_size_request(-1, 44);
 
         // The current mark lives at the panel's edge (decision

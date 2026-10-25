@@ -105,11 +105,14 @@ fn install() {
             "kalam-pdf-even-spreads-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="16" rx="1.5" /><rect x="13" y="4" width="9" height="16" rx="1.5" /><path d="M5 10a1.5 1.5 0 0 1 1.5-1.5h.5a1.5 1.5 0 0 1 1.5 1.5c0 1.5-3 2-3 3.5h3" /><path d="M16 9.5a1.5 1.5 0 0 1 2.5 1c0 1-1.5 1.5-1.5 1.5s1.5.5 1.5 1.5a1.5 1.5 0 0 1-2.5 1" /></svg>"#,
         ),
-        // The PDF panels' pin (decision 57): a plain thumbtack, drawn
-        // upright so the pinned state reads at the panel header's size.
+        // The PDF panels' pin (decision 57): the board's upright
+        // outline thumbtack. It is one even-odd filled silhouette,
+        // not a pair of stroked paths: symbolic-icon recolouring is
+        // fill based, and the separate stroked stem vanished at
+        // panel-header size.
         (
             "kalam-pin-symbolic.svg",
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v5l2 3H7l2-3z" /><path d="M12 11v9" /></svg>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7.4 2.8h9.2l-1.4 5.4L19 11.4h-5.6v9.4h-2.8v-9.4H5l3.8-3.2zM9.4 4.8h5.2l-.7 3.1 1.2 1.7H8.9l1.2-1.7z" /></svg>"#,
         ),
         // The reader's bookmark ribbon (decision 16): a V-notched strip
         // hanging from the top edge. Idle is an outline in the border
@@ -127,7 +130,10 @@ fn install() {
 
     for (name, content) in ICONS {
         let dest = actions_dir.join(name);
-        if !dest.exists() {
+        // Bundled glyphs are part of the app build. Refresh stale
+        // copies from earlier builds, or a corrected icon would stay
+        // shadowed by the obsolete file in the user's data directory.
+        if std::fs::read_to_string(&dest).ok().as_deref() != Some(*content) {
             let _ = std::fs::write(&dest, content);
         }
     }

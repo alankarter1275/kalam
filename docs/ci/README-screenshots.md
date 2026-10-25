@@ -38,7 +38,9 @@ and fixture writes can never leak between routes or from the runner's own
 
 For each route, the script waits until the app has logged the route
 and Sway has a toplevel window. It then applies a short minimum dwell
-(five seconds for the three readers, less for ordinary pages) and
+(five seconds for the three readers, less for ordinary pages, with
+longer floors for proof actions the app itself schedules later or
+transient toasts that must dismiss) and
 polls until two coarsely identical frames say the page has stopped
 materially changing. `SETTLE` is the maximum readiness budget rather
 than a fixed delay; on timeout the latest frame is kept and the report

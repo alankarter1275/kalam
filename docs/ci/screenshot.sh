@@ -452,6 +452,24 @@ if [ -z "$MIN_SETTLE" ]; then
     components) MIN_SETTLE=3 ;;
     *) MIN_SETTLE=2 ;;
   esac
+  # Six EPUB proof states are deliberately scheduled by the app nine
+  # seconds after reader construction (the annotation tap follows
+  # another 1.2 seconds later), so frame stability before then only
+  # proves the bare page is stable. Give those actions time to exist.
+  case "$READER_ACTION" in
+    dict|dict-missing|search|search-missing|chip|annotation)
+      MIN_SETTLE=13
+      ;;
+  esac
+  # The notification proof states seed their events through the live
+  # notifier at 0.9 seconds; the seeded error toast then lives for
+  # nine seconds. The frames are of the history panel and bell dot,
+  # not of that transient toast stack, so let it dismiss first.
+  case "$DIALOG" in
+    notifications|notifications-dot)
+      MIN_SETTLE=11
+      ;;
+  esac
 fi
 MAX_SETTLE=$((SETTLE + 10))
 if [ "$MAX_SETTLE" -lt $((MIN_SETTLE + 2)) ]; then

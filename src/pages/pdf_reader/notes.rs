@@ -323,7 +323,7 @@ fn populate_bookmarks(
 ) {
     if model.bookmarks.is_empty() {
         widgets.list.append(&notes_empty(
-            "bookmark-new-symbolic",
+            "kalam-ribbon-outline-symbolic",
             "No bookmarks yet",
             "Press B to bookmark the page you’re on.",
         ));
@@ -340,6 +340,7 @@ fn populate_bookmarks(
     });
 
     let mut standing_heading: Option<String> = None;
+    let mut group_has_row = false;
     for mark in marks.into_iter().take(NOTES_ROW_CAP) {
         let page = mark.chapter_index.max(1) as usize;
         let heading = pages_heading_for_page(
@@ -350,13 +351,15 @@ fn populate_bookmarks(
         )
         .title;
         if standing_heading.as_deref() != Some(heading.as_str()) {
-            if standing_heading.is_some() {
-                widgets.list.append(&notes_separator());
-            }
             widgets.list.append(&notes_heading(&heading));
             standing_heading = Some(heading);
+            group_has_row = false;
+        }
+        if group_has_row {
+            widgets.list.append(&notes_separator());
         }
         widgets.list.append(&bookmark_row(model, mark, sender));
+        group_has_row = true;
     }
 }
 
@@ -413,7 +416,10 @@ fn populate_words(
         ));
         return;
     }
-    for word in words.into_iter().take(NOTES_ROW_CAP) {
+    for (index, word) in words.into_iter().take(NOTES_ROW_CAP).enumerate() {
+        if index > 0 {
+            widgets.list.append(&notes_word_separator());
+        }
         widgets.list.append(&saved_word_row(word, sender));
     }
 }
@@ -550,7 +556,7 @@ fn bookmark_row(
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     row.set_hexpand(true);
     let icon = crate::icons::symbolic_with_classes(
-        "bookmark-new-symbolic",
+        "kalam-ribbon-filled-symbolic",
         16,
         &["kalam-pdf-notes-bookmark-icon"],
     );
@@ -608,6 +614,7 @@ fn saved_word_row(
     body.set_hexpand(true);
     let title = gtk::Label::new(Some(&word.word));
     title.add_css_class("kalam-reader-word-name");
+    title.add_css_class("kalam-pdf-notes-word-name");
     title.set_halign(gtk::Align::Fill);
     title.set_xalign(0.0);
     title.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -684,13 +691,25 @@ fn notes_separator() -> gtk::Separator {
     separator
 }
 
+fn notes_word_separator() -> gtk::Separator {
+    let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+    separator.add_css_class("kalam-pdf-notes-separator");
+    separator.set_margin_start(20);
+    separator.set_margin_end(20);
+    separator
+}
+
 fn notes_empty(icon_name: &str, title: &str, body: &str) -> gtk::Box {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 8);
     wrap.add_css_class("kalam-pdf-notes-empty");
     wrap.set_hexpand(true);
-    wrap.set_margin_start(36);
-    wrap.set_margin_end(36);
-    wrap.set_margin_top(112);
+    wrap.set_vexpand(true);
+    wrap.set_margin_start(56);
+    wrap.set_margin_end(56);
+
+    let top_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    top_spacer.set_vexpand(true);
+    wrap.append(&top_spacer);
 
     let icon = crate::icons::symbolic_with_classes(icon_name, 32, &["kalam-pdf-notes-empty-icon"]);
     icon.set_halign(gtk::Align::Center);
@@ -708,6 +727,10 @@ fn notes_empty(icon_name: &str, title: &str, body: &str) -> gtk::Box {
     body_label.set_halign(gtk::Align::Fill);
     body_label.set_xalign(0.5);
     wrap.append(&body_label);
+
+    let bottom_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    bottom_spacer.set_vexpand(true);
+    wrap.append(&bottom_spacer);
     wrap
 }
 

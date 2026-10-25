@@ -5309,7 +5309,6 @@ button.kalam-pdf-notes-search-toggle.active {
 }
 
 .kalam-pdf-notes-word-row-wrap {
-    border-bottom: 1px solid alpha(@kalam_border, 0.65);
     padding: 11px 20px;
 }
 
@@ -5366,6 +5365,11 @@ button.kalam-pdf-notes-row-hit:hover {
     -gtk-icon-size: 15px;
 }
 
+.kalam-pdf-notes-word-name {
+    font-size: 1.06rem;
+    font-weight: 700;
+}
+
 .kalam-pdf-notes-word-meaning {
     color: @kalam_text_dim;
     font-size: 0.8rem;
@@ -5382,13 +5386,14 @@ separator.kalam-pdf-notes-separator {
 
 .kalam-pdf-notes-empty-title {
     color: @kalam_text;
-    font-size: 0.95rem;
-    font-weight: 600;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1.08rem;
+    font-weight: 700;
 }
 
 .kalam-pdf-notes-empty-body {
     color: @kalam_text_dim;
-    font-size: 0.84rem;
+    font-size: 0.88rem;
     line-height: 1.5;
 }
 

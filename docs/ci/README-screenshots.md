@@ -4,6 +4,12 @@ The GUI smoke job checks that Kalam launches and can construct selected pages
 under a headless Wayland session. It is diagnostic, not a visual acceptance
 test and not a required CI gate.
 
+The captures run in six parallel matrix groups — EPUB, comics, PDF,
+general pages, and two Settings halves. Each group uploads its reports
+and settled frames as a short-lived artifact; one final publish job
+merges them and commits the familiar `ci-logs/` files, avoiding six
+racing pushes to the same branch.
+
 ## Routes exercised
 
 The job runs `docs/ci/screenshot.sh` for each route (139 synthetic books
@@ -11,7 +17,9 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 
 | Route | What it opens |
 |---|---|
-| `read-1` | The EPUB reader with the first seeded EPUB. |
+| `read-1` | The EPUB reader with the first seeded EPUB, including its chrome, panels, selection, dictionary and search proof states. |
+| `comic-read-22` + `COMIC_FIXTURE=1` | The comics reader on the second seeded chapter, including Chapters, Pages, Reading, Image, Shortcuts and page-jump states. |
+| `pdf-read-21` + `PDF_FIXTURE=1` | The PDF reader on the seeded outlined document, including chrome, Contents, Reading, Image/Invert, Shortcuts and page-jump states. |
 | `tasks` | The task manager's current empty/idle state. |
 | `components` | The hidden redesign component gallery, twice: Terracotta Light and Dark on a tall 1600×3400 output. |
 | `book-1` | The redesigned book details page for the first seeded EPUB, twice: Terracotta Light and Dark at 1600×1200. |
@@ -28,9 +36,14 @@ disposable `XDG_CONFIG_HOME` (`screenshot.sh` force-assigns it), so prefs
 and fixture writes can never leak between routes or from the runner's own
 `~/.config`.
 
-For each route, the script captures the requested page, waits, captures it
-again, and then launches Home for comparison. The repeated captures should be
-identical when the page has settled. The route and Home captures should differ.
+For each route, the script waits until the app has logged the route
+and Sway has a toplevel window. It then applies a short minimum dwell
+(five seconds for the three readers, less for ordinary pages) and
+polls until two coarsely identical frames say the page has stopped
+materially changing. `SETTLE` is the maximum readiness budget rather
+than a fixed delay; on timeout the latest frame is kept and the report
+records that no stable pair was seen. Home is launched and settled the
+same way for comparison. The route and Home captures should differ.
 A difference proves navigation changed the screen; it does not prove every
 control or piece of content is correct.
 
@@ -44,6 +57,9 @@ is refreshed by CI, not by local edits to the harness.
 The job commits text reports to:
 
 - `ci-logs/reader-latest.txt`
+- `ci-logs/reader-*-latest.txt` for the EPUB proof states
+- `ci-logs/comics-*-latest.txt`
+- `ci-logs/pdf-*-latest.txt`
 - `ci-logs/tasks-latest.txt`
 - `ci-logs/components-light-latest.txt`
 - `ci-logs/components-dark-latest.txt`
@@ -60,10 +76,13 @@ The job commits text reports to:
 - `ci-logs/settings-*-latest.txt` (one per Settings capture, 23 today)
 
 The report includes route checks, timing spans, main-loop stalls, pixel
-samples, screenshot fingerprints, app output and peak RSS. PNG images and
-compositor logs stay in the temporary Actions workspace; the workflow does not
-upload them as artifacts. The only uploaded artifact is the release binary
-used by the smoke job. The exceptions are the redesigned surfaces: the
+samples, screenshot fingerprints, app output and peak RSS. Compositor
+logs, seeded config homes and intermediate stability candidates stay
+in each shard's temporary workspace. A shard uploads only its reports
+and settled PNGs, with one-day retention, so the final publish job can
+merge all six groups; those are internal handoff artifacts, not a
+second public copy of the proof set. The exceptions committed for
+direct inspection are the redesigned surfaces: the
 gallery, the book page and its two dialogs, the series page, the author
 page and its dialogs, and the Settings captures. Their settled frames
 are committed as
@@ -111,8 +130,9 @@ The script reports measurements and does not set a pass threshold.
 - **Timing:** shared-runner milliseconds are not a performance benchmark.
   Use `KALAM_TIMING=1` on the target desktop for timing decisions. Peak memory
   is reported as a diagnostic.
-- **Screenshots:** because PNGs are not uploaded, the committed report is what
-  an agent can inspect from the repository for most routes: fingerprints and
+- **Screenshots:** the internal shard artifacts are still not reachable
+  from the Arena sandbox, so the committed report is what an agent can
+  inspect from the repository for most routes: fingerprints and
   metrics, not the image itself. The redesign frames listed above are
   committed as PNGs, so those can and should be eyeballed directly —
   remembering the gallery's 1600×3400 software-rendered output is a shape

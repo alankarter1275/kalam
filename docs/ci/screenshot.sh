@@ -18,9 +18,16 @@ set -uo pipefail
 
 OUT="${OUT:-ci-shots}"
 BOOKS="${BOOKS:-139}"
-# Generous: a cold binary on a shared runner is slow to first paint, and a
-# screenshot taken too early shows an empty window and looks exactly like a bug.
+# SETTLE is now a readiness *budget*, not a fixed sleep. The harness
+# waits for the app window and route line, gives the route a short
+# minimum dwell for asynchronous work to begin, and then looks for two
+# coarsely-identical frames. SETTLE (plus a small slack in the script)
+# remains the generous upper bound for a cold binary on a shared
+# runner: a screenshot taken too early shows an empty window and looks
+# exactly like a bug, so timing out still photographs the latest frame.
 SETTLE="${SETTLE:-25}"
+MIN_SETTLE="${MIN_SETTLE:-}"
+STABLE_MAX_CHANGED_PCT="${STABLE_MAX_CHANGED_PCT:-0.5}"
 # Headless output size. The default matches a laptop-ish window. A tall
 # route (the component gallery is ~3,000 px of stacked sections) can ask
 # for a taller output instead of synthetic scrolling, which headless sway
@@ -174,7 +181,7 @@ SWAY_PID=$!
 # exactly that: an empty sway.log (no errors at all) next to "sway never came
 # up", which is the signature of a running compositor we simply could not
 # talk to.
-for _ in $(seq 1 30); do
+for _ in $(seq 1 300); do
   if [ -z "${SWAYSOCK:-}" ]; then
     CANDIDATE="$(ls -t "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | head -1)"
     [ -n "$CANDIDATE" ] && export SWAYSOCK="$CANDIDATE"
@@ -186,7 +193,7 @@ for _ in $(seq 1 30); do
   if ! kill -0 "$SWAY_PID" 2>/dev/null; then
     break
   fi
-  sleep 1
+  sleep 0.1
 done
 
 say "SWAYSOCK=${SWAYSOCK:-<none found>}"
@@ -254,6 +261,104 @@ sample_rss() {
   [ -z "$rss" ] && return 0
   [ "$rss" -gt "$PEAK_KB" ] && PEAK_KB="$rss"
   return 0
+}
+
+now_s() {
+  date +%s
+}
+
+app_window_seen() {
+  swaymsg -t get_tree 2>/dev/null | grep -q '"app_id"'
+}
+
+route_logged() { # route_logged <log> <route>
+  grep -q "KALAM_ROUTE=$2" "$1" 2>/dev/null
+}
+
+# Poll instead of assuming that a fixed number of seconds is either
+# necessary or sufficient. Success needs both halves of the evidence:
+# the app says it accepted the route, and the compositor has a real
+# toplevel for it. The caller still takes diagnostic screenshots on a
+# timeout; a blank or missing signal should be visible in the report,
+# not hidden by an early exit.
+wait_for_app_ready() { # wait_for_app_ready <pid> <log> <route> <timeout>
+  local pid="$1" log="$2" route="$3" timeout="$4"
+  local start elapsed
+  start="$(now_s)"
+  while :; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 1
+    fi
+    sample_rss
+    if route_logged "$log" "$route" && app_window_seen; then
+      return 0
+    fi
+    elapsed=$(( $(now_s) - start ))
+    [ "$elapsed" -ge "$timeout" ] && return 2
+    sleep 0.25
+  done
+}
+
+wait_until_elapsed() { # wait_until_elapsed <start-seconds> <minimum-seconds> <pid>
+  local start="$1" minimum="$2" pid="$3"
+  while [ $(( $(now_s) - start )) -lt "$minimum" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 1
+    fi
+    sample_rss
+    sleep 0.25
+  done
+  return 0
+}
+
+frame_stable() { # frame_stable <a.png> <b.png>
+  if cmp -s "$1" "$2"; then
+    return 0
+  fi
+  python3 docs/ci/check-shot.py --compare "$1" "$2" \
+    "$STABLE_MAX_CHANGED_PCT" >/dev/null 2>&1
+}
+
+capture_candidate() { # capture_candidate <path>
+  grim "$1" 2>>"$OUT/grim.log"
+}
+
+# Starting from an already-photographed reference frame, poll once a
+# second until the next frame is coarsely the same picture or the
+# deadline arrives. The target always receives the latest candidate:
+# on a genuinely animated or unusually slow page, the newest frame is
+# still better evidence than refusing to publish one at all.
+wait_for_stable_frame() { # wait_for_stable_frame <pid> <reference> <target> <deadline>
+  local pid="$1" target="$3" deadline="$4"
+  local previous="$OUT/.stable-previous.png"
+  local candidate="$OUT/.stable-candidate.png"
+  if ! cp "$2" "$previous" 2>/dev/null; then
+    capture_candidate "$target" || true
+    return 1
+  fi
+
+  while [ "$(now_s)" -lt "$deadline" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      cp "$previous" "$target" 2>/dev/null || true
+      return 1
+    fi
+    sample_rss
+    sleep 1
+    if ! capture_candidate "$candidate"; then
+      cp "$previous" "$target" 2>/dev/null || true
+      return 1
+    fi
+    if frame_stable "$previous" "$candidate"; then
+      cp "$candidate" "$target"
+      rm -f "$previous" "$candidate"
+      return 0
+    fi
+    mv "$candidate" "$previous"
+  done
+
+  cp "$previous" "$target" 2>/dev/null || true
+  rm -f "$previous" "$candidate"
+  return 2
 }
 
 say ""
@@ -333,19 +438,42 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
+
+# Readers do real asynchronous work after their route has opened --
+# opening a book, decoding a comic page, rendering a PDF spread and
+# applying the screenshot action that proof frame exists to show. A
+# five-second floor lets that work get started before stability is
+# judged; ordinary pages and Settings need only enough time for their
+# staged dialog or pane action to land. Callers can override either
+# bound with MIN_SETTLE/SETTLE when a future route proves slower.
+if [ -z "$MIN_SETTLE" ]; then
+  case "$ROUTE" in
+    read-*|comic-read-*|pdf-read-*) MIN_SETTLE=5 ;;
+    components) MIN_SETTLE=3 ;;
+    *) MIN_SETTLE=2 ;;
+  esac
+fi
+MAX_SETTLE=$((SETTLE + 10))
+if [ "$MAX_SETTLE" -lt $((MIN_SETTLE + 2)) ]; then
+  MAX_SETTLE=$((MIN_SETTLE + 2))
+fi
+say "readiness: min=${MIN_SETTLE}s max=${MAX_SETTLE}s stable_max_changed=${STABLE_MAX_CHANGED_PCT}%"
+
+APP_START="$(now_s)"
 KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_COMIC_ACTION="$COMIC_ACTION" KALAM_PDF_ACTION="$PDF_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
-for _ in $(seq 1 "$SETTLE"); do
-  sample_rss
-  sleep 1
-done
-
-if ! kill -0 "$APP_PID" 2>/dev/null; then
+wait_for_app_ready "$APP_PID" "$OUT/kalam.log" "$ROUTE" "$SETTLE"
+READY_STATUS=$?
+if [ "$READY_STATUS" -eq 1 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
   say "FATAL: kalam exited during startup. Its output:"
   sed 's/^/  /' "$OUT/kalam.log" | tail -40 | tee -a "$REPORT"
   swaymsg exit >/dev/null 2>&1 || true
   exit 0
+elif [ "$READY_STATUS" -eq 2 ]; then
+  say "readiness: route/window signal not seen within ${SETTLE}s; photographing anyway"
+else
+  say "readiness: route and window seen after $(( $(now_s) - APP_START ))s"
 fi
 
 WINDOWS="$(swaymsg -t get_tree | grep -c '"app_id"' || true)"
@@ -366,12 +494,21 @@ swaymsg '[app_id=".*"] focus' >/dev/null 2>&1 \
   || swaymsg focus >/dev/null 2>&1 || true
 say "focused: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
 
-for _ in $(seq 1 6); do sample_rss; sleep 1; done
+# The old sequence then slept for another fixed 18 seconds, on the
+# theory that covers arrive in the background and anything still grey
+# after that is never coming. Frame stability expresses that theory
+# directly: photograph once the minimum dwell has elapsed, then keep
+# looking until the picture stops materially changing (or the budget
+# expires and the latest frame is used).
+wait_until_elapsed "$APP_START" "$MIN_SETTLE" "$APP_PID" || true
 shot "02-$ROUTE-settling"
-# Covers arrive in the background, so the interesting screenshot is the later
-# one: anything still grey here is a cover that is never coming.
-for _ in $(seq 1 12); do sample_rss; sleep 1; done
-shot "03-$ROUTE-settled"
+STABLE_DEADLINE=$((APP_START + MAX_SETTLE))
+if wait_for_stable_frame "$APP_PID" "$OUT/02-$ROUTE-settling.png" \
+    "$OUT/03-$ROUTE-settled.png" "$STABLE_DEADLINE"; then
+  say "  shot: 03-$ROUTE-settled (stable after $(( $(now_s) - APP_START ))s)"
+else
+  say "  shot: 03-$ROUTE-settled (latest frame; no stable pair within ${MAX_SETTLE}s)"
+fi
 
 # --- does a tap on the page turn it? (TAP=1) -------------------------------
 #
@@ -513,14 +650,31 @@ esac
 if [ "$ROUTE" != "home" ]; then
   kill "$APP_PID" 2>/dev/null || true
   wait "$APP_PID" 2>/dev/null || true
-  sleep 2
+  sleep 0.25
   # `sample_rss` uses `pgrep -n` (newest), so it follows this process too.
   # That keeps the peak-memory figure honest -- it is still the high-water
   # mark of a single kalam process, just possibly the second one.
+  HOME_START="$(now_s)"
   KALAM_ROUTE=home KALAM_THEME="$THEME" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam-home.log" 2>&1 &
   HOME_PID=$!
-  for _ in $(seq 1 12); do sample_rss; sleep 1; done
+  wait_for_app_ready "$HOME_PID" "$OUT/kalam-home.log" home 10
+  HOME_READY_STATUS=$?
+  if [ "$HOME_READY_STATUS" -eq 2 ]; then
+    say "readiness: Home route/window signal not seen within 10s; photographing anyway"
+  elif [ "$HOME_READY_STATUS" -eq 0 ]; then
+    say "readiness: Home seen after $(( $(now_s) - HOME_START ))s"
+  fi
+  wait_until_elapsed "$HOME_START" 2 "$HOME_PID" || true
   shot "04-home-for-comparison"
+  # Home is only the comparison negative, but an early splash or a
+  # still-loading cover grid would make that comparison meaningless.
+  # Give it the same stable-frame treatment with a much smaller cap.
+  if wait_for_stable_frame "$HOME_PID" "$OUT/04-home-for-comparison.png" \
+      "$OUT/04-home-for-comparison.png" $((HOME_START + 10)); then
+    say "readiness: Home stable after $(( $(now_s) - HOME_START ))s"
+  else
+    say "readiness: Home latest frame used; no stable pair within 10s"
+  fi
   kill "$HOME_PID" 2>/dev/null || true
 
   ROUTE_SUM="$(md5sum "$OUT/03-$ROUTE-settled.png" 2>/dev/null | cut -d" " -f1)"
@@ -614,7 +768,10 @@ say "=== shutting down ==="
 kill "$APP_PID" 2>/dev/null || true
 kill "${HOME_PID:-}" 2>/dev/null || true
 swaymsg exit >/dev/null 2>&1 || true
-sleep 2
+for _ in $(seq 1 20); do
+  kill -0 "$SWAY_PID" 2>/dev/null || break
+  sleep 0.1
+done
 kill "$SWAY_PID" 2>/dev/null || true
 wait "$SWAY_PID" 2>/dev/null || true
 

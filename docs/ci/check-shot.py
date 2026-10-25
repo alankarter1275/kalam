@@ -87,6 +87,47 @@ def read_png(path):
     return width, height, out, channels
 
 
+def compare(path_a, path_b, step=6, channel_threshold=20):
+    """Return (changed-percent, mean absolute channel difference).
+
+    The screenshot harness uses this as a *stability* signal, not as a
+    visual verdict. Sampling every sixth pixel keeps the pure-Python PNG
+    decoder quick enough to poll, while still catching page loads, panel
+    slides and cover arrivals. A blinking text cursor occupies only a
+    handful of samples, so it does not keep an otherwise settled page
+    awake until the timeout.
+    """
+    width_a, height_a, rows_a, channels_a = read_png(path_a)
+    width_b, height_b, rows_b, channels_b = read_png(path_b)
+    if (width_a, height_a) != (width_b, height_b):
+        return 100.0, 255.0
+
+    total = 0
+    changed = 0
+    absolute_sum = 0
+    for y in range(0, height_a, step):
+        row_a = rows_a[y]
+        row_b = rows_b[y]
+        for x in range(0, width_a, step):
+            ia = x * channels_a
+            ib = x * channels_b
+            differences = (
+                abs(row_a[ia] - row_b[ib]),
+                abs(row_a[ia + 1] - row_b[ib + 1]),
+                abs(row_a[ia + 2] - row_b[ib + 2]),
+            )
+            total += 1
+            absolute_sum += sum(differences)
+            if max(differences) > channel_threshold:
+                changed += 1
+
+    if not total:
+        return 100.0, 255.0
+    changed_pct = 100.0 * changed / total
+    mean_absolute = absolute_sum / (total * 3)
+    return changed_pct, mean_absolute
+
+
 def analyse(path):
     width, height, rows, channels = read_png(path)
 
@@ -115,6 +156,26 @@ def analyse(path):
 
 
 def main(argv):
+    if len(argv) >= 2 and argv[1] == "--compare":
+        if len(argv) not in (4, 5):
+            print(
+                "usage: check-shot.py --compare <a.png> <b.png> "
+                "[max-changed-percent]"
+            )
+            return 2
+        try:
+            max_changed = float(argv[4]) if len(argv) == 5 else 0.5
+            changed_pct, mean_absolute = compare(argv[2], argv[3])
+        except Exception as exc:  # noqa: BLE001 -- caller treats this as unstable
+            print(f"compare: could not read ({exc})")
+            return 2
+        stable = changed_pct <= max_changed
+        print(
+            f"changed={changed_pct:.3f}% mean_abs={mean_absolute:.3f} "
+            f"max_changed={max_changed:.3f}% stable={str(stable).lower()}"
+        )
+        return 0 if stable else 1
+
     if len(argv) < 2:
         print("usage: check-shot.py <shot.png> [...]")
         return 0

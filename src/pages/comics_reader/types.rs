@@ -248,6 +248,26 @@ pub enum JumpMode {
     Chapter,
 }
 
+/// One page anywhere in the series being read. The chapter is an index
+/// into the reader's ordered chapter list; it is `None` only for a
+/// standalone chapter that the catalog could not place in a series.
+/// Page numbers are always local to that chapter, matching the Pages
+/// grid's numbers (decision 38).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SeriesPageRef {
+    pub chapter_idx: Option<usize>,
+    pub page_idx: usize,
+}
+
+impl SeriesPageRef {
+    pub const fn new(chapter_idx: Option<usize>, page_idx: usize) -> Self {
+        Self {
+            chapter_idx,
+            page_idx,
+        }
+    }
+}
+
 /// The chapter hierarchy's own facts about one chapter book: its printed
 /// number and volume, and the chapter's title when the file or the
 /// catalog knows one. Kept beside the `Book` rows so the Chapters tab
@@ -268,7 +288,19 @@ pub enum ComicsReaderMsg {
     /// page took GDK's encoded-bytes fallback and supplied no RGBA
     /// pixels to analyse.
     PageLoaded(u64, usize, Option<gtk::gdk::Texture>, Option<CropRect>),
-    ThumbnailLoaded(u64, usize, Option<gtk::gdk::Texture>),
+    /// A Pages-grid thumbnail decode. Unlike a reading page, it stays
+    /// valid across a chapter switch because its identity includes the
+    /// chapter it belongs to; the generation only disowns work left
+    /// over after the reader's thumbnail caches are emptied.
+    ThumbnailLoaded(u64, SeriesPageRef, Option<gtk::gdk::Texture>),
+    /// A recycled Pages-grid cell has been bound to this page. This is
+    /// the lazy window's edge: only now is its thumbnail worth decoding.
+    PageThumbnailVisible(SeriesPageRef),
+    /// A Pages-grid thumbnail was chosen, in this chapter or another.
+    OpenSeriesPage(SeriesPageRef),
+    /// The Pages grid scrolled; its sticky heading follows the first
+    /// chapter on show rather than the chapter being read.
+    PagesGridScrolled(f64),
     SetPage(usize),
     UpdateScrollPage(f64),
     ScrollDelta(f64),

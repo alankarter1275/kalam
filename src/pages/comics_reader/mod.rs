@@ -23,6 +23,7 @@ pub mod providers;
 pub mod reading_settings;
 pub mod image_processing;
 pub mod page_picture;
+pub mod pages_grid;
 
 pub use types::*;
 
@@ -135,16 +136,22 @@ pub struct ComicsReaderModel {
     pub chapter_page_counts: Vec<Option<usize>>,
     pub chapter_page_offsets: Vec<Option<usize>>,
     pub series_total_pages: Option<usize>,
-    /// Pages-tab thumbnails, keyed by page within the current chapter.
-    /// Decoded small and kept apart from the reading window's
-    /// full-size textures, which are deliberately bounded.
-    pub thumb_textures: HashMap<usize, gdk::Texture>,
-    pub thumb_pending: HashSet<usize>,
-    pub thumb_failed: HashSet<usize>,
-    pub page_thumb_buttons: Vec<gtk::Button>,
-    pub page_thumb_pictures: Vec<gtk::Picture>,
-    pub page_thumb_status: Vec<gtk::Label>,
-    /// Bumped whenever the provider changes, so page and thumbnail
+    /// The Pages tab's windowed whole-series grid. It owns its
+    /// thumbnail textures and failure states, keyed by chapter as
+    /// well as page so chapter 1 page 4 and chapter 2 page 4 never
+    /// share a cell or a decode.
+    pub page_grid: Option<pages_grid::SeriesPagesGrid>,
+    pub thumb_pending: HashSet<SeriesPageRef>,
+    /// Providers opened only when a thumbnail from another chapter
+    /// first scrolls into the grid. The chapter being read always
+    /// uses the live `provider` above, so remote chapters keep
+    /// working without a local file.
+    pub thumb_providers: HashMap<usize, Arc<dyn provider::ImageProvider>>,
+    /// Bumped when the thumbnail caches are emptied. A chapter switch
+    /// deliberately does not bump it: series thumbnails remain true
+    /// whichever chapter is open.
+    pub thumb_load_gen: u64,
+    /// Bumped whenever the reading provider changes, so full-page
     /// decodes finishing after a chapter switch are recognised as
     /// belonging to the chapter that was left and dropped.
     pub load_gen: u64,
@@ -437,12 +444,10 @@ impl ComicsReaderModel {
             chapter_page_counts,
             chapter_page_offsets,
             series_total_pages,
-            thumb_textures: HashMap::new(),
+            page_grid: None,
             thumb_pending: HashSet::new(),
-            thumb_failed: HashSet::new(),
-            page_thumb_buttons: Vec::new(),
-            page_thumb_pictures: Vec::new(),
-            page_thumb_status: Vec::new(),
+            thumb_providers: HashMap::new(),
+            thumb_load_gen: 0,
             load_gen: 0,
         }
     }
@@ -715,68 +720,124 @@ impl ComicsReaderModel {
         }
     }
 
-    /// Decode small copies of every page in the current chapter for
-    /// the Pages grid. Separate from [`Self::trigger_loads`]: the
-    /// reading window keeps only a few full-size textures alive,
-    /// while the grid wants the whole chapter at thumbnail size.
-    pub fn trigger_thumbnail_loads(&mut self, sender: &relm4::ComponentSender<Self>) {
-        let provider = self.provider.clone();
-        let gen = self.load_gen;
-        for idx in 0..self.total_pages {
-            if self.thumb_textures.contains_key(&idx)
-                || self.thumb_pending.contains(&idx)
-                || self.thumb_failed.contains(&idx)
-                || self.textures.contains_key(&idx)
-            {
-                continue;
+    /// The page being read, in the whole-series grid's own terms.
+    pub fn current_series_page_ref(&self) -> SeriesPageRef {
+        SeriesPageRef::new(self.current_chapter_idx, self.current_page)
+    }
+
+    /// Every countable page in the series, in grid order. Page
+    /// numbers restart at each chapter because the grid numbers —
+    /// and its thumbnail jumps — are chapter-local (decision 38).
+    pub fn page_grid_entries(&self) -> Vec<pages_grid::SeriesPageEntry> {
+        let book_ids: Vec<i64> = self.series_chapters.iter().map(|book| book.id).collect();
+        pages_grid::build_series_page_entries(
+            &book_ids,
+            &self.chapter_page_counts,
+            self.current_chapter_idx,
+            self.total_pages,
+        )
+    }
+
+    pub fn sync_page_grid_entries(&self) {
+        if let Some(grid) = &self.page_grid {
+            grid.set_entries(
+                self.page_grid_entries(),
+                Some(self.current_series_page_ref()),
+            );
+        }
+    }
+
+    fn thumbnail_provider_for(
+        &mut self,
+        page: SeriesPageRef,
+    ) -> Option<Arc<dyn provider::ImageProvider>> {
+        match page.chapter_idx {
+            None => Some(self.provider.clone()),
+            Some(chapter_idx) if Some(chapter_idx) == self.current_chapter_idx => {
+                Some(self.provider.clone())
             }
-            self.thumb_pending.insert(idx);
-            let s = sender.input_sender().clone();
-            let prov = provider.clone();
-            crate::tasks::spawn_internal(
-                "Loading comic thumbnail",
-                move |_| -> Option<DecodedPage> {
-                    let b = prov.fetch_page(idx).ok()?;
-                    let img = image::load_from_memory(&b).ok()?;
-                    let rgba = img.thumbnail(240, 360).to_rgba8();
-                    let width = rgba.width() as i32;
-                    let height = rgba.height() as i32;
+            Some(chapter_idx) => {
+                if let Some(provider) = self.thumb_providers.get(&chapter_idx) {
+                    return Some(provider.clone());
+                }
+                let book = self.series_chapters.get(chapter_idx)?;
+                let provider: Arc<dyn provider::ImageProvider> = Arc::new(
+                    providers::LocalProvider::new(book.file_path.clone()).ok()?,
+                );
+                self.thumb_providers.insert(chapter_idx, provider.clone());
+                Some(provider)
+            }
+        }
+    }
+
+    /// Decode one small copy when the windowed Pages grid binds its
+    /// cell. Separate from [`Self::trigger_loads`]: the reading
+    /// window keeps only a few full-size textures alive, while the
+    /// grid's provider may be any chapter in the series.
+    pub fn request_page_thumbnail(
+        &mut self,
+        page: SeriesPageRef,
+        sender: &relm4::ComponentSender<Self>,
+    ) {
+        let Some(grid) = self.page_grid.clone() else {
+            return;
+        };
+        if grid.has_thumbnail_state(page) || !self.thumb_pending.insert(page) {
+            return;
+        }
+
+        let Some(provider) = self.thumbnail_provider_for(page) else {
+            self.thumb_pending.remove(&page);
+            grid.update_thumbnail(page, None);
+            return;
+        };
+
+        let gen = self.thumb_load_gen;
+        let idx = page.page_idx;
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Loading comic thumbnail",
+            move |_| -> Option<DecodedPage> {
+                let b = provider.fetch_page(idx).ok()?;
+                let img = image::load_from_memory(&b).ok()?;
+                let rgba = img.thumbnail(240, 360).to_rgba8();
+                let width = rgba.width() as i32;
+                let height = rgba.height() as i32;
+                Some(DecodedPage::Rgba {
+                    width,
+                    height,
+                    bytes: rgba.into_raw(),
+                    crop: None,
+                })
+            },
+            |_| {},
+            move |decoded_opt| {
+                let tex_opt = match decoded_opt {
                     Some(DecodedPage::Rgba {
                         width,
                         height,
-                        bytes: rgba.into_raw(),
-                        crop: None,
-                    })
-                },
-                |_| {},
-                move |decoded_opt| {
-                    let tex_opt = match decoded_opt {
-                        Some(DecodedPage::Rgba {
+                        bytes,
+                        ..
+                    }) => {
+                        let stride = (width * 4) as usize;
+                        let gbytes = glib::Bytes::from_owned(bytes);
+                        let mem_tex = gdk::MemoryTexture::new(
                             width,
                             height,
-                            bytes,
-                            ..
-                        }) => {
-                            let stride = (width * 4) as usize;
-                            let gbytes = glib::Bytes::from_owned(bytes);
-                            let mem_tex = gdk::MemoryTexture::new(
-                                width,
-                                height,
-                                gdk::MemoryFormat::R8g8b8a8,
-                                &gbytes,
-                                stride,
-                            );
-                            Some(mem_tex.upcast::<gdk::Texture>())
-                        }
-                        Some(DecodedPage::RawBytes(b)) => {
-                            gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok()
-                        }
-                        None => None,
-                    };
-                    let _ = s.send(types::ComicsReaderMsg::ThumbnailLoaded(gen, idx, tex_opt));
-                },
-            );
-        }
+                            gdk::MemoryFormat::R8g8b8a8,
+                            &gbytes,
+                            stride,
+                        );
+                        Some(mem_tex.upcast::<gdk::Texture>())
+                    }
+                    Some(DecodedPage::RawBytes(b)) => {
+                        gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok()
+                    }
+                    None => None,
+                };
+                let _ = s.send(types::ComicsReaderMsg::ThumbnailLoaded(gen, page, tex_opt));
+            },
+        );
     }
 
     pub fn next_page(&mut self) {
@@ -1086,18 +1147,29 @@ impl ComicsReaderModel {
             }
             ComicLeftTab::Pages => {
                 widgets.left_stack.set_visible_child_name("pages");
-                populate_pages_grid(&widgets.pages_box, self, sender);
+                self.sync_page_grid_entries();
+                sync_pages_current(self);
+                widgets.pages_empty_label.set_visible(
+                    self.page_grid
+                        .as_ref()
+                        .is_some_and(|grid| grid.entry_count() == 0),
+                );
+                // Open scrolled to the current page, wherever in
+                // the series it sits. GridView first makes GTK
+                // realise that window; the idle adjustment then puts
+                // one row of context above it, using the fixed
+                // 112 + 12 cell pitch.
+                if let Some(grid) = &self.page_grid {
+                    grid.scroll_to_current();
+                    if let Some(target) = grid.current_scroll_target() {
+                        let vadj = widgets.pages_scroll.vadjustment();
+                        glib::idle_add_local_once(move || {
+                            let max = (vadj.upper() - vadj.page_size()).max(0.0);
+                            vadj.set_value(target.clamp(0.0, max));
+                        });
+                    }
+                }
                 update_pages_heading(widgets, self);
-                self.trigger_thumbnail_loads(sender);
-                // Open scrolled to the current page: rows are a
-                // fixed 112 high with a 12 gap, so the target is
-                // known before the thumbnails land.
-                let vadj = widgets.pages_scroll.vadjustment();
-                let row = (self.current_page / 3) as f64;
-                glib::idle_add_local_once(move || {
-                    let max = (vadj.upper() - vadj.page_size()).max(0.0);
-                    vadj.set_value((row * 124.0 - 12.0).clamp(0.0, max));
-                });
             }
         }
     }
@@ -1126,9 +1198,12 @@ impl ComicsReaderModel {
         self.textures.clear();
         self.page_crop_boxes.clear();
         self.pending_loads.clear();
-        self.thumb_textures.clear();
         self.thumb_pending.clear();
-        self.thumb_failed.clear();
+        self.thumb_providers.clear();
+        if let Some(grid) = &self.page_grid {
+            grid.clear_thumbnails();
+        }
+        self.thumb_load_gen = self.thumb_load_gen.wrapping_add(1);
         self.load_gen = self.load_gen.wrapping_add(1);
 
         #[cfg(target_os = "linux")]
@@ -1788,140 +1863,76 @@ fn populate_chapters_list(
     }
 }
 
-/// The Pages tab (decision 38): the current chapter as a 3-column
-/// grid of 112-high thumbnails, the page number over the bottom, the
-/// page being read ringed in the accent. A page whose thumbnail has
-/// not arrived is a skeleton in the border colour; one that failed
-/// is the dashed card. The widget handles are kept on the model so a
-/// decode landing — or a page turn — updates one cell instead of
-/// rebuilding the grid under the reader's scroll position.
-fn populate_pages_grid(
-    grid_host: &gtk::Box,
-    model: &mut ComicsReaderModel,
-    sender: &ComponentSender<ComicsReaderModel>,
-) {
-    while let Some(child) = grid_host.first_child() {
-        grid_host.remove(&child);
-    }
-    model.page_thumb_buttons.clear();
-    model.page_thumb_pictures.clear();
-    model.page_thumb_status.clear();
-
-    if model.total_pages == 0 {
-        let empty = gtk::Label::new(Some("No pages in this chapter"));
-        empty.add_css_class("dim-label");
-        empty.set_margin_top(24);
-        empty.set_halign(gtk::Align::Center);
-        grid_host.append(&empty);
-        return;
-    }
-
-    let grid = gtk::Grid::new();
-    grid.set_column_spacing(12);
-    grid.set_row_spacing(12);
-    grid.set_column_homogeneous(true);
-    grid.set_hexpand(true);
-
-    for idx in 0..model.total_pages {
-        let failed = model.thumb_failed.contains(&idx);
-        let texture = model
-            .thumb_textures
-            .get(&idx)
-            .or_else(|| model.textures.get(&idx));
-
-        let overlay = gtk::Overlay::new();
-        overlay.set_size_request(86, 112);
-        overlay.set_hexpand(true);
-        overlay.set_vexpand(false);
-
-        let pic = gtk::Picture::new();
-        if let Some(tex) = texture {
-            pic.set_paintable(Some(tex));
-        }
-        pic.set_content_fit(gtk::ContentFit::Cover);
-        pic.set_can_shrink(true);
-        pic.set_hexpand(true);
-        pic.set_vexpand(true);
-        pic.set_size_request(86, 112);
-        overlay.set_child(Some(&pic));
-
-        let status = gtk::Label::new(Some(if failed { "Failed to load" } else { "" }));
-        status.add_css_class("kalam-comics-page-status");
-        status.set_halign(gtk::Align::Center);
-        status.set_valign(gtk::Align::Center);
-        status.set_wrap(true);
-        status.set_justify(gtk::Justification::Center);
-        overlay.add_overlay(&status);
-
-        let num = gtk::Label::new(Some(&format!("{}", idx + 1)));
-        num.add_css_class("kalam-comics-page-num");
-        num.set_halign(gtk::Align::Center);
-        num.set_valign(gtk::Align::End);
-        num.set_margin_bottom(6);
-        overlay.add_overlay(&num);
-
-        let btn = gtk::Button::new();
-        btn.set_child(Some(&overlay));
-        btn.add_css_class("kalam-comics-page-thumb");
-        if idx == model.current_page {
-            btn.add_css_class("current");
-        }
-        if failed {
-            btn.add_css_class("failed");
-        }
-        btn.set_tooltip_text(Some(&format!("Page {}", idx + 1)));
-        let s = sender.clone();
-        btn.connect_clicked(move |_| {
-            s.input(ComicsReaderMsg::SetPage(idx));
-        });
-
-        grid.attach(&btn, (idx % 3) as i32, (idx / 3) as i32, 1, 1);
-        model.page_thumb_buttons.push(btn);
-        model.page_thumb_pictures.push(pic);
-        model.page_thumb_status.push(status);
-    }
-    grid_host.append(&grid);
-}
-
-/// The Pages tab's sticky heading: the chapter on show and how far
-/// through it the reader is (`36 pages · reading`, `· read` once
-/// finished).
+/// The Pages tab's sticky heading: the chapter on show at the top
+/// of the grid, its page count and reading state (`36 pages ·
+/// reading`, `· read` once finished, `· not started` before it).
+/// Scrolling the whole-series grid into another chapter moves this
+/// heading even though the chapter being read has not changed.
 fn update_pages_heading(widgets: &ComicsReaderModelWidgets, model: &ComicsReaderModel) {
-    let chapter = model
-        .current_chapter_idx
-        .and_then(|idx| {
-            model.series_chapters.get(idx).map(|book| {
-                // The heading spells the word out (`CHAPTER 2`, in
-                // the section label's uppercase) where the chapter
-                // rows abbreviate it to `Ch. 2`.
-                let number = chapter_display(model, idx, book).0;
-                match number.strip_prefix("Ch. ") {
-                    Some(n) => format!("Chapter {n}"),
-                    None => number,
-                }
-            })
+    let visible_chapter_idx = model
+        .page_grid
+        .as_ref()
+        .and_then(|grid| {
+            grid.first_visible_page(widgets.pages_scroll.vadjustment().value())
         })
-        .unwrap_or_else(|| "Chapter".to_string());
-    widgets.pages_chapter_label.set_label(&chapter);
-    let state = if model.total_pages > 0 && model.current_page + 1 >= model.total_pages {
-        "read"
+        .map(|page| page.chapter_idx)
+        .unwrap_or(model.current_chapter_idx);
+
+    let (chapter, page_count, state) = if let Some((idx, book)) = visible_chapter_idx
+        .and_then(|idx| model.series_chapters.get(idx).map(|book| (idx, book)))
+    {
+        // The heading spells the word out (`CHAPTER 2`, in the
+        // section label's uppercase) where the chapter rows
+        // abbreviate it to `Ch. 2`.
+        let number = chapter_display(model, idx, book).0;
+        let chapter = match number.strip_prefix("Ch. ") {
+            Some(n) => format!("Chapter {n}"),
+            None => number,
+        };
+        let page_count = if Some(idx) == model.current_chapter_idx {
+            model.total_pages
+        } else {
+            model
+                .chapter_page_counts
+                .get(idx)
+                .copied()
+                .flatten()
+                .unwrap_or(0)
+        };
+        let state = if Some(idx) == model.current_chapter_idx {
+            if model.total_pages > 0 && model.current_page + 1 >= model.total_pages {
+                "read"
+            } else {
+                "reading"
+            }
+        } else if book.progress >= 100 {
+            "read"
+        } else if book.progress > 0 {
+            "reading"
+        } else {
+            "not started"
+        };
+        (chapter, page_count, state)
     } else {
-        "reading"
+        let state = if model.total_pages > 0 && model.current_page + 1 >= model.total_pages {
+            "read"
+        } else {
+            "reading"
+        };
+        ("Chapter".to_string(), model.total_pages, state)
     };
+
+    widgets.pages_chapter_label.set_label(&chapter);
     widgets
         .pages_meta_label
-        .set_label(&format!("{} pages · {}", model.total_pages, state));
+        .set_label(&format!("{page_count} pages · {state}"));
 }
 
 /// Mark the page being read in a standing Pages grid, without
-/// rebuilding it.
+/// rebuilding it or moving its scroll position.
 fn sync_pages_current(model: &ComicsReaderModel) {
-    for (idx, btn) in model.page_thumb_buttons.iter().enumerate() {
-        if idx == model.current_page {
-            btn.add_css_class("current");
-        } else {
-            btn.remove_css_class("current");
-        }
+    if let Some(grid) = &model.page_grid {
+        grid.set_current(Some(model.current_series_page_ref()));
     }
 }
 
@@ -2617,22 +2628,41 @@ impl Component for ComicsReaderModel {
                                 },                            },
                         },
 
-                        // Pages View: the current chapter's grid,
-                        // populated by `populate_pages_grid`.
-                        #[name = "pages_scroll"]
-                        gtk::ScrolledWindow {
+                        // Pages View: the whole series in one
+                        // windowed grid. Init installs the GridView
+                        // as the scrolled window's direct child so
+                        // GTK only creates the visible cells.
+                        #[name = "pages_overlay"]
+                        gtk::Overlay {
                             set_hexpand: true,
                             set_vexpand: true,
-                            set_hscrollbar_policy: gtk::PolicyType::Never,
 
-                            #[name = "pages_box"]
-                            gtk::Box {
+                            #[name = "pages_scroll"]
+                            gtk::ScrolledWindow {
+                                set_hexpand: true,
+                                set_vexpand: true,
+                                set_hscrollbar_policy: gtk::PolicyType::Never,
+                            },
+
+                            // The grid runs under a 72px fade to
+                            // the panel card at the bottom.
+                            add_overlay = &gtk::Box {
+                                add_css_class: "kalam-comics-pages-fade",
                                 set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 0,
-                                set_margin_start: 20,
-                                set_margin_end: 20,
-                                set_margin_top: 12,
-                                set_margin_bottom: 20,
+                                set_valign: gtk::Align::End,
+                                set_size_request: (-1, 72),
+                                set_can_target: false,
+                            },
+
+                            #[name = "pages_empty_label"]
+                            add_overlay = &gtk::Label {
+                                set_label: "No pages in this chapter",
+                                add_css_class: "dim-label",
+                                set_halign: gtk::Align::Center,
+                                set_valign: gtk::Align::Start,
+                                set_margin_top: 24,
+                                set_can_target: false,
+                                set_visible: false,
                             },
                         },
                     },
@@ -2741,11 +2771,37 @@ impl Component for ComicsReaderModel {
 
         // Explicitly register stack page names so GTK child lookup succeeds without warnings
         widgets.left_stack.page(&widgets.chapters_scroll).set_name("chapters");
-        widgets.left_stack.page(&widgets.pages_scroll).set_name("pages");
+        widgets.left_stack.page(&widgets.pages_overlay).set_name("pages");
         widgets.right_stack.page(&widgets.image_scroll).set_name("image");
         widgets.right_stack.page(&widgets.shortcuts_scroll).set_name("shortcuts");
         widgets.left_stack.set_visible_child_name("chapters");
         widgets.right_stack.set_visible_child_name("reading");
+
+        // The whole-series Pages grid (decision 38). It is the
+        // scrolled window's direct child, so GridView can window
+        // its cells against the real viewport; thumbnails are only
+        // requested as those cells bind.
+        {
+            let page_grid =
+                pages_grid::SeriesPagesGrid::new(sender.input_sender().clone());
+            page_grid.set_entries(
+                model.page_grid_entries(),
+                Some(model.current_series_page_ref()),
+            );
+            widgets.pages_scroll.set_child(Some(&page_grid.widget()));
+            widgets
+                .pages_empty_label
+                .set_visible(page_grid.entry_count() == 0);
+            model.page_grid = Some(page_grid);
+
+            let tx = sender.input_sender().clone();
+            widgets
+                .pages_scroll
+                .vadjustment()
+                .connect_value_changed(move |adj| {
+                    let _ = tx.send(ComicsReaderMsg::PagesGridScrolled(adj.value()));
+                });
+        }
 
         // The panel tab pills (decision 37): the shared segmented
         // control at panel size, stretched across the panel with
@@ -3132,7 +3188,8 @@ impl Component for ComicsReaderModel {
 
         build_shortcuts_panel(&widgets.shortcuts_box);
         populate_chapters_list(&widgets.chapters_list_box, &model, &sender);
-        populate_pages_grid(&widgets.pages_box, &mut model, &sender);
+        model.sync_page_grid_entries();
+        sync_pages_current(&model);
         update_pages_heading(&widgets, &model);
         model.update_bookmark_icon_state(&widgets);
         model.sync_settings_ui(&widgets);
@@ -3713,27 +3770,38 @@ impl Component for ComicsReaderModel {
                     }
                 }
             }
-            ComicsReaderMsg::ThumbnailLoaded(gen, idx, maybe_tex) => {
-                if gen != self.load_gen {
+            ComicsReaderMsg::ThumbnailLoaded(gen, page, maybe_tex) => {
+                if gen != self.thumb_load_gen {
                     return;
                 }
-                self.thumb_pending.remove(&idx);
-                match maybe_tex {
-                    Some(tex) => {
-                        if let Some(pic) = self.page_thumb_pictures.get(idx) {
-                            pic.set_paintable(Some(&tex));
-                        }
-                        self.thumb_textures.insert(idx, tex);
-                    }
-                    None => {
-                        self.thumb_failed.insert(idx);
-                        if let Some(btn) = self.page_thumb_buttons.get(idx) {
-                            btn.add_css_class("failed");
-                        }
-                        if let Some(status) = self.page_thumb_status.get(idx) {
-                            status.set_label("Failed to load");
-                        }
-                    }
+                self.thumb_pending.remove(&page);
+                if let Some(grid) = self.page_grid.clone() {
+                    grid.update_thumbnail(page, maybe_tex);
+                }
+            }
+            ComicsReaderMsg::PageThumbnailVisible(page) => {
+                self.request_page_thumbnail(page, &sender);
+            }
+            ComicsReaderMsg::OpenSeriesPage(page) => {
+                if page.chapter_idx.is_none()
+                    || page.chapter_idx == self.current_chapter_idx
+                {
+                    let _ = sender
+                        .input_sender()
+                        .send(ComicsReaderMsg::SetPage(page.page_idx));
+                } else if let Some(book_id) = self
+                    .page_grid
+                    .as_ref()
+                    .and_then(|grid| grid.book_id_for_page(page))
+                {
+                    let _ = sender.input_sender().send(
+                        ComicsReaderMsg::SwitchChapterAt(book_id, Some(page.page_idx)),
+                    );
+                }
+            }
+            ComicsReaderMsg::PagesGridScrolled(_) => {
+                if self.left_tab == ComicLeftTab::Pages {
+                    update_pages_heading(widgets, self);
                 }
             }
             ComicsReaderMsg::ToggleDirection => {
@@ -4118,9 +4186,10 @@ impl Component for ComicsReaderModel {
                             self.textures.clear();
                             self.page_crop_boxes.clear();
                             self.pending_loads.clear();
-                            self.thumb_textures.clear();
-                            self.thumb_pending.clear();
-                            self.thumb_failed.clear();
+                            // Pages thumbnails and their pending
+                            // decodes are series-wide: moving between
+                            // chapters changes the ring, not the truth
+                            // of a thumbnail already decoded.
                             self.load_gen = self.load_gen.wrapping_add(1);
                             self.at_chapter_end = false;
 
@@ -4153,11 +4222,14 @@ impl Component for ComicsReaderModel {
                             self.reload_bookmarks();
                             self.update_bookmark_icon_state(widgets);
                             populate_chapters_list(&widgets.chapters_list_box, self, &sender);
-                            populate_pages_grid(&widgets.pages_box, self, &sender);
+                            self.sync_page_grid_entries();
+                            sync_pages_current(self);
+                            widgets.pages_empty_label.set_visible(
+                                self.page_grid
+                                    .as_ref()
+                                    .is_some_and(|grid| grid.entry_count() == 0),
+                            );
                             update_pages_heading(widgets, self);
-                            if self.left_panel_open && self.left_tab == ComicLeftTab::Pages {
-                                self.trigger_thumbnail_loads(&sender);
-                            }
 
                             self.trigger_loads(&sender);
                             let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));

@@ -4830,6 +4830,20 @@ button.kalam-comics-chapter-row:hover {
     padding-bottom: 8px;
 }
 
+gridview.kalam-comics-pages-grid {
+    background: transparent;
+}
+
+gridview.kalam-comics-pages-grid > child {
+    background: transparent;
+    padding: 0;
+}
+
+.kalam-comics-pages-fade {
+    background-image: linear-gradient(to bottom, alpha(@kalam_card, 0.0), @kalam_card);
+    border-radius: 0 0 22px 22px;
+}
+
 button.kalam-comics-page-thumb {
     background: @kalam_border;
     border: 1px solid transparent;

@@ -5135,9 +5135,82 @@ button.kalam-pdf-contents-chevron image {
 
 button.kalam-pdf-pin:focus-visible,
 button.kalam-pdf-contents-nav:focus-visible,
-button.kalam-pdf-contents-chevron:focus-visible {
+button.kalam-pdf-contents-chevron:focus-visible,
+button.kalam-pdf-rotate-btn:focus-visible {
     outline: 2px solid @kalam_accent;
     outline-offset: 1px;
+}
+
+/* Reading pane (decisions 53–54): headings on the panel, then
+   inset cards whose rows are separated by hairlines. The tiles
+   are the comic pane's 68px shape; the selected tile is the same
+   ground with the accent hairline, as both boards draw it. */
+.kalam-pdf-reading-card {
+    padding: 0;
+}
+
+separator.kalam-pdf-reading-separator {
+    background: alpha(@kalam_border, 0.6);
+    min-height: 1px;
+}
+
+button.kalam-pdf-tile {
+    /* GTK's min-height is the content box: 46 + 10px padding top
+       and bottom + the hairlines lands on the spec's 68px tile. */
+    min-height: 46px;
+    border-radius: 10px;
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    color: @kalam_text_dim;
+    padding: 10px 4px;
+    font-size: 0.82rem;
+}
+
+button.kalam-pdf-tile:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-tile.active {
+    background: @kalam_bg;
+    border-color: @kalam_accent;
+    color: @kalam_text;
+    font-weight: 700;
+}
+
+button.kalam-pdf-tile image {
+    -gtk-icon-size: 20px;
+    margin: 0;
+}
+
+.kalam-pdf-reading-name {
+    color: @kalam_text;
+    font-size: 0.92rem;
+}
+
+.kalam-pdf-reading-value {
+    color: @kalam_text_dim;
+    font-size: 0.9rem;
+}
+
+button.kalam-pdf-rotate-btn {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    box-shadow: none;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-rotate-btn:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-rotate-btn image {
+    -gtk-icon-size: 16px;
 }
 
 /* ---------------------------------------------------------------------------

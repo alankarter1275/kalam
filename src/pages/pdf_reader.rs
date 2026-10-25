@@ -45,14 +45,51 @@ pub enum PdfHandleDrag {
     End,
 }
 
+/// Which selection grip, if either, a press at (`x`, `y`) takes hold
+/// of. The end grip wins an overlap, as it has since the EPUB reader
+/// set the rule. Handle tuples are `(x, y, length)`: a vertical bar
+/// at upright or upside-down orientations, a horizontal bar after a
+/// quarter turn. The grip tested here is the bar end the teardrop
+/// hangs from, which is why each quarter turn names a different end.
+fn selection_handle_at(sel: &PdfActiveSelection, x: f64, y: f64) -> Option<PdfHandleDrag> {
+    if sel.is_block {
+        return None;
+    }
+    let (sx, sy, sl) = sel.start_handle;
+    let (ex, ey, el) = sel.end_handle;
+    let (start_hit, end_hit) = match sel.rotation {
+        90 => (
+            (x - (sx + sl)).abs() < 28.0 && (y - sy).abs() < 24.0,
+            (x - ex).abs() < 28.0 && (y - ey).abs() < 24.0,
+        ),
+        180 => (
+            (x - sx).abs() < 24.0 && (y - (sy + sl)).abs() < 28.0,
+            (x - ex).abs() < 24.0 && (y - ey).abs() < 28.0,
+        ),
+        270 => (
+            (x - sx).abs() < 28.0 && (y - sy).abs() < 24.0,
+            (x - (ex + el)).abs() < 28.0 && (y - ey).abs() < 24.0,
+        ),
+        _ => (
+            (x - sx).abs() < 24.0 && (y - sy).abs() < 28.0,
+            (x - ex).abs() < 24.0 && (y - (ey + el)).abs() < 28.0,
+        ),
+    };
+    if end_hit {
+        Some(PdfHandleDrag::End)
+    } else if start_hit {
+        Some(PdfHandleDrag::Start)
+    } else {
+        None
+    }
+}
+
 /// Is (`x`, `y`) over one of the selection's handle grips -- the zone a
-/// press there takes hold of? Mirrors the hit zones `SelectionDragBegin`
-/// uses, so the hover cursor never promises a grab that will not happen.
+/// press there takes hold of? Mirrors `SelectionDragBegin` exactly by
+/// sharing its decision, so the hover cursor never promises a grab
+/// that will not happen.
 fn over_selection_handle(sel: &PdfActiveSelection, x: f64, y: f64) -> bool {
-    let (sx, sy, _) = sel.start_handle;
-    let (ex, ey, eh) = sel.end_handle;
-    ((x - ex).abs() < 24.0 && (y - (ey + eh)).abs() < 28.0)
-        || ((x - sx).abs() < 24.0 && (y - sy).abs() < 28.0)
+    selection_handle_at(sel, x, y).is_some()
 }
 
 #[allow(dead_code)]
@@ -68,6 +105,11 @@ pub struct PdfActiveSelection {
     pub anchor_pt: (f32, f32),
     pub active_pt: (f32, f32),
     pub is_block: bool,
+    /// The view rotation the screen geometry was computed for. The
+    /// selection is cleared when the view turns, so this never has
+    /// to be reprojected after the fact; it only tells the painter
+    /// and the grip hit-test which way the bars run.
+    pub rotation: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +118,7 @@ pub struct PdfRenderRequest {
     pub page: usize,
     pub scale: f32,
     pub smart_crop: bool,
+    pub rotation: i32,
     pub path: PathBuf,
 }
 
@@ -196,6 +239,229 @@ pub enum PdfSpreadMode {
     NoSpreads,
     OddSpreads,
     EvenSpreads,
+}
+
+/// The Reading pane's Layout axis (decision 53). The engine's three
+/// spread modes fold into it exactly: Spread plus "Cover on its own"
+/// is the old OddSpreads, Spread without it is EvenSpreads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfLayout {
+    Single,
+    Spread,
+}
+
+/// The Reading pane's Flow axis (decision 53). Horizontal and
+/// wrapped scrolling predate the two-axis pane and remain valid
+/// stored values; on this axis they are both Scroll, and choosing
+/// Scroll afresh means the vertical stream the design draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfFlow {
+    Paged,
+    Scroll,
+}
+
+/// How the page is first sized into the viewport (decision 54).
+/// `Original` is one CSS pixel per PDF point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfFitMode {
+    Width,
+    Height,
+    Screen,
+    Original,
+}
+
+impl PdfFitMode {
+    pub fn pref_value(self) -> &'static str {
+        match self {
+            PdfFitMode::Width => "width",
+            PdfFitMode::Height => "height",
+            PdfFitMode::Screen => "screen",
+            PdfFitMode::Original => "original",
+        }
+    }
+
+    pub fn from_pref(value: Option<&str>) -> Option<Self> {
+        match value {
+            Some("width") => Some(PdfFitMode::Width),
+            Some("height") => Some(PdfFitMode::Height),
+            Some("screen") => Some(PdfFitMode::Screen),
+            Some("original") => Some(PdfFitMode::Original),
+            _ => None,
+        }
+    }
+}
+
+pub const PDF_MIN_ZOOM_PERCENT: u32 = 25;
+pub const PDF_MAX_ZOOM_PERCENT: u32 = 300;
+pub const PDF_MAX_SCROLL_GAP: i32 = 64;
+
+fn pdf_layout_for_spread_mode(mode: PdfSpreadMode) -> PdfLayout {
+    match mode {
+        PdfSpreadMode::NoSpreads => PdfLayout::Single,
+        PdfSpreadMode::OddSpreads | PdfSpreadMode::EvenSpreads => PdfLayout::Spread,
+    }
+}
+
+fn pdf_spread_mode_for_layout(layout: PdfLayout, cover_on_its_own: bool) -> PdfSpreadMode {
+    match (layout, cover_on_its_own) {
+        (PdfLayout::Single, _) => PdfSpreadMode::NoSpreads,
+        (PdfLayout::Spread, true) => PdfSpreadMode::OddSpreads,
+        (PdfLayout::Spread, false) => PdfSpreadMode::EvenSpreads,
+    }
+}
+
+fn pdf_flow_for_scroll_mode(mode: PdfScrollMode) -> PdfFlow {
+    match mode {
+        PdfScrollMode::PageScrolling => PdfFlow::Paged,
+        PdfScrollMode::VerticalScrolling
+        | PdfScrollMode::HorizontalScrolling
+        | PdfScrollMode::WrappedScrolling => PdfFlow::Scroll,
+    }
+}
+
+fn pdf_scroll_mode_for_flow(flow: PdfFlow) -> PdfScrollMode {
+    match flow {
+        PdfFlow::Paged => PdfScrollMode::PageScrolling,
+        PdfFlow::Scroll => PdfScrollMode::VerticalScrolling,
+    }
+}
+
+/// Snaps a stored or accumulated rotation to the four view angles.
+/// Anything that is not already a quarter turn reads as upright: a
+/// corrupt pref must never leave a book permanently skewed.
+fn normalize_pdf_rotation(degrees: i32) -> i32 {
+    match degrees.rem_euclid(360) {
+        90 => 90,
+        180 => 180,
+        270 => 270,
+        _ => 0,
+    }
+}
+
+/// The page's dimensions as displayed: quarter turns exchange the
+/// sides, half turns keep them. `base_page_width/height` always hold
+/// this display pair; the source pair lives beside them.
+fn display_page_dimensions(source_w: f64, source_h: f64, rotation: i32) -> (f64, f64) {
+    match normalize_pdf_rotation(rotation) {
+        90 | 270 => (source_h, source_w),
+        _ => (source_w, source_h),
+    }
+}
+
+/// A source-page point in display pixels. Fractions keep the four
+/// quarter turns exact and independent of the page's own size; the
+/// caller scales into its own target box.
+fn source_fraction_to_display(x: f64, y: f64, rotation: i32) -> (f64, f64) {
+    match normalize_pdf_rotation(rotation) {
+        90 => (1.0 - y, x),
+        180 => (1.0 - x, 1.0 - y),
+        270 => (y, 1.0 - x),
+        _ => (x, y),
+    }
+}
+
+/// A display pixel back in source-page points, the space MuPDF's
+/// text layer and search results are reported in.
+fn display_point_to_source(
+    x: f64,
+    y: f64,
+    display_w: f64,
+    display_h: f64,
+    source_w: f32,
+    source_h: f32,
+    rotation: i32,
+) -> (f32, f32) {
+    if display_w <= 0.0 || display_h <= 0.0 || source_w <= 0.0 || source_h <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let u = (x / display_w).clamp(0.0, 1.0);
+    let v = (y / display_h).clamp(0.0, 1.0);
+    let (su, sv) = match normalize_pdf_rotation(rotation) {
+        90 => (v, 1.0 - u),
+        180 => (1.0 - u, 1.0 - v),
+        270 => (1.0 - v, u),
+        _ => (u, v),
+    };
+    ((su * source_w as f64) as f32, (sv * source_h as f64) as f32)
+}
+
+/// A source-page rectangle as an axis-aligned display rectangle
+/// `(x, y, width, height)` in the target box.
+fn source_rect_to_display(
+    rect: (f32, f32, f32, f32),
+    source_w: f32,
+    source_h: f32,
+    display_w: f64,
+    display_h: f64,
+    rotation: i32,
+) -> (f64, f64, f64, f64) {
+    if source_w <= 0.0 || source_h <= 0.0 || display_w <= 0.0 || display_h <= 0.0 {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+    let (x0, y0, x1, y1) = rect;
+    let a = source_fraction_to_display(x0 as f64 / source_w as f64, y0 as f64 / source_h as f64, rotation);
+    let b = source_fraction_to_display(x1 as f64 / source_w as f64, y1 as f64 / source_h as f64, rotation);
+    let rx = a.0.min(b.0) * display_w;
+    let ry = a.1.min(b.1) * display_h;
+    let rw = ((a.0.max(b.0) - a.0.min(b.0)) * display_w).max(1.0);
+    let rh = ((a.1.max(b.1) - a.1.min(b.1)) * display_h).max(1.0);
+    (rx, ry, rw, rh)
+}
+
+/// The scale one fit choice asks for, before the zoom percentage is
+/// laid over it. A spread is sized as the spread (decision 53):
+/// two display pages and the seam between them.
+fn pdf_fit_zoom(
+    mode: PdfFitMode,
+    avail_w: f64,
+    avail_h: f64,
+    page_w: f64,
+    page_h: f64,
+    spreads_active: bool,
+    seam_gap: i32,
+) -> f64 {
+    let page_w = if page_w > 10.0 { page_w } else { 595.0 };
+    let page_h = if page_h > 10.0 { page_h } else { 842.0 };
+    let needed_w = if spreads_active {
+        page_w * 2.0 + seam_gap.max(0) as f64
+    } else {
+        page_w
+    };
+    let zoom_w = avail_w.max(100.0) / needed_w;
+    let zoom_h = avail_h.max(100.0) / page_h;
+    let fit = match mode {
+        PdfFitMode::Width => zoom_w,
+        PdfFitMode::Height => zoom_h,
+        PdfFitMode::Screen => zoom_w.min(zoom_h),
+        PdfFitMode::Original => 1.0,
+    };
+    (fit.clamp(0.2, 3.5) * 100.0).round() / 100.0
+}
+
+/// The effective scale the viewport renders at: the fit's scale with
+/// the Reading pane's zoom percentage over it (100% is the fit
+/// itself, as in the comic reader).
+fn pdf_effective_zoom(fit_zoom: f64, zoom_percent: u32) -> f64 {
+    let percent = zoom_percent.clamp(PDF_MIN_ZOOM_PERCENT, PDF_MAX_ZOOM_PERCENT) as f64 / 100.0;
+    ((fit_zoom * percent).clamp(0.2, 3.5) * 100.0).round() / 100.0
+}
+
+/// Whether a viewport this shape can carry a spread at fit-height
+/// size — the "wide enough" of decision 53, judged on the page's
+/// own shape rather than a fixed pixel width so landscape pages
+/// and quarter turns each get the answer their geometry deserves.
+fn pdf_viewport_fits_spread(
+    viewport_w: f64,
+    viewport_h: f64,
+    page_w: f64,
+    page_h: f64,
+    seam_gap: i32,
+) -> bool {
+    if viewport_w <= 100.0 || viewport_h <= 100.0 || page_w <= 0.0 || page_h <= 0.0 {
+        return false;
+    }
+    let height_scale = (viewport_h - 100.0).max(100.0) / page_h;
+    (page_w * 2.0 + seam_gap.max(0) as f64) * height_scale <= (viewport_w - 32.0).max(100.0)
 }
 
 /// Calculate left and optional right pages for a given target page.
@@ -517,21 +783,21 @@ struct VisibleTocRow {
 }
 
 pub struct PdfSettingsWidgets {
-    pub scroll_page_btn: gtk::Button,
-    pub scroll_vertical_btn: gtk::Button,
-    pub scroll_horizontal_btn: gtk::Button,
-    pub scroll_wrapped_btn: gtk::Button,
-    pub spread_none_btn: gtk::Button,
-    pub spread_odd_btn: gtk::Button,
-    pub spread_even_btn: gtk::Button,
-    pub gap_0_btn: gtk::Button,
-    pub gap_4_btn: gtk::Button,
-    pub gap_8_btn: gtk::Button,
-    pub gap_12_btn: gtk::Button,
-    pub gap_16_btn: gtk::Button,
-    pub spread_gap_box: gtk::Box,
-    pub smart_crop_switch: gtk::Switch,
-    pub zoom_label: gtk::Label,
+    pub layout_single_btn: gtk::Button,
+    pub layout_spread_btn: gtk::Button,
+    pub flow_control: crate::widgets::segmented::SegmentedControl,
+    pub scroll_gap_row: gtk::Box,
+    pub scroll_gap_scale: gtk::Scale,
+    pub scroll_gap_value: gtk::Label,
+    pub cover_switch: gtk::Switch,
+    pub fit_width_btn: gtk::Button,
+    pub fit_height_btn: gtk::Button,
+    pub fit_screen_btn: gtk::Button,
+    pub fit_original_btn: gtk::Button,
+    pub zoom_scale: gtk::Scale,
+    pub zoom_value: gtk::Label,
+    pub rotate_left_btn: gtk::Button,
+    pub rotate_right_btn: gtk::Button,
 }
 
 #[derive(Debug)]
@@ -541,12 +807,19 @@ pub enum PdfReaderMsg {
     ZoomIn,
     ZoomOut,
     ResetZoom,
-    FitToPage,
-    FitToWidth,
+    SetZoomPercent(u32),
+    SetFitMode(PdfFitMode),
+    ToggleFitOriginal,
     GoToFirstPage,
     GoToLastPage,
+    SetLayout(PdfLayout),
+    SetFlow(PdfFlow),
+    SetCoverOnItsOwn(bool),
+    SetScrollGap(i32),
+    RotateView(i32),
     SetScrollMode(PdfScrollMode),
     SetSpreadMode(PdfSpreadMode),
+    ApplyAutoSpreadMode(PdfSpreadMode),
     SetSpreadGap(i32),
     ToggleBookmark,
     DeleteBookmark(i64),
@@ -666,6 +939,26 @@ pub struct PdfReaderModel {
     pub spread_mode: PdfSpreadMode,
     pub two_page_gap: i32,
     pub smart_crop: bool,
+    /// Space between successive pages (or spread rows) in a scroll
+    /// flow — the Reading pane's "Gap between pages". The seam
+    /// inside a spread stays `two_page_gap`, its pre-redesign pref.
+    pub scroll_gap: i32,
+    /// How spread pages pair when Layout is Spread; kept as its own
+    /// state so choosing Single does not forget the pairing.
+    pub cover_on_its_own: bool,
+    /// True until the reader (or an earlier Kalam) has ever stored
+    /// a layout choice: while it stands, the layout follows the
+    /// window's shape instead of a stored answer.
+    pub layout_auto: bool,
+    pub fit_mode: PdfFitMode,
+    /// Zoom as a percentage of the selected fit's size; 100 is the
+    /// fit itself. `zoom_level` remains the effective scale every
+    /// render and allocation reads.
+    pub zoom_percent: u32,
+    /// The fit a double-click to Original came from, so the next
+    /// double-click can go back to it.
+    pub pre_zoom_fit: Option<PdfFitMode>,
+    pub rotation_degrees: i32,
     pub left_tab: PdfLeftTab,
     pub right_tab: PdfRightTab,
     pub show_back_button: bool,
@@ -725,6 +1018,11 @@ pub struct PdfReaderModel {
     pub active_generation: Option<Arc<AtomicU64>>,
     pub base_page_width: f64,
     pub base_page_height: f64,
+    /// The measured page size in the file's own orientation. Text
+    /// and search geometry stay in this space however the view is
+    /// turned; `base_page_*` is its display pair.
+    pub source_page_width: f64,
+    pub source_page_height: f64,
     pub doc_tx: Option<async_channel::Sender<PdfDocRequest>>,
     /// True once `DocumentLoaded` applied the doc service's `Info` answer.
     pub doc_ready: bool,
@@ -819,24 +1117,95 @@ impl PdfReaderModel {
             _ => PdfScrollMode::VerticalScrolling,
         };
 
-        // 2. Spread Mode: Check per-book setting first, fallback to global default, fallback to NoSpreads
+        // 2. Spread Mode: Check per-book setting first, fallback to global default, fallback to NoSpreads.
+        // Neither stored anywhere means no layout choice has ever been
+        // made: the layout then follows the window (decision 53), and
+        // NoSpreads below is only the skeleton's provisional shape.
         let book_spread = init.catalog.get_pref(&format!("book.{}.pdf.spread_mode", init.book_id));
         let global_spread = init.catalog.get_pref("reader.pdf.spread_mode");
+        let layout_auto = book_spread.is_none() && global_spread.is_none();
         let spread_mode = match book_spread.as_deref().or(global_spread.as_deref()) {
             Some("odd") => PdfSpreadMode::OddSpreads,
             Some("even") => PdfSpreadMode::EvenSpreads,
             _ => PdfSpreadMode::NoSpreads,
         };
 
-        // 3. Zoom level: specific to this document
-        let book_zoom = init.catalog.get_pref(&format!("book.{}.pdf.zoom", init.book_id));
-        let zoom_level = book_zoom
-            .and_then(|z| z.parse::<f64>().ok())
-            .unwrap_or(1.0)
-            .clamp(0.4, 3.0);
+        // "Cover on its own" is its own remembered choice. Before it
+        // had a pref of its own it lived inside the spread mode, so a
+        // stored pairing still answers for it; an unpaired book
+        // starts with the cover on its own, as the boards draw it.
+        let cover_pref = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.cover_on_its_own", init.book_id))
+            .or_else(|| init.catalog.get_pref("reader.pdf.cover_on_its_own"));
+        let cover_on_its_own = match cover_pref.as_deref() {
+            Some("1") => true,
+            Some("0") => false,
+            _ => spread_mode != PdfSpreadMode::EvenSpreads,
+        };
 
-        // 4. Two-page spread gap: global default
+        // 3. Fit and zoom: specific to this document. The zoom the
+        // pane shows is a percentage of the fit; a book last read by
+        // an older Kalam stored one absolute scale instead, which
+        // opens as Original at that same effective size rather than
+        // silently resizing under its reader.
+        let book_fit = init.catalog.get_pref(&format!("book.{}.pdf.fit_mode", init.book_id));
+        let book_zoom_percent = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.zoom_percent", init.book_id))
+            .and_then(|z| z.parse::<i64>().ok())
+            .map(|z| z.clamp(PDF_MIN_ZOOM_PERCENT as i64, PDF_MAX_ZOOM_PERCENT as i64) as u32);
+        let legacy_zoom = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.zoom", init.book_id))
+            .and_then(|z| z.parse::<f64>().ok())
+            .filter(|z| z.is_finite() && *z > 0.0);
+        let (fit_mode, zoom_percent) = match (PdfFitMode::from_pref(book_fit.as_deref()), book_zoom_percent) {
+            (Some(fit), percent) => (fit, percent.unwrap_or(100)),
+            (None, Some(percent)) => (PdfFitMode::Height, percent),
+            (None, None) => match legacy_zoom {
+                Some(scale) => (
+                    PdfFitMode::Original,
+                    ((scale * 100.0).round() as i64)
+                        .clamp(PDF_MIN_ZOOM_PERCENT as i64, PDF_MAX_ZOOM_PERCENT as i64)
+                        as u32,
+                ),
+                None => (PdfFitMode::Height, 100),
+            },
+        };
+        let rotation_degrees = normalize_pdf_rotation(
+            init.catalog
+                .get_pref_i64(&format!("book.{}.pdf.rotation", init.book_id), 0) as i32,
+        );
+        // Provisional until the document's real page size and the
+        // viewport's real size are both known; DocumentLoaded and
+        // the first resize recompute it from the fit.
+        let (provisional_w, provisional_h) = display_page_dimensions(595.0, 842.0, rotation_degrees);
+        let zoom_level = pdf_effective_zoom(
+            pdf_fit_zoom(
+                fit_mode,
+                850.0 - 32.0,
+                900.0 - 100.0,
+                provisional_w,
+                provisional_h,
+                spread_mode != PdfSpreadMode::NoSpreads
+                    && scroll_mode != PdfScrollMode::WrappedScrolling,
+                12,
+            ),
+            zoom_percent,
+        );
+
+        // 4. Gaps: the two-page seam keeps its global pref; the gap
+        // between successive pages in a scroll is per book, like the
+        // rest of the page style, with the global as its seed.
         let two_page_gap = (init.catalog.get_pref_i64("reader.pdf.two_page_gap", 12) as i32).clamp(0, 48);
+        let book_scroll_gap = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.scroll_gap", init.book_id))
+            .and_then(|g| g.parse::<i64>().ok());
+        let scroll_gap = book_scroll_gap
+            .unwrap_or_else(|| init.catalog.get_pref_i64("reader.pdf.scroll_gap", 24))
+            .clamp(0, PDF_MAX_SCROLL_GAP as i64) as i32;
 
         // 5. Smart crop: per-book setting
         let smart_crop_pref = init
@@ -868,6 +1237,13 @@ impl PdfReaderModel {
             spread_mode,
             two_page_gap,
             smart_crop,
+            scroll_gap,
+            cover_on_its_own,
+            layout_auto,
+            fit_mode,
+            zoom_percent,
+            pre_zoom_fit: None,
+            rotation_degrees,
             left_tab: PdfLeftTab::Contents,
             right_tab: PdfRightTab::Reading,
             show_back_button: false,
@@ -922,8 +1298,10 @@ impl PdfReaderModel {
             render_tx: None,
             render_generation: 1,
             active_generation: None,
-            base_page_width: 595.0,
-            base_page_height: 842.0,
+            base_page_width: provisional_w,
+            base_page_height: provisional_h,
+            source_page_width: 595.0,
+            source_page_height: 842.0,
             doc_tx: None,
             doc_ready: false,
             text_in_progress: HashSet::new(),
@@ -1175,36 +1553,187 @@ impl PdfReaderModel {
         }
     }
 
-    pub fn compute_fit_zoom(&self, scroll: &gtk::ScrolledWindow, fit_width_only: bool) -> f64 {
-        let win_w = scroll.width() as f64;
-        let win_h = scroll.height() as f64;
-        let w = if win_w > 100.0 { win_w } else { 850.0 };
-        let h = if win_h > 100.0 { win_h } else { 900.0 };
+    /// Keep the display page pair in step with the source pair and
+    /// the view rotation. Every allocation in the viewport reads
+    /// `base_page_*`, so this one assignment is what turns the
+    /// whole layout; the rasterizer turns the page itself.
+    pub fn sync_display_page_dimensions(&mut self) {
+        let (w, h) = display_page_dimensions(
+            self.source_page_width,
+            self.source_page_height,
+            self.rotation_degrees,
+        );
+        self.base_page_width = w;
+        self.base_page_height = h;
+    }
 
-        // Available area inside viewport, accounting for side padding and scrollbars
-        let avail_w = (w - 48.0).max(100.0);
-        let avail_h = (h - 72.0).max(100.0);
-
-        let base_w = if self.base_page_width > 10.0 { self.base_page_width } else { 595.0 };
-        let base_h = if self.base_page_height > 10.0 { self.base_page_height } else { 842.0 };
-
-        let spreads_active = self.spread_mode != PdfSpreadMode::NoSpreads
-            && self.scroll_mode != PdfScrollMode::WrappedScrolling;
-
-        let needed_w = if spreads_active {
-            (base_w * 2.0) + (self.two_page_gap as f64)
+    /// The scale the selected fit asks for in this viewport, before
+    /// the zoom percentage. The margins are the ones the viewport
+    /// builders actually lay down, so a fit page is neither clipped
+    /// by its own padding nor shrunk by padding it does not have.
+    pub fn compute_fit_zoom(&self, scroll: &gtk::ScrolledWindow) -> f64 {
+        let hadj_size = scroll.hadjustment().page_size();
+        let vadj_size = scroll.vadjustment().page_size();
+        let w = if hadj_size > 100.0 {
+            hadj_size
+        } else if scroll.width() > 100 {
+            scroll.width() as f64
         } else {
-            base_w
+            850.0
         };
-
-        let zoom_w = avail_w / needed_w;
-        let fit = if fit_width_only {
-            zoom_w
+        let h = if vadj_size > 100.0 {
+            vadj_size
+        } else if scroll.height() > 100 {
+            scroll.height() as f64
         } else {
-            let zoom_h = avail_h / base_h;
-            zoom_w.min(zoom_h)
+            900.0
         };
-        (fit.clamp(0.2, 3.5) * 100.0).round() / 100.0
+        let (margin_w, margin_h) = match self.scroll_mode {
+            PdfScrollMode::PageScrolling => (32.0, 100.0),
+            PdfScrollMode::VerticalScrolling | PdfScrollMode::WrappedScrolling => (32.0, 124.0),
+            PdfScrollMode::HorizontalScrolling => (88.0, 92.0),
+        };
+        pdf_fit_zoom(
+            self.fit_mode,
+            (w - margin_w).max(100.0),
+            (h - margin_h).max(100.0),
+            self.base_page_width,
+            self.base_page_height,
+            self.spread_mode != PdfSpreadMode::NoSpreads
+                && self.scroll_mode != PdfScrollMode::WrappedScrolling,
+            self.two_page_gap,
+        )
+    }
+
+    /// Recompute the effective scale from fit + zoom percentage.
+    /// Returns whether it moved; callers that are about to rebuild
+    /// the viewport use that to retire the old render generation,
+    /// callers that are not go through `apply_zoom_change`.
+    pub fn refresh_fit_zoom(&mut self, scroll: &gtk::ScrolledWindow) -> bool {
+        let next = pdf_effective_zoom(self.compute_fit_zoom(scroll), self.zoom_percent);
+        if (next - self.zoom_level).abs() > 0.005 {
+            self.zoom_level = next;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Retire every in-flight and cached raster: the next
+    /// `trigger_loads` re-renders at the new scale or rotation
+    /// instead of accepting textures from the old one.
+    pub fn invalidate_renders(&mut self) {
+        self.render_generation = self.render_generation.wrapping_add(1);
+        if let Some(ref gen) = self.active_generation {
+            gen.store(self.render_generation, Ordering::Relaxed);
+        }
+        self.pending_loads.clear();
+    }
+
+    /// The Reading pane's fit choices are this book's (decision 53:
+    /// the choice is remembered per book). The legacy absolute scale
+    /// is written alongside, so an older Kalam meeting this book
+    /// still opens it at the size its reader left it.
+    pub fn persist_fit_zoom(&self) {
+        self.catalog.set_pref(
+            &format!("book.{}.pdf.fit_mode", self.book_id),
+            self.fit_mode.pref_value(),
+        );
+        self.catalog.set_pref_i64(
+            &format!("book.{}.pdf.zoom_percent", self.book_id),
+            self.zoom_percent as i64,
+        );
+        self.catalog.set_pref(
+            &format!("book.{}.pdf.zoom", self.book_id),
+            &format!("{:.2}", self.zoom_level),
+        );
+    }
+
+    /// The spread mode the window's own shape asks for, while no
+    /// stored layout choice stands (decision 53).
+    pub fn desired_auto_spread_mode(&self, scroll: &gtk::ScrolledWindow) -> PdfSpreadMode {
+        if pdf_viewport_fits_spread(
+            scroll.width() as f64,
+            scroll.height() as f64,
+            self.base_page_width,
+            self.base_page_height,
+            self.two_page_gap,
+        ) {
+            pdf_spread_mode_for_layout(PdfLayout::Spread, self.cover_on_its_own)
+        } else {
+            PdfSpreadMode::NoSpreads
+        }
+    }
+
+    /// A display-space point in this page's source points.
+    pub fn display_point_to_page(
+        &self,
+        x: f64,
+        y: f64,
+        target_w: f64,
+        target_h: f64,
+        page_text: &PdfPageText,
+    ) -> (f32, f32) {
+        display_point_to_source(
+            x,
+            y,
+            target_w,
+            target_h,
+            page_text.width_pts,
+            page_text.height_pts,
+            self.rotation_degrees,
+        )
+    }
+
+    /// Source-space highlight rectangles in display pixels, plus
+    /// the selection handles for the first and last of them. The
+    /// handle bars follow the text's own direction, which is the
+    /// view rotation laid over the page's reading direction.
+    pub fn page_rects_to_display(
+        &self,
+        rects: &[(f32, f32, f32, f32)],
+        target_w: f64,
+        target_h: f64,
+        page_text: &PdfPageText,
+    ) -> Vec<(f64, f64, f64, f64)> {
+        rects
+            .iter()
+            .map(|rect| {
+                source_rect_to_display(
+                    *rect,
+                    page_text.width_pts,
+                    page_text.height_pts,
+                    target_w,
+                    target_h,
+                    self.rotation_degrees,
+                )
+            })
+            .collect()
+    }
+
+    pub fn selection_handles(
+        &self,
+        first: (f64, f64, f64, f64),
+        last: (f64, f64, f64, f64),
+    ) -> ((f64, f64, f64), (f64, f64, f64)) {
+        match normalize_pdf_rotation(self.rotation_degrees) {
+            90 => (
+                (first.0, first.1, first.2),
+                (last.0, last.1 + last.3, last.2),
+            ),
+            180 => (
+                (first.0 + first.2, first.1, first.3),
+                (last.0, last.1, last.3),
+            ),
+            270 => (
+                (first.0, first.1 + first.3, first.2),
+                (last.0, last.1, last.2),
+            ),
+            _ => (
+                (first.0, first.1, first.3),
+                (last.0 + last.2, last.1, last.3),
+            ),
+        }
     }
 
     /// The pages a reader "standing" on `current_page` still needs: the
@@ -1437,6 +1966,7 @@ impl PdfReaderModel {
 
         let scale = ((1.5 * self.zoom_level).clamp(0.5, 3.5)) as f32;
         let smart_crop = self.smart_crop;
+        let rotation = self.rotation_degrees;
         let gen = self.render_generation;
 
         for page in load_order {
@@ -1462,6 +1992,7 @@ impl PdfReaderModel {
                     page,
                     scale,
                     smart_crop,
+                    rotation,
                     path: path.clone(),
                 });
             }
@@ -1801,17 +2332,46 @@ impl PdfReaderModel {
                         // size and colour in both readers (2.20 step 5).
                         let hc = sel_handle_color;
                         cr.set_source_rgba(hc.0, hc.1, hc.2, 1.0);
-                        let (sx, sy, sh) = sel.start_handle;
-                        cr.rectangle(sx - 1.0, sy, 2.0, sh);
-                        let _ = cr.fill();
-                        draw_teardrop(cr, sx, sy + 1.0, true);
-                        let _ = cr.fill();
-
-                        let (ex, ey, eh) = sel.end_handle;
-                        cr.rectangle(ex - 1.0, ey, 2.0, eh);
-                        let _ = cr.fill();
-                        draw_teardrop(cr, ex, ey + eh - 1.0, false);
-                        let _ = cr.fill();
+                        let (sx, sy, sl) = sel.start_handle;
+                        let (ex, ey, el) = sel.end_handle;
+                        match sel.rotation {
+                            90 => {
+                                cr.rectangle(sx, sy - 1.0, sl, 2.0);
+                                let _ = cr.fill();
+                                draw_teardrop_side(cr, sx + sl - 1.0, sy, true);
+                                cr.rectangle(ex, ey - 1.0, el, 2.0);
+                                let _ = cr.fill();
+                                draw_teardrop_side(cr, ex + 1.0, ey, false);
+                            }
+                            180 => {
+                                cr.rectangle(sx - 1.0, sy, 2.0, sl);
+                                let _ = cr.fill();
+                                draw_teardrop(cr, sx, sy + sl - 1.0, false);
+                                let _ = cr.fill();
+                                cr.rectangle(ex - 1.0, ey, 2.0, el);
+                                let _ = cr.fill();
+                                draw_teardrop(cr, ex, ey + 1.0, true);
+                                let _ = cr.fill();
+                            }
+                            270 => {
+                                cr.rectangle(sx, sy - 1.0, sl, 2.0);
+                                let _ = cr.fill();
+                                draw_teardrop_side(cr, sx + 1.0, sy, false);
+                                cr.rectangle(ex, ey - 1.0, el, 2.0);
+                                let _ = cr.fill();
+                                draw_teardrop_side(cr, ex + el - 1.0, ey, true);
+                            }
+                            _ => {
+                                cr.rectangle(sx - 1.0, sy, 2.0, sl);
+                                let _ = cr.fill();
+                                draw_teardrop(cr, sx, sy + 1.0, true);
+                                let _ = cr.fill();
+                                cr.rectangle(ex - 1.0, ey, 2.0, el);
+                                let _ = cr.fill();
+                                draw_teardrop(cr, ex, ey + el - 1.0, false);
+                                let _ = cr.fill();
+                            }
+                        }
                     }
                 }
             }
@@ -2138,7 +2698,7 @@ impl PdfReaderModel {
                 }
             }
             PdfScrollMode::VerticalScrolling => {
-                let container = gtk::Box::new(gtk::Orientation::Vertical, 20);
+                let container = gtk::Box::new(gtk::Orientation::Vertical, self.scroll_gap);
                 container.set_halign(gtk::Align::Fill);
                 container.set_valign(gtk::Align::Start);
                 container.set_hexpand(true);
@@ -2268,7 +2828,7 @@ impl PdfReaderModel {
                 container.upcast()
             }
             PdfScrollMode::HorizontalScrolling => {
-                let container = gtk::Box::new(gtk::Orientation::Horizontal, 24);
+                let container = gtk::Box::new(gtk::Orientation::Horizontal, self.scroll_gap);
                 container.set_valign(gtk::Align::Start);
                 container.set_halign(gtk::Align::Start);
                 container.set_vexpand(true);
@@ -2373,8 +2933,8 @@ impl PdfReaderModel {
                 flow_box.set_margin_bottom(88);
                 flow_box.set_margin_start(16);
                 flow_box.set_margin_end(16);
-                flow_box.set_column_spacing(20);
-                flow_box.set_row_spacing(20);
+                flow_box.set_column_spacing(self.scroll_gap.max(0) as u32);
+                flow_box.set_row_spacing(self.scroll_gap.max(0) as u32);
                 flow_box.set_selection_mode(gtk::SelectionMode::None);
 
                 let thumb_w = (self.base_page_width * 0.6 * self.zoom_level) as i32;
@@ -2605,30 +3165,55 @@ impl PdfReaderModel {
         }
     }
 
-    /// Synchronize settings controls with active state.
+    /// Synchronize the Reading pane with active state. Sliders are
+    /// only moved when they disagree, so a drag is never fought by
+    /// the sync its own messages trigger; the handlers they fire
+    /// into ignore a value they already hold.
     pub fn sync_settings_ui(&self, sw: &PdfSettingsWidgets) {
-        toggle_active(&sw.scroll_page_btn, self.scroll_mode == PdfScrollMode::PageScrolling);
-        toggle_active(&sw.scroll_vertical_btn, self.scroll_mode == PdfScrollMode::VerticalScrolling);
-        toggle_active(&sw.scroll_horizontal_btn, self.scroll_mode == PdfScrollMode::HorizontalScrolling);
-        toggle_active(&sw.scroll_wrapped_btn, self.scroll_mode == PdfScrollMode::WrappedScrolling);
+        toggle_active(
+            &sw.layout_single_btn,
+            pdf_layout_for_spread_mode(self.spread_mode) == PdfLayout::Single,
+        );
+        toggle_active(
+            &sw.layout_spread_btn,
+            pdf_layout_for_spread_mode(self.spread_mode) == PdfLayout::Spread,
+        );
+        sw.flow_control.set_selected(match pdf_flow_for_scroll_mode(self.scroll_mode) {
+            PdfFlow::Paged => 0,
+            PdfFlow::Scroll => 1,
+        });
 
-        toggle_active(&sw.spread_none_btn, self.spread_mode == PdfSpreadMode::NoSpreads);
-        toggle_active(&sw.spread_odd_btn, self.spread_mode == PdfSpreadMode::OddSpreads);
-        toggle_active(&sw.spread_even_btn, self.spread_mode == PdfSpreadMode::EvenSpreads);
+        // The gap is a Scroll choice (decision 53); in Paged the row
+        // stays visible but inert, exactly as the board draws it.
+        sw.scroll_gap_row
+            .set_sensitive(self.scroll_mode != PdfScrollMode::PageScrolling);
+        if (sw.scroll_gap_scale.value() - self.scroll_gap as f64).abs() > 0.01 {
+            sw.scroll_gap_scale.set_value(self.scroll_gap as f64);
+        }
+        sw.scroll_gap_value.set_label(&self.scroll_gap.to_string());
 
-        sw.spread_gap_box.set_visible(true);
-        sw.spread_gap_box.set_sensitive(self.spread_mode != PdfSpreadMode::NoSpreads);
-        toggle_active(&sw.gap_0_btn, self.two_page_gap == 0);
-        toggle_active(&sw.gap_4_btn, self.two_page_gap == 4);
-        toggle_active(&sw.gap_8_btn, self.two_page_gap == 8);
-        toggle_active(&sw.gap_12_btn, self.two_page_gap == 12);
-        toggle_active(&sw.gap_16_btn, self.two_page_gap == 16);
-
-        if sw.smart_crop_switch.is_active() != self.smart_crop {
-            sw.smart_crop_switch.set_active(self.smart_crop);
+        if sw.cover_switch.is_active() != self.cover_on_its_own {
+            sw.cover_switch.set_active(self.cover_on_its_own);
         }
 
-        sw.zoom_label.set_label(&format!("{}%", (self.zoom_level * 100.0).round() as i32));
+        toggle_active(&sw.fit_width_btn, self.fit_mode == PdfFitMode::Width);
+        toggle_active(&sw.fit_height_btn, self.fit_mode == PdfFitMode::Height);
+        toggle_active(&sw.fit_screen_btn, self.fit_mode == PdfFitMode::Screen);
+        toggle_active(&sw.fit_original_btn, self.fit_mode == PdfFitMode::Original);
+
+        if (sw.zoom_scale.value() - self.zoom_percent as f64).abs() > 0.01 {
+            sw.zoom_scale.set_value(self.zoom_percent as f64);
+        }
+        sw.zoom_value.set_label(&format!("{}%", self.zoom_percent));
+
+        for (button, verb) in [
+            (&sw.rotate_left_btn, "Rotate the view left"),
+            (&sw.rotate_right_btn, "Rotate the view right"),
+        ] {
+            let label = format!("{verb} (currently {}°)", self.rotation_degrees);
+            button.set_tooltip_text(Some(&label));
+            button.update_property(&[gtk::accessible::Property::Label(&label)]);
+        }
     }
 }
 
@@ -3056,7 +3641,7 @@ impl Component for PdfReaderModel {
                 set_child = &gtk::Label {
                     add_css_class: "kalam-zoom-osd",
                     #[watch]
-                    set_label: &format!("{:.0}%", model.zoom_level * 100.0),
+                    set_label: &format!("{}%", model.zoom_percent),
                 },
             },
         }
@@ -3626,6 +4211,10 @@ impl Component for PdfReaderModel {
         hadj.connect_page_size_notify(move |_| {
             let _ = tx_resize.send(PdfReaderMsg::ViewportResized);
         });
+        let tx_resize_v = tx.clone();
+        vadj.connect_page_size_notify(move |_| {
+            let _ = tx_resize_v.send(PdfReaderMsg::ViewportResized);
+        });
 
         // A settings-driven viewport rebuild (scroll mode, spreads, gap)
         // swaps the scrolled window's child, but the adjustments only
@@ -3693,7 +4282,7 @@ impl Component for PdfReaderModel {
                         }
 
                         if let Some(ref doc) = cached_doc {
-                            if let Ok(rendered) = doc.render_page_rgba(req.page, req.scale, req.smart_crop) {
+                            if let Ok(rendered) = doc.render_page_rgba_rotated(req.page, req.scale, req.smart_crop, req.rotation) {
                                 if req.generation == gen.load(Ordering::Relaxed) {
                                     let bytes = glib::Bytes::from_owned(rendered.samples);
                                     let texture = gdk::MemoryTexture::new(
@@ -4180,36 +4769,140 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::ZoomIn => {
-                let old_zoom = self.zoom_level;
-                self.zoom_level = ((self.zoom_level + 0.10).min(3.5) * 100.0).round() / 100.0;
-                self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+                let _ = sender.input_sender().send(PdfReaderMsg::SetZoomPercent(
+                    self.zoom_percent.saturating_add(10),
+                ));
             }
             PdfReaderMsg::ZoomOut => {
+                let _ = sender.input_sender().send(PdfReaderMsg::SetZoomPercent(
+                    self.zoom_percent.saturating_sub(10),
+                ));
+            }
+            PdfReaderMsg::SetZoomPercent(percent) => {
+                let clamped = percent.clamp(PDF_MIN_ZOOM_PERCENT, PDF_MAX_ZOOM_PERCENT);
+                if self.zoom_percent != clamped {
+                    let old_zoom = self.zoom_level;
+                    self.zoom_percent = clamped;
+                    self.refresh_fit_zoom(&widgets.viewport_scroll);
+                    self.persist_fit_zoom();
+                    self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+                    if self.search_active {
+                        self.highlight_current_search_match(widgets);
+                    }
+                }
+            }
+            PdfReaderMsg::SetFitMode(fit) => {
+                // Choosing a fit means that fit exactly: any zoom
+                // away from it is forgotten, as in the comic reader.
+                if self.fit_mode != fit || self.zoom_percent != 100 {
+                    let old_zoom = self.zoom_level;
+                    self.fit_mode = fit;
+                    self.zoom_percent = 100;
+                    self.pre_zoom_fit = None;
+                    self.refresh_fit_zoom(&widgets.viewport_scroll);
+                    self.persist_fit_zoom();
+                    self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+                    if self.search_active {
+                        self.highlight_current_search_match(widgets);
+                    }
+                }
+            }
+            PdfReaderMsg::ToggleFitOriginal => {
+                // Fit ↔ actual size: a zoomed page first returns to
+                // its fit; a fitted page goes to Original, keeping
+                // the fit it came from for the way back.
                 let old_zoom = self.zoom_level;
-                self.zoom_level = ((self.zoom_level - 0.10).max(0.3) * 100.0).round() / 100.0;
-                self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
+                if self.zoom_percent != 100 {
+                    self.zoom_percent = 100;
+                } else if self.fit_mode != PdfFitMode::Original {
+                    self.pre_zoom_fit = Some(self.fit_mode);
+                    self.fit_mode = PdfFitMode::Original;
+                } else {
+                    self.fit_mode = self.pre_zoom_fit.take().unwrap_or(PdfFitMode::Height);
+                }
+                self.refresh_fit_zoom(&widgets.viewport_scroll);
+                self.persist_fit_zoom();
                 self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+                if self.search_active {
+                    self.highlight_current_search_match(widgets);
+                }
             }
             PdfReaderMsg::ResetZoom => {
-                let old_zoom = self.zoom_level;
-                self.zoom_level = 1.0;
-                self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+                // The 0 key's standing meaning in this reader is
+                // actual size (see the Shortcuts pane).
+                let _ = sender
+                    .input_sender()
+                    .send(PdfReaderMsg::SetFitMode(PdfFitMode::Original));
             }
-            PdfReaderMsg::FitToPage => {
-                let old_zoom = self.zoom_level;
-                let fit = self.compute_fit_zoom(&widgets.viewport_scroll, false);
-                self.zoom_level = fit;
-                self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+            PdfReaderMsg::SetLayout(layout) => {
+                // An explicit tile press ends the window-shaped
+                // default, even when it names the layout already on
+                // screen: from here the book keeps this answer.
+                self.layout_auto = false;
+                let target = pdf_spread_mode_for_layout(layout, self.cover_on_its_own);
+                if target == self.spread_mode {
+                    let mode_str = match target {
+                        PdfSpreadMode::NoSpreads => "none",
+                        PdfSpreadMode::OddSpreads => "odd",
+                        PdfSpreadMode::EvenSpreads => "even",
+                    };
+                    self.catalog.set_pref(&format!("book.{}.pdf.spread_mode", self.book_id), mode_str);
+                    self.catalog.set_pref("reader.pdf.spread_mode", mode_str);
+                } else {
+                    let _ = sender.input_sender().send(PdfReaderMsg::SetSpreadMode(target));
+                }
             }
-            PdfReaderMsg::FitToWidth => {
-                let old_zoom = self.zoom_level;
-                let fit = self.compute_fit_zoom(&widgets.viewport_scroll, true);
-                self.zoom_level = fit;
-                self.catalog.set_pref(&format!("book.{}.pdf.zoom", self.book_id), &format!("{:.2}", self.zoom_level));
-                self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+            PdfReaderMsg::SetFlow(flow) => {
+                let _ = sender
+                    .input_sender()
+                    .send(PdfReaderMsg::SetScrollMode(pdf_scroll_mode_for_flow(flow)));
+            }
+            PdfReaderMsg::SetCoverOnItsOwn(on) => {
+                if self.cover_on_its_own != on {
+                    self.cover_on_its_own = on;
+                    let value = if on { "1" } else { "0" };
+                    self.catalog.set_pref(&format!("book.{}.pdf.cover_on_its_own", self.book_id), value);
+                    self.catalog.set_pref("reader.pdf.cover_on_its_own", value);
+                    if pdf_layout_for_spread_mode(self.spread_mode) == PdfLayout::Spread {
+                        // Repairing is an explicit page-style choice too.
+                        self.layout_auto = false;
+                        let _ = sender.input_sender().send(PdfReaderMsg::SetSpreadMode(
+                            pdf_spread_mode_for_layout(PdfLayout::Spread, on),
+                        ));
+                    }
+                }
+            }
+            PdfReaderMsg::SetScrollGap(gap) => {
+                let clamped = gap.clamp(0, PDF_MAX_SCROLL_GAP);
+                if self.scroll_gap != clamped {
+                    self.scroll_gap = clamped;
+                    self.catalog.set_pref_i64(&format!("book.{}.pdf.scroll_gap", self.book_id), clamped as i64);
+                    self.catalog.set_pref_i64("reader.pdf.scroll_gap", clamped as i64);
+                    if self.scroll_mode != PdfScrollMode::PageScrolling {
+                        // Container spacing is baked at build time.
+                        let child = self.build_viewport_widget(&sender);
+                        widgets.viewport_scroll.set_child(Some(&child));
+                        self.prune_textures();
+                        self.trigger_loads(&sender);
+                        // Deferred scroll, same reason as SetScrollMode below.
+                        self.viewport_rebuild_pending = self.current_page > 1;
+                    }
+                }
+            }
+            PdfReaderMsg::RotateView(delta) => {
+                let next = normalize_pdf_rotation(self.rotation_degrees + delta);
+                if next != self.rotation_degrees {
+                    let old_zoom = self.zoom_level;
+                    self.rotation_degrees = next;
+                    self.catalog.set_pref_i64(&format!("book.{}.pdf.rotation", self.book_id), next as i64);
+                    self.sync_display_page_dimensions();
+                    // A quarter turn changes what every fit means.
+                    self.refresh_fit_zoom(&widgets.viewport_scroll);
+                    self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+                    if self.search_active {
+                        self.highlight_current_search_match(widgets);
+                    }
+                }
             }
             PdfReaderMsg::SetScrollMode(mode) => {
                 if self.scroll_mode != mode {
@@ -4223,13 +4916,20 @@ impl Component for PdfReaderModel {
                     self.catalog.set_pref(&format!("book.{}.pdf.scroll_mode", self.book_id), mode_str);
                     self.catalog.set_pref("reader.pdf.scroll_mode", mode_str);
 
-                    // Adjust scrollbar policies
+                    // The flow is one of the fit's inputs (its margins,
+                    // and whether a spread is sized as one).
+                    if self.refresh_fit_zoom(&widgets.viewport_scroll) {
+                        self.invalidate_renders();
+                    }
                     self.update_scroll_policies(&widgets.viewport_scroll);
 
                     let child = self.build_viewport_widget(&sender);
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.prune_textures();
                     self.trigger_loads(&sender);
+                    if self.search_active {
+                        self.highlight_current_search_match(widgets);
+                    }
                     // The scroll back to the current page is deferred: right
                     // after set_child the adjustment still describes the OLD
                     // layout, so the position lands wrong, the value-changed
@@ -4254,12 +4954,40 @@ impl Component for PdfReaderModel {
                     self.catalog.set_pref(&format!("book.{}.pdf.spread_mode", self.book_id), mode_str);
                     self.catalog.set_pref("reader.pdf.spread_mode", mode_str);
 
+                    if self.refresh_fit_zoom(&widgets.viewport_scroll) {
+                        self.invalidate_renders();
+                    }
                     self.update_scroll_policies(&widgets.viewport_scroll);
                     let child = self.build_viewport_widget(&sender);
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.prune_textures();
                     self.trigger_loads(&sender);
+                    if self.search_active {
+                        self.highlight_current_search_match(widgets);
+                    }
                     // Deferred scroll, same reason as SetScrollMode above.
+                    self.viewport_rebuild_pending =
+                        self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1;
+                }
+            }
+            PdfReaderMsg::ApplyAutoSpreadMode(mode) => {
+                // The window-shaped default: same rebuild as an
+                // explicit choice, but nothing is stored — the next
+                // window (or the next resize) is free to answer
+                // differently until the reader picks a tile.
+                if self.layout_auto && self.spread_mode != mode {
+                    self.spread_mode = mode;
+                    if self.refresh_fit_zoom(&widgets.viewport_scroll) {
+                        self.invalidate_renders();
+                    }
+                    self.update_scroll_policies(&widgets.viewport_scroll);
+                    let child = self.build_viewport_widget(&sender);
+                    widgets.viewport_scroll.set_child(Some(&child));
+                    self.prune_textures();
+                    self.trigger_loads(&sender);
+                    if self.search_active {
+                        self.highlight_current_search_match(widgets);
+                    }
                     self.viewport_rebuild_pending =
                         self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1;
                 }
@@ -4270,6 +4998,9 @@ impl Component for PdfReaderModel {
                     self.two_page_gap = clamped;
                     self.catalog.set_pref_i64("reader.pdf.two_page_gap", clamped as i64);
                     if self.spread_mode != PdfSpreadMode::NoSpreads {
+                        if self.refresh_fit_zoom(&widgets.viewport_scroll) {
+                            self.invalidate_renders();
+                        }
                         self.update_scroll_policies(&widgets.viewport_scroll);
                         let child = self.build_viewport_widget(&sender);
                         widgets.viewport_scroll.set_child(Some(&child));
@@ -4673,8 +5404,9 @@ impl Component for PdfReaderModel {
                     Ok(info) => {
                         self.total_pages = info.total_pages;
                         self.toc_entries = info.toc_entries;
-                        self.base_page_width = info.base_page_width;
-                        self.base_page_height = info.base_page_height;
+                        self.source_page_width = info.base_page_width;
+                        self.source_page_height = info.base_page_height;
+                        self.sync_display_page_dimensions();
                         if self.current_page > self.total_pages {
                             self.current_page = 1;
                         }
@@ -4685,6 +5417,15 @@ impl Component for PdfReaderModel {
                         self.expand_current_toc_branch();
                         self.refresh_left_panel(widgets, &sender);
                         self.sync_jump_mode_control();
+
+                        // With real page geometry the default layout
+                        // and fit can finally be judged; both settle
+                        // before the build below so the first real
+                        // frame is already the right shape.
+                        if self.layout_auto {
+                            self.spread_mode = self.desired_auto_spread_mode(&widgets.viewport_scroll);
+                        }
+                        self.refresh_fit_zoom(&widgets.viewport_scroll);
 
                         // Rebuild the viewport now that the real page count
                         // and dimensions are known (the widget built during
@@ -4978,24 +5719,14 @@ impl Component for PdfReaderModel {
                 // both overlap -- a selection one glyph wide -- the end
                 // wins, the one a reader who just dragged rightwards is
                 // reaching for (the EPUB reader's rule).
-                let adjusting = if let Some(ref sel) = *self.active_selection.borrow() {
-                    if sel.slot == slot && !is_block {
-                        let (ex, ey, eh) = sel.end_handle;
-                        if (x - ex).abs() < 24.0 && (y - (ey + eh)).abs() < 28.0 {
-                            Some(PdfHandleDrag::End)
-                        } else {
-                            let (sx, sy, _) = sel.start_handle;
-                            if (x - sx).abs() < 24.0 && (y - sy).abs() < 28.0 {
-                                Some(PdfHandleDrag::Start)
-                            } else {
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    }
-                } else {
+                let adjusting = if is_block {
                     None
+                } else {
+                    self.active_selection
+                        .borrow()
+                        .as_ref()
+                        .filter(|sel| sel.slot == slot)
+                        .and_then(|sel| selection_handle_at(sel, x, y))
                 };
 
                 self.handle_dragging.set(adjusting.is_some());
@@ -5037,11 +5768,8 @@ impl Component for PdfReaderModel {
                     return;
                 }
 
-                let scale_x = target_w / (page_text.width_pts as f64);
-                let scale_y = target_h / (page_text.height_pts as f64);
-
-                let start_pt = ((start_x / scale_x) as f32, (start_y / scale_y) as f32);
-                let curr_pt = ((curr_x / scale_x) as f32, (curr_y / scale_y) as f32);
+                let start_pt = self.display_point_to_page(start_x, start_y, target_w, target_h, page_text);
+                let curr_pt = self.display_point_to_page(curr_x, curr_y, target_w, target_h, page_text);
                 // A handle drag moves that end and leaves the other where
                 // it is. Alt mid-drag turns the same press into a block
                 // marquee, so the grip is only honoured while it is not a
@@ -5078,18 +5806,18 @@ impl Component for PdfReaderModel {
                     self.active_selection.replace(None);
                     self.dismiss_selection_chip();
                 } else {
-                    let mut screen_rects = Vec::with_capacity(highlight_rects.len());
+                    let screen_rects = self.page_rects_to_display(
+                        &highlight_rects,
+                        target_w,
+                        target_h,
+                        page_text,
+                    );
                     let mut min_x = f64::MAX;
                     let mut min_y = f64::MAX;
                     let mut max_x = f64::MIN;
                     let mut max_y = f64::MIN;
 
-                    for r in &highlight_rects {
-                        let rx = r.0 as f64 * scale_x;
-                        let ry = r.1 as f64 * scale_y;
-                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
-                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
-                        screen_rects.push((rx, ry, rw, rh));
+                    for &(rx, ry, rw, rh) in &screen_rects {
                         min_x = min_x.min(rx);
                         min_y = min_y.min(ry);
                         max_x = max_x.max(rx + rw);
@@ -5099,8 +5827,7 @@ impl Component for PdfReaderModel {
                     let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
                     let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
 
-                    let start_handle = (first.0, first.1, first.3);
-                    let end_handle = (last.0 + last.2, last.1, last.3);
+                    let (start_handle, end_handle) = self.selection_handles(first, last);
                     let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
 
                     self.active_selection.replace(Some(PdfActiveSelection {
@@ -5114,6 +5841,7 @@ impl Component for PdfReaderModel {
                         anchor_pt: p0,
                         active_pt: p1,
                         is_block,
+                        rotation: self.rotation_degrees,
                     }));
                 }
 
@@ -5195,23 +5923,20 @@ impl Component for PdfReaderModel {
                 };
                 if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return }
 
-                let scale_x = target_w / (page_text.width_pts as f64);
-                let scale_y = target_h / (page_text.height_pts as f64);
-
-                let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
+                let pt = self.display_point_to_page(x, y, target_w, target_h, page_text);
                 if let Some((word_text, highlight_rects)) = page_text.word_at(pt) {
-                    let mut screen_rects = Vec::with_capacity(highlight_rects.len());
+                    let screen_rects = self.page_rects_to_display(
+                        &highlight_rects,
+                        target_w,
+                        target_h,
+                        page_text,
+                    );
                     let mut min_x = f64::MAX;
                     let mut min_y = f64::MAX;
                     let mut max_x = f64::MIN;
                     let mut max_y = f64::MIN;
 
-                    for r in &highlight_rects {
-                        let rx = r.0 as f64 * scale_x;
-                        let ry = r.1 as f64 * scale_y;
-                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
-                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
-                        screen_rects.push((rx, ry, rw, rh));
+                    for &(rx, ry, rw, rh) in &screen_rects {
                         min_x = min_x.min(rx);
                         min_y = min_y.min(ry);
                         max_x = max_x.max(rx + rw);
@@ -5233,8 +5958,7 @@ impl Component for PdfReaderModel {
                     let anchor_pt = (first_pt.0, (first_pt.1 + first_pt.3) * 0.5);
                     let active_pt = (last_pt.2, (last_pt.1 + last_pt.3) * 0.5);
 
-                    let start_handle = (first.0, first.1, first.3);
-                    let end_handle = (last.0 + last.2, last.1, last.3);
+                    let (start_handle, end_handle) = self.selection_handles(first, last);
                     let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
 
                     self.active_selection.replace(Some(PdfActiveSelection {
@@ -5248,12 +5972,19 @@ impl Component for PdfReaderModel {
                         anchor_pt,
                         active_pt,
                         is_block: false,
+                        rotation: self.rotation_degrees,
                     }));
 
                     if let Some(da) = self.page_draw_areas.get(&slot) {
                         da.queue_draw();
                     }
                     self.show_selection_chip(slot, &sender);
+                } else {
+                    // A double-click that found no word is the
+                    // zoom gesture the design asks for (fit ↔
+                    // actual size); one that found a word stays a
+                    // selection, as it always has in this reader.
+                    let _ = sender.input_sender().send(PdfReaderMsg::ToggleFitOriginal);
                 }
             }
             PdfReaderMsg::SelectionLineAt { slot, x, y } => {
@@ -5284,23 +6015,20 @@ impl Component for PdfReaderModel {
                 };
                 if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return }
 
-                let scale_x = target_w / (page_text.width_pts as f64);
-                let scale_y = target_h / (page_text.height_pts as f64);
-
-                let pt = ((x / scale_x) as f32, (y / scale_y) as f32);
+                let pt = self.display_point_to_page(x, y, target_w, target_h, page_text);
                 if let Some((line_text, highlight_rects)) = page_text.line_at(pt) {
-                    let mut screen_rects = Vec::with_capacity(highlight_rects.len());
+                    let screen_rects = self.page_rects_to_display(
+                        &highlight_rects,
+                        target_w,
+                        target_h,
+                        page_text,
+                    );
                     let mut min_x = f64::MAX;
                     let mut min_y = f64::MAX;
                     let mut max_x = f64::MIN;
                     let mut max_y = f64::MIN;
 
-                    for r in &highlight_rects {
-                        let rx = r.0 as f64 * scale_x;
-                        let ry = r.1 as f64 * scale_y;
-                        let rw = (r.2 - r.0).max(1.0) as f64 * scale_x;
-                        let rh = (r.3 - r.1).max(1.0) as f64 * scale_y;
-                        screen_rects.push((rx, ry, rw, rh));
+                    for &(rx, ry, rw, rh) in &screen_rects {
                         min_x = min_x.min(rx);
                         min_y = min_y.min(ry);
                         max_x = max_x.max(rx + rw);
@@ -5317,8 +6045,7 @@ impl Component for PdfReaderModel {
                     let anchor_pt = (first_pt.0, (first_pt.1 + first_pt.3) * 0.5);
                     let active_pt = (last_pt.2, (last_pt.1 + last_pt.3) * 0.5);
 
-                    let start_handle = (first.0, first.1, first.3);
-                    let end_handle = (last.0 + last.2, last.1, last.3);
+                    let (start_handle, end_handle) = self.selection_handles(first, last);
                     let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
 
                     self.active_selection.replace(Some(PdfActiveSelection {
@@ -5332,6 +6059,7 @@ impl Component for PdfReaderModel {
                         anchor_pt,
                         active_pt,
                         is_block: false,
+                        rotation: self.rotation_degrees,
                     }));
 
                     if let Some(da) = self.page_draw_areas.get(&slot) {
@@ -5425,6 +6153,35 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::ViewportResized => {
                 self.update_scroll_policies(&widgets.viewport_scroll);
+                if self.doc_ready {
+                    let auto_change = if self.layout_auto {
+                        let desired = self.desired_auto_spread_mode(&widgets.viewport_scroll);
+                        if desired != self.spread_mode {
+                            let _ = sender
+                                .input_sender()
+                                .send(PdfReaderMsg::ApplyAutoSpreadMode(desired));
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if !auto_change {
+                        // A fit is a relationship to the viewport, not a
+                        // scale frozen when it was chosen: a resized (or
+                        // freshly inset, by a pinned panel) page area
+                        // re-derives it, preserving the scroll centre the
+                        // way any other zoom change does.
+                        let old_zoom = self.zoom_level;
+                        if self.refresh_fit_zoom(&widgets.viewport_scroll) {
+                            self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
+                            if self.search_active {
+                                self.highlight_current_search_match(widgets);
+                            }
+                        }
+                    }
+                }
             }
             PdfReaderMsg::LayoutSettled => {
                 // Fired from the adjustment's upper notify: the freshly
@@ -5615,7 +6372,24 @@ impl PdfReaderModel {
                 sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Bookmarks));
                 sender.input(PdfReaderMsg::OpenLeftPanel);
             }
-            Ok("reading") => sender.input(PdfReaderMsg::OpenRightPanel),
+            Ok("reading") => {
+                // The Reading board's own state: Spread + Scroll,
+                // cover on its own, the 24px scroll gap, fit Height.
+                sender.input(PdfReaderMsg::SetLayout(PdfLayout::Spread));
+                sender.input(PdfReaderMsg::SetCoverOnItsOwn(true));
+                sender.input(PdfReaderMsg::SetFlow(PdfFlow::Scroll));
+                sender.input(PdfReaderMsg::SetScrollGap(24));
+                sender.input(PdfReaderMsg::SetFitMode(PdfFitMode::Height));
+                sender.input(PdfReaderMsg::OpenRightPanel);
+                if !self.right_panel_pinned {
+                    sender.input(PdfReaderMsg::ToggleRightPin);
+                }
+            }
+            Ok("rotated") => {
+                sender.input(PdfReaderMsg::SetLayout(PdfLayout::Spread));
+                sender.input(PdfReaderMsg::SetFitMode(PdfFitMode::Screen));
+                sender.input(PdfReaderMsg::RotateView(90));
+            }
             Ok("shortcuts") => {
                 sender.input(PdfReaderMsg::SetRightTab(PdfRightTab::Shortcuts));
                 sender.input(PdfReaderMsg::OpenRightPanel);
@@ -5706,7 +6480,7 @@ impl PdfReaderModel {
         let (page_w_pts, page_h_pts) = if let Some(text) = self.page_text_cache.get(&target_page) {
             (text.width_pts as f64, text.height_pts as f64)
         } else {
-            (self.base_page_width, self.base_page_height)
+            (self.source_page_width, self.source_page_height)
         };
 
         let (target_w, target_h) = if let Some(da) = self.page_draw_areas.get(&slot) {
@@ -5721,16 +6495,21 @@ impl PdfReaderModel {
             (self.base_page_width * self.zoom_level, self.base_page_height * self.zoom_level)
         };
 
-        let scale_x = if page_w_pts > 0.0 { target_w / page_w_pts } else { 1.0 };
-        let scale_y = if page_h_pts > 0.0 { target_h / page_h_pts } else { 1.0 };
-
-        let screen_rects: Vec<(f64, f64, f64, f64)> = res.rects.iter().map(|&(x0, y0, x1, y1)| {
-            let rx = x0 as f64 * scale_x;
-            let ry = y0 as f64 * scale_y;
-            let rw = ((x1 - x0) as f64 * scale_x).max(4.0);
-            let rh = ((y1 - y0) as f64 * scale_y).max(4.0);
-            (rx, ry, rw, rh)
-        }).collect();
+        let screen_rects: Vec<(f64, f64, f64, f64)> = res
+            .rects
+            .iter()
+            .map(|rect| {
+                let (rx, ry, rw, rh) = source_rect_to_display(
+                    *rect,
+                    page_w_pts as f32,
+                    page_h_pts as f32,
+                    target_w,
+                    target_h,
+                    self.rotation_degrees,
+                );
+                (rx, ry, rw.max(4.0), rh.max(4.0))
+            })
+            .collect();
 
         self.search_highlight.replace(Some((slot, target_page, screen_rects)));
 
@@ -5872,6 +6651,24 @@ fn draw_teardrop(cr: &cairo::Context, tip_x: f64, tip_y: f64, start: bool) {
         );
     }
     cr.close_path();
+}
+
+/// The same teardrop turned on its side, for a selection on a
+/// quarter-turned page: the body hangs east or west of the tip,
+/// away from the text it belongs to. Drawing it through the
+/// upright path under a rotated context keeps one grip shape in
+/// the app rather than a second, drifting copy of it.
+fn draw_teardrop_side(cr: &cairo::Context, tip_x: f64, tip_y: f64, east: bool) {
+    let _ = cr.save();
+    cr.translate(tip_x, tip_y);
+    cr.rotate(if east {
+        std::f64::consts::FRAC_PI_2
+    } else {
+        -std::f64::consts::FRAC_PI_2
+    });
+    draw_teardrop(cr, 0.0, 0.0, true);
+    let _ = cr.fill();
+    let _ = cr.restore();
 }
 
 pub fn pdf_path_fingerprint(path: &std::path::Path) -> Option<String> {
@@ -6261,364 +7058,374 @@ fn build_pdf_shortcuts_panel(host: &gtk::Box) {
     );
 }
 
-fn setting_icon_btn(icon: &str, label: &str) -> gtk::Button {
-    let btn = gtk::Button::new();
-    btn.add_css_class("kalam-reader-seg-btn");
-    btn.set_halign(gtk::Align::Fill);
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    row.append(&crate::icons::symbolic_with_classes(
+fn pdf_reading_heading(label: &str) -> gtk::Label {
+    let heading = gtk::Label::new(Some(label));
+    heading.add_css_class("kalam-reader-section-label");
+    heading.set_halign(gtk::Align::Start);
+    heading.set_xalign(0.0);
+    heading
+}
+
+fn pdf_reading_card() -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    card.add_css_class("kalam-pdf-inset-card");
+    card.add_css_class("kalam-pdf-reading-card");
+    card.set_hexpand(true);
+    card
+}
+
+fn pdf_reading_separator() -> gtk::Separator {
+    let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+    separator.add_css_class("kalam-pdf-reading-separator");
+    separator
+}
+
+fn pdf_tile_button(icon: &str, label: &str, tooltip: &str) -> gtk::Button {
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    content.set_halign(gtk::Align::Center);
+    content.set_valign(gtk::Align::Center);
+    content.append(&crate::icons::symbolic_with_classes(
         icon,
-        16,
+        20,
         &["kalam-inline-icon"],
     ));
-    let lbl = gtk::Label::new(Some(label));
-    lbl.set_halign(gtk::Align::Start);
-    lbl.set_hexpand(true);
-    row.append(&lbl);
-    btn.set_child(Some(&row));
-    btn
+    let text = gtk::Label::new(Some(label));
+    text.set_halign(gtk::Align::Center);
+    content.append(&text);
+
+    let button = gtk::Button::new();
+    button.add_css_class("kalam-reader-seg-btn");
+    button.add_css_class("kalam-pdf-tile");
+    button.set_child(Some(&content));
+    button.set_hexpand(true);
+    button.set_size_request(-1, 68);
+    button.set_tooltip_text(Some(tooltip));
+    button.update_property(&[gtk::accessible::Property::Label(label)]);
+    button
+}
+
+fn pdf_slider_row(
+    label: &str,
+    min: f64,
+    max: f64,
+    step: f64,
+    initial: f64,
+    suffix: &str,
+) -> (gtk::Box, gtk::Scale, gtk::Label) {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.add_css_class("kalam-pdf-reading-row");
+    row.set_size_request(-1, 52);
+    row.set_margin_start(14);
+    row.set_margin_end(14);
+
+    let name = gtk::Label::new(Some(label));
+    name.add_css_class("kalam-pdf-reading-name");
+    name.set_size_request(92, -1);
+    name.set_halign(gtk::Align::Start);
+    name.set_xalign(0.0);
+    name.set_valign(gtk::Align::Center);
+    name.set_wrap(true);
+    row.append(&name);
+
+    let scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, min, max, step);
+    scale.add_css_class("kalam-ui-slider");
+    scale.add_css_class("kalam-pdf-slider");
+    scale.set_draw_value(false);
+    scale.set_digits(0);
+    scale.set_value(initial);
+    scale.set_hexpand(true);
+    scale.set_valign(gtk::Align::Center);
+    row.append(&scale);
+
+    let value = gtk::Label::new(Some(&format!("{}{}", initial.round() as i32, suffix)));
+    value.add_css_class("kalam-pdf-reading-value");
+    value.set_size_request(44, -1);
+    value.set_halign(gtk::Align::End);
+    value.set_xalign(1.0);
+    value.set_valign(gtk::Align::Center);
+    row.append(&value);
+
+    (row, scale, value)
 }
 
 fn build_pdf_settings_panel(
     model: &PdfReaderModel,
     sender: &ComponentSender<PdfReaderModel>,
 ) -> (gtk::Box, PdfSettingsWidgets) {
-    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 16);
-    wrap.set_margin_start(16);
-    wrap.set_margin_end(16);
-    wrap.set_margin_top(16);
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    wrap.add_css_class("kalam-pdf-reading");
+    wrap.set_margin_start(20);
+    wrap.set_margin_end(20);
+    wrap.set_margin_top(14);
     wrap.set_margin_bottom(24);
 
-    // ── 1. Scrolling Section (Matching Photo) ────────────────
-    let scroll_section = reader_settings_section("Scrolling");
+    // ── Page style (decisions 53–54): two independent axes. ──
+    wrap.append(&pdf_reading_heading("Page style"));
+    let page_style_card = pdf_reading_card();
 
-    let scroll_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let layout_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    layout_row.set_homogeneous(true);
+    layout_row.set_margin_start(12);
+    layout_row.set_margin_end(12);
+    layout_row.set_margin_top(12);
+    layout_row.set_margin_bottom(12);
 
-    let scroll_page_btn = setting_icon_btn("kalam-pdf-page-scroll-symbolic", "Page Scrolling");
+    let layout_single_btn = pdf_tile_button(
+        "view-paged-symbolic",
+        "Single",
+        "Show one page at a time",
+    );
     let tx = sender.input_sender().clone();
-    scroll_page_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetScrollMode(PdfScrollMode::PageScrolling));
+    layout_single_btn.connect_clicked(move |_| {
+        let _ = tx.send(PdfReaderMsg::SetLayout(PdfLayout::Single));
     });
-    scroll_box.append(&scroll_page_btn);
+    layout_row.append(&layout_single_btn);
 
-    let scroll_vertical_btn = setting_icon_btn("kalam-pdf-vertical-scroll-symbolic", "Vertical Scrolling");
+    let layout_spread_btn = pdf_tile_button(
+        "view-dual-symbolic",
+        "Spread",
+        "Show two facing pages",
+    );
     let tx = sender.input_sender().clone();
-    scroll_vertical_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetScrollMode(PdfScrollMode::VerticalScrolling));
+    layout_spread_btn.connect_clicked(move |_| {
+        let _ = tx.send(PdfReaderMsg::SetLayout(PdfLayout::Spread));
     });
-    scroll_box.append(&scroll_vertical_btn);
+    layout_row.append(&layout_spread_btn);
+    page_style_card.append(&layout_row);
+    page_style_card.append(&pdf_reading_separator());
 
-    let scroll_horizontal_btn = setting_icon_btn("kalam-pdf-horizontal-scroll-symbolic", "Horizontal Scrolling");
+    let flow_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    flow_row.add_css_class("kalam-pdf-reading-row");
+    flow_row.set_size_request(-1, 52);
+    flow_row.set_margin_start(14);
+    flow_row.set_margin_end(14);
+    let flow_label = gtk::Label::new(Some("Flow"));
+    flow_label.add_css_class("kalam-pdf-reading-name");
+    flow_label.set_hexpand(true);
+    flow_label.set_halign(gtk::Align::Start);
+    flow_label.set_xalign(0.0);
+    flow_label.set_valign(gtk::Align::Center);
+    flow_row.append(&flow_label);
+
     let tx = sender.input_sender().clone();
-    scroll_horizontal_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetScrollMode(PdfScrollMode::HorizontalScrolling));
-    });
-    scroll_box.append(&scroll_horizontal_btn);
+    let flow_control = crate::widgets::segmented::segmented_control(
+        &["Paged", "Scroll"],
+        match pdf_flow_for_scroll_mode(model.scroll_mode) {
+            PdfFlow::Paged => 0,
+            PdfFlow::Scroll => 1,
+        },
+        crate::widgets::segmented::SegmentedSize::Panel,
+        move |idx| {
+            let _ = tx.send(PdfReaderMsg::SetFlow(if idx == 1 {
+                PdfFlow::Scroll
+            } else {
+                PdfFlow::Paged
+            }));
+        },
+    );
+    let flow_root = flow_control.widget();
+    flow_root.set_halign(gtk::Align::End);
+    flow_root.set_size_request(150, -1);
+    for button in flow_control.buttons() {
+        button.set_hexpand(true);
+    }
+    flow_control.buttons()[0].set_tooltip_text(Some("Turn one spread at a time"));
+    flow_control.buttons()[1].set_tooltip_text(Some("Read a continuous vertical stream"));
+    flow_row.append(&flow_root);
+    page_style_card.append(&flow_row);
+    page_style_card.append(&pdf_reading_separator());
 
-    let scroll_wrapped_btn = setting_icon_btn("kalam-pdf-wrapped-scroll-symbolic", "Wrapped Scrolling");
+    let (scroll_gap_row, scroll_gap_scale, scroll_gap_value) = pdf_slider_row(
+        "Gap between pages",
+        0.0,
+        PDF_MAX_SCROLL_GAP as f64,
+        2.0,
+        model.scroll_gap as f64,
+        "",
+    );
+    {
+        let tx = sender.input_sender().clone();
+        let value = scroll_gap_value.clone();
+        scroll_gap_scale.connect_value_changed(move |scale| {
+            let gap = scale.value().round() as i32;
+            value.set_label(&gap.to_string());
+            let _ = tx.send(PdfReaderMsg::SetScrollGap(gap));
+        });
+    }
+    page_style_card.append(&scroll_gap_row);
+    page_style_card.append(&pdf_reading_separator());
+
+    let cover_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    cover_row.add_css_class("kalam-pdf-reading-row");
+    cover_row.set_size_request(-1, 52);
+    cover_row.set_margin_start(14);
+    cover_row.set_margin_end(14);
+    let cover_label = gtk::Label::new(Some("Cover on its own"));
+    cover_label.add_css_class("kalam-pdf-reading-name");
+    cover_label.set_hexpand(true);
+    cover_label.set_halign(gtk::Align::Start);
+    cover_label.set_xalign(0.0);
+    cover_label.set_valign(gtk::Align::Center);
+    cover_row.append(&cover_label);
     let tx = sender.input_sender().clone();
-    scroll_wrapped_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetScrollMode(PdfScrollMode::WrappedScrolling));
+    let cover_switch = crate::pages::settings::toggle_switch(model.cover_on_its_own, move |on| {
+        let _ = tx.send(PdfReaderMsg::SetCoverOnItsOwn(on));
     });
-    scroll_box.append(&scroll_wrapped_btn);
+    cover_switch.set_tooltip_text(Some("Show page 1 alone before pairing spreads"));
+    cover_switch.update_property(&[gtk::accessible::Property::Label("Cover on its own")]);
+    cover_row.append(&cover_switch);
+    page_style_card.append(&cover_row);
+    wrap.append(&page_style_card);
 
-    scroll_section.append(&scroll_box);
-    wrap.append(&scroll_section);
+    // ── Fit (decision 54). ──
+    wrap.append(&pdf_reading_heading("Fit"));
+    let fit_card = pdf_reading_card();
+    let fit_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    fit_row.set_homogeneous(true);
+    fit_row.set_margin_start(12);
+    fit_row.set_margin_end(12);
+    fit_row.set_margin_top(12);
+    fit_row.set_margin_bottom(12);
 
-    let divider = gtk::Separator::new(gtk::Orientation::Horizontal);
-    divider.add_css_class("kalam-section-divider");
-    wrap.append(&divider);
-
-    // ── 2. Spreads Section (Matching Photo) ──────────────────
-    let spread_section = reader_settings_section("Spreads");
-
-    let spread_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-
-    let spread_none_btn = setting_icon_btn("kalam-pdf-no-spreads-symbolic", "No Spreads");
-    let tx = sender.input_sender().clone();
-    spread_none_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetSpreadMode(PdfSpreadMode::NoSpreads));
-    });
-    spread_box.append(&spread_none_btn);
-
-    let spread_odd_btn = setting_icon_btn("kalam-pdf-odd-spreads-symbolic", "Odd Spreads");
-    let tx = sender.input_sender().clone();
-    spread_odd_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetSpreadMode(PdfSpreadMode::OddSpreads));
-    });
-    spread_box.append(&spread_odd_btn);
-
-    let spread_even_btn = setting_icon_btn("kalam-pdf-even-spreads-symbolic", "Even Spreads");
-    let tx = sender.input_sender().clone();
-    spread_even_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetSpreadMode(PdfSpreadMode::EvenSpreads));
-    });
-    spread_box.append(&spread_even_btn);
-
-    spread_section.append(&spread_box);
-
-    // Spread gap options box (permanently visible under Spreads)
-    let spread_gap_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    spread_gap_box.add_css_class("kalam-reader-spread-gap-box");
-    spread_gap_box.set_margin_top(8);
-
-    let gap_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    gap_row.add_css_class("kalam-reader-setting-row");
-    let gap_label = gtk::Label::new(Some("Spread Gap"));
-    gap_label.add_css_class("kalam-reader-setting-name");
-    gap_label.set_hexpand(true);
-    gap_label.set_halign(gtk::Align::Start);
-    gap_row.append(&gap_label);
-
-    let gap_switcher = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    gap_switcher.add_css_class("linked");
-
-    let gap_0_btn = gtk::Button::with_label("0px");
-    gap_0_btn.add_css_class("kalam-reader-seg-btn");
-    let tx = sender.input_sender().clone();
-    gap_0_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetSpreadGap(0));
-    });
-    gap_switcher.append(&gap_0_btn);
-
-    let gap_4_btn = gtk::Button::with_label("4px");
-    gap_4_btn.add_css_class("kalam-reader-seg-btn");
-    let tx = sender.input_sender().clone();
-    gap_4_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetSpreadGap(4));
-    });
-    gap_switcher.append(&gap_4_btn);
-
-    let gap_8_btn = gtk::Button::with_label("8px");
-    gap_8_btn.add_css_class("kalam-reader-seg-btn");
-    let tx = sender.input_sender().clone();
-    gap_8_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetSpreadGap(8));
-    });
-    gap_switcher.append(&gap_8_btn);
-
-    let gap_12_btn = gtk::Button::with_label("12px");
-    gap_12_btn.add_css_class("kalam-reader-seg-btn");
-    let tx = sender.input_sender().clone();
-    gap_12_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetSpreadGap(12));
-    });
-    gap_switcher.append(&gap_12_btn);
-
-    let gap_16_btn = gtk::Button::with_label("16px");
-    gap_16_btn.add_css_class("kalam-reader-seg-btn");
-    let tx = sender.input_sender().clone();
-    gap_16_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::SetSpreadGap(16));
-    });
-    gap_switcher.append(&gap_16_btn);
-    gap_row.append(&gap_switcher);
-    spread_gap_box.append(&gap_row);
-
-    let gap_hint = gtk::Label::new(Some("0px gives seamless cross-page spreads and illustrations."));
-    gap_hint.add_css_class("kalam-reader-setting-hint");
-    gap_hint.set_wrap(true);
-    gap_hint.set_xalign(0.0);
-    spread_gap_box.append(&gap_hint);
-
-    spread_section.append(&spread_gap_box);
-    wrap.append(&spread_section);
-
-    let divider2 = gtk::Separator::new(gtk::Orientation::Horizontal);
-    divider2.add_css_class("kalam-section-divider");
-    wrap.append(&divider2);
-
-    // ── 3. Zoom & View Sizing Section ─────────────────────────
-    let zoom_section = reader_settings_section("Zoom & View Sizing");
-
-    let fit_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    fit_row.add_css_class("kalam-reader-setting-row");
-    let fit_label = gtk::Label::new(Some("Page Sizing"));
-    fit_label.add_css_class("kalam-reader-setting-name");
-    fit_label.set_hexpand(true);
-    fit_label.set_halign(gtk::Align::Start);
-    fit_row.append(&fit_label);
-
-    let fit_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    fit_box.add_css_class("linked");
-
-    let fit_page_btn = gtk::Button::with_label("Fit Page");
-    fit_page_btn.add_css_class("kalam-reader-seg-btn");
-    let tx = sender.input_sender().clone();
-    fit_page_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::FitToPage);
-    });
-    fit_box.append(&fit_page_btn);
-
-    let fit_width_btn = gtk::Button::with_label("Fit Width");
-    fit_width_btn.add_css_class("kalam-reader-seg-btn");
+    let fit_width_btn = pdf_tile_button(
+        "zoom-fit-best-symbolic",
+        "Width",
+        "Fit the page or spread to the width",
+    );
     let tx = sender.input_sender().clone();
     fit_width_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::FitToWidth);
+        let _ = tx.send(PdfReaderMsg::SetFitMode(PdfFitMode::Width));
     });
-    fit_box.append(&fit_width_btn);
+    fit_row.append(&fit_width_btn);
 
-    fit_row.append(&fit_box);
-    zoom_section.append(&fit_row);
+    let fit_height_btn = pdf_tile_button(
+        "kalam-pdf-page-scroll-symbolic",
+        "Height",
+        "Fit the page to the height",
+    );
+    let tx = sender.input_sender().clone();
+    fit_height_btn.connect_clicked(move |_| {
+        let _ = tx.send(PdfReaderMsg::SetFitMode(PdfFitMode::Height));
+    });
+    fit_row.append(&fit_height_btn);
 
-    let zoom_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    zoom_row.add_css_class("kalam-reader-setting-row");
-    let zoom_name = gtk::Label::new(Some("Magnification"));
-    zoom_name.add_css_class("kalam-reader-setting-name");
-    zoom_name.set_hexpand(true);
-    zoom_name.set_halign(gtk::Align::Start);
-    zoom_row.append(&zoom_name);
+    let fit_screen_btn = pdf_tile_button(
+        "view-fullscreen-symbolic",
+        "Screen",
+        "Fit the whole page or spread on screen",
+    );
+    let tx = sender.input_sender().clone();
+    fit_screen_btn.connect_clicked(move |_| {
+        let _ = tx.send(PdfReaderMsg::SetFitMode(PdfFitMode::Screen));
+    });
+    fit_row.append(&fit_screen_btn);
 
-    let zoom_stepper = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    zoom_stepper.add_css_class("kalam-reader-stepper");
+    let fit_original_btn = pdf_tile_button(
+        "zoom-original-symbolic",
+        "Original",
+        "Show the page at its original size",
+    );
+    let tx = sender.input_sender().clone();
+    fit_original_btn.connect_clicked(move |_| {
+        let _ = tx.send(PdfReaderMsg::SetFitMode(PdfFitMode::Original));
+    });
+    fit_row.append(&fit_original_btn);
+    fit_card.append(&fit_row);
+    wrap.append(&fit_card);
 
-    let minus_btn = gtk::Button::new();
-    minus_btn.add_css_class("kalam-reader-stepper-btn");
-    minus_btn.set_size_request(30, 30);
-    minus_btn.set_child(Some(&crate::icons::symbolic_with_classes(
-        "list-remove-symbolic",
-        14,
+    // ── View: zoom over the fit, and the quarter turns. ──
+    wrap.append(&pdf_reading_heading("View"));
+    let view_card = pdf_reading_card();
+    let (zoom_row, zoom_scale, zoom_value) = pdf_slider_row(
+        "Zoom",
+        PDF_MIN_ZOOM_PERCENT as f64,
+        PDF_MAX_ZOOM_PERCENT as f64,
+        5.0,
+        model.zoom_percent as f64,
+        "%",
+    );
+    {
+        let tx = sender.input_sender().clone();
+        let value = zoom_value.clone();
+        zoom_scale.connect_value_changed(move |scale| {
+            let percent = scale.value().round() as u32;
+            value.set_label(&format!("{percent}%"));
+            let _ = tx.send(PdfReaderMsg::SetZoomPercent(percent));
+        });
+    }
+    view_card.append(&zoom_row);
+    view_card.append(&pdf_reading_separator());
+
+    let rotate_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    rotate_row.add_css_class("kalam-pdf-reading-row");
+    rotate_row.set_size_request(-1, 52);
+    rotate_row.set_margin_start(14);
+    rotate_row.set_margin_end(14);
+    let rotate_label = gtk::Label::new(Some("Rotate"));
+    rotate_label.add_css_class("kalam-pdf-reading-name");
+    rotate_label.set_hexpand(true);
+    rotate_label.set_halign(gtk::Align::Start);
+    rotate_label.set_xalign(0.0);
+    rotate_label.set_valign(gtk::Align::Center);
+    rotate_row.append(&rotate_label);
+
+    let rotate_buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let rotate_left_btn = gtk::Button::new();
+    rotate_left_btn.add_css_class("kalam-pdf-rotate-btn");
+    rotate_left_btn.set_size_request(36, 36);
+    rotate_left_btn.set_child(Some(&crate::icons::symbolic_with_classes(
+        "object-rotate-left-symbolic",
+        16,
         &["kalam-inline-icon"],
     )));
     let tx = sender.input_sender().clone();
-    minus_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::ZoomOut);
+    rotate_left_btn.connect_clicked(move |_| {
+        let _ = tx.send(PdfReaderMsg::RotateView(-90));
     });
-    zoom_stepper.append(&minus_btn);
+    rotate_left_btn.set_tooltip_text(Some("Rotate the view left"));
+    rotate_left_btn
+        .update_property(&[gtk::accessible::Property::Label("Rotate the view left")]);
+    rotate_buttons.append(&rotate_left_btn);
 
-    let zoom_label = gtk::Label::new(Some(&format!(
-        "{}%",
-        (model.zoom_level * 100.0).round() as i32
-    )));
-    zoom_label.add_css_class("kalam-reader-stepper-value");
-    zoom_stepper.append(&zoom_label);
-
-    let plus_btn = gtk::Button::new();
-    plus_btn.add_css_class("kalam-reader-stepper-btn");
-    plus_btn.set_size_request(30, 30);
-    plus_btn.set_child(Some(&crate::icons::symbolic_with_classes(
-        "list-add-symbolic",
-        14,
+    let rotate_right_btn = gtk::Button::new();
+    rotate_right_btn.add_css_class("kalam-pdf-rotate-btn");
+    rotate_right_btn.set_size_request(36, 36);
+    rotate_right_btn.set_child(Some(&crate::icons::symbolic_with_classes(
+        "object-rotate-right-symbolic",
+        16,
         &["kalam-inline-icon"],
     )));
     let tx = sender.input_sender().clone();
-    plus_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::ZoomIn);
+    rotate_right_btn.connect_clicked(move |_| {
+        let _ = tx.send(PdfReaderMsg::RotateView(90));
     });
-    zoom_stepper.append(&plus_btn);
-
-    let reset_btn = gtk::Button::with_label("100%");
-    reset_btn.add_css_class("flat");
-    let tx = sender.input_sender().clone();
-    reset_btn.connect_clicked(move |_| {
-        let _ = tx.send(PdfReaderMsg::ResetZoom);
-    });
-    zoom_stepper.append(&reset_btn);
-
-    zoom_row.append(&zoom_stepper);
-    zoom_section.append(&zoom_row);
-
-    wrap.append(&zoom_section);
-
-    let divider3 = gtk::Separator::new(gtk::Orientation::Horizontal);
-    divider3.add_css_class("kalam-section-divider");
-    wrap.append(&divider3);
-
-    // ── 4. Margins & Enhancements Section ─────────────────────
-    let crop_section = reader_settings_section("Margins & Enhancements");
-
-    let crop_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    crop_row.add_css_class("kalam-reader-setting-row");
-    let crop_label = gtk::Label::new(Some("Smart Crop (Trim Margins)"));
-    crop_label.add_css_class("kalam-reader-setting-name");
-    crop_label.set_hexpand(true);
-    crop_label.set_halign(gtk::Align::Start);
-    crop_row.append(&crop_label);
-
-    let tx = sender.input_sender().clone();
-    let smart_crop_switch = crate::pages::settings::toggle_switch(model.smart_crop, move |on| {
-        let _ = tx.send(PdfReaderMsg::SetSmartCrop(on));
-    });
-    crop_row.append(&smart_crop_switch);
-    crop_section.append(&crop_row);
-
-    let crop_hint = gtk::Label::new(Some(
-        "Auto-detects margins around ink content to maximize reading area while preserving ink safety buffers.",
-    ));
-    crop_hint.add_css_class("kalam-reader-setting-hint");
-    crop_hint.set_wrap(true);
-    crop_hint.set_xalign(0.0);
-    crop_section.append(&crop_hint);
-
-    wrap.append(&crop_section);
-
-    let divider5 = gtk::Separator::new(gtk::Orientation::Horizontal);
-    divider5.add_css_class("kalam-section-divider");
-    wrap.append(&divider5);
-
-    // ── 6. Document Properties Section ────────────────────────
-    let info_section = reader_settings_section("Document Properties");
-
-    let title_prop = prop_row("Title", &model.title);
-    info_section.append(&title_prop);
-
-    let author_prop = prop_row("Author", &model.author);
-    info_section.append(&author_prop);
-
-    let pages_prop = prop_row("Total Pages", &format!("{} pages", model.total_pages));
-    info_section.append(&pages_prop);
-
-    let engine_prop = prop_row("Renderer", "MuPDF v0.8.0 (RGBA)");
-    info_section.append(&engine_prop);
-
-    wrap.append(&info_section);
+    rotate_right_btn.set_tooltip_text(Some("Rotate the view right"));
+    rotate_right_btn
+        .update_property(&[gtk::accessible::Property::Label("Rotate the view right")]);
+    rotate_buttons.append(&rotate_right_btn);
+    rotate_row.append(&rotate_buttons);
+    view_card.append(&rotate_row);
+    wrap.append(&view_card);
 
     let widgets = PdfSettingsWidgets {
-        scroll_page_btn,
-        scroll_vertical_btn,
-        scroll_horizontal_btn,
-        scroll_wrapped_btn,
-        spread_none_btn,
-        spread_odd_btn,
-        spread_even_btn,
-        gap_0_btn,
-        gap_4_btn,
-        gap_8_btn,
-        gap_12_btn,
-        gap_16_btn,
-        spread_gap_box,
-        smart_crop_switch,
-        zoom_label,
+        layout_single_btn,
+        layout_spread_btn,
+        flow_control,
+        scroll_gap_row,
+        scroll_gap_scale,
+        scroll_gap_value,
+        cover_switch,
+        fit_width_btn,
+        fit_height_btn,
+        fit_screen_btn,
+        fit_original_btn,
+        zoom_scale,
+        zoom_value,
+        rotate_left_btn,
+        rotate_right_btn,
     };
 
     (wrap, widgets)
-}
-
-fn prop_row(label: &str, value: &str) -> gtk::Box {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    row.add_css_class("kalam-reader-setting-row");
-    let name_lbl = gtk::Label::new(Some(label));
-    name_lbl.add_css_class("dim-label");
-    name_lbl.set_halign(gtk::Align::Start);
-    name_lbl.set_hexpand(true);
-    row.append(&name_lbl);
-
-    let val_lbl = gtk::Label::new(Some(value));
-    val_lbl.set_halign(gtk::Align::End);
-    val_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    val_lbl.set_max_width_chars(22);
-    row.append(&val_lbl);
-    row
-}
-
-fn reader_settings_section(label: &str) -> gtk::Box {
-    let section = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    section.add_css_class("kalam-reader-section");
-    let heading = gtk::Label::new(Some(label));
-    heading.add_css_class("kalam-reader-section-label");
-    heading.set_halign(gtk::Align::Start);
-    section.append(&heading);
-    section
 }
 
 fn toggle_active(button: &gtk::Button, active: bool) {
@@ -6922,6 +7729,7 @@ mod tests {
             anchor_pt: (0.0, 0.0),
             active_pt: (0.0, 0.0),
             is_block: false,
+            rotation: 0,
         };
         assert!(over_selection_handle(&sel, 300.0, 236.0), "end grip centre");
         assert!(over_selection_handle(&sel, 100.0, 200.0), "start grip centre");
@@ -7036,6 +7844,125 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_reading_axes_fold_onto_the_engine_modes() {
+        assert_eq!(
+            pdf_spread_mode_for_layout(PdfLayout::Single, true),
+            PdfSpreadMode::NoSpreads
+        );
+        assert_eq!(
+            pdf_spread_mode_for_layout(PdfLayout::Spread, true),
+            PdfSpreadMode::OddSpreads
+        );
+        assert_eq!(
+            pdf_spread_mode_for_layout(PdfLayout::Spread, false),
+            PdfSpreadMode::EvenSpreads
+        );
+        assert_eq!(
+            pdf_layout_for_spread_mode(PdfSpreadMode::NoSpreads),
+            PdfLayout::Single
+        );
+        assert_eq!(
+            pdf_layout_for_spread_mode(PdfSpreadMode::EvenSpreads),
+            PdfLayout::Spread
+        );
+        // The pre-redesign flows stay readable on the new axis.
+        assert_eq!(
+            pdf_flow_for_scroll_mode(PdfScrollMode::HorizontalScrolling),
+            PdfFlow::Scroll
+        );
+        assert_eq!(
+            pdf_flow_for_scroll_mode(PdfScrollMode::WrappedScrolling),
+            PdfFlow::Scroll
+        );
+        assert_eq!(
+            pdf_scroll_mode_for_flow(PdfFlow::Scroll),
+            PdfScrollMode::VerticalScrolling
+        );
+    }
+
+    #[test]
+    fn test_fit_modes_and_zoom_percent() {
+        for fit in [
+            PdfFitMode::Width,
+            PdfFitMode::Height,
+            PdfFitMode::Screen,
+            PdfFitMode::Original,
+        ] {
+            assert_eq!(PdfFitMode::from_pref(Some(fit.pref_value())), Some(fit));
+        }
+        assert_eq!(PdfFitMode::from_pref(Some("sideways")), None);
+
+        let zoom = |fit, spreads| pdf_fit_zoom(fit, 1200.0, 900.0, 500.0, 1000.0, spreads, 0);
+        assert_eq!(zoom(PdfFitMode::Width, true), 1.2);
+        assert_eq!(zoom(PdfFitMode::Width, false), 2.4);
+        assert_eq!(zoom(PdfFitMode::Height, true), 0.9);
+        assert_eq!(zoom(PdfFitMode::Screen, true), 0.9);
+        assert_eq!(zoom(PdfFitMode::Original, true), 1.0);
+
+        assert_eq!(pdf_effective_zoom(1.2, 150), 1.8);
+        assert_eq!(pdf_effective_zoom(1.2, 10), 0.3);
+        assert_eq!(pdf_effective_zoom(2.0, 400), 3.5);
+    }
+
+    #[test]
+    fn test_auto_spread_needs_a_wide_enough_window() {
+        assert!(pdf_viewport_fits_spread(1600.0, 1000.0, 420.0, 595.0, 0));
+        assert!(!pdf_viewport_fits_spread(900.0, 1000.0, 420.0, 595.0, 0));
+        assert!(!pdf_viewport_fits_spread(0.0, 1000.0, 420.0, 595.0, 0));
+    }
+
+    #[test]
+    fn test_rotation_geometry_round_trips() {
+        assert_eq!(normalize_pdf_rotation(-90), 270);
+        assert_eq!(normalize_pdf_rotation(450), 90);
+        assert_eq!(normalize_pdf_rotation(45), 0);
+        assert_eq!(display_page_dimensions(420.0, 595.0, 90), (595.0, 420.0));
+        assert_eq!(display_page_dimensions(420.0, 595.0, 180), (420.0, 595.0));
+
+        // A source rectangle and its centre, quarter-turned both ways.
+        let rect = (10.0, 20.0, 30.0, 60.0);
+        let turned = source_rect_to_display(rect, 100.0, 200.0, 400.0, 200.0, 90);
+        assert!((turned.0 - 280.0).abs() < 0.001, "{turned:?}");
+        assert!((turned.1 - 20.0).abs() < 0.001, "{turned:?}");
+        assert!((turned.2 - 80.0).abs() < 0.001, "{turned:?}");
+        assert!((turned.3 - 40.0).abs() < 0.001, "{turned:?}");
+        let back = display_point_to_source(320.0, 40.0, 400.0, 200.0, 100.0, 200.0, 90);
+        assert!((back.0 - 20.0).abs() < 0.001 && (back.1 - 40.0).abs() < 0.001, "{back:?}");
+
+        let back = display_point_to_source(80.0, 160.0, 400.0, 200.0, 100.0, 200.0, 270);
+        assert!((back.0 - 20.0).abs() < 0.001 && (back.1 - 40.0).abs() < 0.001, "{back:?}");
+
+        let flipped = source_rect_to_display(rect, 100.0, 200.0, 200.0, 400.0, 180);
+        assert!((flipped.0 - 140.0).abs() < 0.001, "{flipped:?}");
+        assert!((flipped.1 - 280.0).abs() < 0.001, "{flipped:?}");
+
+        // On a quarter-turned page the bars run horizontally and the
+        // grips hang from opposite ends of them.
+        let sel = PdfActiveSelection {
+            page: 1,
+            slot: PageSlot::Fixed(1),
+            text: "word".to_string(),
+            screen_rects: Vec::new(),
+            bounds: (0.0, 0.0, 10.0, 10.0),
+            start_handle: (100.0, 200.0, 80.0),
+            end_handle: (40.0, 300.0, 80.0),
+            anchor_pt: (0.0, 0.0),
+            active_pt: (0.0, 0.0),
+            is_block: false,
+            rotation: 90,
+        };
+        assert_eq!(
+            selection_handle_at(&sel, 180.0, 200.0),
+            Some(PdfHandleDrag::Start)
+        );
+        assert_eq!(
+            selection_handle_at(&sel, 40.0, 300.0),
+            Some(PdfHandleDrag::End)
+        );
+        assert_eq!(selection_handle_at(&sel, 100.0, 200.0), None);
     }
 
     #[test]

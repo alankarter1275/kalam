@@ -723,6 +723,20 @@ impl PdfDocument {
         scale: f32,
         smart_crop: bool,
     ) -> Result<RenderedPage> {
+        self.render_page_rgba_rotated(page_num, scale, smart_crop, 0)
+    }
+
+    /// Rasterize a page turned by a quarter-turn view rotation
+    /// (clockwise degrees). The rotation lives only in the render
+    /// matrix: the file, its text layer and every stored page
+    /// coordinate keep the page's own orientation.
+    pub fn render_page_rgba_rotated(
+        &self,
+        page_num: usize,
+        scale: f32,
+        smart_crop: bool,
+        rotation_degrees: i32,
+    ) -> Result<RenderedPage> {
         if page_num == 0 || page_num > self.page_count {
             return Err(anyhow!("Page number {} out of range", page_num));
         }
@@ -733,7 +747,11 @@ impl PdfDocument {
             .map_err(|e| anyhow!("Failed to load page {}: {}", page_num, e))?;
 
         let scale_clamped = scale.clamp(0.2, 4.0);
-        let matrix = Matrix::new_scale(scale_clamped, scale_clamped);
+        let mut matrix = Matrix::new_scale(scale_clamped, scale_clamped);
+        let rotation = rotation_degrees.rem_euclid(360);
+        if rotation != 0 {
+            matrix.rotate(rotation as f32);
+        }
         let pixmap = page
             .to_pixmap(&matrix, &Colorspace::device_rgb(), true, true)
             .map_err(|e| anyhow!("Failed to rasterize page {}: {}", page_num, e))?;

@@ -451,8 +451,9 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
     """A real, hand-built PDF for the PDF-reader screenshot route.
 
     MuPDF must be able to count and render the pages, search their
-    vector text and walk a linked outline; a byte stub says nothing
-    about any of that. The writer stays dependency-free: compressed
+    vector text, walk a linked outline and read catalogue page
+    labels; a byte stub says nothing about any of that. The writer
+    stays dependency-free: compressed
     content streams, the standard Helvetica face, page destinations
     and a conventional cross-reference table.
     """
@@ -483,6 +484,13 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
         11: "Atmosphere",
         12: "Index",
     }
+    # The catalogue labels seven roman front-matter pages, then
+    # restarts the text proper at decimal 1 on physical page 8.
+    # The printed furniture follows the same labels, as a real
+    # book's would; stored reading positions stay physical.
+    page_labels = [
+        "i", "ii", "iii", "iv", "v", "vi", "vii", "1", "2", "3", "4", "5"
+    ]
     body_lines = [
         "Water moves through soil, stone and living tissue,",
         "carrying minerals from high ground toward the sea.",
@@ -512,7 +520,9 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
                 f"{36 + stripe * 58} 300 50 180 re f"
             )
         heading = title if page == 1 else section
-        subheading = f"by {author}" if page == 1 else f"Page {page}"
+        subheading = (
+            f"by {author}" if page == 1 else f"Page {page_labels[page - 1]}"
+        )
         parts.append(
             f"BT /F1 18 Tf 0.15 g 36 535 Td ({_pdf_escape(heading)}) Tj ET"
         )
@@ -524,7 +534,9 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
             parts.append(
                 f"BT /F1 10 Tf 0.18 g 36 {y} Td ({_pdf_escape(line)}) Tj ET"
             )
-        parts.append(f"BT /F1 9 Tf 0.42 g 205 28 Td ({page}) Tj ET")
+        parts.append(
+            f"BT /F1 9 Tf 0.42 g 205 28 Td ({page_labels[page - 1]}) Tj ET"
+        )
         stream = zlib.compress("\n".join(parts).encode("ascii"))
         add(
             content_id,
@@ -605,7 +617,8 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
     add(
         catalog_id,
         f"<< /Type /Catalog /Pages {pages_id} 0 R "
-        f"/Outlines {outlines_id} 0 R /PageMode /UseOutlines >>",
+        f"/Outlines {outlines_id} 0 R /PageMode /UseOutlines "
+        f"/PageLabels << /Nums [0 << /S /r >> 7 << /S /D >>] >> >>",
     )
 
     output = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
@@ -637,7 +650,9 @@ def seed_pdf_fixture(
     outlined, searchable document. With `--books 20`, this is book
     21, independent of the comic fixture seeded after it. Page 4
     is both the saved place and a bookmark, and the per-book
-    settings open the board's 4-5 spread at 140%.
+    settings open the board's 4-5 spread at 140%. Those physical
+    pages are labelled iv-v, so every PDF capture also proves the
+    location text's label lead and the Contents labels.
     """
     conn.execute(
         """

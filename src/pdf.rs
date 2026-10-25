@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use mupdf::{Colorspace, Document, Matrix, Outline, Rect, TextBlockContent, TextExtractOptions, TextPageFlags};
 use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 /// Bounding rectangle in PDF points: (x0, y0, x1, y1).
@@ -462,11 +463,52 @@ pub struct RenderedPage {
     pub samples: Vec<u8>,
 }
 
+/// The open MuPDF document, kept in its PDF-specific form when
+/// the file really is a PDF. That form is the one that can answer
+/// for the catalogue's page labels; it still dereferences to the
+/// generic document every other operation here was written
+/// against, so rendering, text and search keep their one path. A
+/// MuPDF-readable file that is not a PDF keeps the generic handle
+/// and simply has no labels to offer.
+enum PdfDocHandle {
+    Pdf(mupdf::pdf::PdfDocument),
+    Generic(Document),
+}
+
+impl Deref for PdfDocHandle {
+    type Target = Document;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Pdf(doc) => doc,
+            Self::Generic(doc) => doc,
+        }
+    }
+}
+
+/// A label fit to show: MuPDF already substitutes the physical
+/// page number where no label range applies, but a range with no
+/// numbering style and an empty prefix formats to an empty
+/// string. That is a label the reader cannot act on, so it falls
+/// back to the physical page here as well.
+fn sanitized_page_label(label: Option<String>, page_num: usize) -> String {
+    label
+        .and_then(|label| {
+            let label = label.trim();
+            if label.is_empty() {
+                None
+            } else {
+                Some(label.to_string())
+            }
+        })
+        .unwrap_or_else(|| page_num.to_string())
+}
+
 /// MuPDF Document handle.
 pub struct PdfDocument {
     #[allow(dead_code)]
     pub path: PathBuf,
-    doc: Document,
+    doc: PdfDocHandle,
     page_count: usize,
 }
 
@@ -486,6 +528,18 @@ impl PdfDocument {
             return Err(anyhow!("PDF document has no pages"));
         }
 
+        let doc = if doc.is_pdf() {
+            PdfDocHandle::Pdf(mupdf::pdf::PdfDocument::try_from(doc).map_err(|e| {
+                anyhow!(
+                    "Failed to open PDF-specific document {:?}: {}",
+                    path_buf,
+                    e
+                )
+            })?)
+        } else {
+            PdfDocHandle::Generic(doc)
+        };
+
         Ok(Self {
             path: path_buf,
             doc,
@@ -496,6 +550,31 @@ impl PdfDocument {
     /// Return total page count.
     pub fn page_count(&self) -> usize {
         self.page_count
+    }
+
+    /// The document's own label for one physical page (1-indexed):
+    /// the front matter's `iv`, a restarted decimal sequence's
+    /// `1`, or the physical page number itself where the document
+    /// defines nothing else. Labels are display names only —
+    /// every stored position in Kalam stays a physical page.
+    pub fn page_label(&self, page_num: usize) -> String {
+        if page_num == 0 || page_num > self.page_count {
+            return page_num.to_string();
+        }
+        let label = match &self.doc {
+            PdfDocHandle::Pdf(doc) => doc.page_label(page_num - 1).ok(),
+            PdfDocHandle::Generic(_) => None,
+        };
+        sanitized_page_label(label, page_num)
+    }
+
+    /// Every page's label, in physical order. Gathered once by
+    /// the reader's background document service so the UI thread
+    /// never has to consult MuPDF while painting.
+    pub fn page_labels(&self) -> Vec<String> {
+        (1..=self.page_count)
+            .map(|page| self.page_label(page))
+            .collect()
     }
 
     /// Return page dimensions (width, height in points) at 72 DPI.
@@ -1207,6 +1286,15 @@ mod tests {
         assert_eq!(reflowed.len(), 2);
         assert!(reflowed[0].contains("across twolines due to PDF formatting."));
         assert_eq!(reflowed[1], "This is a second paragraph. It continues here.");
+    }
+
+    #[test]
+    fn page_labels_trim_and_fall_back_to_the_physical_page() {
+        assert_eq!(sanitized_page_label(Some(" iv ".to_string()), 8), "iv");
+        assert_eq!(sanitized_page_label(Some("A-3".to_string()), 40), "A-3");
+        assert_eq!(sanitized_page_label(Some(String::new()), 8), "8");
+        assert_eq!(sanitized_page_label(Some("  ".to_string()), 8), "8");
+        assert_eq!(sanitized_page_label(None, 8), "8");
     }
 
     #[test]

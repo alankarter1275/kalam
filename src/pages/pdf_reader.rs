@@ -195,6 +195,7 @@ pub struct PdfThumbnailRequest {
 pub struct PdfDocInfo {
     pub total_pages: usize,
     pub toc_entries: Vec<PdfTocEntry>,
+    pub page_labels: Vec<String>,
     pub base_page_width: f64,
     pub base_page_height: f64,
 }
@@ -631,29 +632,76 @@ pub fn calculate_all_spreads(
     }
 }
 
+/// The name one physical page is shown by: its document-defined
+/// label where the catalogue carries one, the physical number
+/// where it does not (or where a label list has not arrived yet).
+/// The engine has already substituted physical numbers for
+/// unlabelled ranges; the trim here keeps a stray blank label
+/// from ever painting as an empty name.
+fn displayed_page_label(page_labels: &[String], page: usize) -> String {
+    if page == 0 {
+        return "0".to_string();
+    }
+    page_labels
+        .get(page - 1)
+        .map(|label| label.trim())
+        .filter(|label| !label.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| page.to_string())
+}
+
 /// The location text for one reading position. Wrapped scrolling
 /// lays pages out one by one even when a spread pairing is chosen,
-/// so it names one page, exactly as the viewport does.
+/// so it names one page, exactly as the viewport does. Where the
+/// document's own labels differ from the physical pages in view,
+/// they lead and the physical position follows (`iv · 8 / 612`,
+/// decisions' "specified, not drawn" list); an ordinary book,
+/// whose labels are its physical numbers, keeps the plain form.
 fn format_location_label(
     spread_mode: PdfSpreadMode,
     scroll_mode: PdfScrollMode,
     total_pages: usize,
     current_page: usize,
+    page_labels: &[String],
 ) -> String {
     if total_pages == 0 {
         return "0 / 0".to_string();
     }
     let current = current_page.clamp(1, total_pages);
-    if spread_mode == PdfSpreadMode::NoSpreads
+    let visible: Vec<usize> = if spread_mode == PdfSpreadMode::NoSpreads
         || scroll_mode == PdfScrollMode::WrappedScrolling
     {
-        return format!("{current} / {total_pages}");
+        vec![current]
+    } else {
+        let (left, right) = calculate_spread_for_page(spread_mode, total_pages, current);
+        match right {
+            Some(right) => vec![left, right],
+            None => vec![left],
+        }
+    };
+    let absolute = match visible.as_slice() {
+        [left, right] => format!("{left}–{right} / {total_pages}"),
+        [page] => format!("{page} / {total_pages}"),
+        _ => format!("0 / {total_pages}"),
+    };
+    let labels: Vec<String> = visible
+        .iter()
+        .map(|page| displayed_page_label(page_labels, *page))
+        .collect();
+    if labels
+        .iter()
+        .zip(&visible)
+        .all(|(label, page)| label == &page.to_string())
+    {
+        return absolute;
     }
-    let (left, right) = calculate_spread_for_page(spread_mode, total_pages, current);
-    match right {
-        Some(right) => format!("{left}–{right} / {total_pages}"),
-        None => format!("{left} / {total_pages}"),
-    }
+    // A prefix-only range repeats one label on every page; a
+    // spread inside it names that label once, not twice.
+    let label_text = match labels.as_slice() {
+        [first, second] if first == second => first.clone(),
+        _ => labels.join("–"),
+    };
+    format!("{label_text} · {absolute}")
 }
 
 /// The pages the Pages grid rings as current for one reading
@@ -1405,6 +1453,7 @@ pub struct PdfReaderModel {
     pub toc_filter: String,
     pub collapsed_toc_entries: HashSet<usize>,
     pub toc_entries: Vec<PdfTocEntry>,
+    pub page_labels: Vec<String>,
     pub bookmarks: Vec<ReadingBookmark>,
     pub annotations: Vec<Annotation>,
     pub saved_words: Vec<SavedWord>,
@@ -1769,6 +1818,7 @@ impl PdfReaderModel {
             toc_filter: String::new(),
             collapsed_toc_entries: HashSet::new(),
             toc_entries: Vec::new(),
+            page_labels: Vec::new(),
             bookmarks: Vec::new(),
             annotations: Vec::new(),
             saved_words: Vec::new(),
@@ -1986,13 +2036,16 @@ impl PdfReaderModel {
     }
 
     /// The plain bottom-right location (decision 52): both pages of
-    /// a spread, or the one page in front of the reader.
+    /// a spread, or the one page in front of the reader, led by the
+    /// document's own page labels where they differ from the
+    /// physical pages (`iv · 8 / 612`).
     pub fn location_label(&self) -> String {
         format_location_label(
             self.spread_mode,
             self.scroll_mode,
             self.total_pages,
             self.current_page,
+            &self.page_labels,
         )
     }
 
@@ -5487,6 +5540,7 @@ impl Component for PdfReaderModel {
                             let info = PdfDocInfo {
                                 total_pages,
                                 toc_entries: doc.outlines().unwrap_or_default(),
+                                page_labels: doc.page_labels(),
                                 base_page_width: w,
                                 base_page_height: h,
                             };
@@ -6868,6 +6922,7 @@ impl Component for PdfReaderModel {
                     Ok(info) => {
                         self.total_pages = info.total_pages;
                         self.toc_entries = info.toc_entries;
+                        self.page_labels = info.page_labels;
                         self.source_page_width = info.base_page_width;
                         self.source_page_height = info.base_page_height;
                         self.sync_display_page_dimensions();
@@ -7772,6 +7827,7 @@ impl PdfReaderModel {
                     let (rows, current_visible) = populate_toc_list(
                         list,
                         &self.toc_entries,
+                        &self.page_labels,
                         &self.collapsed_toc_entries,
                         &self.toc_filter,
                         self.current_page,
@@ -8567,6 +8623,7 @@ fn build_pdf_pages_pane(
 fn populate_toc_list(
     list_box: &gtk::Box,
     entries: &[PdfTocEntry],
+    page_labels: &[String],
     collapsed: &HashSet<usize>,
     filter: &str,
     current_page: usize,
@@ -8723,10 +8780,15 @@ fn populate_toc_list(
         title_lbl.set_width_chars(1);
         nav_content.append(&title_lbl);
 
-        let page_lbl = gtk::Label::new(Some(&page_target.to_string()));
+        // The right-hand name is the document's page label
+        // (decision 58), not the physical page the row jumps to.
+        let page_lbl =
+            gtk::Label::new(Some(&displayed_page_label(page_labels, page_target)));
         page_lbl.add_css_class("kalam-pdf-contents-page");
         page_lbl.set_halign(gtk::Align::End);
         page_lbl.set_valign(gtk::Align::Center);
+        page_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        page_lbl.set_max_width_chars(16);
         nav_content.append(&page_lbl);
 
         let nav_button = gtk::Button::new();
@@ -9616,7 +9678,8 @@ mod tests {
                 PdfSpreadMode::NoSpreads,
                 PdfScrollMode::VerticalScrolling,
                 12,
-                4
+                4,
+                &[]
             ),
             "4 / 12"
         );
@@ -9626,7 +9689,8 @@ mod tests {
                 PdfSpreadMode::OddSpreads,
                 PdfScrollMode::PageScrolling,
                 12,
-                4
+                4,
+                &[]
             ),
             "4–5 / 12"
         );
@@ -9635,7 +9699,8 @@ mod tests {
                 PdfSpreadMode::OddSpreads,
                 PdfScrollMode::PageScrolling,
                 12,
-                1
+                1,
+                &[]
             ),
             "1 / 12"
         );
@@ -9645,10 +9710,74 @@ mod tests {
                 PdfSpreadMode::OddSpreads,
                 PdfScrollMode::WrappedScrolling,
                 12,
-                4
+                4,
+                &[]
             ),
             "4 / 12"
         );
+    }
+
+    #[test]
+    fn test_location_label_leads_with_the_documents_page_labels() {
+        // Seven roman front-matter pages, then the text proper
+        // restarts at 1 — the catalogue shape behind the design's
+        // `iv · 8 / 612` example.
+        let labels: Vec<String> = [
+            "i", "ii", "iii", "iv", "v", "vi", "vii", "1", "2", "3", "4", "5",
+        ]
+        .iter()
+        .map(|label| label.to_string())
+        .collect();
+        assert_eq!(
+            format_location_label(
+                PdfSpreadMode::NoSpreads,
+                PdfScrollMode::VerticalScrolling,
+                12,
+                4,
+                &labels
+            ),
+            "iv · 4 / 12"
+        );
+        // Both pages of a spread carry their labels.
+        assert_eq!(
+            format_location_label(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::PageScrolling,
+                12,
+                4,
+                &labels
+            ),
+            "iv–v · 4–5 / 12"
+        );
+        // A restarted decimal sequence differs from the physical
+        // page even though both are numerals.
+        assert_eq!(
+            format_location_label(
+                PdfSpreadMode::NoSpreads,
+                PdfScrollMode::VerticalScrolling,
+                12,
+                8,
+                &labels
+            ),
+            "1 · 8 / 12"
+        );
+        // Labels that are the physical numbers keep the plain form.
+        let physical: Vec<String> = (1..=12).map(|page| page.to_string()).collect();
+        assert_eq!(
+            format_location_label(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::PageScrolling,
+                12,
+                4,
+                &physical
+            ),
+            "4–5 / 12"
+        );
+        // A short or blank label list falls back page by page.
+        assert_eq!(displayed_page_label(&labels, 3), "iii");
+        assert_eq!(displayed_page_label(&labels, 99), "99");
+        assert_eq!(displayed_page_label(&[" ".to_string()], 1), "1");
+        assert_eq!(displayed_page_label(&[], 0), "0");
     }
 
     #[test]

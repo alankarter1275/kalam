@@ -441,6 +441,17 @@ pub struct PdfSearchResult {
     pub rects: Vec<PdfTextRect>,
 }
 
+/// One whole-book search: the matches, and whether the book
+/// carries searchable text at all. An empty result list alone
+/// cannot tell "no matches" from a scanned book with no text
+/// layer, and the reader owes those two states different words
+/// (decision 61).
+#[derive(Clone, Debug, Default)]
+pub struct PdfSearchOutcome {
+    pub results: Vec<PdfSearchResult>,
+    pub has_searchable_text: bool,
+}
+
 /// Raw RGBA rasterized page buffer.
 #[derive(Clone, Debug)]
 pub struct RenderedPage {
@@ -629,20 +640,36 @@ impl PdfDocument {
         Ok(rects)
     }
 
+    /// Whether any page yields searchable words. A scanned
+    /// book can render beautifully and still give back nothing
+    /// but whitespace here; that is the state the reader calls
+    /// *no searchable text*, distinct from a failed match.
+    fn document_has_searchable_text(&self) -> bool {
+        (1..=self.page_count).any(|page_num| {
+            self.extract_raw_text(page_num)
+                .map(|text| text.chars().any(|ch| ch.is_alphanumeric()))
+                .unwrap_or(false)
+        })
+    }
+
     /// Search for text across every page in the PDF document.
     pub fn search_document(
         &self,
         needle: &str,
         toc: &[PdfTocEntry],
         max_matches: usize,
-    ) -> Vec<PdfSearchResult> {
+    ) -> PdfSearchOutcome {
         let needle_trimmed = needle.trim();
         if needle_trimmed.chars().count() < 2 {
-            return Vec::new();
+            return PdfSearchOutcome {
+                results: Vec::new(),
+                has_searchable_text: self.document_has_searchable_text(),
+            };
         }
         let needle_lower = needle_trimmed.to_lowercase();
         let needle_len = needle_trimmed.chars().count();
         let mut results = Vec::new();
+        let mut has_searchable_text = false;
 
         for page_num in 1..=self.page_count {
             if results.len() >= max_matches {
@@ -655,6 +682,7 @@ impl PdfDocument {
             if rects.is_empty() {
                 continue;
             }
+            has_searchable_text = true;
 
             // Find section / chapter title from TOC
             let section_title = toc
@@ -663,6 +691,9 @@ impl PdfDocument {
                 .map(|e| e.title.clone());
 
             let raw_text = self.extract_raw_text(page_num).unwrap_or_default();
+            if raw_text.chars().any(|ch| ch.is_alphanumeric()) {
+                has_searchable_text = true;
+            }
             let raw_lower = raw_text.to_lowercase();
             let chars: Vec<char> = raw_text.chars().collect();
 
@@ -685,9 +716,36 @@ impl PdfDocument {
                 });
             } else {
                 for (i, &char_idx) in match_indices.iter().enumerate() {
-                    let start_char = char_idx.saturating_sub(30);
-                    let end_char = (char_idx + needle_len + 40).min(chars.len());
-                    let snippet: String = chars[start_char..end_char].iter().collect();
+                    // A readable breath of context on both
+                    // sides, trimmed back to whole words where
+                    // the page allows, with the board's
+                    // ellipses where the text runs on.
+                    let mut start_char = char_idx.saturating_sub(34);
+                    if start_char > 0 {
+                        if let Some(space) = (start_char..char_idx)
+                            .find(|&idx| chars[idx].is_whitespace())
+                        {
+                            start_char = space + 1;
+                        }
+                    }
+                    let match_end = char_idx + needle_len;
+                    let mut end_char = (match_end + 44).min(chars.len());
+                    if end_char < chars.len() {
+                        if let Some(space) = (match_end..end_char)
+                            .rev()
+                            .find(|&idx| chars[idx].is_whitespace())
+                        {
+                            end_char = space;
+                        }
+                    }
+                    let mut snippet: String =
+                        chars[start_char..end_char].iter().collect();
+                    if start_char > 0 {
+                        snippet = format!("…{snippet}");
+                    }
+                    if end_char < chars.len() {
+                        snippet.push('…');
+                    }
 
                     let r = if i < rects.len() {
                         vec![rects[i]]
@@ -706,7 +764,13 @@ impl PdfDocument {
             }
         }
 
-        results
+        if !has_searchable_text {
+            has_searchable_text = self.document_has_searchable_text();
+        }
+        PdfSearchOutcome {
+            results,
+            has_searchable_text,
+        }
     }
 
     /// Whether this page carries visual content.

@@ -647,6 +647,30 @@ jobs:
             THEME=terracotta-light \
             docs/ci/screenshot.sh
 
+      - name: open the PDF search results (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-search-results-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=search-results \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF search results (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-search-results-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=search-results \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open PDF search with no matches (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-search-no-matches-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=search-no-matches \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       - name: open the PDF shortcuts panel (dark) and report
         if: matrix.group == 'pdf'
         run: |
@@ -1188,6 +1212,8 @@ jobs:
           for shot in pdf-chrome-light pdf-chrome-dark \
                       pdf-contents-dark pdf-contents-pinned-dark \
                       pdf-pages-dark pdf-pages-pinned-light \
+                      pdf-search-results-dark pdf-search-results-light \
+                      pdf-search-no-matches-dark \
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark; do
@@ -1310,6 +1336,8 @@ jobs:
           for shot in pdf-chrome-light pdf-chrome-dark \
                       pdf-contents-dark pdf-contents-pinned-dark \
                       pdf-pages-dark pdf-pages-pinned-light \
+                      pdf-search-results-dark pdf-search-results-light \
+                      pdf-search-no-matches-dark \
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark; do

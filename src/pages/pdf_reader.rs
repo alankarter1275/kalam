@@ -26,10 +26,11 @@ use std::time::Duration;
 
 use crate::db::{Catalog, ReadingBookmark};
 use crate::epub_book::ReadingTheme;
-use crate::pdf::{PdfDocument, PdfPageText, PdfSearchResult, PdfTocEntry};
+use crate::pdf::{PdfDocument, PdfPageText, PdfSearchOutcome, PdfSearchResult, PdfTocEntry};
 
 mod image;
 mod pages_grid;
+mod search_results;
 
 pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
 
@@ -41,7 +42,54 @@ pub enum PageSlot {
     PagedSpreadRight,
 }
 
-pub type PdfSearchHighlight = (PageSlot, usize, Vec<(f64, f64, f64, f64)>);
+/// One search match painted over a materialised page. Every
+/// scoped match on a visible page takes the quiet tint; the
+/// current one takes the accent besides (decision 61).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PdfSearchHighlight {
+    pub slot: PageSlot,
+    pub page: usize,
+    /// Source-space MuPDF rects. The draw callback maps them
+    /// against the area's live allocation, so a zoom or a panel
+    /// pin cannot leave last size's coordinates behind.
+    pub rects: Vec<(f32, f32, f32, f32)>,
+    pub source_width: f32,
+    pub source_height: f32,
+    pub rotation: i32,
+    pub match_rgb: [f32; 3],
+    pub match_alpha: f32,
+    pub current_rgb: [f32; 3],
+    pub current: bool,
+}
+
+/// How widely search reaches (decision 61): the chapter the
+/// reader is standing in, or the whole book. A fresh search
+/// always opens on the chapter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PdfSearchScope {
+    Chapter,
+    Book,
+}
+
+impl PdfSearchScope {
+    pub fn toggle_index(self) -> usize {
+        match self {
+            Self::Chapter => 0,
+            Self::Book => 1,
+        }
+    }
+
+    pub fn from_toggle_index(index: usize) -> Self {
+        if index == 1 { Self::Book } else { Self::Chapter }
+    }
+
+    pub fn placeholder(self) -> &'static str {
+        match self {
+            Self::Chapter => "Search this chapter…",
+            Self::Book => "Search this book…",
+        }
+    }
+}
 
 /// Which end of an existing selection a drag is taking hold of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -812,6 +860,138 @@ fn pages_heading_for_page(
     }
 }
 
+/// The raw whole-book matches one search scope can see. Chapter
+/// is the top-level outline span the standing anchor page is in;
+/// a book with no outline has one chapter by construction, and
+/// so does its front matter before the first outline entry.
+fn pdf_search_scoped_indices(
+    results: &[PdfSearchResult],
+    entries: &[PdfTocEntry],
+    total_pages: usize,
+    scope: PdfSearchScope,
+    chapter_anchor_page: usize,
+    fallback_title: &str,
+) -> Vec<usize> {
+    match scope {
+        PdfSearchScope::Book => (0..results.len()).collect(),
+        PdfSearchScope::Chapter => {
+            let span = pages_heading_for_page(
+                entries,
+                total_pages,
+                chapter_anchor_page,
+                fallback_title,
+            );
+            results
+                .iter()
+                .enumerate()
+                .filter(|(_, result)| span.contains(result.page))
+                .map(|(index, _)| index)
+                .collect()
+        }
+    }
+}
+
+/// The result a new search lands on: the first scoped match on
+/// or after the page the reader was standing on when they asked,
+/// wrapping to the scope's first match when the rest are behind.
+fn pdf_search_start_position(
+    results: &[PdfSearchResult],
+    scoped_indices: &[usize],
+    anchor_page: usize,
+) -> usize {
+    scoped_indices
+        .iter()
+        .position(|raw| {
+            results
+                .get(*raw)
+                .is_some_and(|result| result.page >= anchor_page)
+        })
+        .unwrap_or(0)
+}
+
+/// One result's place in the book: its top-level chapter, and
+/// the deepest section it sits in when that is a different name.
+/// The results list prints this letter-spaced and uppercase
+/// from CSS (`THE EARTH · VOLCANOES`); one sentence-cased
+/// chord here beats the flat nearest title the old popover had.
+fn pdf_search_section_path(
+    entries: &[PdfTocEntry],
+    total_pages: usize,
+    page: usize,
+    fallback_title: &str,
+) -> String {
+    let Some(current) = current_toc_index(entries, page, total_pages) else {
+        return pages_heading_for_page(entries, total_pages, page, fallback_title).title;
+    };
+    let parents = toc_parent_indices(entries);
+    let mut chain = Vec::new();
+    let mut cursor = Some(current);
+    while let Some(index) = cursor {
+        chain.push(entries[index].title.trim().to_string());
+        cursor = parents.get(index).copied().flatten();
+    }
+    chain.reverse();
+    chain.retain(|title| !title.is_empty());
+    match chain.len() {
+        0 => pages_heading_for_page(entries, total_pages, page, fallback_title).title,
+        1 => chain.remove(0),
+        _ => {
+            let root = chain.first().expect("two or more chain entries").clone();
+            let deepest = chain.last().expect("two or more chain entries").clone();
+            if root.eq_ignore_ascii_case(&deepest) {
+                root
+            } else {
+                format!("{root} · {deepest}")
+            }
+        }
+    }
+}
+
+/// The lazy results model's entries for one scoped search:
+/// a chapter heading each time the running section path
+/// changes, then its results in reading order.
+fn pdf_search_result_entries(
+    results: &[PdfSearchResult],
+    scoped_indices: &[usize],
+    entries: &[PdfTocEntry],
+    total_pages: usize,
+    fallback_title: &str,
+) -> Vec<search_results::PdfSearchResultsEntry> {
+    let mut grouped = Vec::new();
+    let mut standing_path: Option<String> = None;
+    for raw_index in scoped_indices {
+        let Some(result) = results.get(*raw_index) else {
+            continue;
+        };
+        let path = pdf_search_section_path(entries, total_pages, result.page, fallback_title);
+        if standing_path.as_deref() != Some(path.as_str()) {
+            grouped.push(search_results::PdfSearchResultsEntry::Heading(
+                path.clone(),
+            ));
+            standing_path = Some(path);
+        }
+        grouped.push(search_results::PdfSearchResultsEntry::Result {
+            raw_index: *raw_index,
+            page: result.page,
+            snippet: result.snippet.clone(),
+        });
+    }
+    grouped
+}
+
+fn pdf_search_result_page_count(
+    results: &[PdfSearchResult],
+    scoped_indices: &[usize],
+) -> usize {
+    let mut pages = scoped_indices
+        .iter()
+        .filter_map(|raw| results.get(*raw).map(|result| result.page))
+        .collect::<Vec<_>>();
+    pages.sort_unstable();
+    pages.dedup();
+    pages.len()
+}
+
 /// The rows Contents shows for one filter/collapse state. A filter
 /// keeps its matches, their ancestors and their descendants, and
 /// overrides folding while it stands — a match folded inside its
@@ -958,6 +1138,11 @@ pub struct PdfPagesWidgets {
     pub columns_2_button: gtk::Button,
 }
 
+pub struct PdfSearchResultsWidgets {
+    pub meta_label: gtk::Label,
+    pub list: search_results::PdfSearchResultsList,
+}
+
 #[derive(Debug)]
 pub enum PdfReaderMsg {
     NextPage,
@@ -1021,8 +1206,11 @@ pub enum PdfReaderMsg {
     MinimizeToBubble,
     ToggleSearch,
     UpdateSearchQuery(String),
+    SetSearchScope(PdfSearchScope),
     NextSearchResult,
     PrevSearchResult,
+    OpenSearchResults,
+    CloseSearchResults,
     JumpToSearchResult(usize),
     CloseSearch,
     PageRendered {
@@ -1077,7 +1265,7 @@ pub enum PdfReaderMsg {
     /// The doc service finished a full-document search.
     SearchReady {
         query: String,
-        results: Vec<PdfSearchResult>,
+        outcome: PdfSearchOutcome,
     },
     CopySelection,
     SaveAnnotation {
@@ -1255,11 +1443,27 @@ pub struct PdfReaderModel {
     pub search_active: bool,
     pub search_query: String,
     pub search_results: Vec<PdfSearchResult>,
+    /// The current match's position inside the scoped results,
+    /// not its raw whole-book index (EPUB T4's rule).
     pub search_index: usize,
-    pub search_popover: Option<gtk::Popover>,
-    pub search_list_box: Option<gtk::ListBox>,
-    pub search_popover_badge: Option<gtk::Label>,
-    pub search_highlight: std::rc::Rc<std::cell::RefCell<Option<PdfSearchHighlight>>>,
+    pub search_scope: PdfSearchScope,
+    /// The page Chapter scope means: where the reader stood when
+    /// this search opened, when its query last changed, or when
+    /// they last chose Chapter. Result jumps must not quietly
+    /// move the chapter out from under the count.
+    pub search_chapter_anchor_page: usize,
+    /// The page a fresh result set starts from, captured with
+    /// the query rather than read after its first jump.
+    pub search_query_anchor_page: usize,
+    pub search_pending: bool,
+    pub search_no_text: bool,
+    /// The results list has taken the left panel over (decision
+    /// 61); the tab it displaced is remembered for its close.
+    pub search_results_open: bool,
+    pub search_results_return_tab: PdfLeftTab,
+    pub search_scope_control: Option<crate::widgets::segmented::SegmentedControl>,
+    pub search_results_widgets: Option<PdfSearchResultsWidgets>,
+    pub search_highlights: std::rc::Rc<std::cell::RefCell<Vec<PdfSearchHighlight>>>,
 }
 
 impl PdfReaderModel {
@@ -1567,10 +1771,16 @@ impl PdfReaderModel {
             search_query: String::new(),
             search_results: Vec::new(),
             search_index: 0,
-            search_popover: None,
-            search_list_box: None,
-            search_popover_badge: None,
-            search_highlight: std::rc::Rc::new(std::cell::RefCell::new(None)),
+            search_scope: PdfSearchScope::Chapter,
+            search_chapter_anchor_page: saved_page,
+            search_query_anchor_page: saved_page,
+            search_pending: false,
+            search_no_text: false,
+            search_results_open: false,
+            search_results_return_tab: PdfLeftTab::Contents,
+            search_scope_control: None,
+            search_results_widgets: None,
+            search_highlights: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
         };
 
         model.reload_bookmarks();
@@ -1732,6 +1942,71 @@ impl PdfReaderModel {
             &self.toc_entries,
             self.total_pages,
         )
+    }
+
+    pub fn search_scoped_indices(&self) -> Vec<usize> {
+        pdf_search_scoped_indices(
+            &self.search_results,
+            &self.toc_entries,
+            self.total_pages,
+            self.search_scope,
+            self.search_chapter_anchor_page,
+            &self.title,
+        )
+    }
+
+    pub fn current_search_result_index(&self) -> Option<usize> {
+        self.search_scoped_indices()
+            .get(self.search_index)
+            .copied()
+    }
+
+    pub fn search_has_matches(&self) -> bool {
+        !self.search_scoped_indices().is_empty()
+    }
+
+    pub fn search_controls_visible(&self) -> bool {
+        self.search_active
+            && !self.search_pending
+            && !self.search_no_text
+            && self.search_has_matches()
+    }
+
+    pub fn search_has_no_matches(&self) -> bool {
+        self.search_active
+            && self.search_query.trim().chars().count() >= 2
+            && !self.search_pending
+            && !self.search_no_text
+            && !self.search_has_matches()
+    }
+
+    pub fn search_status_is_accent(&self) -> bool {
+        self.search_no_text || self.search_has_no_matches()
+    }
+
+    /// The one line the pill can say besides a count. *No
+    /// matches* and *no searchable text* are the board's exact
+    /// words; an untouched or still-running search stays quiet.
+    pub fn search_count_text(&self) -> String {
+        if !self.search_active
+            || self.search_query.trim().chars().count() < 2
+            || self.search_pending
+        {
+            return String::new();
+        }
+        if self.search_no_text {
+            return "This book has no searchable text".to_string();
+        }
+        let scoped = self.search_scoped_indices();
+        if scoped.is_empty() {
+            "No matches".to_string()
+        } else {
+            format!(
+                "{} of {}",
+                self.search_index.min(scoped.len() - 1) + 1,
+                scoped.len()
+            )
+        }
     }
 
     /// Move the Contents current mark after a page turn. The row
@@ -2772,25 +3047,58 @@ impl PdfReaderModel {
         draw_area.set_can_target(false);
 
         let active_sel_ref = self.active_selection.clone();
-        let search_hl_ref = self.search_highlight.clone();
+        let search_hl_ref = self.search_highlights.clone();
         let slot_copy = slot;
         let sel_handle_color = self.handle_color();
-        draw_area.set_draw_func(move |_, cr, _w, _h| {
-            // 1. Draw search match highlight (soft golden glow)
-            if let Some((sel_slot, _page, ref s_rects)) = *search_hl_ref.borrow() {
-                if sel_slot == slot_copy && !s_rects.is_empty() {
-                    // Soft golden fill: rgba(244, 211, 94, 0.45)
-                    cr.set_source_rgba(244.0 / 255.0, 211.0 / 255.0, 94.0 / 255.0, 0.45);
-                    for &(rx, ry, rw, rh) in s_rects {
+        draw_area.set_draw_func(move |_, cr, width, height| {
+            // 1. Search matches (decision 61, design-system §9):
+            // every scoped match on this page in the quiet tint,
+            // the current one in the accent with its outline.
+            // Rects are stored in source space and mapped here,
+            // against the allocation being painted.
+            for highlight in search_hl_ref.borrow().iter() {
+                if highlight.slot != slot_copy || highlight.rects.is_empty() {
+                    continue;
+                }
+                let screen_rects: Vec<(f64, f64, f64, f64)> = highlight
+                    .rects
+                    .iter()
+                    .map(|rect| {
+                        let (rx, ry, rw, rh) = source_rect_to_display(
+                            *rect,
+                            highlight.source_width,
+                            highlight.source_height,
+                            width as f64,
+                            height as f64,
+                            highlight.rotation,
+                        );
+                        (rx, ry, rw.max(4.0), rh.max(4.0))
+                    })
+                    .collect();
+                if highlight.current {
+                    let [r, g, b] = highlight.current_rgb;
+                    cr.set_source_rgba(r as f64, g as f64, b as f64, 0.38);
+                    for &(rx, ry, rw, rh) in &screen_rects {
                         cr.rectangle(rx, ry, rw, rh);
                         let _ = cr.fill();
                     }
-                    // Golden border outline: rgba(217, 119, 6, 0.85)
-                    cr.set_source_rgba(217.0 / 255.0, 119.0 / 255.0, 6.0 / 255.0, 0.85);
+                    cr.set_source_rgba(r as f64, g as f64, b as f64, 0.9);
                     cr.set_line_width(1.5);
-                    for &(rx, ry, rw, rh) in s_rects {
+                    for &(rx, ry, rw, rh) in &screen_rects {
                         cr.rectangle(rx, ry, rw, rh);
                         let _ = cr.stroke();
+                    }
+                } else {
+                    let [r, g, b] = highlight.match_rgb;
+                    cr.set_source_rgba(
+                        r as f64,
+                        g as f64,
+                        b as f64,
+                        highlight.match_alpha as f64,
+                    );
+                    for &(rx, ry, rw, rh) in &screen_rects {
+                        cr.rectangle(rx, ry, rw, rh);
+                        let _ = cr.fill();
                     }
                 }
             }
@@ -3914,12 +4222,18 @@ impl Component for PdfReaderModel {
                     add_css_class: "kalam-reader-sidebar-left",
                     add_css_class: "kalam-pdf-panel",
 
+                    #[name = "left_tabs_row"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 8,
                         set_margin_start: 20,
                         set_margin_end: 20,
                         set_margin_top: 16,
+                        // Search results take the panel over whole:
+                        // tabs and pin both wait behind its header
+                        // until it closes back to them (decision 61).
+                        #[watch]
+                        set_visible: !model.search_results_open,
 
                         #[name = "left_tabs_host"]
                         gtk::Box {
@@ -4012,27 +4326,39 @@ impl Component for PdfReaderModel {
                 },
             },
 
-            // ── Floating Top-Right Search Bar ──────────────────────────
+            // ── Search (decision 61): the 640×52 pill centred over
+            // the visible page area. Pinned panels move that
+            // centre; `sync_panel_layout` mirrors their insets
+            // onto this revealer.
+            #[name = "search_revealer"]
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-search-shell",
                 #[watch]
                 set_reveal_child: model.search_active,
                 set_transition_type: gtk::RevealerTransitionType::SlideDown,
-                set_halign: gtk::Align::End,
+                set_transition_duration: 220,
+                set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::Start,
-                set_margin_top: 14,
-                set_margin_end: 24,
+                set_margin_top: 16,
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
                     add_css_class: "kalam-reader-search-bar",
+                    add_css_class: "epub-search",
+                    add_css_class: "pdf-search",
                     set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 6,
+                    set_spacing: 4,
+                    set_size_request: (640, 52),
+                    set_valign: gtk::Align::Center,
 
                     #[name = "search_entry"]
                     gtk::SearchEntry {
-                        set_placeholder_text: Some("Search in document..."),
-                        set_width_request: 220,
+                        add_css_class: "k-reader-search-entry",
+                        #[watch]
+                        set_placeholder_text: Some(model.search_scope.placeholder()),
+                        set_width_request: 170,
+                        set_hexpand: true,
+                        set_valign: gtk::Align::Center,
                         connect_search_changed[sender] => move |entry| {
                             sender.input(PdfReaderMsg::UpdateSearchQuery(entry.text().to_string()));
                         },
@@ -4041,52 +4367,83 @@ impl Component for PdfReaderModel {
                         },
                     },
 
-                    #[name = "search_count_btn"]
-                    gtk::MenuButton {
-                        add_css_class: "kalam-reader-search-count-btn",
-                        set_tooltip_text: Some("Matches at a glance"),
-                        #[wrap(Some)]
-                        set_child = &gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_spacing: 4,
-
-                            #[name = "search_count_label"]
-                            gtk::Label {
-                                add_css_class: "kalam-reader-search-count",
-                                #[watch]
-                                set_label: &if model.search_query.is_empty() {
-                                    String::new()
-                                } else if model.search_results.is_empty() {
-                                    "0 matches".to_string()
-                                } else {
-                                    format!("{} of {}", model.search_index + 1, model.search_results.len())
-                                },
-                            },
-
-                            gtk::Label {
-                                add_css_class: "kalam-reader-search-chevron",
-                                set_label: "▾",
-                            },
+                    #[name = "search_count_label"]
+                    gtk::Label {
+                        add_css_class: "kalam-reader-search-count",
+                        #[watch]
+                        set_css_classes: if model.search_status_is_accent() {
+                            &["kalam-reader-search-count", "no-matches"]
+                        } else {
+                            &["kalam-reader-search-count"]
                         },
+                        set_valign: gtk::Align::Center,
+                        set_width_chars: 1,
+                        set_ellipsize: gtk::pango::EllipsizeMode::End,
+                        #[watch]
+                        set_label: &model.search_count_text(),
                     },
 
+                    #[name = "search_prev_btn"]
                     gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("go-up-symbolic", 14, &["kalam-inline-icon"])),
+                        set_child: Some(&crate::icons::symbolic_with_classes("pan-up-symbolic", 16, &["kalam-inline-icon"])),
                         add_css_class: "kalam-reader-search-btn",
+                        #[watch]
+                        set_visible: model.search_controls_visible(),
+                        set_valign: gtk::Align::Center,
                         set_tooltip_text: Some("Previous match (Shift+Enter)"),
                         connect_clicked => PdfReaderMsg::PrevSearchResult,
                     },
 
+                    #[name = "search_next_btn"]
                     gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes("go-down-symbolic", 14, &["kalam-inline-icon"])),
+                        set_child: Some(&crate::icons::symbolic_with_classes("pan-down-symbolic", 16, &["kalam-inline-icon"])),
                         add_css_class: "kalam-reader-search-btn",
+                        #[watch]
+                        set_visible: model.search_controls_visible(),
+                        set_valign: gtk::Align::Center,
                         set_tooltip_text: Some("Next match (Enter)"),
                         connect_clicked => PdfReaderMsg::NextSearchResult,
                     },
 
+                    #[name = "search_results_btn"]
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("view-list-symbolic", 16, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-search-btn",
+                        #[watch]
+                        set_css_classes: if model.search_results_open {
+                            &["kalam-reader-search-btn", "search-results-open"]
+                        } else {
+                            &["kalam-reader-search-btn"]
+                        },
+                        #[watch]
+                        set_visible: model.search_controls_visible(),
+                        set_valign: gtk::Align::Center,
+                        set_tooltip_text: Some("Show all results"),
+                        connect_clicked => PdfReaderMsg::OpenSearchResults,
+                    },
+
+                    gtk::Separator {
+                        add_css_class: "k-reader-search-divider",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_valign: gtk::Align::Center,
+                        set_height_request: 24,
+                    },
+
+                    #[name = "search_scope_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_valign: gtk::Align::Center,
+                        #[watch]
+                        set_sensitive: !model.search_no_text,
+                        #[watch]
+                        set_opacity: if model.search_no_text { 0.45 } else { 1.0 },
+                    },
+
+                    #[name = "search_close_btn"]
                     gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes("window-close-symbolic", 14, &["kalam-inline-icon"])),
                         add_css_class: "kalam-reader-search-btn",
+                        set_valign: gtk::Align::Center,
                         set_tooltip_text: Some("Close (Esc)"),
                         connect_clicked => PdfReaderMsg::CloseSearch,
                     },
@@ -4190,9 +4547,13 @@ impl Component for PdfReaderModel {
         bookmarks_list_box.set_vexpand(true);
         bookmarks_scroll.set_child(Some(&bookmarks_list_box));
 
+        let (search_results_pane, search_results_widgets) =
+            build_pdf_search_results_pane(&sender);
+
         left_stack.add_named(&contents_pane, Some("contents"));
         left_stack.add_named(&pages_pane, Some("pages"));
         left_stack.add_named(&bookmarks_scroll, Some("bookmarks"));
+        left_stack.add_named(&search_results_pane, Some("search-results"));
         widgets.left_panel_host.append(&left_stack);
 
         // 2. The right panel stack: the Reading pane (the standing
@@ -4250,6 +4611,7 @@ impl Component for PdfReaderModel {
         model.bookmarks_list_box = Some(bookmarks_list_box);
         model.pages_grid = Some(pages_grid);
         model.pages_widgets = Some(pages_widgets);
+        model.search_results_widgets = Some(search_results_widgets);
         model.settings_widgets = Some(settings_w);
         model.image_widgets = Some(image_w);
 
@@ -4320,6 +4682,32 @@ impl Component for PdfReaderModel {
                     .expect("just built")
                     .widget(),
             );
+            let tx = sender.input_sender().clone();
+            model.search_scope_control = Some(crate::widgets::segmented::segmented_control(
+                &["Chapter", "Book"],
+                model.search_scope.toggle_index(),
+                crate::widgets::segmented::SegmentedSize::Small,
+                move |idx| {
+                    let _ = tx.send(PdfReaderMsg::SetSearchScope(
+                        PdfSearchScope::from_toggle_index(idx),
+                    ));
+                },
+            ));
+            widgets.search_scope_host.append(
+                &model
+                    .search_scope_control
+                    .as_ref()
+                    .expect("just built")
+                    .widget(),
+            );
+            for (button, label) in [
+                (&widgets.search_prev_btn, "Previous match"),
+                (&widgets.search_next_btn, "Next match"),
+                (&widgets.search_results_btn, "Show all search results"),
+                (&widgets.search_close_btn, "Close search"),
+            ] {
+                button.update_property(&[gtk::accessible::Property::Label(label)]);
+            }
         }
 
         // The Back+Bubble unit (decision 15): the shell's own Back
@@ -4387,6 +4775,9 @@ impl Component for PdfReaderModel {
                 .set_transition_type(gtk::RevealerTransitionType::Crossfade);
             widgets
                 .jump_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+            widgets
+                .search_revealer
                 .set_transition_type(gtk::RevealerTransitionType::Crossfade);
         }
 
@@ -5038,8 +5429,8 @@ impl Component for PdfReaderModel {
                             });
                         }
                         PdfDocRequest::Search { query, toc, .. } => {
-                            let results = doc.search_document(&query, &toc, 500);
-                            let _ = tx_doc_msg.send(PdfReaderMsg::SearchReady { query, results });
+                            let outcome = doc.search_document(&query, &toc, 500);
+                            let _ = tx_doc_msg.send(PdfReaderMsg::SearchReady { query, outcome });
                         }
                     }
                 }
@@ -5070,12 +5461,6 @@ impl Component for PdfReaderModel {
         }
         model.update_bookmark_icon_state(&widgets);
 
-        let (search_pop, search_lb, search_badge) = build_pdf_search_snippets_popover();
-        widgets.search_count_btn.set_popover(Some(&search_pop));
-        model.search_popover = Some(search_pop);
-        model.search_list_box = Some(search_lb);
-        model.search_popover_badge = Some(search_badge);
-
         let entry_key = gtk::EventControllerKey::new();
         let s_entry = sender.clone();
         entry_key.connect_key_pressed(move |_, keyval, _code, state| {
@@ -5087,7 +5472,7 @@ impl Component for PdfReaderModel {
                 }
                 gtk::glib::Propagation::Stop
             } else if keyval == gtk::gdk::Key::Escape {
-                s_entry.input(PdfReaderMsg::CloseSearch);
+                s_entry.input(PdfReaderMsg::EscapeKey);
                 gtk::glib::Propagation::Stop
             } else {
                 gtk::glib::Propagation::Proceed
@@ -5129,7 +5514,11 @@ impl Component for PdfReaderModel {
                 // jump field, a selection, the floating panels,
                 // then the book. A pinned panel is page layout, not
                 // a layer, so it does not spend an Escape.
-                if self.search_active {
+                if self.search_results_open {
+                    let _ = sender
+                        .input_sender()
+                        .send(PdfReaderMsg::CloseSearchResults);
+                } else if self.search_active {
                     let _ = sender.input_sender().send(PdfReaderMsg::CloseSearch);
                 } else if self.jump_open {
                     self.jump_open = false;
@@ -5150,20 +5539,13 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::ToggleSearch => {
-                self.search_active = !self.search_active;
-                if !self.search_active {
-                    self.search_query.clear();
-                    self.search_results.clear();
-                    self.search_index = 0;
-                    self.search_highlight.replace(None);
-                    for da in self.page_draw_areas.values() {
-                        da.queue_draw();
-                    }
-                    if let Some(popover) = &self.search_popover {
-                        popover.popdown();
-                    }
-                    _root.grab_focus();
+                if self.search_active {
+                    let _ = sender.input_sender().send(PdfReaderMsg::CloseSearch);
                 } else {
+                    // A fresh search always opens on the chapter
+                    // (decision 61), whatever the last one chose.
+                    self.clear_search_state(widgets, &sender);
+                    self.search_active = true;
                     self.jump_open = false;
                     let entry = widgets.search_entry.clone();
                     glib::idle_add_local_once(move || {
@@ -5173,73 +5555,158 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::UpdateSearchQuery(query) => {
+                if widgets.search_entry.text().as_str() != query.as_str() {
+                    // A caller outside the entry (the screenshot
+                    // loop, a future shortcut) speaks through the
+                    // entry, so the pill shows the words it is
+                    // searching for. Setting the text raises
+                    // search-changed; the duplicate that signal
+                    // queues then meets the guard below and stops.
+                    widgets.search_entry.set_text(&query);
+                }
+                if query == self.search_query {
+                    return;
+                }
                 self.search_query = query.clone();
                 self.search_index = 0;
-                if query.trim().is_empty() {
-                    self.search_results.clear();
-                    self.highlight_current_search_match(widgets);
-                    self.update_search_snippets_popover(&sender);
-                } else if let (Some(path), Some(tx)) =
-                    (self.file_path.clone(), self.doc_tx.as_ref())
-                {
-                    // Search runs on the doc service; results arrive in
-                    // SearchReady and are applied only if the query is
-                    // still current (stale answers are dropped silently).
-                    let _ = tx.send_blocking(PdfDocRequest::Search {
-                        path,
-                        query,
-                        toc: self.toc_entries.clone(),
+                self.search_results.clear();
+                self.search_no_text = false;
+                self.search_chapter_anchor_page = self.current_page;
+                self.search_query_anchor_page = self.current_page;
+                self.search_pending = query.trim().chars().count() >= 2;
+                if self.search_pending {
+                    if let (Some(path), Some(tx)) =
+                        (self.file_path.clone(), self.doc_tx.as_ref())
+                    {
+                        // Search runs on the doc service; results
+                        // arrive in SearchReady and are applied
+                        // only if the query is still current.
+                        let _ = tx.send_blocking(PdfDocRequest::Search {
+                            path,
+                            query,
+                            toc: self.toc_entries.clone(),
+                        });
+                    } else {
+                        self.search_pending = false;
+                    }
+                }
+                self.highlight_search_matches(widgets, &sender);
+                self.update_search_results_panel();
+            }
+            PdfReaderMsg::SetSearchScope(scope) => {
+                if self.search_no_text {
+                    self.sync_search_scope_control();
+                    return;
+                }
+                let standing_raw = self.current_search_result_index();
+                let standing_page = standing_raw
+                    .and_then(|raw| self.search_results.get(raw))
+                    .map(|result| result.page)
+                    .unwrap_or(self.current_page);
+                if scope == PdfSearchScope::Chapter {
+                    // Chapter means the chapter under the reader
+                    // now, including the one a Book result just
+                    // carried them into.
+                    self.search_chapter_anchor_page = self.current_page;
+                }
+                self.search_scope = scope;
+                self.sync_search_scope_control();
+                let scoped = self.search_scoped_indices();
+                self.search_index = standing_raw
+                    .and_then(|raw| scoped.iter().position(|candidate| *candidate == raw))
+                    .unwrap_or_else(|| {
+                        pdf_search_start_position(
+                            &self.search_results,
+                            &scoped,
+                            standing_page,
+                        )
                     });
+                self.highlight_search_matches(widgets, &sender);
+                self.update_search_results_panel();
+                if self.search_results_open {
+                    if let Some(results) = &self.search_results_widgets {
+                        results.list.scroll_to_current();
+                    }
                 }
             }
-            PdfReaderMsg::SearchReady { query, results } => {
+            PdfReaderMsg::SearchReady { query, outcome } => {
                 if query == self.search_query {
-                    self.search_results = results;
-                    self.search_index = 0;
-                    self.highlight_current_search_match(widgets);
-                    self.update_search_snippets_popover(&sender);
+                    self.search_pending = false;
+                    self.search_no_text = !outcome.has_searchable_text;
+                    self.search_results = outcome.results;
+                    let scoped = self.search_scoped_indices();
+                    self.search_index = pdf_search_start_position(
+                        &self.search_results,
+                        &scoped,
+                        self.search_query_anchor_page,
+                    );
+                    self.highlight_search_matches(widgets, &sender);
+                    self.update_search_results_panel();
+                    if self.search_results_open {
+                        if let Some(results) = &self.search_results_widgets {
+                            results.list.scroll_to_current();
+                        }
+                    }
                 }
             }
             PdfReaderMsg::NextSearchResult => {
-                if !self.search_results.is_empty() {
-                    self.search_index = (self.search_index + 1) % self.search_results.len();
-                    self.highlight_current_search_match(widgets);
-                    self.update_search_snippets_popover(&sender);
+                let scoped_len = self.search_scoped_indices().len();
+                if scoped_len > 0 {
+                    self.search_index = (self.search_index + 1) % scoped_len;
+                    self.highlight_search_matches(widgets, &sender);
+                    self.update_search_results_panel();
+                    if self.search_results_open {
+                        if let Some(results) = &self.search_results_widgets {
+                            results.list.scroll_to_current();
+                        }
+                    }
                 }
             }
             PdfReaderMsg::PrevSearchResult => {
-                if !self.search_results.is_empty() {
-                    if self.search_index == 0 {
-                        self.search_index = self.search_results.len() - 1;
+                let scoped_len = self.search_scoped_indices().len();
+                if scoped_len > 0 {
+                    self.search_index = if self.search_index == 0 {
+                        scoped_len - 1
                     } else {
-                        self.search_index -= 1;
+                        self.search_index - 1
+                    };
+                    self.highlight_search_matches(widgets, &sender);
+                    self.update_search_results_panel();
+                    if self.search_results_open {
+                        if let Some(results) = &self.search_results_widgets {
+                            results.list.scroll_to_current();
+                        }
                     }
-                    self.highlight_current_search_match(widgets);
-                    self.update_search_snippets_popover(&sender);
                 }
             }
-            PdfReaderMsg::JumpToSearchResult(idx) => {
-                if idx < self.search_results.len() {
-                    self.search_index = idx;
-                    self.highlight_current_search_match(widgets);
-                    self.update_search_snippets_popover(&sender);
-                    if let Some(popover) = &self.search_popover {
-                        popover.popdown();
+            PdfReaderMsg::OpenSearchResults => {
+                if self.search_active {
+                    self.open_search_results(widgets, &sender);
+                }
+            }
+            PdfReaderMsg::CloseSearchResults => {
+                if self.search_results_open {
+                    self.close_search_results(widgets, &sender);
+                }
+            }
+            PdfReaderMsg::JumpToSearchResult(raw_index) => {
+                let scoped = self.search_scoped_indices();
+                if let Some(position) =
+                    scoped.iter().position(|candidate| *candidate == raw_index)
+                {
+                    self.search_index = position;
+                    self.highlight_search_matches(widgets, &sender);
+                    self.update_search_results_panel();
+                    if self.search_results_open {
+                        if let Some(results) = &self.search_results_widgets {
+                            results.list.scroll_to_current();
+                        }
                     }
                 }
             }
             PdfReaderMsg::CloseSearch => {
                 self.search_active = false;
-                self.search_query.clear();
-                self.search_results.clear();
-                self.search_index = 0;
-                self.search_highlight.replace(None);
-                for da in self.page_draw_areas.values() {
-                    da.queue_draw();
-                }
-                if let Some(popover) = &self.search_popover {
-                    popover.popdown();
-                }
+                self.clear_search_state(widgets, &sender);
                 _root.grab_focus();
             }
             PdfReaderMsg::NextPage => {
@@ -5369,7 +5836,7 @@ impl Component for PdfReaderModel {
                     self.persist_fit_zoom();
                     self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
                     if self.search_active {
-                        self.highlight_current_search_match(widgets);
+                        self.refresh_search_highlights();
                     }
                 }
             }
@@ -5385,7 +5852,7 @@ impl Component for PdfReaderModel {
                     self.persist_fit_zoom();
                     self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
                     if self.search_active {
-                        self.highlight_current_search_match(widgets);
+                        self.refresh_search_highlights();
                     }
                 }
             }
@@ -5406,7 +5873,7 @@ impl Component for PdfReaderModel {
                 self.persist_fit_zoom();
                 self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
                 if self.search_active {
-                    self.highlight_current_search_match(widgets);
+                    self.refresh_search_highlights();
                 }
             }
             PdfReaderMsg::ResetZoom => {
@@ -5483,7 +5950,7 @@ impl Component for PdfReaderModel {
                     self.refresh_fit_zoom(&widgets.viewport_scroll);
                     self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
                     if self.search_active {
-                        self.highlight_current_search_match(widgets);
+                        self.refresh_search_highlights();
                     }
                 }
             }
@@ -5511,7 +5978,7 @@ impl Component for PdfReaderModel {
                     self.prune_textures();
                     self.trigger_loads(&sender);
                     if self.search_active {
-                        self.highlight_current_search_match(widgets);
+                        self.refresh_search_highlights();
                     }
                     // The scroll back to the current page is deferred: right
                     // after set_child the adjustment still describes the OLD
@@ -5546,7 +6013,7 @@ impl Component for PdfReaderModel {
                     self.prune_textures();
                     self.trigger_loads(&sender);
                     if self.search_active {
-                        self.highlight_current_search_match(widgets);
+                        self.refresh_search_highlights();
                     }
                     // Deferred scroll, same reason as SetScrollMode above.
                     self.viewport_rebuild_pending =
@@ -5569,7 +6036,7 @@ impl Component for PdfReaderModel {
                     self.prune_textures();
                     self.trigger_loads(&sender);
                     if self.search_active {
-                        self.highlight_current_search_match(widgets);
+                        self.refresh_search_highlights();
                     }
                     self.viewport_rebuild_pending =
                         self.scroll_mode != PdfScrollMode::PageScrolling && self.current_page > 1;
@@ -5744,6 +6211,9 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::SetLeftTab(tab) => {
+                // Choosing a tab is one of the ways back out of
+                // the search results' takeover (decision 61).
+                self.search_results_open = false;
                 self.left_tab = tab;
                 self.refresh_left_panel(widgets, &sender);
                 if tab == PdfLeftTab::Pages {
@@ -5762,11 +6232,22 @@ impl Component for PdfReaderModel {
                 widgets.left_revealer.set_reveal_child(true);
                 self.expand_current_toc_branch();
                 self.refresh_left_panel(widgets, &sender);
-                if !was_open && self.left_tab == PdfLeftTab::Contents {
+                if !was_open
+                    && self.left_tab == PdfLeftTab::Contents
+                    && !self.search_results_open
+                {
                     self.scroll_toc_to_current();
                 }
-                if !was_open && self.left_tab == PdfLeftTab::Pages {
+                if !was_open
+                    && self.left_tab == PdfLeftTab::Pages
+                    && !self.search_results_open
+                {
                     self.scroll_pages_to_current();
+                }
+                if !was_open && self.search_results_open {
+                    if let Some(results) = &self.search_results_widgets {
+                        results.list.scroll_to_current();
+                    }
                 }
             }
             PdfReaderMsg::OpenRightPanel => {
@@ -5775,16 +6256,23 @@ impl Component for PdfReaderModel {
                 self.refresh_right_panel(widgets);
             }
             PdfReaderMsg::OpenContents => {
-                if self.left_panel_open && self.left_tab == PdfLeftTab::Contents {
+                if self.left_panel_open
+                    && self.left_tab == PdfLeftTab::Contents
+                    && !self.search_results_open
+                {
                     self.left_panel_open = false;
                     self.sync_panel_layout(widgets);
                 } else {
+                    self.search_results_open = false;
                     self.left_tab = PdfLeftTab::Contents;
                     let _ = sender.input_sender().send(PdfReaderMsg::OpenLeftPanel);
                 }
             }
             PdfReaderMsg::OpenPages => {
-                if self.left_panel_open && self.left_tab == PdfLeftTab::Pages {
+                if self.left_panel_open
+                    && self.left_tab == PdfLeftTab::Pages
+                    && !self.search_results_open
+                {
                     self.left_panel_open = false;
                     self.sync_panel_layout(widgets);
                 } else {
@@ -6904,7 +7392,7 @@ impl Component for PdfReaderModel {
                         if self.refresh_fit_zoom(&widgets.viewport_scroll) {
                             self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
                             if self.search_active {
-                                self.highlight_current_search_match(widgets);
+                                self.refresh_search_highlights();
                             }
                         }
                     }
@@ -6933,6 +7421,10 @@ impl Component for PdfReaderModel {
 
         self.sync_toc_current();
         self.sync_pages_current();
+        // A page turn or a turned page changes which slots the
+        // scoped matches can paint on; refreshing here keeps
+        // every navigation honest without jumping back.
+        self.refresh_search_highlights();
         if self.left_tab == PdfLeftTab::Pages {
             self.update_pages_heading();
         }
@@ -6966,6 +7458,10 @@ impl PdfReaderModel {
         };
         widgets.viewport_scroll.set_margin_start(left_inset);
         widgets.viewport_scroll.set_margin_end(right_inset);
+        // The search pill centres over the same visible page
+        // area the pinned panels leave behind (decision 61).
+        widgets.search_revealer.set_margin_start(left_inset);
+        widgets.search_revealer.set_margin_end(right_inset);
 
         for (button, pinned, side) in [
             (&widgets.left_pin_button, self.left_panel_pinned, "left"),
@@ -6987,6 +7483,14 @@ impl PdfReaderModel {
         widgets: &PdfReaderModelWidgets,
         sender: &ComponentSender<Self>,
     ) {
+        if self.search_results_open {
+            if let Some(stack) = &self.left_stack {
+                stack.set_visible_child_name("search-results");
+            }
+            self.update_search_results_panel();
+            self.sync_panel_layout(widgets);
+            return;
+        }
         if let Some(tabs) = &self.left_tabs {
             tabs.set_selected(match self.left_tab {
                 PdfLeftTab::Contents => 0,
@@ -7169,6 +7673,18 @@ impl PdfReaderModel {
                 sender.input(PdfReaderMsg::SetFitMode(PdfFitMode::Height));
                 sender.input(PdfReaderMsg::SetPageColour(PdfPageColour::Invert));
             }
+            Ok("search-results") => {
+                sender.input(PdfReaderMsg::ToggleSearch);
+                sender.input(PdfReaderMsg::SetSearchScope(PdfSearchScope::Book));
+                sender.input(PdfReaderMsg::UpdateSearchQuery("water".to_string()));
+                sender.input(PdfReaderMsg::OpenSearchResults);
+            }
+            Ok("search-no-matches") => {
+                sender.input(PdfReaderMsg::ToggleSearch);
+                sender.input(PdfReaderMsg::UpdateSearchQuery(
+                    "volcanx".to_string(),
+                ));
+            }
             Ok("shortcuts") => {
                 sender.input(PdfReaderMsg::SetRightTab(PdfRightTab::Shortcuts));
                 sender.input(PdfReaderMsg::OpenRightPanel);
@@ -7207,179 +7723,293 @@ impl PdfReaderModel {
             .update_property(&[gtk::accessible::Property::Label(label)]);
     }
 
-    pub fn highlight_current_search_match(&mut self, widgets: &PdfReaderModelWidgets) {
-        if !self.search_active || self.search_results.is_empty() || self.search_index >= self.search_results.len() {
-            self.search_highlight.replace(None);
-            for da in self.page_draw_areas.values() {
-                da.queue_draw();
-            }
-            return;
+    pub fn sync_search_scope_control(&self) {
+        if let Some(control) = &self.search_scope_control {
+            control.set_selected(self.search_scope.toggle_index());
         }
+    }
 
-        let res = self.search_results[self.search_index].clone();
-        let target_page = res.page;
+    /// Put every piece of search back where a fresh Ctrl+F
+    /// expects it: no query, no results, Chapter scope, no
+    /// results takeover, and the displaced left tab restored.
+    pub fn clear_search_state(
+        &mut self,
+        widgets: &PdfReaderModelWidgets,
+        sender: &ComponentSender<Self>,
+    ) {
+        let restore_tab = self
+            .search_results_open
+            .then_some(self.search_results_return_tab);
+        self.search_query.clear();
+        if !widgets.search_entry.text().is_empty() {
+            widgets.search_entry.set_text("");
+        }
+        self.search_results.clear();
+        self.search_index = 0;
+        self.search_scope = PdfSearchScope::Chapter;
+        self.search_chapter_anchor_page = self.current_page;
+        self.search_query_anchor_page = self.current_page;
+        self.search_pending = false;
+        self.search_no_text = false;
+        self.search_results_open = false;
+        if let Some(tab) = restore_tab {
+            self.left_tab = tab;
+        }
+        self.sync_search_scope_control();
+        self.refresh_search_highlights();
+        self.update_search_results_panel();
+        if restore_tab.is_some() {
+            self.refresh_left_panel(widgets, sender);
+        }
+    }
 
-        // Jump to page if not current
-        if self.current_page != target_page {
-            self.current_page = target_page.clamp(1, self.total_pages);
-            self.save_progress();
-            self.prune_textures();
+    /// The list button's act (decision 61): results take the
+    /// left panel whole, remembering the tab they displaced.
+    pub fn open_search_results(
+        &mut self,
+        widgets: &PdfReaderModelWidgets,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !self.search_results_open {
+            self.search_results_return_tab = self.left_tab;
+            self.search_results_open = true;
+        }
+        self.left_panel_open = true;
+        self.show_back_button = false;
+        self.back_gen = self.back_gen.wrapping_add(1);
+        widgets.left_revealer.set_reveal_child(true);
+        self.refresh_left_panel(widgets, sender);
+        if let Some(results) = &self.search_results_widgets {
+            results.list.scroll_to_current();
+        }
+    }
 
-            match self.scroll_mode {
-                PdfScrollMode::PageScrolling => {
-                    match self.spread_mode {
-                        PdfSpreadMode::NoSpreads => self.update_paged_view(),
-                        _ => self.update_two_page_view(),
+    /// The results header's close: back to the tab that was
+    /// standing when the results arrived, focus back in the
+    /// query where a refining keystroke belongs.
+    pub fn close_search_results(
+        &mut self,
+        widgets: &PdfReaderModelWidgets,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.search_results_open = false;
+        self.left_tab = self.search_results_return_tab;
+        self.refresh_left_panel(widgets, sender);
+        if self.search_active {
+            let entry = widgets.search_entry.clone();
+            glib::idle_add_local_once(move || {
+                entry.grab_focus();
+            });
+        }
+    }
+
+    /// Paint the header and rows decision 61 asks for: the
+    /// quoted query with its scoped result/page counts above,
+    /// chapter-grouped matches below. An empty scope gets one
+    /// plain sentence rather than a blank panel.
+    pub fn update_search_results_panel(&self) {
+        let Some(panel) = &self.search_results_widgets else {
+            return;
+        };
+        let query = self.search_query.trim();
+        let scoped = self.search_scoped_indices();
+        let current_raw = self.current_search_result_index();
+        let scope_noun = match self.search_scope {
+            PdfSearchScope::Chapter => "chapter",
+            PdfSearchScope::Book => "book",
+        };
+
+        let (meta, entries) = if query.chars().count() < 2 {
+            (
+                "Search the text of this PDF".to_string(),
+                vec![search_results::PdfSearchResultsEntry::Message(format!(
+                    "Type to search this {scope_noun}."
+                ))],
+            )
+        } else if self.search_pending {
+            (
+                format!("\"{query}\" · searching"),
+                vec![search_results::PdfSearchResultsEntry::Message(
+                    "Searching…".to_string(),
+                )],
+            )
+        } else if self.search_no_text {
+            (
+                "This book has no searchable text".to_string(),
+                Vec::new(),
+            )
+        } else if scoped.is_empty() {
+            if self.search_scope == PdfSearchScope::Chapter && !self.search_results.is_empty() {
+                (
+                    format!("\"{query}\" · no results in this chapter"),
+                    vec![search_results::PdfSearchResultsEntry::Message(
+                        "No matches in this chapter. Book scope has the rest.".to_string(),
+                    )],
+                )
+            } else {
+                (
+                    format!("\"{query}\" · no results"),
+                    vec![search_results::PdfSearchResultsEntry::Message(
+                        "No matches".to_string(),
+                    )],
+                )
+            }
+        } else {
+            let pages = pdf_search_result_page_count(&self.search_results, &scoped);
+            (
+                format!(
+                    "\"{query}\" · {} {} on {} {}",
+                    scoped.len(),
+                    if scoped.len() == 1 { "result" } else { "results" },
+                    pages,
+                    if pages == 1 { "page" } else { "pages" },
+                ),
+                pdf_search_result_entries(
+                    &self.search_results,
+                    &scoped,
+                    &self.toc_entries,
+                    self.total_pages,
+                    &self.title,
+                ),
+            )
+        };
+
+        let theme = crate::theme::current(&self.catalog);
+        let paint = search_results::PdfSearchSnippetPaint {
+            match_colour: theme.text.to_string(),
+            match_alpha_percent: if theme.dark { 10 } else { 8 },
+            current_colour: theme.accent.to_string(),
+        };
+        panel.meta_label.set_label(&meta);
+        panel
+            .list
+            .set_results(entries, query.to_string(), current_raw, paint);
+    }
+
+    fn search_slot_for_page(&self, page: usize) -> Option<PageSlot> {
+        match self.scroll_mode {
+            PdfScrollMode::PageScrolling => match self.spread_mode {
+                PdfSpreadMode::NoSpreads => {
+                    (page == self.current_page).then_some(PageSlot::PagedSingle)
+                }
+                _ => {
+                    let (left, right) = self.spread_for_page(self.current_page);
+                    if page == left {
+                        Some(PageSlot::PagedSpreadLeft)
+                    } else if right == Some(page) {
+                        Some(PageSlot::PagedSpreadRight)
+                    } else {
+                        None
                     }
                 }
+            },
+            _ => Some(PageSlot::Fixed(page)),
+        }
+    }
+
+    fn search_page_paint(&self) -> ([f32; 3], f32, [f32; 3]) {
+        let theme = crate::theme::current(&self.catalog);
+        // Design-system §9's quiet tint is the standing ink at
+        // a whisper. On a PDF page that ink is the page's own:
+        // black on its pale paper, white once Invert has made
+        // the page a negative — the UI's pale dark-mode text
+        // would vanish against the paper it is meant to mark.
+        let match_rgb = if self.image_settings.page_colour == PdfPageColour::Invert {
+            [1.0, 1.0, 1.0]
+        } else {
+            [0.0, 0.0, 0.0]
+        };
+        (
+            match_rgb,
+            if theme.dark { 0.10 } else { 0.08 },
+            image::rgb_from_hex(theme.accent),
+        )
+    }
+
+    /// Rebuild the source-space highlights the page draw
+    /// callbacks paint: every scoped match that has a slot in
+    /// the standing viewport, current marked. This runs after
+    /// page turns too, without jumping — leaving the current
+    /// match's page is allowed; its tint simply waits there.
+    pub fn refresh_search_highlights(&self) {
+        let mut highlights = Vec::new();
+        if self.search_active && !self.search_pending {
+            let scoped = self.search_scoped_indices();
+            let current_raw = scoped.get(self.search_index).copied();
+            let (match_rgb, match_alpha, current_rgb) = self.search_page_paint();
+            for raw_index in scoped {
+                let Some(result) = self.search_results.get(raw_index) else {
+                    continue;
+                };
+                let Some(slot) = self.search_slot_for_page(result.page) else {
+                    continue;
+                };
+                let (source_width, source_height) = self
+                    .page_text_cache
+                    .get(&result.page)
+                    .map(|text| (text.width_pts, text.height_pts))
+                    .unwrap_or((self.source_page_width as f32, self.source_page_height as f32));
+                highlights.push(PdfSearchHighlight {
+                    slot,
+                    page: result.page,
+                    rects: result.rects.clone(),
+                    source_width,
+                    source_height,
+                    rotation: self.rotation_degrees,
+                    match_rgb,
+                    match_alpha,
+                    current_rgb,
+                    current: Some(raw_index) == current_raw,
+                });
+            }
+        }
+
+        let changed = {
+            let mut standing = self.search_highlights.borrow_mut();
+            if *standing == highlights {
+                false
+            } else {
+                *standing = highlights;
+                true
+            }
+        };
+        if changed {
+            for draw_area in self.page_draw_areas.values() {
+                draw_area.queue_draw();
+            }
+        }
+    }
+
+    /// Search navigation's landing: take the reader to the
+    /// current scoped match's page, then let the standing
+    /// viewport paint every match it can see.
+    pub fn highlight_search_matches(
+        &mut self,
+        widgets: &PdfReaderModelWidgets,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(raw_index) = self.current_search_result_index() else {
+            self.refresh_search_highlights();
+            return;
+        };
+        let target_page = self.search_results[raw_index].page;
+        if self.current_page != target_page {
+            self.current_page = target_page.clamp(1, self.total_pages.max(1));
+            self.save_progress();
+            self.prune_textures();
+            self.trigger_loads(sender);
+            match self.scroll_mode {
+                PdfScrollMode::PageScrolling => match self.spread_mode {
+                    PdfSpreadMode::NoSpreads => self.update_paged_view(),
+                    _ => self.update_two_page_view(),
+                },
                 _ => {
                     self.scroll_to_current_page(&widgets.viewport_scroll);
                 }
             }
             self.update_bookmark_icon_state(widgets);
         }
-
-        let slot = match self.scroll_mode {
-            PdfScrollMode::PageScrolling => match self.spread_mode {
-                PdfSpreadMode::NoSpreads => PageSlot::PagedSingle,
-                _ => {
-                    let (l, r) = self.spread_for_page(self.current_page);
-                    if l == target_page {
-                        PageSlot::PagedSpreadLeft
-                    } else if r == Some(target_page) {
-                        PageSlot::PagedSpreadRight
-                    } else {
-                        PageSlot::PagedSingle
-                    }
-                }
-            },
-            _ => PageSlot::Fixed(target_page),
-        };
-
-        let (page_w_pts, page_h_pts) = if let Some(text) = self.page_text_cache.get(&target_page) {
-            (text.width_pts as f64, text.height_pts as f64)
-        } else {
-            (self.source_page_width, self.source_page_height)
-        };
-
-        let (target_w, target_h) = if let Some(da) = self.page_draw_areas.get(&slot) {
-            let w = da.width() as f64;
-            let h = da.height() as f64;
-            if w > 10.0 && h > 10.0 {
-                (w, h)
-            } else {
-                (self.base_page_width * self.zoom_level, self.base_page_height * self.zoom_level)
-            }
-        } else {
-            (self.base_page_width * self.zoom_level, self.base_page_height * self.zoom_level)
-        };
-
-        let screen_rects: Vec<(f64, f64, f64, f64)> = res
-            .rects
-            .iter()
-            .map(|rect| {
-                let (rx, ry, rw, rh) = source_rect_to_display(
-                    *rect,
-                    page_w_pts as f32,
-                    page_h_pts as f32,
-                    target_w,
-                    target_h,
-                    self.rotation_degrees,
-                );
-                (rx, ry, rw.max(4.0), rh.max(4.0))
-            })
-            .collect();
-
-        self.search_highlight.replace(Some((slot, target_page, screen_rects)));
-
-        for da in self.page_draw_areas.values() {
-            da.queue_draw();
-        }
-    }
-
-    pub fn update_search_snippets_popover(&self, sender: &ComponentSender<Self>) {
-        let Some(ref list_box) = self.search_list_box else { return };
-        let Some(ref badge_lbl) = self.search_popover_badge else { return };
-
-        while let Some(child) = list_box.first_child() {
-            list_box.remove(&child);
-        }
-
-        let total = self.search_results.len();
-        if total == 0 {
-            badge_lbl.set_label("0 matches");
-            let empty_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-            empty_box.set_margin_all(20);
-            empty_box.set_halign(gtk::Align::Center);
-
-            let empty_lbl = gtk::Label::new(Some(if self.search_query.trim().is_empty() {
-                "Type to search across document"
-            } else {
-                "No matches found"
-            }));
-            empty_lbl.add_css_class("kalam-search-popover-badge");
-            empty_box.append(&empty_lbl);
-            list_box.append(&empty_box);
-            return;
-        }
-
-        badge_lbl.set_label(&format!("{} matches", total));
-
-        let display_limit = 100.min(total);
-        for idx in 0..display_limit {
-            let res = &self.search_results[idx];
-            let row = gtk::Box::new(gtk::Orientation::Vertical, 3);
-            row.add_css_class("kalam-search-snippet-row");
-            if idx == self.search_index {
-                row.add_css_class("active");
-            }
-
-            let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            let header_text = if let Some(ref sec) = res.section_title {
-                format!("Page {} · {}", res.page, sec)
-            } else {
-                format!("Page {}", res.page)
-            };
-            let sec_label = gtk::Label::new(Some(&header_text));
-            sec_label.add_css_class("kalam-search-snippet-chapter");
-            sec_label.set_hexpand(true);
-            sec_label.set_halign(gtk::Align::Start);
-            sec_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-
-            let idx_label = gtk::Label::new(Some(&format!("#{}", idx + 1)));
-            idx_label.add_css_class("kalam-search-snippet-index");
-
-            top_row.append(&sec_label);
-            top_row.append(&idx_label);
-
-            let text_label = gtk::Label::new(None);
-            text_label.add_css_class("kalam-search-snippet-text");
-            text_label.set_use_markup(true);
-            text_label.set_markup(&format_pdf_search_snippet(&res.snippet, &self.search_query));
-            text_label.set_wrap(true);
-            text_label.set_wrap_mode(gtk::pango::WrapMode::Word);
-            text_label.set_halign(gtk::Align::Start);
-            text_label.set_xalign(0.0);
-
-            row.append(&top_row);
-            row.append(&text_label);
-
-            let gesture = gtk::GestureClick::new();
-            let s = sender.clone();
-            gesture.connect_released(move |_, _, _, _| {
-                s.input(PdfReaderMsg::JumpToSearchResult(idx));
-            });
-            row.add_controller(gesture);
-
-            list_box.append(&row);
-        }
-
-        if total > display_limit {
-            let more_lbl = gtk::Label::new(Some(&format!("+ {} more matches (use Next/Prev)", total - display_limit)));
-            more_lbl.add_css_class("kalam-search-snippet-index");
-            more_lbl.set_margin_all(8);
-            list_box.append(&more_lbl);
-        }
+        self.refresh_search_highlights();
     }
 }
 
@@ -7462,25 +8092,79 @@ pub fn pdf_path_fingerprint(path: &std::path::Path) -> Option<String> {
     Some(format!("{}:{}", md.len(), mtime))
 }
 
-fn format_pdf_search_snippet(snippet: &str, query: &str) -> String {
-    let query_lower = query.trim().to_lowercase();
-    let snippet_lower = snippet.to_lowercase();
-    if query_lower.is_empty() {
-        return glib::markup_escape_text(snippet).to_string();
+/// The search results pane that takes the left panel over
+/// (decision 61): its own serif header and close where the tab
+/// pill stood, the quoted count under it, and the lazy grouped
+/// list running to the panel's foot.
+fn build_pdf_search_results_pane(
+    sender: &ComponentSender<PdfReaderModel>,
+) -> (gtk::Box, PdfSearchResultsWidgets) {
+    let list = search_results::PdfSearchResultsList::new(sender.input_sender().clone());
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    scroll.add_css_class("kalam-reader-panel-scroll");
+    scroll.set_child(Some(&list.widget()));
+
+    let title = gtk::Label::new(Some("Search results"));
+    title.add_css_class("kalam-pdf-search-results-title");
+    title.set_halign(gtk::Align::Fill);
+    title.set_xalign(0.0);
+    title.set_hexpand(true);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_width_chars(1);
+
+    let close = gtk::Button::new();
+    close.set_child(Some(&crate::icons::symbolic_with_classes(
+        "window-close-symbolic",
+        14,
+        &["kalam-inline-icon"],
+    )));
+    close.add_css_class("kalam-pdf-search-results-close");
+    close.set_size_request(32, 32);
+    close.set_valign(gtk::Align::Center);
+    close.set_tooltip_text(Some("Back to panel tabs"));
+    close.update_property(&[gtk::accessible::Property::Label("Back to panel tabs")]);
+    {
+        let tx = sender.input_sender().clone();
+        close.connect_clicked(move |_| {
+            let _ = tx.send(PdfReaderMsg::CloseSearchResults);
+        });
     }
-    if let Some(idx) = snippet_lower.find(&query_lower) {
-        let prefix = &snippet[..idx];
-        let matched = &snippet[idx..idx + query.trim().len().min(snippet.len() - idx)];
-        let suffix = &snippet[(idx + matched.len()).min(snippet.len())..];
-        format!(
-            "{}<span weight=\"bold\" foreground=\"#d97706\" background=\"#f4d35e\" background_alpha=\"30%\">{}</span>{}",
-            glib::markup_escape_text(prefix),
-            glib::markup_escape_text(matched),
-            glib::markup_escape_text(suffix)
-        )
-    } else {
-        glib::markup_escape_text(snippet).to_string()
-    }
+
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    header.set_margin_start(20);
+    header.set_margin_end(14);
+    header.set_margin_top(18);
+    header.append(&title);
+    header.append(&close);
+
+    let meta_label = gtk::Label::new(Some("Search the text of this PDF"));
+    meta_label.add_css_class("kalam-pdf-search-results-meta");
+    meta_label.set_halign(gtk::Align::Fill);
+    meta_label.set_xalign(0.0);
+    meta_label.set_wrap(true);
+    meta_label.set_margin_start(20);
+    meta_label.set_margin_end(20);
+    meta_label.set_margin_top(2);
+    meta_label.set_margin_bottom(10);
+
+    let pane = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    pane.add_css_class("kalam-pdf-search-results-pane");
+    pane.set_hexpand(true);
+    pane.set_vexpand(true);
+    pane.append(&header);
+    pane.append(&meta_label);
+    pane.append(&scroll);
+
+    (
+        pane,
+        PdfSearchResultsWidgets { meta_label, list },
+    )
 }
 
 fn pdf_pages_column_button(
@@ -7609,50 +8293,6 @@ fn build_pdf_pages_pane(
             columns_2_button,
         },
     )
-}
-
-fn build_pdf_search_snippets_popover() -> (gtk::Popover, gtk::ListBox, gtk::Label) {
-    let popover = gtk::Popover::new();
-    popover.add_css_class("kalam-search-snippet-popover");
-    popover.set_has_arrow(true);
-    popover.set_position(gtk::PositionType::Bottom);
-
-    let content_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    content_box.set_width_request(340);
-
-    let header_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    header_box.add_css_class("kalam-search-popover-header");
-
-    let title_lbl = gtk::Label::new(Some("Matches at a Glance"));
-    title_lbl.add_css_class("kalam-search-popover-title");
-    title_lbl.set_hexpand(true);
-    title_lbl.set_halign(gtk::Align::Start);
-
-    let badge_lbl = gtk::Label::new(Some("0 matches"));
-    badge_lbl.add_css_class("kalam-search-popover-badge");
-
-    header_box.append(&title_lbl);
-    header_box.append(&badge_lbl);
-    content_box.append(&header_box);
-
-    let scroll = gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .vscrollbar_policy(gtk::PolicyType::Automatic)
-        .max_content_height(340)
-        .propagate_natural_height(true)
-        .hexpand(true)
-        .vexpand(true)
-        .build();
-
-    let list_box = gtk::ListBox::new();
-    list_box.set_selection_mode(gtk::SelectionMode::None);
-    list_box.add_css_class("kalam-search-popover-list");
-    scroll.set_child(Some(&list_box));
-
-    content_box.append(&scroll);
-    popover.set_child(Some(&content_box));
-
-    (popover, list_box, badge_lbl)
 }
 
 fn populate_toc_list(
@@ -8665,6 +9305,124 @@ mod tests {
             toc("Currents", 9, 1),
             toc("Index", 12, 0),
         ]
+    }
+
+    fn search_result(page: usize) -> PdfSearchResult {
+        PdfSearchResult {
+            page,
+            section_title: None,
+            snippet: format!("…water on page {page}…"),
+            match_text: "water".to_string(),
+            rects: Vec::new(),
+        }
+    }
+
+    fn sample_search_results() -> Vec<PdfSearchResult> {
+        [1, 2, 3, 4, 7, 8, 9, 9, 12]
+            .into_iter()
+            .map(search_result)
+            .collect()
+    }
+
+    #[test]
+    fn pdf_search_chapter_scope_uses_the_anchored_top_level_span() {
+        let results = sample_search_results();
+        let scoped = pdf_search_scoped_indices(
+            &results,
+            &sample_toc(),
+            12,
+            PdfSearchScope::Chapter,
+            4,
+            "The Book",
+        );
+        assert_eq!(scoped, vec![1, 2, 3, 4]);
+        assert_eq!(
+            pdf_search_start_position(&results, &scoped, 4),
+            2,
+            "the first match on the standing page, not the chapter's first"
+        );
+    }
+
+    #[test]
+    fn pdf_search_book_scope_and_start_wrap_the_whole_book() {
+        let results = sample_search_results();
+        let scoped = pdf_search_scoped_indices(
+            &results,
+            &sample_toc(),
+            12,
+            PdfSearchScope::Book,
+            4,
+            "The Book",
+        );
+        assert_eq!(scoped.len(), results.len());
+        assert_eq!(pdf_search_start_position(&results, &scoped, 10), 8);
+        assert_eq!(pdf_search_start_position(&results, &scoped, 13), 0);
+        assert_eq!(pdf_search_result_page_count(&results, &scoped), 8);
+    }
+
+    #[test]
+    fn pdf_search_groups_results_by_chapter_and_section() {
+        assert_eq!(
+            pdf_search_section_path(&sample_toc(), 12, 4, "The Book"),
+            "The Earth · Plate tectonics"
+        );
+        assert_eq!(
+            pdf_search_section_path(&sample_toc(), 12, 9, "The Book"),
+            "Oceans · Currents"
+        );
+
+        let results = sample_search_results();
+        let scoped: Vec<usize> = (0..results.len()).collect();
+        let entries = pdf_search_result_entries(
+            &results,
+            &scoped,
+            &sample_toc(),
+            12,
+            "The Book",
+        );
+        let headings: Vec<String> = entries
+            .iter()
+            .filter_map(|entry| match entry {
+                search_results::PdfSearchResultsEntry::Heading(title) => {
+                    Some(title.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            headings,
+            vec![
+                "Preface",
+                "The Earth",
+                "The Earth · Structure of the Earth",
+                "The Earth · Plate tectonics",
+                "Oceans",
+                "Oceans · Currents",
+                "Index",
+            ]
+        );
+    }
+
+    #[test]
+    fn pdf_search_without_an_outline_searches_the_whole_book_as_its_chapter() {
+        let results = sample_search_results();
+        let scoped = pdf_search_scoped_indices(
+            &results,
+            &[],
+            12,
+            PdfSearchScope::Chapter,
+            4,
+            "The Book",
+        );
+        assert_eq!(scoped.len(), results.len());
+        let entries =
+            pdf_search_result_entries(&results, &scoped, &[], 12, "The Book");
+        assert_eq!(
+            entries.first(),
+            Some(&search_results::PdfSearchResultsEntry::Heading(
+                "The Book".to_string()
+            ))
+        );
     }
 
     #[test]

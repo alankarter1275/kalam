@@ -5273,6 +5273,112 @@ button.kalam-pdf-rotate-btn:focus-visible {
     outline-offset: 1px;
 }
 
+/* Search results (decision 61): the left panel under new
+   management. A serif header, the scoped count, then grouped
+   matches — `p. N`, the snippet with its tinted words, and the
+   current row carrying the accent bar at the panel's edge. */
+.kalam-pdf-search-results-title {
+    color: @kalam_text;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.kalam-pdf-search-results-meta {
+    color: @kalam_text_dim;
+    font-size: 0.86rem;
+}
+
+button.kalam-pdf-search-results-close {
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    box-shadow: none;
+    color: @kalam_text_dim;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+}
+
+button.kalam-pdf-search-results-close:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+listview.kalam-pdf-search-results-list {
+    background: transparent;
+}
+
+listview.kalam-pdf-search-results-list > row,
+listview.kalam-pdf-search-results-list > child {
+    background: transparent;
+    padding: 0;
+}
+
+.kalam-pdf-search-results-heading {
+    border-bottom: 1px solid alpha(@kalam_border, 0.65);
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 14px 20px 8px;
+    text-transform: uppercase;
+}
+
+.kalam-pdf-search-results-message {
+    color: @kalam_text_dim;
+    font-size: 0.9rem;
+    padding: 18px 20px;
+}
+
+button.kalam-pdf-search-result-row {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid alpha(@kalam_border, 0.55);
+    border-radius: 0;
+    box-shadow: none;
+    color: @kalam_text;
+    padding: 10px 20px 10px 0;
+}
+
+button.kalam-pdf-search-result-row:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-pdf-search-result-row.current {
+    background: @kalam_search_current;
+}
+
+button.kalam-pdf-search-result-row.current:hover {
+    background: @kalam_search_current;
+}
+
+.kalam-pdf-search-result-bar {
+    background: transparent;
+}
+
+.kalam-pdf-search-result-bar.current {
+    background: @kalam_accent;
+}
+
+.kalam-pdf-search-result-page {
+    color: @kalam_text_dim;
+    font-size: 0.84rem;
+    padding-top: 1px;
+}
+
+.kalam-pdf-search-result-snippet {
+    color: @kalam_text;
+    font-size: 0.88rem;
+    line-height: 1.35;
+}
+
+button.kalam-pdf-search-results-close:focus-visible,
+button.kalam-pdf-search-result-row:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: -2px;
+}
+
 /* Reading pane (decisions 53–54): headings on the panel, then
    inset cards whose rows are separated by hairlines. The tiles
    are the comic pane's 68px shape; the selected tile is the same
@@ -6041,10 +6147,12 @@ popover.kalam-reader-dict-popover > contents {
     margin-left: 4px;
 }
 
-/* The EPUB search pill (decision 34): a 52px floating pill at the
-   top centre of the page. The PDF bar keeps the shared shape above
-   until its own phase. */
-.kalam-reader-search-bar.epub-search {
+/* The reader search pill (decisions 34 and 61): a 52px floating
+   pill at the top centre of the visible page. EPUB and PDF share
+   the shape; the PDF query carries its board's accent underline
+   and one more button for the results list. */
+.kalam-reader-search-bar.epub-search,
+.kalam-reader-search-bar.pdf-search {
     background: @kalam_card;
     border: 1px solid @kalam_border;
     border-radius: 999px;
@@ -6073,13 +6181,26 @@ entry.k-reader-search-entry image {
     color: @kalam_text_dim;
 }
 
-.kalam-reader-search-bar.epub-search .kalam-reader-search-count {
+.kalam-reader-search-bar.pdf-search entry.k-reader-search-entry {
+    border-bottom: 1.5px solid @kalam_accent;
+    border-radius: 0;
+    min-height: 32px;
+    padding-bottom: 3px;
+}
+
+.kalam-reader-search-bar.pdf-search entry.k-reader-search-entry:focus-within {
+    border-bottom: 1.5px solid @kalam_accent;
+}
+
+.kalam-reader-search-bar.epub-search .kalam-reader-search-count,
+.kalam-reader-search-bar.pdf-search .kalam-reader-search-count {
     color: @kalam_text_dim;
     font-size: 13px;
     font-weight: 500;
 }
 
-.kalam-reader-search-bar.epub-search .kalam-reader-search-count.no-matches {
+.kalam-reader-search-bar.epub-search .kalam-reader-search-count.no-matches,
+.kalam-reader-search-bar.pdf-search .kalam-reader-search-count.no-matches {
     color: @kalam_accent;
 }
 
@@ -6089,11 +6210,22 @@ entry.k-reader-search-entry image {
     margin: 0 2px;
 }
 
-.kalam-reader-search-bar.epub-search .kalam-reader-search-btn {
+.kalam-reader-search-bar.epub-search .kalam-reader-search-btn,
+.kalam-reader-search-bar.pdf-search .kalam-reader-search-btn {
     min-width: 36px;
     min-height: 36px;
     border-radius: 999px;
     padding: 0;
+}
+
+.kalam-reader-search-bar.pdf-search .kalam-reader-search-btn.search-results-open {
+    background: @kalam_search_current;
+    color: @kalam_text_bright;
+}
+
+.kalam-reader-search-bar.pdf-search .kalam-reader-search-btn:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 1px;
 }
 
 /* ── "Matches at a Glance" Popover ────────────────────────────── */

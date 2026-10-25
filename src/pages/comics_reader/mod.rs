@@ -87,7 +87,6 @@ pub struct ComicsReaderModel {
     pub set_grayscale_switch: Option<Rc<dyn Fn(bool)>>,
     pub set_invert_switch: Option<Rc<dyn Fn(bool)>>,
     pub set_crop_switch: Option<Rc<dyn Fn(bool)>>,
-    pub reset_image_btn: Option<gtk::Button>,
     pub left_tab: ComicLeftTab,
     pub right_tab: ComicRightTab,
     pub left_panel_open: bool,
@@ -402,7 +401,6 @@ impl ComicsReaderModel {
             set_grayscale_switch: None,
             set_invert_switch: None,
             set_crop_switch: None,
-            reset_image_btn: None,
             left_tab: ComicLeftTab::Chapters,
             right_tab: ComicRightTab::Reading,
             left_panel_open: false,
@@ -1036,9 +1034,6 @@ impl ComicsReaderModel {
         }
         if let Some(set) = &self.set_crop_switch {
             set(self.image_settings.crop_blank_borders);
-        }
-        if let Some(btn) = &self.reset_image_btn {
-            btn.set_sensitive(self.image_settings != ComicImageSettings::default());
         }
 
         toggle_active(&widgets.style_single_btn, self.page_style == PageStyle::Single);
@@ -3133,7 +3128,6 @@ impl Component for ComicsReaderModel {
             reset_btn.set_halign(gtk::Align::Start);
             reset_btn.set_margin_top(16);
             widgets.image_box.append(&reset_btn);
-            model.reset_image_btn = Some(reset_btn);
         }
 
         build_shortcuts_panel(&widgets.shortcuts_box);

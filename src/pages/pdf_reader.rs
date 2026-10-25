@@ -7824,16 +7824,8 @@ impl PdfReaderModel {
         match self.left_tab {
             PdfLeftTab::Contents => {
                 if let Some(list) = &self.toc_list_box {
-                    let (rows, current_visible) = populate_toc_list(
-                        list,
-                        &self.toc_entries,
-                        &self.page_labels,
-                        &self.collapsed_toc_entries,
-                        &self.toc_filter,
-                        self.current_page,
-                        self.total_pages,
-                        sender,
-                    );
+                    let (rows, current_visible) =
+                        populate_toc_list(list, self, sender);
                     self.toc_rows = rows;
                     self.toc_current_visible_row = current_visible;
                     self.toc_current_page_synced = self.current_page;
@@ -8622,14 +8614,15 @@ fn build_pdf_pages_pane(
 
 fn populate_toc_list(
     list_box: &gtk::Box,
-    entries: &[PdfTocEntry],
-    page_labels: &[String],
-    collapsed: &HashSet<usize>,
-    filter: &str,
-    current_page: usize,
-    total_pages: usize,
+    model: &PdfReaderModel,
     sender: &ComponentSender<PdfReaderModel>,
 ) -> (Vec<(usize, gtk::Box)>, Option<usize>) {
+    let entries = &model.toc_entries;
+    let page_labels = &model.page_labels;
+    let collapsed = &model.collapsed_toc_entries;
+    let filter = model.toc_filter.as_str();
+    let current_page = model.current_page;
+    let total_pages = model.total_pages;
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }

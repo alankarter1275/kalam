@@ -4447,6 +4447,20 @@ button.kalam-lib-play {
     background: @kalam_bg;
 }
 
+/* The Image pane's fixed stage colours (decision 41). Theme is the
+   absence of a modifier, above. */
+.kalam-comics-viewport.comic-bg-black {
+    background: #000000;
+}
+
+.kalam-comics-viewport.comic-bg-grey {
+    background: #808080;
+}
+
+.kalam-comics-viewport.comic-bg-white {
+    background: #ffffff;
+}
+
 .kalam-comics-topbar {
     background: linear-gradient(to bottom, alpha(#000000, 0.8) 0%, alpha(#000000, 0.0) 100%);
     border-bottom: none;
@@ -4671,6 +4685,50 @@ button.kalam-comics-tile.active {
 button.kalam-comics-tile image {
     -gtk-icon-size: 20px;
     margin: 0;
+}
+
+/* Image pane background dots: 24px circles, the hollow one showing
+   the inset card through it. The selected dot's 2px accent ring is
+   inset so selecting a colour never changes the row's geometry. */
+button.kalam-comics-colour-dot {
+    /* GTK's min size is the content box: 22 + the 1px border lands
+       on the board's 24px dot. */
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid @kalam_border;
+    box-shadow: none;
+}
+
+button.kalam-comics-colour-dot.bg-theme {
+    background: transparent;
+}
+
+button.kalam-comics-colour-dot.bg-black {
+    background: #000000;
+}
+
+button.kalam-comics-colour-dot.bg-grey {
+    background: #808080;
+}
+
+button.kalam-comics-colour-dot.bg-white {
+    background: #ffffff;
+}
+
+button.kalam-comics-colour-dot:hover {
+    border-color: @kalam_text_dim;
+}
+
+button.kalam-comics-colour-dot.active {
+    border-color: transparent;
+    box-shadow: inset 0 0 0 2px @kalam_accent;
+}
+
+button.kalam-comics-colour-dot:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
 }
 
 button.kalam-reader-seg-btn.kalam-comics-direction-btn {

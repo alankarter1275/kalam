@@ -9,16 +9,19 @@
 //! book (`book.<id>.comic.*`); those values seed the series record the
 //! first time a chapter from the series is opened with this model.
 
-use super::types::{FitMode, PageStyle, ReadingDirection};
+use super::types::{
+    ComicBackground, ComicImageSettings, FitMode, PageStyle, ReadingDirection,
+};
 use crate::db::Catalog;
 use serde::{Deserialize, Serialize};
 
 pub(crate) const MIN_ZOOM_PERCENT: u32 = 25;
 pub(crate) const MAX_ZOOM_PERCENT: u32 = 300;
 
-/// Everything shown by the comics Reading pane, as one value. Keeping
-/// the whole pane in one record is the all-or-nothing rule: a series
-/// either follows the global choices or carries this complete set.
+/// Everything shown by the comics Reading and Image panes, as one
+/// value. Keeping the whole right panel in one record is the
+/// all-or-nothing rule (decision 40): a series either follows the
+/// global choices or carries this complete set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct ComicReadingSettings {
@@ -35,6 +38,9 @@ pub(crate) struct ComicReadingSettings {
     pub(crate) zoom_percent: u32,
     pub(crate) auto_next_chapter: bool,
     pub(crate) mark_read_on_advance: bool,
+    /// The Image pane rides in the same record: one switch covers the
+    /// whole panel, so an Image edit is a series edit too.
+    pub(crate) image: ComicImageSettings,
 }
 
 impl Default for ComicReadingSettings {
@@ -48,6 +54,7 @@ impl Default for ComicReadingSettings {
             zoom_percent: 100,
             auto_next_chapter: true,
             mark_read_on_advance: true,
+            image: ComicImageSettings::default(),
         }
     }
 }
@@ -123,6 +130,24 @@ fn fit_pref(fit: FitMode) -> &'static str {
     }
 }
 
+fn background_from_pref(value: Option<&str>) -> ComicBackground {
+    match value {
+        Some("black") => ComicBackground::Black,
+        Some("grey") => ComicBackground::Grey,
+        Some("white") => ComicBackground::White,
+        _ => ComicBackground::Theme,
+    }
+}
+
+fn background_pref(background: ComicBackground) -> &'static str {
+    match background {
+        ComicBackground::Theme => "theme",
+        ComicBackground::Black => "black",
+        ComicBackground::Grey => "grey",
+        ComicBackground::White => "white",
+    }
+}
+
 impl ComicReadingSettings {
     /// Clamp numeric values and fold the two historical spellings the
     /// redesigned pane no longer offers: Fade becomes Single, and a
@@ -133,6 +158,7 @@ impl ComicReadingSettings {
         self.zoom_percent = self
             .zoom_percent
             .clamp(MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
+        self.image = self.image.canonical();
         if self.page_style == PageStyle::Fade {
             self.page_style = PageStyle::Single;
         }
@@ -165,6 +191,19 @@ impl ComicReadingSettings {
             mark_read_on_advance: catalog
                 .get_pref_i64("reader.comic.mark_read_on_advance", 1)
                 != 0,
+            image: ComicImageSettings {
+                background: background_from_pref(
+                    catalog
+                        .get_pref("reader.comic.image.background")
+                        .as_deref(),
+                ),
+                brightness: catalog.get_pref_i64("reader.comic.image.brightness", 0) as i32,
+                contrast: catalog.get_pref_i64("reader.comic.image.contrast", 0) as i32,
+                warmth: catalog.get_pref_i64("reader.comic.image.warmth", 0) as i32,
+                grayscale: catalog.get_pref_i64("reader.comic.image.grayscale", 0) != 0,
+                invert_colours: catalog.get_pref_i64("reader.comic.image.invert", 0) != 0,
+                crop_blank_borders: catalog.get_pref_i64("reader.comic.image.crop", 1) != 0,
+            },
         }
         .canonical()
     }
@@ -190,6 +229,31 @@ impl ComicReadingSettings {
         catalog.set_pref_i64(
             "reader.comic.mark_read_on_advance",
             i64::from(settings.mark_read_on_advance),
+        );
+        catalog.set_pref(
+            "reader.comic.image.background",
+            background_pref(settings.image.background),
+        );
+        catalog.set_pref_i64(
+            "reader.comic.image.brightness",
+            settings.image.brightness as i64,
+        );
+        catalog.set_pref_i64(
+            "reader.comic.image.contrast",
+            settings.image.contrast as i64,
+        );
+        catalog.set_pref_i64("reader.comic.image.warmth", settings.image.warmth as i64);
+        catalog.set_pref_i64(
+            "reader.comic.image.grayscale",
+            i64::from(settings.image.grayscale),
+        );
+        catalog.set_pref_i64(
+            "reader.comic.image.invert",
+            i64::from(settings.image.invert_colours),
+        );
+        catalog.set_pref_i64(
+            "reader.comic.image.crop",
+            i64::from(settings.image.crop_blank_borders),
         );
     }
 
@@ -276,12 +340,22 @@ mod tests {
             zoom_percent: 999,
             auto_next_chapter: false,
             mark_read_on_advance: false,
+            image: ComicImageSettings {
+                background: ComicBackground::Grey,
+                brightness: 140,
+                contrast: -25,
+                warmth: 30,
+                grayscale: true,
+                invert_colours: false,
+                crop_blank_borders: false,
+            },
         }
         .canonical();
         assert_eq!(settings.direction, ReadingDirection::Ltr);
         assert_eq!(settings.page_style, PageStyle::LongStrip);
         assert_eq!(settings.two_page_gap, 48);
         assert_eq!(settings.zoom_percent, MAX_ZOOM_PERCENT);
+        assert_eq!(settings.image.brightness, ComicImageSettings::MAX_ADJUSTMENT);
 
         settings.write_globals(&catalog);
         assert_eq!(ComicReadingSettings::load_globals(&catalog), settings);

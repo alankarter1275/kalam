@@ -21,6 +21,8 @@ pub mod types;
 pub mod provider;
 pub mod providers;
 pub mod reading_settings;
+pub mod image_processing;
+pub mod page_picture;
 
 pub use types::*;
 
@@ -58,6 +60,9 @@ pub struct ComicsReaderModel {
     pub pre_zoom_fit: Option<FitMode>,
     pub auto_next_chapter: bool,
     pub mark_read_on_advance: bool,
+    /// The Image pane's effective choices (decision 41), carried in
+    /// the same panel-wide settings record as the Reading fields.
+    pub image_settings: ComicImageSettings,
     /// The per-series reading-settings record (decisions 40/147):
     /// where it lives, and whether this series currently keeps one.
     /// The fields above are always the effective choices, wherever
@@ -72,6 +77,17 @@ pub struct ComicsReaderModel {
     pub set_mark_read_switch: Option<Rc<dyn Fn(bool)>>,
     pub zoom_slider: Option<crate::widgets::setting_row::SliderRow>,
     pub use_defaults_btn: Option<gtk::Button>,
+    /// Image-pane handles, in `ComicBackground::ALL` order for the
+    /// colour dots. The guarded setters and slider rows mirror the
+    /// Reading pane's pattern.
+    pub image_background_buttons: Vec<gtk::Button>,
+    pub brightness_slider: Option<crate::widgets::setting_row::SliderRow>,
+    pub contrast_slider: Option<crate::widgets::setting_row::SliderRow>,
+    pub warmth_slider: Option<crate::widgets::setting_row::SliderRow>,
+    pub set_grayscale_switch: Option<Rc<dyn Fn(bool)>>,
+    pub set_invert_switch: Option<Rc<dyn Fn(bool)>>,
+    pub set_crop_switch: Option<Rc<dyn Fn(bool)>>,
+    pub reset_image_btn: Option<gtk::Button>,
     pub left_tab: ComicLeftTab,
     pub right_tab: ComicRightTab,
     pub left_panel_open: bool,
@@ -94,6 +110,11 @@ pub struct ComicsReaderModel {
     pub osd_text: String,
     pub bookmarks: Vec<ReadingBookmark>,
     pub textures: HashMap<usize, gdk::Texture>,
+    /// Cached blank-border analysis for the current chapter, keyed
+    /// like `textures`. The rectangles are tiny and deliberately
+    /// outlive the bounded full-size texture window: returning to a
+    /// page should not analyse it a second time in this chapter.
+    pub page_crop_boxes: HashMap<usize, CropRect>,
     pub pending_loads: HashSet<usize>,
     pub session_id: Option<i64>,
     pub session_start: std::time::Instant,
@@ -132,7 +153,14 @@ pub struct ComicsReaderModel {
 
 #[allow(dead_code)]
 enum DecodedPage {
-    Rgba { width: i32, height: i32, bytes: Vec<u8> },
+    Rgba {
+        width: i32,
+        height: i32,
+        bytes: Vec<u8>,
+        /// Full reading pages carry their blank-border analysis;
+        /// thumbnails reuse this transport without spending the scan.
+        crop: Option<CropRect>,
+    },
     RawBytes(Vec<u8>),
 }
 
@@ -356,6 +384,7 @@ impl ComicsReaderModel {
             pre_zoom_fit: None,
             auto_next_chapter: settings.auto_next_chapter,
             mark_read_on_advance: settings.mark_read_on_advance,
+            image_settings: settings.image,
             series_id,
             series_settings_key,
             series_override_on,
@@ -366,6 +395,14 @@ impl ComicsReaderModel {
             set_mark_read_switch: None,
             zoom_slider: None,
             use_defaults_btn: None,
+            image_background_buttons: Vec::new(),
+            brightness_slider: None,
+            contrast_slider: None,
+            warmth_slider: None,
+            set_grayscale_switch: None,
+            set_invert_switch: None,
+            set_crop_switch: None,
+            reset_image_btn: None,
             left_tab: ComicLeftTab::Chapters,
             right_tab: ComicRightTab::Reading,
             left_panel_open: false,
@@ -387,6 +424,7 @@ impl ComicsReaderModel {
             osd_text: String::new(),
             bookmarks,
             textures: HashMap::new(),
+            page_crop_boxes: HashMap::new(),
             pending_loads: HashSet::new(),
             session_id,
             session_start: std::time::Instant::now(),
@@ -468,6 +506,7 @@ impl ComicsReaderModel {
             zoom_percent: self.zoom_percent,
             auto_next_chapter: self.auto_next_chapter,
             mark_read_on_advance: self.mark_read_on_advance,
+            image: self.image_settings,
         }
         .canonical()
     }
@@ -485,6 +524,7 @@ impl ComicsReaderModel {
         self.fit_mode = settings.fit_mode;
         self.two_page_gap = settings.two_page_gap;
         self.zoom_percent = settings.zoom_percent;
+        self.image_settings = settings.image;
         if let (Some(ref catalog), Some(key)) = (&self.catalog, &self.series_settings_key) {
             settings.save_series(catalog, key);
         }
@@ -504,6 +544,7 @@ impl ComicsReaderModel {
         self.pre_zoom_fit = None;
         self.auto_next_chapter = settings.auto_next_chapter;
         self.mark_read_on_advance = settings.mark_read_on_advance;
+        self.image_settings = settings.image;
     }
 
     pub fn settings_differ_from_defaults(&self) -> bool {
@@ -512,6 +553,29 @@ impl ComicsReaderModel {
             None => ComicReadingSettings::default(),
         };
         self.current_reading_settings() != globals
+    }
+
+    /// The crop to paint for one page. Analysis is cached whether or
+    /// not the switch is on, so turning Crop on never waits for a
+    /// second scan of a page this chapter has already decoded.
+    pub(crate) fn effective_crop(&self, page_idx: usize) -> CropRect {
+        if self.image_settings.crop_blank_borders {
+            self.page_crop_boxes
+                .get(&page_idx)
+                .copied()
+                .unwrap_or(CropRect::FULL)
+        } else {
+            CropRect::FULL
+        }
+    }
+
+    pub(crate) fn effective_page_size(
+        &self,
+        page_idx: usize,
+        texture: &gdk::Texture,
+    ) -> (i32, i32) {
+        self.effective_crop(page_idx)
+            .pixel_size(texture.width(), texture.height())
     }
 
     /// Mark the chapter being left read, at its last page, whatever
@@ -580,6 +644,7 @@ impl ComicsReaderModel {
 
         for idx in missing {
             self.pending_loads.insert(idx);
+            let known_crop = self.page_crop_boxes.get(&idx).copied();
             let s = sender.input_sender().clone();
             let prov = provider.clone();
             crate::tasks::spawn_internal(
@@ -596,10 +661,23 @@ impl ComicsReaderModel {
                         let rgba = img.to_rgba8();
                         let width = rgba.width() as i32;
                         let height = rgba.height() as i32;
+                        // Crop's one analysis pass (spec §5) rides
+                        // this existing off-main-thread decode. Its
+                        // result travels back with the pixels and is
+                        // cached for the rest of the chapter.
+                        let crop = known_crop.unwrap_or_else(|| {
+                            image_processing::analyse_blank_border_crop(
+                                rgba.as_raw(),
+                                rgba.width(),
+                                rgba.height(),
+                                rgba.width() as usize * 4,
+                            )
+                        });
                         Some(DecodedPage::Rgba {
                             width,
                             height,
                             bytes: rgba.into_raw(),
+                            crop: Some(crop),
                         })
                     } else {
                         Some(DecodedPage::RawBytes(b))
@@ -607,8 +685,13 @@ impl ComicsReaderModel {
                 },
                 |_| {},
                 move |decoded_opt| {
-                    let tex_opt = match decoded_opt {
-                        Some(DecodedPage::Rgba { width, height, bytes }) => {
+                    let (tex_opt, crop) = match decoded_opt {
+                        Some(DecodedPage::Rgba {
+                            width,
+                            height,
+                            bytes,
+                            crop,
+                        }) => {
                             let stride = (width * 4) as usize;
                             let gbytes = glib::Bytes::from_owned(bytes);
                             let mem_tex = gdk::MemoryTexture::new(
@@ -618,14 +701,17 @@ impl ComicsReaderModel {
                                 &gbytes,
                                 stride,
                             );
-                            Some(mem_tex.upcast::<gdk::Texture>())
+                            (Some(mem_tex.upcast::<gdk::Texture>()), crop)
                         }
-                        Some(DecodedPage::RawBytes(b)) => {
-                            gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok()
-                        }
-                        None => None,
+                        Some(DecodedPage::RawBytes(b)) => (
+                            gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok(),
+                            None,
+                        ),
+                        None => (None, None),
                     };
-                    let _ = s.send(types::ComicsReaderMsg::PageLoaded(gen, idx, tex_opt));
+                    let _ = s.send(types::ComicsReaderMsg::PageLoaded(
+                        gen, idx, tex_opt, crop,
+                    ));
                 },
             );
         }
@@ -661,12 +747,18 @@ impl ComicsReaderModel {
                         width,
                         height,
                         bytes: rgba.into_raw(),
+                        crop: None,
                     })
                 },
                 |_| {},
                 move |decoded_opt| {
                     let tex_opt = match decoded_opt {
-                        Some(DecodedPage::Rgba { width, height, bytes }) => {
+                        Some(DecodedPage::Rgba {
+                            width,
+                            height,
+                            bytes,
+                            ..
+                        }) => {
                             let stride = (width * 4) as usize;
                             let gbytes = glib::Bytes::from_owned(bytes);
                             let mem_tex = gdk::MemoryTexture::new(
@@ -907,6 +999,48 @@ impl ComicsReaderModel {
             });
         }
 
+        // The Image pane and the stage it paints (decision 41).
+        for class in ["comic-bg-black", "comic-bg-grey", "comic-bg-white"] {
+            widgets.viewport_box.remove_css_class(class);
+        }
+        match self.image_settings.background {
+            ComicBackground::Theme => {}
+            ComicBackground::Black => widgets.viewport_box.add_css_class("comic-bg-black"),
+            ComicBackground::Grey => widgets.viewport_box.add_css_class("comic-bg-grey"),
+            ComicBackground::White => widgets.viewport_box.add_css_class("comic-bg-white"),
+        }
+        for (idx, button) in self.image_background_buttons.iter().enumerate() {
+            toggle_active(
+                button,
+                ComicBackground::ALL.get(idx).copied()
+                    == Some(self.image_settings.background),
+            );
+        }
+        for (slider, value) in [
+            (&self.brightness_slider, self.image_settings.brightness),
+            (&self.contrast_slider, self.image_settings.contrast),
+            (&self.warmth_slider, self.image_settings.warmth),
+        ] {
+            if let Some(slider) = slider {
+                let scale = slider.scale();
+                if (scale.value() - value as f64).abs() > f64::EPSILON {
+                    scale.set_value(value as f64);
+                }
+            }
+        }
+        if let Some(set) = &self.set_grayscale_switch {
+            set(self.image_settings.grayscale);
+        }
+        if let Some(set) = &self.set_invert_switch {
+            set(self.image_settings.invert_colours);
+        }
+        if let Some(set) = &self.set_crop_switch {
+            set(self.image_settings.crop_blank_borders);
+        }
+        if let Some(btn) = &self.reset_image_btn {
+            btn.set_sensitive(self.image_settings != ComicImageSettings::default());
+        }
+
         toggle_active(&widgets.style_single_btn, self.page_style == PageStyle::Single);
         toggle_active(&widgets.style_double_btn, self.page_style == PageStyle::Double);
         toggle_active(&widgets.style_strip_btn, self.page_style == PageStyle::LongStrip);
@@ -981,11 +1115,13 @@ impl ComicsReaderModel {
         if let Some(tabs) = &self.right_tabs {
             tabs.set_selected(match self.right_tab {
                 ComicRightTab::Reading => 0,
-                ComicRightTab::Shortcuts => 1,
+                ComicRightTab::Image => 1,
+                ComicRightTab::Shortcuts => 2,
             });
         }
         widgets.right_stack.set_visible_child_name(match self.right_tab {
             ComicRightTab::Reading => "reading",
+            ComicRightTab::Image => "image",
             ComicRightTab::Shortcuts => "shortcuts",
         });
         self.sync_settings_ui(widgets);
@@ -993,6 +1129,7 @@ impl ComicsReaderModel {
 
     pub fn cleanup_memory(&mut self) {
         self.textures.clear();
+        self.page_crop_boxes.clear();
         self.pending_loads.clear();
         self.thumb_textures.clear();
         self.thumb_pending.clear();
@@ -1094,7 +1231,7 @@ fn update_viewport_policies(
 fn wrap_comic_page(
     _model: &ComicsReaderModel,
     _page_idx: usize,
-    pic: gtk::Picture,
+    pic: page_picture::ComicPagePicture,
     target_w: i32,
     target_h: i32,
     _sender: Option<&ComponentSender<ComicsReaderModel>>,
@@ -1102,7 +1239,22 @@ fn wrap_comic_page(
     if target_w > 0 && target_h > 0 {
         pic.set_size_request(target_w, target_h);
     }
-    pic.into()
+    pic.upcast()
+}
+
+/// Push new colour settings into every page already on the stage.
+/// Recursing the live tree is what lets a slider be a repaint rather
+/// than a viewport rebuild, so Long strip keeps its scroll position
+/// while the reader is still dragging.
+fn update_page_pictures(widget: &gtk::Widget, settings: ComicImageSettings) {
+    if let Ok(picture) = widget.clone().downcast::<page_picture::ComicPagePicture>() {
+        picture.set_image_settings(settings);
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        update_page_pictures(&current, settings);
+        child = current.next_sibling();
+    }
 }
 
 fn rebuild_viewport_widget(
@@ -1196,18 +1348,19 @@ fn rebuild_viewport_widget(
             item_box.add_css_class("kalam-webtoon-page-item");
 
             if let Some(texture) = model.textures.get(&idx) {
-                let tw = texture.width();
-                let th = texture.height();
+                let (tw, th) = model.effective_page_size(idx, texture);
                 let target_h = if tw > 0 {
                     ((avail_w as f64) * (th as f64 / tw as f64)).round() as i32
                 } else {
                     -1
                 };
 
-                let pic = gtk::Picture::for_paintable(texture);
+                let pic = page_picture::ComicPagePicture::new(
+                    texture,
+                    model.image_settings,
+                    model.effective_crop(idx),
+                );
                 pic.set_size_request(avail_w, target_h);
-                pic.set_can_shrink(false);
-                pic.set_content_fit(gtk::ContentFit::Contain);
                 pic.set_halign(gtk::Align::Center);
                 let wrapped = wrap_comic_page(
                     model,
@@ -1278,9 +1431,12 @@ fn rebuild_viewport_widget(
 
             if let Some(idx) = opt_idx {
                 if let Some(texture) = model.textures.get(&idx) {
-                    let tw = texture.width();
-                    let th = texture.height();
-                    let pic = gtk::Picture::for_paintable(texture);
+                    let (tw, th) = model.effective_page_size(idx, texture);
+                    let pic = page_picture::ComicPagePicture::new(
+                        texture,
+                        model.image_settings,
+                        model.effective_crop(idx),
+                    );
                     pic.set_halign(if is_left { gtk::Align::End } else { gtk::Align::Start });
 
                     let (target_w, target_h) = match model.fit_mode {
@@ -1291,13 +1447,9 @@ fn rebuild_viewport_widget(
                                     * zoom;
                                 let (target_w, target_h) = zoomed_size(tw, th, scale);
                                 pic.set_size_request(target_w, target_h);
-                                pic.set_can_shrink(false);
-                                pic.set_content_fit(gtk::ContentFit::Contain);
                                 pic.set_valign(gtk::Align::Center);
                                 (target_w, target_h)
                             } else {
-                                pic.set_can_shrink(true);
-                                pic.set_content_fit(gtk::ContentFit::Contain);
                                 pic.set_hexpand(true);
                                 pic.set_vexpand(true);
                                 pic.set_valign(gtk::Align::Center);
@@ -1310,13 +1462,9 @@ fn rebuild_viewport_widget(
                                 let (target_w, target_h) =
                                     zoomed_size(tw, th, win_h as f64 / th as f64 * zoom);
                                 pic.set_size_request(target_w, target_h);
-                                pic.set_can_shrink(false);
-                                pic.set_content_fit(gtk::ContentFit::Contain);
                                 pic.set_valign(gtk::Align::Center);
                                 (target_w, target_h)
                             } else {
-                                pic.set_can_shrink(true);
-                                pic.set_content_fit(gtk::ContentFit::Contain);
                                 pic.set_hexpand(false);
                                 pic.set_vexpand(true);
                                 pic.set_valign(gtk::Align::Center);
@@ -1332,16 +1480,12 @@ fn rebuild_viewport_widget(
                                 -1
                             };
                             pic.set_size_request(avail_w, target_h);
-                            pic.set_can_shrink(false);
-                            pic.set_content_fit(gtk::ContentFit::Contain);
                             pic.set_valign(gtk::Align::Start);
                             (avail_w, target_h)
                         }
                         FitMode::Original => {
                             let (target_w, target_h) = zoomed_size(tw, th, zoom);
                             pic.set_size_request(target_w, target_h);
-                            pic.set_can_shrink(false);
-                            pic.set_content_fit(gtk::ContentFit::Contain);
                             pic.set_valign(gtk::Align::Center);
                             (target_w, target_h)
                         }
@@ -1394,9 +1538,12 @@ fn rebuild_viewport_widget(
     }
 
     if let Some(texture) = model.textures.get(&model.current_page) {
-        let tw = texture.width();
-        let th = texture.height();
-        let pic = gtk::Picture::for_paintable(texture);
+        let (tw, th) = model.effective_page_size(model.current_page, texture);
+        let pic = page_picture::ComicPagePicture::new(
+            texture,
+            model.image_settings,
+            model.effective_crop(model.current_page),
+        );
         pic.set_halign(gtk::Align::Center);
 
         let (target_w, target_h) = match model.fit_mode {
@@ -1407,13 +1554,9 @@ fn rebuild_viewport_widget(
                         * zoom;
                     let (target_w, target_h) = zoomed_size(tw, th, scale);
                     pic.set_size_request(target_w, target_h);
-                    pic.set_can_shrink(false);
-                    pic.set_content_fit(gtk::ContentFit::Contain);
                     pic.set_valign(gtk::Align::Center);
                     (target_w, target_h)
                 } else {
-                    pic.set_can_shrink(true);
-                    pic.set_content_fit(gtk::ContentFit::Contain);
                     pic.set_hexpand(true);
                     pic.set_vexpand(true);
                     pic.set_valign(gtk::Align::Center);
@@ -1426,13 +1569,9 @@ fn rebuild_viewport_widget(
                     let (target_w, target_h) =
                         zoomed_size(tw, th, win_h as f64 / th as f64 * zoom);
                     pic.set_size_request(target_w, target_h);
-                    pic.set_can_shrink(false);
-                    pic.set_content_fit(gtk::ContentFit::Contain);
                     pic.set_valign(gtk::Align::Center);
                     (target_w, target_h)
                 } else {
-                    pic.set_can_shrink(true);
-                    pic.set_content_fit(gtk::ContentFit::Contain);
                     pic.set_hexpand(false);
                     pic.set_vexpand(true);
                     pic.set_valign(gtk::Align::Center);
@@ -1448,16 +1587,12 @@ fn rebuild_viewport_widget(
                     -1
                 };
                 pic.set_size_request(avail_w, target_h);
-                pic.set_can_shrink(false);
-                pic.set_content_fit(gtk::ContentFit::Contain);
                 pic.set_valign(gtk::Align::Start);
                 (avail_w, target_h)
             }
             FitMode::Original => {
                 let (target_w, target_h) = zoomed_size(tw, th, zoom);
                 pic.set_size_request(target_w, target_h);
-                pic.set_can_shrink(false);
-                pic.set_content_fit(gtk::ContentFit::Contain);
                 pic.set_valign(gtk::Align::Center);
                 (target_w, target_h)
             }
@@ -2550,6 +2685,24 @@ impl Component for ComicsReaderModel {
                         set_vexpand: true,
                         set_transition_type: gtk::StackTransitionType::Crossfade,
 
+                        // Image View, populated in init alongside
+                        // the Reading pane's guarded controls.
+                        #[name = "image_scroll"]
+                        gtk::ScrolledWindow {
+                            set_hexpand: true,
+                            set_vexpand: true,
+                            set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                            #[name = "image_box"]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 0,
+                                set_margin_start: 16,
+                                set_margin_end: 16,
+                                set_margin_bottom: 20,
+                            },
+                        },
+
                         // Shortcuts View, populated in init by
                         // `build_shortcuts_panel`.
                         #[name = "shortcuts_scroll"]
@@ -2594,6 +2747,7 @@ impl Component for ComicsReaderModel {
         // Explicitly register stack page names so GTK child lookup succeeds without warnings
         widgets.left_stack.page(&widgets.chapters_scroll).set_name("chapters");
         widgets.left_stack.page(&widgets.pages_scroll).set_name("pages");
+        widgets.right_stack.page(&widgets.image_scroll).set_name("image");
         widgets.right_stack.page(&widgets.shortcuts_scroll).set_name("shortcuts");
         widgets.left_stack.set_visible_child_name("chapters");
         widgets.right_stack.set_visible_child_name("reading");
@@ -2635,13 +2789,13 @@ impl Component for ComicsReaderModel {
             ));
             let tx = sender.input_sender().clone();
             model.right_tabs = Some(make_tabs(
-                &["Reading", "Shortcuts"],
+                &["Reading", "Image", "Shortcuts"],
                 &widgets.right_tabs_host,
                 Rc::new(move |idx| {
-                    let _ = tx.send(ComicsReaderMsg::SetRightTab(if idx == 1 {
-                        ComicRightTab::Shortcuts
-                    } else {
-                        ComicRightTab::Reading
+                    let _ = tx.send(ComicsReaderMsg::SetRightTab(match idx {
+                        1 => ComicRightTab::Image,
+                        2 => ComicRightTab::Shortcuts,
+                        _ => ComicRightTab::Reading,
                     }));
                 }),
             ));
@@ -2819,6 +2973,167 @@ impl Component for ComicsReaderModel {
             defaults_btn.set_sensitive(false);
             widgets.defaults_host.append(&defaults_btn);
             model.use_defaults_btn = Some(defaults_btn);
+        }
+
+        // The Image pane (decision 41), in board order. It is built
+        // with the Reading pane's guarded rows because edits here
+        // are edits to the same panel-wide series record.
+        {
+            let image_host = widgets.image_box.clone();
+            let add_image_section = |label: &str| {
+                let heading = gtk::Label::new(Some(label));
+                heading.add_css_class("kalam-reader-section-label");
+                heading.set_halign(gtk::Align::Start);
+                heading.set_margin_top(14);
+                heading.set_margin_bottom(8);
+                image_host.append(&heading);
+            };
+
+            add_image_section("Background");
+            let background_card = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            background_card.add_css_class("kalam-comics-inset-card");
+            background_card.set_size_request(-1, 48);
+            background_card.set_valign(gtk::Align::Center);
+            let background_label = gtk::Label::new(Some("Colour"));
+            background_label.add_css_class("kalam-ui-body");
+            background_label.set_hexpand(true);
+            background_label.set_xalign(0.0);
+            background_label.set_valign(gtk::Align::Center);
+            background_card.append(&background_label);
+
+            let dots = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            dots.set_valign(gtk::Align::Center);
+            for background in ComicBackground::ALL {
+                let button = gtk::Button::new();
+                button.add_css_class("kalam-comics-colour-dot");
+                button.add_css_class(match background {
+                    ComicBackground::Theme => "bg-theme",
+                    ComicBackground::Black => "bg-black",
+                    ComicBackground::Grey => "bg-grey",
+                    ComicBackground::White => "bg-white",
+                });
+                button.set_size_request(24, 24);
+                button.set_valign(gtk::Align::Center);
+                let accessible_label = match background {
+                    ComicBackground::Theme => "Theme background",
+                    ComicBackground::Black => "Black background",
+                    ComicBackground::Grey => "Grey background",
+                    ComicBackground::White => "White background",
+                };
+                button.set_tooltip_text(Some(accessible_label));
+                button.update_property(&[gtk::accessible::Property::Label(
+                    accessible_label,
+                )]);
+                let tx = sender.input_sender().clone();
+                button.connect_clicked(move |_| {
+                    let _ = tx.send(ComicsReaderMsg::SetImageBackground(background));
+                });
+                dots.append(&button);
+                model.image_background_buttons.push(button);
+            }
+            background_card.append(&dots);
+            widgets.image_box.append(&background_card);
+
+            add_image_section("Adjustments");
+            let adjustments_card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            adjustments_card.add_css_class("kalam-comics-inset-card");
+            let make_adjustment = |label: &str,
+                                   initial: i32,
+                                   make_msg: Rc<dyn Fn(i32) -> ComicsReaderMsg>| {
+                let tx = sender.input_sender().clone();
+                crate::widgets::setting_row::slider_row(
+                    label,
+                    None,
+                    ComicImageSettings::MIN_ADJUSTMENT as f64,
+                    ComicImageSettings::MAX_ADJUSTMENT as f64,
+                    1.0,
+                    initial as f64,
+                    0,
+                    "",
+                    move |value| {
+                        let _ = tx.send(make_msg(value.round() as i32));
+                    },
+                )
+            };
+
+            let brightness = make_adjustment(
+                "Brightness",
+                model.image_settings.brightness,
+                Rc::new(ComicsReaderMsg::SetBrightness),
+            );
+            brightness
+                .widget()
+                .add_css_class("kalam-comics-setting-divider");
+            adjustments_card.append(&brightness.widget());
+            model.brightness_slider = Some(brightness);
+
+            let contrast = make_adjustment(
+                "Contrast",
+                model.image_settings.contrast,
+                Rc::new(ComicsReaderMsg::SetContrast),
+            );
+            contrast
+                .widget()
+                .add_css_class("kalam-comics-setting-divider");
+            adjustments_card.append(&contrast.widget());
+            model.contrast_slider = Some(contrast);
+
+            let warmth = make_adjustment(
+                "Warmth",
+                model.image_settings.warmth,
+                Rc::new(ComicsReaderMsg::SetWarmth),
+            );
+            adjustments_card.append(&warmth.widget());
+            model.warmth_slider = Some(warmth);
+            widgets.image_box.append(&adjustments_card);
+
+            add_image_section("Filters");
+            let filters_card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            filters_card.add_css_class("kalam-comics-inset-card");
+
+            let (row, set) = guarded_switch_row(
+                "Grayscale",
+                model.image_settings.grayscale,
+                &sender,
+                Rc::new(ComicsReaderMsg::SetGrayscale),
+            );
+            row.widget()
+                .add_css_class("kalam-comics-setting-divider");
+            filters_card.append(&row.widget());
+            model.set_grayscale_switch = Some(set);
+
+            let (row, set) = guarded_switch_row(
+                "Invert colours",
+                model.image_settings.invert_colours,
+                &sender,
+                Rc::new(ComicsReaderMsg::SetInvertColours),
+            );
+            filters_card.append(&row.widget());
+            model.set_invert_switch = Some(set);
+            widgets.image_box.append(&filters_card);
+
+            add_image_section("Crop");
+            let (row, set) = guarded_switch_row(
+                "Crop blank borders",
+                model.image_settings.crop_blank_borders,
+                &sender,
+                Rc::new(ComicsReaderMsg::SetCropBlankBorders),
+            );
+            row.widget().add_css_class("kalam-comics-inset-card");
+            widgets.image_box.append(&row.widget());
+            model.set_crop_switch = Some(set);
+
+            let tx = sender.input_sender().clone();
+            let reset_btn = crate::widgets::pill_button::boxed_ghost_button(
+                "Reset image settings",
+                move || {
+                    let _ = tx.send(ComicsReaderMsg::ResetImageSettings);
+                },
+            );
+            reset_btn.set_halign(gtk::Align::Start);
+            reset_btn.set_margin_top(16);
+            widgets.image_box.append(&reset_btn);
+            model.reset_image_btn = Some(reset_btn);
         }
 
         build_shortcuts_panel(&widgets.shortcuts_box);
@@ -3133,6 +3448,24 @@ impl Component for ComicsReaderModel {
                 sender.input(ComicsReaderMsg::SetZoomPercent(45));
                 sender.input(ComicsReaderMsg::OpenRightPanel);
             }
+            Ok("image") => {
+                sender.input(ComicsReaderMsg::SetRightTab(ComicRightTab::Image));
+                sender.input(ComicsReaderMsg::OpenRightPanel);
+            }
+            Ok("image-adjusted") => {
+                // Real Image edits: the frame has to prove the stage
+                // colour, the GSK colour matrix and crop all reached
+                // the painted page, not only that the pane exists.
+                sender.input(ComicsReaderMsg::SetImageBackground(
+                    ComicBackground::White,
+                ));
+                sender.input(ComicsReaderMsg::SetBrightness(15));
+                sender.input(ComicsReaderMsg::SetContrast(25));
+                sender.input(ComicsReaderMsg::SetWarmth(45));
+                sender.input(ComicsReaderMsg::SetCropBlankBorders(true));
+                sender.input(ComicsReaderMsg::SetRightTab(ComicRightTab::Image));
+                sender.input(ComicsReaderMsg::OpenRightPanel);
+            }
             Ok("shortcuts") => {
                 sender.input(ComicsReaderMsg::SetRightTab(ComicRightTab::Shortcuts));
                 sender.input(ComicsReaderMsg::OpenRightPanel);
@@ -3308,7 +3641,7 @@ impl Component for ComicsReaderModel {
                     let _ = sender.input_sender().send(ComicsReaderMsg::NextPage);
                 }
             }
-            ComicsReaderMsg::PageLoaded(gen, idx, ref maybe_tex) => {
+            ComicsReaderMsg::PageLoaded(gen, idx, ref maybe_tex, crop) => {
                 if gen != self.load_gen {
                     // Asked for by the chapter that was left; its
                     // page numbers mean nothing here.
@@ -3317,6 +3650,9 @@ impl Component for ComicsReaderModel {
                 self.pending_loads.remove(&idx);
                 if let Some(tex) = maybe_tex.clone() {
                     self.textures.insert(idx, tex.clone());
+                    if let Some(crop) = crop {
+                        self.page_crop_boxes.insert(idx, crop);
+                    }
                     let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
 
                     if is_webtoon {
@@ -3325,8 +3661,7 @@ impl Component for ComicsReaderModel {
                             let vp_w = widgets.viewport_box.width();
                             let win_w = if vp_w > 100 { vp_w } else { 850 };
                             let avail_w = (((win_w - 24).max(300) as f64) * zoom_factor(self)).round() as i32;
-                            let tw = tex.width();
-                            let th = tex.height();
+                            let (tw, th) = self.effective_page_size(idx, &tex);
                             let target_h = if tw > 0 {
                                 ((avail_w as f64) * (th as f64 / tw as f64)).round() as i32
                             } else {
@@ -3341,10 +3676,12 @@ impl Component for ComicsReaderModel {
                                         while let Some(old) = item_box.first_child() {
                                             item_box.remove(&old);
                                         }
-                                        let pic = gtk::Picture::for_paintable(&tex);
+                                        let pic = page_picture::ComicPagePicture::new(
+                                            &tex,
+                                            self.image_settings,
+                                            self.effective_crop(idx),
+                                        );
                                         pic.set_size_request(avail_w, target_h);
-                                        pic.set_can_shrink(false);
-                                        pic.set_content_fit(gtk::ContentFit::Contain);
                                         pic.set_halign(gtk::Align::Center);
                                         let wrapped = wrap_comic_page(
                                             self,
@@ -3563,6 +3900,107 @@ impl Component for ComicsReaderModel {
                     self.sync_settings_ui(widgets);
                 }
             }
+            ComicsReaderMsg::SetImageBackground(background) => {
+                if self.image_settings.background != background {
+                    self.image_settings.background = background;
+                    self.store_series_setting();
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::SetBrightness(value) => {
+                let value = value.clamp(
+                    ComicImageSettings::MIN_ADJUSTMENT,
+                    ComicImageSettings::MAX_ADJUSTMENT,
+                );
+                if self.image_settings.brightness != value {
+                    self.image_settings.brightness = value;
+                    self.store_series_setting();
+                    if let Some(child) = widgets.viewport_box.child() {
+                        update_page_pictures(&child, self.image_settings);
+                    }
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::SetContrast(value) => {
+                let value = value.clamp(
+                    ComicImageSettings::MIN_ADJUSTMENT,
+                    ComicImageSettings::MAX_ADJUSTMENT,
+                );
+                if self.image_settings.contrast != value {
+                    self.image_settings.contrast = value;
+                    self.store_series_setting();
+                    if let Some(child) = widgets.viewport_box.child() {
+                        update_page_pictures(&child, self.image_settings);
+                    }
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::SetWarmth(value) => {
+                let value = value.clamp(
+                    ComicImageSettings::MIN_ADJUSTMENT,
+                    ComicImageSettings::MAX_ADJUSTMENT,
+                );
+                if self.image_settings.warmth != value {
+                    self.image_settings.warmth = value;
+                    self.store_series_setting();
+                    if let Some(child) = widgets.viewport_box.child() {
+                        update_page_pictures(&child, self.image_settings);
+                    }
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::SetGrayscale(on) => {
+                if self.image_settings.grayscale != on {
+                    self.image_settings.grayscale = on;
+                    self.store_series_setting();
+                    if let Some(child) = widgets.viewport_box.child() {
+                        update_page_pictures(&child, self.image_settings);
+                    }
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::SetInvertColours(on) => {
+                if self.image_settings.invert_colours != on {
+                    self.image_settings.invert_colours = on;
+                    self.store_series_setting();
+                    if let Some(child) = widgets.viewport_box.child() {
+                        update_page_pictures(&child, self.image_settings);
+                    }
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::SetCropBlankBorders(on) => {
+                if self.image_settings.crop_blank_borders != on {
+                    self.image_settings.crop_blank_borders = on;
+                    self.store_series_setting();
+                    // Crop changes the page's effective aspect, not
+                    // just its paint: the fit sizes have to be laid
+                    // out again around the cropped rectangle.
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
+                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    widgets.viewport_box.set_child(Some(&child));
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::ResetImageSettings => {
+                let defaults = ComicImageSettings::default();
+                if self.image_settings != defaults {
+                    let crop_changed =
+                        self.image_settings.crop_blank_borders != defaults.crop_blank_borders;
+                    self.image_settings = defaults;
+                    self.store_series_setting();
+                    if crop_changed {
+                        let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                        update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
+                        let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                        widgets.viewport_box.set_child(Some(&child));
+                    } else if let Some(child) = widgets.viewport_box.child() {
+                        update_page_pictures(&child, self.image_settings);
+                    }
+                    self.sync_settings_ui(widgets);
+                }
+            }
             ComicsReaderMsg::SetSeriesOverride(on) => {
                 if on {
                     self.store_series_setting();
@@ -3684,6 +4122,7 @@ impl Component for ComicsReaderModel {
                             self.provider = std::sync::Arc::new(new_prov);
                             self.total_pages = self.provider.page_count();
                             self.textures.clear();
+                            self.page_crop_boxes.clear();
                             self.pending_loads.clear();
                             self.thumb_textures.clear();
                             self.thumb_pending.clear();

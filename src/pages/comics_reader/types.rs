@@ -105,14 +105,138 @@ pub enum ComicLeftTab {
     Pages,
 }
 
-/// The right floating panel's tabs (decision 39). The Image pane joins
-/// this enum with its draw-time adjustment engine; until then the panel
-/// carries the two panes that already have behaviour behind them.
+/// The right floating panel's tabs (decision 39).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ComicRightTab {
     #[default]
     Reading,
+    Image,
     Shortcuts,
+}
+
+/// The colour behind a comic page (decision 41). `Theme` keeps the
+/// reader's normal stage colour; the other three are the fixed dots in
+/// the Image pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ComicBackground {
+    #[default]
+    Theme,
+    Black,
+    Grey,
+    White,
+}
+
+impl ComicBackground {
+    pub const ALL: [Self; 4] = [Self::Theme, Self::Black, Self::Grey, Self::White];
+}
+
+/// Everything the Image pane controls (decision 41). Adjustments are
+/// centred on zero: 0 leaves that part of the page alone, while the
+/// ends of the range are deliberately strong. Crop starts on, as the
+/// approved boards show it; all other processing starts neutral.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ComicImageSettings {
+    pub background: ComicBackground,
+    pub brightness: i32,
+    pub contrast: i32,
+    pub warmth: i32,
+    pub grayscale: bool,
+    pub invert_colours: bool,
+    pub crop_blank_borders: bool,
+}
+
+impl Default for ComicImageSettings {
+    fn default() -> Self {
+        Self {
+            background: ComicBackground::Theme,
+            brightness: 0,
+            contrast: 0,
+            warmth: 0,
+            grayscale: false,
+            invert_colours: false,
+            crop_blank_borders: true,
+        }
+    }
+}
+
+impl ComicImageSettings {
+    pub const MIN_ADJUSTMENT: i32 = -100;
+    pub const MAX_ADJUSTMENT: i32 = 100;
+
+    pub fn canonical(mut self) -> Self {
+        self.brightness = self
+            .brightness
+            .clamp(Self::MIN_ADJUSTMENT, Self::MAX_ADJUSTMENT);
+        self.contrast = self
+            .contrast
+            .clamp(Self::MIN_ADJUSTMENT, Self::MAX_ADJUSTMENT);
+        self.warmth = self
+            .warmth
+            .clamp(Self::MIN_ADJUSTMENT, Self::MAX_ADJUSTMENT);
+        self
+    }
+}
+
+/// A page rectangle in unit coordinates: `(0, 0)` is the top-left of
+/// the decoded image and `(1, 1)` its bottom-right. Crop analysis
+/// stores fractions rather than pixels so one result serves every
+/// display size and zoom.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CropRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl CropRect {
+    pub const FULL: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        width: 1.0,
+        height: 1.0,
+    };
+
+    pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        if ![x, y, width, height].iter().all(|v| v.is_finite()) {
+            return Self::FULL;
+        }
+        let x = x.clamp(0.0, 1.0);
+        let y = y.clamp(0.0, 1.0);
+        let width = width.clamp(0.0, 1.0 - x);
+        let height = height.clamp(0.0, 1.0 - y);
+        if width <= 0.0 || height <= 0.0 {
+            Self::FULL
+        } else {
+            Self {
+                x,
+                y,
+                width,
+                height,
+            }
+        }
+    }
+
+    pub fn is_full(self) -> bool {
+        self.x <= 0.0005
+            && self.y <= 0.0005
+            && self.width >= 0.9995
+            && self.height >= 0.9995
+    }
+
+    pub fn pixel_size(self, image_width: i32, image_height: i32) -> (i32, i32) {
+        (
+            ((image_width.max(1) as f32 * self.width).round() as i32).max(1),
+            ((image_height.max(1) as f32 * self.height).round() as i32).max(1),
+        )
+    }
+}
+
+impl Default for CropRect {
+    fn default() -> Self {
+        Self::FULL
+    }
 }
 
 /// What the page-jump field counts in (decision 50): a series-wide page
@@ -137,10 +261,13 @@ pub struct ChapterMeta {
 
 #[derive(Debug)]
 pub enum ComicsReaderMsg {
-    /// A decoded page, tagged with the load generation that asked for
-    /// it so a chapter switch can disown late arrivals from the chapter
-    /// that has already been left.
-    PageLoaded(u64, usize, Option<gtk::gdk::Texture>),
+    /// A decoded page and its cached blank-border analysis, tagged
+    /// with the load generation that asked for it so a chapter switch
+    /// can disown late arrivals from the chapter that has already been
+    /// left. The crop is `None` only when no texture arrived or the
+    /// page took GDK's encoded-bytes fallback and supplied no RGBA
+    /// pixels to analyse.
+    PageLoaded(u64, usize, Option<gtk::gdk::Texture>, Option<CropRect>),
     ThumbnailLoaded(u64, usize, Option<gtk::gdk::Texture>),
     SetPage(usize),
     UpdateScrollPage(f64),
@@ -165,6 +292,16 @@ pub enum ComicsReaderMsg {
     ToggleZoom100,
     SetAutoNextChapter(bool),
     SetMarkReadOnAdvance(bool),
+    /// The Image pane (decision 41). These edits belong to the same
+    /// all-or-nothing panel record as the Reading pane.
+    SetImageBackground(ComicBackground),
+    SetBrightness(i32),
+    SetContrast(i32),
+    SetWarmth(i32),
+    SetGrayscale(bool),
+    SetInvertColours(bool),
+    SetCropBlankBorders(bool),
+    ResetImageSettings,
     /// "Settings for this series" (decisions 40/147): on stores the
     /// standing choices as this series' own; off forgets the record
     /// and the global comic defaults come back.

@@ -935,15 +935,13 @@ fn pdf_search_section_path(
     match chain.len() {
         0 => pages_heading_for_page(entries, total_pages, page, fallback_title).title,
         1 => chain.remove(0),
-        _ => {
-            let root = chain.first().expect("two or more chain entries").clone();
-            let deepest = chain.last().expect("two or more chain entries").clone();
-            if root.eq_ignore_ascii_case(&deepest) {
-                root
-            } else {
-                format!("{root} · {deepest}")
+        _ => match (chain.first(), chain.last()) {
+            (Some(root), Some(deepest)) if root.eq_ignore_ascii_case(deepest) => {
+                root.clone()
             }
-        }
+            (Some(root), Some(deepest)) => format!("{root} · {deepest}"),
+            _ => pages_heading_for_page(entries, total_pages, page, fallback_title).title,
+        },
     }
 }
 
@@ -4683,7 +4681,7 @@ impl Component for PdfReaderModel {
                     .widget(),
             );
             let tx = sender.input_sender().clone();
-            model.search_scope_control = Some(crate::widgets::segmented::segmented_control(
+            let search_scope_control = crate::widgets::segmented::segmented_control(
                 &["Chapter", "Book"],
                 model.search_scope.toggle_index(),
                 crate::widgets::segmented::SegmentedSize::Small,
@@ -4692,14 +4690,11 @@ impl Component for PdfReaderModel {
                         PdfSearchScope::from_toggle_index(idx),
                     ));
                 },
-            ));
-            widgets.search_scope_host.append(
-                &model
-                    .search_scope_control
-                    .as_ref()
-                    .expect("just built")
-                    .widget(),
             );
+            widgets
+                .search_scope_host
+                .append(&search_scope_control.widget());
+            model.search_scope_control = Some(search_scope_control);
             for (button, label) in [
                 (&widgets.search_prev_btn, "Previous match"),
                 (&widgets.search_next_btn, "Next match"),

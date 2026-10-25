@@ -114,6 +114,18 @@ fn install() {
             "kalam-pin-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7.4 2.8h9.2l-1.4 5.4L19 11.4h-5.6v9.4h-2.8v-9.4H5l3.8-3.2zM9.4 4.8h5.2l-.7 3.1 1.2 1.7H8.9l1.2-1.7z" /></svg>"#,
         ),
+        // The PDF Pages grid's density toggle (decision 59): the
+        // board's two and three upright page columns, kept as
+        // simple stroked rectangles so the count remains legible
+        // at the 18px panel-header size.
+        (
+            "kalam-columns-2-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="5" width="6" height="14" rx="1" /><rect x="14" y="5" width="6" height="14" rx="1" /></svg>"#,
+        ),
+        (
+            "kalam-columns-3-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="5" width="4" height="14" rx="1" /><rect x="10" y="5" width="4" height="14" rx="1" /><rect x="17" y="5" width="4" height="14" rx="1" /></svg>"#,
+        ),
         // The reader's bookmark ribbon (decision 16): a V-notched strip
         // hanging from the top edge. Idle is an outline in the border
         // colour over the page; set is the same shape filled with the

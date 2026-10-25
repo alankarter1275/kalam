@@ -5133,9 +5133,141 @@ button.kalam-pdf-contents-chevron image {
     -gtk-icon-size: 14px;
 }
 
+/* Contents with no outline (decision 58): the board's quiet
+   signpost to Pages, rather than a dead-end label. */
+.kalam-pdf-contents-empty-icon {
+    color: @kalam_text_dim;
+}
+
+.kalam-pdf-contents-empty-title {
+    color: @kalam_text;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.kalam-pdf-contents-empty-text {
+    color: @kalam_text_dim;
+    font-size: 0.88rem;
+}
+
+button.kalam-pdf-contents-open-pages {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    box-shadow: none;
+    color: @kalam_text;
+    padding: 7px 18px;
+}
+
+button.kalam-pdf-contents-open-pages:hover {
+    background: @kalam_hover;
+}
+
+/* Pages (decision 59): sticky chapter heading, the 2/3-column
+   toggle, and whole-page thumbnails over their number strips. */
+.kalam-pdf-pages-heading-title {
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.kalam-pdf-pages-heading-meta {
+    color: @kalam_text_dim;
+    font-size: 0.8rem;
+}
+
+button.kalam-pdf-pages-columns-btn {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    box-shadow: none;
+    color: @kalam_text_dim;
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0;
+}
+
+button.kalam-pdf-pages-columns-btn:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-pages-columns-btn.active {
+    border-color: @kalam_accent;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-pages-columns-btn image {
+    -gtk-icon-size: 18px;
+}
+
+gridview.kalam-pdf-pages-grid {
+    background: transparent;
+}
+
+gridview.kalam-pdf-pages-grid > child {
+    background: transparent;
+    padding: 0;
+}
+
+.kalam-pdf-pages-fade {
+    background-image: linear-gradient(to bottom, alpha(@kalam_card, 0.0), @kalam_card);
+    border-radius: 0 0 22px 22px;
+}
+
+button.kalam-pdf-page-thumb {
+    background: alpha(@kalam_border, 0.72);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    box-shadow: none;
+    padding: 0;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-page-thumb:hover {
+    border-color: @kalam_text_dim;
+}
+
+button.kalam-pdf-page-thumb.current {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+button.kalam-pdf-page-thumb.failed {
+    background: transparent;
+    border: 1.5px dashed @kalam_text_dim;
+}
+
+button.kalam-pdf-page-thumb.failed .kalam-pdf-page-thumb-image {
+    background: transparent;
+}
+
+.kalam-pdf-page-thumb-image {
+    background: alpha(@kalam_border, 0.72);
+    border-radius: 6px 6px 0 0;
+}
+
+.kalam-pdf-page-thumb-num {
+    color: @kalam_text;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.kalam-pdf-page-thumb-status {
+    color: @kalam_text_dim;
+    font-size: 11px;
+    padding: 0 8px;
+}
+
 button.kalam-pdf-pin:focus-visible,
 button.kalam-pdf-contents-nav:focus-visible,
 button.kalam-pdf-contents-chevron:focus-visible,
+button.kalam-pdf-contents-open-pages:focus-visible,
+button.kalam-pdf-pages-columns-btn:focus-visible,
+button.kalam-pdf-page-thumb:focus-visible,
 button.kalam-pdf-rotate-btn:focus-visible {
     outline: 2px solid @kalam_accent;
     outline-offset: 1px;

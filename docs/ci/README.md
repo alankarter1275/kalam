@@ -43,7 +43,7 @@ day. The smoke-test job downloads that binary rather than building it again.
 
 The `screenshots` job depends on a successful build and uses
 `continue-on-error: true`. A compositor or rendering problem therefore does
-not block a correct code change. Its 72 captures run as six parallel
+not block a correct code change. Its 74 captures run as six parallel
 matrix groups — EPUB, comics, PDF, general pages, and two halves of
 Settings — rather than as one serial list. Each group uploads its
 `report.txt` files and settled PNGs as a one-day internal artifact;

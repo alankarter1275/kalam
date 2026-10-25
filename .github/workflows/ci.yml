@@ -631,6 +631,22 @@ jobs:
             THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      - name: open the PDF Pages panel (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Pages panel in two columns pinned (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-pinned-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-2 \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
       - name: open the PDF shortcuts panel (dark) and report
         if: matrix.group == 'pdf'
         run: |
@@ -1171,6 +1187,7 @@ jobs:
           # on the PDF route.
           for shot in pdf-chrome-light pdf-chrome-dark \
                       pdf-contents-dark pdf-contents-pinned-dark \
+                      pdf-pages-dark pdf-pages-pinned-light \
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark; do
@@ -1292,6 +1309,7 @@ jobs:
           done
           for shot in pdf-chrome-light pdf-chrome-dark \
                       pdf-contents-dark pdf-contents-pinned-dark \
+                      pdf-pages-dark pdf-pages-pinned-light \
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark; do

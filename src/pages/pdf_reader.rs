@@ -29,6 +29,7 @@ use crate::epub_book::ReadingTheme;
 use crate::pdf::{PdfDocument, PdfPageText, PdfSearchResult, PdfTocEntry};
 
 mod image;
+mod pages_grid;
 
 pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
 
@@ -122,6 +123,19 @@ pub struct PdfRenderRequest {
     pub page: usize,
     pub scale: f32,
     pub smart_crop: bool,
+    pub rotation: i32,
+    pub path: PathBuf,
+}
+
+/// One low-resolution page for the Pages grid. It travels on its
+/// own worker and generation: turning or zooming the reading page
+/// must not have to wait behind thumbnails, and a thumbnail must
+/// never be mistaken for a reading raster.
+#[derive(Debug, Clone)]
+pub struct PdfThumbnailRequest {
+    pub generation: u64,
+    pub page: usize,
+    pub target_width: u32,
     pub rotation: i32,
     pub path: PathBuf,
 }
@@ -593,6 +607,31 @@ fn format_location_label(
     }
 }
 
+/// The pages the Pages grid rings as current for one reading
+/// position, under the location text's own spread rules.
+fn pdf_pages_current_pages(
+    spread_mode: PdfSpreadMode,
+    scroll_mode: PdfScrollMode,
+    total_pages: usize,
+    current_page: usize,
+) -> HashSet<usize> {
+    if total_pages == 0 {
+        return HashSet::new();
+    }
+    let current = current_page.clamp(1, total_pages);
+    if spread_mode == PdfSpreadMode::NoSpreads
+        || scroll_mode == PdfScrollMode::WrappedScrolling
+    {
+        return HashSet::from([current]);
+    }
+    let (left, right) = calculate_spread_for_page(spread_mode, total_pages, current);
+    let mut pages = HashSet::from([left]);
+    if let Some(right) = right {
+        pages.insert(right);
+    }
+    pages
+}
+
 /// The pages the jump field's Chapter mode counts: the outline's
 /// top level, in outline order. MuPDF's flattened outline already
 /// forces structural titles (Preface, Chapter, Index) to depth 0,
@@ -679,6 +718,100 @@ fn current_toc_index(
         .map(|(index, _)| index)
 }
 
+/// The top-level span the Pages panel's sticky heading names for
+/// one page. A nested section still belongs to its chapter on the
+/// board (`THE EARTH · 47 pages`), so this deliberately resolves
+/// to a root outline entry rather than the deepest current entry
+/// Contents marks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PdfPagesHeading {
+    title: String,
+    start_page: usize,
+    end_page: usize,
+}
+
+impl PdfPagesHeading {
+    fn page_count(&self) -> usize {
+        self.end_page.saturating_sub(self.start_page) + 1
+    }
+
+    fn contains(&self, page: usize) -> bool {
+        (self.start_page..=self.end_page).contains(&page)
+    }
+}
+
+fn pages_heading_for_page(
+    entries: &[PdfTocEntry],
+    total_pages: usize,
+    page: usize,
+    fallback_title: &str,
+) -> PdfPagesHeading {
+    let total_pages = total_pages.max(1);
+    let page = page.clamp(1, total_pages);
+    let fallback = || {
+        let title = if fallback_title.trim().is_empty() {
+            "This book"
+        } else {
+            fallback_title.trim()
+        };
+        title.to_string()
+    };
+
+    let parents = toc_parent_indices(entries);
+    let mut roots: Vec<(usize, usize, String)> = entries
+        .iter()
+        .enumerate()
+        .filter(|(index, entry)| {
+            parents.get(*index).copied().flatten().is_none()
+                && entry.page >= 1
+                && entry.page <= total_pages
+        })
+        .map(|(index, entry)| (entry.page, index, entry.title.clone()))
+        .collect();
+    roots.sort_by_key(|(start, index, _)| (*start, *index));
+    // Two roots at one destination describe the same opening; the
+    // later outline row is the more specific name for that span.
+    roots.dedup_by(|later, kept| {
+        if later.0 == kept.0 {
+            kept.1 = later.1;
+            kept.2 = later.2.clone();
+            true
+        } else {
+            false
+        }
+    });
+
+    if roots.is_empty() {
+        return PdfPagesHeading {
+            title: fallback(),
+            start_page: 1,
+            end_page: total_pages,
+        };
+    }
+    if page < roots[0].0 {
+        return PdfPagesHeading {
+            title: fallback(),
+            start_page: 1,
+            end_page: roots[0].0 - 1,
+        };
+    }
+
+    let root_index = roots
+        .iter()
+        .rposition(|(start, _, _)| *start <= page)
+        .expect("the first root starts at or before this page");
+    let (start_page, _, title) = roots[root_index].clone();
+    let end_page = roots
+        .get(root_index + 1)
+        .map(|(next_start, _, _)| next_start - 1)
+        .unwrap_or(total_pages);
+    PdfPagesHeading {
+        title,
+        start_page,
+        end_page,
+    }
+}
+
 /// The rows Contents shows for one filter/collapse state. A filter
 /// keeps its matches, their ancestors and their descendants, and
 /// overrides folding while it stands — a match folded inside its
@@ -761,6 +894,7 @@ pub struct CachedPageTexture {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfLeftTab {
     Contents,
+    Pages,
     Bookmarks,
 }
 
@@ -816,6 +950,14 @@ pub struct PdfImageWidgets {
     pub trim_switch: gtk::Switch,
 }
 
+pub struct PdfPagesWidgets {
+    pub scroll: gtk::ScrolledWindow,
+    pub heading_title: gtk::Label,
+    pub heading_meta: gtk::Label,
+    pub columns_3_button: gtk::Button,
+    pub columns_2_button: gtk::Button,
+}
+
 #[derive(Debug)]
 pub enum PdfReaderMsg {
     NextPage,
@@ -854,6 +996,8 @@ pub enum PdfReaderMsg {
     OpenLeftPanel,
     OpenRightPanel,
     OpenContents,
+    OpenPages,
+    SetPagesColumns(usize),
     OpenReadingPanel,
     OpenShortcutsPanel,
     ToggleLeftPanel,
@@ -888,6 +1032,15 @@ pub enum PdfReaderMsg {
         width: i32,
         height: i32,
     },
+    /// A Pages-grid cell for this page has just been bound. This
+    /// is the lazy thumbnail request, not a reading-page load.
+    PageThumbnailVisible(usize),
+    PageThumbnailReady {
+        generation: u64,
+        page: usize,
+        texture: Option<gdk::Texture>,
+    },
+    PagesGridScrolled(f64),
     LeftEdgeHover(bool),
     RightEdgeHover(bool),
     LeftPanelHover(bool),
@@ -1040,6 +1193,13 @@ pub struct PdfReaderModel {
     pub toc_current_visible_row: Option<usize>,
     pub toc_current_page_synced: usize,
     pub bookmarks_list_box: Option<gtk::Box>,
+    pub pages_grid: Option<pages_grid::PdfPagesGrid>,
+    pub pages_widgets: Option<PdfPagesWidgets>,
+    pub pages_columns: usize,
+    pub thumbnail_tx: Option<async_channel::Sender<PdfThumbnailRequest>>,
+    pub thumbnail_generation: u64,
+    pub thumbnail_active_generation: Option<Arc<AtomicU64>>,
+    pub thumbnail_pending: HashSet<usize>,
     pub settings_widgets: Option<PdfSettingsWidgets>,
     pub image_widgets: Option<PdfImageWidgets>,
     pub screenshot_action_applied: bool,
@@ -1286,6 +1446,16 @@ impl PdfReaderModel {
         let right_panel_pinned =
             init.catalog.get_pref_i64("reader.pdf.right_panel_pinned", 0) != 0;
 
+        // The Pages grid's density is a reader preference rather
+        // than a property of one document; the board's three
+        // columns are the starting answer.
+        let pages_columns =
+            if init.catalog.get_pref_i64("reader.pdf.pages_columns", 3) == 2 {
+                2
+            } else {
+                3
+            };
+
         let mut model = Self {
             book_id: init.book_id,
             catalog: init.catalog,
@@ -1358,6 +1528,13 @@ impl PdfReaderModel {
             toc_current_visible_row: None,
             toc_current_page_synced: 0,
             bookmarks_list_box: None,
+            pages_grid: None,
+            pages_widgets: None,
+            pages_columns,
+            thumbnail_tx: None,
+            thumbnail_generation: 1,
+            thumbnail_active_generation: None,
+            thumbnail_pending: HashSet::new(),
             settings_widgets: None,
             image_widgets: None,
             screenshot_action_applied: false,
@@ -1453,6 +1630,28 @@ impl PdfReaderModel {
     /// Return list of (left, right) page spreads for streaming.
     pub fn all_spreads(&self) -> Vec<(usize, Option<usize>)> {
         calculate_all_spreads(self.spread_mode, self.total_pages)
+    }
+
+    /// The pages the Pages grid rings as current. A spread rings
+    /// both of its pages (decision 59); wrapped scrolling reads
+    /// as single pages everywhere else in the reader, so it rings
+    /// only the page the location names.
+    pub fn pages_current_pages(&self) -> HashSet<usize> {
+        pdf_pages_current_pages(
+            self.spread_mode,
+            self.scroll_mode,
+            self.total_pages,
+            self.current_page,
+        )
+    }
+
+    fn pages_heading(&self, first_visible_page: usize) -> PdfPagesHeading {
+        pages_heading_for_page(
+            &self.toc_entries,
+            self.total_pages,
+            first_visible_page,
+            &self.title,
+        )
     }
 
     pub fn schedule_left_close(&mut self, sender: &ComponentSender<Self>) {
@@ -1696,6 +1895,136 @@ impl PdfReaderModel {
         self.pending_loads.clear();
     }
 
+    /// Point the standing Pages grid at the document facts now in
+    /// hand. The grid only replaces its list model when the page
+    /// count changes, so calling this from panel refreshes does
+    /// not spend the reader's place in a long grid.
+    pub fn sync_pages_grid_document(&self) {
+        if let Some(grid) = &self.pages_grid {
+            grid.set_document(
+                if self.doc_ready { self.total_pages } else { 0 },
+                self.pages_current_pages(),
+                self.base_page_height / self.base_page_width.max(1.0),
+                self.image_settings,
+                self.image_paper_rgb,
+            );
+        }
+        self.update_pages_heading();
+    }
+
+    pub fn sync_pages_current(&self) {
+        if let Some(grid) = &self.pages_grid {
+            grid.set_current_pages(self.pages_current_pages());
+        }
+    }
+
+    /// The sticky Pages heading: the top-level chapter at the
+    /// grid's top edge, its span, and `reading` when that span is
+    /// the one on the page behind the panel.
+    pub fn update_pages_heading(&self) {
+        let Some(pages) = &self.pages_widgets else {
+            return;
+        };
+        toggle_active(&pages.columns_3_button, self.pages_columns == 3);
+        toggle_active(&pages.columns_2_button, self.pages_columns == 2);
+
+        if !self.doc_ready {
+            pages.heading_title.set_label(&self.title);
+            pages.heading_meta.set_label("Opening PDF...");
+            return;
+        }
+
+        let first_visible = self
+            .pages_grid
+            .as_ref()
+            .and_then(|grid| grid.first_visible_page(pages.scroll.vadjustment().value()))
+            .unwrap_or(self.current_page);
+        let heading = self.pages_heading(first_visible);
+        let page_word = if heading.page_count() == 1 {
+            "page"
+        } else {
+            "pages"
+        };
+        let meta = if heading.contains(self.current_page) {
+            format!("{} {page_word} · reading", heading.page_count())
+        } else {
+            format!("{} {page_word}", heading.page_count())
+        };
+        pages.heading_title.set_label(&heading.title);
+        pages.heading_meta.set_label(&meta);
+    }
+
+    /// Open Pages where the reader is standing. `scroll_to` first
+    /// makes GridView realise the right window; the idle pass
+    /// then leaves one row of context above the current spread.
+    pub fn scroll_pages_to_current(&self) {
+        let (Some(grid), Some(pages)) = (&self.pages_grid, &self.pages_widgets) else {
+            return;
+        };
+        grid.scroll_to_current();
+        let grid = grid.clone();
+        let adjustment = pages.scroll.vadjustment();
+        glib::idle_add_local_once(move || {
+            let max = (adjustment.upper() - adjustment.page_size()).max(0.0);
+            if let Some(target) = grid.opening_scroll_target(max, adjustment.page_size()) {
+                adjustment.set_value(target);
+            }
+        });
+    }
+
+    /// Ask the thumbnail worker for one page the grid has just
+    /// bound. Existing, failed and already-pending pages stop
+    /// here, which is what keeps cell recycling from becoming a
+    /// stream of duplicate MuPDF renders while scrolling.
+    pub fn request_page_thumbnail(&mut self, page: usize) {
+        if !self.doc_ready || page == 0 || page > self.total_pages {
+            return;
+        }
+        let Some(grid) = self.pages_grid.clone() else {
+            return;
+        };
+        if grid.has_thumbnail_state(page) || !self.thumbnail_pending.insert(page) {
+            return;
+        }
+        let Some(path) = self.file_path.clone() else {
+            self.thumbnail_pending.remove(&page);
+            grid.update_thumbnail(page, None);
+            return;
+        };
+        let Some(tx) = self.thumbnail_tx.clone() else {
+            self.thumbnail_pending.remove(&page);
+            grid.update_thumbnail(page, None);
+            return;
+        };
+        let _ = tx.send_blocking(PdfThumbnailRequest {
+            generation: self.thumbnail_generation,
+            page,
+            target_width: pages_grid::THUMBNAIL_TARGET_WIDTH,
+            rotation: self.rotation_degrees,
+            path,
+        });
+    }
+
+    /// Retire thumbnails drawn for another orientation. Bound
+    /// cells are re-asked explicitly: clearing their textures
+    /// does not make GridView bind them again.
+    pub fn invalidate_thumbnails(&mut self) {
+        self.thumbnail_generation = self.thumbnail_generation.wrapping_add(1);
+        if let Some(generation) = &self.thumbnail_active_generation {
+            generation.store(self.thumbnail_generation, Ordering::Relaxed);
+        }
+        self.thumbnail_pending.clear();
+        let Some(grid) = self.pages_grid.clone() else {
+            return;
+        };
+        grid.set_page_aspect(self.base_page_height / self.base_page_width.max(1.0));
+        let bound_pages = grid.bound_pages();
+        grid.clear_thumbnails();
+        for page in bound_pages {
+            self.request_page_thumbnail(page);
+        }
+    }
+
     /// The Reading pane's fit choices are this book's (decision 53:
     /// the choice is remembered per book). The legacy absolute scale
     /// is written alongside, so an older Kalam meeting this book
@@ -1737,6 +2066,9 @@ impl PdfReaderModel {
         }
         if let Some(pic) = &self.two_page_right_pic {
             pic.set_image_settings(self.image_settings, self.image_paper_rgb);
+        }
+        if let Some(grid) = &self.pages_grid {
+            grid.set_image_settings(self.image_settings, self.image_paper_rgb);
         }
     }
 
@@ -2017,6 +2349,14 @@ impl PdfReaderModel {
         self.page_draw_areas.clear();
         self.page_text_cache.clear();
         self.pending_loads.clear();
+        self.thumbnail_pending.clear();
+        self.thumbnail_generation = self.thumbnail_generation.wrapping_add(1);
+        if let Some(generation) = &self.thumbnail_active_generation {
+            generation.store(self.thumbnail_generation, Ordering::Relaxed);
+        }
+        if let Some(grid) = &self.pages_grid {
+            grid.clear_thumbnails();
+        }
         self.ocr_in_progress.clear();
         self.ocr_started_fp.clear();
         self.text_in_progress.clear();
@@ -2026,6 +2366,7 @@ impl PdfReaderModel {
 
         self.doc_tx = None;
         self.render_tx = None;
+        self.thumbnail_tx = None;
         self.ocr_tx = None;
 
         #[cfg(target_os = "linux")]
@@ -3546,10 +3887,10 @@ impl Component for PdfReaderModel {
                 },
             },
 
-            // ── 8. The left panel: Contents and Bookmarks ───────────
+            // ── 8. The left panel: Contents, Pages and Bookmarks ──
             // Floating 16 from every edge (decision 52); the tab
-            // pill and pin ride at the top (decision 57). Pages and
-            // Notes join this panel in their own tranches.
+            // pill and pin ride at the top (decision 57). Notes
+            // joins this panel in its own tranche.
             #[name = "left_revealer"]
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-sidebar-shell",
@@ -3783,9 +4124,9 @@ impl Component for PdfReaderModel {
         let widgets = view_output!();
 
         // 1. The left panel stack: Contents (filter over the
-        // outline) and the stored Bookmarks list. Pages joins this
-        // stack in its own tranche; Notes replaces neither list
-        // until its data model lands.
+        // outline), the lazy Pages grid, and the stored Bookmarks
+        // list. Notes replaces neither list until its data model
+        // lands.
         let left_stack = gtk::Stack::new();
         left_stack.set_hexpand(true);
         left_stack.set_vexpand(true);
@@ -3825,6 +4166,18 @@ impl Component for PdfReaderModel {
         toc_scroll.set_child(Some(&toc_list_box));
         contents_pane.append(&toc_scroll);
 
+        let (pages_pane, pages_grid, pages_widgets) =
+            build_pdf_pages_pane(&model, &sender);
+        {
+            let tx = sender.input_sender().clone();
+            pages_widgets
+                .scroll
+                .vadjustment()
+                .connect_value_changed(move |adjustment| {
+                    let _ = tx.send(PdfReaderMsg::PagesGridScrolled(adjustment.value()));
+                });
+        }
+
         let bookmarks_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -3838,6 +4191,7 @@ impl Component for PdfReaderModel {
         bookmarks_scroll.set_child(Some(&bookmarks_list_box));
 
         left_stack.add_named(&contents_pane, Some("contents"));
+        left_stack.add_named(&pages_pane, Some("pages"));
         left_stack.add_named(&bookmarks_scroll, Some("bookmarks"));
         widgets.left_panel_host.append(&left_stack);
 
@@ -3894,6 +4248,8 @@ impl Component for PdfReaderModel {
         model.toc_list_box = Some(toc_list_box);
         model.toc_scroll = Some(toc_scroll);
         model.bookmarks_list_box = Some(bookmarks_list_box);
+        model.pages_grid = Some(pages_grid);
+        model.pages_widgets = Some(pages_widgets);
         model.settings_widgets = Some(settings_w);
         model.image_widgets = Some(image_w);
 
@@ -3922,13 +4278,13 @@ impl Component for PdfReaderModel {
         {
             let tx = sender.input_sender().clone();
             model.left_tabs = Some(make_tabs(
-                &["Contents", "Bookmarks"],
+                &["Contents", "Pages", "Bookmarks"],
                 &widgets.left_tabs_host,
                 Rc::new(move |idx| {
-                    let _ = tx.send(PdfReaderMsg::SetLeftTab(if idx == 1 {
-                        PdfLeftTab::Bookmarks
-                    } else {
-                        PdfLeftTab::Contents
+                    let _ = tx.send(PdfReaderMsg::SetLeftTab(match idx {
+                        1 => PdfLeftTab::Pages,
+                        2 => PdfLeftTab::Bookmarks,
+                        _ => PdfLeftTab::Contents,
                     }));
                 }),
             ));
@@ -4125,6 +4481,10 @@ impl Component for PdfReaderModel {
                 }
                 Key::t | Key::T => {
                     let _ = tx_key.send(PdfReaderMsg::OpenContents);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::p | Key::P => {
+                    let _ = tx_key.send(PdfReaderMsg::OpenPages);
                     gtk::glib::Propagation::Stop
                 }
                 Key::s | Key::S => {
@@ -4450,6 +4810,88 @@ impl Component for PdfReaderModel {
         model.render_tx = Some(render_tx);
         model.active_generation = Some(active_gen);
         model.render_generation = 1;
+
+        // The Pages grid's one thumbnail worker. It drains each
+        // available batch newest-first and renders a page once,
+        // so a fast scroll does not leave the now-visible cells
+        // queued behind every thumbnail they passed on the way.
+        let (thumbnail_tx, thumbnail_rx) =
+            async_channel::unbounded::<PdfThumbnailRequest>();
+        let thumbnail_gen = Arc::new(AtomicU64::new(1));
+        {
+            let rx = thumbnail_rx.clone();
+            let active = thumbnail_gen.clone();
+            let tx_msg = sender.input_sender().clone();
+            let _ = std::thread::Builder::new()
+                .name("kalam-pdf-thumbnail-worker".to_string())
+                .spawn(move || {
+                    let mut cached_path: Option<PathBuf> = None;
+                    let mut cached_doc: Option<PdfDocument> = None;
+
+                    while let Ok(first) = rx.recv_blocking() {
+                        let mut batch = vec![first];
+                        while let Ok(req) = rx.try_recv() {
+                            batch.push(req);
+                        }
+
+                        let mut seen = HashSet::new();
+                        for req in batch.into_iter().rev() {
+                            if req.generation != active.load(Ordering::Relaxed)
+                                || !seen.insert(req.page)
+                            {
+                                continue;
+                            }
+
+                            if cached_path.as_ref() != Some(&req.path) {
+                                cached_path = Some(req.path.clone());
+                                cached_doc = PdfDocument::open(&req.path).ok();
+                            }
+
+                            let texture = cached_doc.as_ref().and_then(|doc| {
+                                let (width, height) =
+                                    doc.page_dimensions(req.page).ok()?;
+                                let scale = pages_grid::thumbnail_render_scale(
+                                    width as f64,
+                                    height as f64,
+                                    req.rotation,
+                                    req.target_width,
+                                );
+                                let rendered = doc
+                                    .render_page_rgba_rotated(
+                                        req.page,
+                                        scale,
+                                        false,
+                                        req.rotation,
+                                    )
+                                    .ok()?;
+                                if req.generation != active.load(Ordering::Relaxed) {
+                                    return None;
+                                }
+                                let bytes = glib::Bytes::from_owned(rendered.samples);
+                                let texture = gdk::MemoryTexture::new(
+                                    rendered.width,
+                                    rendered.height,
+                                    gdk::MemoryFormat::R8g8b8a8,
+                                    &bytes,
+                                    rendered.stride,
+                                );
+                                Some(texture.upcast::<gdk::Texture>())
+                            });
+
+                            if req.generation == active.load(Ordering::Relaxed) {
+                                let _ = tx_msg.send(PdfReaderMsg::PageThumbnailReady {
+                                    generation: req.generation,
+                                    page: req.page,
+                                    texture,
+                                });
+                            }
+                        }
+                    }
+                });
+        }
+        model.thumbnail_tx = Some(thumbnail_tx);
+        model.thumbnail_active_generation = Some(thumbnail_gen);
+        model.thumbnail_generation = 1;
 
         // Start background OCR worker thread for scanned PDF pages
         let (ocr_tx, ocr_rx) = async_channel::unbounded::<crate::ocr::PdfOcrRequest>();
@@ -5036,6 +5478,7 @@ impl Component for PdfReaderModel {
                     self.rotation_degrees = next;
                     self.catalog.set_pref_i64(&format!("book.{}.pdf.rotation", self.book_id), next as i64);
                     self.sync_display_page_dimensions();
+                    self.invalidate_thumbnails();
                     // A quarter turn changes what every fit means.
                     self.refresh_fit_zoom(&widgets.viewport_scroll);
                     self.apply_zoom_change(old_zoom, &sender, &widgets.viewport_scroll);
@@ -5303,6 +5746,9 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::SetLeftTab(tab) => {
                 self.left_tab = tab;
                 self.refresh_left_panel(widgets, &sender);
+                if tab == PdfLeftTab::Pages {
+                    self.scroll_pages_to_current();
+                }
             }
             PdfReaderMsg::SetRightTab(tab) => {
                 self.right_tab = tab;
@@ -5319,6 +5765,9 @@ impl Component for PdfReaderModel {
                 if !was_open && self.left_tab == PdfLeftTab::Contents {
                     self.scroll_toc_to_current();
                 }
+                if !was_open && self.left_tab == PdfLeftTab::Pages {
+                    self.scroll_pages_to_current();
+                }
             }
             PdfReaderMsg::OpenRightPanel => {
                 self.right_panel_open = true;
@@ -5332,6 +5781,47 @@ impl Component for PdfReaderModel {
                 } else {
                     self.left_tab = PdfLeftTab::Contents;
                     let _ = sender.input_sender().send(PdfReaderMsg::OpenLeftPanel);
+                }
+            }
+            PdfReaderMsg::OpenPages => {
+                if self.left_panel_open && self.left_tab == PdfLeftTab::Pages {
+                    self.left_panel_open = false;
+                    self.sync_panel_layout(widgets);
+                } else {
+                    // Route through SetLeftTab so choosing Pages
+                    // from an already-open Contents or Bookmarks
+                    // panel also takes its opening scroll.
+                    sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Pages));
+                    sender.input(PdfReaderMsg::OpenLeftPanel);
+                }
+            }
+            PdfReaderMsg::SetPagesColumns(columns) => {
+                let columns = if columns == 2 { 2 } else { 3 };
+                if self.pages_columns != columns {
+                    // Anchor the density change on the page at the
+                    // grid's top edge, not on whichever pixel row
+                    // happens to occupy after every cell resizes.
+                    let anchor = self
+                        .pages_widgets
+                        .as_ref()
+                        .and_then(|pages| {
+                            self.pages_grid
+                                .as_ref()
+                                .and_then(|grid| {
+                                    grid.first_visible_page(
+                                        pages.scroll.vadjustment().value(),
+                                    )
+                                })
+                        })
+                        .unwrap_or(self.current_page);
+                    self.pages_columns = columns;
+                    self.catalog
+                        .set_pref_i64("reader.pdf.pages_columns", columns as i64);
+                    if let Some(grid) = &self.pages_grid {
+                        grid.set_columns(columns);
+                        grid.scroll_to_page(anchor);
+                    }
+                    self.update_pages_heading();
                 }
             }
             PdfReaderMsg::OpenReadingPanel => {
@@ -5614,6 +6104,26 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
+            PdfReaderMsg::PageThumbnailVisible(page) => {
+                self.request_page_thumbnail(page);
+            }
+            PdfReaderMsg::PageThumbnailReady {
+                generation,
+                page,
+                texture,
+            } => {
+                if generation == self.thumbnail_generation {
+                    self.thumbnail_pending.remove(&page);
+                    if let Some(grid) = &self.pages_grid {
+                        grid.update_thumbnail(page, texture);
+                    }
+                }
+            }
+            PdfReaderMsg::PagesGridScrolled(_) => {
+                if self.left_tab == PdfLeftTab::Pages {
+                    self.update_pages_heading();
+                }
+            }
             PdfReaderMsg::DocumentLoaded { info } => {
                 crate::timing::span_end("pdf_open_total");
                 match *info {
@@ -5674,6 +6184,7 @@ impl Component for PdfReaderModel {
                         let cur = self.current_page;
                         let _ = self.ensure_page_text(cur);
                         self.trigger_loads(&sender);
+                        self.sync_pages_grid_document();
                         self.apply_screenshot_action(&sender);
                     }
                     Err(err) => {
@@ -6421,6 +6932,10 @@ impl Component for PdfReaderModel {
         }
 
         self.sync_toc_current();
+        self.sync_pages_current();
+        if self.left_tab == PdfLeftTab::Pages {
+            self.update_pages_heading();
+        }
 
         if let Some(ref sw) = self.settings_widgets {
             self.sync_settings_ui(sw);
@@ -6475,12 +6990,14 @@ impl PdfReaderModel {
         if let Some(tabs) = &self.left_tabs {
             tabs.set_selected(match self.left_tab {
                 PdfLeftTab::Contents => 0,
-                PdfLeftTab::Bookmarks => 1,
+                PdfLeftTab::Pages => 1,
+                PdfLeftTab::Bookmarks => 2,
             });
         }
         if let Some(stack) = &self.left_stack {
             stack.set_visible_child_name(match self.left_tab {
                 PdfLeftTab::Contents => "contents",
+                PdfLeftTab::Pages => "pages",
                 PdfLeftTab::Bookmarks => "bookmarks",
             });
         }
@@ -6500,6 +7017,9 @@ impl PdfReaderModel {
                     self.toc_current_visible_row = current_visible;
                     self.toc_current_page_synced = self.current_page;
                 }
+            }
+            PdfLeftTab::Pages => {
+                self.sync_pages_grid_document();
             }
             PdfLeftTab::Bookmarks => {
                 if let Some(list) = &self.bookmarks_list_box {
@@ -6597,6 +7117,19 @@ impl PdfReaderModel {
             Ok("bookmarks") => {
                 sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Bookmarks));
                 sender.input(PdfReaderMsg::OpenLeftPanel);
+            }
+            Ok("pages") => {
+                sender.input(PdfReaderMsg::SetPagesColumns(3));
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Pages));
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+            }
+            Ok("pages-2") => {
+                sender.input(PdfReaderMsg::SetPagesColumns(2));
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Pages));
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+                if !self.left_panel_pinned {
+                    sender.input(PdfReaderMsg::ToggleLeftPin);
+                }
             }
             Ok("reading") => {
                 // The Reading board's own state: Spread + Scroll,
@@ -6950,6 +7483,134 @@ fn format_pdf_search_snippet(snippet: &str, query: &str) -> String {
     }
 }
 
+fn pdf_pages_column_button(
+    icon: &str,
+    label: &str,
+    columns: usize,
+    sender: &ComponentSender<PdfReaderModel>,
+) -> gtk::Button {
+    let button = gtk::Button::new();
+    button.set_child(Some(&crate::icons::symbolic_with_classes(
+        icon,
+        18,
+        &["kalam-inline-icon"],
+    )));
+    button.add_css_class("kalam-pdf-pages-columns-btn");
+    button.set_size_request(32, 32);
+    button.set_valign(gtk::Align::Center);
+    button.set_tooltip_text(Some(label));
+    button.update_property(&[gtk::accessible::Property::Label(label)]);
+    let tx = sender.input_sender().clone();
+    button.connect_clicked(move |_| {
+        let _ = tx.send(PdfReaderMsg::SetPagesColumns(columns));
+    });
+    button
+}
+
+/// The Pages pane: a sticky chapter heading and column toggle
+/// over the lazy GridView, with the board's soft fade where the
+/// grid runs under the panel's rounded bottom.
+fn build_pdf_pages_pane(
+    model: &PdfReaderModel,
+    sender: &ComponentSender<PdfReaderModel>,
+) -> (
+    gtk::Overlay,
+    pages_grid::PdfPagesGrid,
+    PdfPagesWidgets,
+) {
+    let grid = pages_grid::PdfPagesGrid::new(
+        sender.input_sender().clone(),
+        model.pages_columns,
+        model.image_settings,
+        model.image_paper_rgb,
+    );
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    scroll.add_css_class("kalam-reader-panel-scroll");
+    scroll.set_child(Some(&grid.widget()));
+
+    let heading_title = gtk::Label::new(Some(&model.title));
+    heading_title.add_css_class("kalam-pdf-pages-heading-title");
+    heading_title.set_halign(gtk::Align::Fill);
+    heading_title.set_xalign(0.0);
+    heading_title.set_hexpand(true);
+    heading_title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    heading_title.set_width_chars(1);
+
+    let heading_meta = gtk::Label::new(Some("Opening PDF..."));
+    heading_meta.add_css_class("kalam-pdf-pages-heading-meta");
+    heading_meta.set_halign(gtk::Align::Fill);
+    heading_meta.set_xalign(0.0);
+    heading_meta.set_hexpand(true);
+    heading_meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    heading_meta.set_width_chars(1);
+
+    let heading_text = gtk::Box::new(gtk::Orientation::Vertical, 1);
+    heading_text.set_hexpand(true);
+    heading_text.append(&heading_title);
+    heading_text.append(&heading_meta);
+
+    let columns_3_button = pdf_pages_column_button(
+        "kalam-columns-3-symbolic",
+        "Three columns",
+        3,
+        sender,
+    );
+    let columns_2_button = pdf_pages_column_button(
+        "kalam-columns-2-symbolic",
+        "Two columns",
+        2,
+        sender,
+    );
+
+    let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    heading.add_css_class("kalam-pdf-pages-heading");
+    heading.set_margin_start(20);
+    heading.set_margin_end(20);
+    heading.set_margin_top(14);
+    heading.set_margin_bottom(6);
+    heading.append(&heading_text);
+    heading.append(&columns_3_button);
+    heading.append(&columns_2_button);
+
+    let pane = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    pane.add_css_class("kalam-pdf-pages-pane");
+    pane.set_hexpand(true);
+    pane.set_vexpand(true);
+    pane.append(&heading);
+    pane.append(&scroll);
+
+    let overlay = gtk::Overlay::new();
+    overlay.set_hexpand(true);
+    overlay.set_vexpand(true);
+    overlay.set_child(Some(&pane));
+
+    let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    fade.add_css_class("kalam-pdf-pages-fade");
+    fade.set_size_request(-1, 48);
+    fade.set_halign(gtk::Align::Fill);
+    fade.set_valign(gtk::Align::End);
+    fade.set_can_target(false);
+    overlay.add_overlay(&fade);
+
+    (
+        overlay,
+        grid,
+        PdfPagesWidgets {
+            scroll,
+            heading_title,
+            heading_meta,
+            columns_3_button,
+            columns_2_button,
+        },
+    )
+}
+
 fn build_pdf_search_snippets_popover() -> (gtk::Popover, gtk::ListBox, gtk::Label) {
     let popover = gtk::Popover::new();
     popover.add_css_class("kalam-search-snippet-popover");
@@ -7008,16 +7669,50 @@ fn populate_toc_list(
     }
 
     if entries.is_empty() {
-        let empty_label = gtk::Label::new(Some(
-            "This file has no outline. Press G to jump to a page.",
+        let empty_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        empty_box.add_css_class("kalam-pdf-contents-empty");
+        empty_box.set_hexpand(true);
+        empty_box.set_vexpand(true);
+        empty_box.set_valign(gtk::Align::Center);
+        empty_box.set_margin_top(48);
+        empty_box.set_margin_start(32);
+        empty_box.set_margin_end(32);
+
+        let icon = crate::icons::symbolic_with_classes(
+            "view-list-symbolic",
+            28,
+            &["kalam-pdf-contents-empty-icon"],
+        );
+        icon.set_halign(gtk::Align::Center);
+        empty_box.append(&icon);
+
+        let title = gtk::Label::new(Some("No contents in this book"));
+        title.add_css_class("kalam-pdf-contents-empty-title");
+        title.set_halign(gtk::Align::Center);
+        title.set_wrap(true);
+        title.set_justify(gtk::Justification::Center);
+        empty_box.append(&title);
+
+        let text = gtk::Label::new(Some(
+            "This PDF has no table of contents. Browse by page instead.",
         ));
-        empty_label.add_css_class("dim-label");
-        empty_label.set_wrap(true);
-        empty_label.set_xalign(0.0);
-        empty_label.set_margin_top(24);
-        empty_label.set_margin_start(20);
-        empty_label.set_margin_end(20);
-        list_box.append(&empty_label);
+        text.add_css_class("kalam-pdf-contents-empty-text");
+        text.set_halign(gtk::Align::Center);
+        text.set_wrap(true);
+        text.set_justify(gtk::Justification::Center);
+        empty_box.append(&text);
+
+        let open_pages = gtk::Button::with_label("Open Pages");
+        open_pages.add_css_class("kalam-pdf-contents-open-pages");
+        open_pages.set_halign(gtk::Align::Center);
+        open_pages.set_margin_top(8);
+        let tx = sender.input_sender().clone();
+        open_pages.connect_clicked(move |_| {
+            let _ = tx.send(PdfReaderMsg::OpenPages);
+        });
+        empty_box.append(&open_pages);
+
+        list_box.append(&empty_box);
         return (Vec::new(), None);
     }
 
@@ -7297,6 +7992,7 @@ fn build_pdf_shortcuts_panel(host: &gtk::Box) {
         "Panels",
         &[
             ("Contents", &["T"][..]),
+            ("Pages", &["P"][..]),
             ("Reading settings", &["S"][..]),
             ("Shortcuts", &["H"][..]),
             ("Close layer or exit", &["Esc"][..]),
@@ -8014,6 +8710,45 @@ mod tests {
     }
 
     #[test]
+    fn test_pages_grid_rings_the_whole_current_spread() {
+        assert_eq!(
+            pdf_pages_current_pages(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::PageScrolling,
+                12,
+                5
+            ),
+            HashSet::from([4, 5])
+        );
+        assert_eq!(
+            pdf_pages_current_pages(
+                PdfSpreadMode::NoSpreads,
+                PdfScrollMode::PageScrolling,
+                12,
+                5
+            ),
+            HashSet::from([5])
+        );
+        assert_eq!(
+            pdf_pages_current_pages(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::WrappedScrolling,
+                12,
+                5
+            ),
+            HashSet::from([5]),
+            "wrapped scrolling reads one page at a time"
+        );
+        assert!(pdf_pages_current_pages(
+            PdfSpreadMode::OddSpreads,
+            PdfScrollMode::PageScrolling,
+            0,
+            1
+        )
+        .is_empty());
+    }
+
+    #[test]
     fn test_pdf_jump_chapters_and_targets() {
         let entries = sample_toc();
         assert_eq!(pdf_jump_chapter_pages(&entries, 12), vec![1, 2, 8, 12]);
@@ -8063,6 +8798,34 @@ mod tests {
             .map(|row| row.index)
             .collect();
         assert_eq!(filtered, vec![1, 3]);
+    }
+
+    #[test]
+    fn test_pages_heading_names_the_top_level_span() {
+        let entries = sample_toc();
+        let heading = pages_heading_for_page(&entries, 12, 5, "The Living Earth");
+        assert_eq!(heading.title, "The Earth");
+        assert_eq!((heading.start_page, heading.end_page), (2, 7));
+        assert_eq!(heading.page_count(), 6);
+        assert!(heading.contains(4));
+        assert!(!heading.contains(8));
+
+        // The next root owns its own span, nested Currents and all.
+        let heading = pages_heading_for_page(&entries, 12, 9, "The Living Earth");
+        assert_eq!(heading.title, "Oceans");
+        assert_eq!((heading.start_page, heading.end_page), (8, 11));
+
+        // No outline: the book itself is the only honest heading.
+        let heading = pages_heading_for_page(&[], 12, 5, "The Living Earth");
+        assert_eq!(heading.title, "The Living Earth");
+        assert_eq!((heading.start_page, heading.end_page), (1, 12));
+
+        // Front matter before the first root gets the same
+        // fallback, bounded by that first chapter.
+        let late = vec![toc("Opening chapter", 4, 0), toc("Index", 12, 0)];
+        let heading = pages_heading_for_page(&late, 12, 2, "Front Matter");
+        assert_eq!(heading.title, "Front Matter");
+        assert_eq!((heading.start_page, heading.end_page), (1, 3));
     }
 
     #[test]

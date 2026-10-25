@@ -254,12 +254,16 @@ fn color_transform(settings: PdfImageSettings, paper_rgb: [f32; 3]) -> ColorTran
         PdfPageColour::Off => {}
         PdfPageColour::Tint => {
             let strength = settings.tint_strength as f32 / 100.0;
-            for channel in 0..3 {
-                let gain = 1.0 - strength * (1.0 - paper_rgb[channel].clamp(0.0, 1.0));
-                for coeff in &mut transform.matrix[channel] {
+            for ((row, offset), paper) in transform.matrix[..3]
+                .iter_mut()
+                .zip(transform.offset[..3].iter_mut())
+                .zip(paper_rgb.iter())
+            {
+                let gain = 1.0 - strength * (1.0 - paper.clamp(0.0, 1.0));
+                for coeff in row {
                     *coeff *= gain;
                 }
-                transform.offset[channel] *= gain;
+                *offset *= gain;
             }
         }
         PdfPageColour::Invert => {

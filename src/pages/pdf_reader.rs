@@ -28,6 +28,10 @@ use crate::db::{Catalog, ReadingBookmark};
 use crate::epub_book::ReadingTheme;
 use crate::pdf::{PdfDocument, PdfPageText, PdfSearchResult, PdfTocEntry};
 
+mod image;
+
+pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PageSlot {
     Fixed(usize),
@@ -763,6 +767,7 @@ pub enum PdfLeftTab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfRightTab {
     Reading,
+    Image,
     Shortcuts,
 }
 
@@ -800,6 +805,17 @@ pub struct PdfSettingsWidgets {
     pub rotate_right_btn: gtk::Button,
 }
 
+pub struct PdfImageWidgets {
+    pub page_colour_control: crate::widgets::segmented::SegmentedControl,
+    pub tint_strength_row: gtk::Box,
+    pub tint_strength_scale: gtk::Scale,
+    pub brightness_scale: gtk::Scale,
+    pub contrast_scale: gtk::Scale,
+    pub warmth_scale: gtk::Scale,
+    pub grayscale_switch: gtk::Switch,
+    pub trim_switch: gtk::Switch,
+}
+
 #[derive(Debug)]
 pub enum PdfReaderMsg {
     NextPage,
@@ -826,6 +842,13 @@ pub enum PdfReaderMsg {
     JumpToPage(usize),
     SetSmartCrop(bool),
     ToggleSmartCrop,
+    SetPageColour(PdfPageColour),
+    SetTintStrength(i32),
+    SetBrightness(i32),
+    SetContrast(i32),
+    SetWarmth(i32),
+    SetGrayscale(bool),
+    ResetImageSettings,
     SetLeftTab(PdfLeftTab),
     SetRightTab(PdfRightTab),
     OpenLeftPanel,
@@ -938,7 +961,13 @@ pub struct PdfReaderModel {
     pub scroll_mode: PdfScrollMode,
     pub spread_mode: PdfSpreadMode,
     pub two_page_gap: i32,
-    pub smart_crop: bool,
+    /// The Image pane's whole state (decisions 54–55): page colour,
+    /// adjustments, grayscale and Trim margins — the pre-redesign
+    /// smart crop under its designed name.
+    pub image_settings: PdfImageSettings,
+    /// The palette paper Tint takes white toward, captured from the
+    /// theme in force when this book opened.
+    pub image_paper_rgb: [f32; 3],
     /// Space between successive pages (or spread rows) in a scroll
     /// flow — the Reading pane's "Gap between pages". The seam
     /// inside a spread stays `two_page_gap`, its pre-redesign pref.
@@ -988,12 +1017,12 @@ pub struct PdfReaderModel {
     pub status_text: String,
     pub session_id: Option<i64>,
     pub session_start: std::time::Instant,
-    pub page_pictures: HashMap<usize, gtk::Picture>,
-    pub paged_picture: Option<gtk::Picture>,
+    pub page_pictures: HashMap<usize, PdfPagePicture>,
+    pub paged_picture: Option<PdfPagePicture>,
     pub paged_loading_box: Option<gtk::Box>,
     pub paged_label: Option<gtk::Label>,
-    pub two_page_left_pic: Option<gtk::Picture>,
-    pub two_page_right_pic: Option<gtk::Picture>,
+    pub two_page_left_pic: Option<PdfPagePicture>,
+    pub two_page_right_pic: Option<PdfPagePicture>,
     pub two_page_loading_box: Option<gtk::Box>,
     pub two_page_label: Option<gtk::Label>,
     pub left_stack: Option<gtk::Stack>,
@@ -1012,6 +1041,7 @@ pub struct PdfReaderModel {
     pub toc_current_page_synced: usize,
     pub bookmarks_list_box: Option<gtk::Box>,
     pub settings_widgets: Option<PdfSettingsWidgets>,
+    pub image_widgets: Option<PdfImageWidgets>,
     pub screenshot_action_applied: bool,
     pub render_tx: Option<async_channel::Sender<PdfRenderRequest>>,
     pub render_generation: u64,
@@ -1207,11 +1237,45 @@ impl PdfReaderModel {
             .unwrap_or_else(|| init.catalog.get_pref_i64("reader.pdf.scroll_gap", 24))
             .clamp(0, PDF_MAX_SCROLL_GAP as i64) as i32;
 
-        // 5. Smart crop: per-book setting
+        // 5. The Image pane's state (decisions 54–55): remembered
+        // for this book, seeded by the last book's answers. Trim
+        // margins is the older smart crop, so it keeps answering to
+        // its original per-book pref. A book with nothing stored
+        // follows the theme in force: Tint in the dark, untouched
+        // paper in the light.
         let smart_crop_pref = init
             .catalog
             .get_pref(&format!("book.{}.pdf.smart_crop", init.book_id));
         let smart_crop = smart_crop_pref.as_deref() == Some("1");
+        let ui_theme = crate::theme::current(&init.catalog);
+        let image_paper_rgb = image::rgb_from_hex(ui_theme.paper);
+        let mut image_settings =
+            PdfImageSettings::defaults_for_theme(ui_theme.dark, smart_crop);
+        let page_colour_pref = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.image.page_colour", init.book_id))
+            .or_else(|| init.catalog.get_pref("reader.pdf.image.page_colour"));
+        if let Some(page_colour) = PdfPageColour::from_pref(page_colour_pref.as_deref()) {
+            image_settings.page_colour = page_colour;
+        }
+        let book_image_i64 = |name: &str| {
+            init.catalog
+                .get_pref(&format!("book.{}.pdf.image.{}", init.book_id, name))
+                .and_then(|value| value.parse::<i64>().ok())
+        };
+        let image_i64 = |name: &str, default: i64| {
+            book_image_i64(name).unwrap_or_else(|| {
+                init.catalog
+                    .get_pref_i64(&format!("reader.pdf.image.{name}"), default)
+            })
+        };
+        image_settings.tint_strength =
+            image_i64("tint_strength", PdfImageSettings::DEFAULT_TINT_STRENGTH as i64) as i32;
+        image_settings.brightness = image_i64("brightness", 0) as i32;
+        image_settings.contrast = image_i64("contrast", 0) as i32;
+        image_settings.warmth = image_i64("warmth", 0) as i32;
+        image_settings.grayscale = image_i64("grayscale", 0) != 0;
+        let image_settings = image_settings.canonical();
 
         // 6. Panel pins are remembered per side (decision 57's
         // approved assumption). They describe the next open as much
@@ -1236,7 +1300,8 @@ impl PdfReaderModel {
             scroll_mode,
             spread_mode,
             two_page_gap,
-            smart_crop,
+            image_settings,
+            image_paper_rgb,
             scroll_gap,
             cover_on_its_own,
             layout_auto,
@@ -1294,6 +1359,7 @@ impl PdfReaderModel {
             toc_current_page_synced: 0,
             bookmarks_list_box: None,
             settings_widgets: None,
+            image_widgets: None,
             screenshot_action_applied: false,
             render_tx: None,
             render_generation: 1,
@@ -1649,6 +1715,88 @@ impl PdfReaderModel {
         );
     }
 
+    /// A page surface carrying the Image pane's current answers.
+    /// Every viewport builder asks here, so a page materialised
+    /// after a slider moved opens already wearing them.
+    pub fn make_page_picture(&self) -> PdfPagePicture {
+        PdfPagePicture::new(self.image_settings, self.image_paper_rgb)
+    }
+
+    /// Repaint every materialised page through the Image pane's
+    /// current answers. Colour lives in the paint, not the raster,
+    /// so this never retires a render generation.
+    pub fn refresh_page_images(&self) {
+        for pic in self.page_pictures.values() {
+            pic.set_image_settings(self.image_settings, self.image_paper_rgb);
+        }
+        if let Some(pic) = &self.paged_picture {
+            pic.set_image_settings(self.image_settings, self.image_paper_rgb);
+        }
+        if let Some(pic) = &self.two_page_left_pic {
+            pic.set_image_settings(self.image_settings, self.image_paper_rgb);
+        }
+        if let Some(pic) = &self.two_page_right_pic {
+            pic.set_image_settings(self.image_settings, self.image_paper_rgb);
+        }
+    }
+
+    /// Image choices are this book's, with the global pref carrying
+    /// them to the next book as its seed — the Reading pane's own
+    /// arrangement. Trim margins keeps its older smart-crop pref,
+    /// written by `SetSmartCrop`.
+    pub fn persist_image_settings(&self) {
+        self.catalog.set_pref(
+            &format!("book.{}.pdf.image.page_colour", self.book_id),
+            self.image_settings.page_colour.pref_value(),
+        );
+        self.catalog.set_pref(
+            "reader.pdf.image.page_colour",
+            self.image_settings.page_colour.pref_value(),
+        );
+        for (name, value) in [
+            ("tint_strength", self.image_settings.tint_strength as i64),
+            ("brightness", self.image_settings.brightness as i64),
+            ("contrast", self.image_settings.contrast as i64),
+            ("warmth", self.image_settings.warmth as i64),
+            ("grayscale", i64::from(self.image_settings.grayscale)),
+        ] {
+            self.catalog.set_pref_i64(
+                &format!("book.{}.pdf.image.{}", self.book_id, name),
+                value,
+            );
+            self.catalog
+                .set_pref_i64(&format!("reader.pdf.image.{name}"), value);
+        }
+    }
+
+    /// Synchronize the Image pane with active state, on the Reading
+    /// pane's terms: sliders only move when they disagree, so the
+    /// sync a drag triggers never fights the drag itself.
+    pub fn sync_image_ui(&self, iw: &PdfImageWidgets) {
+        iw.page_colour_control
+            .set_selected(self.image_settings.page_colour.segment_index());
+        iw.tint_strength_row
+            .set_sensitive(self.image_settings.page_colour == PdfPageColour::Tint);
+        for (scale, value) in [
+            (&iw.tint_strength_scale, self.image_settings.tint_strength),
+            (&iw.brightness_scale, self.image_settings.brightness),
+            (&iw.contrast_scale, self.image_settings.contrast),
+            (&iw.warmth_scale, self.image_settings.warmth),
+        ] {
+            if (scale.value() - value as f64).abs() > 0.01 {
+                scale.set_value(value as f64);
+            }
+        }
+        if iw.grayscale_switch.is_active() != self.image_settings.grayscale {
+            iw.grayscale_switch
+                .set_active(self.image_settings.grayscale);
+        }
+        if iw.trim_switch.is_active() != self.image_settings.trim_margins {
+            iw.trim_switch
+                .set_active(self.image_settings.trim_margins);
+        }
+    }
+
     /// The spread mode the window's own shape asks for, while no
     /// stored layout choice stands (decision 53).
     pub fn desired_auto_spread_mode(&self, scroll: &gtk::ScrolledWindow) -> PdfSpreadMode {
@@ -1819,7 +1967,7 @@ impl PdfReaderModel {
         for p in &evicted {
             self.textures.remove(p);
             if let Some(pic) = self.page_pictures.get(p) {
-                pic.set_paintable(None::<&gdk::Texture>);
+                pic.set_texture(None);
                 pic.remove_css_class("kalam-pdf-page-image");
                 pic.add_css_class("kalam-pdf-placeholder");
             }
@@ -1851,16 +1999,16 @@ impl PdfReaderModel {
 
     pub fn cleanup_memory(&mut self) {
         for pic in self.page_pictures.values() {
-            pic.set_paintable(None::<&gdk::Texture>);
+            pic.set_texture(None);
         }
         if let Some(ref pic) = self.paged_picture {
-            pic.set_paintable(None::<&gdk::Texture>);
+            pic.set_texture(None);
         }
         if let Some(ref pic) = self.two_page_left_pic {
-            pic.set_paintable(None::<&gdk::Texture>);
+            pic.set_texture(None);
         }
         if let Some(ref pic) = self.two_page_right_pic {
-            pic.set_paintable(None::<&gdk::Texture>);
+            pic.set_texture(None);
         }
 
         self.textures.clear();
@@ -1965,7 +2113,7 @@ impl PdfReaderModel {
         }
 
         let scale = ((1.5 * self.zoom_level).clamp(0.5, 3.5)) as f32;
-        let smart_crop = self.smart_crop;
+        let smart_crop = self.image_settings.trim_margins;
         let rotation = self.rotation_degrees;
         let gen = self.render_generation;
 
@@ -2257,7 +2405,7 @@ impl PdfReaderModel {
     fn wrap_page(
         &mut self,
         slot: PageSlot,
-        pic: gtk::Picture,
+        pic: PdfPagePicture,
         sender: &ComponentSender<Self>,
     ) -> gtk::Widget {
         let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
@@ -2521,9 +2669,7 @@ impl PdfReaderModel {
                         spacer_left.set_hexpand(true);
                         page_row.append(&spacer_left);
 
-                        let pic = gtk::Picture::new();
-                        pic.set_can_shrink(true);
-                        pic.set_content_fit(gtk::ContentFit::Contain);
+                        let pic = self.make_page_picture();
                         pic.set_halign(gtk::Align::Center);
                         pic.set_valign(gtk::Align::Start);
                         pic.add_css_class("kalam-pdf-page-image");
@@ -2549,7 +2695,7 @@ impl PdfReaderModel {
                         pic.set_size_request(page_w, page_h);
 
                         if let Some(cached) = self.textures.get(&self.current_page) {
-                            pic.set_paintable(Some(&cached.texture));
+                            pic.set_texture(Some(&cached.texture));
                             pic.set_visible(true);
                             loading_box.set_visible(false);
                         } else {
@@ -2604,18 +2750,14 @@ impl PdfReaderModel {
                         let page_w = (self.base_page_width * self.zoom_level) as i32;
                         let page_h = (self.base_page_height * self.zoom_level) as i32;
 
-                        let left_pic = gtk::Picture::new();
-                        left_pic.set_can_shrink(true);
-                        left_pic.set_content_fit(gtk::ContentFit::Contain);
+                        let left_pic = self.make_page_picture();
                         left_pic.set_halign(if right.is_some() { gtk::Align::End } else { gtk::Align::Center });
                         left_pic.set_valign(gtk::Align::Start);
                         left_pic.set_size_request(page_w, page_h);
                         left_pic.add_css_class("kalam-pdf-page-image");
                         left_pic.add_css_class("kalam-pdf-two-page");
 
-                        let right_pic = gtk::Picture::new();
-                        right_pic.set_can_shrink(true);
-                        right_pic.set_content_fit(gtk::ContentFit::Contain);
+                        let right_pic = self.make_page_picture();
                         right_pic.set_halign(gtk::Align::Start);
                         right_pic.set_valign(gtk::Align::Start);
                         right_pic.set_size_request(page_w, page_h);
@@ -2651,12 +2793,12 @@ impl PdfReaderModel {
 
                         if all_needed_loaded {
                             if let Some(cached) = left_loaded {
-                                left_pic.set_paintable(Some(&cached.texture));
+                                left_pic.set_texture(Some(&cached.texture));
                                 left_pic.set_visible(true);
                             }
                             if right.is_some() {
                                 if let Some(cached) = right_loaded {
-                                    right_pic.set_paintable(Some(&cached.texture));
+                                    right_pic.set_texture(Some(&cached.texture));
                                     right_pic.set_visible(true);
                                 }
                             } else {
@@ -2722,15 +2864,13 @@ impl PdfReaderModel {
                             spacer_left.set_hexpand(true);
                             page_row.append(&spacer_left);
 
-                            let pic = gtk::Picture::new();
-                            pic.set_can_shrink(true);
-                            pic.set_content_fit(gtk::ContentFit::Contain);
+                            let pic = self.make_page_picture();
                             pic.set_halign(gtk::Align::Center);
                             pic.set_valign(gtk::Align::Start);
                             pic.set_size_request(page_w, page_h);
 
                             if let Some(cached) = self.textures.get(&p) {
-                                pic.set_paintable(Some(&cached.texture));
+                                pic.set_texture(Some(&cached.texture));
                                 pic.add_css_class("kalam-pdf-page-image");
                             } else {
                                 pic.add_css_class("kalam-pdf-placeholder");
@@ -2764,9 +2904,7 @@ impl PdfReaderModel {
                             spread_inner.set_halign(gtk::Align::Center);
                             spread_inner.set_valign(gtk::Align::Start);
 
-                            let left_pic = gtk::Picture::new();
-                            left_pic.set_can_shrink(true);
-                            left_pic.set_content_fit(gtk::ContentFit::Contain);
+                            let left_pic = self.make_page_picture();
                             left_pic.set_halign(if right.is_some() { gtk::Align::End } else { gtk::Align::Center });
                             left_pic.set_valign(gtk::Align::Start);
                             left_pic.set_size_request(page_w, page_h);
@@ -2780,7 +2918,7 @@ impl PdfReaderModel {
 
                             if spread_ready {
                                 if let Some(cached) = self.textures.get(&left) {
-                                    left_pic.set_paintable(Some(&cached.texture));
+                                    left_pic.set_texture(Some(&cached.texture));
                                     left_pic.add_css_class("kalam-pdf-page-image");
                                 }
                             } else {
@@ -2792,9 +2930,7 @@ impl PdfReaderModel {
                             spread_inner.append(&left_widget);
 
                             if let Some(r) = right {
-                                let right_pic = gtk::Picture::new();
-                                right_pic.set_can_shrink(true);
-                                right_pic.set_content_fit(gtk::ContentFit::Contain);
+                                let right_pic = self.make_page_picture();
                                 right_pic.set_halign(gtk::Align::Start);
                                 right_pic.set_valign(gtk::Align::Start);
                                 right_pic.set_size_request(page_w, page_h);
@@ -2802,7 +2938,7 @@ impl PdfReaderModel {
 
                                 if spread_ready {
                                     if let Some(cached) = self.textures.get(&r) {
-                                        right_pic.set_paintable(Some(&cached.texture));
+                                        right_pic.set_texture(Some(&cached.texture));
                                         right_pic.add_css_class("kalam-pdf-page-image");
                                     }
                                 } else {
@@ -2844,14 +2980,12 @@ impl PdfReaderModel {
                 match self.spread_mode {
                     PdfSpreadMode::NoSpreads => {
                         for p in 1..=self.total_pages {
-                            let pic = gtk::Picture::new();
-                            pic.set_can_shrink(true);
-                            pic.set_content_fit(gtk::ContentFit::Contain);
+                            let pic = self.make_page_picture();
                             pic.set_valign(gtk::Align::Start);
                             pic.set_size_request(page_w, page_h);
 
                             if let Some(cached) = self.textures.get(&p) {
-                                pic.set_paintable(Some(&cached.texture));
+                                pic.set_texture(Some(&cached.texture));
                                 pic.add_css_class("kalam-pdf-page-image");
                             } else {
                                 pic.add_css_class("kalam-pdf-placeholder");
@@ -2868,9 +3002,7 @@ impl PdfReaderModel {
                             spread_box.set_valign(gtk::Align::Start);
                             spread_box.add_css_class("kalam-pdf-spread-row");
 
-                            let left_pic = gtk::Picture::new();
-                            left_pic.set_can_shrink(true);
-                            left_pic.set_content_fit(gtk::ContentFit::Contain);
+                            let left_pic = self.make_page_picture();
                             left_pic.set_valign(gtk::Align::Start);
                             left_pic.set_size_request(page_w, page_h);
                             left_pic.add_css_class("kalam-pdf-two-page");
@@ -2883,7 +3015,7 @@ impl PdfReaderModel {
 
                             if spread_ready {
                                 if let Some(cached) = self.textures.get(&left) {
-                                    left_pic.set_paintable(Some(&cached.texture));
+                                    left_pic.set_texture(Some(&cached.texture));
                                     left_pic.add_css_class("kalam-pdf-page-image");
                                 }
                             } else {
@@ -2895,16 +3027,14 @@ impl PdfReaderModel {
                             spread_box.append(&left_widget);
 
                             if let Some(r) = right {
-                                let right_pic = gtk::Picture::new();
-                                right_pic.set_can_shrink(true);
-                                right_pic.set_content_fit(gtk::ContentFit::Contain);
+                                let right_pic = self.make_page_picture();
                                 right_pic.set_valign(gtk::Align::Start);
                                 right_pic.set_size_request(page_w, page_h);
                                 right_pic.add_css_class("kalam-pdf-two-page");
 
                                 if spread_ready {
                                     if let Some(cached) = self.textures.get(&r) {
-                                        right_pic.set_paintable(Some(&cached.texture));
+                                        right_pic.set_texture(Some(&cached.texture));
                                         right_pic.add_css_class("kalam-pdf-page-image");
                                     }
                                 } else {
@@ -2941,14 +3071,12 @@ impl PdfReaderModel {
                 let thumb_h = (self.base_page_height * 0.6 * self.zoom_level) as i32;
 
                 for p in 1..=self.total_pages {
-                    let pic = gtk::Picture::new();
-                    pic.set_can_shrink(true);
-                    pic.set_content_fit(gtk::ContentFit::Contain);
+                    let pic = self.make_page_picture();
                     pic.set_valign(gtk::Align::Start);
                     pic.set_size_request(thumb_w, thumb_h);
 
                     if let Some(cached) = self.textures.get(&p) {
-                        pic.set_paintable(Some(&cached.texture));
+                        pic.set_texture(Some(&cached.texture));
                         pic.add_css_class("kalam-pdf-page-image");
                     } else {
                         pic.add_css_class("kalam-pdf-placeholder");
@@ -2976,7 +3104,7 @@ impl PdfReaderModel {
         pic.set_size_request(page_w, page_h);
 
         if let Some(cached) = self.textures.get(&self.current_page) {
-            pic.set_paintable(Some(&cached.texture));
+            pic.set_texture(Some(&cached.texture));
             pic.set_visible(true);
             loading_box.set_visible(false);
             pic.queue_resize();
@@ -3015,14 +3143,14 @@ impl PdfReaderModel {
 
         if all_needed_loaded {
             if let Some(cached) = left_loaded {
-                left_pic.set_paintable(Some(&cached.texture));
+                left_pic.set_texture(Some(&cached.texture));
                 left_pic.set_halign(if right.is_some() { gtk::Align::End } else { gtk::Align::Center });
                 left_pic.set_valign(gtk::Align::Start);
                 left_pic.set_visible(true);
             }
             if right.is_some() {
                 if let Some(cached) = right_loaded {
-                    right_pic.set_paintable(Some(&cached.texture));
+                    right_pic.set_texture(Some(&cached.texture));
                     right_pic.set_halign(gtk::Align::Start);
                     right_pic.set_valign(gtk::Align::Start);
                     right_pic.set_visible(true);
@@ -3731,6 +3859,16 @@ impl Component for PdfReaderModel {
         let (settings_box, settings_w) = build_pdf_settings_panel(&model, &sender);
         settings_scroll.set_child(Some(&settings_box));
 
+        let image_scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .hexpand(true)
+            .vexpand(true)
+            .build();
+        image_scroll.add_css_class("kalam-reader-panel-scroll");
+        let (image_box, image_w) = build_pdf_image_panel(&model, &sender);
+        image_scroll.set_child(Some(&image_box));
+
         let shortcuts_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -3747,6 +3885,7 @@ impl Component for PdfReaderModel {
         shortcuts_scroll.set_child(Some(&shortcuts_box));
 
         right_stack.add_named(&settings_scroll, Some("reading"));
+        right_stack.add_named(&image_scroll, Some("image"));
         right_stack.add_named(&shortcuts_scroll, Some("shortcuts"));
         widgets.right_panel_host.append(&right_stack);
 
@@ -3756,6 +3895,7 @@ impl Component for PdfReaderModel {
         model.toc_scroll = Some(toc_scroll);
         model.bookmarks_list_box = Some(bookmarks_list_box);
         model.settings_widgets = Some(settings_w);
+        model.image_widgets = Some(image_w);
 
         // The panel tab pills (decision 54): the shared segmented
         // control at panel size, stretched across the panel head
@@ -3794,13 +3934,13 @@ impl Component for PdfReaderModel {
             ));
             let tx = sender.input_sender().clone();
             model.right_tabs = Some(make_tabs(
-                &["Reading", "Shortcuts"],
+                &["Reading", "Image", "Shortcuts"],
                 &widgets.right_tabs_host,
                 Rc::new(move |idx| {
-                    let _ = tx.send(PdfReaderMsg::SetRightTab(if idx == 1 {
-                        PdfRightTab::Shortcuts
-                    } else {
-                        PdfRightTab::Reading
+                    let _ = tx.send(PdfReaderMsg::SetRightTab(match idx {
+                        1 => PdfRightTab::Image,
+                        2 => PdfRightTab::Shortcuts,
+                        _ => PdfRightTab::Reading,
                     }));
                 }),
             ));
@@ -5072,17 +5212,93 @@ impl Component for PdfReaderModel {
                 self.update_bookmark_icon_state(widgets);
             }
             PdfReaderMsg::SetSmartCrop(crop) => {
-                if self.smart_crop != crop {
-                    self.smart_crop = crop;
+                if self.image_settings.trim_margins != crop {
+                    self.image_settings.trim_margins = crop;
                     self.catalog.set_pref(
                         &format!("book.{}.pdf.smart_crop", self.book_id),
-                        if self.smart_crop { "1" } else { "0" },
+                        if self.image_settings.trim_margins { "1" } else { "0" },
                     );
                     self.apply_zoom_change(self.zoom_level, &sender, &widgets.viewport_scroll);
                 }
             }
             PdfReaderMsg::ToggleSmartCrop => {
-                let _ = sender.input_sender().send(PdfReaderMsg::SetSmartCrop(!self.smart_crop));
+                let _ = sender.input_sender().send(PdfReaderMsg::SetSmartCrop(!self.image_settings.trim_margins));
+            }
+            PdfReaderMsg::SetPageColour(colour) => {
+                if self.image_settings.page_colour != colour {
+                    self.image_settings.page_colour = colour;
+                    self.persist_image_settings();
+                    self.refresh_page_images();
+                }
+            }
+            PdfReaderMsg::SetTintStrength(value) => {
+                let value = value.clamp(0, 100);
+                if self.image_settings.tint_strength != value {
+                    self.image_settings.tint_strength = value;
+                    self.persist_image_settings();
+                    self.refresh_page_images();
+                }
+            }
+            PdfReaderMsg::SetBrightness(value) => {
+                let value = value.clamp(
+                    PdfImageSettings::MIN_ADJUSTMENT,
+                    PdfImageSettings::MAX_ADJUSTMENT,
+                );
+                if self.image_settings.brightness != value {
+                    self.image_settings.brightness = value;
+                    self.persist_image_settings();
+                    self.refresh_page_images();
+                }
+            }
+            PdfReaderMsg::SetContrast(value) => {
+                let value = value.clamp(
+                    PdfImageSettings::MIN_ADJUSTMENT,
+                    PdfImageSettings::MAX_ADJUSTMENT,
+                );
+                if self.image_settings.contrast != value {
+                    self.image_settings.contrast = value;
+                    self.persist_image_settings();
+                    self.refresh_page_images();
+                }
+            }
+            PdfReaderMsg::SetWarmth(value) => {
+                let value = value.clamp(
+                    PdfImageSettings::MIN_ADJUSTMENT,
+                    PdfImageSettings::MAX_ADJUSTMENT,
+                );
+                if self.image_settings.warmth != value {
+                    self.image_settings.warmth = value;
+                    self.persist_image_settings();
+                    self.refresh_page_images();
+                }
+            }
+            PdfReaderMsg::SetGrayscale(on) => {
+                if self.image_settings.grayscale != on {
+                    self.image_settings.grayscale = on;
+                    self.persist_image_settings();
+                    self.refresh_page_images();
+                }
+            }
+            PdfReaderMsg::ResetImageSettings => {
+                // Back to the theme's own starting answers. Trim
+                // margins is the one reset that reaches the raster:
+                // a trimmed page was rendered cropped, so putting
+                // it back goes through the same re-render its own
+                // switch uses.
+                let theme = crate::theme::current(&self.catalog);
+                self.image_paper_rgb = image::rgb_from_hex(theme.paper);
+                let was_trimmed = self.image_settings.trim_margins;
+                self.image_settings =
+                    PdfImageSettings::defaults_for_theme(theme.dark, false);
+                self.persist_image_settings();
+                self.refresh_page_images();
+                if was_trimmed {
+                    self.catalog.set_pref(
+                        &format!("book.{}.pdf.smart_crop", self.book_id),
+                        "0",
+                    );
+                    self.apply_zoom_change(self.zoom_level, &sender, &widgets.viewport_scroll);
+                }
             }
             PdfReaderMsg::SetLeftTab(tab) => {
                 self.left_tab = tab;
@@ -5326,7 +5542,7 @@ impl Component for PdfReaderModel {
                     }
                     PdfScrollMode::WrappedScrolling => {
                         if let Some(pic) = self.page_pictures.get(&page) {
-                            pic.set_paintable(Some(&texture));
+                            pic.set_texture(Some(&texture));
                             let target_w = (self.base_page_width * 0.6 * self.zoom_level) as i32;
                             let target_h = (self.base_page_height * 0.6 * self.zoom_level) as i32;
                             pic.set_size_request(target_w, target_h);
@@ -5341,7 +5557,7 @@ impl Component for PdfReaderModel {
                         match self.spread_mode {
                             PdfSpreadMode::NoSpreads => {
                                 if let Some(pic) = self.page_pictures.get(&page) {
-                                    pic.set_paintable(Some(&texture));
+                                    pic.set_texture(Some(&texture));
                                     let target_w = (self.base_page_width * self.zoom_level) as i32;
                                     let target_h = (self.base_page_height * self.zoom_level) as i32;
                                     pic.set_size_request(target_w, target_h);
@@ -5369,7 +5585,7 @@ impl Component for PdfReaderModel {
 
                                     if let Some(left_tex) = left_cached {
                                         if let Some(pic) = self.page_pictures.get(&left) {
-                                            pic.set_paintable(Some(&left_tex.texture));
+                                            pic.set_texture(Some(&left_tex.texture));
                                             pic.set_size_request(target_w, target_h);
                                             pic.remove_css_class("kalam-pdf-placeholder");
                                             pic.add_css_class("kalam-pdf-page-image");
@@ -5381,7 +5597,7 @@ impl Component for PdfReaderModel {
                                     if let Some(r) = right {
                                         if let Some(right_tex) = right_cached {
                                             if let Some(pic) = self.page_pictures.get(&r) {
-                                                pic.set_paintable(Some(&right_tex.texture));
+                                                pic.set_texture(Some(&right_tex.texture));
                                                 pic.set_size_request(target_w, target_h);
                                                 pic.remove_css_class("kalam-pdf-placeholder");
                                                 pic.add_css_class("kalam-pdf-page-image");
@@ -6209,6 +6425,9 @@ impl Component for PdfReaderModel {
         if let Some(ref sw) = self.settings_widgets {
             self.sync_settings_ui(sw);
         }
+        if let Some(ref iw) = self.image_widgets {
+            self.sync_image_ui(iw);
+        }
 
         self.update_view(widgets, sender);
     }
@@ -6295,18 +6514,25 @@ impl PdfReaderModel {
         if let Some(tabs) = &self.right_tabs {
             tabs.set_selected(match self.right_tab {
                 PdfRightTab::Reading => 0,
-                PdfRightTab::Shortcuts => 1,
+                PdfRightTab::Image => 1,
+                PdfRightTab::Shortcuts => 2,
             });
         }
         if let Some(stack) = &self.right_stack {
             stack.set_visible_child_name(match self.right_tab {
                 PdfRightTab::Reading => "reading",
+                PdfRightTab::Image => "image",
                 PdfRightTab::Shortcuts => "shortcuts",
             });
         }
         if self.right_tab == PdfRightTab::Reading {
             if let Some(sw) = &self.settings_widgets {
                 self.sync_settings_ui(sw);
+            }
+        }
+        if self.right_tab == PdfRightTab::Image {
+            if let Some(iw) = &self.image_widgets {
+                self.sync_image_ui(iw);
             }
         }
         self.sync_panel_layout(widgets);
@@ -6389,6 +6615,26 @@ impl PdfReaderModel {
                 sender.input(PdfReaderMsg::SetLayout(PdfLayout::Spread));
                 sender.input(PdfReaderMsg::SetFitMode(PdfFitMode::Screen));
                 sender.input(PdfReaderMsg::RotateView(90));
+            }
+            Ok("image") => {
+                // The Image board's own state: Tint at its default
+                // strength over a spread, the sliders where the
+                // board leaves them, the panel pinned beside it.
+                sender.input(PdfReaderMsg::SetPageColour(PdfPageColour::Tint));
+                sender.input(PdfReaderMsg::SetTintStrength(75));
+                sender.input(PdfReaderMsg::SetBrightness(35));
+                sender.input(PdfReaderMsg::SetContrast(35));
+                sender.input(PdfReaderMsg::SetWarmth(5));
+                sender.input(PdfReaderMsg::SetRightTab(PdfRightTab::Image));
+                sender.input(PdfReaderMsg::OpenRightPanel);
+                if !self.right_panel_pinned {
+                    sender.input(PdfReaderMsg::ToggleRightPin);
+                }
+            }
+            Ok("image-invert") => {
+                sender.input(PdfReaderMsg::SetLayout(PdfLayout::Spread));
+                sender.input(PdfReaderMsg::SetFitMode(PdfFitMode::Height));
+                sender.input(PdfReaderMsg::SetPageColour(PdfPageColour::Invert));
             }
             Ok("shortcuts") => {
                 sender.input(PdfReaderMsg::SetRightTab(PdfRightTab::Shortcuts));
@@ -7426,6 +7672,253 @@ fn build_pdf_settings_panel(
         zoom_value,
         rotate_left_btn,
         rotate_right_btn,
+    };
+
+    (wrap, widgets)
+}
+
+fn pdf_image_slider_row(
+    label: &str,
+    min: f64,
+    max: f64,
+    step: f64,
+    initial: f64,
+) -> (gtk::Box, gtk::Scale) {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.add_css_class("kalam-pdf-reading-row");
+    row.set_size_request(-1, 52);
+    row.set_margin_start(14);
+    row.set_margin_end(14);
+
+    let name = gtk::Label::new(Some(label));
+    name.add_css_class("kalam-pdf-reading-name");
+    name.set_size_request(116, -1);
+    name.set_halign(gtk::Align::Start);
+    name.set_xalign(0.0);
+    name.set_valign(gtk::Align::Center);
+    name.set_wrap(true);
+    row.append(&name);
+
+    let scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, min, max, step);
+    scale.add_css_class("kalam-ui-slider");
+    scale.add_css_class("kalam-pdf-slider");
+    scale.set_draw_value(false);
+    scale.set_digits(0);
+    scale.set_value(initial);
+    scale.set_hexpand(true);
+    scale.set_valign(gtk::Align::Center);
+    scale.update_property(&[gtk::accessible::Property::Label(label)]);
+    row.append(&scale);
+
+    (row, scale)
+}
+
+fn connect_pdf_image_scale(
+    scale: &gtk::Scale,
+    sender: &ComponentSender<PdfReaderModel>,
+    make_msg: Rc<dyn Fn(i32) -> PdfReaderMsg>,
+) {
+    let tx = sender.input_sender().clone();
+    scale.connect_value_changed(move |scale| {
+        let _ = tx.send(make_msg(scale.value().round() as i32));
+    });
+}
+
+fn pdf_image_switch_row(
+    label: &str,
+    initial: bool,
+    tooltip: &str,
+    sender: &ComponentSender<PdfReaderModel>,
+    make_msg: Rc<dyn Fn(bool) -> PdfReaderMsg>,
+) -> (gtk::Box, gtk::Switch) {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.add_css_class("kalam-pdf-reading-row");
+    row.set_size_request(-1, 52);
+    row.set_margin_start(14);
+    row.set_margin_end(14);
+
+    let name = gtk::Label::new(Some(label));
+    name.add_css_class("kalam-pdf-reading-name");
+    name.set_hexpand(true);
+    name.set_halign(gtk::Align::Start);
+    name.set_xalign(0.0);
+    name.set_valign(gtk::Align::Center);
+    row.append(&name);
+
+    let tx = sender.input_sender().clone();
+    let switch = crate::pages::settings::toggle_switch(initial, move |on| {
+        let _ = tx.send(make_msg(on));
+    });
+    switch.set_tooltip_text(Some(tooltip));
+    switch.update_property(&[gtk::accessible::Property::Label(label)]);
+    row.append(&switch);
+
+    (row, switch)
+}
+
+fn build_pdf_image_panel(
+    model: &PdfReaderModel,
+    sender: &ComponentSender<PdfReaderModel>,
+) -> (gtk::Box, PdfImageWidgets) {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    wrap.add_css_class("kalam-pdf-image");
+    wrap.set_margin_start(20);
+    wrap.set_margin_end(20);
+    wrap.set_margin_top(14);
+    wrap.set_margin_bottom(24);
+
+    // ── Page colour (decisions 54–55). ──
+    wrap.append(&pdf_reading_heading("Page colour"));
+    let page_colour_card = pdf_reading_card();
+
+    let tx = sender.input_sender().clone();
+    let page_colour_control = crate::widgets::segmented::segmented_control(
+        &["Off", "Tint", "Invert"],
+        model.image_settings.page_colour.segment_index(),
+        crate::widgets::segmented::SegmentedSize::Panel,
+        move |idx| {
+            let _ = tx.send(PdfReaderMsg::SetPageColour(
+                PdfPageColour::from_segment_index(idx),
+            ));
+        },
+    );
+    let page_colour_root = page_colour_control.widget();
+    page_colour_root.set_hexpand(true);
+    page_colour_root.set_halign(gtk::Align::Fill);
+    for button in page_colour_control.buttons() {
+        button.set_hexpand(true);
+    }
+    page_colour_control.buttons()[0]
+        .set_tooltip_text(Some("Show the page exactly as the file drew it"));
+    page_colour_control.buttons()[1]
+        .set_tooltip_text(Some("Dim white paper toward the palette's paper colour"));
+    page_colour_control.buttons()[2]
+        .set_tooltip_text(Some("Invert the page; best on text-only pages"));
+    let page_colour_row = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    page_colour_row.set_margin_start(12);
+    page_colour_row.set_margin_end(12);
+    page_colour_row.set_margin_top(12);
+    page_colour_row.append(&page_colour_root);
+    page_colour_card.append(&page_colour_row);
+
+    let caption = gtk::Label::new(Some(
+        "Dims white paper toward the page colour; illustrations stay almost \
+         unchanged. Invert works best on text-only pages.",
+    ));
+    caption.add_css_class("kalam-pdf-image-caption");
+    caption.set_wrap(true);
+    caption.set_xalign(0.0);
+    caption.set_margin_start(14);
+    caption.set_margin_end(14);
+    caption.set_margin_top(12);
+    caption.set_margin_bottom(14);
+    page_colour_card.append(&caption);
+    page_colour_card.append(&pdf_reading_separator());
+
+    let (tint_strength_row, tint_strength_scale) = pdf_image_slider_row(
+        "Tint strength",
+        0.0,
+        100.0,
+        1.0,
+        model.image_settings.tint_strength as f64,
+    );
+    connect_pdf_image_scale(
+        &tint_strength_scale,
+        sender,
+        Rc::new(PdfReaderMsg::SetTintStrength),
+    );
+    page_colour_card.append(&tint_strength_row);
+    wrap.append(&page_colour_card);
+
+    // ── Adjust (decision 54). ──
+    wrap.append(&pdf_reading_heading("Adjust"));
+    let adjust_card = pdf_reading_card();
+
+    let (brightness_row, brightness_scale) = pdf_image_slider_row(
+        "Brightness",
+        PdfImageSettings::MIN_ADJUSTMENT as f64,
+        PdfImageSettings::MAX_ADJUSTMENT as f64,
+        1.0,
+        model.image_settings.brightness as f64,
+    );
+    connect_pdf_image_scale(
+        &brightness_scale,
+        sender,
+        Rc::new(PdfReaderMsg::SetBrightness),
+    );
+    adjust_card.append(&brightness_row);
+    adjust_card.append(&pdf_reading_separator());
+
+    let (contrast_row, contrast_scale) = pdf_image_slider_row(
+        "Contrast",
+        PdfImageSettings::MIN_ADJUSTMENT as f64,
+        PdfImageSettings::MAX_ADJUSTMENT as f64,
+        1.0,
+        model.image_settings.contrast as f64,
+    );
+    connect_pdf_image_scale(
+        &contrast_scale,
+        sender,
+        Rc::new(PdfReaderMsg::SetContrast),
+    );
+    adjust_card.append(&contrast_row);
+    adjust_card.append(&pdf_reading_separator());
+
+    let (warmth_row, warmth_scale) = pdf_image_slider_row(
+        "Warmth",
+        PdfImageSettings::MIN_ADJUSTMENT as f64,
+        PdfImageSettings::MAX_ADJUSTMENT as f64,
+        1.0,
+        model.image_settings.warmth as f64,
+    );
+    connect_pdf_image_scale(
+        &warmth_scale,
+        sender,
+        Rc::new(PdfReaderMsg::SetWarmth),
+    );
+    adjust_card.append(&warmth_row);
+    adjust_card.append(&pdf_reading_separator());
+
+    let (grayscale_row, grayscale_switch) = pdf_image_switch_row(
+        "Grayscale",
+        model.image_settings.grayscale,
+        "Show the page without colour",
+        sender,
+        Rc::new(PdfReaderMsg::SetGrayscale),
+    );
+    adjust_card.append(&grayscale_row);
+    adjust_card.append(&pdf_reading_separator());
+
+    let (trim_row, trim_switch) = pdf_image_switch_row(
+        "Trim margins",
+        model.image_settings.trim_margins,
+        "Crop each page to its printed area",
+        sender,
+        Rc::new(PdfReaderMsg::SetSmartCrop),
+    );
+    adjust_card.append(&trim_row);
+    wrap.append(&adjust_card);
+
+    let tx = sender.input_sender().clone();
+    let reset_button = crate::widgets::pill_button::boxed_ghost_button(
+        "Reset image settings",
+        move || {
+            let _ = tx.send(PdfReaderMsg::ResetImageSettings);
+        },
+    );
+    reset_button.set_halign(gtk::Align::Center);
+    reset_button.set_margin_top(4);
+    wrap.append(&reset_button);
+
+    let widgets = PdfImageWidgets {
+        page_colour_control,
+        tint_strength_row,
+        tint_strength_scale,
+        brightness_scale,
+        contrast_scale,
+        warmth_scale,
+        grayscale_switch,
+        trim_switch,
     };
 
     (wrap, widgets)

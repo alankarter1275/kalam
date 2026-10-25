@@ -625,6 +625,20 @@ jobs:
             THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      - name: open the PDF Image panel (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-image-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=image \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open an inverted PDF spread (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-image-invert-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=image-invert \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       - name: open the PDF page-jump out of range (dark) and report
         run: |
           BOOKS=20 OUT=ci-shots-pdf-jump-range-dark SETTLE=20 \
@@ -1051,6 +1065,7 @@ jobs:
           for shot in pdf-chrome-light pdf-chrome-dark \
                       pdf-contents-dark pdf-contents-pinned-dark \
                       pdf-reading-dark pdf-rotated-dark \
+                      pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark; do
             cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
               || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
@@ -1171,6 +1186,7 @@ jobs:
           for shot in pdf-chrome-light pdf-chrome-dark \
                       pdf-contents-dark pdf-contents-pinned-dark \
                       pdf-reading-dark pdf-rotated-dark \
+                      pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark; do
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi

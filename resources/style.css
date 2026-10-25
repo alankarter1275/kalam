@@ -5193,6 +5193,13 @@ button.kalam-pdf-tile image {
     font-size: 0.9rem;
 }
 
+/* The Image pane's one piece of prose (decision 55): what Tint
+   does to a page, and Invert's warning, in the panel's dim voice. */
+.kalam-pdf-image-caption {
+    color: @kalam_text_dim;
+    font-size: 0.88rem;
+}
+
 button.kalam-pdf-rotate-btn {
     min-width: 34px;
     min-height: 34px;

@@ -2481,9 +2481,13 @@ fn author_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
 /// and guessing one would photograph some other page while looking right.
 fn route_by_name(name: &str) -> Option<Route> {
     let name = name.trim().to_ascii_lowercase();
-    // The comics reader is its own route (it builds a provider from
-    // the archive, unlike the EPUB engine behind `read-`), so the
-    // screenshot loop spells it out.
+    // The PDF reader is its own route (MuPDF raster pages, unlike
+    // the EPUB engine behind `read-`), so the screenshot loop
+    // spells it out — and the same for comics below.
+    if let Some(id) = name.strip_prefix("pdf-read-") {
+        let book_id = id.parse::<i64>().ok().filter(|id| *id > 0)?;
+        return Some(Route::PdfReader { book_id });
+    }
     if let Some(id) = name.strip_prefix("comic-read-") {
         let book_id = id.parse::<i64>().ok().filter(|id| *id > 0)?;
         return Some(Route::ComicsReader { book_id });
@@ -2551,9 +2555,10 @@ fn known_route_names() -> Vec<&'static str> {
 
 /// The names that take an id, for the error message only. They are not in
 /// `known_route_names` because that list is asserted to resolve as it stands.
-const ROUTE_ID_FORMS: [&str; 5] = [
+const ROUTE_ID_FORMS: [&str; 6] = [
     "book-<id>",
     "read-<id>",
+    "pdf-read-<id>",
     "comic-read-<id>",
     "series-book-<id>",
     "author-book-<id>",
@@ -2629,7 +2634,7 @@ mod tests {
             .into_iter()
             .filter_map(|name| route_by_name(name).as_ref().map(route_label))
             .collect();
-        for name in ["book-1", "read-1", "comic-read-1"] {
+        for name in ["book-1", "read-1", "pdf-read-1", "comic-read-1"] {
             labels.push(route_label(&route_by_name(name).expect("id form resolves")));
         }
         // `series-book-<id>` resolves through the catalog, so its route is
@@ -2689,10 +2694,14 @@ mod tests {
             Some(Route::Reader { book_id: 12 })
         );
         assert_eq!(
+            route_by_name("pdf-read-7"),
+            Some(Route::PdfReader { book_id: 7 })
+        );
+        assert_eq!(
             route_by_name("comic-read-7"),
             Some(Route::ComicsReader { book_id: 7 })
         );
-        for name in ["book", "reader", "book-", "read-", "book-abc", "book-1x", "read--1", "comic-read-", "comic-read-x", "comic-7"] {
+        for name in ["book", "reader", "book-", "read-", "book-abc", "book-1x", "read--1", "pdf-read-", "pdf-read-x", "pdf-7", "comic-read-", "comic-read-x", "comic-7"] {
             assert_eq!(route_by_name(name), None, "{name:?} must not resolve");
         }
     }

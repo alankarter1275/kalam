@@ -105,6 +105,12 @@ fn install() {
             "kalam-pdf-even-spreads-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="16" rx="1.5" /><rect x="13" y="4" width="9" height="16" rx="1.5" /><path d="M5 10a1.5 1.5 0 0 1 1.5-1.5h.5a1.5 1.5 0 0 1 1.5 1.5c0 1.5-3 2-3 3.5h3" /><path d="M16 9.5a1.5 1.5 0 0 1 2.5 1c0 1-1.5 1.5-1.5 1.5s1.5.5 1.5 1.5a1.5 1.5 0 0 1-2.5 1" /></svg>"#,
         ),
+        // The PDF panels' pin (decision 57): a plain thumbtack, drawn
+        // upright so the pinned state reads at the panel header's size.
+        (
+            "kalam-pin-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v5l2 3H7l2-3z" /><path d="M12 11v9" /></svg>"#,
+        ),
         // The reader's bookmark ribbon (decision 16): a V-notched strip
         // hanging from the top edge. Idle is an outline in the border
         // colour over the page; set is the same shape filled with the

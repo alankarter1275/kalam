@@ -443,6 +443,278 @@ def cbz_bytes(series: str, author: str, number: int, pages: int = 12) -> bytes:
     return buf.getvalue()
 
 
+def _pdf_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
+    """A real, hand-built PDF for the PDF-reader screenshot route.
+
+    MuPDF must be able to count and render the pages, search their
+    vector text and walk a linked outline; a byte stub says nothing
+    about any of that. The writer stays dependency-free: compressed
+    content streams, the standard Helvetica face, page destinations
+    and a conventional cross-reference table.
+    """
+    if pages != 12:
+        raise ValueError("the PDF fixture's outline is written for 12 pages")
+
+    width, height = 420, 595
+    objects: dict[int, bytes] = {}
+
+    def add(object_id: int, body) -> None:
+        objects[object_id] = body.encode("ascii") if isinstance(body, str) else body
+
+    catalog_id, pages_id, font_id, outlines_id = 1, 2, 3, 4
+    next_id = 5
+    page_ids: list[int] = []
+
+    section_by_page = {
+        1: "Preface",
+        2: "The Earth",
+        3: "Structure of the Earth",
+        4: "Plate tectonics",
+        5: "Plate tectonics",
+        6: "Volcanoes",
+        7: "Volcanoes",
+        8: "Oceans",
+        9: "Currents",
+        10: "Atmosphere",
+        11: "Atmosphere",
+        12: "Index",
+    }
+    body_lines = [
+        "Water moves through soil, stone and living tissue,",
+        "carrying minerals from high ground toward the sea.",
+        "Rivers record every season in their colour and force.",
+        "When rain returns, dry channels answer almost at once.",
+        "The planet keeps its memory in layers of sediment.",
+        "Heat below the crust drives a slow, patient motion.",
+        "Mountains rise where great plates meet and compress.",
+        "Oceans store the warmth that softens coastal winters.",
+        "Air, water and rock exchange matter without pause.",
+        "Every landscape is a temporary agreement among forces.",
+    ]
+
+    for page in range(1, pages + 1):
+        page_id, content_id = next_id, next_id + 1
+        next_id += 2
+        page_ids.append(page_id)
+        section = section_by_page[page]
+        parts = [
+            "0.98 0.97 0.94 rg 0 0 420 595 re f",
+            "0.78 0.35 0.22 rg 0 570 420 25 re f",
+        ]
+        for stripe in range(6):
+            shade = 0.58 + stripe * 0.06
+            parts.append(
+                f"{shade:.3f} {shade * 0.82:.3f} {shade * 0.68:.3f} rg "
+                f"{36 + stripe * 58} 300 50 180 re f"
+            )
+        heading = title if page == 1 else section
+        subheading = f"by {author}" if page == 1 else f"Page {page}"
+        parts.append(
+            f"BT /F1 18 Tf 0.15 g 36 535 Td ({_pdf_escape(heading)}) Tj ET"
+        )
+        parts.append(
+            f"BT /F1 10 Tf 0.38 g 36 515 Td ({_pdf_escape(subheading)}) Tj ET"
+        )
+        for offset, line in enumerate(body_lines):
+            y = 260 - offset * 19
+            parts.append(
+                f"BT /F1 10 Tf 0.18 g 36 {y} Td ({_pdf_escape(line)}) Tj ET"
+            )
+        parts.append(f"BT /F1 9 Tf 0.42 g 205 28 Td ({page}) Tj ET")
+        stream = zlib.compress("\n".join(parts).encode("ascii"))
+        add(
+            content_id,
+            f"<< /Length {len(stream)} /Filter /FlateDecode >>\nstream\n".encode(
+                "ascii"
+            )
+            + stream
+            + b"\nendstream",
+        )
+        add(
+            page_id,
+            f"<< /Type /Page /Parent {pages_id} 0 R "
+            f"/MediaBox [0 0 {width} {height}] "
+            f"/Resources << /Font << /F1 {font_id} 0 R >> >> "
+            f"/Contents {content_id} 0 R >>",
+        )
+
+    outline_spec = [
+        ("Preface", 1, []),
+        (
+            "The Earth",
+            2,
+            [
+                ("Structure of the Earth", 3, []),
+                ("Plate tectonics", 4, []),
+                ("Volcanoes", 6, []),
+            ],
+        ),
+        ("Oceans", 8, [("Currents", 9, [])]),
+        ("Atmosphere", 10, []),
+        ("Index", 12, []),
+    ]
+
+    def build_outline(spec):
+        nonlocal next_id
+        object_id = next_id
+        next_id += 1
+        return {
+            "id": object_id,
+            "title": spec[0],
+            "page": spec[1],
+            "children": [build_outline(child) for child in spec[2]],
+        }
+
+    def descendant_count(node) -> int:
+        return sum(1 + descendant_count(child) for child in node["children"])
+
+    outline_roots = [build_outline(spec) for spec in outline_spec]
+
+    def add_outline_items(nodes, parent_id: int) -> None:
+        for index, node in enumerate(nodes):
+            fields = [
+                f"/Title ({_pdf_escape(node['title'])})",
+                f"/Parent {parent_id} 0 R",
+                f"/Dest [{page_ids[node['page'] - 1]} 0 R /XYZ 0 {height} 0]",
+            ]
+            if index > 0:
+                fields.append(f"/Prev {nodes[index - 1]['id']} 0 R")
+            if index + 1 < len(nodes):
+                fields.append(f"/Next {nodes[index + 1]['id']} 0 R")
+            if node["children"]:
+                fields.append(f"/First {node['children'][0]['id']} 0 R")
+                fields.append(f"/Last {node['children'][-1]['id']} 0 R")
+                fields.append(f"/Count {descendant_count(node)}")
+            add(node["id"], "<< " + " ".join(fields) + " >>")
+            add_outline_items(node["children"], node["id"])
+
+    add_outline_items(outline_roots, outlines_id)
+    outline_count = sum(1 + descendant_count(node) for node in outline_roots)
+    add(
+        outlines_id,
+        f"<< /Type /Outlines /First {outline_roots[0]['id']} 0 R "
+        f"/Last {outline_roots[-1]['id']} 0 R /Count {outline_count} >>",
+    )
+    add(font_id, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
+    add(pages_id, f"<< /Type /Pages /Count {pages} /Kids [{kids}] >>")
+    add(
+        catalog_id,
+        f"<< /Type /Catalog /Pages {pages_id} 0 R "
+        f"/Outlines {outlines_id} 0 R /PageMode /UseOutlines >>",
+    )
+
+    output = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets: dict[int, int] = {}
+    for object_id in sorted(objects):
+        offsets[object_id] = len(output)
+        output.extend(f"{object_id} 0 obj\n".encode("ascii"))
+        output.extend(objects[object_id])
+        output.extend(b"\nendobj\n")
+    xref_offset = len(output)
+    max_id = max(objects)
+    output.extend(f"xref\n0 {max_id + 1}\n".encode("ascii"))
+    output.extend(b"0000000000 65535 f \n")
+    for object_id in range(1, max_id + 1):
+        output.extend(f"{offsets[object_id]:010d} 00000 n \n".encode("ascii"))
+    output.extend(
+        f"trailer\n<< /Size {max_id + 1} /Root {catalog_id} 0 R >>\n"
+        f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(output)
+
+
+def seed_pdf_fixture(conn, library: pathlib.Path, now: datetime) -> int:
+    """Seed the book behind `pdf-read-21`. Returns covers written.
+
+    The PDF route opens the file with MuPDF, so it needs a real
+    outlined, searchable document. With `--books 20`, this is book
+    21, independent of the comic fixture seeded after it. Page 4
+    is both the saved place and a bookmark, and the per-book
+    settings open the board's 4-5 spread at 140%.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reading_bookmarks (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            chapter_index INTEGER NOT NULL,
+            fraction      REAL    NOT NULL DEFAULT 0.0,
+            label         TEXT    NOT NULL DEFAULT '',
+            created_at    TEXT    NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_prefs (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
+
+    title, author = "The Living Earth", "Ada Meridian"
+    pdf = pdf_bytes(title, author)
+    book_uuid = str(uuid.uuid4())
+    book_dir = library / book_folder_name(author, title, book_uuid)
+    book_dir.mkdir(parents=True)
+    (book_dir / "book.pdf").write_bytes(pdf)
+    (book_dir / "cover.png").write_bytes(png(600, 960, cover_colour(19)))
+
+    stamp = now.isoformat()
+    cursor = conn.execute(
+        "INSERT INTO books (uuid, title, sort_title, authors, series, "
+        "description, format, file_name, file_hash, cover_name, added_at, "
+        "progress) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            book_uuid,
+            title,
+            title.lower(),
+            author,
+            None,
+            "Rivers, plates, oceans and air: the systems that keep a "
+            "planet in motion.",
+            "PDF",
+            "book.pdf",
+            "hash-pdf-000021",
+            "cover.png",
+            stamp,
+            33,
+        ),
+    )
+    book_id = cursor.lastrowid
+
+    # PDF progress stores its one-based page directly: page 4
+    # opens the Plate tectonics spread, bookmarked there.
+    conn.execute(
+        "INSERT INTO reading_progress (book_id, chapter_index, fraction, "
+        "updated_at) VALUES (?,?,?,?)",
+        (book_id, 4, 4 / 12, stamp),
+    )
+    conn.execute(
+        "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, "
+        "label, created_at) VALUES (?,?,?,?,?)",
+        (book_id, 4, 4 / 12, "Where the plates meet", stamp),
+    )
+    prefs = {
+        f"book.{book_id}.pdf.scroll_mode": "page",
+        f"book.{book_id}.pdf.spread_mode": "odd",
+        f"book.{book_id}.pdf.zoom": "1.40",
+        "reader.pdf.two_page_gap": "0",
+    }
+    conn.executemany(
+        "INSERT OR REPLACE INTO app_prefs (key, value) VALUES (?, ?)",
+        sorted(prefs.items()),
+    )
+    print(f"pdf fixture: book {book_id} (route pdf-read-{book_id})")
+    return 1
+
+
 def seed_comic_fixture(conn, library: pathlib.Path, now: datetime) -> int:
     """Add the comics reader's drawn state: one series of two real
     CBZ chapters, the first read, the second open at page 4 of 12
@@ -1231,6 +1503,11 @@ def main() -> int:
         help="add the cached bibliography + marks the author-page screenshot opens",
     )
     ap.add_argument(
+        "--pdf-fixture",
+        action="store_true",
+        help="add the real outlined PDF the PDF-reader screenshots open",
+    )
+    ap.add_argument(
         "--comic-fixture",
         action="store_true",
         help="add the two-chapter CBZ series the comics reader screenshots open",
@@ -1391,6 +1668,10 @@ def main() -> int:
             conn, library, now, args.books + (3 if args.series_fixture else 0)
         )
         total_books += 2
+
+    if args.pdf_fixture:
+        covers_written += seed_pdf_fixture(conn, library, now)
+        total_books += 1
 
     if args.comic_fixture:
         covers_written += seed_comic_fixture(conn, library, now)

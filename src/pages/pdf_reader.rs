@@ -19,13 +19,14 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::{Catalog, ReadingBookmark};
 use crate::epub_book::ReadingTheme;
-use crate::pdf::{is_top_level_title, PdfDocument, PdfPageText, PdfSearchResult, PdfTocEntry};
+use crate::pdf::{PdfDocument, PdfPageText, PdfSearchResult, PdfTocEntry};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PageSlot {
@@ -297,6 +298,187 @@ pub fn calculate_all_spreads(
     }
 }
 
+/// The location text for one reading position. Wrapped scrolling
+/// lays pages out one by one even when a spread pairing is chosen,
+/// so it names one page, exactly as the viewport does.
+fn format_location_label(
+    spread_mode: PdfSpreadMode,
+    scroll_mode: PdfScrollMode,
+    total_pages: usize,
+    current_page: usize,
+) -> String {
+    if total_pages == 0 {
+        return "0 / 0".to_string();
+    }
+    let current = current_page.clamp(1, total_pages);
+    if spread_mode == PdfSpreadMode::NoSpreads
+        || scroll_mode == PdfScrollMode::WrappedScrolling
+    {
+        return format!("{current} / {total_pages}");
+    }
+    let (left, right) = calculate_spread_for_page(spread_mode, total_pages, current);
+    match right {
+        Some(right) => format!("{left}–{right} / {total_pages}"),
+        None => format!("{left} / {total_pages}"),
+    }
+}
+
+/// The pages the jump field's Chapter mode counts: the outline's
+/// top level, in outline order. MuPDF's flattened outline already
+/// forces structural titles (Preface, Chapter, Index) to depth 0,
+/// which is the level a reader means by a chapter here.
+fn pdf_jump_chapter_pages(entries: &[PdfTocEntry], total_pages: usize) -> Vec<usize> {
+    entries
+        .iter()
+        .filter(|entry| entry.depth == 0 && entry.page >= 1 && entry.page <= total_pages)
+        .map(|entry| entry.page)
+        .collect()
+}
+
+fn pdf_jump_current(
+    mode: PdfJumpMode,
+    entries: &[PdfTocEntry],
+    total_pages: usize,
+    current_page: usize,
+) -> usize {
+    match mode {
+        PdfJumpMode::Page => current_page.clamp(1, total_pages.max(1)),
+        PdfJumpMode::Chapter => {
+            let chapters = pdf_jump_chapter_pages(entries, total_pages);
+            chapters
+                .iter()
+                .rposition(|page| *page <= current_page)
+                .map(|idx| idx + 1)
+                .unwrap_or(1)
+        }
+    }
+}
+
+fn pdf_jump_target(
+    mode: PdfJumpMode,
+    text: &str,
+    entries: &[PdfTocEntry],
+    total_pages: usize,
+) -> Option<usize> {
+    let value: usize = text.trim().parse().ok()?;
+    if value == 0 {
+        return None;
+    }
+    match mode {
+        PdfJumpMode::Page => (value <= total_pages).then_some(value),
+        PdfJumpMode::Chapter => pdf_jump_chapter_pages(entries, total_pages)
+            .get(value - 1)
+            .copied(),
+    }
+}
+
+/// Each flattened outline entry's parent, by depth. The outline
+/// arrives flattened, so parentage is the nearest previous entry
+/// one level up.
+fn toc_parent_indices(entries: &[PdfTocEntry]) -> Vec<Option<usize>> {
+    let mut parents = Vec::with_capacity(entries.len());
+    let mut stack: Vec<usize> = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        while stack
+            .last()
+            .is_some_and(|last| entries[*last].depth >= entry.depth)
+        {
+            stack.pop();
+        }
+        parents.push(stack.last().copied());
+        stack.push(index);
+    }
+    parents
+}
+
+/// The outline entry the reader is inside: the latest-starting
+/// entry at or before the current page, deepest first when several
+/// entries share a start page.
+fn current_toc_index(
+    entries: &[PdfTocEntry],
+    current_page: usize,
+    total_pages: usize,
+) -> Option<usize> {
+    entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| {
+            entry.page >= 1 && entry.page <= total_pages && entry.page <= current_page
+        })
+        .max_by_key(|(index, entry)| (entry.page, entry.depth, *index))
+        .map(|(index, _)| index)
+}
+
+/// The rows Contents shows for one filter/collapse state. A filter
+/// keeps its matches, their ancestors and their descendants, and
+/// overrides folding while it stands — a match folded inside its
+/// parent would be a filter that hides what it found.
+fn visible_toc_rows(
+    entries: &[PdfTocEntry],
+    collapsed: &HashSet<usize>,
+    filter: &str,
+) -> Vec<VisibleTocRow> {
+    let parents = toc_parent_indices(entries);
+    let has_children: Vec<bool> = entries
+        .iter()
+        .enumerate()
+        .map(|(index, _)| parents.contains(&Some(index)))
+        .collect();
+    let query = filter.trim().to_lowercase();
+
+    let included: Vec<bool> = if query.is_empty() {
+        entries
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                let mut cursor = parents[index];
+                while let Some(parent) = cursor {
+                    if collapsed.contains(&parent) {
+                        return false;
+                    }
+                    cursor = parents[parent];
+                }
+                true
+            })
+            .collect()
+    } else {
+        let mut included = vec![false; entries.len()];
+        for (index, entry) in entries.iter().enumerate() {
+            if !entry.title.to_lowercase().contains(&query) {
+                continue;
+            }
+            included[index] = true;
+            let mut cursor = parents[index];
+            while let Some(parent) = cursor {
+                included[parent] = true;
+                cursor = parents[parent];
+            }
+            for (other, _) in entries.iter().enumerate().skip(index + 1) {
+                let mut cursor = parents[other];
+                while let Some(parent) = cursor {
+                    if parent == index {
+                        included[other] = true;
+                        break;
+                    }
+                    cursor = parents[parent];
+                }
+            }
+        }
+        included
+    };
+
+    entries
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| included[*index])
+        .map(|(index, _)| VisibleTocRow {
+            index,
+            has_children: has_children[index],
+            collapsed: query.is_empty() && collapsed.contains(&index),
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct CachedPageTexture {
@@ -307,10 +489,31 @@ pub struct CachedPageTexture {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PdfSidebarTab {
-    Toc,
+pub enum PdfLeftTab {
+    Contents,
     Bookmarks,
-    Settings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfRightTab {
+    Reading,
+    Shortcuts,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfJumpMode {
+    Page,
+    Chapter,
+}
+
+/// One outline row after the filter and collapsed branches have had
+/// their say. `index` is the entry's position in the flattened
+/// outline, which is also the identity the collapse set stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VisibleTocRow {
+    index: usize,
+    has_children: bool,
+    collapsed: bool,
 }
 
 pub struct PdfSettingsWidgets {
@@ -350,9 +553,29 @@ pub enum PdfReaderMsg {
     JumpToPage(usize),
     SetSmartCrop(bool),
     ToggleSmartCrop,
-    SwitchSidebarTab(PdfSidebarTab),
-    ToggleSidebar,
-    CloseSidebar,
+    SetLeftTab(PdfLeftTab),
+    SetRightTab(PdfRightTab),
+    OpenLeftPanel,
+    OpenRightPanel,
+    OpenContents,
+    OpenReadingPanel,
+    OpenShortcutsPanel,
+    ToggleLeftPanel,
+    ToggleRightPanel,
+    ClosePanels,
+    ToggleLeftPin,
+    ToggleRightPin,
+    TocFilterChanged(String),
+    ToggleTocEntry(usize),
+    OpenJump(Option<String>),
+    CloseJump,
+    SetJumpMode(PdfJumpMode),
+    JumpTextChanged(String),
+    SubmitJump,
+    ShowBackChrome,
+    BackZoneHover(bool),
+    BackRevealDue(u64),
+    BackHideDue(u64),
     EscapeKey,
     Close,
     MinimizeToBubble,
@@ -369,13 +592,12 @@ pub enum PdfReaderMsg {
         width: i32,
         height: i32,
     },
-    TopEdgeHover(bool),
-    BottomEdgeHover(bool),
     LeftEdgeHover(bool),
-    SidebarHover(bool),
-    BackHideTimerTick(u64),
-    BottomHideTimerTick(u64),
-    SidebarCloseTimerTick(u64),
+    RightEdgeHover(bool),
+    LeftPanelHover(bool),
+    RightPanelHover(bool),
+    LeftCloseTimerTick(u64),
+    RightCloseTimerTick(u64),
     UserScrolled,
     ScrollDelta(f64),
     UpdateScrollPage(usize),
@@ -444,18 +666,26 @@ pub struct PdfReaderModel {
     pub spread_mode: PdfSpreadMode,
     pub two_page_gap: i32,
     pub smart_crop: bool,
-    pub sidebar_tab: PdfSidebarTab,
+    pub left_tab: PdfLeftTab,
+    pub right_tab: PdfRightTab,
     pub show_back_button: bool,
-    pub show_bottom_pill: bool,
-    pub show_sidebar: bool,
-    pub sidebar_pinned: bool,
-    pub mouse_in_top_edge: bool,
-    pub mouse_in_bottom_edge: bool,
+    pub left_panel_open: bool,
+    pub right_panel_open: bool,
+    pub left_panel_pinned: bool,
+    pub right_panel_pinned: bool,
+    pub back_hover: bool,
     pub mouse_in_left_edge: bool,
-    pub mouse_in_sidebar: bool,
-    pub back_hide_seq: u64,
-    pub bottom_hide_seq: u64,
-    pub sidebar_close_seq: u64,
+    pub mouse_in_right_edge: bool,
+    pub mouse_in_left_panel: bool,
+    pub mouse_in_right_panel: bool,
+    pub back_gen: u64,
+    pub left_close_seq: u64,
+    pub right_close_seq: u64,
+    pub jump_open: bool,
+    pub jump_text: String,
+    pub jump_mode: PdfJumpMode,
+    pub toc_filter: String,
+    pub collapsed_toc_entries: HashSet<usize>,
     pub toc_entries: Vec<PdfTocEntry>,
     pub bookmarks: Vec<ReadingBookmark>,
     pub textures: HashMap<usize, CachedPageTexture>,
@@ -474,9 +704,22 @@ pub struct PdfReaderModel {
     pub two_page_loading_box: Option<gtk::Box>,
     pub two_page_label: Option<gtk::Label>,
     pub left_stack: Option<gtk::Stack>,
+    pub right_stack: Option<gtk::Stack>,
+    pub left_tabs: Option<crate::widgets::segmented::SegmentedControl>,
+    pub right_tabs: Option<crate::widgets::segmented::SegmentedControl>,
+    pub jump_mode_control: Option<crate::widgets::segmented::SegmentedControl>,
+    pub back_unit: Option<crate::widgets::slide_out_pill::SlideOutPill>,
     pub toc_list_box: Option<gtk::Box>,
+    pub toc_scroll: Option<gtk::ScrolledWindow>,
+    /// The visible Contents rows by outline index, so a page turn can
+    /// move the current mark without rebuilding the list under the
+    /// reader's scroll position.
+    pub toc_rows: Vec<(usize, gtk::Box)>,
+    pub toc_current_visible_row: Option<usize>,
+    pub toc_current_page_synced: usize,
     pub bookmarks_list_box: Option<gtk::Box>,
     pub settings_widgets: Option<PdfSettingsWidgets>,
+    pub screenshot_action_applied: bool,
     pub render_tx: Option<async_channel::Sender<PdfRenderRequest>>,
     pub render_generation: u64,
     pub active_generation: Option<Arc<AtomicU64>>,
@@ -601,6 +844,15 @@ impl PdfReaderModel {
             .get_pref(&format!("book.{}.pdf.smart_crop", init.book_id));
         let smart_crop = smart_crop_pref.as_deref() == Some("1");
 
+        // 6. Panel pins are remembered per side (decision 57's
+        // approved assumption). They describe the next open as much
+        // as this one: a pinned side reopens as page layout, not as
+        // a floating layer.
+        let left_panel_pinned =
+            init.catalog.get_pref_i64("reader.pdf.left_panel_pinned", 0) != 0;
+        let right_panel_pinned =
+            init.catalog.get_pref_i64("reader.pdf.right_panel_pinned", 0) != 0;
+
         let mut model = Self {
             book_id: init.book_id,
             catalog: init.catalog,
@@ -616,18 +868,26 @@ impl PdfReaderModel {
             spread_mode,
             two_page_gap,
             smart_crop,
-            sidebar_tab: PdfSidebarTab::Toc,
-            show_back_button: true,
-            show_bottom_pill: true,
-            show_sidebar: false,
-            sidebar_pinned: false,
-            mouse_in_top_edge: false,
-            mouse_in_bottom_edge: false,
+            left_tab: PdfLeftTab::Contents,
+            right_tab: PdfRightTab::Reading,
+            show_back_button: false,
+            left_panel_open: false,
+            right_panel_open: false,
+            left_panel_pinned,
+            right_panel_pinned,
+            back_hover: false,
             mouse_in_left_edge: false,
-            mouse_in_sidebar: false,
-            back_hide_seq: 0,
-            bottom_hide_seq: 0,
-            sidebar_close_seq: 0,
+            mouse_in_right_edge: false,
+            mouse_in_left_panel: false,
+            mouse_in_right_panel: false,
+            back_gen: 0,
+            left_close_seq: 0,
+            right_close_seq: 0,
+            jump_open: false,
+            jump_text: String::new(),
+            jump_mode: PdfJumpMode::Page,
+            toc_filter: String::new(),
+            collapsed_toc_entries: HashSet::new(),
             toc_entries: Vec::new(),
             bookmarks: Vec::new(),
             textures: HashMap::new(),
@@ -646,9 +906,19 @@ impl PdfReaderModel {
             two_page_loading_box: None,
             two_page_label: None,
             left_stack: None,
+            right_stack: None,
+            left_tabs: None,
+            right_tabs: None,
+            jump_mode_control: None,
+            back_unit: None,
             toc_list_box: None,
+            toc_scroll: None,
+            toc_rows: Vec::new(),
+            toc_current_visible_row: None,
+            toc_current_page_synced: 0,
             bookmarks_list_box: None,
             settings_widgets: None,
+            screenshot_action_applied: false,
             render_tx: None,
             render_generation: 1,
             active_generation: None,
@@ -741,31 +1011,125 @@ impl PdfReaderModel {
         calculate_all_spreads(self.spread_mode, self.total_pages)
     }
 
-    pub fn schedule_back_hide(&mut self, sender: &ComponentSender<Self>) {
-        self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
-        let seq = self.back_hide_seq;
-        let s = sender.clone();
-        glib::timeout_add_local_once(Duration::from_millis(3000), move || {
-            let _ = s.input_sender().send(PdfReaderMsg::BackHideTimerTick(seq));
-        });
-    }
-
-    pub fn schedule_bottom_hide(&mut self, sender: &ComponentSender<Self>) {
-        self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
-        let seq = self.bottom_hide_seq;
-        let s = sender.clone();
-        glib::timeout_add_local_once(Duration::from_millis(3500), move || {
-            let _ = s.input_sender().send(PdfReaderMsg::BottomHideTimerTick(seq));
-        });
-    }
-
-    pub fn schedule_sidebar_close(&mut self, sender: &ComponentSender<Self>) {
-        self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
-        let seq = self.sidebar_close_seq;
+    pub fn schedule_left_close(&mut self, sender: &ComponentSender<Self>) {
+        self.left_close_seq = self.left_close_seq.wrapping_add(1);
+        let seq = self.left_close_seq;
         let s = sender.clone();
         glib::timeout_add_local_once(Duration::from_millis(600), move || {
-            let _ = s.input_sender().send(PdfReaderMsg::SidebarCloseTimerTick(seq));
+            let _ = s.input_sender().send(PdfReaderMsg::LeftCloseTimerTick(seq));
         });
+    }
+
+    pub fn schedule_right_close(&mut self, sender: &ComponentSender<Self>) {
+        self.right_close_seq = self.right_close_seq.wrapping_add(1);
+        let seq = self.right_close_seq;
+        let s = sender.clone();
+        glib::timeout_add_local_once(Duration::from_millis(600), move || {
+            let _ = s.input_sender().send(PdfReaderMsg::RightCloseTimerTick(seq));
+        });
+    }
+
+    /// The plain bottom-right location (decision 52): both pages of
+    /// a spread, or the one page in front of the reader.
+    pub fn location_label(&self) -> String {
+        format_location_label(
+            self.spread_mode,
+            self.scroll_mode,
+            self.total_pages,
+            self.current_page,
+        )
+    }
+
+    pub fn jump_max(&self) -> usize {
+        match self.jump_mode {
+            PdfJumpMode::Page => self.total_pages,
+            PdfJumpMode::Chapter => {
+                pdf_jump_chapter_pages(&self.toc_entries, self.total_pages).len()
+            }
+        }
+    }
+
+    pub fn jump_current(&self) -> usize {
+        pdf_jump_current(
+            self.jump_mode,
+            &self.toc_entries,
+            self.total_pages,
+            self.current_page,
+        )
+    }
+
+    pub fn jump_out_of_range(&self) -> bool {
+        if self.jump_text.trim().is_empty() {
+            return false;
+        }
+        pdf_jump_target(
+            self.jump_mode,
+            &self.jump_text,
+            &self.toc_entries,
+            self.total_pages,
+        )
+        .is_none()
+    }
+
+    pub fn jump_hint(&self) -> String {
+        if self.jump_out_of_range() {
+            match self.jump_mode {
+                PdfJumpMode::Page => format!("Pages 1–{}", self.total_pages.max(1)),
+                PdfJumpMode::Chapter => format!("Chapters 1–{}", self.jump_max().max(1)),
+            }
+        } else {
+            format!("of {}", self.jump_max())
+        }
+    }
+
+    pub fn jump_target_page(&self) -> Option<usize> {
+        pdf_jump_target(
+            self.jump_mode,
+            &self.jump_text,
+            &self.toc_entries,
+            self.total_pages,
+        )
+    }
+
+    /// Move the Contents current mark after a page turn. The row
+    /// widgets survive page turns; rebuilding them here would throw
+    /// away the reader's place in a pinned Contents list.
+    pub fn sync_toc_current(&mut self) {
+        if self.toc_current_page_synced == self.current_page {
+            return;
+        }
+        self.toc_current_page_synced = self.current_page;
+        let current = current_toc_index(&self.toc_entries, self.current_page, self.total_pages);
+        self.toc_current_visible_row = self
+            .toc_rows
+            .iter()
+            .position(|(index, _)| Some(*index) == current);
+        for (index, row) in &self.toc_rows {
+            if Some(*index) == current {
+                row.add_css_class("active");
+            } else {
+                row.remove_css_class("active");
+            }
+        }
+    }
+
+    /// Contents opens on the branch being read (decision 58): a
+    /// branch the reader folded earlier in the session does not
+    /// stay folded over the current section.
+    pub fn expand_current_toc_branch(&mut self) {
+        let Some(current) = current_toc_index(
+            &self.toc_entries,
+            self.current_page,
+            self.total_pages,
+        ) else {
+            return;
+        };
+        let parents = toc_parent_indices(&self.toc_entries);
+        let mut cursor = parents.get(current).copied().flatten();
+        while let Some(parent) = cursor {
+            self.collapsed_toc_entries.remove(&parent);
+            cursor = parents.get(parent).copied().flatten();
+        }
     }
 
     pub fn trigger_zoom_osd(&mut self, sender: &ComponentSender<Self>) {
@@ -2279,6 +2643,9 @@ impl Component for PdfReaderModel {
         #[root]
         gtk::Overlay {
             add_css_class: "kalam-reader-overlay",
+            add_css_class: "kalam-pdf-overlay",
+            set_hexpand: true,
+            set_vexpand: true,
 
             // ── 1. Main Viewport Scroll ──────────────────────────────
             #[name = "viewport_scroll"]
@@ -2290,260 +2657,303 @@ impl Component for PdfReaderModel {
                 add_css_class: "kalam-pdf-viewport",
             },
 
-            // ── 2. Overlay Backdrop for Dimming & Dismissing Sidebar ──
-            add_overlay = &gtk::Button {
-                add_css_class: "kalam-reader-dim",
+            // ── 2. The click that puts a floating panel away ───────
+            // No dim anywhere (decision 52): this transparent layer
+            // only exists while an unpinned panel stands, catches
+            // the page click that dismisses it, and is spent doing
+            // so. The panels ride above it and stay interactive.
+            #[name = "panel_click_catcher"]
+            add_overlay = &gtk::Box {
+                add_css_class: "kalam-pdf-click-catcher",
                 #[watch]
-                set_visible: model.show_sidebar,
+                set_visible: (model.left_panel_open && !model.left_panel_pinned)
+                    || (model.right_panel_open && !model.right_panel_pinned),
                 set_hexpand: true,
                 set_vexpand: true,
                 set_halign: gtk::Align::Fill,
                 set_valign: gtk::Align::Fill,
-                connect_clicked => PdfReaderMsg::CloseSidebar,
             },
 
-            // ── 3. Overlay: Invisible Left Edge Hover Strip ───────────
+            // ── 3. The 15px edge strips that summon the panels ─────
             #[name = "left_edge_box"]
             add_overlay = &gtk::Box {
                 add_css_class: "kalam-reader-hover-edge",
                 add_css_class: "kalam-reader-hover-edge-left",
-                set_width_request: 18,
+                set_width_request: 15,
                 set_hexpand: false,
                 set_vexpand: true,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Fill,
             },
 
-            // ── 4. Floating Top-Left Back Dock ────────────────────────
+            #[name = "right_edge_box"]
+            add_overlay = &gtk::Box {
+                add_css_class: "kalam-reader-hover-edge",
+                add_css_class: "kalam-reader-hover-edge-right",
+                set_width_request: 15,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Fill,
+            },
+
+            // ── 4. The Back pill with its Bubble slide-out ──────────
+            // Hidden until the pointer rests in the top-left zone
+            // (decision 15, inherited by 52). The shared slide-out
+            // unit is built in init and appended into `back_host`.
+            #[name = "back_revealer"]
             add_overlay = &gtk::Revealer {
                 #[watch]
-                set_reveal_child: model.show_back_button && !model.show_sidebar,
+                set_reveal_child: model.show_back_button && !model.left_panel_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideDown,
+                set_transition_duration: 220,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
 
-                #[name = "back_dock"]
+                #[name = "back_host"]
                 gtk::Box {
-                    add_css_class: "kalam-reader-back-dock",
                     set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 6,
-                    set_margin_start: 24,
-                    set_margin_top: 18,
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::labelled(
-                            "go-previous-symbolic",
-                            16,
-                            "Library",
-                            6,
-                        )),
-                        add_css_class: "kalam-reader-back",
-                        set_tooltip_text: Some("Back to Library (Esc / Backspace)"),
-                        connect_clicked => PdfReaderMsg::Close,
-                    },
-
-                    #[name = "top_bookmark_btn"]
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
-                            "bookmark-new-symbolic",
-                            16,
-                            &["kalam-inline-icon"],
-                        )),
-                        add_css_class: "kalam-reader-back",
-                        set_tooltip_text: Some("Bookmark Page (b)"),
-                        connect_clicked => PdfReaderMsg::ToggleBookmark,
-                    },
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
-                            "edit-find-symbolic",
-                            16,
-                            &["kalam-inline-icon"],
-                        )),
-                        add_css_class: "kalam-reader-back",
-                        set_tooltip_text: Some("Search in document (Ctrl+F)"),
-                        connect_clicked => PdfReaderMsg::ToggleSearch,
-                    },
-
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
-                            "window-minimize-symbolic",
-                            16,
-                            &["kalam-inline-icon"],
-                        )),
-                        add_css_class: "kalam-reader-back",
-                        set_tooltip_text: Some("Minimize to Bubble"),
-                        connect_clicked => PdfReaderMsg::MinimizeToBubble,
-                    },
+                    set_margin_start: 18,
+                    set_margin_top: 14,
                 },
             },
 
-            // ── 5. Floating Bottom Navigation Pill ────────────────────
+            // ── 5. The bookmark ribbon ──────────────────────────────
+            // Always there, hanging from the top edge 48 from the
+            // right (decision 16); not drawn under a pinned right
+            // panel (decision 57).
+            #[name = "ribbon_button"]
+            add_overlay = &gtk::Button {
+                add_css_class: "kalam-reader-ribbon",
+                #[watch]
+                set_visible: !(model.right_panel_open && model.right_panel_pinned),
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Start,
+                set_margin_end: 48,
+                connect_clicked => PdfReaderMsg::ToggleBookmark,
+
+                #[name = "ribbon_image"]
+                gtk::Image {
+                    set_icon_name: Some("kalam-ribbon-outline-symbolic"),
+                    set_pixel_size: 26,
+                },
+            },
+
+            // ── 6. The location text ────────────────────────────────
+            // Plain `12–13 / 612`, bottom-right, no pill under it
+            // (decision 52). Clicking it opens the jump field.
+            #[name = "location_label"]
+            add_overlay = &gtk::Label {
+                add_css_class: "kalam-reader-location",
+                #[watch]
+                set_visible: !(model.right_panel_open && model.right_panel_pinned),
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::End,
+                set_margin_end: 24,
+                set_margin_bottom: 16,
+                #[watch]
+                set_label: &model.location_label(),
+            },
+
+            // ── 7. The page-jump field ──────────────────────────────
+            // A 52-high pill at the top centre (decisions 50, 53):
+            // label, underlined number, `of N` hint (accent range
+            // out of bounds), Page/Chapter switch, close.
+            #[name = "jump_revealer"]
             add_overlay = &gtk::Revealer {
                 #[watch]
-                set_reveal_child: model.show_bottom_pill,
-                set_transition_type: gtk::RevealerTransitionType::SlideUp,
+                set_reveal_child: model.jump_open,
+                set_transition_type: gtk::RevealerTransitionType::SlideDown,
+                set_transition_duration: 180,
                 set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::End,
+                set_valign: gtk::Align::Start,
+                set_margin_top: 16,
 
-                #[name = "bottom_dock"]
-                gtk::Box {
-                    add_css_class: "kalam-reader-bottom-dock",
-                    set_margin_bottom: 24,
+                #[wrap(Some)]
+                set_child = &gtk::Box {
+                    add_css_class: "kalam-pdf-jump",
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 10,
+                    set_size_request: (480, -1),
 
-                    gtk::Box {
-                        add_css_class: "kalam-reader-bottom-pill",
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 4,
+                    gtk::Label {
+                        add_css_class: "kalam-pdf-jump-label",
+                        set_label: "Go to",
                         set_valign: gtk::Align::Center,
+                    },
 
-                        // Previous Page
-                        gtk::Button {
-                            set_child: Some(&crate::icons::symbolic_with_classes(
-                                "go-previous-symbolic",
-                                15,
-                                &["kalam-inline-icon"],
-                            )),
-                            add_css_class: "kalam-reader-pill-nav",
-                            set_tooltip_text: Some("Previous Page (Left / h)"),
-                            connect_clicked => PdfReaderMsg::PrevPage,
+                    #[name = "jump_entry"]
+                    gtk::Entry {
+                        add_css_class: "kalam-pdf-jump-entry",
+                        set_width_chars: 5,
+                        set_max_width_chars: 7,
+                        set_valign: gtk::Align::Center,
+                        set_input_purpose: gtk::InputPurpose::Digits,
+                        #[watch]
+                        set_css_classes: if model.jump_out_of_range() {
+                            &["kalam-pdf-jump-entry", "error"]
+                        } else {
+                            &["kalam-pdf-jump-entry"]
                         },
+                    },
 
-                        // Page Indicator Box
-                        gtk::Box {
-                            add_css_class: "kalam-reader-pill-info",
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_spacing: 6,
-                            set_valign: gtk::Align::Center,
-
-                            gtk::Label {
-                                add_css_class: "kalam-reader-pill-pages",
-                                #[watch]
-                                set_label: &format!("Page {} of {}", model.current_page, model.total_pages),
-                            },
+                    #[name = "jump_hint"]
+                    gtk::Label {
+                        add_css_class: "kalam-pdf-jump-hint",
+                        set_valign: gtk::Align::Center,
+                        set_hexpand: true,
+                        set_halign: gtk::Align::End,
+                        #[watch]
+                        set_label: &model.jump_hint(),
+                        #[watch]
+                        set_css_classes: if model.jump_out_of_range() {
+                            &["kalam-pdf-jump-hint", "error"]
+                        } else {
+                            &["kalam-pdf-jump-hint"]
                         },
+                    },
 
-                        // Next Page
-                        gtk::Button {
-                            set_child: Some(&crate::icons::symbolic_with_classes(
-                                "go-next-symbolic",
-                                15,
-                                &["kalam-inline-icon"],
-                            )),
-                            add_css_class: "kalam-reader-pill-nav",
-                            set_tooltip_text: Some("Next Page (Right / Space / l)"),
-                            connect_clicked => PdfReaderMsg::NextPage,
-                        },
+                    #[name = "jump_mode_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_valign: gtk::Align::Center,
+                    },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes(
+                            "window-close-symbolic",
+                            14,
+                            &["kalam-inline-icon"],
+                        )),
+                        add_css_class: "kalam-pdf-jump-close",
+                        set_valign: gtk::Align::Center,
+                        set_tooltip_text: Some("Close (Esc)"),
+                        connect_clicked => PdfReaderMsg::CloseJump,
                     },
                 },
             },
 
-            // ── 6. Overlay: Slide-in Sidebar (TOC + Bookmarks + Settings) ─────
+            // ── 8. The left panel: Contents and Bookmarks ───────────
+            // Floating 16 from every edge (decision 52); the tab
+            // pill and pin ride at the top (decision 57). Pages and
+            // Notes join this panel in their own tranches.
+            #[name = "left_revealer"]
             add_overlay = &gtk::Revealer {
                 add_css_class: "kalam-reader-sidebar-shell",
                 add_css_class: "kalam-reader-sidebar-shell-left",
                 #[watch]
-                set_reveal_child: model.show_sidebar,
+                set_reveal_child: model.left_panel_open,
                 set_transition_type: gtk::RevealerTransitionType::SlideRight,
+                set_transition_duration: 220,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Fill,
+                set_margin_start: 16,
+                set_margin_top: 16,
+                set_margin_bottom: 16,
 
-                #[name = "left_sidebar_box"]
+                #[name = "left_panel_box"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_size_request: (340, -1),
-                    set_margin_start: 8,
-                    set_margin_top: 8,
-                    set_margin_bottom: 8,
+                    set_vexpand: true,
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-left",
+                    add_css_class: "kalam-pdf-panel",
 
-                    // Book Head (Cover + Title + Author + Progress)
                     gtk::Box {
-                        add_css_class: "kalam-reader-book-head",
                         set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 12,
+                        set_spacing: 8,
+                        set_margin_start: 20,
+                        set_margin_end: 20,
+                        set_margin_top: 16,
 
-                        #[name = "cover_host"]
+                        #[name = "left_tabs_host"]
                         gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            add_css_class: "kalam-reader-cover-slot",
-                            set_width_request: 48,
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_hexpand: true,
                         },
 
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 4,
-                            set_hexpand: true,
-
-                            gtk::Label {
-                                add_css_class: "kalam-reader-book-title",
-                                add_css_class: "kalam-title-serif",
-                                #[watch]
-                                set_label: &model.title,
-                                set_halign: gtk::Align::Start,
-                                set_ellipsize: gtk::pango::EllipsizeMode::End,
-                                set_max_width_chars: 24,
-                                set_xalign: 0.0,
-                            },
-
-                            gtk::Label {
-                                add_css_class: "dim-label",
-                                #[watch]
-                                set_label: &model.author,
-                                set_halign: gtk::Align::Start,
-                                set_ellipsize: gtk::pango::EllipsizeMode::End,
-                                set_max_width_chars: 24,
-                                set_xalign: 0.0,
-                            },
-
-                            gtk::ProgressBar {
-                                add_css_class: "kalam-reader-progress",
-                                set_show_text: false,
-                                #[watch]
-                                set_fraction: model.progress_fraction(),
-                            },
+                        #[name = "left_pin_button"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "kalam-pin-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-pdf-pin",
+                            set_size_request: (36, 36),
+                            set_valign: gtk::Align::Center,
+                            connect_clicked => PdfReaderMsg::ToggleLeftPin,
                         },
                     },
 
-                    // Main Content Host (Stack populated in init)
                     #[name = "left_panel_host"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_hexpand: true,
                         set_vexpand: true,
+                        set_margin_bottom: 8,
+                    },
+                },
+            },
+
+            // ── 9. The right panel: Reading and Shortcuts ───────────
+            #[name = "right_revealer"]
+            add_overlay = &gtk::Revealer {
+                add_css_class: "kalam-reader-sidebar-shell",
+                add_css_class: "kalam-reader-sidebar-shell-right",
+                #[watch]
+                set_reveal_child: model.right_panel_open,
+                set_transition_type: gtk::RevealerTransitionType::SlideLeft,
+                set_transition_duration: 220,
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Fill,
+                set_margin_end: 16,
+                set_margin_top: 16,
+                set_margin_bottom: 16,
+
+                #[name = "right_panel_box"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_size_request: (340, -1),
+                    set_vexpand: true,
+                    add_css_class: "kalam-reader-sidebar",
+                    add_css_class: "kalam-reader-sidebar-right",
+                    add_css_class: "kalam-pdf-panel",
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
+                        set_margin_start: 20,
+                        set_margin_end: 20,
+                        set_margin_top: 16,
+
+                        #[name = "right_tabs_host"]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_hexpand: true,
+                        },
+
+                        #[name = "right_pin_button"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "kalam-pin-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-pdf-pin",
+                            set_size_request: (36, 36),
+                            set_valign: gtk::Align::Center,
+                            connect_clicked => PdfReaderMsg::ToggleRightPin,
+                        },
                     },
 
-                    // Bottom Tabbar (TOC, Bookmarks, and Settings buttons)
+                    #[name = "right_panel_host"]
                     gtk::Box {
-                        add_css_class: "kalam-reader-tabbar",
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 2,
-                        set_homogeneous: true,
-
-                        #[name = "tab_toc_btn"]
-                        gtk::Button {
-                            set_child: Some(&reader_sidebar_tab_content("view-list-bullet-symbolic", "TOC")),
-                            add_css_class: "kalam-reader-tab",
-                            set_hexpand: true,
-                            connect_clicked => PdfReaderMsg::SwitchSidebarTab(PdfSidebarTab::Toc),
-                        },
-
-                        #[name = "tab_bookmarks_btn"]
-                        gtk::Button {
-                            set_child: Some(&reader_sidebar_tab_content("bookmark-new-symbolic", "Bookmarks")),
-                            add_css_class: "kalam-reader-tab",
-                            set_hexpand: true,
-                            connect_clicked => PdfReaderMsg::SwitchSidebarTab(PdfSidebarTab::Bookmarks),
-                        },
-
-                        #[name = "tab_settings_btn"]
-                        gtk::Button {
-                            set_child: Some(&reader_sidebar_tab_content("preferences-system-symbolic", "Settings")),
-                            add_css_class: "kalam-reader-tab",
-                            set_hexpand: true,
-                            connect_clicked => PdfReaderMsg::SwitchSidebarTab(PdfSidebarTab::Settings),
-                        },
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_hexpand: true,
+                        set_vexpand: true,
+                        set_margin_bottom: 8,
                     },
                 },
             },
@@ -2629,17 +3039,18 @@ impl Component for PdfReaderModel {
                 },
             },
 
-            // ── 5. Top-Right Zoom OSD Indicator (VLC style) ───────────
+            // ── The transient zoom readout ───────────────────────────
+            // Bottom centre, only while it has something to say
+            // (decision 53, the comics readout's home).
             add_overlay = &gtk::Revealer {
                 #[watch]
                 set_reveal_child: model.show_zoom_osd,
                 set_transition_type: gtk::RevealerTransitionType::Crossfade,
                 set_transition_duration: 250,
-                set_halign: gtk::Align::End,
-                set_valign: gtk::Align::Start,
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::End,
                 set_can_target: false,
-                set_margin_top: 24,
-                set_margin_end: 28,
+                set_margin_bottom: 24,
 
                 #[wrap(Some)]
                 set_child = &gtk::Label {
@@ -2650,7 +3061,6 @@ impl Component for PdfReaderModel {
             },
         }
     }
-
     fn init(
         init: Self::Init,
         root: Self::Root,
@@ -2659,17 +3069,36 @@ impl Component for PdfReaderModel {
         let mut model = Self::new(init);
         let widgets = view_output!();
 
-        // 1. Populate Cover in Sidebar Book Head
-        let cover_w = crate::widgets::book_row::cover_widget(model.cover_path.as_deref(), 48, 70);
-        widgets.cover_host.append(&cover_w);
-
-        // 2. Set up Left Sidebar Stack (TOC + Bookmarks + Settings)
+        // 1. The left panel stack: Contents (filter over the
+        // outline) and the stored Bookmarks list. Pages joins this
+        // stack in its own tranche; Notes replaces neither list
+        // until its data model lands.
         let left_stack = gtk::Stack::new();
         left_stack.set_hexpand(true);
         left_stack.set_vexpand(true);
         left_stack.set_transition_type(gtk::StackTransitionType::Crossfade);
 
-        // Panel 1: Outlines (TOC)
+        let contents_pane = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        contents_pane.set_hexpand(true);
+        contents_pane.set_vexpand(true);
+        contents_pane.add_css_class("kalam-pdf-contents-pane");
+
+        let toc_filter_entry = gtk::SearchEntry::new();
+        toc_filter_entry.set_placeholder_text(Some("Filter contents"));
+        toc_filter_entry.add_css_class("kalam-pdf-contents-filter");
+        toc_filter_entry.set_hexpand(true);
+        toc_filter_entry.set_margin_start(20);
+        toc_filter_entry.set_margin_end(20);
+        toc_filter_entry.set_margin_top(14);
+        toc_filter_entry.set_margin_bottom(8);
+        {
+            let tx = sender.input_sender().clone();
+            toc_filter_entry.connect_search_changed(move |entry| {
+                let _ = tx.send(PdfReaderMsg::TocFilterChanged(entry.text().to_string()));
+            });
+        }
+        contents_pane.append(&toc_filter_entry);
+
         let toc_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -2681,8 +3110,8 @@ impl Component for PdfReaderModel {
         toc_list_box.set_hexpand(true);
         toc_list_box.set_vexpand(true);
         toc_scroll.set_child(Some(&toc_list_box));
+        contents_pane.append(&toc_scroll);
 
-        // Panel 2: Bookmarks
         let bookmarks_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -2695,7 +3124,18 @@ impl Component for PdfReaderModel {
         bookmarks_list_box.set_vexpand(true);
         bookmarks_scroll.set_child(Some(&bookmarks_list_box));
 
-        // Panel 3: Settings
+        left_stack.add_named(&contents_pane, Some("contents"));
+        left_stack.add_named(&bookmarks_scroll, Some("bookmarks"));
+        widgets.left_panel_host.append(&left_stack);
+
+        // 2. The right panel stack: the Reading pane (the standing
+        // settings builder until the Reading tranche rebuilds it
+        // on the two-axis model) and Shortcuts.
+        let right_stack = gtk::Stack::new();
+        right_stack.set_hexpand(true);
+        right_stack.set_vexpand(true);
+        right_stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -2706,33 +3146,203 @@ impl Component for PdfReaderModel {
         let (settings_box, settings_w) = build_pdf_settings_panel(&model, &sender);
         settings_scroll.set_child(Some(&settings_box));
 
-        left_stack.add_named(&toc_scroll, Some("toc"));
-        left_stack.add_named(&bookmarks_scroll, Some("bookmarks"));
-        left_stack.add_named(&settings_scroll, Some("settings"));
-        widgets.left_panel_host.append(&left_stack);
+        let shortcuts_scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .hexpand(true)
+            .vexpand(true)
+            .build();
+        shortcuts_scroll.add_css_class("kalam-reader-panel-scroll");
+        let shortcuts_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        shortcuts_box.set_hexpand(true);
+        shortcuts_box.set_margin_start(20);
+        shortcuts_box.set_margin_end(20);
+        shortcuts_box.set_margin_bottom(20);
+        build_pdf_shortcuts_panel(&shortcuts_box);
+        shortcuts_scroll.set_child(Some(&shortcuts_box));
 
-        populate_toc_list(
-            &toc_list_box,
-            &model.toc_entries,
-            model.current_page,
-            model.total_pages,
-            &sender,
-        );
-
-        populate_bookmarks_list(&bookmarks_list_box, &model.bookmarks, &sender);
+        right_stack.add_named(&settings_scroll, Some("reading"));
+        right_stack.add_named(&shortcuts_scroll, Some("shortcuts"));
+        widgets.right_panel_host.append(&right_stack);
 
         model.left_stack = Some(left_stack);
+        model.right_stack = Some(right_stack);
         model.toc_list_box = Some(toc_list_box);
+        model.toc_scroll = Some(toc_scroll);
         model.bookmarks_list_box = Some(bookmarks_list_box);
         model.settings_widgets = Some(settings_w);
 
-        // 3. Connect Keyboard Controller
+        // The panel tab pills (decision 54): the shared segmented
+        // control at panel size, stretched across the panel head
+        // with each tab taking an equal share.
+        let make_tabs = |labels: &[&str],
+                         host: &gtk::Box,
+                         on_change: Rc<dyn Fn(usize) + 'static>|
+         -> crate::widgets::segmented::SegmentedControl {
+            let control = crate::widgets::segmented::segmented_control(
+                labels,
+                0,
+                crate::widgets::segmented::SegmentedSize::Panel,
+                move |idx| on_change(idx),
+            );
+            let root = control.widget();
+            root.set_hexpand(true);
+            root.set_halign(gtk::Align::Fill);
+            for button in control.buttons() {
+                button.set_hexpand(true);
+            }
+            host.append(&root);
+            control
+        };
+        {
+            let tx = sender.input_sender().clone();
+            model.left_tabs = Some(make_tabs(
+                &["Contents", "Bookmarks"],
+                &widgets.left_tabs_host,
+                Rc::new(move |idx| {
+                    let _ = tx.send(PdfReaderMsg::SetLeftTab(if idx == 1 {
+                        PdfLeftTab::Bookmarks
+                    } else {
+                        PdfLeftTab::Contents
+                    }));
+                }),
+            ));
+            let tx = sender.input_sender().clone();
+            model.right_tabs = Some(make_tabs(
+                &["Reading", "Shortcuts"],
+                &widgets.right_tabs_host,
+                Rc::new(move |idx| {
+                    let _ = tx.send(PdfReaderMsg::SetRightTab(if idx == 1 {
+                        PdfRightTab::Shortcuts
+                    } else {
+                        PdfRightTab::Reading
+                    }));
+                }),
+            ));
+            let tx = sender.input_sender().clone();
+            model.jump_mode_control = Some(crate::widgets::segmented::segmented_control(
+                &["Page", "Chapter"],
+                0,
+                crate::widgets::segmented::SegmentedSize::Small,
+                move |idx| {
+                    let _ = tx.send(PdfReaderMsg::SetJumpMode(if idx == 1 {
+                        PdfJumpMode::Chapter
+                    } else {
+                        PdfJumpMode::Page
+                    }));
+                },
+            ));
+            widgets.jump_mode_host.append(
+                &model
+                    .jump_mode_control
+                    .as_ref()
+                    .expect("just built")
+                    .widget(),
+            );
+        }
+
+        // The Back+Bubble unit (decision 15): the shell's own Back
+        // pill, with the shared slide-out carrying an icon-only
+        // Bubble behind it. Focus entering the pill reveals the
+        // unit too, so keyboard readers meet it by tabbing.
+        {
+            let back_button = gtk::Button::new();
+            back_button.set_child(Some(&crate::icons::labelled(
+                "go-previous-symbolic",
+                16,
+                "Back",
+                6,
+            )));
+            back_button.add_css_class("kalam-back-btn");
+            back_button.add_css_class("kalam-back-float");
+            back_button.set_can_focus(true);
+            let tx = sender.input_sender().clone();
+            back_button.connect_clicked(move |_| {
+                let _ = tx.send(PdfReaderMsg::Close);
+            });
+            let tx = sender.input_sender().clone();
+            back_button.connect_has_focus_notify(move |btn| {
+                if btn.has_focus() {
+                    let _ = tx.send(PdfReaderMsg::ShowBackChrome);
+                }
+            });
+
+            let bubble_button = gtk::Button::new();
+            bubble_button.set_child(Some(&crate::icons::symbolic_with_classes(
+                "view-dual-symbolic",
+                16,
+                &["kalam-inline-icon"],
+            )));
+            bubble_button.set_tooltip_text(Some("Minimize to Bubble"));
+            bubble_button.update_property(&[gtk::accessible::Property::Label(
+                "Minimize to Bubble",
+            )]);
+            bubble_button.set_size_request(44, 44);
+
+            let tx = sender.input_sender().clone();
+            let unit = crate::widgets::slide_out_pill::slide_out_pill_with_button(
+                &back_button,
+                bubble_button,
+                move || {
+                    let _ = tx.send(PdfReaderMsg::MinimizeToBubble);
+                },
+            );
+            widgets.back_host.append(&unit.widget());
+            model.back_unit = Some(unit);
+        }
+
+        // Reduced motion turns the panel slides into fades
+        // (decision 15, system §9) — decided once at open, like
+        // the other readers.
+        if crate::appearance::reduce_motion() {
+            widgets
+                .back_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+            widgets
+                .left_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+            widgets
+                .right_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+            widgets
+                .jump_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+        }
+
+        // The jump field's entry: every keystroke re-validates
+        // (the accent range state is live), Enter jumps.
+        {
+            let tx = sender.input_sender().clone();
+            widgets.jump_entry.connect_changed(move |entry| {
+                let _ = tx.send(PdfReaderMsg::JumpTextChanged(entry.text().to_string()));
+            });
+            let tx = sender.input_sender().clone();
+            widgets.jump_entry.connect_activate(move |_| {
+                let _ = tx.send(PdfReaderMsg::SubmitJump);
+            });
+        }
+
+        model.refresh_left_panel(&widgets, &sender);
+        model.refresh_right_panel(&widgets);
+
+        // 3. Connect Keyboard Controller. The panel and jump keys
+        // are decision 53's map; text entry keeps its own keys, so
+        // typing in the Contents filter, the jump field or search
+        // never turns pages or exits the book.
         let tx = sender.input_sender().clone();
         let key = gtk::EventControllerKey::new();
         let tx_key = tx.clone();
-        key.connect_key_pressed(move |_, keyval, _keycode, state| {
+        key.connect_key_pressed(move |controller, keyval, _keycode, state| {
             use gtk::gdk::Key;
             let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
+            let typing = controller
+                .widget()
+                .and_then(|widget| widget.root())
+                .and_then(|root| root.focus())
+                .is_some_and(|focus| focus.is::<gtk::Editable>() || focus.is::<gtk::Text>());
+            if typing && keyval != Key::Escape {
+                return gtk::glib::Propagation::Proceed;
+            }
             match keyval {
                 Key::Escape => {
                     let _ = tx_key.send(PdfReaderMsg::EscapeKey);
@@ -2742,12 +3352,20 @@ impl Component for PdfReaderModel {
                     let _ = tx_key.send(PdfReaderMsg::Close);
                     gtk::glib::Propagation::Stop
                 }
-                Key::Left | Key::Page_Up | Key::h | Key::H => {
+                Key::Left | Key::Page_Up => {
                     let _ = tx_key.send(PdfReaderMsg::PrevPage);
                     gtk::glib::Propagation::Stop
                 }
-                Key::Right | Key::Page_Down | Key::space | Key::l | Key::L => {
+                Key::Right | Key::Page_Down | Key::space => {
                     let _ = tx_key.send(PdfReaderMsg::NextPage);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::Home => {
+                    let _ = tx_key.send(PdfReaderMsg::GoToFirstPage);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::End => {
+                    let _ = tx_key.send(PdfReaderMsg::GoToLastPage);
                     gtk::glib::Propagation::Stop
                 }
                 Key::Up | Key::k | Key::K => {
@@ -2781,7 +3399,19 @@ impl Component for PdfReaderModel {
                     gtk::glib::Propagation::Stop
                 }
                 Key::t | Key::T => {
-                    let _ = tx_key.send(PdfReaderMsg::ToggleSidebar);
+                    let _ = tx_key.send(PdfReaderMsg::OpenContents);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::s | Key::S => {
+                    let _ = tx_key.send(PdfReaderMsg::OpenReadingPanel);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::h | Key::H => {
+                    let _ = tx_key.send(PdfReaderMsg::OpenShortcutsPanel);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::g | Key::G => {
+                    let _ = tx_key.send(PdfReaderMsg::OpenJump(None));
                     gtk::glib::Propagation::Stop
                 }
                 _ => gtk::glib::Propagation::Proceed,
@@ -2847,105 +3477,109 @@ impl Component for PdfReaderModel {
             root.add_controller(global);
         }
 
-        // 4. Edge hover motion controller on root (Top, Bottom, Left)
-        let root_motion = gtk::EventControllerMotion::new();
-        let tx_rm = tx.clone();
-        let root_clone = root.clone();
-        let was_top = std::rc::Rc::new(std::cell::Cell::new(false));
-        let was_bottom = std::rc::Rc::new(std::cell::Cell::new(false));
-        let was_left = std::rc::Rc::new(std::cell::Cell::new(false));
-        let was_top_clone = was_top.clone();
-        let was_bottom_clone = was_bottom.clone();
-        let was_left_clone = was_left.clone();
+        // 4. The Back unit's rest zone (decision 15): the top-left
+        // 180 × 68. Enter/leave transitions are reported once each;
+        // the 250 ms rest and the 300 ms grace live in the update
+        // arms.
+        {
+            let root_motion = gtk::EventControllerMotion::new();
+            let tx_rm = tx.clone();
+            let was_in_zone = std::rc::Rc::new(std::cell::Cell::new(false));
+            let was_in_zone_move = was_in_zone.clone();
+            root_motion.connect_motion(move |_, x, y| {
+                let in_zone = x < 180.0 && y < 68.0;
+                if in_zone != was_in_zone_move.get() {
+                    was_in_zone_move.set(in_zone);
+                    let _ = tx_rm.send(PdfReaderMsg::BackZoneHover(in_zone));
+                }
+            });
+            let tx_leave = tx.clone();
+            root_motion.connect_leave(move |_| {
+                if was_in_zone.get() {
+                    was_in_zone.set(false);
+                    let _ = tx_leave.send(PdfReaderMsg::BackZoneHover(false));
+                }
+            });
+            root.add_controller(root_motion);
+        }
 
-        root_motion.connect_motion(move |_, x, y| {
-            let w = root_clone.width() as f64;
-            let h = root_clone.height() as f64;
-            // Only trigger top dock when hovering over top-left area where the pill lives
-            let top = x < 240.0 && y < 75.0;
-            // Only trigger bottom dock when hovering over bottom-center area where the pill lives
-            let bottom = y > (h - 75.0) && h > 75.0 && (x - (w / 2.0)).abs() < 180.0;
-            // Left edge zone for slide-in sidebar
-            let left = x < 20.0;
-
-            if top != was_top_clone.get() {
-                was_top_clone.set(top);
-                let _ = tx_rm.send(PdfReaderMsg::TopEdgeHover(top));
-            }
-            if bottom != was_bottom_clone.get() {
-                was_bottom_clone.set(bottom);
-                let _ = tx_rm.send(PdfReaderMsg::BottomEdgeHover(bottom));
-            }
-            if left != was_left_clone.get() {
-                was_left_clone.set(left);
-                let _ = tx_rm.send(PdfReaderMsg::LeftEdgeHover(left));
-            }
-        });
-
-        let tx_leave = tx.clone();
-        root_motion.connect_leave(move |_| {
-            if was_top.get() {
-                was_top.set(false);
-                let _ = tx_leave.send(PdfReaderMsg::TopEdgeHover(false));
-            }
-            if was_bottom.get() {
-                was_bottom.set(false);
-                let _ = tx_leave.send(PdfReaderMsg::BottomEdgeHover(false));
-            }
-            if was_left.get() {
-                was_left.set(false);
+        // 5. The edge strips summon their panels; leaving one
+        // starts the grace that puts an unpinned panel away.
+        {
+            let left_edge_motion = gtk::EventControllerMotion::new();
+            let tx_enter = tx.clone();
+            left_edge_motion.connect_enter(move |_, _, _| {
+                let _ = tx_enter.send(PdfReaderMsg::LeftEdgeHover(true));
+            });
+            let tx_leave = tx.clone();
+            left_edge_motion.connect_leave(move |_| {
                 let _ = tx_leave.send(PdfReaderMsg::LeftEdgeHover(false));
-            }
-        });
-        root.add_controller(root_motion);
+            });
+            widgets.left_edge_box.add_controller(left_edge_motion);
 
-        // 5. Hover state on floating back dock
-        let back_motion = gtk::EventControllerMotion::new();
-        let tx_bd = tx.clone();
-        back_motion.connect_enter(move |_, _, _| {
-            let _ = tx_bd.send(PdfReaderMsg::TopEdgeHover(true));
-        });
-        let tx_bdl = tx.clone();
-        back_motion.connect_leave(move |_| {
-            let _ = tx_bdl.send(PdfReaderMsg::TopEdgeHover(false));
-        });
-        widgets.back_dock.add_controller(back_motion);
+            let right_edge_motion = gtk::EventControllerMotion::new();
+            let tx_enter = tx.clone();
+            right_edge_motion.connect_enter(move |_, _, _| {
+                let _ = tx_enter.send(PdfReaderMsg::RightEdgeHover(true));
+            });
+            let tx_leave = tx.clone();
+            right_edge_motion.connect_leave(move |_| {
+                let _ = tx_leave.send(PdfReaderMsg::RightEdgeHover(false));
+            });
+            widgets.right_edge_box.add_controller(right_edge_motion);
+        }
 
-        // 6. Hover state on floating bottom dock
-        let bottom_motion = gtk::EventControllerMotion::new();
-        let tx_bm = tx.clone();
-        bottom_motion.connect_enter(move |_, _, _| {
-            let _ = tx_bm.send(PdfReaderMsg::BottomEdgeHover(true));
-        });
-        let tx_bml = tx.clone();
-        bottom_motion.connect_leave(move |_| {
-            let _ = tx_bml.send(PdfReaderMsg::BottomEdgeHover(false));
-        });
-        widgets.bottom_dock.add_controller(bottom_motion);
+        // 6. Panel hover, the other half of each grace.
+        {
+            let left_panel_motion = gtk::EventControllerMotion::new();
+            let tx_enter = tx.clone();
+            left_panel_motion.connect_enter(move |_, _, _| {
+                let _ = tx_enter.send(PdfReaderMsg::LeftPanelHover(true));
+            });
+            let tx_leave = tx.clone();
+            left_panel_motion.connect_leave(move |_| {
+                let _ = tx_leave.send(PdfReaderMsg::LeftPanelHover(false));
+            });
+            widgets.left_panel_box.add_controller(left_panel_motion);
 
-        // Hover state on dedicated left edge strip
-        let left_edge_motion = gtk::EventControllerMotion::new();
-        let tx_lem = tx.clone();
-        left_edge_motion.connect_enter(move |_, _, _| {
-            let _ = tx_lem.send(PdfReaderMsg::LeftEdgeHover(true));
-        });
-        let tx_leml = tx.clone();
-        left_edge_motion.connect_leave(move |_| {
-            let _ = tx_leml.send(PdfReaderMsg::LeftEdgeHover(false));
-        });
-        widgets.left_edge_box.add_controller(left_edge_motion);
+            let right_panel_motion = gtk::EventControllerMotion::new();
+            let tx_enter = tx.clone();
+            right_panel_motion.connect_enter(move |_, _, _| {
+                let _ = tx_enter.send(PdfReaderMsg::RightPanelHover(true));
+            });
+            let tx_leave = tx.clone();
+            right_panel_motion.connect_leave(move |_| {
+                let _ = tx_leave.send(PdfReaderMsg::RightPanelHover(false));
+            });
+            widgets.right_panel_box.add_controller(right_panel_motion);
+        }
 
-        // 7. Hover state on Left Sidebar
-        let sidebar_motion = gtk::EventControllerMotion::new();
-        let tx_sm = tx.clone();
-        sidebar_motion.connect_enter(move |_, _, _| {
-            let _ = tx_sm.send(PdfReaderMsg::SidebarHover(true));
-        });
-        let tx_sml = tx.clone();
-        sidebar_motion.connect_leave(move |_| {
-            let _ = tx_sml.send(PdfReaderMsg::SidebarHover(false));
-        });
-        widgets.left_sidebar_box.add_controller(sidebar_motion);
+        // 7. Clicking the location text opens the jump field: it
+        // is the one piece of page furniture that names a place,
+        // so it is where naming a different place starts.
+        {
+            let click = gtk::GestureClick::new();
+            let tx_click = tx.clone();
+            click.connect_pressed(move |gesture, _, _, _| {
+                let _ = tx_click.send(PdfReaderMsg::OpenJump(None));
+                gesture.set_state(gtk::EventSequenceState::Claimed);
+            });
+            widgets.location_label.add_controller(click);
+        }
+
+        // The transparent layer over the page: its click is spent
+        // putting the floating panels away (decision 52).
+        {
+            let click = gtk::GestureClick::new();
+            let root_for_focus = root.clone();
+            let tx_click = tx.clone();
+            click.connect_pressed(move |gesture, _, _, _| {
+                root_for_focus.grab_focus();
+                let _ = tx_click.send(PdfReaderMsg::ClosePanels);
+                gesture.set_state(gtk::EventSequenceState::Claimed);
+            });
+            widgets.panel_click_catcher.add_controller(click);
+        }
 
         // 8. Scroll controller to autohide controls on scrolling or zoom on Ctrl+scroll
         let scroll_ctrl = gtk::EventControllerScroll::new(
@@ -3032,11 +3666,6 @@ impl Component for PdfReaderModel {
         let child = model.build_viewport_widget(&sender);
         widgets.viewport_scroll.set_child(Some(&child));
         model.update_scroll_policies(&widgets.viewport_scroll);
-
-        // Initially select TOC tab
-        toggle_active(&widgets.tab_toc_btn, true);
-        toggle_active(&widgets.tab_bookmarks_btn, false);
-        toggle_active(&widgets.tab_settings_btn, false);
 
         // Start bounded background rendering workers (exactly 2 threads for lifetime of reader)
         let (render_tx, render_rx) = async_channel::unbounded::<PdfRenderRequest>();
@@ -3265,8 +3894,6 @@ impl Component for PdfReaderModel {
         let cur = model.current_page;
         let _ = model.ensure_page_text(cur);
 
-        model.schedule_back_hide(&sender);
-        model.schedule_bottom_hide(&sender);
         if model.doc_ready {
             model.trigger_loads(&sender);
         }
@@ -3327,13 +3954,26 @@ impl Component for PdfReaderModel {
                 let _ = sender.output_sender().send(PdfReaderOut::MinimizeToBubble { book_id: self.book_id });
             }
             PdfReaderMsg::EscapeKey => {
+                // One layer at a time (decision 52): search, the
+                // jump field, a selection, the floating panels,
+                // then the book. A pinned panel is page layout, not
+                // a layer, so it does not spend an Escape.
                 if self.search_active {
                     let _ = sender.input_sender().send(PdfReaderMsg::CloseSearch);
+                } else if self.jump_open {
+                    self.jump_open = false;
+                    _root.grab_focus();
                 } else if self.active_selection.borrow().is_some() {
                     self.clear_selection();
-                } else if self.show_sidebar {
-                    self.show_sidebar = false;
-                    self.sidebar_pinned = false;
+                } else if (self.left_panel_open && !self.left_panel_pinned)
+                    || (self.right_panel_open && !self.right_panel_pinned)
+                {
+                    if !self.left_panel_pinned {
+                        self.left_panel_open = false;
+                    }
+                    if !self.right_panel_pinned {
+                        self.right_panel_open = false;
+                    }
                 } else {
                     let _ = sender.input_sender().send(PdfReaderMsg::Close);
                 }
@@ -3353,6 +3993,7 @@ impl Component for PdfReaderModel {
                     }
                     _root.grab_focus();
                 } else {
+                    self.jump_open = false;
                     let entry = widgets.search_entry.clone();
                     glib::idle_add_local_once(move || {
                         entry.grab_focus();
@@ -3686,10 +4327,17 @@ impl Component for PdfReaderModel {
                         self.scroll_to_current_page(&widgets.viewport_scroll);
                     }
                 }
-                self.show_sidebar = false;
-                self.sidebar_pinned = false;
-                self.mouse_in_sidebar = false;
+                self.jump_open = false;
+                if !self.left_panel_pinned {
+                    self.left_panel_open = false;
+                }
+                if !self.right_panel_pinned {
+                    self.right_panel_open = false;
+                }
+                self.mouse_in_left_panel = false;
+                self.mouse_in_right_panel = false;
                 self.mouse_in_left_edge = false;
+                self.mouse_in_right_edge = false;
                 self.update_bookmark_icon_state(widgets);
             }
             PdfReaderMsg::SetSmartCrop(crop) => {
@@ -3705,60 +4353,202 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::ToggleSmartCrop => {
                 let _ = sender.input_sender().send(PdfReaderMsg::SetSmartCrop(!self.smart_crop));
             }
-            PdfReaderMsg::SwitchSidebarTab(tab) => {
-                self.sidebar_tab = tab;
-                if let Some(ref stack) = self.left_stack {
-                    match tab {
-                        PdfSidebarTab::Toc => {
-                            stack.set_visible_child_name("toc");
-                            toggle_active(&widgets.tab_toc_btn, true);
-                            toggle_active(&widgets.tab_bookmarks_btn, false);
-                            toggle_active(&widgets.tab_settings_btn, false);
-                        }
-                        PdfSidebarTab::Bookmarks => {
-                            stack.set_visible_child_name("bookmarks");
-                            toggle_active(&widgets.tab_toc_btn, false);
-                            toggle_active(&widgets.tab_bookmarks_btn, true);
-                            toggle_active(&widgets.tab_settings_btn, false);
-                            if let Some(ref list) = self.bookmarks_list_box {
-                                populate_bookmarks_list(list, &self.bookmarks, &sender);
-                            }
-                        }
-                        PdfSidebarTab::Settings => {
-                            stack.set_visible_child_name("settings");
-                            toggle_active(&widgets.tab_toc_btn, false);
-                            toggle_active(&widgets.tab_bookmarks_btn, false);
-                            toggle_active(&widgets.tab_settings_btn, true);
-                            if let Some(ref sw) = self.settings_widgets {
-                                self.sync_settings_ui(sw);
-                            }
-                        }
-                    }
+            PdfReaderMsg::SetLeftTab(tab) => {
+                self.left_tab = tab;
+                self.refresh_left_panel(widgets, &sender);
+            }
+            PdfReaderMsg::SetRightTab(tab) => {
+                self.right_tab = tab;
+                self.refresh_right_panel(widgets);
+            }
+            PdfReaderMsg::OpenLeftPanel => {
+                let was_open = self.left_panel_open;
+                self.left_panel_open = true;
+                self.show_back_button = false;
+                self.back_gen = self.back_gen.wrapping_add(1);
+                widgets.left_revealer.set_reveal_child(true);
+                self.expand_current_toc_branch();
+                self.refresh_left_panel(widgets, &sender);
+                if !was_open && self.left_tab == PdfLeftTab::Contents {
+                    self.scroll_toc_to_current();
                 }
             }
-            PdfReaderMsg::CloseSidebar => {
-                self.show_sidebar = false;
-                self.sidebar_pinned = false;
-                self.mouse_in_sidebar = false;
-                self.mouse_in_left_edge = false;
+            PdfReaderMsg::OpenRightPanel => {
+                self.right_panel_open = true;
+                widgets.right_revealer.set_reveal_child(true);
+                self.refresh_right_panel(widgets);
             }
-            PdfReaderMsg::ToggleSidebar => {
-                self.show_sidebar = !self.show_sidebar;
-                self.sidebar_pinned = self.show_sidebar;
-                if self.show_sidebar {
+            PdfReaderMsg::OpenContents => {
+                if self.left_panel_open && self.left_tab == PdfLeftTab::Contents {
+                    self.left_panel_open = false;
+                    self.sync_panel_layout(widgets);
+                } else {
+                    self.left_tab = PdfLeftTab::Contents;
+                    let _ = sender.input_sender().send(PdfReaderMsg::OpenLeftPanel);
+                }
+            }
+            PdfReaderMsg::OpenReadingPanel => {
+                if self.right_panel_open && self.right_tab == PdfRightTab::Reading {
+                    self.right_panel_open = false;
+                    self.sync_panel_layout(widgets);
+                } else {
+                    self.right_tab = PdfRightTab::Reading;
+                    let _ = sender.input_sender().send(PdfReaderMsg::OpenRightPanel);
+                }
+            }
+            PdfReaderMsg::OpenShortcutsPanel => {
+                if self.right_panel_open && self.right_tab == PdfRightTab::Shortcuts {
+                    self.right_panel_open = false;
+                    self.sync_panel_layout(widgets);
+                } else {
+                    self.right_tab = PdfRightTab::Shortcuts;
+                    let _ = sender.input_sender().send(PdfReaderMsg::OpenRightPanel);
+                }
+            }
+            PdfReaderMsg::ToggleLeftPanel => {
+                if self.left_panel_open {
+                    self.left_panel_open = false;
+                    self.sync_panel_layout(widgets);
+                } else {
+                    let _ = sender.input_sender().send(PdfReaderMsg::OpenLeftPanel);
+                }
+            }
+            PdfReaderMsg::ToggleRightPanel => {
+                if self.right_panel_open {
+                    self.right_panel_open = false;
+                    self.sync_panel_layout(widgets);
+                } else {
+                    let _ = sender.input_sender().send(PdfReaderMsg::OpenRightPanel);
+                }
+            }
+            PdfReaderMsg::ClosePanels => {
+                // The spent page click (decision 52): floating
+                // panels go away, pinned layout stays.
+                if !self.left_panel_pinned {
+                    self.left_panel_open = false;
+                }
+                if !self.right_panel_pinned {
+                    self.right_panel_open = false;
+                }
+                self.sync_panel_layout(widgets);
+            }
+            PdfReaderMsg::ToggleLeftPin => {
+                self.left_panel_pinned = !self.left_panel_pinned;
+                self.catalog.set_pref_i64(
+                    "reader.pdf.left_panel_pinned",
+                    i64::from(self.left_panel_pinned),
+                );
+                if self.left_panel_pinned {
+                    self.left_panel_open = true;
+                    self.left_close_seq = self.left_close_seq.wrapping_add(1);
+                } else if !self.mouse_in_left_panel && !self.mouse_in_left_edge {
+                    self.schedule_left_close(&sender);
+                }
+                self.sync_panel_layout(widgets);
+            }
+            PdfReaderMsg::ToggleRightPin => {
+                self.right_panel_pinned = !self.right_panel_pinned;
+                self.catalog.set_pref_i64(
+                    "reader.pdf.right_panel_pinned",
+                    i64::from(self.right_panel_pinned),
+                );
+                if self.right_panel_pinned {
+                    self.right_panel_open = true;
+                    self.right_close_seq = self.right_close_seq.wrapping_add(1);
+                } else if !self.mouse_in_right_panel && !self.mouse_in_right_edge {
+                    self.schedule_right_close(&sender);
+                }
+                self.sync_panel_layout(widgets);
+            }
+            PdfReaderMsg::TocFilterChanged(filter) => {
+                if self.toc_filter != filter {
+                    self.toc_filter = filter;
+                    self.refresh_left_panel(widgets, &sender);
+                }
+            }
+            PdfReaderMsg::ToggleTocEntry(index) => {
+                if !self.collapsed_toc_entries.remove(&index) {
+                    self.collapsed_toc_entries.insert(index);
+                }
+                self.refresh_left_panel(widgets, &sender);
+            }
+            PdfReaderMsg::OpenJump(text) => {
+                if self.jump_mode == PdfJumpMode::Chapter && self.jump_max() == 0 {
+                    self.jump_mode = PdfJumpMode::Page;
+                }
+                self.jump_open = true;
+                self.jump_text = text.unwrap_or_else(|| self.jump_current().to_string());
+                widgets.jump_entry.set_text(&self.jump_text);
+                self.sync_jump_mode_control();
+                widgets.jump_entry.grab_focus();
+                widgets.jump_entry.select_region(0, -1);
+            }
+            PdfReaderMsg::CloseJump => {
+                self.jump_open = false;
+                _root.grab_focus();
+            }
+            PdfReaderMsg::SetJumpMode(mode) => {
+                let mode = if mode == PdfJumpMode::Chapter && self.jump_max() == 0 {
+                    PdfJumpMode::Page
+                } else {
+                    mode
+                };
+                if self.jump_mode != mode {
+                    self.jump_mode = mode;
+                    self.jump_text = self.jump_current().to_string();
+                    widgets.jump_entry.set_text(&self.jump_text);
+                    widgets.jump_entry.select_region(0, -1);
+                }
+                self.sync_jump_mode_control();
+            }
+            PdfReaderMsg::JumpTextChanged(text) => {
+                self.jump_text = text;
+            }
+            PdfReaderMsg::SubmitJump => {
+                if let Some(page) = self.jump_target_page() {
+                    self.jump_open = false;
+                    let _ = sender.input_sender().send(PdfReaderMsg::JumpToPage(page));
+                    _root.grab_focus();
+                }
+            }
+            PdfReaderMsg::ShowBackChrome => {
+                self.back_hover = true;
+                self.back_gen = self.back_gen.wrapping_add(1);
+                self.show_back_button = true;
+            }
+            PdfReaderMsg::BackZoneHover(hovering) => {
+                if !hovering && !self.back_hover {
+                    // Already accounted away (a focus reveal never
+                    // entered the zone) — nothing to schedule.
+                    return;
+                }
+                self.back_hover = hovering;
+                self.back_gen = self.back_gen.wrapping_add(1);
+                let gen = self.back_gen;
+                let tx = sender.input_sender().clone();
+                if hovering {
+                    // The 250 ms rest before the unit drops in.
+                    glib::timeout_add_local_once(Duration::from_millis(250), move || {
+                        let _ = tx.send(PdfReaderMsg::BackRevealDue(gen));
+                    });
+                } else {
+                    if let Some(unit) = &self.back_unit {
+                        unit.hide();
+                    }
+                    // The 300 ms grace, then the whole unit goes.
+                    glib::timeout_add_local_once(Duration::from_millis(300), move || {
+                        let _ = tx.send(PdfReaderMsg::BackHideDue(gen));
+                    });
+                }
+            }
+            PdfReaderMsg::BackRevealDue(gen) => {
+                if gen == self.back_gen && self.back_hover && !self.left_panel_open {
+                    self.show_back_button = true;
+                }
+            }
+            PdfReaderMsg::BackHideDue(gen) => {
+                if gen == self.back_gen && !self.back_hover {
                     self.show_back_button = false;
-                    if let Some(ref list) = self.toc_list_box {
-                        populate_toc_list(
-                            list,
-                            &self.toc_entries,
-                            self.current_page,
-                            self.total_pages,
-                            &sender,
-                        );
-                    }
-                    if let Some(ref list) = self.bookmarks_list_box {
-                        populate_bookmarks_list(list, &self.bookmarks, &sender);
-                    }
                 }
             }
             PdfReaderMsg::PageRendered {
@@ -3892,15 +4682,9 @@ impl Component for PdfReaderModel {
                         self.status_text.clear();
                         self.doc_ready = true;
 
-                        if let Some(ref list) = self.toc_list_box {
-                            populate_toc_list(
-                                list,
-                                &self.toc_entries,
-                                self.current_page,
-                                self.total_pages,
-                                &sender,
-                            );
-                        }
+                        self.expand_current_toc_branch();
+                        self.refresh_left_panel(widgets, &sender);
+                        self.sync_jump_mode_control();
 
                         // Rebuild the viewport now that the real page count
                         // and dimensions are known (the widget built during
@@ -3933,6 +4717,7 @@ impl Component for PdfReaderModel {
                         let cur = self.current_page;
                         let _ = self.ensure_page_text(cur);
                         self.trigger_loads(&sender);
+                        self.apply_screenshot_action(&sender);
                     }
                     Err(err) => {
                         self.is_loading = false;
@@ -4053,89 +4838,80 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
-            PdfReaderMsg::TopEdgeHover(hovering) => {
-                self.mouse_in_top_edge = hovering;
-                if hovering {
-                    if !self.show_sidebar {
-                        self.show_back_button = true;
-                    }
-                } else if self.show_back_button {
-                    self.schedule_back_hide(&sender);
-                }
-            }
-            PdfReaderMsg::BottomEdgeHover(hovering) => {
-                self.mouse_in_bottom_edge = hovering;
-                if hovering {
-                    self.show_bottom_pill = true;
-                } else if self.show_bottom_pill {
-                    self.schedule_bottom_hide(&sender);
-                }
-            }
             PdfReaderMsg::LeftEdgeHover(hovering) => {
                 self.mouse_in_left_edge = hovering;
                 if hovering {
-                    let was_hidden = !self.show_sidebar;
-                    self.show_sidebar = true;
-                    self.show_back_button = false;
-                    if was_hidden {
-                        if let Some(ref list) = self.toc_list_box {
-                            populate_toc_list(
-                                list,
-                                &self.toc_entries,
-                                self.current_page,
-                                self.total_pages,
-                                &sender,
-                            );
-                        }
-                        if let Some(ref list) = self.bookmarks_list_box {
-                            populate_bookmarks_list(list, &self.bookmarks, &sender);
-                        }
-                    }
-                } else if !self.mouse_in_sidebar && !self.sidebar_pinned {
-                    self.schedule_sidebar_close(&sender);
+                    let _ = sender.input_sender().send(PdfReaderMsg::OpenLeftPanel);
+                } else if self.left_panel_open
+                    && !self.left_panel_pinned
+                    && !self.mouse_in_left_panel
+                {
+                    self.schedule_left_close(&sender);
                 }
             }
-            PdfReaderMsg::SidebarHover(hovering) => {
-                self.mouse_in_sidebar = hovering;
+            PdfReaderMsg::RightEdgeHover(hovering) => {
+                self.mouse_in_right_edge = hovering;
                 if hovering {
-                    self.sidebar_close_seq = self.sidebar_close_seq.wrapping_add(1);
-                } else if !self.mouse_in_left_edge && !self.sidebar_pinned {
-                    self.schedule_sidebar_close(&sender);
+                    let _ = sender.input_sender().send(PdfReaderMsg::OpenRightPanel);
+                } else if self.right_panel_open
+                    && !self.right_panel_pinned
+                    && !self.mouse_in_right_panel
+                {
+                    self.schedule_right_close(&sender);
                 }
             }
-            PdfReaderMsg::BackHideTimerTick(seq) => {
-                if seq == self.back_hide_seq && !self.mouse_in_top_edge {
-                    self.show_back_button = false;
+            PdfReaderMsg::LeftPanelHover(hovering) => {
+                self.mouse_in_left_panel = hovering;
+                if hovering {
+                    self.left_close_seq = self.left_close_seq.wrapping_add(1);
+                } else if self.left_panel_open
+                    && !self.left_panel_pinned
+                    && !self.mouse_in_left_edge
+                {
+                    self.schedule_left_close(&sender);
                 }
             }
-            PdfReaderMsg::BottomHideTimerTick(seq) => {
-                if seq == self.bottom_hide_seq && !self.mouse_in_bottom_edge {
-                    self.show_bottom_pill = false;
+            PdfReaderMsg::RightPanelHover(hovering) => {
+                self.mouse_in_right_panel = hovering;
+                if hovering {
+                    self.right_close_seq = self.right_close_seq.wrapping_add(1);
+                } else if self.right_panel_open
+                    && !self.right_panel_pinned
+                    && !self.mouse_in_right_edge
+                {
+                    self.schedule_right_close(&sender);
                 }
             }
-            PdfReaderMsg::SidebarCloseTimerTick(seq) => {
-                if !self.sidebar_pinned && seq == self.sidebar_close_seq && !self.mouse_in_sidebar && !self.mouse_in_left_edge {
-                    self.show_sidebar = false;
+            PdfReaderMsg::LeftCloseTimerTick(seq) => {
+                if !self.left_panel_pinned
+                    && seq == self.left_close_seq
+                    && !self.mouse_in_left_panel
+                    && !self.mouse_in_left_edge
+                {
+                    self.left_panel_open = false;
+                    self.sync_panel_layout(widgets);
+                }
+            }
+            PdfReaderMsg::RightCloseTimerTick(seq) => {
+                if !self.right_panel_pinned
+                    && seq == self.right_close_seq
+                    && !self.mouse_in_right_panel
+                    && !self.mouse_in_right_edge
+                {
+                    self.right_panel_open = false;
+                    self.sync_panel_layout(widgets);
                 }
             }
             PdfReaderMsg::UserScrolled => {
-                if self.show_bottom_pill && !self.mouse_in_bottom_edge {
-                    self.show_bottom_pill = false;
-                    self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
-                }
-                if self.show_back_button && !self.mouse_in_top_edge {
+                if self.show_back_button && !self.back_hover {
                     self.show_back_button = false;
-                    self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
+                    self.back_gen = self.back_gen.wrapping_add(1);
                 }
             }
             PdfReaderMsg::ScrollDelta(dir) => {
-                if self.show_bottom_pill && !self.mouse_in_bottom_edge {
-                    self.show_bottom_pill = false;
-                    self.bottom_hide_seq = self.bottom_hide_seq.wrapping_add(1);
-                }
-                if self.show_back_button && !self.mouse_in_top_edge {
+                if self.show_back_button && !self.back_hover {
                     self.show_back_button = false;
-                    self.back_hide_seq = self.back_hide_seq.wrapping_add(1);
+                    self.back_gen = self.back_gen.wrapping_add(1);
                 }
                 if self.scroll_mode == PdfScrollMode::HorizontalScrolling {
                     let hadj = widgets.viewport_scroll.hadjustment();
@@ -4671,6 +5447,8 @@ impl Component for PdfReaderModel {
             }
         }
 
+        self.sync_toc_current();
+
         if let Some(ref sw) = self.settings_widgets {
             self.sync_settings_ui(sw);
         }
@@ -4680,12 +5458,200 @@ impl Component for PdfReaderModel {
 }
 
 impl PdfReaderModel {
+    /// Put the page area and the pin buttons where the panel
+    /// state says they belong. A pinned panel takes 16 + 340 + 16
+    /// of its side and the viewport sits beside it (decision 57);
+    /// a floating panel leaves the page where it was.
+    pub fn sync_panel_layout(&self, widgets: &PdfReaderModelWidgets) {
+        let left_inset = if self.left_panel_open && self.left_panel_pinned {
+            372
+        } else {
+            0
+        };
+        let right_inset = if self.right_panel_open && self.right_panel_pinned {
+            372
+        } else {
+            0
+        };
+        widgets.viewport_scroll.set_margin_start(left_inset);
+        widgets.viewport_scroll.set_margin_end(right_inset);
+
+        for (button, pinned, side) in [
+            (&widgets.left_pin_button, self.left_panel_pinned, "left"),
+            (&widgets.right_pin_button, self.right_panel_pinned, "right"),
+        ] {
+            toggle_active(button, pinned);
+            let label = if pinned {
+                format!("Unpin the {side} panel")
+            } else {
+                format!("Pin the {side} panel")
+            };
+            button.set_tooltip_text(Some(&label));
+            button.update_property(&[gtk::accessible::Property::Label(&label)]);
+        }
+    }
+
+    pub fn refresh_left_panel(
+        &mut self,
+        widgets: &PdfReaderModelWidgets,
+        sender: &ComponentSender<Self>,
+    ) {
+        if let Some(tabs) = &self.left_tabs {
+            tabs.set_selected(match self.left_tab {
+                PdfLeftTab::Contents => 0,
+                PdfLeftTab::Bookmarks => 1,
+            });
+        }
+        if let Some(stack) = &self.left_stack {
+            stack.set_visible_child_name(match self.left_tab {
+                PdfLeftTab::Contents => "contents",
+                PdfLeftTab::Bookmarks => "bookmarks",
+            });
+        }
+        match self.left_tab {
+            PdfLeftTab::Contents => {
+                if let Some(list) = &self.toc_list_box {
+                    let (rows, current_visible) = populate_toc_list(
+                        list,
+                        &self.toc_entries,
+                        &self.collapsed_toc_entries,
+                        &self.toc_filter,
+                        self.current_page,
+                        self.total_pages,
+                        sender,
+                    );
+                    self.toc_rows = rows;
+                    self.toc_current_visible_row = current_visible;
+                    self.toc_current_page_synced = self.current_page;
+                }
+            }
+            PdfLeftTab::Bookmarks => {
+                if let Some(list) = &self.bookmarks_list_box {
+                    populate_bookmarks_list(list, &self.bookmarks, sender);
+                }
+            }
+        }
+        self.sync_panel_layout(widgets);
+    }
+
+    pub fn refresh_right_panel(&self, widgets: &PdfReaderModelWidgets) {
+        if let Some(tabs) = &self.right_tabs {
+            tabs.set_selected(match self.right_tab {
+                PdfRightTab::Reading => 0,
+                PdfRightTab::Shortcuts => 1,
+            });
+        }
+        if let Some(stack) = &self.right_stack {
+            stack.set_visible_child_name(match self.right_tab {
+                PdfRightTab::Reading => "reading",
+                PdfRightTab::Shortcuts => "shortcuts",
+            });
+        }
+        if self.right_tab == PdfRightTab::Reading {
+            if let Some(sw) = &self.settings_widgets {
+                self.sync_settings_ui(sw);
+            }
+        }
+        self.sync_panel_layout(widgets);
+    }
+
+    pub fn sync_jump_mode_control(&self) {
+        if let Some(control) = &self.jump_mode_control {
+            control.set_selected(match self.jump_mode {
+                PdfJumpMode::Page => 0,
+                PdfJumpMode::Chapter => 1,
+            });
+            if let Some(chapter_button) = control.buttons().get(1) {
+                // Chapter mode without an outline would be a range
+                // with nothing in it; the switch says so by resting.
+                chapter_button.set_sensitive(
+                    !pdf_jump_chapter_pages(&self.toc_entries, self.total_pages).is_empty(),
+                );
+            }
+        }
+    }
+
+    /// Bring the Contents current row into view when the panel
+    /// opens. Rows are the spec's 44px, so the target is arithmetic
+    /// rather than a hunt through allocations.
+    pub fn scroll_toc_to_current(&self) {
+        let (Some(scroll), Some(row)) = (&self.toc_scroll, self.toc_current_visible_row)
+        else {
+            return;
+        };
+        let adjustment = scroll.vadjustment();
+        glib::idle_add_local_once(move || {
+            let max = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+            let target = (row as f64 * 44.0 - adjustment.page_size() / 2.0 + 22.0)
+                .clamp(adjustment.lower(), max);
+            adjustment.set_value(target);
+        });
+    }
+
+    /// The screenshot loop's ask (`KALAM_PDF_ACTION`), applied
+    /// once the document facts exist — a frame of Contents or the
+    /// jump field taken before `DocumentLoaded` would photograph
+    /// the skeleton and call it the reader.
+    pub fn apply_screenshot_action(&mut self, sender: &ComponentSender<Self>) {
+        if self.screenshot_action_applied {
+            return;
+        }
+        self.screenshot_action_applied = true;
+        match std::env::var("KALAM_PDF_ACTION").as_deref() {
+            Ok("chrome") => {
+                sender.input(PdfReaderMsg::ShowBackChrome);
+                if let Some(unit) = &self.back_unit {
+                    unit.reveal();
+                }
+            }
+            Ok("contents") => sender.input(PdfReaderMsg::OpenLeftPanel),
+            Ok("contents-pinned") => {
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+                if !self.left_panel_pinned {
+                    sender.input(PdfReaderMsg::ToggleLeftPin);
+                }
+            }
+            Ok("bookmarks") => {
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Bookmarks));
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+            }
+            Ok("reading") => sender.input(PdfReaderMsg::OpenRightPanel),
+            Ok("shortcuts") => {
+                sender.input(PdfReaderMsg::SetRightTab(PdfRightTab::Shortcuts));
+                sender.input(PdfReaderMsg::OpenRightPanel);
+            }
+            Ok("jump") => sender.input(PdfReaderMsg::OpenJump(None)),
+            Ok("jump-range") => {
+                sender.input(PdfReaderMsg::OpenJump(Some("999".to_string())))
+            }
+            _ => {}
+        }
+    }
+
     pub fn update_bookmark_icon_state(&self, widgets: &PdfReaderModelWidgets) {
         let is_bookmarked = self
             .bookmarks
             .iter()
             .any(|b| b.chapter_index as usize == self.current_page);
-        toggle_active(&widgets.top_bookmark_btn, is_bookmarked);
+        widgets.ribbon_image.set_icon_name(Some(if is_bookmarked {
+            "kalam-ribbon-filled-symbolic"
+        } else {
+            "kalam-ribbon-outline-symbolic"
+        }));
+        if is_bookmarked {
+            widgets.ribbon_button.add_css_class("set");
+        } else {
+            widgets.ribbon_button.remove_css_class("set");
+        }
+        let label = if is_bookmarked {
+            "Remove the bookmark here (B)"
+        } else {
+            "Bookmark this page (B)"
+        };
+        widgets.ribbon_button.set_tooltip_text(Some(label));
+        widgets
+            .ribbon_button
+            .update_property(&[gtk::accessible::Property::Label(label)]);
     }
 
     pub fn highlight_current_search_match(&mut self, widgets: &PdfReaderModelWidgets) {
@@ -4988,70 +5954,145 @@ fn build_pdf_search_snippets_popover() -> (gtk::Popover, gtk::ListBox, gtk::Labe
 fn populate_toc_list(
     list_box: &gtk::Box,
     entries: &[PdfTocEntry],
+    collapsed: &HashSet<usize>,
+    filter: &str,
     current_page: usize,
     total_pages: usize,
     sender: &ComponentSender<PdfReaderModel>,
-) {
+) -> (Vec<(usize, gtk::Box)>, Option<usize>) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
 
     if entries.is_empty() {
-        let empty_label = gtk::Label::new(Some("No document outlines available."));
+        let empty_label = gtk::Label::new(Some(
+            "This file has no outline. Press G to jump to a page.",
+        ));
         empty_label.add_css_class("dim-label");
+        empty_label.set_wrap(true);
+        empty_label.set_xalign(0.0);
         empty_label.set_margin_top(24);
-        empty_label.set_margin_start(16);
-        empty_label.set_margin_end(16);
+        empty_label.set_margin_start(20);
+        empty_label.set_margin_end(20);
         list_box.append(&empty_label);
-        return;
+        return (Vec::new(), None);
     }
 
-    for item in entries {
+    let visible = visible_toc_rows(entries, collapsed, filter);
+    if visible.is_empty() {
+        let empty_label = gtk::Label::new(Some("No matches."));
+        empty_label.add_css_class("dim-label");
+        empty_label.set_margin_top(24);
+        empty_label.set_margin_start(20);
+        empty_label.set_margin_end(20);
+        list_box.append(&empty_label);
+        return (Vec::new(), None);
+    }
+
+    let current_index = current_toc_index(entries, current_page, total_pages);
+    let filtering = !filter.trim().is_empty();
+    let mut rows = Vec::with_capacity(visible.len());
+    let mut current_visible = None;
+
+    for visible_row in visible {
+        let item = &entries[visible_row.index];
         let page_target = item.page;
         if page_target == 0 || page_target > total_pages {
             continue;
         }
 
-        let is_top = is_top_level_title(&item.title);
-        let effective_depth = if is_top { 0 } else { item.depth };
-        let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let indent = (effective_depth.saturating_sub(1) * 14) as i32;
-        row_box.set_margin_start(indent);
+        let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row_box.add_css_class("kalam-pdf-contents-row");
+        if item.depth == 0 {
+            row_box.add_css_class("top-level");
+        }
+        if Some(visible_row.index) == current_index {
+            row_box.add_css_class("active");
+            current_visible = Some(rows.len());
+        }
+        row_box.set_hexpand(true);
+        row_box.set_size_request(-1, 44);
 
-        let title_lbl = gtk::Label::new(Some(&item.title));
-        title_lbl.set_halign(gtk::Align::Start);
-        title_lbl.set_valign(gtk::Align::Start);
-        title_lbl.set_xalign(0.0);
-        title_lbl.set_hexpand(true);
-        title_lbl.set_wrap(true);
-        title_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-        title_lbl.set_width_chars(1);
-        title_lbl.set_lines(-1);
-        row_box.append(&title_lbl);
+        // The current mark lives at the panel's edge (decision
+        // 58), so the bar is the row's first cell — always drawn,
+        // transparent when idle, so titles never shift.
+        let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        bar.add_css_class("kalam-pdf-contents-bar");
+        bar.set_size_request(3, -1);
+        bar.set_vexpand(true);
+        row_box.append(&bar);
 
-        let page_lbl = gtk::Label::new(Some(&page_target.to_string()));
-        page_lbl.add_css_class("dim-label");
-        page_lbl.set_halign(gtk::Align::End);
-        page_lbl.set_valign(gtk::Align::Start);
-        page_lbl.set_margin_top(1);
-        row_box.append(&page_lbl);
+        let indent = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        indent.set_size_request(17 + (item.depth as i32 * 18), -1);
+        row_box.append(&indent);
 
-        let btn = gtk::Button::new();
-        btn.set_child(Some(&row_box));
-        btn.add_css_class("flat");
-        btn.add_css_class("kalam-reader-toc-item");
-
-        if current_page == page_target {
-            btn.add_css_class("active");
+        if visible_row.has_children && !filtering {
+            let chevron = gtk::Button::new();
+            chevron.add_css_class("kalam-pdf-contents-chevron");
+            chevron.set_size_request(24, 32);
+            chevron.set_valign(gtk::Align::Center);
+            chevron.set_child(Some(&crate::icons::symbolic_with_classes(
+                if visible_row.collapsed {
+                    "pan-end-symbolic"
+                } else {
+                    "pan-down-symbolic"
+                },
+                14,
+                &["kalam-inline-icon"],
+            )));
+            let chevron_label = if visible_row.collapsed {
+                format!("Expand {}", item.title)
+            } else {
+                format!("Collapse {}", item.title)
+            };
+            chevron.set_tooltip_text(Some(&chevron_label));
+            chevron
+                .update_property(&[gtk::accessible::Property::Label(&chevron_label)]);
+            let entry_index = visible_row.index;
+            let tx = sender.input_sender().clone();
+            chevron.connect_clicked(move |_| {
+                let _ = tx.send(PdfReaderMsg::ToggleTocEntry(entry_index));
+            });
+            row_box.append(&chevron);
+        } else {
+            let chevron_slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            chevron_slot.set_size_request(24, -1);
+            row_box.append(&chevron_slot);
         }
 
+        let nav_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let title_lbl = gtk::Label::new(Some(&item.title));
+        title_lbl.add_css_class("kalam-pdf-contents-title");
+        title_lbl.set_xalign(0.0);
+        title_lbl.set_hexpand(true);
+        title_lbl.set_valign(gtk::Align::Center);
+        title_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        title_lbl.set_width_chars(1);
+        nav_content.append(&title_lbl);
+
+        let page_lbl = gtk::Label::new(Some(&page_target.to_string()));
+        page_lbl.add_css_class("kalam-pdf-contents-page");
+        page_lbl.set_halign(gtk::Align::End);
+        page_lbl.set_valign(gtk::Align::Center);
+        nav_content.append(&page_lbl);
+
+        let nav_button = gtk::Button::new();
+        nav_button.set_child(Some(&nav_content));
+        nav_button.add_css_class("flat");
+        nav_button.add_css_class("kalam-pdf-contents-nav");
+        nav_button.set_hexpand(true);
+        nav_button.set_valign(gtk::Align::Fill);
         let tx = sender.input_sender().clone();
-        btn.connect_clicked(move |_| {
+        nav_button.connect_clicked(move |_| {
             let _ = tx.send(PdfReaderMsg::JumpToPage(page_target));
         });
+        row_box.append(&nav_button);
 
-        list_box.append(&btn);
+        rows.push((visible_row.index, row_box.clone()));
+        list_box.append(&row_box);
     }
+
+    (rows, current_visible)
 }
 
 fn populate_bookmarks_list(
@@ -5078,7 +6119,7 @@ fn populate_bookmarks_list(
         label.set_halign(gtk::Align::Center);
         empty_box.append(&label);
 
-        let hint = gtk::Label::new(Some("Press B or tap the bookmark button on the bottom bar to bookmark any page."));
+        let hint = gtk::Label::new(Some("Press B or tap the ribbon at the top of the page to bookmark any page."));
         hint.add_css_class("dim-label");
         hint.set_wrap(true);
         hint.set_justify(gtk::Justification::Center);
@@ -5138,6 +6179,80 @@ fn populate_bookmarks_list(
 
         list_box.append(&row_btn);
     }
+}
+
+fn pdf_shortcut_row(label: &str, keys: &[&str]) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.add_css_class("kalam-pdf-shortcut-row");
+    row.set_size_request(-1, 48);
+    let lbl = gtk::Label::new(Some(label));
+    lbl.set_halign(gtk::Align::Start);
+    lbl.set_hexpand(true);
+    lbl.set_valign(gtk::Align::Center);
+    row.append(&lbl);
+    for key in keys {
+        let chip = gtk::Label::new(Some(key));
+        chip.add_css_class("kalam-ui-key-chip");
+        chip.set_valign(gtk::Align::Center);
+        row.append(&chip);
+    }
+    row
+}
+
+fn pdf_shortcut_group(host: &gtk::Box, heading: &str, rows: &[(&str, &[&str])]) {
+    let heading_lbl = gtk::Label::new(Some(heading));
+    heading_lbl.add_css_class("kalam-reader-section-label");
+    heading_lbl.set_halign(gtk::Align::Start);
+    heading_lbl.set_margin_top(14);
+    heading_lbl.set_margin_bottom(8);
+    host.append(&heading_lbl);
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    card.add_css_class("kalam-pdf-inset-card");
+    for (label, keys) in rows {
+        card.append(&pdf_shortcut_row(label, keys));
+    }
+    host.append(&card);
+}
+
+/// The Shortcuts pane (decision 53): the reader's keys in their
+/// three groups. Recording a new key and the conflict refusal
+/// ride on the shared keybind store and join here with it; until
+/// then the pane is the honest reference for the keys the reader
+/// answers.
+fn build_pdf_shortcuts_panel(host: &gtk::Box) {
+    pdf_shortcut_group(
+        host,
+        "Navigation",
+        &[
+            ("Next page", &["→", "Space"][..]),
+            ("Previous page", &["←"][..]),
+            ("First page", &["Home"][..]),
+            ("Last page", &["End"][..]),
+            ("Go to page", &["G"][..]),
+            ("Toggle bookmark", &["B"][..]),
+        ],
+    );
+    pdf_shortcut_group(
+        host,
+        "View",
+        &[
+            ("Zoom in", &["+"][..]),
+            ("Zoom out", &["−"][..]),
+            ("Actual size", &["0"][..]),
+            ("Search", &["Ctrl", "F"][..]),
+            ("Copy selection", &["Ctrl", "C"][..]),
+        ],
+    );
+    pdf_shortcut_group(
+        host,
+        "Panels",
+        &[
+            ("Contents", &["T"][..]),
+            ("Reading settings", &["S"][..]),
+            ("Shortcuts", &["H"][..]),
+            ("Close layer or exit", &["Esc"][..]),
+        ],
+    );
 }
 
 fn setting_icon_btn(icon: &str, label: &str) -> gtk::Button {
@@ -5500,21 +6615,6 @@ fn reader_settings_section(label: &str) -> gtk::Box {
     section
 }
 
-fn reader_sidebar_tab_content(icon: &str, label: &str) -> gtk::Box {
-    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    box_.set_halign(gtk::Align::Center);
-    box_.set_hexpand(true);
-    box_.append(&crate::icons::symbolic_with_classes(
-        icon,
-        17,
-        &["kalam-inline-icon"],
-    ));
-    let label_widget = gtk::Label::new(Some(label));
-    label_widget.set_halign(gtk::Align::Center);
-    box_.append(&label_widget);
-    box_
-}
-
 fn toggle_active(button: &gtk::Button, active: bool) {
     if active {
         button.add_css_class("active");
@@ -5540,6 +6640,120 @@ mod tests {
                 .collect();
         pages.sort_unstable();
         pages
+    }
+
+    fn toc(title: &str, page: usize, depth: usize) -> PdfTocEntry {
+        PdfTocEntry {
+            title: title.to_string(),
+            page,
+            depth,
+        }
+    }
+
+    fn sample_toc() -> Vec<PdfTocEntry> {
+        vec![
+            toc("Preface", 1, 0),
+            toc("The Earth", 2, 0),
+            toc("Structure of the Earth", 3, 1),
+            toc("Plate tectonics", 4, 1),
+            toc("Oceans", 8, 0),
+            toc("Currents", 9, 1),
+            toc("Index", 12, 0),
+        ]
+    }
+
+    #[test]
+    fn test_location_label_names_the_whole_spread() {
+        assert_eq!(
+            format_location_label(
+                PdfSpreadMode::NoSpreads,
+                PdfScrollMode::VerticalScrolling,
+                12,
+                4
+            ),
+            "4 / 12"
+        );
+        // Cover on its own: page 4 opens the 4–5 spread.
+        assert_eq!(
+            format_location_label(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::PageScrolling,
+                12,
+                4
+            ),
+            "4–5 / 12"
+        );
+        assert_eq!(
+            format_location_label(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::PageScrolling,
+                12,
+                1
+            ),
+            "1 / 12"
+        );
+        // Wrapped lays pages out singly even with a pairing chosen.
+        assert_eq!(
+            format_location_label(
+                PdfSpreadMode::OddSpreads,
+                PdfScrollMode::WrappedScrolling,
+                12,
+                4
+            ),
+            "4 / 12"
+        );
+    }
+
+    #[test]
+    fn test_pdf_jump_chapters_and_targets() {
+        let entries = sample_toc();
+        assert_eq!(pdf_jump_chapter_pages(&entries, 12), vec![1, 2, 8, 12]);
+        assert_eq!(
+            pdf_jump_current(PdfJumpMode::Chapter, &entries, 12, 4),
+            2,
+            "page 4 stands in the second top-level chapter"
+        );
+        assert_eq!(
+            pdf_jump_target(PdfJumpMode::Chapter, "3", &entries, 12),
+            Some(8)
+        );
+        assert_eq!(
+            pdf_jump_target(PdfJumpMode::Chapter, "5", &entries, 12),
+            None
+        );
+        assert_eq!(
+            pdf_jump_target(PdfJumpMode::Page, "12", &entries, 12),
+            Some(12)
+        );
+        assert_eq!(pdf_jump_target(PdfJumpMode::Page, "0", &entries, 12), None);
+        assert_eq!(pdf_jump_target(PdfJumpMode::Page, "13", &entries, 12), None);
+        assert_eq!(pdf_jump_target(PdfJumpMode::Page, "", &entries, 12), None);
+    }
+
+    #[test]
+    fn test_contents_current_entry_and_visible_rows() {
+        let entries = sample_toc();
+        assert_eq!(current_toc_index(&entries, 5, 12), Some(3));
+        assert_eq!(current_toc_index(&entries, 2, 12), Some(1));
+        assert_eq!(
+            toc_parent_indices(&entries),
+            vec![None, None, Some(1), Some(1), None, Some(4), None]
+        );
+
+        let collapsed = HashSet::from([1]);
+        let visible: Vec<usize> = visible_toc_rows(&entries, &collapsed, "")
+            .iter()
+            .map(|row| row.index)
+            .collect();
+        assert_eq!(visible, vec![0, 1, 4, 5, 6]);
+
+        // A filter must not hide its own match inside a folded
+        // branch: the ancestor rides along, the siblings do not.
+        let filtered: Vec<usize> = visible_toc_rows(&entries, &collapsed, "plate")
+            .iter()
+            .map(|row| row.index)
+            .collect();
+        assert_eq!(filtered, vec![1, 3]);
     }
 
     #[test]

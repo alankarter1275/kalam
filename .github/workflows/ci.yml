@@ -570,6 +570,54 @@ jobs:
             THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      # PDF reader (decisions 52-58): the pure page with its summoned
+      # Back+Bubble in both modes, then Contents floating and pinned,
+      # Shortcuts, and the page-jump field's out-of-range state. The
+      # PDF fixture is id BOOKS+1, bookmarked on page 4, and opens
+      # as the 4-5 spread — so the frames also prove the filled
+      # ribbon and the `4–5 / 12` location text.
+      - name: open a PDF with its chrome up (light) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-chrome-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=chrome \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open a PDF with its chrome up (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-chrome-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=chrome \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF contents panel (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-contents-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=contents \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF contents panel pinned (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-contents-pinned-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=contents-pinned \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF shortcuts panel (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-shortcuts-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=shortcuts \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF page-jump out of range (dark) and report
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-jump-range-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=jump-range \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # The task manager's whole job is showing state that only exists while
       # something is running, so a shot of it over a quiet library proves
       # little about the interesting case. What it does prove is the part no
@@ -983,6 +1031,18 @@ jobs:
             cp "ci-shots-$shot/03-comic-read-22-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true
           done
+          # The PDF reader frames, by the same slug rule: the OUT
+          # suffix is the published basename, and every frame settled
+          # on the PDF route.
+          for shot in pdf-chrome-light pdf-chrome-dark \
+                      pdf-contents-dark pdf-contents-pinned-dark \
+                      pdf-shortcuts-dark pdf-jump-range-dark; do
+            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
+              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
+            cp "ci-shots-$shot/03-pdf-read-21-settled.png" \
+              "ci-logs/$shot.png" 2>/dev/null || true
+          done
           # The settled gallery/book/dialog frames are the one deliberate
           # exception to "PNGs stay in the job workspace": an artboard
           # nobody can see is not an artboard, and the agent cannot
@@ -1090,6 +1150,12 @@ jobs:
                       comics-reading-dark comics-reading-strip-dark \
                       comics-image-light comics-image-adjusted-dark \
                       comics-shortcuts-dark comics-jump-range-dark; do
+            git add -f "ci-logs/$shot-latest.txt"
+            if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
+          done
+          for shot in pdf-chrome-light pdf-chrome-dark \
+                      pdf-contents-dark pdf-contents-pinned-dark \
+                      pdf-shortcuts-dark pdf-jump-range-dark; do
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done

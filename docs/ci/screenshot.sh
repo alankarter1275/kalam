@@ -105,6 +105,13 @@ READER_FIXTURE="${READER_FIXTURE:-}"
 if [ -n "$READER_FIXTURE" ]; then
   SEED_ARGS+=(--reader-fixture)
 fi
+# PDF_FIXTURE adds the seeder's real outlined PDF after the
+# generic books, so `pdf-read-$((BOOKS+1))` opens page 4 as a
+# bookmarked 4-5 spread — the PDF reader's drawn state.
+PDF_FIXTURE="${PDF_FIXTURE:-}"
+if [ -n "$PDF_FIXTURE" ]; then
+  SEED_ARGS+=(--pdf-fixture)
+fi
 # COMIC_FIXTURE adds the seeder's two-chapter CBZ series after the
 # generic books, so `comic-read-$((BOOKS+2))` opens chapter 2 at
 # page 4 with a bookmark on it — the comics reader's drawn state.
@@ -294,6 +301,11 @@ say "requested reader action: ${READER_ACTION:-<none>}"
 # jump, jump-range).
 COMIC_ACTION="${COMIC_ACTION:-}"
 say "requested comic action: ${COMIC_ACTION:-<none>}"
+# PDF_ACTION is the same ask for the PDF reader (KALAM_PDF_ACTION:
+# chrome, contents, contents-pinned, bookmarks, reading, shortcuts,
+# jump, jump-range).
+PDF_ACTION="${PDF_ACTION:-}"
+say "requested PDF action: ${PDF_ACTION:-<none>}"
 say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
@@ -321,7 +333,7 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
-KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_COMIC_ACTION="$COMIC_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_COMIC_ACTION="$COMIC_ACTION" KALAM_PDF_ACTION="$PDF_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do

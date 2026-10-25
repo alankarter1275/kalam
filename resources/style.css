@@ -4885,14 +4885,16 @@ button.kalam-comics-page-thumb.failed {
 }
 
 /* Shortcuts pane: inset groups of 48px rows with key chips. */
-.kalam-comics-inset-card {
+.kalam-comics-inset-card,
+.kalam-pdf-inset-card {
     background: @kalam_bg;
     border: 1px solid @kalam_border;
     border-radius: 14px;
     padding: 2px 14px;
 }
 
-.kalam-comics-shortcut-row {
+.kalam-comics-shortcut-row,
+.kalam-pdf-shortcut-row {
     border-bottom: 1px solid alpha(@kalam_border, 0.6);
     color: @kalam_text;
     font-size: 0.9rem;
@@ -4901,7 +4903,8 @@ button.kalam-comics-page-thumb.failed {
 /* The page-jump field (decision 50): a 52-high pill at the top
    centre in the search bar's shape, the number underlined in the
    accent, and the whole field in accent ink out of range. */
-.kalam-comics-jump {
+.kalam-comics-jump,
+.kalam-pdf-jump {
     background: @kalam_card;
     border: 1px solid @kalam_border;
     border-radius: 999px;
@@ -4909,12 +4912,14 @@ button.kalam-comics-page-thumb.failed {
     min-height: 38px;
 }
 
-.kalam-comics-jump-label {
+.kalam-comics-jump-label,
+.kalam-pdf-jump-label {
     color: @kalam_text_dim;
     font-size: 0.9rem;
 }
 
-entry.kalam-comics-jump-entry {
+entry.kalam-comics-jump-entry,
+entry.kalam-pdf-jump-entry {
     background: transparent;
     border: none;
     border-bottom: 2px solid @kalam_accent;
@@ -4927,26 +4932,31 @@ entry.kalam-comics-jump-entry {
     padding: 0 2px 3px;
 }
 
-entry.kalam-comics-jump-entry:focus-within {
+entry.kalam-comics-jump-entry:focus-within,
+entry.kalam-pdf-jump-entry:focus-within {
     background: transparent;
     box-shadow: none;
     outline: none;
 }
 
-entry.kalam-comics-jump-entry.error {
+entry.kalam-comics-jump-entry.error,
+entry.kalam-pdf-jump-entry.error {
     color: @kalam_accent;
 }
 
-.kalam-comics-jump-hint {
+.kalam-comics-jump-hint,
+.kalam-pdf-jump-hint {
     color: @kalam_text_dim;
     font-size: 0.86rem;
 }
 
-.kalam-comics-jump-hint.error {
+.kalam-comics-jump-hint.error,
+.kalam-pdf-jump-hint.error {
     color: @kalam_accent;
 }
 
-button.kalam-comics-jump-close {
+button.kalam-comics-jump-close,
+button.kalam-pdf-jump-close {
     background: transparent;
     border: none;
     box-shadow: none;
@@ -4957,7 +4967,8 @@ button.kalam-comics-jump-close {
     color: @kalam_text_dim;
 }
 
-button.kalam-comics-jump-close:hover {
+button.kalam-comics-jump-close:hover,
+button.kalam-pdf-jump-close:hover {
     background: @kalam_hover;
     color: @kalam_text;
 }
@@ -4965,7 +4976,166 @@ button.kalam-comics-jump-close:hover {
 button.kalam-comics-chapter-row:focus-visible,
 button.kalam-comics-page-thumb:focus-visible,
 button.kalam-comics-tile:focus-visible,
-button.kalam-comics-jump-close:focus-visible {
+button.kalam-comics-jump-close:focus-visible,
+button.kalam-pdf-jump-close:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 1px;
+}
+
+/* ── PDF reader, pure-page chrome (decisions 52–58) ── */
+/* The stage is the palette's own ground; the PDF page carries
+   its own paper colour until the Image tranche paints it. */
+.kalam-pdf-overlay,
+.kalam-pdf-viewport {
+    background: @kalam_bg;
+}
+
+.kalam-pdf-click-catcher {
+    background: transparent;
+}
+
+/* The panels share the reader sidebar shell (340, radius 22,
+   card, hairline); their headers carry the tab pill and pin. */
+.kalam-pdf-panel {
+    padding-bottom: 4px;
+}
+
+.kalam-pdf-panel .kalam-ui-segmented.panel {
+    border-radius: 999px;
+}
+
+/* The pin (decision 57, design-system §10): a 36 circle beside
+   the tabs. Unpinned it is the hairline and ink; pinned it is
+   the accent fill with a white pin. */
+button.kalam-pdf-pin {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    box-shadow: none;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-pin:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-pin.active {
+    background: @kalam_accent_fill;
+    border-color: @kalam_accent_fill;
+    color: white;
+}
+
+button.kalam-pdf-pin.active:hover {
+    background: @kalam_accent;
+    border-color: @kalam_accent;
+    color: white;
+}
+
+button.kalam-pdf-pin image {
+    -gtk-icon-size: 16px;
+}
+
+/* Contents (decision 58): the filter, then 44px rows with the
+   current section's 3px accent bar at the panel's edge. */
+entry.kalam-pdf-contents-filter {
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    box-shadow: none;
+    min-height: 40px;
+    padding: 0 12px;
+    color: @kalam_text;
+}
+
+entry.kalam-pdf-contents-filter > text {
+    color: @kalam_text;
+}
+
+entry.kalam-pdf-contents-filter:focus-within {
+    border-color: @kalam_accent;
+    box-shadow: none;
+    outline: none;
+}
+
+.kalam-pdf-contents-row {
+    min-height: 44px;
+    color: @kalam_text;
+}
+
+.kalam-pdf-contents-row:hover {
+    background: alpha(@kalam_surface_2, 0.85);
+}
+
+.kalam-pdf-contents-bar {
+    background: transparent;
+}
+
+.kalam-pdf-contents-row.active .kalam-pdf-contents-bar {
+    background: @kalam_accent;
+}
+
+button.kalam-pdf-contents-nav {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: @kalam_text_dim;
+    min-height: 36px;
+    padding: 4px 20px 4px 0;
+}
+
+button.kalam-pdf-contents-nav:hover {
+    background: transparent;
+    color: @kalam_text;
+}
+
+.kalam-pdf-contents-title {
+    color: @kalam_text_dim;
+    font-size: 0.92rem;
+}
+
+.kalam-pdf-contents-row.top-level .kalam-pdf-contents-title {
+    color: @kalam_text;
+    font-weight: 600;
+}
+
+.kalam-pdf-contents-row.active .kalam-pdf-contents-title {
+    color: @kalam_text;
+    font-weight: 700;
+}
+
+.kalam-pdf-contents-page {
+    color: @kalam_text_dim;
+    font-size: 0.86rem;
+}
+
+button.kalam-pdf-contents-chevron {
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    box-shadow: none;
+    color: @kalam_text_dim;
+    min-width: 24px;
+    min-height: 32px;
+    padding: 0;
+}
+
+button.kalam-pdf-contents-chevron:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-contents-chevron image {
+    -gtk-icon-size: 14px;
+}
+
+button.kalam-pdf-pin:focus-visible,
+button.kalam-pdf-contents-nav:focus-visible,
+button.kalam-pdf-contents-chevron:focus-visible {
     outline: 2px solid @kalam_accent;
     outline-offset: 1px;
 }

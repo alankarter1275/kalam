@@ -1432,6 +1432,18 @@ jobs:
           cp ci-shots-author-dark/report.txt ci-logs/author-dark-latest.txt 2>/dev/null \
             || echo "(no author-dark report produced)" > ci-logs/author-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-dark-latest.txt
+          cp ci-shots-editor-picker-light/report.txt ci-logs/editor-picker-light-latest.txt 2>/dev/null \
+            || echo "(no editor-picker-light report produced)" > ci-logs/editor-picker-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-picker-light-latest.txt
+          cp ci-shots-editor-picker-dark/report.txt ci-logs/editor-picker-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-picker-dark report produced)" > ci-logs/editor-picker-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-picker-dark-latest.txt
+          cp ci-shots-editor-light/report.txt ci-logs/editor-light-latest.txt 2>/dev/null \
+            || echo "(no editor-light report produced)" > ci-logs/editor-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-light-latest.txt
+          cp ci-shots-editor-dark/report.txt ci-logs/editor-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-dark report produced)" > ci-logs/editor-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-dark-latest.txt
           cp ci-shots-author-panel-light/report.txt ci-logs/author-panel-light-latest.txt 2>/dev/null \
             || echo "(no author-panel-light report produced)" > ci-logs/author-panel-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-panel-light-latest.txt
@@ -1586,6 +1598,14 @@ jobs:
             ci-logs/author-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-dark/03-author-book-21-settled.png \
             ci-logs/author-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-picker-light/03-editor-settled.png \
+            ci-logs/editor-picker-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-picker-dark/03-editor-settled.png \
+            ci-logs/editor-picker-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-light/03-edit-book-1-settled.png \
+            ci-logs/editor-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-author-panel-light/03-author-book-21-settled.png \
             ci-logs/author-panel-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-shelf-light/03-author-book-21-settled.png \

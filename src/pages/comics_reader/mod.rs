@@ -45,7 +45,6 @@ use crate::db::ReadingBookmark;
 /// along so the ordinary settings sync can keep the “Current” marker
 /// truthful after any individual control is nudged.
 struct PresetRowWidgets {
-    name: String,
     settings: ComicReadingSettings,
     apply_button: gtk::Button,
     current_label: gtk::Label,
@@ -92,11 +91,11 @@ pub struct ComicsReaderModel {
     /// loaded once when the reader opens and rebuilt only when the list
     /// itself changes; the Current marker is then kept in step by the
     /// normal settings sync.
-    pub saved_presets: Vec<reading_settings::ComicSettingsPreset>,
+    saved_presets: Vec<reading_settings::ComicSettingsPreset>,
     pub preset_sender: Option<relm4::Sender<ComicsReaderMsg>>,
     pub preset_list_host: Option<gtk::Box>,
     pub preset_empty_label: Option<gtk::Label>,
-    pub preset_rows: Vec<PresetRowWidgets>,
+    preset_rows: Vec<PresetRowWidgets>,
     pub preset_form: Option<gtk::Box>,
     pub preset_name_entry: Option<gtk::Entry>,
     pub preset_form_note: Option<gtk::Label>,
@@ -682,7 +681,6 @@ impl ComicsReaderModel {
             host.append(&row);
 
             self.preset_rows.push(PresetRowWidgets {
-                name: preset.name,
                 settings: preset.settings,
                 apply_button: apply,
                 current_label: current,

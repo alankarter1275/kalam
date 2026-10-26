@@ -374,7 +374,7 @@ fn manga_to_candidate(manga: Manga) -> Candidate {
     let cover = manga
         .main_picture
         .as_ref()
-        .and_then(|picture| cover_ref(picture))
+        .and_then(cover_ref)
         .or_else(|| manga.pictures.first().and_then(cover_ref));
 
     let external_id = (manga.id > 0).then(|| manga.id.to_string());

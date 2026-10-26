@@ -624,6 +624,14 @@ pub fn open_edit_comic_series_dialog(
 // Find metadata
 // ---------------------------------------------------------------------------
 
+/// Late-bound dialog actions. The buttons are built before the
+/// search/review state machine they invoke, so those actions are
+/// installed into shared slots once both halves exist.
+type DialogAction = Rc<dyn Fn()>;
+type CandidateAction = Rc<dyn Fn(Candidate)>;
+type SharedDialogAction = Rc<RefCell<Option<DialogAction>>>;
+type SharedCandidateAction = Rc<RefCell<Option<CandidateAction>>>;
+
 #[derive(Clone)]
 struct ReviewState {
     candidate: Candidate,
@@ -1207,11 +1215,10 @@ pub fn open_find_comic_series_metadata_dialog(
     let generation = Rc::new(Cell::new(0_u64));
     let review_state: Rc<RefCell<Option<ReviewState>>> = Rc::new(RefCell::new(None));
     let results_state: Rc<RefCell<Vec<Candidate>>> = Rc::new(RefCell::new(Vec::new()));
-    let show_review_holder: Rc<RefCell<Option<Rc<dyn Fn(Candidate)>>>> =
-        Rc::new(RefCell::new(None));
-    let show_results_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
-    let search_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
-    let refresh_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let show_review_holder: SharedCandidateAction = Rc::new(RefCell::new(None));
+    let show_results_holder: SharedDialogAction = Rc::new(RefCell::new(None));
+    let search_holder: SharedDialogAction = Rc::new(RefCell::new(None));
+    let refresh_holder: SharedDialogAction = Rc::new(RefCell::new(None));
 
     let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     let query_field: TextField = text_field("Search title", "Series title", &series.title);

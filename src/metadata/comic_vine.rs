@@ -407,7 +407,7 @@ fn volume_to_candidate(volume: Volume) -> Candidate {
         let roles: Vec<String> = match &person.role {
             Some(raw) => raw
                 .split(',')
-                .map(|role| credit_role(role))
+                .map(credit_role)
                 .filter(|role| !role.is_empty())
                 .collect(),
             None => Vec::new(),

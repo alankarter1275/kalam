@@ -480,14 +480,6 @@ pub fn enabled_comic_sources(
     enabled_sources_for(catalog, SourceId::COMICS)
 }
 
-/// Compatibility name for the book-shaped callers that predated comic
-/// sources: this is the **book** provider list.
-pub fn enabled_sources(
-    catalog: &std::sync::Arc<crate::db::Catalog>,
-) -> Vec<Box<dyn MetadataSource>> {
-    enabled_book_sources(catalog)
-}
-
 /// One provider by id, honouring its Settings switch — for detail and
 /// refresh fetches that already know which service they mean.
 pub fn source_by_id(

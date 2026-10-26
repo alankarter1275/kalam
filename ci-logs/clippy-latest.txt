@@ -1,12 +1,4 @@
-src/pages/epub_editor.rs:72:12: [1m[91merror[0m: type `pages::epub_editor::InlineTag` is more private than the item `pages::epub_editor::EpubEditorMsg::Format::0`: field `pages::epub_editor::EpubEditorMsg::Format::0` is reachable at visibility `pub(crate)`
-src/pages/epub_editor.rs:80:17: [1m[91merror[0m: type `pages::epub_editor::ViewMode` is more private than the item `pages::epub_editor::EpubEditorMsg::SetViewMode::0`: field `pages::epub_editor::EpubEditorMsg::SetViewMode::0` is reachable at visibility `pub(crate)`
-src/pages/epub_editor.rs:81:17: [1m[91merror[0m: type `pages::epub_editor::RightTab` is more private than the item `pages::epub_editor::EpubEditorMsg::SetRightTab::0`: field `pages::epub_editor::EpubEditorMsg::SetRightTab::0` is reachable at visibility `pub(crate)`
-src/epub_container.rs:40:12: [1m[91merror[0m: method `is_text` is never used
-src/epub_container.rs:78:9: [1m[91merror[0m: field `is_cover_image` is never read
-src/epub_container.rs:114:9: [1m[91merror[0m: field `nav_path` is never read
-src/pages/epub_editor.rs:64:1: [1m[91merror[0m: large size difference between variants: the entire enum is at least 496 bytes
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -20,29 +12,20 @@ not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m sourceview5 v0.11.2
 [1m[92m  Downloaded[0m sourceview5-sys v0.11.2
+[1m[92m  Downloaded[0m sourceview5 v0.11.2
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
 [1m[92m   Compiling[0m sourceview5-sys v0.11.2
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
+[1m[92m    Checking[0m sourceview5 v0.11.2
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
-[1m[92m    Checking[0m sourceview5 v0.11.2
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/epub_editor.rs:72:12: [1m[91merror[0m: type `pages::epub_editor::InlineTag` is more private than the item `pages::epub_editor::EpubEditorMsg::Format::0`: field `pages::epub_editor::EpubEditorMsg::Format::0` is reachable at visibility `pub(crate)`
-src/pages/epub_editor.rs:80:17: [1m[91merror[0m: type `pages::epub_editor::ViewMode` is more private than the item `pages::epub_editor::EpubEditorMsg::SetViewMode::0`: field `pages::epub_editor::EpubEditorMsg::SetViewMode::0` is reachable at visibility `pub(crate)`
-src/pages/epub_editor.rs:81:17: [1m[91merror[0m: type `pages::epub_editor::RightTab` is more private than the item `pages::epub_editor::EpubEditorMsg::SetRightTab::0`: field `pages::epub_editor::EpubEditorMsg::SetRightTab::0` is reachable at visibility `pub(crate)`
-src/epub_container.rs:40:12: [1m[91merror[0m: method `is_text` is never used
-src/epub_container.rs:78:9: [1m[91merror[0m: field `is_cover_image` is never read
-src/epub_container.rs:114:9: [1m[91merror[0m: field `nav_path` is never read
-src/pages/epub_editor.rs:64:1: [1m[91merror[0m: large size difference between variants: the entire enum is at least 496 bytes
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
---- run 40414261164 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 19.31s
+--- run 40414603308 ---

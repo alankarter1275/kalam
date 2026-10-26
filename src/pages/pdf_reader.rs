@@ -1426,6 +1426,7 @@ pub enum PdfReaderMsg {
     /// popover's three choices travel without a float in the message.
     SetSelectedDrawingWidthTenths(i64),
     CloseDrawingPopover,
+    ShowDrawingPopover,
     DrawToolbarZoneHover(bool),
     DrawToolbarHover(bool),
     DrawToolbarRevealDue(u64),
@@ -7381,6 +7382,9 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::CloseDrawingPopover => {
                 self.dismiss_drawing_popover();
             }
+            PdfReaderMsg::ShowDrawingPopover => {
+                self.show_selected_drawing_popover_for_selection(&sender);
+            }
             PdfReaderMsg::DrawToolbarZoneHover(hovering) => {
                 self.draw_toolbar_zone_hover = hovering;
                 if hovering && self.doc_ready {
@@ -9335,23 +9339,10 @@ impl PdfReaderModel {
             Ok("drawing-selected") => {
                 self.draw_toolbar_visible = true;
                 if let Some(drawing) = self.drawings.first().cloned() {
-                    let position = self
-                        .page_identities
-                        .iter()
-                        .find(|identity| identity.page_id == drawing.page_id)
-                        .map(|identity| identity.position);
-                    let slot = position.and_then(|page| {
-                        self.page_overlays
-                            .keys()
-                            .copied()
-                            .find(|slot| self.page_for_slot(*slot) == Some(page))
-                    });
                     self.selected_drawing_id = Some(drawing.id);
                     self.refresh_drawing_paints();
                     self.queue_all_drawing_areas();
-                    if let Some(slot) = slot {
-                        self.show_selected_drawing_popover(slot, sender);
-                    }
+                    self.show_selected_drawing_popover_for_selection(sender);
                 }
             }
             Ok("shortcuts") => {

@@ -1373,6 +1373,42 @@ impl PdfReaderModel {
         }
     }
 
+    /// Open the selected drawing's popover on whichever materialised
+    /// slot currently carries its page.
+    pub fn show_selected_drawing_popover_for_selection(
+        &mut self,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(id) = self.selected_drawing_id else {
+            return;
+        };
+        let Some(drawing) = self
+            .drawings
+            .iter()
+            .find(|drawing| drawing.id == id)
+            .cloned()
+        else {
+            return;
+        };
+        let Some(position) = self
+            .page_identities
+            .iter()
+            .find(|identity| identity.page_id == drawing.page_id)
+            .map(|identity| identity.position)
+        else {
+            return;
+        };
+        let Some(slot) = self
+            .page_overlays
+            .keys()
+            .copied()
+            .find(|slot| self.page_for_slot(*slot) == Some(position))
+        else {
+            return;
+        };
+        self.show_selected_drawing_popover(slot, sender);
+    }
+
     pub fn show_selected_drawing_popover(
         &mut self,
         slot: PageSlot,
@@ -1393,6 +1429,16 @@ impl PdfReaderModel {
         let Some(overlay) = self.page_overlays.get(&slot).cloned() else {
             return;
         };
+        if !overlay.is_mapped() {
+            // A Wayland popup shown before its parent surface is
+            // mapped can keep that surface from ever presenting.
+            // Ask again once the page has had a frame to land in.
+            let s = sender.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(120), move || {
+                let _ = s.input_sender().send(PdfReaderMsg::ShowDrawingPopover);
+            });
+            return;
+        }
         let (target_w, target_h) = self.drawing_target_dimensions();
         let (x, y, w, h) = drawing_bounds(&drawing.geometry, drawing.width_pts);
         let a = source_point_to_display(

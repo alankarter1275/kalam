@@ -111,6 +111,7 @@ impl PdfPageEditItem {
                 path,
                 page,
                 page_count,
+                ..
             } => {
                 let name = path
                     .file_name()
@@ -639,7 +640,7 @@ fn join_words(parts: &[String]) -> String {
 /// that nothing is written yet.
 pub fn page_edit_summary_sentence(summary: PdfPageEditSummary) -> String {
     let mut phrases: Vec<String> = Vec::new();
-    let mut phrase = |verb: &str, count: usize, phrases: &mut Vec<String>| {
+    let phrase = |verb: &str, count: usize, phrases: &mut Vec<String>| {
         if count == 0 {
             return;
         }

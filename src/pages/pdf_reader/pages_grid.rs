@@ -591,7 +591,8 @@ impl PdfPagesGrid {
                             if state.selected_keys.is_empty() {
                                 state.selected_keys.insert(key.clone());
                             }
-                            state.dragging_keys.clone_from(&state.selected_keys);
+                            let dragging = state.selected_keys.clone();
+                            state.dragging_keys = dragging;
                             refresh_cells(&state);
                             key
                         };

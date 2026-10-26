@@ -46,7 +46,7 @@ jobs:
             build-essential pkg-config \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
-            libgraphene-1.0-dev \
+            libgraphene-1.0-dev libgtksourceview-5-dev \
             libclang-dev libfontconfig1-dev
 
       - name: Install Rust toolchain
@@ -1060,6 +1060,35 @@ jobs:
         run: |
           BOOKS=20 OUT=ci-shots-author-dark SETTLE=20 ROUTE=author-book-21 \
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      # Deep editor (E1): the picker and the workspace on a seeded book.
+      - name: open the editor picker (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-picker-light SETTLE=20 ROUTE=editor \
+            THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor picker (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-picker-dark SETTLE=20 ROUTE=editor \
+            THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor workspace (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-light SETTLE=20 ROUTE=edit-book-1 \
+            THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor workspace (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-dark SETTLE=20 ROUTE=edit-book-1 \
+            THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the author open-series panel (light) and report

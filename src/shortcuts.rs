@@ -60,6 +60,7 @@ impl ShortcutAction {
         match self {
             Self::GoHome => "nav-home",
             Self::GoLibrary => "nav-library",
+            Self::GoEditor => "nav-editor",
             Self::OpenSettings => "nav-settings",
             Self::Back => "nav-back",
             Self::Notifications => "nav-notifications",

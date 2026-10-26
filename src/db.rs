@@ -13,6 +13,7 @@ mod annotations;
 mod authors;
 mod pdf_annotations;
 mod dictionaries;
+mod editor;
 mod history;
 mod lookup_history;
 mod metadata;

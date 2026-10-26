@@ -113,6 +113,8 @@ bundled-dictionaries = []
 relm4 = { version = "0.11", features = ["libadwaita", "gnome_45"] }
 libadwaita = { version = "0.9", features = ["v1_4"] }
 gtk = { version = "0.11", package = "gtk4", features = ["v4_12"] }
+# Deep EPUB editor source view (editor-spec §6); pairs with gtk4 0.11.
+sourceview5 = "0.11"
 gdk-pixbuf = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 glib = "0.22"

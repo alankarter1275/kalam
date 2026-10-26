@@ -50,6 +50,24 @@ const FONT_FILES: &[(&str, &[u8])] = &[
         "DMSans-Italic[opsz,wght].ttf",
         include_bytes!("../assets/fonts/DMSans-Italic[opsz,wght].ttf"),
     ),
+    // DM Mono (deep editor, decision 127): the source editor's face.
+    // Static weights, unmodified upstream files like the others.
+    (
+        "DMMono-Regular.ttf",
+        include_bytes!("../assets/fonts/DMMono-Regular.ttf"),
+    ),
+    (
+        "DMMono-Italic.ttf",
+        include_bytes!("../assets/fonts/DMMono-Italic.ttf"),
+    ),
+    (
+        "DMMono-Medium.ttf",
+        include_bytes!("../assets/fonts/DMMono-Medium.ttf"),
+    ),
+    (
+        "DMMono-MediumItalic.ttf",
+        include_bytes!("../assets/fonts/DMMono-MediumItalic.ttf"),
+    ),
 ];
 
 /// Write the bundled fonts to the cache and register them with

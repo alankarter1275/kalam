@@ -62,6 +62,7 @@ impl NavItem {
             NavItem::Shelves => "view-grid-symbolic",
             NavItem::Downloads => "folder-download-symbolic",
             NavItem::Comics => "image-x-generic-symbolic",
+            NavItem::Editor => "accessories-text-editor-symbolic",
             NavItem::RemoteBrowse => "network-workgroup-symbolic",
             NavItem::Fanfiction => "document-edit-symbolic",
             NavItem::Settings => "emblem-system-symbolic",
@@ -164,6 +165,15 @@ impl Route {
                 | Route::ComicsReader { .. }
                 | Route::RemoteReader { .. }
         )
+    }
+
+    /// Pages that fill the content area edge to edge and own their
+    /// scrolling — the readers and the editor workspace. The shell's
+    /// page scroller and back chip step aside for them (the editor
+    /// has its own Back, because leaving it can mean discarding
+    /// unsaved changes).
+    pub fn owns_its_surface(&self) -> bool {
+        self.is_reader() || matches!(self, Route::EditorWorkspace { .. })
     }
 }
 

@@ -684,6 +684,9 @@ impl Component for BookPageModel {
                     open_in_file_manager(&book.file_path.clone());
                 }
             }
+            BookPageMsg::EditBook => {
+                let _ = sender.output(BookPageOut::EditBook);
+            }
             BookPageMsg::SetShelf { shelf_id, member } => {
                 if let Some(book) = &self.book {
                     let catalog = self.service.catalog();

@@ -373,6 +373,15 @@ pub fn reader_cache_dir(uuid: &str) -> PathBuf {
     data_dir().join("cache").join("reader").join(uuid)
 }
 
+/// Deep-editor snapshots (decision 135): whole-EPUB copies taken before
+/// every save, tool, restore and import, grouped per book by uuid so a
+/// library can be carried elsewhere with its editing history intact.
+/// The rows that name them live in `editor_snapshots`; files found here
+/// without a row are orphans from a crash mid-save and can be deleted.
+pub fn editor_snapshots_dir(uuid: &str) -> PathBuf {
+    data_dir().join("editor-snapshots").join(uuid)
+}
+
 /// `~/.local/share/kalam/covers` — covers kept for remembered metadata.
 ///
 /// Separate from `library/<uuid>/` because that directory is deleted with the

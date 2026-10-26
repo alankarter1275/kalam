@@ -2420,6 +2420,131 @@ fn dashboard_feed(
     items
 }
 
+// ---------------------------------------------------------------------------
+// Deep EPUB editor (editor-spec.md, decisions 118–143)
+// ---------------------------------------------------------------------------
+
+/// One row of the editor picker (decision 142).
+pub struct EditorPickerEntry {
+    pub book: Book,
+    /// When the newest editor snapshot was taken — the picker's
+    /// "Edited 2 Oct" state. `None` reads "Not edited".
+    pub last_edited_at: Option<String>,
+}
+
+impl LibraryService {
+    /// Every EPUB in the library in title order, with its last-edit
+    /// stamp. PDFs and comics have no deep editor (decision 119).
+    pub fn editor_picker_entries(&self) -> Vec<EditorPickerEntry> {
+        let books = self
+            .catalog
+            .list_books(crate::db::SortKey::Title, "")
+            .unwrap_or_default();
+        books
+            .into_iter()
+            .filter(|book| matches!(book.format, BookFormat::Epub))
+            .map(|book| {
+                let last_edited_at = self.catalog.last_editor_snapshot_at(book.id);
+                EditorPickerEntry {
+                    book,
+                    last_edited_at,
+                }
+            })
+            .collect()
+    }
+
+    /// Load a book whole for the workspace. The `Err` text is
+    /// user-presentable: the can't-open state card shows it as-is
+    /// (decision 143).
+    pub fn open_for_editing(
+        &self,
+        book_id: i64,
+    ) -> Result<(Book, crate::epub_container::EpubContainer), String> {
+        let book = self
+            .catalog
+            .get_book(book_id)
+            .ok()
+            .flatten()
+            .ok_or_else(|| "This book is no longer in the library.".to_string())?;
+        if !matches!(book.format, BookFormat::Epub) {
+            return Err("Only EPUBs can be edited.".to_string());
+        }
+        if !book.file_path.is_file() {
+            return Err(
+                "This EPUB can't be opened. The file is missing. Kalam has not changed it."
+                    .to_string(),
+            );
+        }
+        let container = crate::epub_container::EpubContainer::open(&book.file_path).map_err(
+            |_| {
+                "This EPUB can't be opened. The file is damaged. Kalam has not changed it."
+                    .to_string()
+            },
+        )?;
+        Ok((book, container))
+    }
+
+    /// Write edited files back into Kalam's copy of the book.
+    ///
+    /// Decision 135, in order: keep a whole-book snapshot, keep the
+    /// one-time `.orig` backup of the untouched original (the same
+    /// backup metadata writes make), rewrite, refresh the stored
+    /// hash, and drop the reader's extraction cache so the next read
+    /// sees the edited text instead of the pre-edit extraction.
+    pub fn save_editor_changes(
+        &self,
+        book: &Book,
+        replacements: &std::collections::HashMap<String, Vec<u8>>,
+        snapshot_label: &str,
+    ) -> Result<(), String> {
+        let dir = crate::paths::editor_snapshots_dir(&book.uuid);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let file_name = format!("{stamp}-{}.epub", snapshot_slug(snapshot_label));
+        std::fs::copy(&book.file_path, dir.join(&file_name)).map_err(|e| e.to_string())?;
+        self.catalog
+            .add_editor_snapshot(
+                book.id,
+                snapshot_label,
+                &file_name,
+                replacements.len() as i64,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let backup = crate::epub_metadata::backup_path(&book.file_path);
+        if !backup.exists() {
+            let _ = std::fs::copy(&book.file_path, &backup);
+        }
+
+        crate::epub_container::write_with_replacements(&book.file_path, replacements)
+            .map_err(|e| e.to_string())?;
+
+        if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
+            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+        }
+        let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
+        Ok(())
+    }
+}
+
+/// "Before save" → `before-save`, for snapshot file names.
+fn snapshot_slug(label: &str) -> String {
+    let slug: String = label
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() {
+        "snapshot".to_string()
+    } else {
+        slug.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

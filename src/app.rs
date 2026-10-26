@@ -147,6 +147,8 @@ enum PageSlot {
     ComponentPreview(Controller<ComponentPreviewModel>),
     Placeholder(Controller<PlaceholderPageModel>),
     Downloads(Controller<DownloadsModel>),
+    EditorPicker(Controller<EditorPickerModel>),
+    EpubEditor(Controller<EpubEditorModel>),
 }
 
 impl PageSlot {
@@ -678,6 +680,9 @@ impl AppModel {
                             }
                         }
                         BookPageOut::Deleted { .. } => AppMsg::Back,
+                        BookPageOut::EditBook => {
+                            AppMsg::Push(Route::EditorWorkspace { book_id: id })
+                        }
                     });
                 PageSlot::Book(ctrl)
             }
@@ -1258,7 +1263,7 @@ impl Component for AppModel {
                                 set_overlay_scrolling: true,
                                 set_hscrollbar_policy: gtk::PolicyType::Never,
                                 #[watch]
-                                set_vscrollbar_policy: if model.route.is_reader() {
+                                set_vscrollbar_policy: if model.route.owns_its_surface() {
                                     gtk::PolicyType::Never
                                 } else {
                                     gtk::PolicyType::Automatic
@@ -1837,6 +1842,15 @@ impl Component for AppModel {
                         self.swap_page(
                             &widgets.content_host,
                             Route::Module(NavItem::Library),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::GoEditor => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Editor),
                             false,
                             &sender,
                         );
@@ -2685,7 +2699,7 @@ mod tests {
             .into_iter()
             .filter_map(|name| route_by_name(name).as_ref().map(route_label))
             .collect();
-        for name in ["book-1", "read-1", "pdf-read-1", "comic-read-1"] {
+        for name in ["book-1", "read-1", "pdf-read-1", "comic-read-1", "edit-book-1"] {
             labels.push(route_label(&route_by_name(name).expect("id form resolves")));
         }
         // `series-book-<id>` resolves through the catalog, so its route is

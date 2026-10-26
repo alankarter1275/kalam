@@ -8495,3 +8495,238 @@ button.kalam-author-merge-row:focus-visible {
   outline-offset: 2px;
 }
 .kalam-author-merge-check { color: @kalam_accent; }
+
+/* ─── Deep EPUB editor (design-system §§32–40) ──────────────────────
+   Flat, docked chrome: hairline borders everywhere, no shadows, no
+   boxes except the Back pill and the filled Save. The source view's
+   colours come from a token-generated GtkSourceView scheme
+   (decision 127); CSS only gives it the DM Mono face. */
+
+.kalam-editor {
+  background: @kalam_bg;
+}
+
+/* Picker (§40) */
+.kalam-editorpicker-search {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid @kalam_border;
+  border-radius: 0;
+  box-shadow: none;
+  color: @kalam_text;
+  padding: 0 2px;
+}
+.kalam-editorpicker-search:focus-within {
+  border-bottom-color: @kalam_accent;
+}
+.kalam-editorpicker-group {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: @kalam_text_dim;
+}
+button.kalam-editorpicker-row {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid @kalam_border;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0 8px;
+  color: @kalam_text;
+}
+button.kalam-editorpicker-row:hover {
+  background: @kalam_hover;
+}
+.kalam-editorpicker-book-title {
+  font-family: "Playfair Display", "Literata", Georgia, serif;
+  font-size: 17px;
+  font-weight: 500;
+  color: @kalam_text;
+}
+
+/* Top bar (§32) */
+.kalam-ed-topbar {
+  background: @kalam_bg;
+  border-bottom: 1px solid @kalam_border;
+  padding: 0 16px;
+}
+.kalam-ed-title {
+  font-family: "Playfair Display", "Literata", Georgia, serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: @kalam_text;
+}
+.kalam-ed-save {
+  min-width: 84px;
+  min-height: 36px;
+}
+
+/* File tree (§36) */
+.kalam-ed-tree {
+  background: @kalam_bg;
+  border-right: 1px solid @kalam_border;
+  padding-top: 8px;
+}
+button.kalam-ed-tree-section {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0 12px;
+}
+button.kalam-ed-tree-section:hover {
+  background: @kalam_hover;
+}
+.kalam-ed-tree-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: @kalam_text_dim;
+}
+button.kalam-ed-tree-row {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0 12px 0 30px;
+  color: @kalam_text;
+  font-size: 13px;
+}
+button.kalam-ed-tree-row:hover {
+  background: @kalam_hover;
+}
+button.kalam-ed-tree-row.open {
+  background: @kalam_surface_2;
+  font-weight: 600;
+}
+.kalam-ed-dot {
+  color: @kalam_accent;
+}
+
+/* Formatting toolbar + tab strip (§§32–33 via decisions 124–126) */
+.kalam-ed-toolbar {
+  background: @kalam_bg;
+  border-bottom: 1px solid @kalam_border;
+  padding: 0 12px;
+}
+button.kalam-ed-tool-btn {
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  box-shadow: none;
+  color: @kalam_text;
+  padding: 0;
+}
+button.kalam-ed-tool-btn:hover {
+  background: @kalam_hover;
+}
+.kalam-ed-tabstrip {
+  background: @kalam_bg;
+  border-bottom: 1px solid @kalam_border;
+  padding: 0 8px;
+}
+button.kalam-ed-filetab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: @kalam_text_dim;
+  font-size: 13px;
+  padding: 0 8px;
+}
+button.kalam-ed-filetab:hover {
+  color: @kalam_text;
+}
+button.kalam-ed-filetab.active {
+  color: @kalam_text;
+  border-bottom-color: @kalam_accent;
+}
+.kalam-ed-tab-temporary {
+  font-style: italic;
+}
+.kalam-ed-tab-close {
+  color: @kalam_text_3;
+  font-size: 14px;
+}
+
+/* Source view (§36): DM Mono 13; colours from the generated scheme. */
+.kalam-ed-source {
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+}
+
+/* Right panel (§§32–33) */
+.kalam-ed-side {
+  background: @kalam_bg;
+  border-left: 1px solid @kalam_border;
+}
+.kalam-ed-tabrow {
+  border-bottom: 1px solid @kalam_border;
+  padding: 0 20px;
+}
+button.kalam-ed-flat-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: @kalam_text_dim;
+  font-size: 13px;
+  padding: 0 2px;
+}
+button.kalam-ed-flat-tab:hover {
+  color: @kalam_text;
+}
+button.kalam-ed-flat-tab.active {
+  color: @kalam_text;
+  border-bottom-color: @kalam_accent;
+}
+.kalam-ed-preview {
+  font-family: "Literata", Georgia, serif;
+  font-size: 15px;
+  color: @kalam_text;
+}
+button.kalam-ed-outline-row {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  color: @kalam_text;
+  font-size: 13px;
+  padding: 0 20px;
+}
+button.kalam-ed-outline-row:hover {
+  background: @kalam_hover;
+}
+.kalam-ed-problem-row {
+  border-bottom: 1px solid @kalam_border;
+}
+.kalam-ed-problem-error {
+  color: @kalam_danger;
+  font-size: 9px;
+}
+.kalam-ed-problem-title {
+  color: @kalam_text;
+  font-size: 13px;
+}
+.kalam-ed-problem-btn {
+  min-height: 30px;
+}
+
+/* Status bar (decision 122) */
+.kalam-ed-statusbar {
+  background: @kalam_bg;
+  border-top: 1px solid @kalam_border;
+  padding: 0 16px;
+}
+.kalam-ed-status-text {
+  color: @kalam_text_dim;
+  font-size: 12px;
+}
+.kalam-ed-status-problems {
+  color: @kalam_accent;
+}
+button.kalam-ed-switch {
+  font-size: 12px;
+}

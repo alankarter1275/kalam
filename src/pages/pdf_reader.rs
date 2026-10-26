@@ -4328,8 +4328,14 @@ impl Component for PdfReaderModel {
             set_vexpand: true,
 
             // ── 1. Main Viewport Scroll ──────────────────────────────
+            // It stands down under a whole-book open state: the
+            // provisional page skeleton's natural height would
+            // otherwise make the root taller than the window and
+            // centre that state's card below the fold.
             #[name = "viewport_scroll"]
             gtk::ScrolledWindow {
+                #[watch]
+                set_visible: !model.open_state.is_blocking(),
                 set_hexpand: true,
                 set_vexpand: true,
                 set_hscrollbar_policy: gtk::PolicyType::Never,

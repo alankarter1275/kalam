@@ -2044,7 +2044,7 @@ fn present_edit_author_dialog(
                             widget.set_size_request(PORTRAIT, PORTRAIT);
                             host.append(&widget);
                             status.set_text(
-                                if profile.is_some_and(|p| {
+                                if profile.as_ref().is_some_and(|p| {
                                     p.manual_fields.iter().any(|f| f == AUTHOR_FIELD_PHOTO)
                                 }) {
                                     "Your portrait. Metadata fetches leave it alone."
@@ -2126,7 +2126,7 @@ fn present_edit_author_dialog(
 
     // The sort name follows the name until the reader types in it
     // themselves (or already locked one by hand on an earlier edit).
-    let sort_dirty = Rc::new(Cell::new(profile.is_some_and(|p| {
+    let sort_dirty = Rc::new(Cell::new(profile.as_ref().is_some_and(|p| {
         p.manual_fields.iter().any(|f| f == AUTHOR_FIELD_SORT_NAME)
     })));
     let updating_sort = Rc::new(Cell::new(false));
@@ -2392,6 +2392,7 @@ fn present_merge_author_dialog(
     let slot_for_merge = slot.clone();
     let s = sender.input_sender().clone();
     let selected_for_merge = selected.clone();
+    let source_name_for_merge = source_name.clone();
     let service_for_merge = service.clone();
     let footer_for_merge = footer.clone();
     let summary_for_merge = summary.clone();
@@ -2402,7 +2403,7 @@ fn present_merge_author_dialog(
         footer_for_merge.set_sensitive(false);
         summary_for_merge.set_text("Merging…");
         let service = service_for_merge.clone();
-        let source_name = source_name.clone();
+        let source_name = source_name_for_merge.clone();
         let slot = slot_for_merge.clone();
         let s = s.clone();
         let footer = footer_for_merge.clone();
@@ -2451,7 +2452,7 @@ fn present_merge_author_dialog(
         let search = search_field.clone();
         let summary = summary.clone();
         let merge_button = merge_button.clone();
-        let holder = holder.clone();
+        let holder_for_rebuild = holder.clone();
         let rebuild: Rc<dyn Fn()> = Rc::new(move || {
             clear_box(&host);
             let chosen = selected.borrow().clone();
@@ -2563,7 +2564,7 @@ fn present_merge_author_dialog(
 
                 let picked = entry.clone();
                 let selected = selected.clone();
-                let holder = holder.clone();
+                let holder = holder_for_rebuild.clone();
                 row_button.connect_clicked(move |_| {
                     *selected.borrow_mut() = Some(picked.clone());
                     if let Some(rebuild) = holder.borrow().clone() {
@@ -2600,7 +2601,7 @@ fn present_merge_author_dialog(
             claim(&profile.canonical_name);
             claim(&profile.sort_name);
             if !profile.normalized_name.trim().is_empty() {
-                source_keys.insert(profile.normalized_name.trim().to_string());
+                claim(profile.normalized_name.trim());
             }
             for alias in &profile.aliases {
                 claim(alias);

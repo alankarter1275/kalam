@@ -802,7 +802,8 @@ fn identity_keys(
         add(&profile.canonical_name);
         add(&profile.sort_name);
         if !profile.normalized_name.trim().is_empty() {
-            keys.insert(profile.normalized_name.trim().to_string());
+            // Normalizing an already-normalized key returns it.
+            add(profile.normalized_name.trim());
         }
         for alias in &profile.aliases {
             add(alias);

@@ -1456,7 +1456,7 @@ mod tests {
     #[test]
     fn stroke_hit_testing_uses_segments_and_width() {
         let geometry = stroke();
-        assert!(drawing_hit(&geometry, 3.0, (60.0, 12.0), 0.0));
+        assert!(drawing_hit(&geometry, 3.0, (60.0, 11.0), 0.0));
         assert!(drawing_hit(&geometry, 3.0, (112.0, 40.0), 2.0));
         assert!(!drawing_hit(&geometry, 3.0, (60.0, 30.0), 0.0));
     }

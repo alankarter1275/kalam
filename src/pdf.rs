@@ -812,9 +812,9 @@ impl PdfDocument {
                     })?;
                     inserted_sources.insert(path.clone(), source);
                 }
-                let source = inserted_sources
-                    .get(path)
-                    .expect("inserted source just opened");
+                let Some(source) = inserted_sources.get(path) else {
+                    return Err(anyhow!("An inserted PDF went missing during the edit"));
+                };
                 if *page == 0 || *page > source.page_count() {
                     return Err(anyhow!(
                         "Inserted page {} is out of range for {:?}",
@@ -856,9 +856,9 @@ impl PdfDocument {
             .collect();
         for (position, entry) in entries.iter().enumerate() {
             if let PdfPageEditSource::Inserted { path, page } = &entry.source {
-                let source = inserted_sources
-                    .get(path)
-                    .expect("inserted source opened above");
+                let Some(source) = inserted_sources.get(path) else {
+                    return Err(anyhow!("An inserted PDF went missing during the edit"));
+                };
                 destination
                     .insert_pdf(
                         source.pdf_handle()?,
@@ -981,9 +981,11 @@ impl PdfDocument {
                         })?;
                         inserted_sources.insert(path.clone(), source);
                     }
-                    let source = inserted_sources
-                        .get(path)
-                        .expect("inserted source just opened");
+                    let Some(source) = inserted_sources.get(path) else {
+                        return Err(anyhow!(
+                            "An inserted PDF went missing during extraction"
+                        ));
+                    };
                     source.page_rotation(*page)?
                 }
             };
@@ -1001,9 +1003,11 @@ impl PdfDocument {
                     (own_handle, page - 1)
                 }
                 PdfPageEditSource::Inserted { path, page } => {
-                    let source = inserted_sources
-                        .get(path)
-                        .expect("inserted source opened above");
+                    let Some(source) = inserted_sources.get(path) else {
+                        return Err(anyhow!(
+                            "An inserted PDF went missing during extraction"
+                        ));
+                    };
                     if *page == 0 || *page > source.page_count() {
                         return Err(anyhow!(
                             "Inserted page {} is out of range for {:?}",

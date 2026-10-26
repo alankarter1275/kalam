@@ -629,7 +629,9 @@ fn join_words(parts: &[String]) -> String {
         [only] => only.clone(),
         [first, second] => format!("{first} and {second}"),
         _ => {
-            let (last, head) = parts.split_last().expect("non-empty");
+            let Some((last, head)) = parts.split_last() else {
+                return String::new();
+            };
             format!("{} and {last}", head.join(", "))
         }
     }
@@ -884,7 +886,7 @@ fn write_page_edit_temp(
 /// catalog's transaction — with its file swap inside — and the
 /// sidecar refresh it finishes with.
 fn apply_page_edit(
-    catalog: Arc<Catalog>,
+    catalog: &Catalog,
     book_id: i64,
     book_path: PathBuf,
     shared_password: PdfSessionPassword,
@@ -1502,7 +1504,7 @@ impl PdfReaderModel {
             .name("kalam-pdf-page-apply".to_string())
             .spawn(move || {
                 let result = apply_page_edit(
-                    catalog,
+                    &catalog,
                     book_id,
                     book_path,
                     password,

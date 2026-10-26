@@ -412,6 +412,7 @@ fn hex_scanner_counts_colours_and_ignores_longer_runs() {
 const READER_PATH_PREFIXES: &[&str] = &[
     "src/pages/reader/",
     "src/pages/pdf_reader.rs",
+    "src/pages/pdf_reader/",
     "src/pages/comics_reader/",
 ];
 

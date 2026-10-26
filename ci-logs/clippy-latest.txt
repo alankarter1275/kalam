@@ -1,4 +1,12 @@
-(no lines matched; last 100 lines of output)
+src/db/series.rs:522:6: [1m[91merror[E0107][0m: type alias takes 1 generic argument but 2 generic arguments were supplied: expected 1 generic argument
+src/db/series.rs:558:53: [1m[91merror[E0107][0m: type alias takes 1 generic argument but 2 generic arguments were supplied: expected 1 generic argument
+src/db/series.rs:219:58: [1m[91merror[E0277][0m: the trait bound `[models::ComicCredit]: std::default::Default` is not satisfied: the trait `std::default::Default` is not implemented for `[models::ComicCredit]`
+src/db/series.rs:219:30: [1m[91merror[E0277][0m: the trait bound `[models::ComicCredit]: serde::Deserialize<'de>` is not satisfied: the trait `author::_::_serde::Deserialize<'_>` is not implemented for `[models::ComicCredit]`
+src/pages/comics_reader/mod.rs:4502:25: [1m[91merror[E0502][0m: cannot borrow `*self` as immutable because it is also borrowed as mutable: immutable borrow occurs here
+src/pages/comics_reader/mod.rs:4518:30: [1m[91merror[E0716][0m: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
+src/pages/comics_reader/mod.rs:4516:30: [1m[91merror[E0716][0m: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -19,8 +27,17 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.66s
---- run 40318692595 ---
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/db/series.rs:522:6: [1m[91merror[E0107][0m: type alias takes 1 generic argument but 2 generic arguments were supplied: expected 1 generic argument
+src/db/series.rs:558:53: [1m[91merror[E0107][0m: type alias takes 1 generic argument but 2 generic arguments were supplied: expected 1 generic argument
+src/db/series.rs:219:58: [1m[91merror[E0277][0m: the trait bound `[models::ComicCredit]: std::default::Default` is not satisfied: the trait `std::default::Default` is not implemented for `[models::ComicCredit]`
+src/db/series.rs:219:30: [1m[91merror[E0277][0m: the trait bound `[models::ComicCredit]: serde::Deserialize<'de>` is not satisfied: the trait `author::_::_serde::Deserialize<'_>` is not implemented for `[models::ComicCredit]`
+src/pages/comics_reader/mod.rs:4502:25: [1m[91merror[E0502][0m: cannot borrow `*self` as immutable because it is also borrowed as mutable: immutable borrow occurs here
+src/pages/comics_reader/mod.rs:4518:30: [1m[91merror[E0716][0m: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
+src/pages/comics_reader/mod.rs:4516:30: [1m[91merror[E0716][0m: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
+--- run 40364268311 ---

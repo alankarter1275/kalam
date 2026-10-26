@@ -216,7 +216,8 @@ fn json_string_vec(value: &str) -> Vec<String> {
 }
 
 fn comic_credits_from_json(value: &str) -> Vec<ComicCredit> {
-    normalise_comic_credits(&serde_json::from_str(value).unwrap_or_default())
+    let credits: Vec<ComicCredit> = serde_json::from_str(value).unwrap_or_default();
+    normalise_comic_credits(&credits)
 }
 
 fn json_vec_string(values: &[String]) -> String {
@@ -515,11 +516,7 @@ fn changed_comic_series_fields(
 /// Write a fetched cover beside the series' chapters. The caller owns
 /// deleting a cover this update later replaces; on update failure it
 /// owns deleting this orphan too.
-pub fn write_comic_series_cover(
-    folder: &str,
-    series_id: i64,
-    bytes: &[u8],
-) -> Result<String, DbError> {
+pub fn write_comic_series_cover(folder: &str, series_id: i64, bytes: &[u8]) -> Result<String> {
     if bytes.is_empty() {
         return Err(DbError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -555,7 +552,7 @@ pub fn write_comic_series_cover(
 
 /// Delete a library-relative series cover. Missing files are already
 /// the desired end state; escaping paths are refused.
-pub fn remove_comic_series_cover(relative: &str) -> Result<(), DbError> {
+pub fn remove_comic_series_cover(relative: &str) -> Result<()> {
     let relative = relative.trim();
     if relative.is_empty() {
         return Ok(());

@@ -4496,11 +4496,9 @@ impl Component for ComicsReaderModel {
                     }
                     self.sync_settings_ui(widgets);
                 } else {
-                    let replaced = reading_settings::upsert_preset(
-                        &mut self.saved_presets,
-                        &name,
-                        self.current_reading_settings(),
-                    );
+                    let settings = self.current_reading_settings();
+                    let replaced =
+                        reading_settings::upsert_preset(&mut self.saved_presets, &name, settings);
                     self.persist_presets();
                     self.preset_name_draft = name.clone();
                     self.preset_form_open = false;
@@ -4511,14 +4509,12 @@ impl Component for ComicsReaderModel {
                         }
                     }
                     self.rebuild_preset_rows();
-                    self.trigger_osd(
-                        if replaced {
-                            &format!("Preset “{name}” replaced")
-                        } else {
-                            &format!("Preset “{name}” saved")
-                        },
-                        &sender,
-                    );
+                    let osd = if replaced {
+                        format!("Preset “{name}” replaced")
+                    } else {
+                        format!("Preset “{name}” saved")
+                    };
+                    self.trigger_osd(&osd, &sender);
                     self.sync_settings_ui(widgets);
                 }
             }

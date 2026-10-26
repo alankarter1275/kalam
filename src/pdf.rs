@@ -504,6 +504,44 @@ fn sanitized_page_label(label: Option<String>, page_num: usize) -> String {
         .unwrap_or_else(|| page_num.to_string())
 }
 
+/// The result of opening a document whose encryption is part of
+/// the question. A locked book is not an I/O or parse failure:
+/// the reader needs to know whether to ask for a password, and
+/// whether the password it just tried was refused.
+pub enum PdfOpenOutcome {
+    Ready(PdfDocument),
+    PasswordRequired,
+    WrongPassword,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PdfPasswordCheck {
+    NotRequired,
+    Unlocked,
+    Required,
+    Wrong,
+}
+
+/// Fold MuPDF's two answers into the one decision `open` makes.
+/// With no password supplied Kalam still tries the empty user
+/// password, as PDF readers do: plenty of encrypted files carry
+/// permissions under an owner password but open freely. Only a
+/// refusal of that silent attempt becomes the password prompt.
+fn pdf_password_check(
+    needs_password: bool,
+    supplied: bool,
+    authenticated: Option<bool>,
+) -> PdfPasswordCheck {
+    if !needs_password {
+        return PdfPasswordCheck::NotRequired;
+    }
+    match authenticated {
+        Some(true) => PdfPasswordCheck::Unlocked,
+        _ if supplied => PdfPasswordCheck::Wrong,
+        _ => PdfPasswordCheck::Required,
+    }
+}
+
 /// MuPDF Document handle.
 pub struct PdfDocument {
     #[allow(dead_code)]
@@ -514,11 +552,53 @@ pub struct PdfDocument {
 
 impl PdfDocument {
     /// Load a PDF document from a file path using MuPDF.
+    ///
+    /// Documents that need a non-empty password fail here, as they
+    /// always have for the cover, indexing and OCR callers. The
+    /// reader uses [`Self::open_with_password`] so it can ask.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        match Self::open_with_password(path, None)? {
+            PdfOpenOutcome::Ready(doc) => Ok(doc),
+            PdfOpenOutcome::PasswordRequired | PdfOpenOutcome::WrongPassword => {
+                Err(anyhow!("PDF document is password protected"))
+            }
+        }
+    }
+
+    /// Load a document, authenticating first when MuPDF says it
+    /// is locked. Authentication has to happen on the generic
+    /// document, before its pages can be counted and before the
+    /// PDF-specific handle used for page labels is taken.
+    pub fn open_with_password<P: AsRef<Path>>(
+        path: P,
+        password: Option<&str>,
+    ) -> Result<PdfOpenOutcome> {
         let path_buf = path.as_ref().to_path_buf();
         let path_str = path_buf.to_string_lossy();
-        let doc = Document::open(&*path_str)
+        let mut doc = Document::open(&*path_str)
             .map_err(|e| anyhow!("Failed to load PDF document {:?}: {}", path_buf, e))?;
+
+        let needs_password = doc.needs_password().map_err(|e| {
+            anyhow!("Failed to inspect PDF document {:?}: {}", path_buf, e)
+        })?;
+        let supplied = password.is_some();
+        let authenticated = if needs_password {
+            Some(doc.authenticate(password.unwrap_or("")).unwrap_or(false))
+        } else {
+            None
+        };
+        match pdf_password_check(needs_password, supplied, authenticated) {
+            PdfPasswordCheck::NotRequired | PdfPasswordCheck::Unlocked => {}
+            PdfPasswordCheck::Required => return Ok(PdfOpenOutcome::PasswordRequired),
+            PdfPasswordCheck::Wrong => return Ok(PdfOpenOutcome::WrongPassword),
+        }
+        if doc.needs_password().unwrap_or(false) {
+            return Ok(if supplied {
+                PdfOpenOutcome::WrongPassword
+            } else {
+                PdfOpenOutcome::PasswordRequired
+            });
+        }
 
         let count = doc
             .page_count()
@@ -540,11 +620,11 @@ impl PdfDocument {
             PdfDocHandle::Generic(doc)
         };
 
-        Ok(Self {
+        Ok(PdfOpenOutcome::Ready(Self {
             path: path_buf,
             doc,
             page_count: count as usize,
-        })
+        }))
     }
 
     /// Return total page count.
@@ -1546,5 +1626,78 @@ mod tests {
         assert!(page_text.line_at((100.0, 110.0)).is_some());
         // Far to the right at the same vertical height
         assert!(page_text.line_at((500.0, 110.0)).is_none());
+    }
+
+    #[test]
+    fn test_password_check_distinguishes_required_from_wrong() {
+        assert_eq!(
+            pdf_password_check(false, false, None),
+            PdfPasswordCheck::NotRequired
+        );
+        assert_eq!(
+            pdf_password_check(true, false, Some(true)),
+            PdfPasswordCheck::Unlocked
+        );
+        assert_eq!(
+            pdf_password_check(true, false, Some(false)),
+            PdfPasswordCheck::Required
+        );
+        assert_eq!(
+            pdf_password_check(true, true, Some(false)),
+            PdfPasswordCheck::Wrong
+        );
+    }
+
+    #[test]
+    fn test_open_with_password_round_trips_an_encrypted_pdf() {
+        use mupdf::pdf::{Encryption, PdfDocument as MuPdfDocument, PdfWriteOptions, Permission};
+
+        let mut source = MuPdfDocument::new();
+        let _page = source
+            .new_page(mupdf::Size::A4)
+            .expect("create the encrypted fixture page");
+        let mut options = PdfWriteOptions::default();
+        options
+            .set_encryption(Encryption::Rc4_128)
+            .set_permissions(Permission::all())
+            .set_owner_password("owner")
+            .set_user_password("open sesame");
+        let mut bytes = Vec::new();
+        source
+            .write_to_with_options(&mut bytes, options)
+            .expect("write the encrypted fixture");
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "kalam-password-test-{}-{stamp}.pdf",
+            std::process::id()
+        ));
+        std::fs::write(&path, bytes).expect("save the encrypted fixture");
+
+        let required = matches!(
+            PdfDocument::open_with_password(&path, None),
+            Ok(PdfOpenOutcome::PasswordRequired)
+        );
+        let wrong = matches!(
+            PdfDocument::open_with_password(&path, Some("not the password")),
+            Ok(PdfOpenOutcome::WrongPassword)
+        );
+        let ready_pages = match PdfDocument::open_with_password(&path, Some("open sesame")) {
+            Ok(PdfOpenOutcome::Ready(doc)) => Some(doc.page_count()),
+            _ => None,
+        };
+        let plain_open_error = PdfDocument::open(&path).err().map(|err| err.to_string());
+        let _ = std::fs::remove_file(&path);
+
+        assert!(required, "no password should ask for one");
+        assert!(wrong, "a refused password should stay a refusal");
+        assert_eq!(ready_pages, Some(1));
+        assert_eq!(
+            plain_open_error.as_deref(),
+            Some("PDF document is password protected")
+        );
     }
 }

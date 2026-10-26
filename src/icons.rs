@@ -138,6 +138,23 @@ fn install() {
             "kalam-ribbon-filled-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 2.5h14V21l-7-4.6L5 21z" /></svg>"#,
         ),
+        // The PDF open states (decision 73): one quiet line glyph
+        // over each dashed card — the lock that asks, the damaged
+        // file that cannot be read, and the file Kalam cannot find.
+        // They only ever stand at card size, so their strokes stay
+        // plain enough to survive symbolic recolouring.
+        (
+            "kalam-lock-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /><circle cx="12" cy="15.25" r="1.15" fill="currentColor" stroke="none" /></svg>"#,
+        ),
+        (
+            "kalam-file-warning-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4" /><path d="M12 9.5V14" /><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" /></svg>"#,
+        ),
+        (
+            "kalam-file-question-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4" /><path d="M10.1 10.1a2 2 0 1 1 2.8 1.8c-.6.25-.9.65-.9 1.35" /><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" /></svg>"#,
+        ),
     ];
 
     for (name, content) in ICONS {

@@ -125,6 +125,12 @@ PDF_NOTES_EMPTY="${PDF_NOTES_EMPTY:-}"
 if [ -n "$PDF_NOTES_EMPTY" ]; then
   SEED_ARGS+=(--pdf-notes-empty)
 fi
+# PDF_FIXTURE_STATE chooses the same book with an encrypted,
+# damaged or absent file, for the whole-book open-state frames.
+PDF_FIXTURE_STATE="${PDF_FIXTURE_STATE:-}"
+if [ -n "$PDF_FIXTURE_STATE" ]; then
+  SEED_ARGS+=(--pdf-fixture-state "$PDF_FIXTURE_STATE")
+fi
 # COMIC_FIXTURE adds the seeder's two-chapter CBZ series after the
 # generic books, so `comic-read-$((BOOKS+2))` opens chapter 2 at
 # page 4 with a bookmark on it — the comics reader's drawn state.

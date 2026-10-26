@@ -4998,6 +4998,77 @@ button.kalam-pdf-jump-close:focus-visible {
     background: transparent;
 }
 
+/* Whole-book open states (decision 73): the shared dashed state
+   card at the password boards' larger measure. The ground is the
+   reader's own, opaque, so a half-built skeleton never shows
+   through behind a book that could not be opened. */
+.kalam-pdf-open-state-scrim {
+    background: @kalam_bg;
+}
+
+.kalam-ui-state-card.kalam-pdf-open-state-card {
+    padding: 32px;
+}
+
+.kalam-pdf-open-state-icon {
+    color: @kalam_text_dim;
+    margin-bottom: 16px;
+}
+
+.kalam-ui-state-heading.kalam-pdf-open-state-title {
+    font-size: 20px;
+}
+
+.kalam-ui-meta.kalam-pdf-open-state-body {
+    font-size: 13.5px;
+    margin-top: 8px;
+}
+
+.kalam-pdf-password-fields {
+    margin-top: 22px;
+}
+
+entry.kalam-pdf-password-entry {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    background: @kalam_bg;
+    color: @kalam_text;
+    font-size: 14px;
+}
+
+entry.kalam-pdf-password-entry:focus-within {
+    border-color: @kalam_accent;
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+entry.kalam-pdf-password-entry.error {
+    border-color: @kalam_accent;
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+entry.kalam-pdf-password-entry:disabled {
+    opacity: 0.4;
+}
+
+entry.kalam-pdf-password-entry image {
+    color: @kalam_text_dim;
+}
+
+.kalam-pdf-password-error {
+    color: @kalam_accent;
+    font-size: 13px;
+}
+
+button.kalam-ui-pill-button.kalam-pdf-open-state-action {
+    min-width: 132px;
+    min-height: 44px;
+    margin-top: 22px;
+}
+
 /* The panels share the reader sidebar shell (340, radius 22,
    card, hairline); their headers carry the tab pill and pin. */
 .kalam-pdf-panel {

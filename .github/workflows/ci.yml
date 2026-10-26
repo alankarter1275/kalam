@@ -759,6 +759,59 @@ jobs:
             THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      # Whole-book open states (decision 73): the same fixture
+      # encrypted with the seeder's known password, damaged, or
+      # absent. The wrong and unlocked frames submit through the
+      # real password path, so the unlocked spread also proves
+      # the render workers received the session password.
+      - name: open a password-protected PDF (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-password-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=password \
+            PDF_ACTION=password THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a password-protected PDF (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-password-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=password \
+            PDF_ACTION=password THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: submit a wrong PDF password (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-password-wrong-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=password \
+            PDF_ACTION=password-wrong THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: unlock a password-protected PDF (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-password-unlocked-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=password \
+            PDF_ACTION=password-unlock THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a damaged PDF (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-corrupt-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=corrupt \
+            PDF_ACTION=open-state THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a missing PDF (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-missing-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=missing \
+            PDF_ACTION=open-state THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # The task manager's whole job is showing state that only exists while
       # something is running, so a shot of it over a quiet library proves
       # little about the interesting case. What it does prove is the part no
@@ -1259,7 +1312,10 @@ jobs:
                       pdf-notes-empty-dark \
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
-                      pdf-shortcuts-dark pdf-jump-range-dark; do
+                      pdf-shortcuts-dark pdf-jump-range-dark \
+                      pdf-password-dark pdf-password-light \
+                      pdf-password-wrong-dark pdf-password-unlocked-dark \
+                      pdf-corrupt-dark pdf-missing-dark; do
             cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
               || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
@@ -1386,7 +1442,10 @@ jobs:
                       pdf-notes-empty-dark \
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
-                      pdf-shortcuts-dark pdf-jump-range-dark; do
+                      pdf-shortcuts-dark pdf-jump-range-dark \
+                      pdf-password-dark pdf-password-light \
+                      pdf-password-wrong-dark pdf-password-unlocked-dark \
+                      pdf-corrupt-dark pdf-missing-dark; do
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done

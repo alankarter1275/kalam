@@ -3222,7 +3222,7 @@ fn pretty_imported(iso: &str) -> String {
 }
 
 /// Reveal the book's folder in the system file manager.
-fn open_in_file_manager(file: &std::path::Path) {
+pub(crate) fn open_in_file_manager(file: &std::path::Path) {
     let Some(dir) = file.parent() else {
         return;
     };

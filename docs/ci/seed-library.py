@@ -26,6 +26,7 @@ smoke-test route is opening a book.
 """
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -447,7 +448,93 @@ def _pdf_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
+# The password fixture's one secret, known to the screenshot
+# action that proves the unlock path. It guards a synthetic book.
+PDF_FIXTURE_PASSWORD = "kalam"
+
+_PDF_PASSWORD_PADDING = bytes.fromhex(
+    "28bf4e5e4e758a4164004e56fffa01082e2e00b6d0683e802f0ca9fe6453697a"
+)
+
+
+def _rc4(key: bytes, data: bytes) -> bytes:
+    state = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + state[i] + key[i % len(key)]) & 0xFF
+        state[i], state[j] = state[j], state[i]
+    out = bytearray()
+    i = j = 0
+    for byte in data:
+        i = (i + 1) & 0xFF
+        j = (j + state[i]) & 0xFF
+        state[i], state[j] = state[j], state[i]
+        out.append(byte ^ state[(state[i] + state[j]) & 0xFF])
+    return bytes(out)
+
+
+def _pdf_pad_password(password: bytes) -> bytes:
+    return (password + _PDF_PASSWORD_PADDING)[:32]
+
+
+def _pdf_encryption(password: str, file_id: bytes) -> dict:
+    """The PDF Standard handler, revision 3, at 128 bits.
+
+    Just enough of ISO 32000's password algorithms to make the
+    fixture a real encrypted document MuPDF refuses and then
+    authenticates — no PDF library and no external tool.
+    """
+    permissions = -4
+    key_length = 16
+    padded = _pdf_pad_password(password.encode("ascii"))
+
+    owner_digest = hashlib.md5(padded).digest()
+    for _ in range(50):
+        owner_digest = hashlib.md5(owner_digest).digest()
+    owner_key = owner_digest[:key_length]
+    owner_value = _rc4(owner_key, padded)
+    for round_ in range(1, 20):
+        owner_value = _rc4(
+            bytes(byte ^ round_ for byte in owner_key), owner_value
+        )
+
+    key_digest = hashlib.md5(
+        padded + owner_value + struct.pack("<i", permissions) + file_id
+    ).digest()
+    for _ in range(50):
+        key_digest = hashlib.md5(key_digest[:key_length]).digest()
+    file_key = key_digest[:key_length]
+
+    user_value = _rc4(
+        file_key,
+        hashlib.md5(_PDF_PASSWORD_PADDING + file_id).digest(),
+    )
+    for round_ in range(1, 20):
+        user_value = _rc4(
+            bytes(byte ^ round_ for byte in file_key), user_value
+        )
+    user_value += _PDF_PASSWORD_PADDING[:16]
+
+    return {
+        "file_key": file_key,
+        "owner_value": owner_value,
+        "user_value": user_value,
+        "permissions": permissions,
+    }
+
+
+def _pdf_object_key(file_key: bytes, object_id: int) -> bytes:
+    material = (
+        file_key
+        + object_id.to_bytes(3, "little")
+        + (0).to_bytes(2, "little")
+    )
+    return hashlib.md5(material).digest()[: min(len(file_key) + 5, 16)]
+
+
+def pdf_bytes(
+    title: str, author: str, pages: int = 12, password: str | None = None
+) -> bytes:
     """A real, hand-built PDF for the PDF-reader screenshot route.
 
     MuPDF must be able to count and render the pages, search their
@@ -469,6 +556,17 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
     catalog_id, pages_id, font_id, outlines_id = 1, 2, 3, 4
     next_id = 5
     page_ids: list[int] = []
+    file_id = hashlib.md5(b"kalam-pdf-fixture").digest()
+    encryption = _pdf_encryption(password, file_id) if password else None
+
+    def pdf_string(object_id: int, text: str) -> str:
+        if encryption is None:
+            return f"({_pdf_escape(text)})"
+        encrypted = _rc4(
+            _pdf_object_key(encryption["file_key"], object_id),
+            text.encode("ascii"),
+        )
+        return f"<{encrypted.hex()}>"
 
     section_by_page = {
         1: "Preface",
@@ -538,6 +636,10 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
             f"BT /F1 9 Tf 0.42 g 205 28 Td ({page_labels[page - 1]}) Tj ET"
         )
         stream = zlib.compress("\n".join(parts).encode("ascii"))
+        if encryption is not None:
+            stream = _rc4(
+                _pdf_object_key(encryption["file_key"], content_id), stream
+            )
         add(
             content_id,
             f"<< /Length {len(stream)} /Filter /FlateDecode >>\nstream\n".encode(
@@ -589,7 +691,7 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
     def add_outline_items(nodes, parent_id: int) -> None:
         for index, node in enumerate(nodes):
             fields = [
-                f"/Title ({_pdf_escape(node['title'])})",
+                f"/Title {pdf_string(node['id'], node['title'])}",
                 f"/Parent {parent_id} 0 R",
                 f"/Dest [{page_ids[node['page'] - 1]} 0 R /XYZ 0 {height} 0]",
             ]
@@ -620,6 +722,17 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
         f"/Outlines {outlines_id} 0 R /PageMode /UseOutlines "
         f"/PageLabels << /Nums [0 << /S /r >> 7 << /S /D >>] >> >>",
     )
+    encrypt_id = None
+    if encryption is not None:
+        encrypt_id = next_id
+        next_id += 1
+        add(
+            encrypt_id,
+            "<< /Filter /Standard /V 2 /R 3 /Length 128 "
+            f"/P {encryption['permissions']} "
+            f"/O <{encryption['owner_value'].hex()}> "
+            f"/U <{encryption['user_value'].hex()}> >>",
+        )
 
     output = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
     offsets: dict[int, int] = {}
@@ -634,15 +747,26 @@ def pdf_bytes(title: str, author: str, pages: int = 12) -> bytes:
     output.extend(b"0000000000 65535 f \n")
     for object_id in range(1, max_id + 1):
         output.extend(f"{offsets[object_id]:010d} 00000 n \n".encode("ascii"))
+    trailer = f"<< /Size {max_id + 1} /Root {catalog_id} 0 R"
+    if encrypt_id is not None:
+        trailer += (
+            f" /Encrypt {encrypt_id} 0 R "
+            f"/ID [<{file_id.hex()}> <{file_id.hex()}>]"
+        )
+    trailer += " >>"
     output.extend(
-        f"trailer\n<< /Size {max_id + 1} /Root {catalog_id} 0 R >>\n"
+        f"trailer\n{trailer}\n"
         f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii")
     )
     return bytes(output)
 
 
 def seed_pdf_fixture(
-    conn, library: pathlib.Path, now: datetime, notes_empty: bool = False
+    conn,
+    library: pathlib.Path,
+    now: datetime,
+    notes_empty: bool = False,
+    fixture_state: str = "normal",
 ) -> int:
     """Seed the book behind `pdf-read-21`. Returns covers written.
 
@@ -710,12 +834,20 @@ def seed_pdf_fixture(
         """
     )
 
+    if fixture_state not in {"normal", "password", "corrupt", "missing"}:
+        raise ValueError(f"unknown PDF fixture state: {fixture_state}")
     title, author = "The Living Earth", "Ada Meridian"
-    pdf = pdf_bytes(title, author)
+    if fixture_state == "password":
+        pdf = pdf_bytes(title, author, password=PDF_FIXTURE_PASSWORD)
+    elif fixture_state == "corrupt":
+        pdf = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\nthis fixture is damaged.\n"
+    else:
+        pdf = pdf_bytes(title, author)
     book_uuid = str(uuid.uuid4())
     book_dir = library / book_folder_name(author, title, book_uuid)
     book_dir.mkdir(parents=True)
-    (book_dir / "book.pdf").write_bytes(pdf)
+    if fixture_state != "missing":
+        (book_dir / "book.pdf").write_bytes(pdf)
     (book_dir / "cover.png").write_bytes(png(600, 960, cover_colour(19)))
 
     stamp = now.isoformat()
@@ -821,7 +953,10 @@ def seed_pdf_fixture(
         "INSERT OR REPLACE INTO app_prefs (key, value) VALUES (?, ?)",
         sorted(prefs.items()),
     )
-    print(f"pdf fixture: book {book_id} (route pdf-read-{book_id})")
+    print(
+        f"pdf fixture: book {book_id} "
+        f"(route pdf-read-{book_id}, {fixture_state})"
+    )
     return 1
 
 
@@ -1623,6 +1758,12 @@ def main() -> int:
         help="with --pdf-fixture, seed no highlights, bookmarks or saved words",
     )
     ap.add_argument(
+        "--pdf-fixture-state",
+        choices=("normal", "password", "corrupt", "missing"),
+        default="normal",
+        help="with --pdf-fixture, seed an encrypted, damaged or absent file",
+    )
+    ap.add_argument(
         "--comic-fixture",
         action="store_true",
         help="add the two-chapter CBZ series the comics reader screenshots open",
@@ -1786,7 +1927,11 @@ def main() -> int:
 
     if args.pdf_fixture:
         covers_written += seed_pdf_fixture(
-            conn, library, now, notes_empty=args.pdf_notes_empty
+            conn,
+            library,
+            now,
+            notes_empty=args.pdf_notes_empty,
+            fixture_state=args.pdf_fixture_state,
         )
         total_books += 1
 

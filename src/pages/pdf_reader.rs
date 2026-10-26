@@ -26,7 +26,10 @@ use std::time::Duration;
 
 use crate::db::{Annotation, Catalog, HighlightColor, ReadingBookmark, SavedWord};
 use crate::epub_book::ReadingTheme;
-use crate::pdf::{PdfDocument, PdfPageText, PdfSearchOutcome, PdfSearchResult, PdfTocEntry};
+use crate::pdf::{
+    PdfDocument, PdfOpenOutcome, PdfPageText, PdfSearchOutcome, PdfSearchResult, PdfTocEntry,
+};
+use crate::widgets::dialog::{confirmation_dialog, ConfirmationKind};
 
 mod image;
 mod notes;
@@ -34,6 +37,144 @@ mod pages_grid;
 mod search_results;
 
 pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
+
+/// The password that unlocked this reading session, shared with
+/// every worker that opens the file for itself. Memory only
+/// (decision 73): it is never written to the catalog, the prefs
+/// or a log, and closing the reader clears it.
+type PdfSessionPassword = Arc<std::sync::RwLock<Option<String>>>;
+
+fn pdf_session_password(shared: &PdfSessionPassword) -> Option<String> {
+    match shared.read() {
+        Ok(password) => password.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
+fn set_pdf_session_password(shared: &PdfSessionPassword, password: Option<String>) {
+    match shared.write() {
+        Ok(mut slot) => *slot = password,
+        Err(poisoned) => *poisoned.into_inner() = password,
+    }
+}
+
+/// Why the document service could not hand the reader a book.
+/// These are states the open card can act on, not error prose:
+/// the underlying MuPDF message stays in the log path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PdfLoadError {
+    PasswordRequired,
+    WrongPassword,
+    FileNotFound,
+    CantOpen,
+}
+
+impl PdfLoadError {
+    pub fn log_message(self) -> &'static str {
+        match self {
+            Self::PasswordRequired => "PDF open needs a password",
+            Self::WrongPassword => "PDF password was refused",
+            Self::FileNotFound => "PDF file not found",
+            Self::CantOpen => "PDF document could not be opened",
+        }
+    }
+}
+
+/// The reader's whole-book open state. `Opening` and `Ready`
+/// leave the pure page to itself; the other three stand the
+/// dashed state card over it (decision 73).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PdfOpenState {
+    Opening,
+    Ready,
+    Password { wrong: bool, submitting: bool },
+    FileNotFound,
+    CantOpen,
+}
+
+impl PdfOpenState {
+    pub fn from_load_error(error: PdfLoadError) -> Self {
+        match error {
+            PdfLoadError::PasswordRequired => Self::Password {
+                wrong: false,
+                submitting: false,
+            },
+            PdfLoadError::WrongPassword => Self::Password {
+                wrong: true,
+                submitting: false,
+            },
+            PdfLoadError::FileNotFound => Self::FileNotFound,
+            PdfLoadError::CantOpen => Self::CantOpen,
+        }
+    }
+
+    pub fn is_blocking(self) -> bool {
+        !matches!(self, Self::Opening | Self::Ready)
+    }
+
+    pub fn is_password(self) -> bool {
+        matches!(self, Self::Password { .. })
+    }
+
+    pub fn password_wrong(self) -> bool {
+        matches!(self, Self::Password { wrong: true, .. })
+    }
+
+    pub fn password_submitting(self) -> bool {
+        matches!(self, Self::Password { submitting: true, .. })
+    }
+
+    pub fn icon_name(self) -> &'static str {
+        match self {
+            Self::Password { .. } => "kalam-lock-symbolic",
+            Self::CantOpen => "kalam-file-warning-symbolic",
+            _ => "kalam-file-question-symbolic",
+        }
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Password { .. } => "This book is password protected",
+            Self::FileNotFound => "File not found",
+            Self::CantOpen => "This PDF can\u{2019}t be opened",
+            Self::Opening | Self::Ready => "",
+        }
+    }
+
+    pub fn body(self) -> &'static str {
+        match self {
+            Self::Password { .. } => {
+                "Enter the password to open it. Kalam doesn\u{2019}t store it."
+            }
+            Self::FileNotFound => {
+                "Kalam can\u{2019}t find this book at its saved location. \
+                 It may have been moved or deleted."
+            }
+            Self::CantOpen => "The file is damaged or isn\u{2019}t a valid PDF.",
+            Self::Opening | Self::Ready => "",
+        }
+    }
+}
+
+/// Open one worker's own copy of the document. Every worker
+/// holds the session password the same way, so an unlocked book
+/// renders, thumbs and OCRs as one book, not four locked ones.
+fn pdf_open_document(
+    path: &std::path::Path,
+    shared_password: &PdfSessionPassword,
+) -> Result<PdfDocument, PdfLoadError> {
+    let password = pdf_session_password(shared_password);
+    match PdfDocument::open_with_password(path, password.as_deref()) {
+        Ok(PdfOpenOutcome::Ready(doc)) => Ok(doc),
+        Ok(PdfOpenOutcome::PasswordRequired) => Err(PdfLoadError::PasswordRequired),
+        Ok(PdfOpenOutcome::WrongPassword) => Err(PdfLoadError::WrongPassword),
+        Err(_) => Err(if path.is_file() {
+            PdfLoadError::CantOpen
+        } else {
+            PdfLoadError::FileNotFound
+        }),
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PageSlot {
@@ -1356,8 +1497,16 @@ pub enum PdfReaderMsg {
     },
     /// The doc service finished opening the document (or failed).
     DocumentLoaded {
-        info: Box<Result<PdfDocInfo, String>>,
+        info: Box<Result<PdfDocInfo, PdfLoadError>>,
     },
+    /// The password field changed. It carries no text: the entry
+    /// is the one place a typed password lives before Unlock.
+    PasswordEdited,
+    SubmitPassword,
+    LocateFile,
+    ConfirmRemoveBook,
+    RemoveBook,
+    RemoveBookDone(Result<(), String>),
     /// The doc service extracted one page's vector text (empty text means
     /// a scanned page: the handler falls back to the OCR cache / worker).
     PageTextReady {
@@ -1469,7 +1618,12 @@ pub struct PdfReaderModel {
     pub pending_loads: HashSet<usize>,
     pub arrow_step: f32,
     pub is_loading: bool,
-    pub status_text: String,
+    pub open_state: PdfOpenState,
+    /// The session password shared with every PDF worker.
+    /// Memory only; see [`PdfSessionPassword`].
+    pub session_password: PdfSessionPassword,
+    pub password_has_text: bool,
+    pub open_state_removing: bool,
     pub session_id: Option<i64>,
     pub session_start: std::time::Instant,
     pub page_pictures: HashMap<usize, PdfPagePicture>,
@@ -1505,6 +1659,7 @@ pub struct PdfReaderModel {
     pub settings_widgets: Option<PdfSettingsWidgets>,
     pub image_widgets: Option<PdfImageWidgets>,
     pub screenshot_action_applied: bool,
+    pub screenshot_password_action_applied: bool,
     pub render_tx: Option<async_channel::Sender<PdfRenderRequest>>,
     pub render_generation: u64,
     pub active_generation: Option<Arc<AtomicU64>>,
@@ -1834,7 +1989,10 @@ impl PdfReaderModel {
             pending_loads: HashSet::new(),
             arrow_step,
             is_loading: true,
-            status_text: "Opening PDF...".to_string(),
+            open_state: PdfOpenState::Opening,
+            session_password: Arc::new(std::sync::RwLock::new(None)),
+            password_has_text: false,
+            open_state_removing: false,
             session_id,
             session_start,
             page_pictures: HashMap::new(),
@@ -1867,6 +2025,7 @@ impl PdfReaderModel {
             settings_widgets: None,
             image_widgets: None,
             screenshot_action_applied: false,
+            screenshot_password_action_applied: false,
             render_tx: None,
             render_generation: 1,
             active_generation: None,
@@ -2794,6 +2953,9 @@ impl PdfReaderModel {
         self.pending_selection = None;
         self.dismiss_recognizing_popover();
         self.doc_ready = false;
+        set_pdf_session_password(&self.session_password, None);
+        self.password_has_text = false;
+        self.open_state_removing = false;
 
         self.doc_tx = None;
         self.render_tx = None;
@@ -4222,7 +4384,9 @@ impl Component for PdfReaderModel {
             #[name = "back_revealer"]
             add_overlay = &gtk::Revealer {
                 #[watch]
-                set_reveal_child: model.show_back_button && !model.left_panel_open,
+                set_reveal_child: model.show_back_button
+                    && !model.left_panel_open
+                    && !model.open_state.is_blocking(),
                 set_transition_type: gtk::RevealerTransitionType::SlideDown,
                 set_transition_duration: 220,
                 set_halign: gtk::Align::Start,
@@ -4244,7 +4408,8 @@ impl Component for PdfReaderModel {
             add_overlay = &gtk::Button {
                 add_css_class: "kalam-reader-ribbon",
                 #[watch]
-                set_visible: !(model.right_panel_open && model.right_panel_pinned),
+                set_visible: model.doc_ready
+                    && !(model.right_panel_open && model.right_panel_pinned),
                 set_halign: gtk::Align::End,
                 set_valign: gtk::Align::Start,
                 set_margin_end: 48,
@@ -4264,7 +4429,8 @@ impl Component for PdfReaderModel {
             add_overlay = &gtk::Label {
                 add_css_class: "kalam-reader-location",
                 #[watch]
-                set_visible: !(model.right_panel_open && model.right_panel_pinned),
+                set_visible: model.doc_ready
+                    && !(model.right_panel_open && model.right_panel_pinned),
                 set_halign: gtk::Align::End,
                 set_valign: gtk::Align::End,
                 set_margin_end: 24,
@@ -4626,6 +4792,154 @@ impl Component for PdfReaderModel {
                     set_label: &format!("{}%", model.zoom_percent),
                 },
             },
+
+            // ── Whole-book open states ────────────────────────────────
+            // Above every scrap of reader chrome: a book that will
+            // not open gets the plain ground, one dashed card, and
+            // Back by itself, with no Bubble behind it (decisions
+            // 52 and 73).
+            add_overlay = &gtk::Box {
+                add_css_class: "kalam-pdf-open-state-scrim",
+                #[watch]
+                set_visible: model.open_state.is_blocking(),
+                set_hexpand: true,
+                set_vexpand: true,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Fill,
+            },
+
+            add_overlay = &gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                add_css_class: "kalam-ui-state-card",
+                add_css_class: "kalam-pdf-open-state-card",
+                set_width_request: 380,
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::Center,
+                #[watch]
+                set_visible: model.open_state.is_blocking(),
+
+                gtk::Image {
+                    add_css_class: "kalam-pdf-open-state-icon",
+                    #[watch]
+                    set_icon_name: Some(model.open_state.icon_name()),
+                    set_pixel_size: 40,
+                    set_halign: gtk::Align::Center,
+                },
+
+                gtk::Label {
+                    add_css_class: "kalam-ui-state-heading",
+                    add_css_class: "kalam-pdf-open-state-title",
+                    set_halign: gtk::Align::Fill,
+                    set_xalign: 0.5,
+                    set_wrap: true,
+                    #[watch]
+                    set_label: model.open_state.title(),
+                },
+
+                gtk::Label {
+                    add_css_class: "kalam-ui-meta",
+                    add_css_class: "kalam-pdf-open-state-body",
+                    set_halign: gtk::Align::Fill,
+                    set_xalign: 0.5,
+                    set_wrap: true,
+                    #[watch]
+                    set_label: model.open_state.body(),
+                },
+
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 8,
+                    add_css_class: "kalam-pdf-password-fields",
+                    #[watch]
+                    set_visible: model.open_state.is_password(),
+
+                    #[name = "password_entry"]
+                    gtk::PasswordEntry {
+                        set_show_peek_icon: true,
+                        set_placeholder_text: Some("Password"),
+                        set_activates_default: false,
+                        set_hexpand: true,
+                        #[watch]
+                        set_sensitive: !model.open_state.password_submitting(),
+                        #[watch]
+                        set_css_classes: if model.open_state.password_wrong() {
+                            &[
+                                "kalam-ui-field",
+                                "kalam-pdf-password-entry",
+                                "error",
+                            ]
+                        } else {
+                            &["kalam-ui-field", "kalam-pdf-password-entry"]
+                        },
+                    },
+
+                    gtk::Label {
+                        add_css_class: "kalam-pdf-password-error",
+                        set_halign: gtk::Align::Start,
+                        set_xalign: 0.0,
+                        set_label: "Wrong password. Try again.",
+                        #[watch]
+                        set_visible: model.open_state.password_wrong(),
+                    },
+                },
+
+                gtk::Button {
+                    add_css_class: "kalam-ui-pill-button",
+                    add_css_class: "primary",
+                    add_css_class: "kalam-pdf-open-state-action",
+                    set_halign: gtk::Align::Center,
+                    set_label: "Unlock",
+                    #[watch]
+                    set_visible: model.open_state.is_password(),
+                    #[watch]
+                    set_sensitive: model.password_has_text
+                        && !model.open_state.password_submitting(),
+                    connect_clicked => PdfReaderMsg::SubmitPassword,
+                },
+
+                gtk::Button {
+                    add_css_class: "kalam-ui-pill-button",
+                    add_css_class: "boxed-ghost",
+                    add_css_class: "kalam-pdf-open-state-action",
+                    set_halign: gtk::Align::Center,
+                    set_label: "Locate file",
+                    #[watch]
+                    set_visible: model.open_state == PdfOpenState::FileNotFound,
+                    connect_clicked => PdfReaderMsg::LocateFile,
+                },
+
+                gtk::Button {
+                    add_css_class: "kalam-ui-pill-button",
+                    add_css_class: "boxed-ghost",
+                    add_css_class: "kalam-pdf-open-state-action",
+                    set_halign: gtk::Align::Center,
+                    set_label: "Remove from library",
+                    #[watch]
+                    set_visible: model.open_state == PdfOpenState::CantOpen,
+                    #[watch]
+                    set_sensitive: !model.open_state_removing,
+                    connect_clicked => PdfReaderMsg::ConfirmRemoveBook,
+                },
+            },
+
+            #[name = "open_state_back_btn"]
+            add_overlay = &gtk::Button {
+                set_child: Some(&crate::icons::labelled(
+                    "go-previous-symbolic",
+                    16,
+                    "Back",
+                    6,
+                )),
+                add_css_class: "kalam-back-btn",
+                add_css_class: "kalam-back-float",
+                #[watch]
+                set_visible: model.open_state.is_blocking(),
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Start,
+                set_margin_start: 18,
+                set_margin_top: 14,
+                connect_clicked => PdfReaderMsg::Close,
+            },
         }
     }
     fn init(
@@ -4633,6 +4947,7 @@ impl Component for PdfReaderModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        crate::icons::init();
         let mut model = Self::new(init);
         let widgets = view_output!();
 
@@ -5302,6 +5617,7 @@ impl Component for PdfReaderModel {
             let rx = render_rx.clone();
             let gen = active_gen.clone();
             let tx_msg = sender.input_sender().clone();
+            let shared_password = model.session_password.clone();
 
             let _ = std::thread::Builder::new()
                 .name(format!("kalam-pdf-worker-{}", worker_id))
@@ -5314,9 +5630,9 @@ impl Component for PdfReaderModel {
                             continue;
                         }
 
-                        if cached_path.as_ref() != Some(&req.path) {
+                        if cached_path.as_ref() != Some(&req.path) || cached_doc.is_none() {
                             cached_path = Some(req.path.clone());
-                            cached_doc = PdfDocument::open(&req.path).ok();
+                            cached_doc = pdf_open_document(&req.path, &shared_password).ok();
                         }
 
                         if let Some(ref doc) = cached_doc {
@@ -5360,6 +5676,7 @@ impl Component for PdfReaderModel {
             let rx = thumbnail_rx.clone();
             let active = thumbnail_gen.clone();
             let tx_msg = sender.input_sender().clone();
+            let shared_password = model.session_password.clone();
             let _ = std::thread::Builder::new()
                 .name("kalam-pdf-thumbnail-worker".to_string())
                 .spawn(move || {
@@ -5380,9 +5697,9 @@ impl Component for PdfReaderModel {
                                 continue;
                             }
 
-                            if cached_path.as_ref() != Some(&req.path) {
+                            if cached_path.as_ref() != Some(&req.path) || cached_doc.is_none() {
                                 cached_path = Some(req.path.clone());
-                                cached_doc = PdfDocument::open(&req.path).ok();
+                                cached_doc = pdf_open_document(&req.path, &shared_password).ok();
                             }
 
                             let texture = cached_doc.as_ref().and_then(|doc| {
@@ -5434,6 +5751,7 @@ impl Component for PdfReaderModel {
         // Start background OCR worker thread for scanned PDF pages
         let (ocr_tx, ocr_rx) = async_channel::unbounded::<crate::ocr::PdfOcrRequest>();
         let tx_ocr_msg = sender.input_sender().clone();
+        let shared_password = model.session_password.clone();
 
         let _ = std::thread::Builder::new()
             .name("kalam-pdf-ocr-worker".to_string())
@@ -5457,9 +5775,9 @@ impl Component for PdfReaderModel {
                         continue;
                     };
 
-                    if cached_path.as_ref() != Some(&req.path) {
+                    if cached_path.as_ref() != Some(&req.path) || cached_doc.is_none() {
                         cached_path = Some(req.path.clone());
-                        cached_doc = PdfDocument::open(&req.path).ok();
+                        cached_doc = pdf_open_document(&req.path, &shared_password).ok();
                     }
 
                     if let Some(ref doc) = cached_doc {
@@ -5503,27 +5821,67 @@ impl Component for PdfReaderModel {
         let tx_doc_msg = sender.input_sender().clone();
         let doc_catalog = model.catalog.clone();
         let doc_book_id = model.book_id;
+        let shared_password = model.session_password.clone();
         let _ = std::thread::Builder::new()
             .name("kalam-pdf-doc-service".to_string())
             .spawn(move || {
                 let mut cached_path: Option<PathBuf> = None;
                 let mut cached_doc: Option<PdfDocument> = None;
+                let mut cached_error: Option<PdfLoadError> = None;
                 while let Ok(req) = doc_rx.recv_blocking() {
                     let path = match &req {
                         PdfDocRequest::Info { path, .. }
                         | PdfDocRequest::ExtractText { path, .. }
                         | PdfDocRequest::Search { path, .. } => path.clone(),
                     };
-                    if cached_path.as_ref() != Some(&path) {
+                    // A failed open is retried rather than cached as
+                    // final: the password that unlocks the book can
+                    // only arrive after the first refusal.
+                    if cached_path.as_ref() != Some(&path) || cached_doc.is_none() {
                         crate::timing::span("pdf_open_doc");
                         cached_path = Some(path.clone());
-                        cached_doc = PdfDocument::open(&path).ok();
+                        match pdf_open_document(&path, &shared_password) {
+                            Ok(doc) => {
+                                cached_doc = Some(doc);
+                                cached_error = None;
+                            }
+                            Err(error) => {
+                                cached_doc = None;
+                                cached_error = Some(error);
+                            }
+                        }
                         crate::timing::span_end("pdf_open_doc");
                     }
                     let Some(ref doc) = cached_doc else {
-                        let _ = tx_doc_msg.send(PdfReaderMsg::DocumentLoaded {
-                            info: Box::new(Err("Failed to open PDF document".to_string())),
-                        });
+                        let error = cached_error.unwrap_or(PdfLoadError::CantOpen);
+                        // Only an Info request may move the whole-book
+                        // state. Text and search work queued behind a
+                        // locked book answers its own caller and stops,
+                        // so it can never overwrite the password card
+                        // with a generic failure.
+                        match &req {
+                            PdfDocRequest::Info { .. } => {
+                                let _ = tx_doc_msg.send(PdfReaderMsg::DocumentLoaded {
+                                    info: Box::new(Err(error)),
+                                });
+                            }
+                            PdfDocRequest::ExtractText { page, .. } => {
+                                let _ = tx_doc_msg.send(PdfReaderMsg::PageTextReady {
+                                    page: *page,
+                                    fingerprint: None,
+                                    text: Err(error.log_message().to_string()),
+                                });
+                            }
+                            PdfDocRequest::Search { query, .. } => {
+                                let _ = tx_doc_msg.send(PdfReaderMsg::SearchReady {
+                                    query: query.clone(),
+                                    outcome: PdfSearchOutcome {
+                                        results: Vec::new(),
+                                        has_searchable_text: false,
+                                    },
+                                });
+                            }
+                        }
                         continue;
                     };
                     match req {
@@ -5597,7 +5955,7 @@ impl Component for PdfReaderModel {
             }
         } else {
             let _ = sender.input_sender().send(PdfReaderMsg::DocumentLoaded {
-                info: Box::new(Err("PDF file not found".to_string())),
+                info: Box::new(Err(PdfLoadError::FileNotFound)),
             });
         }
 
@@ -5628,6 +5986,23 @@ impl Component for PdfReaderModel {
         });
         widgets.search_entry.add_controller(entry_key);
 
+        // The password card's field. Its changed signal carries
+        // no text into the model: before Unlock, the entry is
+        // the only place the typed password exists.
+        {
+            let tx = sender.input_sender().clone();
+            widgets.password_entry.connect_changed(move |_| {
+                let _ = tx.send(PdfReaderMsg::PasswordEdited);
+            });
+            let tx = sender.input_sender().clone();
+            widgets.password_entry.connect_activate(move |_| {
+                let _ = tx.send(PdfReaderMsg::SubmitPassword);
+            });
+            widgets
+                .open_state_back_btn
+                .update_property(&[gtk::accessible::Property::Label("Back")]);
+        }
+
         ComponentParts { model, widgets }
     }
 
@@ -5638,6 +6013,28 @@ impl Component for PdfReaderModel {
         sender: ComponentSender<Self>,
         _root: &Self::Root,
     ) {
+        // A whole-book open state owns the keyboard and chrome
+        // until it resolves or the reader leaves. Its own card
+        // messages, the document answer it is waiting for, and
+        // text answers already in flight are the only traffic
+        // allowed through.
+        if self.open_state.is_blocking()
+            && !matches!(
+                msg,
+                PdfReaderMsg::Close
+                    | PdfReaderMsg::EscapeKey
+                    | PdfReaderMsg::DocumentLoaded { .. }
+                    | PdfReaderMsg::PageTextReady { .. }
+                    | PdfReaderMsg::PasswordEdited
+                    | PdfReaderMsg::SubmitPassword
+                    | PdfReaderMsg::LocateFile
+                    | PdfReaderMsg::ConfirmRemoveBook
+                    | PdfReaderMsg::RemoveBook
+                    | PdfReaderMsg::RemoveBookDone(_)
+            )
+        {
+            return;
+        }
         match msg {
             PdfReaderMsg::Close => {
                 self.save_progress();
@@ -5657,12 +6054,121 @@ impl Component for PdfReaderModel {
                 self.save_progress();
                 let _ = sender.output_sender().send(PdfReaderOut::MinimizeToBubble { book_id: self.book_id });
             }
+            PdfReaderMsg::PasswordEdited => {
+                if let PdfOpenState::Password {
+                    wrong,
+                    submitting: false,
+                } = self.open_state
+                {
+                    self.password_has_text = !widgets.password_entry.text().is_empty();
+                    if wrong {
+                        self.open_state = PdfOpenState::Password {
+                            wrong: false,
+                            submitting: false,
+                        };
+                    }
+                }
+            }
+            PdfReaderMsg::SubmitPassword => {
+                if let PdfOpenState::Password {
+                    submitting: false,
+                    ..
+                } = self.open_state
+                {
+                    let password = widgets.password_entry.text().to_string();
+                    if !password.is_empty() {
+                        if let (Some(path), Some(tx)) =
+                            (self.file_path.clone(), self.doc_tx.as_ref())
+                        {
+                            set_pdf_session_password(&self.session_password, Some(password));
+                            self.password_has_text = true;
+                            self.open_state = PdfOpenState::Password {
+                                wrong: false,
+                                submitting: true,
+                            };
+                            self.is_loading = true;
+                            crate::timing::span("pdf_open_total");
+                            let _ = tx.send_blocking(PdfDocRequest::Info {
+                                path,
+                                page: self.current_page,
+                            });
+                        }
+                    }
+                }
+            }
+            PdfReaderMsg::LocateFile => {
+                if self.open_state == PdfOpenState::FileNotFound {
+                    if let Some(path) = self.file_path.clone() {
+                        crate::pages::book::open_in_file_manager(&path);
+                    }
+                }
+            }
+            PdfReaderMsg::ConfirmRemoveBook => {
+                if self.open_state == PdfOpenState::CantOpen && !self.open_state_removing {
+                    let title = self.title.clone();
+                    let s = sender.input_sender().clone();
+                    let dialog = confirmation_dialog(
+                        _root,
+                        "Remove this book?",
+                        &format!(
+                            "\u{201c}{title}\u{201d} will be removed from your library and its files \
+                             deleted. This cannot be undone."
+                        ),
+                        "Keep book",
+                        "Remove book",
+                        ConfirmationKind::Destructive,
+                        move || {
+                            let _ = s.send(PdfReaderMsg::RemoveBook);
+                        },
+                    );
+                    if dialog.is_none() {
+                        crate::notify::error(
+                            "Could not remove the book",
+                            "The confirmation dialog could not be opened.",
+                        );
+                    }
+                }
+            }
+            PdfReaderMsg::RemoveBook => {
+                if self.open_state == PdfOpenState::CantOpen && !self.open_state_removing {
+                    self.open_state_removing = true;
+                    let id = self.book_id;
+                    let title = self.title.clone();
+                    let catalog = self.catalog.clone();
+                    let s = sender.input_sender().clone();
+                    crate::tasks::spawn(
+                        format!("Deleting {title}"),
+                        move |_reporter| {
+                            catalog.delete_book(id).map_err(|e| e.to_string())
+                        },
+                        |_| {},
+                        move |res| {
+                            let _ = s.send(PdfReaderMsg::RemoveBookDone(res));
+                        },
+                    );
+                }
+            }
+            PdfReaderMsg::RemoveBookDone(result) => {
+                self.open_state_removing = false;
+                match result {
+                    Ok(()) => {
+                        let title = self.title.clone();
+                        crate::notify::success("Book removed", &title);
+                        let _ = sender.input_sender().send(PdfReaderMsg::Close);
+                    }
+                    Err(err) => {
+                        crate::notify::error("Could not remove the book", &err);
+                    }
+                }
+            }
             PdfReaderMsg::EscapeKey => {
                 // One layer at a time (decision 52): search, the
                 // jump field, a selection, the floating panels,
                 // then the book. A pinned panel is page layout, not
                 // a layer, so it does not spend an Escape.
-                if self.search_results_open {
+                if self.open_state.is_blocking() {
+                    let _ = sender.input_sender().send(PdfReaderMsg::Close);
+                } else if self.search_results_open {
                     let _ = sender
                         .input_sender()
                         .send(PdfReaderMsg::CloseSearchResults);
@@ -6930,7 +7436,11 @@ impl Component for PdfReaderModel {
                             self.current_page = 1;
                         }
                         self.is_loading = false;
-                        self.status_text.clear();
+                        self.open_state = PdfOpenState::Ready;
+                        self.open_state_removing = false;
+                        self.password_has_text = false;
+                        widgets.password_entry.set_text("");
+                        _root.grab_focus();
                         self.doc_ready = true;
 
                         self.expand_current_toc_branch();
@@ -6982,8 +7492,25 @@ impl Component for PdfReaderModel {
                     }
                     Err(err) => {
                         self.is_loading = false;
-                        self.status_text = err.clone();
-                        log::warn!("PDF open failed: {err}");
+                        self.doc_ready = false;
+                        self.open_state = PdfOpenState::from_load_error(err);
+                        self.open_state_removing = false;
+                        set_pdf_session_password(&self.session_password, None);
+                        if self.open_state.is_password() {
+                            self.password_has_text = !widgets.password_entry.text().is_empty();
+                            if err == PdfLoadError::PasswordRequired {
+                                self.apply_password_screenshot_action(widgets, &sender);
+                            }
+                            let entry = widgets.password_entry.clone();
+                            let select_all = err == PdfLoadError::WrongPassword;
+                            glib::idle_add_local_once(move || {
+                                entry.grab_focus();
+                                if select_all {
+                                    entry.select_region(0, -1);
+                                }
+                            });
+                        }
+                        log::warn!("PDF open failed: {}", err.log_message());
                     }
                 }
             }
@@ -7900,6 +8427,39 @@ impl PdfReaderModel {
                 .clamp(adjustment.lower(), max);
             adjustment.set_value(target);
         });
+    }
+
+    /// The password card's screenshot asks, applied once when
+    /// the document service first asks for a password. The
+    /// wrong and unlock frames go through the real submit path,
+    /// so the photograph is evidence about MuPDF's answer, not
+    /// a state staged behind its back.
+    pub fn apply_password_screenshot_action(
+        &mut self,
+        widgets: &PdfReaderModelWidgets,
+        sender: &ComponentSender<Self>,
+    ) {
+        if self.screenshot_password_action_applied {
+            return;
+        }
+        self.screenshot_password_action_applied = true;
+        match std::env::var("KALAM_PDF_ACTION").as_deref() {
+            Ok("password") => {
+                widgets.password_entry.set_text("kalam-password");
+                self.password_has_text = true;
+            }
+            Ok("password-wrong") => {
+                widgets.password_entry.set_text("wrong-password");
+                self.password_has_text = true;
+                sender.input(PdfReaderMsg::SubmitPassword);
+            }
+            Ok("password-unlock") => {
+                widgets.password_entry.set_text("kalam");
+                self.password_has_text = true;
+                sender.input(PdfReaderMsg::SubmitPassword);
+            }
+            _ => {}
+        }
     }
 
     /// The screenshot loop's ask (`KALAM_PDF_ACTION`), applied
@@ -10344,5 +10904,49 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_pdf_open_states_say_their_designed_words() {
+        assert!(!PdfOpenState::Opening.is_blocking());
+        assert!(!PdfOpenState::Ready.is_blocking());
+
+        let password = PdfOpenState::from_load_error(PdfLoadError::PasswordRequired);
+        assert_eq!(
+            password,
+            PdfOpenState::Password {
+                wrong: false,
+                submitting: false,
+            }
+        );
+        assert!(password.is_blocking());
+        assert!(password.is_password());
+        assert_eq!(password.icon_name(), "kalam-lock-symbolic");
+        assert_eq!(password.title(), "This book is password protected");
+        assert_eq!(
+            password.body(),
+            "Enter the password to open it. Kalam doesn’t store it."
+        );
+
+        let wrong = PdfOpenState::from_load_error(PdfLoadError::WrongPassword);
+        assert!(wrong.password_wrong());
+        assert!(!wrong.password_submitting());
+
+        let missing = PdfOpenState::from_load_error(PdfLoadError::FileNotFound);
+        assert_eq!(missing.icon_name(), "kalam-file-question-symbolic");
+        assert_eq!(missing.title(), "File not found");
+        assert_eq!(
+            missing.body(),
+            "Kalam can’t find this book at its saved location. \
+             It may have been moved or deleted."
+        );
+
+        let cant_open = PdfOpenState::from_load_error(PdfLoadError::CantOpen);
+        assert_eq!(cant_open.icon_name(), "kalam-file-warning-symbolic");
+        assert_eq!(cant_open.title(), "This PDF can’t be opened");
+        assert_eq!(
+            cant_open.body(),
+            "The file is damaged or isn’t a valid PDF."
+        );
     }
 }

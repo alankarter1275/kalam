@@ -141,19 +141,21 @@ fn install() {
         // The PDF open states (decision 73): one quiet line glyph
         // over each dashed card — the lock that asks, the damaged
         // file that cannot be read, and the file Kalam cannot find.
-        // They only ever stand at card size, so their strokes stay
-        // plain enough to survive symbolic recolouring.
+        // Like the pin above, each is an even-odd filled silhouette
+        // rather than stroked paths: symbolic recolouring fills the
+        // path geometry, so a stroked lock or file lands as a solid
+        // blob with its keyhole and marks filled in.
         (
             "kalam-lock-symbolic.svg",
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /><circle cx="12" cy="15.25" r="1.15" fill="currentColor" stroke="none" /></svg>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M8 10.5V8a4 4 0 0 1 8 0v2.5h-1.6V8a2.4 2.4 0 0 0-4.8 0v2.5H8zM7 10.5h10a2 2 0 0 1 2 2v5.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-5.5a2 2 0 0 1 2-2zM7.2 12.1h9.6a.6.6 0 0 1 .6.6v5.1a.6.6 0 0 1-.6.6H7.2a.6.6 0 0 1-.6-.6v-5.1a.6.6 0 0 1 .6-.6zM12 14.1a1.15 1.15 0 1 1 0 2.3 1.15 1.15 0 0 1 0-2.3z" /></svg>"#,
         ),
         (
             "kalam-file-warning-symbolic.svg",
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4" /><path d="M12 9.5V14" /><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" /></svg>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7 3h7l4 4v14H7zM8.6 4.6h4.6l3.2 3.2v11.6H8.6zM11.2 9.5h1.6V14h-1.6zM12 16.05a.95.95 0 1 1 0 1.9.95.95 0 0 1 0-1.9z" /></svg>"#,
         ),
         (
             "kalam-file-question-symbolic.svg",
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4" /><path d="M10.1 10.1a2 2 0 1 1 2.8 1.8c-.6.25-.9.65-.9 1.35" /><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" /></svg>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7 3h7l4 4v14H7zM8.6 4.6h4.6l3.2 3.2v11.6H8.6zM10.05 11.6c-.9-.35-1.45-1.15-1.45-2.1 0-1.75 1.5-3.2 3.4-3.2s3.4 1.35 3.4 3.05c0 1.2-.65 2.1-1.65 2.7-.75.45-1.05.8-1.05 1.55v.55h-1.6V13.3c0-1.2.6-2.05 1.55-2.6.6-.35.95-.75.95-1.4 0-.9-.75-1.6-1.65-1.6s-1.65.7-1.65 1.6c0 .45.2.85.55 1.1zM12 16.05a.95.95 0 1 1 0 1.9.95.95 0 0 1 0-1.9z" /></svg>"#,
         ),
     ];
 

@@ -4799,6 +4799,7 @@ impl Component for PdfReaderModel {
             // Back by itself, with no Bubble behind it (decisions
             // 52 and 73).
             add_overlay = &gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
                 add_css_class: "kalam-pdf-open-state-scrim",
                 #[watch]
                 set_visible: model.open_state.is_blocking(),
@@ -4806,119 +4807,122 @@ impl Component for PdfReaderModel {
                 set_vexpand: true,
                 set_halign: gtk::Align::Fill,
                 set_valign: gtk::Align::Fill,
-            },
-
-            add_overlay = &gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                add_css_class: "kalam-ui-state-card",
-                add_css_class: "kalam-pdf-open-state-card",
-                set_width_request: 380,
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::Center,
-                #[watch]
-                set_visible: model.open_state.is_blocking(),
-
-                gtk::Image {
-                    add_css_class: "kalam-pdf-open-state-icon",
-                    #[watch]
-                    set_icon_name: Some(model.open_state.icon_name()),
-                    set_pixel_size: 40,
-                    set_halign: gtk::Align::Center,
-                },
-
-                gtk::Label {
-                    add_css_class: "kalam-ui-state-heading",
-                    add_css_class: "kalam-pdf-open-state-title",
-                    set_halign: gtk::Align::Fill,
-                    set_xalign: 0.5,
-                    set_wrap: true,
-                    #[watch]
-                    set_label: model.open_state.title(),
-                },
-
-                gtk::Label {
-                    add_css_class: "kalam-ui-meta",
-                    add_css_class: "kalam-pdf-open-state-body",
-                    set_halign: gtk::Align::Fill,
-                    set_xalign: 0.5,
-                    set_wrap: true,
-                    #[watch]
-                    set_label: model.open_state.body(),
-                },
 
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 8,
-                    add_css_class: "kalam-pdf-password-fields",
+                    add_css_class: "kalam-ui-state-card",
+                    add_css_class: "kalam-pdf-open-state-card",
+                    set_width_request: 380,
+                    set_hexpand: true,
+                    set_vexpand: true,
+                    set_halign: gtk::Align::Center,
+                    set_valign: gtk::Align::Center,
                     #[watch]
-                    set_visible: model.open_state.is_password(),
+                    set_visible: model.open_state.is_blocking(),
 
-                    #[name = "password_entry"]
-                    gtk::PasswordEntry {
-                        set_show_peek_icon: true,
-                        set_placeholder_text: Some("Password"),
-                        set_activates_default: false,
-                        set_hexpand: true,
+                    gtk::Image {
+                        add_css_class: "kalam-pdf-open-state-icon",
                         #[watch]
-                        set_sensitive: !model.open_state.password_submitting(),
-                        #[watch]
-                        set_css_classes: if model.open_state.password_wrong() {
-                            &[
-                                "kalam-ui-field",
-                                "kalam-pdf-password-entry",
-                                "error",
-                            ]
-                        } else {
-                            &["kalam-ui-field", "kalam-pdf-password-entry"]
-                        },
+                        set_icon_name: Some(model.open_state.icon_name()),
+                        set_pixel_size: 40,
+                        set_halign: gtk::Align::Center,
                     },
 
                     gtk::Label {
-                        add_css_class: "kalam-pdf-password-error",
-                        set_halign: gtk::Align::Start,
-                        set_xalign: 0.0,
-                        set_label: "Wrong password. Try again.",
+                        add_css_class: "kalam-ui-state-heading",
+                        add_css_class: "kalam-pdf-open-state-title",
+                        set_halign: gtk::Align::Fill,
+                        set_xalign: 0.5,
+                        set_wrap: true,
                         #[watch]
-                        set_visible: model.open_state.password_wrong(),
+                        set_label: model.open_state.title(),
                     },
-                },
 
-                gtk::Button {
-                    add_css_class: "kalam-ui-pill-button",
-                    add_css_class: "primary",
-                    add_css_class: "kalam-pdf-open-state-action",
-                    set_halign: gtk::Align::Center,
-                    set_label: "Unlock",
-                    #[watch]
-                    set_visible: model.open_state.is_password(),
-                    #[watch]
-                    set_sensitive: model.password_has_text
-                        && !model.open_state.password_submitting(),
-                    connect_clicked => PdfReaderMsg::SubmitPassword,
-                },
+                    gtk::Label {
+                        add_css_class: "kalam-ui-meta",
+                        add_css_class: "kalam-pdf-open-state-body",
+                        set_halign: gtk::Align::Fill,
+                        set_xalign: 0.5,
+                        set_wrap: true,
+                        set_max_width_chars: 40,
+                        #[watch]
+                        set_label: model.open_state.body(),
+                    },
 
-                gtk::Button {
-                    add_css_class: "kalam-ui-pill-button",
-                    add_css_class: "boxed-ghost",
-                    add_css_class: "kalam-pdf-open-state-action",
-                    set_halign: gtk::Align::Center,
-                    set_label: "Locate file",
-                    #[watch]
-                    set_visible: model.open_state == PdfOpenState::FileNotFound,
-                    connect_clicked => PdfReaderMsg::LocateFile,
-                },
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 8,
+                        add_css_class: "kalam-pdf-password-fields",
+                        #[watch]
+                        set_visible: model.open_state.is_password(),
 
-                gtk::Button {
-                    add_css_class: "kalam-ui-pill-button",
-                    add_css_class: "boxed-ghost",
-                    add_css_class: "kalam-pdf-open-state-action",
-                    set_halign: gtk::Align::Center,
-                    set_label: "Remove from library",
-                    #[watch]
-                    set_visible: model.open_state == PdfOpenState::CantOpen,
-                    #[watch]
-                    set_sensitive: !model.open_state_removing,
-                    connect_clicked => PdfReaderMsg::ConfirmRemoveBook,
+                        #[name = "password_entry"]
+                        gtk::PasswordEntry {
+                            set_show_peek_icon: true,
+                            set_placeholder_text: Some("Password"),
+                            set_activates_default: false,
+                            set_hexpand: true,
+                            #[watch]
+                            set_sensitive: !model.open_state.password_submitting(),
+                            #[watch]
+                            set_css_classes: if model.open_state.password_wrong() {
+                                &[
+                                    "kalam-ui-field",
+                                    "kalam-pdf-password-entry",
+                                    "error",
+                                ]
+                            } else {
+                                &["kalam-ui-field", "kalam-pdf-password-entry"]
+                            },
+                        },
+
+                        gtk::Label {
+                            add_css_class: "kalam-pdf-password-error",
+                            set_halign: gtk::Align::Start,
+                            set_xalign: 0.0,
+                            set_label: "Wrong password. Try again.",
+                            #[watch]
+                            set_visible: model.open_state.password_wrong(),
+                        },
+                    },
+
+                    gtk::Button {
+                        add_css_class: "kalam-ui-pill-button",
+                        add_css_class: "primary",
+                        add_css_class: "kalam-pdf-open-state-action",
+                        set_halign: gtk::Align::Center,
+                        set_label: "Unlock",
+                        #[watch]
+                        set_visible: model.open_state.is_password(),
+                        #[watch]
+                        set_sensitive: model.password_has_text
+                            && !model.open_state.password_submitting(),
+                        connect_clicked => PdfReaderMsg::SubmitPassword,
+                    },
+
+                    gtk::Button {
+                        add_css_class: "kalam-ui-pill-button",
+                        add_css_class: "boxed-ghost",
+                        add_css_class: "kalam-pdf-open-state-action",
+                        set_halign: gtk::Align::Center,
+                        set_label: "Locate file",
+                        #[watch]
+                        set_visible: model.open_state == PdfOpenState::FileNotFound,
+                        connect_clicked => PdfReaderMsg::LocateFile,
+                    },
+
+                    gtk::Button {
+                        add_css_class: "kalam-ui-pill-button",
+                        add_css_class: "boxed-ghost",
+                        add_css_class: "kalam-pdf-open-state-action",
+                        set_halign: gtk::Align::Center,
+                        set_label: "Remove from library",
+                        #[watch]
+                        set_visible: model.open_state == PdfOpenState::CantOpen,
+                        #[watch]
+                        set_sensitive: !model.open_state_removing,
+                        connect_clicked => PdfReaderMsg::ConfirmRemoveBook,
+                    },
                 },
             },
 

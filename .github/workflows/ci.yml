@@ -1645,7 +1645,9 @@ jobs:
             ci-logs/author-panel-light-latest.txt ci-logs/author-shelf-light-latest.txt \
             ci-logs/author-annotations-dark-latest.txt \
             ci-logs/authors-light-latest.txt ci-logs/authors-dark-latest.txt \
-            ci-logs/author-edit-dark-latest.txt ci-logs/author-merge-dark-latest.txt
+            ci-logs/author-edit-dark-latest.txt ci-logs/author-merge-dark-latest.txt \
+            ci-logs/editor-picker-light-latest.txt ci-logs/editor-picker-dark-latest.txt \
+            ci-logs/editor-light-latest.txt ci-logs/editor-dark-latest.txt
           for shot in settings-appearance-light settings-appearance-dark \
                       settings-reading-light settings-reading-dropdown-dark \
                       settings-libraries-light settings-libraries-open-dark \
@@ -1731,7 +1733,11 @@ jobs:
                       ci-logs/authors-terracotta-light.png \
                       ci-logs/authors-terracotta-dark.png \
                       ci-logs/author-edit-terracotta-dark.png \
-                      ci-logs/author-merge-terracotta-dark.png; do
+                      ci-logs/author-merge-terracotta-dark.png \
+                      ci-logs/editor-picker-terracotta-light.png \
+                      ci-logs/editor-picker-terracotta-dark.png \
+                      ci-logs/editor-terracotta-light.png \
+                      ci-logs/editor-terracotta-dark.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

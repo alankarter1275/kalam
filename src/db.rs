@@ -292,6 +292,61 @@ impl PdfDrawingGeometry {
             }
         }
     }
+
+    /// Turn the whole object with its page (decision 69), in the
+    /// page's old displayed space of `page_width` × `page_height`
+    /// points. A clockwise quarter turn is the same mapping the
+    /// reader's own view rotation uses to carry a source point to
+    /// the screen, so a stroke stays over the words it was drawn
+    /// on after the file's `/Rotate` catches up with it.
+    ///
+    /// A text box keeps only its new axis-aligned home: its words
+    /// are re-set upright in the page's new orientation when they
+    /// are next painted, exactly as they would be had the page
+    /// always stood that way.
+    pub fn rotate_clockwise(
+        &mut self,
+        degrees: i32,
+        page_width: f32,
+        page_height: f32,
+    ) {
+        if page_width <= 0.0 || page_height <= 0.0 {
+            return;
+        }
+        let turn = |point: (f32, f32)| match degrees.rem_euclid(360) {
+            90 => (page_height - point.1, point.0),
+            180 => (page_width - point.0, page_height - point.1),
+            270 => (point.1, page_width - point.0),
+            _ => point,
+        };
+        match self {
+            Self::Stroke { points, .. } => {
+                for point in points {
+                    *point = turn(*point);
+                }
+            }
+            Self::Shape { start, end, .. } => {
+                *start = turn(*start);
+                *end = turn(*end);
+            }
+            Self::Text { rect, .. } => {
+                let corners = [
+                    turn((rect.0, rect.1)),
+                    turn((rect.0 + rect.2, rect.1)),
+                    turn((rect.0, rect.1 + rect.3)),
+                    turn((rect.0 + rect.2, rect.1 + rect.3)),
+                ];
+                let min_x = corners.iter().map(|p| p.0).fold(f32::MAX, f32::min);
+                let min_y = corners.iter().map(|p| p.1).fold(f32::MAX, f32::min);
+                let max_x = corners.iter().map(|p| p.0).fold(f32::MIN, f32::max);
+                let max_y = corners.iter().map(|p| p.1).fold(f32::MIN, f32::max);
+                *rect = (min_x, min_y, max_x - min_x, max_y - min_y);
+            }
+            Self::Sticky { point, .. } => {
+                *point = turn(*point);
+            }
+        }
+    }
 }
 
 /// One saved PDF drawing object. Colour names are the five highlight
@@ -309,6 +364,52 @@ pub struct PdfDrawing {
     pub created_at: String,
     #[allow(dead_code)] // written on update; no edited-at stamp is shown yet
     pub updated_at: String,
+}
+
+/// How much of the reader's own work sits on a set of PDF pages.
+/// The delete prompt (decision 69) is only owed when this is not
+/// empty, and its copy names these counts — so they are kept by
+/// kind rather than summed into one vague "annotations".
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PdfPageBoundCounts {
+    pub highlights: usize,
+    pub quotes: usize,
+    pub notes: usize,
+    pub drawings: usize,
+    pub bookmarks: usize,
+}
+
+impl PdfPageBoundCounts {
+    pub fn is_empty(&self) -> bool {
+        self.highlights == 0
+            && self.quotes == 0
+            && self.notes == 0
+            && self.drawings == 0
+            && self.bookmarks == 0
+    }
+}
+
+/// One surviving page whose drawings must turn with it when a
+/// page edit is applied: the page's identity, its size in the
+/// orientation the drawings were made against, and the staged
+/// clockwise turn.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfPageRotationRewrite {
+    pub page_id: String,
+    pub page_width: f32,
+    pub page_height: f32,
+    pub clockwise_degrees: i32,
+}
+
+/// Everything the catalog rewrites when a PDF page edit lands:
+/// the book's pages named by identity in their new order (a name
+/// the book does not have yet is an inserted page; a name it has
+/// that is missing here is a deleted one), and the turns its
+/// surviving pages' drawings must make.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfPageEditRewrite {
+    pub ordered_page_ids: Vec<String>,
+    pub rotations: Vec<PdfPageRotationRewrite>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]

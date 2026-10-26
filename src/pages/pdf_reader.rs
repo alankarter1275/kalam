@@ -36,10 +36,14 @@ use crate::widgets::dialog::{confirmation_dialog, ConfirmationKind};
 mod drawings;
 mod image;
 mod notes;
+mod page_edit;
 mod pages_grid;
 mod search_results;
 
 pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
+use page_edit::{
+    PdfPageEditAppliedInfo, PdfPageEditLeaveIntent, PdfPageEditState, PdfThumbnailSource,
+};
 use drawings::{
     PdfActiveShape, PdfActiveStroke, PdfDrawTool, PdfDrawingDragState, PdfDrawingPaint,
     PdfDrawingSettings, PdfDrawingTextEditor, PdfDrawingWidgets, PdfInkColor, PdfShapeKind,
@@ -318,6 +322,10 @@ pub struct PdfActiveSelection {
 #[derive(Debug, Clone)]
 pub struct PdfRenderRequest {
     pub generation: u64,
+    /// The managed file changes in place when a page edit is
+    /// applied. The revision is therefore part of every worker's
+    /// document-cache key: the same path is not the same book.
+    pub revision: u64,
     pub page: usize,
     pub scale: f32,
     pub smart_crop: bool,
@@ -332,6 +340,11 @@ pub struct PdfRenderRequest {
 #[derive(Debug, Clone)]
 pub struct PdfThumbnailRequest {
     pub generation: u64,
+    pub revision: u64,
+    /// The stable grid key this raster belongs to. A staged page
+    /// keeps its key while its physical page (or source file)
+    /// changes around it.
+    pub key: String,
     pub page: usize,
     pub target_width: u32,
     pub rotation: i32,
@@ -355,12 +368,25 @@ pub struct PdfDocInfo {
 pub enum PdfDocRequest {
     /// Open the file and report page count, outline and page dimensions
     /// (measured on `page`, the resumed reading position).
-    Info { path: PathBuf, page: usize },
+    Info {
+        path: PathBuf,
+        page: usize,
+        revision: u64,
+    },
     /// Extract the vector text layer of one page, plus the file fingerprint
     /// (computed here so the UI thread never stats the file).
-    ExtractText { path: PathBuf, page: usize },
+    ExtractText {
+        path: PathBuf,
+        page: usize,
+        revision: u64,
+    },
     /// Full-document text search.
-    Search { path: PathBuf, query: String, toc: Vec<PdfTocEntry> },
+    Search {
+        path: PathBuf,
+        query: String,
+        toc: Vec<PdfTocEntry>,
+        revision: u64,
+    },
 }
 
 /// A click that landed on a page whose text layer was not ready yet
@@ -1380,10 +1406,20 @@ pub struct PdfImageWidgets {
 
 pub struct PdfPagesWidgets {
     pub scroll: gtk::ScrolledWindow,
+    pub normal_heading: gtk::Box,
+    pub edit_heading: gtk::Box,
     pub heading_title: gtk::Label,
     pub heading_meta: gtk::Label,
     pub columns_3_button: gtk::Button,
     pub columns_2_button: gtk::Button,
+    pub edit_button: gtk::Button,
+    pub edit_selected_label: gtk::Label,
+    pub edit_apply_button: gtk::Button,
+    pub edit_rotate_left_button: gtk::Button,
+    pub edit_rotate_right_button: gtk::Button,
+    pub edit_extract_button: gtk::Button,
+    pub edit_delete_button: gtk::Button,
+    pub edit_insert_button: gtk::Button,
 }
 
 pub struct PdfSearchResultsWidgets {
@@ -1508,15 +1544,50 @@ pub enum PdfReaderMsg {
         width: i32,
         height: i32,
     },
-    /// A Pages-grid cell for this page has just been bound. This
-    /// is the lazy thumbnail request, not a reading-page load.
-    PageThumbnailVisible(usize),
+    /// A Pages-grid cell for this stable page key has just been
+    /// bound. This is the lazy thumbnail request, not a
+    /// reading-page load.
+    PageThumbnailVisible(String),
     PageThumbnailReady {
         generation: u64,
-        page: usize,
+        key: String,
         texture: Option<gdk::Texture>,
     },
     PagesGridScrolled(f64),
+    StartPageEdit,
+    PageEditThumbnailClicked {
+        key: String,
+        control: bool,
+        shift: bool,
+    },
+    PageEditSelectAll,
+    PageEditUndo,
+    PageEditRotate(i32),
+    PageEditDelete,
+    ConfirmPageEditDelete,
+    PageEditInsert,
+    InsertPagesChosen(PathBuf),
+    InsertPagesReady {
+        path: PathBuf,
+        result: Result<usize, String>,
+    },
+    PageEditExtract,
+    ExtractPagesChosen(PathBuf),
+    ExtractPagesDone(Result<PathBuf, String>),
+    PageEditApply,
+    PageEditApplied(Result<PdfPageEditAppliedInfo, String>),
+    PageEditLeaveDiscard,
+    PageEditLeaveKeep,
+    PageEditLeaveApply,
+    PageEditDragStarted(String),
+    PageEditMove {
+        key: String,
+        target_index: usize,
+    },
+    StagePageEditScreenshot,
+    StagePageEditDeleteScreenshot,
+    StagePageEditUnsavedScreenshot,
+    StagePageEditDragScreenshot,
     LeftEdgeHover(bool),
     RightEdgeHover(bool),
     LeftPanelHover(bool),
@@ -1536,6 +1607,7 @@ pub enum PdfReaderMsg {
     SelectionLineAt { slot: PageSlot, x: f64, y: f64 },
     PageOcrResult {
         generation: u64,
+        revision: u64,
         page: usize,
         /// Fingerprint the OCR worker computed after recognition; used to
         /// persist the result only when the file is unchanged.
@@ -1544,6 +1616,7 @@ pub enum PdfReaderMsg {
     },
     /// The doc service finished opening the document (or failed).
     DocumentLoaded {
+        revision: u64,
         info: Box<Result<PdfDocInfo, PdfLoadError>>,
     },
     /// The password field changed. It carries no text: the entry
@@ -1557,12 +1630,14 @@ pub enum PdfReaderMsg {
     /// The doc service extracted one page's vector text (empty text means
     /// a scanned page: the handler falls back to the OCR cache / worker).
     PageTextReady {
+        revision: u64,
         page: usize,
         fingerprint: Option<String>,
         text: Result<PdfPageText, String>,
     },
     /// The doc service finished a full-document search.
     SearchReady {
+        revision: u64,
         query: String,
         outcome: PdfSearchOutcome,
     },
@@ -1725,10 +1800,22 @@ pub struct PdfReaderModel {
     pub pages_grid: Option<pages_grid::PdfPagesGrid>,
     pub pages_widgets: Option<PdfPagesWidgets>,
     pub pages_columns: usize,
+    /// Pages Edit's staged order (decisions 68–71). Inert until
+    /// the Pages pencil starts it; nothing in it is durable
+    /// until Apply.
+    pub page_edit: PdfPageEditState,
+    pub page_edit_leave_intent: Option<PdfPageEditLeaveIntent>,
+    pub page_edit_dialog: Option<crate::widgets::in_app_dialog::InAppDialog>,
+    /// The current grid order resolved back to a file and page
+    /// for each stable thumbnail key.
+    pub page_thumbnail_sources: HashMap<String, PdfThumbnailSource>,
+    /// Bumped when Apply replaces the managed file. Every PDF
+    /// worker keys its cached open document by path + revision.
+    pub document_revision: u64,
     pub thumbnail_tx: Option<async_channel::Sender<PdfThumbnailRequest>>,
     pub thumbnail_generation: u64,
     pub thumbnail_active_generation: Option<Arc<AtomicU64>>,
-    pub thumbnail_pending: HashSet<usize>,
+    pub thumbnail_pending: HashSet<String>,
     pub settings_widgets: Option<PdfSettingsWidgets>,
     pub image_widgets: Option<PdfImageWidgets>,
     pub screenshot_action_applied: bool,
@@ -2122,6 +2209,11 @@ impl PdfReaderModel {
             pages_grid: None,
             pages_widgets: None,
             pages_columns,
+            page_edit: PdfPageEditState::default(),
+            page_edit_leave_intent: None,
+            page_edit_dialog: None,
+            page_thumbnail_sources: HashMap::new(),
+            document_revision: 0,
             thumbnail_tx: None,
             thumbnail_generation: 1,
             thumbnail_active_generation: None,
@@ -2617,25 +2709,75 @@ impl PdfReaderModel {
     }
 
     /// Point the standing Pages grid at the document facts now in
-    /// hand. The grid only replaces its list model when the page
-    /// count changes, so calling this from panel refreshes does
-    /// not spend the reader's place in a long grid.
-    pub fn sync_pages_grid_document(&self) {
-        if let Some(grid) = &self.pages_grid {
-            grid.set_document(
-                if self.doc_ready { self.total_pages } else { 0 },
-                self.pages_current_pages(),
+    /// hand. The grid only replaces its list model when its
+    /// stable-key entries change, so calling this from panel
+    /// refreshes does not spend the reader's place in a long
+    /// grid. In Pages Edit, those entries are the staged order.
+    pub fn sync_pages_grid_document(&mut self) {
+        let previous_sources = self.page_thumbnail_sources.clone();
+        let (entries, current, selected, rotated) = self.page_edit_grid_entries();
+        // A quarter turn changes what an existing key must render
+        // without changing the key itself. Retire that key's old
+        // raster and any in-flight answer for the old angle; all
+        // other decoded thumbnails remain valid.
+        let changed_sources: Vec<String> = entries
+            .iter()
+            .filter(|entry| {
+                previous_sources
+                    .get(&entry.key)
+                    .is_some_and(|previous| {
+                        self.page_thumbnail_sources.get(&entry.key) != Some(previous)
+                    })
+            })
+            .map(|entry| entry.key.clone())
+            .collect();
+        if !changed_sources.is_empty() {
+            self.thumbnail_generation = self.thumbnail_generation.wrapping_add(1);
+            if let Some(generation) = &self.thumbnail_active_generation {
+                generation.store(self.thumbnail_generation, Ordering::Relaxed);
+            }
+            self.thumbnail_pending.clear();
+            if let Some(grid) = &self.pages_grid {
+                for key in &changed_sources {
+                    grid.clear_thumbnail(key);
+                }
+            }
+        }
+
+        if let Some(grid) = self.pages_grid.clone() {
+            grid.set_entries(
+                entries,
+                pages_grid::PdfPagesGridMarks {
+                    current,
+                    selected,
+                    rotated,
+                    edit_mode: self.page_edit.active,
+                },
                 self.base_page_height / self.base_page_width.max(1.0),
                 self.image_settings,
                 self.image_paper_rgb,
             );
+            if !changed_sources.is_empty() {
+                for key in grid.bound_keys() {
+                    self.request_page_thumbnail_key(&key);
+                }
+            }
         }
         self.update_pages_heading();
     }
 
     pub fn sync_pages_current(&self) {
         if let Some(grid) = &self.pages_grid {
-            grid.set_current_pages(self.pages_current_pages());
+            if self.page_edit.active {
+                grid.set_current_keys(HashSet::new());
+            } else {
+                grid.set_current_keys(
+                    self.pages_current_pages()
+                        .into_iter()
+                        .filter_map(|page| self.page_id_for_position(page))
+                        .collect(),
+                );
+            }
         }
     }
 
@@ -2646,6 +2788,10 @@ impl PdfReaderModel {
         let Some(pages) = &self.pages_widgets else {
             return;
         };
+        self.sync_page_edit_header();
+        if self.page_edit.active {
+            return;
+        }
         toggle_active(&pages.columns_3_button, self.pages_columns == 3);
         toggle_active(&pages.columns_2_button, self.pages_columns == 2);
 
@@ -2682,6 +2828,12 @@ impl PdfReaderModel {
         let (Some(grid), Some(pages)) = (&self.pages_grid, &self.pages_widgets) else {
             return;
         };
+        if self.page_edit.active {
+            if let Some(key) = self.page_edit_current_key() {
+                grid.scroll_to_key(&key);
+            }
+            return;
+        }
         grid.scroll_to_current();
         let grid = grid.clone();
         let adjustment = pages.scroll.vadjustment();
@@ -2690,39 +2842,6 @@ impl PdfReaderModel {
             if let Some(target) = grid.opening_scroll_target(max, adjustment.page_size()) {
                 adjustment.set_value(target);
             }
-        });
-    }
-
-    /// Ask the thumbnail worker for one page the grid has just
-    /// bound. Existing, failed and already-pending pages stop
-    /// here, which is what keeps cell recycling from becoming a
-    /// stream of duplicate MuPDF renders while scrolling.
-    pub fn request_page_thumbnail(&mut self, page: usize) {
-        if !self.doc_ready || page == 0 || page > self.total_pages {
-            return;
-        }
-        let Some(grid) = self.pages_grid.clone() else {
-            return;
-        };
-        if grid.has_thumbnail_state(page) || !self.thumbnail_pending.insert(page) {
-            return;
-        }
-        let Some(path) = self.file_path.clone() else {
-            self.thumbnail_pending.remove(&page);
-            grid.update_thumbnail(page, None);
-            return;
-        };
-        let Some(tx) = self.thumbnail_tx.clone() else {
-            self.thumbnail_pending.remove(&page);
-            grid.update_thumbnail(page, None);
-            return;
-        };
-        let _ = tx.send_blocking(PdfThumbnailRequest {
-            generation: self.thumbnail_generation,
-            page,
-            target_width: pages_grid::THUMBNAIL_TARGET_WIDTH,
-            rotation: self.rotation_degrees,
-            path,
         });
     }
 
@@ -2739,10 +2858,10 @@ impl PdfReaderModel {
             return;
         };
         grid.set_page_aspect(self.base_page_height / self.base_page_width.max(1.0));
-        let bound_pages = grid.bound_pages();
+        let bound_keys = grid.bound_keys();
         grid.clear_thumbnails();
-        for page in bound_pages {
-            self.request_page_thumbnail(page);
+        for key in bound_keys {
+            self.request_page_thumbnail_key(&key);
         }
     }
 
@@ -3212,6 +3331,7 @@ impl PdfReaderModel {
             if let Some(ref tx) = self.render_tx {
                 let _ = tx.send_blocking(PdfRenderRequest {
                     generation: gen,
+                    revision: self.document_revision,
                     page,
                     scale,
                     smart_crop,
@@ -3262,6 +3382,7 @@ impl PdfReaderModel {
         }
         let _ = tx.send_blocking(crate::ocr::PdfOcrRequest {
             generation: self.render_generation,
+            revision: self.document_revision,
             page,
             path: path.clone(),
         });
@@ -3280,6 +3401,7 @@ impl PdfReaderModel {
                 let _ = tx.send_blocking(PdfDocRequest::ExtractText {
                     path,
                     page,
+                    revision: self.document_revision,
                 });
             } else {
                 self.text_in_progress.remove(&page);
@@ -5822,6 +5944,10 @@ impl Component for PdfReaderModel {
                     let _ = tx_key.send(PdfReaderMsg::OpenNotes);
                     gtk::glib::Propagation::Stop
                 }
+                Key::a | Key::A if ctrl => {
+                    let _ = tx_key.send(PdfReaderMsg::PageEditSelectAll);
+                    gtk::glib::Propagation::Stop
+                }
                 Key::z | Key::Z if ctrl => {
                     let _ = tx_key.send(PdfReaderMsg::UndoDelete);
                     gtk::glib::Propagation::Stop
@@ -6140,7 +6266,7 @@ impl Component for PdfReaderModel {
             let _ = std::thread::Builder::new()
                 .name(format!("kalam-pdf-worker-{}", worker_id))
                 .spawn(move || {
-                    let mut cached_path: Option<PathBuf> = None;
+                    let mut cached_key: Option<(PathBuf, u64)> = None;
                     let mut cached_doc: Option<PdfDocument> = None;
 
                     while let Ok(req) = rx.recv_blocking() {
@@ -6148,8 +6274,9 @@ impl Component for PdfReaderModel {
                             continue;
                         }
 
-                        if cached_path.as_ref() != Some(&req.path) || cached_doc.is_none() {
-                            cached_path = Some(req.path.clone());
+                        let request_key = (req.path.clone(), req.revision);
+                        if cached_key.as_ref() != Some(&request_key) || cached_doc.is_none() {
+                            cached_key = Some(request_key);
                             cached_doc = pdf_open_document(&req.path, &shared_password).ok();
                         }
 
@@ -6198,7 +6325,7 @@ impl Component for PdfReaderModel {
             let _ = std::thread::Builder::new()
                 .name("kalam-pdf-thumbnail-worker".to_string())
                 .spawn(move || {
-                    let mut cached_path: Option<PathBuf> = None;
+                    let mut cached_key: Option<(PathBuf, u64)> = None;
                     let mut cached_doc: Option<PdfDocument> = None;
 
                     while let Ok(first) = rx.recv_blocking() {
@@ -6210,13 +6337,14 @@ impl Component for PdfReaderModel {
                         let mut seen = HashSet::new();
                         for req in batch.into_iter().rev() {
                             if req.generation != active.load(Ordering::Relaxed)
-                                || !seen.insert(req.page)
+                                || !seen.insert(req.key.clone())
                             {
                                 continue;
                             }
 
-                            if cached_path.as_ref() != Some(&req.path) || cached_doc.is_none() {
-                                cached_path = Some(req.path.clone());
+                            let request_key = (req.path.clone(), req.revision);
+                            if cached_key.as_ref() != Some(&request_key) || cached_doc.is_none() {
+                                cached_key = Some(request_key);
                                 cached_doc = pdf_open_document(&req.path, &shared_password).ok();
                             }
 
@@ -6254,7 +6382,7 @@ impl Component for PdfReaderModel {
                             if req.generation == active.load(Ordering::Relaxed) {
                                 let _ = tx_msg.send(PdfReaderMsg::PageThumbnailReady {
                                     generation: req.generation,
-                                    page: req.page,
+                                    key: req.key.clone(),
                                     texture,
                                 });
                             }
@@ -6274,7 +6402,7 @@ impl Component for PdfReaderModel {
         let _ = std::thread::Builder::new()
             .name("kalam-pdf-ocr-worker".to_string())
             .spawn(move || {
-                let mut cached_path: Option<PathBuf> = None;
+                let mut cached_key: Option<(PathBuf, u64)> = None;
                 let mut cached_doc: Option<PdfDocument> = None;
                 let mut ocr_engine: Option<ocrs::OcrEngine> = None;
                 let mut engine_attempted = false;
@@ -6293,8 +6421,9 @@ impl Component for PdfReaderModel {
                         continue;
                     };
 
-                    if cached_path.as_ref() != Some(&req.path) || cached_doc.is_none() {
-                        cached_path = Some(req.path.clone());
+                    let request_key = (req.path.clone(), req.revision);
+                    if cached_key.as_ref() != Some(&request_key) || cached_doc.is_none() {
+                        cached_key = Some(request_key);
                         cached_doc = pdf_open_document(&req.path, &shared_password).ok();
                     }
 
@@ -6308,6 +6437,7 @@ impl Component for PdfReaderModel {
                                     if req.generation == ocr_gen.load(Ordering::Relaxed) {
                                         let _ = tx_ocr_msg.send(PdfReaderMsg::PageOcrResult {
                                             generation: req.generation,
+                                            revision: req.revision,
                                             page: req.page,
                                             fingerprint: pdf_path_fingerprint(&req.path),
                                             text: Box::new(Ok(page_text)),
@@ -6318,6 +6448,7 @@ impl Component for PdfReaderModel {
                                     if req.generation == ocr_gen.load(Ordering::Relaxed) {
                                         let _ = tx_ocr_msg.send(PdfReaderMsg::PageOcrResult {
                                             generation: req.generation,
+                                            revision: req.revision,
                                             page: req.page,
                                             fingerprint: pdf_path_fingerprint(&req.path),
                                             text: Box::new(Err(err.to_string())),
@@ -6343,21 +6474,28 @@ impl Component for PdfReaderModel {
         let _ = std::thread::Builder::new()
             .name("kalam-pdf-doc-service".to_string())
             .spawn(move || {
-                let mut cached_path: Option<PathBuf> = None;
+                let mut cached_key: Option<(PathBuf, u64)> = None;
                 let mut cached_doc: Option<PdfDocument> = None;
                 let mut cached_error: Option<PdfLoadError> = None;
                 while let Ok(req) = doc_rx.recv_blocking() {
-                    let path = match &req {
-                        PdfDocRequest::Info { path, .. }
-                        | PdfDocRequest::ExtractText { path, .. }
-                        | PdfDocRequest::Search { path, .. } => path.clone(),
+                    let (path, revision) = match &req {
+                        PdfDocRequest::Info {
+                            path, revision, ..
+                        }
+                        | PdfDocRequest::ExtractText {
+                            path, revision, ..
+                        }
+                        | PdfDocRequest::Search {
+                            path, revision, ..
+                        } => (path.clone(), *revision),
                     };
+                    let request_key = (path.clone(), revision);
                     // A failed open is retried rather than cached as
                     // final: the password that unlocks the book can
                     // only arrive after the first refusal.
-                    if cached_path.as_ref() != Some(&path) || cached_doc.is_none() {
+                    if cached_key.as_ref() != Some(&request_key) || cached_doc.is_none() {
                         crate::timing::span("pdf_open_doc");
-                        cached_path = Some(path.clone());
+                        cached_key = Some(request_key);
                         match pdf_open_document(&path, &shared_password) {
                             Ok(doc) => {
                                 cached_doc = Some(doc);
@@ -6380,11 +6518,13 @@ impl Component for PdfReaderModel {
                         match &req {
                             PdfDocRequest::Info { .. } => {
                                 let _ = tx_doc_msg.send(PdfReaderMsg::DocumentLoaded {
+                                    revision,
                                     info: Box::new(Err(error)),
                                 });
                             }
                             PdfDocRequest::ExtractText { page, .. } => {
                                 let _ = tx_doc_msg.send(PdfReaderMsg::PageTextReady {
+                                    revision,
                                     page: *page,
                                     fingerprint: None,
                                     text: Err(error.log_message().to_string()),
@@ -6392,6 +6532,7 @@ impl Component for PdfReaderModel {
                             }
                             PdfDocRequest::Search { query, .. } => {
                                 let _ = tx_doc_msg.send(PdfReaderMsg::SearchReady {
+                                    revision,
                                     query: query.clone(),
                                     outcome: PdfSearchOutcome {
                                         results: Vec::new(),
@@ -6421,6 +6562,7 @@ impl Component for PdfReaderModel {
                                 base_page_height: h,
                             };
                             let _ = tx_doc_msg.send(PdfReaderMsg::DocumentLoaded {
+                                revision,
                                 info: Box::new(Ok(info)),
                             });
                         }
@@ -6447,6 +6589,7 @@ impl Component for PdfReaderModel {
                                 }
                             }
                             let _ = tx_doc_msg.send(PdfReaderMsg::PageTextReady {
+                                revision,
                                 page,
                                 fingerprint,
                                 text: text.map_err(|e| e.to_string()),
@@ -6454,7 +6597,11 @@ impl Component for PdfReaderModel {
                         }
                         PdfDocRequest::Search { query, toc, .. } => {
                             let outcome = doc.search_document(&query, &toc, 500);
-                            let _ = tx_doc_msg.send(PdfReaderMsg::SearchReady { query, outcome });
+                            let _ = tx_doc_msg.send(PdfReaderMsg::SearchReady {
+                                revision,
+                                query,
+                                outcome,
+                            });
                         }
                     }
                 }
@@ -6469,10 +6616,12 @@ impl Component for PdfReaderModel {
                 let _ = tx.send_blocking(PdfDocRequest::Info {
                     path: path.clone(),
                     page: model.current_page,
+                    revision: model.document_revision,
                 });
             }
         } else {
             let _ = sender.input_sender().send(PdfReaderMsg::DocumentLoaded {
+                revision: model.document_revision,
                 info: Box::new(Err(PdfLoadError::FileNotFound)),
             });
         }
@@ -6555,6 +6704,10 @@ impl Component for PdfReaderModel {
         }
         match msg {
             PdfReaderMsg::Close => {
+                if self.page_edit_blocks_leave(PdfPageEditLeaveIntent::CloseReader, &sender) {
+                    // The unsaved-changes answer sends Close
+                    // again once the edit is discarded or applied.
+                } else {
                 self.commit_drawing_text_editor();
                 self.commit_sticky_card_text();
                 self.save_progress();
@@ -6569,10 +6722,16 @@ impl Component for PdfReaderModel {
                 }
                 self.cleanup_memory();
                 let _ = sender.output_sender().send(PdfReaderOut::Close);
+                }
             }
             PdfReaderMsg::MinimizeToBubble => {
-                self.save_progress();
-                let _ = sender.output_sender().send(PdfReaderOut::MinimizeToBubble { book_id: self.book_id });
+                if !self.page_edit_blocks_leave(
+                    PdfPageEditLeaveIntent::MinimizeToBubble,
+                    &sender,
+                ) {
+                    self.save_progress();
+                    let _ = sender.output_sender().send(PdfReaderOut::MinimizeToBubble { book_id: self.book_id });
+                }
             }
             PdfReaderMsg::PasswordEdited => {
                 if let PdfOpenState::Password {
@@ -6611,6 +6770,7 @@ impl Component for PdfReaderModel {
                             let _ = tx.send_blocking(PdfDocRequest::Info {
                                 path,
                                 page: self.current_page,
+                                revision: self.document_revision,
                             });
                         }
                     }
@@ -6720,6 +6880,12 @@ impl Component for PdfReaderModel {
                     _root.grab_focus();
                 } else if self.active_selection.borrow().is_some() {
                     self.clear_selection();
+                } else if self.page_edit.active {
+                    // Pages Edit is its own layer: a clean edit
+                    // leaves, a dirty one asks (decision 70), and
+                    // either way this Escape is spent on it.
+                    let _ = self
+                        .page_edit_blocks_leave(PdfPageEditLeaveIntent::ExitMode, &sender);
                 } else if (self.left_panel_open && !self.left_panel_pinned)
                     || (self.right_panel_open && !self.right_panel_pinned)
                 {
@@ -6780,6 +6946,7 @@ impl Component for PdfReaderModel {
                             path,
                             query,
                             toc: self.toc_entries.clone(),
+                            revision: self.document_revision,
                         });
                     } else {
                         self.search_pending = false;
@@ -6824,8 +6991,12 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
-            PdfReaderMsg::SearchReady { query, outcome } => {
-                if query == self.search_query {
+            PdfReaderMsg::SearchReady {
+                revision,
+                query,
+                outcome,
+            } => {
+                if revision == self.document_revision && query == self.search_query {
                     self.search_pending = false;
                     self.search_no_text = !outcome.has_searchable_text;
                     self.search_results = outcome.results;
@@ -7571,6 +7742,15 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::UndoDelete => {
+                // In Pages Edit, Ctrl+Z answers for the staged
+                // edit first (decision 70) — including when its
+                // stack is empty, rather than resurrecting a mark
+                // deleted before the edit began.
+                if self.page_edit.active {
+                    if self.page_edit.undo() {
+                        self.sync_pages_grid_document();
+                    }
+                } else {
                 // Decision 30: deletions are direct because Ctrl+Z
                 // brings them back — the row as it stood, restored
                 // exactly. A failed restore keeps its place on the
@@ -7676,6 +7856,7 @@ impl Component for PdfReaderModel {
                         }
                     }
                     self.refresh_notes_panel(&sender);
+                }
                 }
             }
             PdfReaderMsg::JumpToPage(target_page) => {
@@ -7799,13 +7980,24 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::SetLeftTab(tab) => {
-                // Choosing a tab is one of the ways back out of
-                // the search results' takeover (decision 61).
-                self.search_results_open = false;
-                self.left_tab = tab;
-                self.refresh_left_panel(widgets, &sender);
-                if tab == PdfLeftTab::Pages {
-                    self.scroll_pages_to_current();
+                if tab != PdfLeftTab::Pages
+                    && self.page_edit_blocks_leave(
+                        PdfPageEditLeaveIntent::SwitchLeftTab(tab),
+                        &sender,
+                    )
+                {
+                    // Restore the segmented control to the tab
+                    // still on screen while the question stands.
+                    self.refresh_left_panel(widgets, &sender);
+                } else {
+                    // Choosing a tab is one of the ways back out of
+                    // the search results' takeover (decision 61).
+                    self.search_results_open = false;
+                    self.left_tab = tab;
+                    self.refresh_left_panel(widgets, &sender);
+                    if tab == PdfLeftTab::Pages {
+                        self.scroll_pages_to_current();
+                    }
                 }
             }
             PdfReaderMsg::SetRightTab(tab) => {
@@ -7850,7 +8042,12 @@ impl Component for PdfReaderModel {
                 {
                     self.left_panel_open = false;
                     self.sync_panel_layout(widgets);
-                } else {
+                } else if self.left_tab == PdfLeftTab::Contents
+                    || !self.page_edit_blocks_leave(
+                        PdfPageEditLeaveIntent::SwitchLeftTab(PdfLeftTab::Contents),
+                        &sender,
+                    )
+                {
                     self.search_results_open = false;
                     self.left_tab = PdfLeftTab::Contents;
                     let _ = sender.input_sender().send(PdfReaderMsg::OpenLeftPanel);
@@ -7881,7 +8078,12 @@ impl Component for PdfReaderModel {
                 {
                     self.left_panel_open = false;
                     self.sync_panel_layout(widgets);
-                } else {
+                } else if self.left_tab == PdfLeftTab::Notes
+                    || !self.page_edit_blocks_leave(
+                        PdfPageEditLeaveIntent::SwitchLeftTab(PdfLeftTab::Notes),
+                        &sender,
+                    )
+                {
                     self.search_results_open = false;
                     self.left_tab = PdfLeftTab::Notes;
                     self.notes_filter = PdfNotesFilter::Highlights;
@@ -8238,18 +8440,18 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
-            PdfReaderMsg::PageThumbnailVisible(page) => {
-                self.request_page_thumbnail(page);
+            PdfReaderMsg::PageThumbnailVisible(key) => {
+                self.request_page_thumbnail_key(&key);
             }
             PdfReaderMsg::PageThumbnailReady {
                 generation,
-                page,
+                key,
                 texture,
             } => {
                 if generation == self.thumbnail_generation {
-                    self.thumbnail_pending.remove(&page);
+                    self.thumbnail_pending.remove(&key);
                     if let Some(grid) = &self.pages_grid {
-                        grid.update_thumbnail(page, texture);
+                        grid.update_thumbnail(&key, texture);
                     }
                 }
             }
@@ -8258,7 +8460,178 @@ impl Component for PdfReaderModel {
                     self.update_pages_heading();
                 }
             }
-            PdfReaderMsg::DocumentLoaded { info } => {
+            PdfReaderMsg::StartPageEdit => {
+                let _ = self.start_page_edit();
+            }
+            PdfReaderMsg::PageEditThumbnailClicked {
+                key,
+                control,
+                shift,
+            } => {
+                if self.page_edit.click(&key, control, shift) {
+                    self.sync_pages_grid_document();
+                }
+            }
+            PdfReaderMsg::PageEditSelectAll => {
+                if self.page_edit.select_all() {
+                    self.sync_pages_grid_document();
+                }
+            }
+            PdfReaderMsg::PageEditUndo => {
+                if self.page_edit.undo() {
+                    self.sync_pages_grid_document();
+                }
+            }
+            PdfReaderMsg::PageEditRotate(degrees) => {
+                if self.page_edit.rotate_selected(degrees) {
+                    self.sync_pages_grid_document();
+                }
+            }
+            PdfReaderMsg::PageEditDelete => {
+                self.request_page_edit_delete(&sender);
+            }
+            PdfReaderMsg::ConfirmPageEditDelete => {
+                self.page_edit_dialog = None;
+                if self.page_edit.delete_selected() {
+                    self.sync_pages_grid_document();
+                }
+            }
+            PdfReaderMsg::PageEditInsert => {
+                self.choose_insert_pdf(&sender);
+            }
+            PdfReaderMsg::InsertPagesChosen(path) => {
+                self.begin_insert_inspection(path, &sender);
+            }
+            PdfReaderMsg::InsertPagesReady { path, result } => {
+                self.page_edit.busy = false;
+                match result {
+                    Ok(page_count) => {
+                        if self
+                            .page_edit
+                            .insert_pdf(path, page_count, self.current_page)
+                        {
+                            self.sync_pages_grid_document();
+                            if let (Some(grid), Some(first)) = (
+                                &self.pages_grid,
+                                self.page_edit.selected_keys_in_order().first(),
+                            ) {
+                                grid.scroll_to_key(first);
+                            }
+                        } else {
+                            crate::notify::error(
+                                "Pages could not be inserted",
+                                "The edit changed while that PDF was being checked.",
+                            );
+                            self.sync_page_edit_header();
+                        }
+                    }
+                    Err(error) => {
+                        crate::notify::error("Pages could not be inserted", &error);
+                        self.sync_page_edit_header();
+                    }
+                }
+                self.resume_page_edit_leave(&sender);
+            }
+            PdfReaderMsg::PageEditExtract => {
+                self.choose_extract_pdf(&sender);
+            }
+            PdfReaderMsg::ExtractPagesChosen(path) => {
+                self.begin_extract_pages(path, &sender);
+            }
+            PdfReaderMsg::ExtractPagesDone(result) => {
+                self.page_edit.busy = false;
+                match result {
+                    Ok(path) => crate::notify::success(
+                        "Pages extracted",
+                        &path.display().to_string(),
+                    ),
+                    Err(error) => {
+                        crate::notify::error("Pages could not be extracted", &error)
+                    }
+                }
+                self.sync_page_edit_header();
+                self.resume_page_edit_leave(&sender);
+            }
+            PdfReaderMsg::PageEditApply => {
+                self.begin_apply_page_edit(&sender);
+            }
+            PdfReaderMsg::PageEditApplied(result) => match result {
+                Ok(info) => self.finish_page_edit_apply(info, widgets, &sender),
+                Err(error) => {
+                    self.page_edit.busy = false;
+                    self.sync_page_edit_header();
+                    crate::notify::error("Pages could not be updated", &error);
+                    self.resume_page_edit_leave(&sender);
+                }
+            },
+            PdfReaderMsg::PageEditLeaveDiscard => {
+                let intent = self.page_edit_leave_intent.take();
+                self.exit_page_edit();
+                if let Some(intent) = intent {
+                    self.perform_page_edit_leave(intent, &sender);
+                }
+            }
+            PdfReaderMsg::PageEditLeaveKeep => {
+                self.page_edit_dialog = None;
+                self.page_edit_leave_intent = None;
+                self.sync_page_edit_header();
+            }
+            PdfReaderMsg::PageEditLeaveApply => {
+                self.page_edit_dialog = None;
+                self.begin_apply_page_edit(&sender);
+                if !self.page_edit.busy {
+                    // Applying could not even start; the reader is
+                    // simply still editing, with no leave in train.
+                    self.page_edit_leave_intent = None;
+                    self.sync_page_edit_header();
+                }
+            }
+            PdfReaderMsg::PageEditDragStarted(key) => {
+                let _ = self.page_edit.drag_keys(&key);
+                self.sync_pages_grid_document();
+            }
+            PdfReaderMsg::PageEditMove { key, target_index } => {
+                let _ = self.page_edit.drag_keys(&key);
+                let _ = self.page_edit.move_selected_to(target_index);
+                self.sync_pages_grid_document();
+            }
+            PdfReaderMsg::StagePageEditScreenshot => {
+                self.stage_page_edit_for_screenshot();
+            }
+            PdfReaderMsg::StagePageEditDeleteScreenshot => {
+                self.stage_page_edit_for_screenshot();
+                self.request_page_edit_delete(&sender);
+            }
+            PdfReaderMsg::StagePageEditUnsavedScreenshot => {
+                self.stage_page_edit_for_screenshot();
+                self.page_edit_leave_intent = Some(PdfPageEditLeaveIntent::ExitMode);
+                self.show_page_edit_unsaved_dialog(&sender);
+            }
+            PdfReaderMsg::StagePageEditDragScreenshot => {
+                self.stage_page_edit_for_screenshot();
+                if let Some(grid) = self.pages_grid.clone() {
+                    let selected = self.page_edit.selected_keys_in_order();
+                    let first_position = selected
+                        .first()
+                        .and_then(|first| {
+                            self.page_edit
+                                .items()
+                                .iter()
+                                .position(|item| item.key() == first)
+                        })
+                        .unwrap_or(0);
+                    let drop_index =
+                        (first_position + 5).min(self.page_edit.items().len());
+                    grid.set_drag_state(
+                        selected.into_iter().collect(),
+                        Some(drop_index),
+                    );
+                }
+            }
+            PdfReaderMsg::DocumentLoaded { revision, info } => {
+                if revision != self.document_revision {
+                    return;
+                }
                 crate::timing::span_end("pdf_open_total");
                 match *info {
                     Ok(info) => {
@@ -8357,10 +8730,14 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::PageTextReady {
+                revision,
                 page,
                 fingerprint,
                 text,
             } => {
+                if revision != self.document_revision {
+                    return;
+                }
                 self.text_in_progress.remove(&page);
                 match text {
                     Ok(page_text) => {
@@ -8417,11 +8794,12 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::PageOcrResult {
                 generation,
+                revision,
                 page,
                 fingerprint,
                 text,
             } => {
-                if generation != self.render_generation {
+                if generation != self.render_generation || revision != self.document_revision {
                     return;
                 }
                 self.ocr_in_progress.remove(&page);
@@ -9427,6 +9805,50 @@ impl PdfReaderModel {
                     sender.input(PdfReaderMsg::ToggleLeftPin);
                 }
             }
+            Ok("pages-edit") => {
+                sender.input(PdfReaderMsg::SetPagesColumns(3));
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Pages));
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+                let s = sender.clone();
+                glib::timeout_add_local_once(Duration::from_secs(9), move || {
+                    let _ = s
+                        .input_sender()
+                        .send(PdfReaderMsg::StagePageEditScreenshot);
+                });
+            }
+            Ok("pages-edit-delete") => {
+                sender.input(PdfReaderMsg::SetPagesColumns(3));
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Pages));
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+                let s = sender.clone();
+                glib::timeout_add_local_once(Duration::from_secs(9), move || {
+                    let _ = s
+                        .input_sender()
+                        .send(PdfReaderMsg::StagePageEditDeleteScreenshot);
+                });
+            }
+            Ok("pages-edit-unsaved") => {
+                sender.input(PdfReaderMsg::SetPagesColumns(3));
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Pages));
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+                let s = sender.clone();
+                glib::timeout_add_local_once(Duration::from_secs(9), move || {
+                    let _ = s
+                        .input_sender()
+                        .send(PdfReaderMsg::StagePageEditUnsavedScreenshot);
+                });
+            }
+            Ok("pages-edit-drag") => {
+                sender.input(PdfReaderMsg::SetPagesColumns(3));
+                sender.input(PdfReaderMsg::SetLeftTab(PdfLeftTab::Pages));
+                sender.input(PdfReaderMsg::OpenLeftPanel);
+                let s = sender.clone();
+                glib::timeout_add_local_once(Duration::from_secs(9), move || {
+                    let _ = s
+                        .input_sender()
+                        .send(PdfReaderMsg::StagePageEditDragScreenshot);
+                });
+            }
             Ok("reading") => {
                 // The Reading board's own state: Spread + Scroll,
                 // cover on its own, the 24px scroll gap, fit Height.
@@ -10017,6 +10439,34 @@ fn build_pdf_search_results_pane(
     )
 }
 
+fn pdf_pages_edit_icon_button<F>(
+    icon: &str,
+    label: &str,
+    class: &str,
+    sender: &ComponentSender<PdfReaderModel>,
+    message: F,
+) -> gtk::Button
+where
+    F: Fn() -> PdfReaderMsg + 'static,
+{
+    let button = gtk::Button::new();
+    button.set_child(Some(&crate::icons::symbolic_with_classes(
+        icon,
+        18,
+        &["kalam-inline-icon"],
+    )));
+    button.add_css_class(class);
+    button.set_size_request(32, 32);
+    button.set_valign(gtk::Align::Center);
+    button.set_tooltip_text(Some(label));
+    button.update_property(&[gtk::accessible::Property::Label(label)]);
+    let tx = sender.input_sender().clone();
+    button.connect_clicked(move |_| {
+        let _ = tx.send(message());
+    });
+    button
+}
+
 fn pdf_pages_column_button(
     icon: &str,
     label: &str,
@@ -10101,22 +10551,119 @@ fn build_pdf_pages_pane(
         2,
         sender,
     );
+    let edit_button = pdf_pages_edit_icon_button(
+        "document-edit-symbolic",
+        "Edit pages",
+        "kalam-pdf-pages-edit-btn",
+        sender,
+        || PdfReaderMsg::StartPageEdit,
+    );
+    edit_button.set_sensitive(model.doc_ready);
 
-    let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    heading.add_css_class("kalam-pdf-pages-heading");
-    heading.set_margin_start(20);
-    heading.set_margin_end(20);
-    heading.set_margin_top(14);
-    heading.set_margin_bottom(6);
-    heading.append(&heading_text);
-    heading.append(&columns_3_button);
-    heading.append(&columns_2_button);
+    let heading_divider = gtk::Separator::new(gtk::Orientation::Vertical);
+    heading_divider.add_css_class("kalam-pdf-pages-heading-divider");
+    heading_divider.set_valign(gtk::Align::Center);
+
+    let normal_heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    normal_heading.add_css_class("kalam-pdf-pages-heading");
+    normal_heading.set_margin_start(20);
+    normal_heading.set_margin_end(20);
+    normal_heading.set_margin_top(14);
+    normal_heading.set_margin_bottom(6);
+    normal_heading.append(&heading_text);
+    normal_heading.append(&columns_3_button);
+    normal_heading.append(&columns_2_button);
+    normal_heading.append(&heading_divider);
+    normal_heading.append(&edit_button);
+
+    let edit_selected_label = gtk::Label::new(Some("0 selected"));
+    edit_selected_label.add_css_class("kalam-pdf-pages-edit-selected");
+    edit_selected_label.set_halign(gtk::Align::Start);
+    edit_selected_label.set_hexpand(true);
+    edit_selected_label.set_xalign(0.0);
+    edit_selected_label.set_valign(gtk::Align::Center);
+
+    let edit_apply_button = gtk::Button::with_label("Apply");
+    edit_apply_button.add_css_class("kalam-pdf-pages-apply-btn");
+    edit_apply_button.set_size_request(72, 32);
+    edit_apply_button.set_valign(gtk::Align::Center);
+    edit_apply_button.set_tooltip_text(Some("Apply the staged page changes"));
+    edit_apply_button.update_property(&[gtk::accessible::Property::Label(
+        "Apply the staged page changes",
+    )]);
+    {
+        let tx = sender.input_sender().clone();
+        edit_apply_button.connect_clicked(move |_| {
+            let _ = tx.send(PdfReaderMsg::PageEditApply);
+        });
+    }
+
+    let edit_top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    edit_top_row.append(&edit_selected_label);
+    edit_top_row.append(&edit_apply_button);
+
+    let edit_rotate_left_button = pdf_pages_edit_icon_button(
+        "object-rotate-left-symbolic",
+        "Rotate selected pages left",
+        "kalam-pdf-pages-edit-action-btn",
+        sender,
+        || PdfReaderMsg::PageEditRotate(-90),
+    );
+    let edit_rotate_right_button = pdf_pages_edit_icon_button(
+        "object-rotate-right-symbolic",
+        "Rotate selected pages right",
+        "kalam-pdf-pages-edit-action-btn",
+        sender,
+        || PdfReaderMsg::PageEditRotate(90),
+    );
+    let edit_extract_button = pdf_pages_edit_icon_button(
+        "document-save-symbolic",
+        "Extract selected pages as a PDF",
+        "kalam-pdf-pages-edit-action-btn",
+        sender,
+        || PdfReaderMsg::PageEditExtract,
+    );
+    let edit_delete_button = pdf_pages_edit_icon_button(
+        "user-trash-symbolic",
+        "Delete selected pages",
+        "kalam-pdf-pages-edit-action-btn",
+        sender,
+        || PdfReaderMsg::PageEditDelete,
+    );
+    let edit_insert_button = pdf_pages_edit_icon_button(
+        "list-add-symbolic",
+        "Insert pages from another PDF",
+        "kalam-pdf-pages-edit-action-btn",
+        sender,
+        || PdfReaderMsg::PageEditInsert,
+    );
+
+    let edit_actions_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    edit_actions_spacer.set_hexpand(true);
+    let edit_actions_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    edit_actions_row.append(&edit_rotate_left_button);
+    edit_actions_row.append(&edit_rotate_right_button);
+    edit_actions_row.append(&edit_extract_button);
+    edit_actions_row.append(&edit_delete_button);
+    edit_actions_row.append(&edit_actions_spacer);
+    edit_actions_row.append(&edit_insert_button);
+
+    let edit_heading = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    edit_heading.add_css_class("kalam-pdf-pages-edit-heading");
+    edit_heading.set_margin_start(20);
+    edit_heading.set_margin_end(20);
+    edit_heading.set_margin_top(14);
+    edit_heading.set_margin_bottom(6);
+    edit_heading.append(&edit_top_row);
+    edit_heading.append(&edit_actions_row);
+    edit_heading.set_visible(false);
 
     let pane = gtk::Box::new(gtk::Orientation::Vertical, 0);
     pane.add_css_class("kalam-pdf-pages-pane");
     pane.set_hexpand(true);
     pane.set_vexpand(true);
-    pane.append(&heading);
+    pane.append(&normal_heading);
+    pane.append(&edit_heading);
     pane.append(&scroll);
 
     let overlay = gtk::Overlay::new();
@@ -10137,10 +10684,20 @@ fn build_pdf_pages_pane(
         grid,
         PdfPagesWidgets {
             scroll,
+            normal_heading,
+            edit_heading,
             heading_title,
             heading_meta,
             columns_3_button,
             columns_2_button,
+            edit_button,
+            edit_selected_label,
+            edit_apply_button,
+            edit_rotate_left_button,
+            edit_rotate_right_button,
+            edit_extract_button,
+            edit_delete_button,
+            edit_insert_button,
         },
     )
 }

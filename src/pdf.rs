@@ -5,8 +5,11 @@
 
 use anyhow::{anyhow, Result};
 use image::{DynamicImage, GenericImageView, RgbaImage};
+use mupdf::pdf::PdfDocument as MuPdfDocument;
 use mupdf::{Colorspace, Document, Matrix, Outline, Rect, TextBlockContent, TextExtractOptions, TextPageFlags};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
@@ -463,6 +466,87 @@ pub struct RenderedPage {
     pub samples: Vec<u8>,
 }
 
+/// Where one page in a page edit comes from. Page numbers are
+/// physical and 1-based, matching every other entry point here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PdfPageEditSource {
+    Existing { page: usize },
+    Inserted { path: PathBuf, page: usize },
+}
+
+/// One page of the document a page edit will write, in final
+/// order. The rotation is a clockwise quarter-turn delta to add
+/// to the source page's own `/Rotate`, never a replacement for it:
+/// turning a page that already lies at 90° right must land at 180°,
+/// just as the reader sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdfPageEditEntry {
+    pub source: PdfPageEditSource,
+    pub rotation_clockwise: i32,
+}
+
+/// What a finished page-edit write can tell its caller besides
+/// "the bytes are written": the new page count, and each existing
+/// page's size in the orientation its saved drawings were made
+/// against, keyed by old physical page. Rotating a drawing with
+/// its page is arithmetic in that old space, so the sizes have to
+/// be captured before MuPDF turns anything.
+#[derive(Debug, Clone)]
+pub struct PdfPageEditWriteInfo {
+    pub page_count: usize,
+    pub existing_page_dimensions: HashMap<usize, (f32, f32)>,
+}
+
+fn normalize_page_edit_rotation(degrees: i32) -> i32 {
+    degrees.rem_euclid(360)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum PageEditTempKey {
+    Existing(usize),
+    Inserted(usize),
+}
+
+/// The page a Contents destination should name after an edit:
+/// its own page when that page survives, and the next surviving
+/// page when it was deleted (decision 69). A destination past the
+/// last survivor has no next page to take, so it settles on the
+/// last one rather than pointing outside the book.
+fn outline_target_page(
+    old_page_zero_based: usize,
+    old_to_new: &HashMap<usize, usize>,
+    survivors_zero_based: &[usize],
+) -> Option<usize> {
+    if let Some(new_page) = old_to_new.get(&old_page_zero_based) {
+        return Some(*new_page);
+    }
+    survivors_zero_based
+        .iter()
+        .find(|old| **old > old_page_zero_based)
+        .or_else(|| survivors_zero_based.last())
+        .and_then(|old| old_to_new.get(old).copied())
+}
+
+fn remap_outline_destinations(
+    outlines: &mut [Outline],
+    old_to_new: &HashMap<usize, usize>,
+    survivors_zero_based: &[usize],
+) {
+    for outline in outlines {
+        if let Some(destination) = outline.dest.as_mut() {
+            if let Some(new_page) = outline_target_page(
+                destination.loc.page_number as usize,
+                old_to_new,
+                survivors_zero_based,
+            ) {
+                destination.loc.page_number = new_page as u32;
+                destination.loc.page_in_chapter = new_page as u32;
+            }
+        }
+        remap_outline_destinations(&mut outline.down, old_to_new, survivors_zero_based);
+    }
+}
+
 /// The open MuPDF document, kept in its PDF-specific form when
 /// the file really is a PDF. That form is the one that can answer
 /// for the catalogue's page labels; it still dereferences to the
@@ -626,6 +710,343 @@ impl PdfDocument {
     /// Return total page count.
     pub fn page_count(&self) -> usize {
         self.page_count
+    }
+
+    fn pdf_handle(&self) -> Result<&MuPdfDocument> {
+        match &self.doc {
+            PdfDocHandle::Pdf(doc) => Ok(doc),
+            PdfDocHandle::Generic(_) => {
+                Err(anyhow!("Page editing needs a PDF document"))
+            }
+        }
+    }
+
+    fn pdf_handle_mut(&mut self) -> Result<&mut MuPdfDocument> {
+        match &mut self.doc {
+            PdfDocHandle::Pdf(doc) => Ok(doc),
+            PdfDocHandle::Generic(_) => {
+                Err(anyhow!("Page editing needs a PDF document"))
+            }
+        }
+    }
+
+    /// One page's own `/Rotate`, clockwise and normalized. The
+    /// reader's *view* rotation is a different thing entirely and
+    /// never reaches the file; this is the turn the page carries
+    /// with it into every other reader.
+    pub fn page_rotation(&self, page_num: usize) -> Result<i32> {
+        if page_num == 0 || page_num > self.page_count {
+            return Err(anyhow!("Page number {} out of range", page_num));
+        }
+        let page = self
+            .pdf_handle()?
+            .load_pdf_page((page_num - 1) as i32)
+            .map_err(|e| anyhow!("Failed to load page {}: {}", page_num, e))?;
+        page.rotation()
+            .map(normalize_page_edit_rotation)
+            .map_err(|e| anyhow!("Failed to read page {} rotation: {}", page_num, e))
+    }
+
+    /// Rewrite this document as `entries` — the Pages panel's
+    /// staged order, with its deletions left out, its inserted
+    /// pages grafted in and its quarter turns applied — and write
+    /// the result to `writer`.
+    ///
+    /// The document is edited in place rather than rebuilt in a
+    /// blank one, so its metadata, form, labels and untouched
+    /// structure travel with it. Page objects keep their identity
+    /// through a move, which is what lets internal links and (when
+    /// nothing was deleted) the outline follow a reorder on their
+    /// own. A deletion breaks that, so the outline is rewritten
+    /// from the map below: a Contents entry whose page went away
+    /// re-points to the next remaining page (decision 69).
+    ///
+    /// Encryption is kept as found. A book its reader unlocked for
+    /// this session must still be locked afterwards; silently
+    /// stripping a password would be an edit nobody asked for.
+    pub fn write_edited_pages_to<W: Write>(
+        &mut self,
+        entries: &[PdfPageEditEntry],
+        writer: &mut W,
+    ) -> Result<PdfPageEditWriteInfo> {
+        use mupdf::pdf::{
+            Encryption, InsertPdfOptions, InsertPosition, PageSelection, PdfWriteOptions,
+        };
+
+        if entries.is_empty() {
+            return Err(anyhow!("A page edit cannot leave a book with no pages"));
+        }
+        let old_count = self.page_count;
+
+        // Everything measured against the old file is captured
+        // before the first mutation: dimensions and rotations for
+        // the caller's drawing arithmetic, and the outline whose
+        // destinations still name old page numbers.
+        let mut existing_dimensions: HashMap<usize, (f32, f32)> = HashMap::new();
+        let mut existing_rotations: HashMap<usize, i32> = HashMap::new();
+        let mut seen_existing: HashSet<usize> = HashSet::new();
+        for entry in entries {
+            if let PdfPageEditSource::Existing { page } = entry.source {
+                if page == 0 || page > old_count {
+                    return Err(anyhow!("Page number {} out of range", page));
+                }
+                if !seen_existing.insert(page) {
+                    return Err(anyhow!("Page {} appears twice in the edit", page));
+                }
+                existing_dimensions.insert(page, self.page_dimensions(page)?);
+                existing_rotations.insert(page, self.page_rotation(page)?);
+            }
+        }
+        let mut outlines = self.doc.outlines().unwrap_or_default();
+
+        // Inserted pages come from other files, opened once each.
+        // Their own rotations are captured now for the same reason
+        // as the book's: a staged turn is a delta, not an absolute.
+        let mut inserted_sources: HashMap<PathBuf, PdfDocument> = HashMap::new();
+        let mut inserted_rotations: HashMap<usize, i32> = HashMap::new();
+        for (position, entry) in entries.iter().enumerate() {
+            if let PdfPageEditSource::Inserted { path, page } = &entry.source {
+                if !inserted_sources.contains_key(path) {
+                    let source = PdfDocument::open(path).map_err(|e| {
+                        anyhow!("Failed to open inserted PDF {:?}: {}", path, e)
+                    })?;
+                    inserted_sources.insert(path.clone(), source);
+                }
+                let source = inserted_sources
+                    .get(path)
+                    .expect("inserted source just opened");
+                if *page == 0 || *page > source.page_count() {
+                    return Err(anyhow!(
+                        "Inserted page {} is out of range for {:?}",
+                        page,
+                        path
+                    ));
+                }
+                inserted_rotations.insert(position, source.page_rotation(*page)?);
+            }
+        }
+
+        let survivors_zero_based: Vec<usize> = {
+            let mut survivors: Vec<usize> =
+                seen_existing.iter().map(|page| page - 1).collect();
+            survivors.sort_unstable();
+            survivors
+        };
+        let omitted_zero_based: Vec<usize> = (0..old_count)
+            .filter(|index| !seen_existing.contains(&(index + 1)))
+            .collect();
+        let deleted_any = !omitted_zero_based.is_empty();
+
+        let destination = self.pdf_handle_mut()?;
+        if deleted_any {
+            destination
+                .delete_pages(PageSelection::Pages(omitted_zero_based))
+                .map_err(|e| anyhow!("Failed to delete pages: {}", e))?;
+        }
+
+        // The sequence as it now stands: the surviving pages in
+        // their old relative order, then every inserted page
+        // appended in final order. Naming each by where it came
+        // from (an inserted page by its final position, which is
+        // unique) turns the reorder below into a selection sort
+        // MuPDF performs one page move at a time.
+        let mut current: Vec<PageEditTempKey> = survivors_zero_based
+            .iter()
+            .map(|index| PageEditTempKey::Existing(*index))
+            .collect();
+        for (position, entry) in entries.iter().enumerate() {
+            if let PdfPageEditSource::Inserted { path, page } = &entry.source {
+                let source = inserted_sources
+                    .get(path)
+                    .expect("inserted source opened above");
+                destination
+                    .insert_pdf(
+                        source.pdf_handle()?,
+                        InsertPdfOptions {
+                            source_pages: PageSelection::Pages(vec![page - 1]),
+                            target: InsertPosition::Append,
+                            rotate: None,
+                            copy_links: true,
+                            copy_annotations: true,
+                            copy_widgets: true,
+                        },
+                    )
+                    .map_err(|e| anyhow!("Failed to insert a page from {:?}: {}", path, e))?;
+                current.push(PageEditTempKey::Inserted(position));
+            }
+        }
+
+        let desired: Vec<PageEditTempKey> = entries
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| match entry.source {
+                PdfPageEditSource::Existing { page } => PageEditTempKey::Existing(page - 1),
+                PdfPageEditSource::Inserted { .. } => PageEditTempKey::Inserted(position),
+            })
+            .collect();
+        for (target, key) in desired.iter().enumerate() {
+            let Some(from) = current.iter().position(|candidate| candidate == key) else {
+                return Err(anyhow!("A page went missing during the edit"));
+            };
+            if from != target {
+                destination
+                    .move_page(from, target)
+                    .map_err(|e| anyhow!("Failed to move a page: {}", e))?;
+                let moved = current.remove(from);
+                current.insert(target, moved);
+            }
+        }
+
+        if deleted_any && !outlines.is_empty() {
+            let old_to_new: HashMap<usize, usize> = desired
+                .iter()
+                .enumerate()
+                .filter_map(|(new_index, key)| match key {
+                    PageEditTempKey::Existing(old_index) => Some((*old_index, new_index)),
+                    PageEditTempKey::Inserted(_) => None,
+                })
+                .collect();
+            remap_outline_destinations(
+                &mut outlines,
+                &old_to_new,
+                &survivors_zero_based,
+            );
+            destination
+                .set_outlines(&outlines)
+                .map_err(|e| anyhow!("Failed to rewrite the contents: {}", e))?;
+        }
+
+        for (position, entry) in entries.iter().enumerate() {
+            let delta = normalize_page_edit_rotation(entry.rotation_clockwise);
+            if delta == 0 {
+                continue;
+            }
+            let original = match entry.source {
+                PdfPageEditSource::Existing { page } => {
+                    existing_rotations.get(&page).copied().unwrap_or(0)
+                }
+                PdfPageEditSource::Inserted { .. } => {
+                    inserted_rotations.get(&position).copied().unwrap_or(0)
+                }
+            };
+            let mut page = destination
+                .load_pdf_page(position as i32)
+                .map_err(|e| anyhow!("Failed to load an edited page: {}", e))?;
+            page.set_rotation(normalize_page_edit_rotation(original + delta))
+                .map_err(|e| anyhow!("Failed to rotate a page: {}", e))?;
+        }
+
+        let mut options = PdfWriteOptions::default();
+        options.set_encryption(Encryption::Keep);
+        destination
+            .write_to_with_options(writer, options)
+            .map_err(|e| anyhow!("Failed to write the edited PDF: {}", e))?;
+
+        // The handle in hand now describes the edited book; keep
+        // the cached count honest for any later question asked of
+        // this same open document.
+        self.page_count = entries.len();
+        Ok(PdfPageEditWriteInfo {
+            page_count: entries.len(),
+            existing_page_dimensions: existing_dimensions,
+        })
+    }
+
+    /// Write a new PDF holding only `entries`, in that order with
+    /// their turns applied (decision 71's Extract). The pages are
+    /// grafted into a blank document, so nothing of Kalam's — its
+    /// annotations live outside the file in any case — and none of
+    /// the book's other structure travels into the copy someone
+    /// is about to hand to another reader.
+    pub fn write_extracted_pages_to<W: Write>(
+        &self,
+        entries: &[PdfPageEditEntry],
+        writer: &mut W,
+    ) -> Result<usize> {
+        use mupdf::pdf::{InsertPdfOptions, InsertPosition, PageSelection};
+
+        if entries.is_empty() {
+            return Err(anyhow!("No pages were chosen to extract"));
+        }
+
+        let mut inserted_sources: HashMap<PathBuf, PdfDocument> = HashMap::new();
+        let mut original_rotations: Vec<i32> = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let rotation = match &entry.source {
+                PdfPageEditSource::Existing { page } => self.page_rotation(*page)?,
+                PdfPageEditSource::Inserted { path, page } => {
+                    if !inserted_sources.contains_key(path) {
+                        let source = PdfDocument::open(path).map_err(|e| {
+                            anyhow!("Failed to open inserted PDF {:?}: {}", path, e)
+                        })?;
+                        inserted_sources.insert(path.clone(), source);
+                    }
+                    let source = inserted_sources
+                        .get(path)
+                        .expect("inserted source just opened");
+                    source.page_rotation(*page)?
+                }
+            };
+            original_rotations.push(rotation);
+        }
+
+        let own_handle = self.pdf_handle()?;
+        let mut destination = MuPdfDocument::new();
+        for entry in entries {
+            let (source, page_zero_based) = match &entry.source {
+                PdfPageEditSource::Existing { page } => {
+                    if *page == 0 || *page > self.page_count {
+                        return Err(anyhow!("Page number {} out of range", page));
+                    }
+                    (own_handle, page - 1)
+                }
+                PdfPageEditSource::Inserted { path, page } => {
+                    let source = inserted_sources
+                        .get(path)
+                        .expect("inserted source opened above");
+                    if *page == 0 || *page > source.page_count() {
+                        return Err(anyhow!(
+                            "Inserted page {} is out of range for {:?}",
+                            page,
+                            path
+                        ));
+                    }
+                    (source.pdf_handle()?, page - 1)
+                }
+            };
+            destination
+                .insert_pdf(
+                    source,
+                    InsertPdfOptions {
+                        source_pages: PageSelection::Pages(vec![page_zero_based]),
+                        target: InsertPosition::Append,
+                        rotate: None,
+                        copy_links: true,
+                        copy_annotations: true,
+                        copy_widgets: true,
+                    },
+                )
+                .map_err(|e| anyhow!("Failed to copy a page for extraction: {}", e))?;
+        }
+
+        for (position, entry) in entries.iter().enumerate() {
+            let delta = normalize_page_edit_rotation(entry.rotation_clockwise);
+            if delta == 0 {
+                continue;
+            }
+            let mut page = destination
+                .load_pdf_page(position as i32)
+                .map_err(|e| anyhow!("Failed to load an extracted page: {}", e))?;
+            page.set_rotation(normalize_page_edit_rotation(
+                original_rotations[position] + delta,
+            ))
+            .map_err(|e| anyhow!("Failed to rotate an extracted page: {}", e))?;
+        }
+
+        destination
+            .write_to(writer)
+            .map_err(|e| anyhow!("Failed to write the extracted PDF: {}", e))?;
+        Ok(entries.len())
     }
 
     /// The document's own label for one physical page (1-indexed):
@@ -1694,6 +2115,130 @@ mod tests {
         assert_eq!(
             plain_open_error.as_deref(),
             Some("PDF document is password protected")
+        );
+    }
+
+    #[test]
+    fn page_edit_reorders_deletes_and_rotates_pages() {
+        use mupdf::pdf::PdfDocument as MuPdfDocument;
+
+        // Three pages of different sizes, so the written order can
+        // be read back from dimensions alone — the fixture needs
+        // no text layer for its pages to be told apart.
+        let mut source = MuPdfDocument::new();
+        for size in [mupdf::Size::A5, mupdf::Size::A4, mupdf::Size::LETTER] {
+            let _page = source.new_page(size).expect("create a fixture page");
+        }
+        let mut bytes = Vec::new();
+        source
+            .write_to(&mut bytes)
+            .expect("write the page-edit fixture");
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "kalam-page-edit-test-{}-{stamp}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create the fixture folder");
+        let source_path = dir.join("source.pdf");
+        let edited_path = dir.join("edited.pdf");
+        let extracted_path = dir.join("extracted.pdf");
+        std::fs::write(&source_path, bytes).expect("save the fixture");
+
+        let result = (|| -> std::result::Result<(usize, (f32, f32), i32, usize), String> {
+            let mut doc = PdfDocument::open(&source_path).map_err(|e| e.to_string())?;
+            let (a4_width, a4_height) =
+                doc.page_dimensions(2).map_err(|e| e.to_string())?;
+
+            // Keep pages 3 then 2, delete page 1, and turn the A4
+            // page a quarter clockwise on its way to the back.
+            let entries = vec![
+                PdfPageEditEntry {
+                    source: PdfPageEditSource::Existing { page: 3 },
+                    rotation_clockwise: 0,
+                },
+                PdfPageEditEntry {
+                    source: PdfPageEditSource::Existing { page: 2 },
+                    rotation_clockwise: 90,
+                },
+            ];
+            let mut edited = Vec::new();
+            let info = doc
+                .write_edited_pages_to(&entries, &mut edited)
+                .map_err(|e| e.to_string())?;
+            std::fs::write(&edited_path, edited).map_err(|e| e.to_string())?;
+            let reopened =
+                PdfDocument::open(&edited_path).map_err(|e| e.to_string())?;
+            let rotated_dims = reopened
+                .page_dimensions(2)
+                .map_err(|e| e.to_string())?;
+            let rotation = reopened.page_rotation(2).map_err(|e| e.to_string())?;
+
+            // Dimensions keyed by the old pages, for the caller's
+            // drawing arithmetic.
+            if info.existing_page_dimensions.get(&2) != Some(&(a4_width, a4_height))
+            {
+                return Err("old page dimensions were not reported".to_string());
+            }
+
+            // Extract reads the *original* document: page 2 only.
+            let original =
+                PdfDocument::open(&source_path).map_err(|e| e.to_string())?;
+            let mut extracted = Vec::new();
+            original
+                .write_extracted_pages_to(
+                    &[PdfPageEditEntry {
+                        source: PdfPageEditSource::Existing { page: 2 },
+                        rotation_clockwise: 0,
+                    }],
+                    &mut extracted,
+                )
+                .map_err(|e| e.to_string())?;
+            std::fs::write(&extracted_path, extracted).map_err(|e| e.to_string())?;
+            let extracted_doc =
+                PdfDocument::open(&extracted_path).map_err(|e| e.to_string())?;
+
+            Ok((
+                reopened.page_count(),
+                rotated_dims,
+                rotation,
+                extracted_doc.page_count(),
+            ))
+        })();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let (count, (width, height), rotation, extracted_count) =
+            result.expect("page edit round trip");
+        assert_eq!(count, 2, "one page was deleted");
+        assert!(width > height, "the A4 page now lies on its side");
+        assert_eq!(rotation, 90);
+        assert_eq!(extracted_count, 1);
+    }
+
+    #[test]
+    fn outline_targets_follow_survivors_and_deleted_pages_take_the_next() {
+        // Old pages 1..5 (zero-based 0..4); page 2 deleted, the
+        // rest reversed.
+        let old_to_new: HashMap<usize, usize> =
+            [(0, 3), (2, 2), (3, 1), (4, 0)].into_iter().collect();
+        let survivors = [0, 2, 3, 4];
+        assert_eq!(
+            outline_target_page(0, &old_to_new, &survivors),
+            Some(3),
+            "a surviving page keeps its entry, at its new place"
+        );
+        assert_eq!(
+            outline_target_page(1, &old_to_new, &survivors),
+            Some(2),
+            "a deleted page's entry takes the next remaining page"
+        );
+        assert_eq!(
+            outline_target_page(9, &old_to_new, &survivors),
+            Some(0),
+            "past the end settles on the last remaining page"
         );
     }
 }

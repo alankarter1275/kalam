@@ -12,6 +12,8 @@ use super::image::{PdfImageSettings, PdfPagePicture};
 use super::PdfReaderMsg;
 use gtk::gdk;
 use gtk::glib::BoxedAnyObject;
+use gtk::glib::types::StaticType;
+use gtk::glib::value::ToValue;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -168,23 +170,59 @@ pub fn thumbnail_render_scale(
     (target_width as f64 / effective_width).clamp(0.05, 4.0) as f32
 }
 
+/// One cell of the grid as the reader describes it. `key` is the
+/// page's stable identity (an inserted page's future one, while
+/// an edit is staged): textures, failures and every mark are
+/// keyed by it, so a staged reorder carries a page's thumbnail
+/// with it instead of leaving it behind on a page number.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdfPagesGridEntry {
+    pub key: String,
+    /// The number strip under the thumbnail.
+    pub label: String,
+    /// The tooltip and accessible name.
+    pub description: String,
+    /// Where a plain (non-edit) click lands.
+    pub jump_page: usize,
+}
+
+/// The marks over the entries: which keys are in the current
+/// spread, which are selected for editing and which carry a
+/// staged rotation.
+#[derive(Debug, Clone, Default)]
+pub struct PdfPagesGridMarks {
+    pub current: HashSet<String>,
+    pub selected: HashSet<String>,
+    pub rotated: HashSet<String>,
+    pub edit_mode: bool,
+}
+
 struct PageThumbCell {
     list_item: gtk::ListItem,
     button: gtk::Button,
     overlay: gtk::Overlay,
     picture: PdfPagePicture,
     status: gtk::Label,
+    badge: gtk::Label,
+    rotated_badge: gtk::Box,
+    drop_bar: gtk::Box,
     num: gtk::Label,
-    bound_page: Option<usize>,
+    bound_key: Option<String>,
+    click_modifiers: gdk::ModifierType,
     click_handler: Option<gtk::glib::SignalHandlerId>,
 }
 
 struct PagesGridState {
-    entries: Vec<usize>,
-    textures: HashMap<usize, gdk::Texture>,
-    texture_order: VecDeque<usize>,
-    failed: HashSet<usize>,
-    current_pages: HashSet<usize>,
+    entries: Vec<PdfPagesGridEntry>,
+    textures: HashMap<String, gdk::Texture>,
+    texture_order: VecDeque<String>,
+    failed: HashSet<String>,
+    current_keys: HashSet<String>,
+    selected_keys: HashSet<String>,
+    rotated_keys: HashSet<String>,
+    dragging_keys: HashSet<String>,
+    drop_index: Option<usize>,
+    edit_mode: bool,
     columns: usize,
     aspect_height_for_width: f64,
     image_settings: PdfImageSettings,
@@ -193,59 +231,132 @@ struct PagesGridState {
 }
 
 impl PagesGridState {
-    fn touch_thumbnail(&mut self, page: usize) {
-        if self.textures.contains_key(&page) {
-            self.texture_order.retain(|cached| *cached != page);
-            self.texture_order.push_back(page);
+    fn touch_thumbnail(&mut self, key: &str) {
+        if self.textures.contains_key(key) {
+            self.texture_order.retain(|cached| cached != key);
+            self.texture_order.push_back(key.to_string());
         }
     }
 
-    fn insert_thumbnail(&mut self, page: usize, texture: gdk::Texture) {
-        self.failed.remove(&page);
-        self.textures.insert(page, texture);
-        self.touch_thumbnail(page);
+    fn insert_thumbnail(&mut self, key: &str, texture: gdk::Texture) {
+        self.failed.remove(key);
+        self.textures.insert(key.to_string(), texture);
+        self.touch_thumbnail(key);
         while self.textures.len() > MAX_CACHED_THUMBNAILS {
             let Some(oldest) = self.texture_order.pop_front() else {
                 break;
             };
-            if oldest != page {
+            if oldest != key {
                 self.textures.remove(&oldest);
             }
         }
     }
 
-    fn remove_thumbnail(&mut self, page: usize) {
-        self.textures.remove(&page);
-        self.texture_order.retain(|cached| *cached != page);
+    fn remove_thumbnail(&mut self, key: &str) {
+        self.textures.remove(key);
+        self.texture_order.retain(|cached| cached != key);
+    }
+
+    fn entry(&self, key: &str) -> Option<PdfPagesGridEntry> {
+        self.entries.iter().find(|entry| entry.key == key).cloned()
+    }
+
+    fn cell_index(&self, list_item: &gtk::ListItem) -> Option<usize> {
+        self.cells
+            .iter()
+            .position(|cell| cell.list_item == *list_item)
     }
 }
 
-fn page_description(page: usize, total_pages: usize, current: bool) -> String {
-    if current {
-        format!("Page {page} of {total_pages}, in the current spread")
-    } else {
-        format!("Page {page} of {total_pages}")
-    }
-}
-
-fn paint_cell(
-    cell: &PageThumbCell,
-    texture: Option<&gdk::Texture>,
+struct PageCellPaint {
+    texture: Option<gdk::Texture>,
     failed: bool,
     current: bool,
-) {
-    cell.picture.set_texture(texture);
+    selected: bool,
+    rotated: bool,
+    dragging: bool,
+    drag_badge: Option<String>,
+    drop_side: Option<gtk::Align>,
+}
+
+fn paint_cell(cell: &PageThumbCell, paint: &PageCellPaint, description: &str) {
+    cell.picture.set_texture(paint.texture.as_ref());
     cell.status
-        .set_label(if failed { "Failed to load" } else { "" });
-    if failed {
+        .set_label(if paint.failed { "Failed to load" } else { "" });
+    if paint.failed {
         cell.button.add_css_class("failed");
     } else {
         cell.button.remove_css_class("failed");
     }
-    if current {
+    if paint.current {
         cell.button.add_css_class("current");
     } else {
         cell.button.remove_css_class("current");
+    }
+    if paint.selected {
+        cell.button.add_css_class("selected");
+    } else {
+        cell.button.remove_css_class("selected");
+    }
+    cell.badge.set_visible(paint.selected || paint.drag_badge.is_some());
+    cell.badge.set_label(paint.drag_badge.as_deref().unwrap_or("✓"));
+    cell.rotated_badge.set_visible(paint.rotated && !paint.dragging);
+    cell.button.set_opacity(if paint.dragging { 0.35 } else { 1.0 });
+    if let Some(side) = paint.drop_side {
+        cell.drop_bar.set_halign(side);
+        cell.drop_bar.set_visible(true);
+    } else {
+        cell.drop_bar.set_visible(false);
+    }
+    cell.button.set_tooltip_text(Some(description));
+    cell.button
+        .update_property(&[gtk::accessible::Property::Label(description)]);
+}
+
+/// Repaint one bound cell from the marks in force.
+fn paint_bound_cell(state: &PagesGridState, cell: &PageThumbCell) {
+    let Some(key) = cell.bound_key.as_deref() else {
+        return;
+    };
+    let Some(position) = state.entries.iter().position(|entry| entry.key == key) else {
+        return;
+    };
+    let entry = &state.entries[position];
+    let drop_side = match state.drop_index {
+        Some(index) if index == position => Some(gtk::Align::Start),
+        Some(index) if index == position + 1 && position + 1 == state.entries.len() => {
+            Some(gtk::Align::End)
+        }
+        _ => None,
+    };
+    let dragging = state.dragging_keys.contains(key);
+    let drag_badge = if dragging && state.dragging_keys.len() > 1 {
+        Some(state.dragging_keys.len().to_string())
+    } else {
+        None
+    };
+    paint_cell(
+        cell,
+        &PageCellPaint {
+            texture: state.textures.get(key).cloned(),
+            failed: state.failed.contains(key),
+            current: state.current_keys.contains(key),
+            selected: state.selected_keys.contains(key),
+            rotated: state.rotated_keys.contains(key),
+            dragging,
+            drag_badge,
+            drop_side,
+        },
+        &entry.description,
+    );
+}
+
+/// Repaint every realised cell from the marks in force. Cells
+/// are recycled, so this — not the bind — is what moves a tick,
+/// a ring or the drop bar while the grid stands still.
+fn refresh_cells(state: &PagesGridState) {
+    for cell in &state.cells {
+        paint_bound_cell(state, cell);
     }
 }
 
@@ -253,8 +364,13 @@ fn clear_cell(cell: &PageThumbCell) {
     cell.picture.set_texture(None);
     cell.status.set_label("");
     cell.num.set_label("");
+    cell.badge.set_visible(false);
+    cell.rotated_badge.set_visible(false);
+    cell.drop_bar.set_visible(false);
+    cell.button.set_opacity(1.0);
     cell.button.remove_css_class("failed");
     cell.button.remove_css_class("current");
+    cell.button.remove_css_class("selected");
 }
 
 fn apply_cell_size(cell: &PageThumbCell, columns: usize, aspect_height_for_width: f64) {
@@ -289,7 +405,12 @@ impl PdfPagesGrid {
             textures: HashMap::new(),
             texture_order: VecDeque::new(),
             failed: HashSet::new(),
-            current_pages: HashSet::new(),
+            current_keys: HashSet::new(),
+            selected_keys: HashSet::new(),
+            rotated_keys: HashSet::new(),
+            dragging_keys: HashSet::new(),
+            drop_index: None,
+            edit_mode: false,
             columns,
             aspect_height_for_width: std::f64::consts::SQRT_2,
             image_settings: image_settings.canonical(),
@@ -300,6 +421,7 @@ impl PdfPagesGrid {
 
         {
             let setup_state = state.clone();
+            let setup_sender = sender.clone();
             factory.connect_setup(move |_, object| {
                 let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
                     return;
@@ -331,6 +453,50 @@ impl PdfPagesGrid {
                 status.set_justify(gtk::Justification::Center);
                 overlay.add_overlay(&status);
 
+                // The edit-mode tick (decision 68: a tick badge,
+                // never a checkbox). While a multi-page drag is
+                // underway it shows the count instead.
+                let badge = gtk::Label::new(Some("✓"));
+                badge.add_css_class("kalam-pdf-page-thumb-badge");
+                badge.set_halign(gtk::Align::Start);
+                badge.set_valign(gtk::Align::Start);
+                badge.set_margin_start(5);
+                badge.set_margin_top(5);
+                badge.set_size_request(20, 20);
+                badge.set_can_target(false);
+                badge.set_visible(false);
+                overlay.add_overlay(&badge);
+
+                // The staged rotation's mark, on a dark disc so
+                // it reads over any page.
+                let rotated_icon = gtk::Image::from_icon_name("object-rotate-right-symbolic");
+                rotated_icon.set_pixel_size(11);
+                rotated_icon.set_hexpand(true);
+                rotated_icon.set_vexpand(true);
+                rotated_icon.set_halign(gtk::Align::Center);
+                rotated_icon.set_valign(gtk::Align::Center);
+                let rotated_badge = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                rotated_badge.add_css_class("kalam-pdf-page-thumb-rotated");
+                rotated_badge.set_halign(gtk::Align::End);
+                rotated_badge.set_valign(gtk::Align::Start);
+                rotated_badge.set_margin_end(5);
+                rotated_badge.set_margin_top(5);
+                rotated_badge.set_size_request(20, 20);
+                rotated_badge.set_can_target(false);
+                rotated_badge.append(&rotated_icon);
+                rotated_badge.set_visible(false);
+                overlay.add_overlay(&rotated_badge);
+
+                // The drop slot: a 3px accent bar standing at an
+                // insertion boundary while a drag hovers.
+                let drop_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                drop_bar.add_css_class("kalam-pdf-page-thumb-dropbar");
+                drop_bar.set_halign(gtk::Align::Start);
+                drop_bar.set_valign(gtk::Align::Fill);
+                drop_bar.set_size_request(3, -1);
+                drop_bar.set_can_target(false);
+                drop_bar.set_visible(false);
+
                 let num = gtk::Label::new(None);
                 num.add_css_class("kalam-pdf-page-thumb-num");
                 num.set_halign(gtk::Align::Center);
@@ -342,8 +508,17 @@ impl PdfPagesGrid {
                 content.append(&overlay);
                 content.append(&num);
 
+                // The bar belongs to the whole cell, number strip
+                // included, so it stands over the assembled card
+                // rather than only over the page image.
+                let cell_overlay = gtk::Overlay::new();
+                cell_overlay.set_hexpand(true);
+                cell_overlay.set_vexpand(true);
+                cell_overlay.set_child(Some(&content));
+                cell_overlay.add_overlay(&drop_bar);
+
                 let button = gtk::Button::new();
-                button.set_child(Some(&content));
+                button.set_child(Some(&cell_overlay));
                 button.add_css_class("kalam-pdf-page-thumb");
                 button.set_hexpand(true);
                 button.set_vexpand(true);
@@ -356,14 +531,204 @@ impl PdfPagesGrid {
                 button.set_margin_bottom(CELL_GAP / 2);
                 list_item.set_child(Some(&button));
 
+                // The modifiers of the press behind the click:
+                // a plain click selects, Ctrl toggles and Shift
+                // takes a run, and `connect_clicked` alone cannot
+                // say which it was.
+                let press = gtk::GestureClick::new();
+                press.set_button(1);
+                {
+                    let press_state = setup_state.clone();
+                    let press_item = list_item.clone();
+                    press.connect_pressed(move |gesture, _, _, _| {
+                        let modifiers = gesture.current_event_state();
+                        let mut state = press_state.borrow_mut();
+                        if let Some(cell_idx) = state.cell_index(&press_item) {
+                            state.cells[cell_idx].click_modifiers = modifiers;
+                        }
+                    });
+                }
+                button.add_controller(press);
+
+                // A page drags its selection with it. The
+                // payload is only the grabbed key — which page
+                // that makes the moving group is the model's
+                // decision, announced by PageEditDragStarted.
+                let drag_source = gtk::DragSource::new();
+                drag_source.set_actions(gdk::DragAction::MOVE);
+                {
+                    let prepare_state = setup_state.clone();
+                    let prepare_item = list_item.clone();
+                    drag_source.connect_prepare(move |_, _, _| {
+                        let mut state = prepare_state.borrow_mut();
+                        if !state.edit_mode {
+                            return None;
+                        }
+                        let cell_idx = state.cell_index(&prepare_item)?;
+                        let key = state.cells[cell_idx].bound_key.clone()?;
+                        if !state.selected_keys.contains(&key) {
+                            state.selected_keys.clear();
+                            state.selected_keys.insert(key.clone());
+                            refresh_cells(&state);
+                        }
+                        Some(gdk::ContentProvider::for_value(&key.to_value()))
+                    });
+                }
+                {
+                    let begin_state = setup_state.clone();
+                    let begin_item = list_item.clone();
+                    let begin_sender = setup_sender.clone();
+                    let begin_button = button.clone();
+                    drag_source.connect_drag_begin(move |source, _| {
+                        let key = {
+                            let mut state = begin_state.borrow_mut();
+                            let Some(cell_idx) = state.cell_index(&begin_item) else {
+                                return;
+                            };
+                            let Some(key) = state.cells[cell_idx].bound_key.clone() else {
+                                return;
+                            };
+                            if state.selected_keys.is_empty() {
+                                state.selected_keys.insert(key.clone());
+                            }
+                            state.dragging_keys.clone_from(&state.selected_keys);
+                            refresh_cells(&state);
+                            key
+                        };
+                        let paintable = gtk::WidgetPaintable::new(Some(&begin_button));
+                        source.set_icon(
+                            Some(&paintable),
+                            begin_button.width() / 2,
+                            begin_button.height() / 2,
+                        );
+                        let _ = begin_sender.send(PdfReaderMsg::PageEditDragStarted(key));
+                    });
+                }
+                {
+                    let end_state = setup_state.clone();
+                    drag_source.connect_drag_end(move |_, _, _| {
+                        let mut state = end_state.borrow_mut();
+                        state.dragging_keys.clear();
+                        state.drop_index = None;
+                        refresh_cells(&state);
+                    });
+                }
+                {
+                    let cancel_state = setup_state.clone();
+                    drag_source.connect_drag_cancel(move |_, _, _| {
+                        let mut state = cancel_state.borrow_mut();
+                        state.dragging_keys.clear();
+                        state.drop_index = None;
+                        refresh_cells(&state);
+                        false
+                    });
+                }
+                button.add_controller(drag_source);
+
+                let drop_target = gtk::DropTarget::new(
+                    String::static_type(),
+                    gdk::DragAction::MOVE,
+                );
+                {
+                    let hover_state = setup_state.clone();
+                    let hover_item = list_item.clone();
+                    let hover_button = button.clone();
+                    let hover: Rc<dyn Fn(f64) -> gdk::DragAction> =
+                        Rc::new(move |x: f64| -> gdk::DragAction {
+                        let mut state = hover_state.borrow_mut();
+                        if !state.edit_mode {
+                            return gdk::DragAction::empty();
+                        }
+                        let Some(cell_idx) = state.cell_index(&hover_item) else {
+                            return gdk::DragAction::empty();
+                        };
+                        let Some(key) = state.cells[cell_idx].bound_key.clone() else {
+                            return gdk::DragAction::empty();
+                        };
+                        let Some(position) =
+                            state.entries.iter().position(|entry| entry.key == key)
+                        else {
+                            return gdk::DragAction::empty();
+                        };
+                        let slot = if x >= f64::from(hover_button.width().max(1)) / 2.0 {
+                            position + 1
+                        } else {
+                            position
+                        };
+                        state.drop_index = Some(slot);
+                        refresh_cells(&state);
+                        gdk::DragAction::MOVE
+                        });
+                    let enter = hover.clone();
+                    drop_target.connect_enter(move |_, x, _| enter(x));
+                    drop_target.connect_motion(move |_, x, _| hover(x));
+                }
+                {
+                    let leave_state = setup_state.clone();
+                    drop_target.connect_leave(move |_| {
+                        let mut state = leave_state.borrow_mut();
+                        state.drop_index = None;
+                        refresh_cells(&state);
+                    });
+                }
+                {
+                    let drop_state = setup_state.clone();
+                    let drop_item = list_item.clone();
+                    let drop_sender = setup_sender.clone();
+                    let drop_button = button.clone();
+                    drop_target.connect_drop(move |_, value, x, _| {
+                        let Ok(key) = value.get::<String>() else {
+                            return false;
+                        };
+                        let mut state = drop_state.borrow_mut();
+                        if !state.edit_mode {
+                            return false;
+                        }
+                        let Some(cell_idx) = state.cell_index(&drop_item) else {
+                            return false;
+                        };
+                        let Some(target_key) = state.cells[cell_idx].bound_key.clone()
+                        else {
+                            return false;
+                        };
+                        let Some(position) = state
+                            .entries
+                            .iter()
+                            .position(|entry| entry.key == target_key)
+                        else {
+                            return false;
+                        };
+                        let target_index =
+                            if x >= f64::from(drop_button.width().max(1)) / 2.0 {
+                                position + 1
+                            } else {
+                                position
+                            };
+                        state.dragging_keys.clear();
+                        state.drop_index = None;
+                        refresh_cells(&state);
+                        drop(state);
+                        let _ = drop_sender.send(PdfReaderMsg::PageEditMove {
+                            key,
+                            target_index,
+                        });
+                        true
+                    });
+                }
+                button.add_controller(drop_target);
+
                 let cell = PageThumbCell {
                     list_item: list_item.clone(),
                     button,
                     overlay,
                     picture,
                     status,
+                    badge,
+                    rotated_badge,
+                    drop_bar,
                     num,
-                    bound_page: None,
+                    bound_key: None,
+                    click_modifiers: gdk::ModifierType::empty(),
                     click_handler: None,
                 };
                 let mut state = setup_state.borrow_mut();
@@ -382,51 +747,67 @@ impl PdfPagesGrid {
                 let Some(boxed) = list_item.item().and_downcast::<BoxedAnyObject>() else {
                     return;
                 };
-                let page = {
-                    let Ok(page_ref) = boxed.try_borrow::<usize>() else {
+                let entry = {
+                    let Ok(entry_ref) = boxed.try_borrow::<PdfPagesGridEntry>() else {
                         return;
                     };
-                    *page_ref
+                    entry_ref.clone()
                 };
+                let key = entry.key.clone();
 
                 {
                     let mut state = bind_state.borrow_mut();
-                    let Some(cell_idx) = state
-                        .cells
-                        .iter()
-                        .position(|cell| cell.list_item == *list_item)
-                    else {
+                    let Some(cell_idx) = state.cell_index(list_item) else {
                         return;
                     };
-                    let texture = state.textures.get(&page).cloned();
-                    if texture.is_some() {
-                        state.touch_thumbnail(page);
+                    if state.textures.contains_key(&key) {
+                        state.touch_thumbnail(&key);
                     }
-                    let failed = state.failed.contains(&page);
-                    let current = state.current_pages.contains(&page);
-                    let total_pages = state.entries.len();
 
                     let cell = &mut state.cells[cell_idx];
                     if let Some(handler) = cell.click_handler.take() {
                         cell.button.disconnect(handler);
                     }
                     let tx = bind_sender.clone();
+                    let click_state = bind_state.clone();
+                    let click_item = list_item.clone();
+                    let click_entry = entry.clone();
                     let handler = cell.button.connect_clicked(move |_| {
-                        let _ = tx.send(PdfReaderMsg::JumpToPage(page));
+                        // In edit mode the click selects, with
+                        // whatever modifiers its press carried;
+                        // reading, it goes to the page.
+                        let modifiers = {
+                            let state = click_state.borrow();
+                            state
+                                .cell_index(&click_item)
+                                .map(|cell_idx| state.cells[cell_idx].click_modifiers)
+                                .unwrap_or_else(gdk::ModifierType::empty)
+                        };
+                        let editing = click_state.borrow().edit_mode;
+                        if editing {
+                            let _ = tx.send(PdfReaderMsg::PageEditThumbnailClicked {
+                                key: click_entry.key.clone(),
+                                control: modifiers.contains(gdk::ModifierType::CONTROL_MASK),
+                                shift: modifiers.contains(gdk::ModifierType::SHIFT_MASK),
+                            });
+                        } else {
+                            let _ = tx.send(PdfReaderMsg::JumpToPage(click_entry.jump_page));
+                        }
                     });
                     cell.click_handler = Some(handler);
-                    cell.bound_page = Some(page);
-                    cell.num.set_label(&page.to_string());
-                    let description = page_description(page, total_pages, current);
-                    cell.button.set_tooltip_text(Some(&description));
-                    cell.button.update_property(&[gtk::accessible::Property::Label(
-                        &description,
-                    )]);
-                    paint_cell(cell, texture.as_ref(), failed, current);
+                    cell.bound_key = Some(entry.key.clone());
+                    cell.click_modifiers = gdk::ModifierType::empty();
+                    cell.num.set_label(&entry.label);
+                }
+                {
+                    let state = bind_state.borrow();
+                    if let Some(cell_idx) = state.cell_index(list_item) {
+                        paint_bound_cell(&state, &state.cells[cell_idx]);
+                    }
                 }
 
                 // Recycled into view is the lazy edge.
-                let _ = bind_sender.send(PdfReaderMsg::PageThumbnailVisible(page));
+                let _ = bind_sender.send(PdfReaderMsg::PageThumbnailVisible(key));
             });
         }
 
@@ -447,7 +828,8 @@ impl PdfPagesGrid {
                 if let Some(handler) = cell.click_handler.take() {
                     cell.button.disconnect(handler);
                 }
-                cell.bound_page = None;
+                cell.bound_key = None;
+                cell.click_modifiers = gdk::ModifierType::empty();
                 clear_cell(cell);
             });
         }
@@ -544,13 +926,16 @@ impl PdfPagesGrid {
         self.view.queue_resize();
     }
 
-    /// Point the grid at this document. A standing model is only
-    /// replaced when the page count really changes, so an ordinary
-    /// panel refresh preserves both scroll and decoded thumbnails.
-    pub fn set_document(
+    /// Point the grid at this set of entries. A standing model
+    /// is only replaced when the entries really change, so an
+    /// ordinary panel refresh preserves both scroll and decoded
+    /// thumbnails; when they do change (a staged reorder, a new
+    /// book), thumbnails follow their key and only the marks of
+    /// still-present pages survive.
+    pub fn set_entries(
         &self,
-        total_pages: usize,
-        current_pages: HashSet<usize>,
+        entries: Vec<PdfPagesGridEntry>,
+        marks: PdfPagesGridMarks,
         aspect_height_for_width: f64,
         image_settings: PdfImageSettings,
         paper_rgb: [f32; 3],
@@ -558,77 +943,118 @@ impl PdfPagesGrid {
         self.set_image_settings(image_settings, paper_rgb);
         self.set_page_aspect(aspect_height_for_width);
 
-        let entries: Vec<usize> = if total_pages == 0 {
-            Vec::new()
+        let valid: HashSet<String> = entries.iter().map(|entry| entry.key.clone()).collect();
+        let current_keys: HashSet<String> = marks
+            .current
+            .into_iter()
+            .filter(|key| valid.contains(key))
+            .collect();
+        let selected_keys: HashSet<String> = if marks.edit_mode {
+            marks
+                .selected
+                .into_iter()
+                .filter(|key| valid.contains(key))
+                .collect()
         } else {
-            (1..=total_pages).collect()
+            HashSet::new()
         };
-        let changed = self.state.borrow().entries != entries;
-        if !changed {
-            self.set_current_pages(current_pages);
+        let rotated_keys: HashSet<String> = if marks.edit_mode {
+            marks
+                .rotated
+                .into_iter()
+                .filter(|key| valid.contains(key))
+                .collect()
+        } else {
+            HashSet::new()
+        };
+
+        enum EntriesChange {
+            Standing,
+            Replaced(Vec<BoxedAnyObject>),
+        }
+        let change = {
+            let mut state = self.state.borrow_mut();
+            // A page whose staged rotation flipped needs a fresh
+            // thumbnail at its new angle; the old quarter-turn
+            // picture must not linger under the new mark.
+            let re_rotated: Vec<String> = state
+                .rotated_keys
+                .symmetric_difference(&rotated_keys)
+                .cloned()
+                .collect();
+            for key in &re_rotated {
+                state.remove_thumbnail(key);
+                state.failed.remove(key);
+            }
+            state.current_keys = current_keys;
+            state.selected_keys = selected_keys;
+            state.rotated_keys = rotated_keys;
+            state.edit_mode = marks.edit_mode;
+            if !marks.edit_mode {
+                state.dragging_keys.clear();
+                state.drop_index = None;
+            }
+            if state.entries == entries {
+                refresh_cells(&state);
+                EntriesChange::Standing
+            } else {
+                state.textures.retain(|key, _| valid.contains(key));
+                state.texture_order.retain(|key| valid.contains(key));
+                state.failed.retain(|key| valid.contains(key));
+                state.dragging_keys.retain(|key| valid.contains(key));
+                if state
+                    .drop_index
+                    .is_some_and(|index| index > entries.len())
+                {
+                    state.drop_index = None;
+                }
+                state.entries = entries;
+                EntriesChange::Replaced(
+                    state
+                        .entries
+                        .iter()
+                        .cloned()
+                        .map(BoxedAnyObject::new)
+                        .collect(),
+                )
+            }
+        };
+
+        if let EntriesChange::Replaced(objects) = change {
+            let store = gtk::gio::ListStore::new::<BoxedAnyObject>();
+            for object in &objects {
+                store.append(object);
+            }
+            let selection = gtk::NoSelection::new(Some(store));
+            self.view.set_model(Some(&selection));
+            let state = self.state.borrow();
+            refresh_cells(&state);
+        }
+    }
+
+    pub fn set_current_keys(&self, current_keys: HashSet<String>) {
+        let mut state = self.state.borrow_mut();
+        let current_keys: HashSet<String> = current_keys
+            .into_iter()
+            .filter(|key| state.entries.iter().any(|entry| &entry.key == key))
+            .collect();
+        if state.current_keys == current_keys {
             return;
         }
-
-        let objects = {
-            let mut state = self.state.borrow_mut();
-            let valid: HashSet<usize> = entries.iter().copied().collect();
-            state.textures.retain(|page, _| valid.contains(page));
-            state.texture_order.retain(|page| valid.contains(page));
-            state.failed.retain(|page| valid.contains(page));
-            state.current_pages = current_pages
-                .into_iter()
-                .filter(|page| valid.contains(page))
-                .collect();
-            state.entries = entries.clone();
-            entries
-                .iter()
-                .copied()
-                .map(BoxedAnyObject::new)
-                .collect::<Vec<_>>()
-        };
-
-        let store = gtk::gio::ListStore::new::<BoxedAnyObject>();
-        for object in &objects {
-            store.append(object);
-        }
-        let selection = gtk::NoSelection::new(Some(store));
-        self.view.set_model(Some(&selection));
-        self.refresh_current_cells();
+        state.current_keys = current_keys;
+        refresh_cells(&state);
     }
 
-    fn refresh_current_cells(&self) {
-        let state = self.state.borrow();
-        let total_pages = state.entries.len();
-        for cell in &state.cells {
-            let Some(page) = cell.bound_page else {
-                continue;
-            };
-            let current = state.current_pages.contains(&page);
-            if current {
-                cell.button.add_css_class("current");
-            } else {
-                cell.button.remove_css_class("current");
-            }
-            let description = page_description(page, total_pages, current);
-            cell.button.set_tooltip_text(Some(&description));
-            cell.button
-                .update_property(&[gtk::accessible::Property::Label(&description)]);
-        }
-    }
-
-    pub fn set_current_pages(&self, current_pages: HashSet<usize>) {
-        {
-            let mut state = self.state.borrow_mut();
-            let current_pages: HashSet<usize> = current_pages
-                .into_iter()
-                .filter(|page| state.entries.contains(page))
-                .collect();
-            if state.current_pages == current_pages {
-                return;
-            }
-            state.current_pages = current_pages;
-        }
-        self.refresh_current_cells();
+    /// Stage the drag marks from outside the controllers (the
+    /// screenshot desk poses a drag this way).
+    pub fn set_drag_state(&self, dragging_keys: HashSet<String>, drop_index: Option<usize>) {
+        let mut state = self.state.borrow_mut();
+        state.dragging_keys = dragging_keys
+            .into_iter()
+            .filter(|key| state.entries.iter().any(|entry| &entry.key == key))
+            .collect();
+        state.drop_index = drop_index.filter(|index| *index <= state.entries.len());
+        refresh_cells(&state);
     }
 
     pub fn current_position(&self) -> Option<usize> {
@@ -636,7 +1062,7 @@ impl PdfPagesGrid {
         state
             .entries
             .iter()
-            .position(|page| state.current_pages.contains(page))
+            .position(|entry| state.current_keys.contains(&entry.key))
     }
 
     pub fn scroll_to_current(&self) {
@@ -652,7 +1078,20 @@ impl PdfPagesGrid {
             .borrow()
             .entries
             .iter()
-            .position(|entry| *entry == page);
+            .position(|entry| entry.jump_page == page);
+        if let Some(position) = position {
+            self.view
+                .scroll_to(position as u32, gtk::ListScrollFlags::empty(), None);
+        }
+    }
+
+    pub fn scroll_to_key(&self, key: &str) {
+        let position = self
+            .state
+            .borrow()
+            .entries
+            .iter()
+            .position(|entry| entry.key == key);
         if let Some(position) = position {
             self.view
                 .scroll_to(position as u32, gtk::ListScrollFlags::empty(), None);
@@ -683,7 +1122,7 @@ impl PdfPagesGrid {
             state.aspect_height_for_width,
             scroll_value,
         )?;
-        state.entries.get(position).copied()
+        state.entries.get(position).map(|entry| entry.jump_page)
     }
 
     pub fn heading_anchor_page(&self, scroll_value: f64) -> Option<usize> {
@@ -694,46 +1133,52 @@ impl PdfPagesGrid {
             state.aspect_height_for_width,
             scroll_value,
         )?;
-        state.entries.get(position).copied()
+        state.entries.get(position).map(|entry| entry.jump_page)
     }
 
-    pub fn bound_pages(&self) -> Vec<usize> {
+    pub fn bound_keys(&self) -> Vec<String> {
         self.state
             .borrow()
             .cells
             .iter()
-            .filter_map(|cell| cell.bound_page)
+            .filter_map(|cell| cell.bound_key.clone())
             .collect()
     }
 
-    pub fn has_thumbnail_state(&self, page: usize) -> bool {
+    pub fn has_thumbnail_state(&self, key: &str) -> bool {
         let state = self.state.borrow();
-        state.textures.contains_key(&page) || state.failed.contains(&page)
+        state.textures.contains_key(key) || state.failed.contains(key)
     }
 
-    pub fn update_thumbnail(&self, page: usize, texture: Option<gdk::Texture>) {
+    /// Forget one key's raster or failure without disturbing the
+    /// rest of the cache — a staged quarter turn needs exactly
+    /// that page rendered again at its new angle.
+    pub fn clear_thumbnail(&self, key: &str) {
         let mut state = self.state.borrow_mut();
-        if !state.entries.contains(&page) {
+        state.remove_thumbnail(key);
+        state.failed.remove(key);
+        for cell in &state.cells {
+            if cell.bound_key.as_deref() == Some(key) {
+                paint_bound_cell(&state, cell);
+            }
+        }
+    }
+
+    pub fn update_thumbnail(&self, key: &str, texture: Option<gdk::Texture>) {
+        let mut state = self.state.borrow_mut();
+        if !state.entries.iter().any(|entry| entry.key == key) {
             return;
         }
-        let current = state.current_pages.contains(&page);
         match texture {
-            Some(texture) => {
-                state.insert_thumbnail(page, texture.clone());
-                for cell in &state.cells {
-                    if cell.bound_page == Some(page) {
-                        paint_cell(cell, Some(&texture), false, current);
-                    }
-                }
-            }
+            Some(texture) => state.insert_thumbnail(key, texture),
             None => {
-                state.remove_thumbnail(page);
-                state.failed.insert(page);
-                for cell in &state.cells {
-                    if cell.bound_page == Some(page) {
-                        paint_cell(cell, None, true, current);
-                    }
-                }
+                state.remove_thumbnail(key);
+                state.failed.insert(key.to_string());
+            }
+        }
+        for cell in &state.cells {
+            if cell.bound_key.as_deref() == Some(key) {
+                paint_bound_cell(&state, cell);
             }
         }
     }
@@ -743,12 +1188,7 @@ impl PdfPagesGrid {
         state.textures.clear();
         state.texture_order.clear();
         state.failed.clear();
-        let current_pages = state.current_pages.clone();
-        for cell in &state.cells {
-            if let Some(page) = cell.bound_page {
-                paint_cell(cell, None, false, current_pages.contains(&page));
-            }
-        }
+        refresh_cells(&state);
     }
 }
 

@@ -5476,6 +5476,72 @@ button.kalam-pdf-pages-columns-btn image {
     -gtk-icon-size: 18px;
 }
 
+separator.kalam-pdf-pages-heading-divider {
+    background: alpha(@kalam_border, 0.72);
+    min-width: 1px;
+    min-height: 24px;
+    margin: 0 2px;
+}
+
+button.kalam-pdf-pages-edit-btn {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    box-shadow: none;
+    color: @kalam_text_dim;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+}
+
+button.kalam-pdf-pages-edit-btn:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+.kalam-pdf-pages-edit-selected {
+    color: @kalam_text;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+button.kalam-pdf-pages-apply-btn {
+    background: @kalam_accent_fill;
+    border: 1px solid @kalam_accent_fill;
+    border-radius: 999px;
+    box-shadow: none;
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 600;
+    min-height: 32px;
+    padding: 6px 20px;
+}
+
+button.kalam-pdf-pages-apply-btn:hover {
+    background: shade(@kalam_accent_fill, 1.08);
+}
+
+button.kalam-pdf-pages-edit-action-btn {
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    box-shadow: none;
+    color: @kalam_text_dim;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+}
+
+button.kalam-pdf-pages-edit-action-btn:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-pages-edit-btn image,
+button.kalam-pdf-pages-edit-action-btn image {
+    -gtk-icon-size: 18px;
+}
+
 gridview.kalam-pdf-pages-grid {
     background: transparent;
 }
@@ -5532,6 +5598,40 @@ button.kalam-pdf-page-thumb.failed .kalam-pdf-page-thumb-image {
     color: @kalam_text_dim;
     font-size: 11px;
     padding: 0 8px;
+}
+
+button.kalam-pdf-page-thumb.selected {
+    border-color: @kalam_accent;
+    box-shadow: inset 0 0 0 1px @kalam_accent;
+}
+
+.kalam-pdf-page-thumb-badge {
+    background: @kalam_accent_fill;
+    border-radius: 999px;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 20px;
+    min-height: 20px;
+    padding: 0;
+}
+
+.kalam-pdf-page-thumb-rotated {
+    background: alpha(@kalam_bg, 0.84);
+    border-radius: 999px;
+    color: @kalam_text;
+    min-width: 20px;
+    min-height: 20px;
+}
+
+.kalam-pdf-page-thumb-rotated image {
+    -gtk-icon-size: 11px;
+}
+
+.kalam-pdf-page-thumb-dropbar {
+    background: @kalam_accent;
+    border-radius: 999px;
+    min-width: 3px;
 }
 
 /* Notes (decision 60): highlights keep only their colour bar,
@@ -5676,6 +5776,9 @@ button.kalam-pdf-contents-nav:focus-visible,
 button.kalam-pdf-contents-chevron:focus-visible,
 button.kalam-pdf-contents-open-pages:focus-visible,
 button.kalam-pdf-pages-columns-btn:focus-visible,
+button.kalam-pdf-pages-edit-btn:focus-visible,
+button.kalam-pdf-pages-apply-btn:focus-visible,
+button.kalam-pdf-pages-edit-action-btn:focus-visible,
 button.kalam-pdf-page-thumb:focus-visible,
 button.kalam-pdf-rotate-btn:focus-visible {
     outline: 2px solid @kalam_accent;

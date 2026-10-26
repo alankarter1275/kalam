@@ -931,7 +931,7 @@ fn plan_comic_rewrites(
     rows.iter()
         .filter_map(|(id, author)| {
             let new_author = rewrite_author_string(author, source_keys, new_name)?;
-            (new_author != *author).then(|| (*id, new_author))
+            (new_author != *author).then_some((*id, new_author))
         })
         .collect()
 }

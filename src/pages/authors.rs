@@ -25,7 +25,6 @@ pub enum AuthorsOut {
 
 #[derive(Debug)]
 pub enum AuthorsMsg {
-    Refresh,
     Loaded {
         gen: u64,
         load: Box<AuthorsLoad>,
@@ -166,10 +165,6 @@ impl Component for AuthorsModel {
         _root: &Self::Root,
     ) {
         match msg {
-            AuthorsMsg::Refresh => {
-                self.request_snapshot(&sender);
-                return;
-            }
             AuthorsMsg::Loaded { gen, load } => {
                 if gen != self.load_gen {
                     return;

@@ -379,7 +379,6 @@ pub struct AuthorIndexEntry {
     pub photo_path: Option<std::path::PathBuf>,
     /// Every spelling that should find this author in search.
     pub aliases: Vec<String>,
-    pub has_profile: bool,
 }
 
 /// The Authors index page: one entry per author in the library,
@@ -1754,7 +1753,6 @@ fn aggregate_author_index(
                     .unwrap_or_default(),
                 photo_path: profile.and_then(|p| p.photo_path.clone()),
                 aliases,
-                has_profile: profile.is_some(),
             }
         })
         .collect();
@@ -2471,7 +2469,6 @@ mod tests {
         assert_eq!(le_guin.known_works, Some(12));
         assert_eq!(le_guin.birth_year, Some(1929));
         assert_eq!(le_guin.death_year, Some(2018));
-        assert!(le_guin.has_profile);
         assert!(le_guin.aliases.iter().any(|a| a == "Ursula Le Guin"));
     }
 

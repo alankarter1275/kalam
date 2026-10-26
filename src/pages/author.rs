@@ -2146,7 +2146,7 @@ fn present_edit_author_dialog(
         name_field.entry().connect_changed(move |entry| {
             if !dirty.get() {
                 updating.set(true);
-                sort_entry.set_text(&sort_author_name(&entry.text().to_string()));
+                sort_entry.set_text(&sort_author_name(entry.text().as_ref()));
                 updating.set(false);
             }
         });

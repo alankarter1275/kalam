@@ -1140,33 +1140,59 @@ impl AuthorPageModel {
         scroller.set_child(Some(&row));
         self.panel_box.append(&scroller);
 
-        // Anchor under the card once it has a real allocation. This
-        // waits on the frame clock, not an idle: idles can burn through
-        // any retry cap before the first frame is even allocated, and
-        // compute_point on an unallocated card reads the origin (the
-        // panel landed over the header twice before CI taught us).
-        // Capped in frames; a rebuild destroys the old card and this
-        // callback with it, then re-anchors from the new one.
+        // Anchor under the card once it has a real allocation — and
+        // keep anchoring it. This waits on the frame clock, not an
+        // idle: idles can burn through any retry cap before the first
+        // frame is even allocated, and compute_point on an
+        // unallocated card reads the origin (the panel landed over
+        // the header twice before CI taught us). It stays on the
+        // clock while the panel stands because the card moves under
+        // it — page scroll, window resize, covers settling — and a
+        // one-shot anchor left the panel floating beside its card
+        // instead of joined to it (§27). A rebuild destroys the old
+        // card and this callback with it, then re-anchors from the
+        // new one; closing the panel hides the revealer, which ends
+        // the callback too.
         if let Some(card) = self.card_buttons.get(index).cloned().flatten() {
             let revealer = self.panel_revealer.clone();
+            let panel_box = self.panel_box.clone();
             let overlay = root.clone();
             let tries = Rc::new(Cell::new(0u32));
+            let shown = Rc::new(Cell::new(false));
+            let anchored = Rc::new(Cell::new(None::<(i32, i32, i32)>));
             card.add_tick_callback(move |widget, _clock| {
+                if shown.get() && !revealer.is_visible() {
+                    return gtk::glib::ControlFlow::Break;
+                }
                 tries.set(tries.get() + 1);
-                let ready = widget.is_mapped() && widget.width() > 1;
-                if !ready && tries.get() < 180 {
+                let point = (widget.is_mapped() && widget.width() > 1).then(|| {
+                    widget.compute_point(&overlay, &gtk::graphene::Point::new(0.0, 0.0))
+                });
+                let point = point.flatten();
+                if point.is_none() && !shown.get() && tries.get() < 180 {
                     return gtk::glib::ControlFlow::Continue;
                 }
-                if let Some(point) =
-                    widget.compute_point(&overlay, &gtk::graphene::Point::new(0.0, 0.0))
-                {
-                    revealer.set_margin_start(point.x() as i32);
-                    revealer.set_margin_top(point.y() as i32 + widget.height());
-                    revealer.set_size_request(widget.width(), -1);
+                if let Some(point) = point {
+                    // Sit on the card's bottom pixel row, not below
+                    // it: with the card's bottom border transparent
+                    // and the panel borderless on top, the overlap is
+                    // what makes the side borders read as one line.
+                    let geometry = (
+                        point.x() as i32,
+                        point.y() as i32 + widget.height() - 1,
+                        widget.width(),
+                    );
+                    if anchored.replace(Some(geometry)) != Some(geometry) {
+                        revealer.set_margin_start(geometry.0);
+                        revealer.set_margin_top(geometry.1);
+                        revealer.set_size_request(geometry.2, -1);
+                        panel_box.set_size_request(geometry.2, -1);
+                    }
                 }
                 revealer.set_visible(true);
                 revealer.set_reveal_child(true);
-                gtk::glib::ControlFlow::Break
+                shown.set(true);
+                gtk::glib::ControlFlow::Continue
             });
         } else {
             self.panel_revealer.set_visible(true);

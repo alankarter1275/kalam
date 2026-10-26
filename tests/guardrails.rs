@@ -638,6 +638,41 @@ fn pages_touch_disk_or_documents_only_inside_tasks() {
 }
 
 #[test]
+fn reader_page_click_claims_only_mapped_panels() {
+    // Regression pin (2026-10-27): the reader's capture-phase page
+    // click asked a shut GtkRevealer's child `is_visible()`, which
+    // stays true while the revealer conceals it — so the click was
+    // claimed on every press and neither the Back button nor the
+    // page view's selection drag ever saw the sequence. The claim
+    // must key on what is actually mapped, and must leave the press
+    // entirely alone when no panel stands.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/pages/reader/mod.rs");
+    let text = std::fs::read_to_string(&path).expect("reader mod.rs is readable");
+    let start = text
+        .find("A click on the page while a panel stands")
+        .expect("the panel click block is still findable by its comment");
+    let block = &text[start..];
+    let end = block
+        .find("root.add_controller(click);")
+        .expect("the panel click controller is still installed on the root");
+    let block = &block[..end];
+
+    assert!(
+        block.contains("panel.is_mapped()"),
+        "the panel claim must test mapped panels:\n{block}"
+    );
+    assert!(
+        !block.contains("panel.is_visible()"),
+        "a concealed GtkRevealer child still reports visible; asking \
+         is_visible() here re-breaks Back and text selection:\n{block}"
+    );
+    assert!(
+        block.contains("if !any_open"),
+        "with no panel open the press must pass through untouched:\n{block}"
+    );
+}
+
+#[test]
 fn boundary_scanner_suppresses_workers_not_done_callbacks() {
     // The worker closure is the task layer; the progress and done
     // callbacks run on the main thread and must stay scanned.

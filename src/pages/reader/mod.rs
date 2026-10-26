@@ -1138,12 +1138,26 @@ impl Component for ReaderModel {
             let right_box = model.right_sidebar_box.clone();
             click.connect_pressed(move |gesture, _, x, y| {
                 let Some(widget) = gesture.widget() else { return };
+                // `is_visible()` would be the wrong question here: a
+                // GtkRevealer conceals its child without clearing the
+                // child's (or its parents') visible flags, so a shut
+                // panel still reports visible — and this capture-phase
+                // claim then swallows *every* press, Back button and
+                // selection drags included. Mapped is what's actually
+                // on screen.
+                let any_open = [left_box.as_ref(), right_box.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|panel| panel.is_mapped());
+                if !any_open {
+                    return;
+                }
                 let point = gtk::graphene::Point::new(x as f32, y as f32);
                 let on_panel = [left_box.as_ref(), right_box.as_ref()]
                     .into_iter()
                     .flatten()
                     .any(|panel| {
-                        panel.is_visible()
+                        panel.is_mapped()
                             && widget
                                 .compute_point(panel, &point)
                                 .is_some_and(|p| {
@@ -1155,16 +1169,7 @@ impl Component for ReaderModel {
                     });
                 if !on_panel {
                     let _ = tx.send(ReaderMsg::CloseSidebars);
-                    // Claim only when there was something to close: the
-                    // message handler reports through the model, so here
-                    // we claim only if a panel was visible at all.
-                    let any_visible = [left_box.as_ref(), right_box.as_ref()]
-                        .into_iter()
-                        .flatten()
-                        .any(|panel| panel.is_visible());
-                    if any_visible {
-                        gesture.set_state(gtk::EventSequenceState::Claimed);
-                    }
+                    gesture.set_state(gtk::EventSequenceState::Claimed);
                 }
             });
             root.add_controller(click);

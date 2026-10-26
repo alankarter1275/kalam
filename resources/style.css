@@ -8008,20 +8008,33 @@ button.kalam-authorpage-card:focus-visible {
   outline: 2px solid @kalam_accent;
   outline-offset: 2px;
 }
+/* Open (§26): the card's bottom edge dissolves into the panel below
+   it — square bottom corners, no bottom border, and no hover wash to
+   split the joined surface in two tones. */
+button.kalam-authorpage-card.open,
+button.kalam-authorpage-card.open:hover {
+  background-color: @kalam_bg;
+  border-bottom: 1px solid transparent;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
 .kalam-authorpage-chevron { color: @kalam_text_dim; }
 
 /* Fan covers 56 × 84, radius 4 (§26). GTK CSS cannot clip a painted
    texture to a radius; the class rounds the generated/dashed faces. */
 .kalam-authorpage-fan-cover { border-radius: 4px; }
 
-/* Open-series panel (§27): floats over content below; its soft shadow
-   is the page's only one. */
+/* Open-series panel (§27): not a floating card but the lower half of
+   its series card — directly under it at the card's own width, over
+   the content below, with no top border and square top corners so
+   the two read as one surface. No shadow (decision 104). */
 .kalam-authorpage-panel {
   background-color: @kalam_bg;
   border: 1px solid @kalam_border;
-  border-radius: 14px;
-  box-shadow: 0 24px 48px alpha(black, 0.35);
-  padding: 18px 22px;
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  box-shadow: none;
+  padding: 20px;
 }
 button.kalam-authorpage-panel-cover {
   background: transparent;

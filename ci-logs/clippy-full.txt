@@ -16,19 +16,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/comics_reader/mod.rs:95:5: [1m[91merror[0m: type `pages::comics_reader::reading_settings::ComicSettingsPreset` is more private than the item `pages::comics_reader::ComicsReaderModel::saved_presets`: field `pages::comics_reader::ComicsReaderModel::saved_presets` is reachable at visibility `pub`
-src/pages/comics_reader/mod.rs:99:5: [1m[91merror[0m: type `pages::comics_reader::PresetRowWidgets` is more private than the item `pages::comics_reader::ComicsReaderModel::preset_rows`: field `pages::comics_reader::ComicsReaderModel::preset_rows` is reachable at visibility `pub`
-src/metadata/mod.rs:485:8: [1m[91merror[0m: function `enabled_sources` is never used
-src/pages/comics_reader/mod.rs:48:5: [1m[91merror[0m: field `name` is never read
-src/metadata/comic_vine.rs:410:22: [1m[91merror[0m: redundant closure: help: replace the closure with the function itself: `credit_role`
-src/metadata/myanimelist.rs:377:19: [1m[91merror[0m: redundant closure: help: replace the closure with the function itself: `cover_ref`
-src/pages/comic_series_metadata.rs:1210:29: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/comic_series_metadata.rs:1212:30: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/comic_series_metadata.rs:1213:24: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/comic_series_metadata.rs:1214:25: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 17.51s

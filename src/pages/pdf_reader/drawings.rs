@@ -548,8 +548,8 @@ pub fn paint_drawing(
             display_height,
             paint.rotation,
         );
-        let [r, g, b] = accent_rgb;
-        cr.set_source_rgba(r as f64, g as f64, b as f64, 0.95);
+        let [r, g, blue] = accent_rgb;
+        cr.set_source_rgba(r as f64, g as f64, blue as f64, 0.95);
         cr.set_line_width(1.5);
         cr.set_dash(&[5.0, 4.0], 0.0);
         cr.rectangle(

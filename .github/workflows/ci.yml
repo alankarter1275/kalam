@@ -647,6 +647,42 @@ jobs:
             THEME=terracotta-light \
             docs/ci/screenshot.sh
 
+      # Pages Edit (decisions 68-71): the staged edit with its
+      # ticks and turned page, the same pages mid-drag, and the
+      # two questions editing can ask. Each action stages itself
+      # nine seconds after the document lands, inside SETTLE.
+      - name: open the PDF Pages edit mode (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-edit-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-edit \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: drag pages in PDF Pages edit mode (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-edit-drag-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-edit-drag \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Pages delete question (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-edit-delete-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-edit-delete \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Pages unsaved question (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-edit-unsaved-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-edit-unsaved \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       - name: open the PDF search results (dark) and report
         if: matrix.group == 'pdf'
         run: |
@@ -1348,6 +1384,8 @@ jobs:
           for shot in pdf-chrome-light pdf-chrome-dark \
                       pdf-contents-dark pdf-contents-pinned-dark \
                       pdf-pages-dark pdf-pages-pinned-light \
+                      pdf-pages-edit-dark pdf-pages-edit-drag-dark \
+                      pdf-pages-edit-delete-dark pdf-pages-edit-unsaved-dark \
                       pdf-search-results-dark pdf-search-results-light \
                       pdf-search-no-matches-dark \
                       pdf-notes-dark pdf-notes-light \
@@ -1481,6 +1519,8 @@ jobs:
           for shot in pdf-chrome-light pdf-chrome-dark \
                       pdf-contents-dark pdf-contents-pinned-dark \
                       pdf-pages-dark pdf-pages-pinned-light \
+                      pdf-pages-edit-dark pdf-pages-edit-drag-dark \
+                      pdf-pages-edit-delete-dark pdf-pages-edit-unsaved-dark \
                       pdf-search-results-dark pdf-search-results-light \
                       pdf-search-no-matches-dark \
                       pdf-notes-dark pdf-notes-light \

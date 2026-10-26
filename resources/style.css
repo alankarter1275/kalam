@@ -5476,7 +5476,7 @@ button.kalam-pdf-pages-columns-btn image {
     -gtk-icon-size: 18px;
 }
 
-separator.kalam-pdf-pages-heading-divider {
+.kalam-pdf-pages-heading-divider {
     background: alpha(@kalam_border, 0.72);
     min-width: 1px;
     min-height: 24px;

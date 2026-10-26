@@ -271,7 +271,6 @@ struct PageCellPaint {
     selected: bool,
     rotated: bool,
     dragging: bool,
-    drag_badge: Option<String>,
     drop_side: Option<gtk::Align>,
 }
 
@@ -294,8 +293,13 @@ fn paint_cell(cell: &PageThumbCell, paint: &PageCellPaint, description: &str) {
     } else {
         cell.button.remove_css_class("selected");
     }
-    cell.badge.set_visible(paint.selected || paint.drag_badge.is_some());
-    cell.badge.set_label(paint.drag_badge.as_deref().unwrap_or("✓"));
+    // A dragged page's count belongs to the ghost following the
+    // pointer, not to every dimmed original left behind.
+    cell.badge.set_visible(paint.selected && !paint.dragging);
+    cell.badge.set_label("✓");
+    cell.badge.set_halign(gtk::Align::Start);
+    cell.badge.set_margin_start(5);
+    cell.badge.set_margin_end(0);
     cell.rotated_badge.set_visible(paint.rotated && !paint.dragging);
     cell.button.set_opacity(if paint.dragging { 0.35 } else { 1.0 });
     if let Some(side) = paint.drop_side {
@@ -326,11 +330,6 @@ fn paint_bound_cell(state: &PagesGridState, cell: &PageThumbCell) {
         _ => None,
     };
     let dragging = state.dragging_keys.contains(key);
-    let drag_badge = if dragging && state.dragging_keys.len() > 1 {
-        Some(state.dragging_keys.len().to_string())
-    } else {
-        None
-    };
     paint_cell(
         cell,
         &PageCellPaint {
@@ -340,7 +339,6 @@ fn paint_bound_cell(state: &PagesGridState, cell: &PageThumbCell) {
             selected: state.selected_keys.contains(key),
             rotated: state.rotated_keys.contains(key),
             dragging,
-            drag_badge,
             drop_side,
         },
         &entry.description,
@@ -375,6 +373,29 @@ fn apply_cell_size(cell: &PageThumbCell, columns: usize, aspect_height_for_width
     cell.overlay.set_size_request(width, image_height);
     cell.picture.set_size_request(width, image_height);
     cell.button.set_size_request(width, total_height);
+}
+
+/// The page that follows the pointer: the grabbed cell as it
+/// stood before its original dimmed, tipped a few degrees on a
+/// few pixels of clear margin so the tip does not crop its
+/// corners.
+fn tilted_drag_icon(button: &gtk::Button) -> Option<gdk::Paintable> {
+    let width = button.width().max(1) as f32;
+    let height = button.height().max(1) as f32;
+    let margin = 8.0;
+    let paintable = gtk::WidgetPaintable::new(Some(button));
+    let snapshot = gtk::Snapshot::new();
+    snapshot.translate(&gtk::graphene::Point::new(
+        width / 2.0 + margin,
+        height / 2.0 + margin,
+    ));
+    snapshot.rotate(-4.0);
+    snapshot.translate(&gtk::graphene::Point::new(-width / 2.0, -height / 2.0));
+    paintable.snapshot(&snapshot, f64::from(width), f64::from(height));
+    snapshot.to_paintable(Some(&gtk::graphene::Size::new(
+        width + margin * 2.0,
+        height + margin * 2.0,
+    )))
 }
 
 /// The PDF Pages grid's standing GTK side. It is deliberately a
@@ -576,7 +597,7 @@ impl PdfPagesGrid {
                     let begin_sender = setup_sender.clone();
                     let begin_button = button.clone();
                     drag_source.connect_drag_begin(move |source, _| {
-                        let key = {
+                        let (key, icon) = {
                             let mut state = begin_state.borrow_mut();
                             let Some(cell_idx) = state.cell_index(&begin_item) else {
                                 return;
@@ -587,17 +608,41 @@ impl PdfPagesGrid {
                             if state.selected_keys.is_empty() {
                                 state.selected_keys.insert(key.clone());
                             }
+                            // The ghost is taken before the
+                            // originals dim: full strength, with
+                            // the moving count at its top-right
+                            // when more than one page is travelling.
+                            let count = state.selected_keys.len();
+                            let icon = {
+                                let cell = &state.cells[cell_idx];
+                                cell.button.add_css_class("selected");
+                                cell.button.set_opacity(1.0);
+                                if count > 1 {
+                                    cell.badge.set_label(&count.to_string());
+                                    cell.badge.set_halign(gtk::Align::End);
+                                    cell.badge.set_margin_start(0);
+                                    cell.badge.set_margin_end(5);
+                                } else {
+                                    cell.badge.set_label("✓");
+                                    cell.badge.set_halign(gtk::Align::Start);
+                                    cell.badge.set_margin_start(5);
+                                    cell.badge.set_margin_end(0);
+                                }
+                                cell.badge.set_visible(true);
+                                tilted_drag_icon(&begin_button)
+                            };
                             let dragging = state.selected_keys.clone();
                             state.dragging_keys = dragging;
                             refresh_cells(&state);
-                            key
+                            (key, icon)
                         };
-                        let paintable = gtk::WidgetPaintable::new(Some(&begin_button));
-                        source.set_icon(
-                            Some(&paintable),
-                            begin_button.width() / 2,
-                            begin_button.height() / 2,
-                        );
+                        if let Some(icon) = icon {
+                            source.set_icon(
+                                Some(&icon),
+                                icon.intrinsic_width() / 2,
+                                icon.intrinsic_height() / 2,
+                            );
+                        }
                         let _ = begin_sender.send(PdfReaderMsg::PageEditDragStarted(key));
                     });
                 }

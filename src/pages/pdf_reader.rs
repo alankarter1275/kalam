@@ -10560,8 +10560,9 @@ fn build_pdf_pages_pane(
     );
     edit_button.set_sensitive(model.doc_ready);
 
-    let heading_divider = gtk::Separator::new(gtk::Orientation::Vertical);
+    let heading_divider = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     heading_divider.add_css_class("kalam-pdf-pages-heading-divider");
+    heading_divider.set_size_request(1, 24);
     heading_divider.set_valign(gtk::Align::Center);
 
     let normal_heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);

@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub enum NavItem {
     Home,
     Library,
+    Authors,
     Shelves,
     Downloads,
     Comics,
@@ -32,6 +33,7 @@ impl NavItem {
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
+        NavItem::Authors,
         NavItem::Shelves,
         NavItem::Comics,
         NavItem::Settings,
@@ -41,6 +43,7 @@ impl NavItem {
         match self {
             NavItem::Home => "Home",
             NavItem::Library => "Library",
+            NavItem::Authors => "Authors",
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",
             NavItem::Comics => "Comics",
@@ -54,6 +57,7 @@ impl NavItem {
         match self {
             NavItem::Home => "go-home-symbolic",
             NavItem::Library => "folder-documents-symbolic",
+            NavItem::Authors => "avatar-default-symbolic",
             NavItem::Shelves => "view-grid-symbolic",
             NavItem::Downloads => "folder-download-symbolic",
             NavItem::Comics => "image-x-generic-symbolic",
@@ -81,6 +85,8 @@ pub enum Route {
     TagBooks {
         tag: String,
     },
+    /// Every author in the library (decision 117).
+    AuthorsIndex,
     AuthorPage {
         author: String,
     },
@@ -135,7 +141,8 @@ impl Route {
             Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
-            Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
+            Route::TagBooks { .. } => NavItem::Library,
+            Route::AuthorsIndex | Route::AuthorPage { .. } => NavItem::Authors,
             Route::BookPage { .. } | Route::SeriesPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {

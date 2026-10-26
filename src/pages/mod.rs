@@ -15,6 +15,7 @@ pub type SelfRebuild = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 pub mod all_books;
 pub mod analytics;
 pub mod author;
+pub mod authors;
 pub mod book;
 pub mod book_float;
 pub mod comics;

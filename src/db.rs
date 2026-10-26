@@ -56,6 +56,10 @@ pub enum DbError {
     OcrCache(String),
     #[error("pdf annotation: {0}")]
     PdfAnnotation(String),
+    /// A rejected author edit/merge. The message is written for the
+    /// person who asked for the change, so it is shown as-is.
+    #[error("{0}")]
+    Author(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -79,7 +83,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 ///          style='underline' in the default yellow
 /// · v20 = stable PDF page identities and page-anchored drawing objects
 ///          (decisions 66, 69 and 72)
-pub const SCHEMA_VERSION: i64 = 20;
+/// · v21 = hand-edited author fields, locked against metadata refresh
+///          (decisions 48 and 112)
+pub const SCHEMA_VERSION: i64 = 21;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -453,6 +459,51 @@ pub struct AuthorProfile {
     pub aliases: Vec<String>,
     pub fetched_at: String,
     pub source_url: String,
+    /// Profile fields the reader edited by hand. A later metadata fetch
+    /// keeps these values instead of replacing them (decision 48). The
+    /// strings are the `AUTHOR_FIELD_*` constants below.
+    pub manual_fields: Vec<String>,
+}
+
+/// Names recorded in [`AuthorProfile::manual_fields`].
+pub const AUTHOR_FIELD_NAME: &str = "name";
+pub const AUTHOR_FIELD_SORT_NAME: &str = "sort_name";
+pub const AUTHOR_FIELD_BIO: &str = "bio";
+pub const AUTHOR_FIELD_BIRTH_DATE: &str = "birth_date";
+pub const AUTHOR_FIELD_DEATH_DATE: &str = "death_date";
+pub const AUTHOR_FIELD_ALIASES: &str = "aliases";
+pub const AUTHOR_FIELD_PHOTO: &str = "photo";
+
+/// What an Edit author save should do with the portrait. `Replace`
+/// carries a file name inside the authors directory; the service layer
+/// writes the image there before the catalog transaction begins.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum AuthorPhotoEdit {
+    #[default]
+    Keep,
+    Remove,
+    Replace(String),
+}
+
+/// The editable author fields, as one value so the rename, the profile
+/// rewrite and the field locks are decided together in one transaction.
+#[derive(Debug, Clone, Default)]
+pub struct AuthorEdit {
+    pub name: String,
+    pub sort_name: String,
+    pub bio: String,
+    pub birth_date: String,
+    pub death_date: String,
+    pub aliases: Vec<String>,
+    pub photo: AuthorPhotoEdit,
+}
+
+/// The result of an author edit or merge: the name the author page
+/// should show now, and how many book rows were rewritten to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorEditOutcome {
+    pub name: String,
+    pub books_updated: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -1142,7 +1193,10 @@ impl Catalog {
                 work_count        INTEGER NOT NULL DEFAULT 0,
                 works_json        TEXT NOT NULL DEFAULT '[]',
                 fetched_at        TEXT NOT NULL DEFAULT '',
-                source_url        TEXT NOT NULL DEFAULT ''
+                source_url        TEXT NOT NULL DEFAULT '',
+                -- v21: fields edited by hand in Edit author; a metadata
+                -- refresh must not overwrite them (decision 48).
+                manual_fields_json TEXT NOT NULL DEFAULT '[]'
             );
             CREATE INDEX IF NOT EXISTS idx_author_profiles_name
                 ON author_profiles(canonical_name COLLATE NOCASE);
@@ -1360,6 +1414,14 @@ impl Catalog {
 
         // Unified annotation system: style column (solid, underline, squiggly, strikeout)
         add_column_if_missing(&conn, "annotations", "style", "TEXT NOT NULL DEFAULT 'solid'")?;
+
+        // v21: hand-edited author fields (see AUTHOR_FIELD_*).
+        add_column_if_missing(
+            &conn,
+            "author_profiles",
+            "manual_fields_json",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )?;
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {

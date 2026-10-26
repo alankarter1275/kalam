@@ -358,6 +358,61 @@ pub struct AuthorPageSnapshot {
     pub finished: std::collections::HashSet<i64>,
 }
 
+/// One author on the Authors index (decision 117): every spelling of
+/// the name in the library folded into one entry, joined with the
+/// cached profile when one exists. Book counts follow the author
+/// page's rule — comic chapters collapse into their series first.
+#[derive(Debug, Clone, Default)]
+pub struct AuthorIndexEntry {
+    pub name: String,
+    pub sort_name: String,
+    pub normalized_name: String,
+    pub book_count: usize,
+    pub read_count: usize,
+    pub series_count: usize,
+    /// Bibliography size when a fetch cached one; `None` until then.
+    pub known_works: Option<i64>,
+    pub bio: String,
+    pub birth_year: Option<i64>,
+    pub death_year: Option<i64>,
+    pub top_subjects: Vec<String>,
+    pub photo_path: Option<std::path::PathBuf>,
+    /// Every spelling that should find this author in search.
+    pub aliases: Vec<String>,
+    pub has_profile: bool,
+}
+
+/// The Authors index page: one entry per author in the library,
+/// ordered by sort name.
+#[derive(Debug, Default)]
+pub struct AuthorsSnapshot {
+    pub entries: Vec<AuthorIndexEntry>,
+    pub errors: Errors,
+}
+
+/// What the Edit author dialog asks to do with the portrait. A
+/// replacement carries the image bytes; `edit_author` files them
+/// into the authors directory before the catalog write.
+#[derive(Debug, Clone, Default)]
+pub enum AuthorPortraitEdit {
+    #[default]
+    Keep,
+    Remove,
+    Replace(Vec<u8>),
+}
+
+/// The Edit author form as one value (decision 112).
+#[derive(Debug, Clone, Default)]
+pub struct AuthorEditInput {
+    pub name: String,
+    pub sort_name: String,
+    pub bio: String,
+    pub birth_date: String,
+    pub death_date: String,
+    pub aliases: Vec<String>,
+    pub portrait: AuthorPortraitEdit,
+}
+
 /// The vocabulary page: the visible word list plus its header counts.
 ///
 /// The counts used to come from two extra `list_saved_words` calls whose
@@ -1118,6 +1173,90 @@ impl LibraryService {
         }
     }
 
+    /// The Authors index (decision 117): every author named by a
+    /// book in the library, spellings folded by normalized name and
+    /// by cached-profile aliases, with the counts the cards show.
+    /// Runs on the page's worker; portrait existence is settled here
+    /// so the fill never stats a file.
+    pub fn authors(&self) -> AuthorsSnapshot {
+        let _t = crate::timing::measure("service_authors");
+        let mut errors = Errors::new();
+        let mut books = take(
+            self.catalog.list_books(SortKey::Title, ""),
+            "books",
+            &mut errors,
+        );
+        // One entry per comic series, never per chapter — the same
+        // rule the author page's owned count obeys.
+        self.catalog.collapse_comic_chapters(&mut books);
+        let ids: Vec<i64> = books.iter().map(|b| b.id).collect();
+        let finished = take(
+            self.catalog.finished_book_ids(&ids),
+            "finished books",
+            &mut errors,
+        );
+        let profiles = take(
+            self.catalog.all_author_profiles(),
+            "author profiles",
+            &mut errors,
+        );
+        let mut entries = aggregate_author_index(&books, &finished, &profiles);
+        for entry in &mut entries {
+            if entry.photo_path.as_ref().is_some_and(|p| !p.is_file()) {
+                entry.photo_path = None;
+            }
+        }
+        AuthorsSnapshot { entries, errors }
+    }
+
+    /// Save an Edit author form (decision 112). A replacement
+    /// portrait is filed into the authors directory first; the
+    /// catalog then renames the identity and locks the changed
+    /// fields in one transaction.
+    pub fn edit_author(
+        &self,
+        current_name: &str,
+        input: AuthorEditInput,
+    ) -> std::result::Result<crate::db::AuthorEditOutcome, String> {
+        let photo = match input.portrait {
+            AuthorPortraitEdit::Keep => crate::db::AuthorPhotoEdit::Keep,
+            AuthorPortraitEdit::Remove => crate::db::AuthorPhotoEdit::Remove,
+            AuthorPortraitEdit::Replace(bytes) => {
+                if bytes.is_empty() {
+                    return Err("That image file is empty.".into());
+                }
+                let file = store_author_portrait(&input.name, &bytes)?;
+                crate::db::AuthorPhotoEdit::Replace(file)
+            }
+        };
+        self.catalog
+            .edit_author(
+                current_name,
+                &crate::db::AuthorEdit {
+                    name: input.name,
+                    sort_name: input.sort_name,
+                    bio: input.bio,
+                    birth_date: input.birth_date,
+                    death_date: input.death_date,
+                    aliases: input.aliases,
+                    photo,
+                },
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    /// Merge one author into another (decision 112); see
+    /// [`Catalog::merge_authors`] for the semantics.
+    pub fn merge_authors(
+        &self,
+        source_name: &str,
+        target_name: &str,
+    ) -> std::result::Result<crate::db::AuthorEditOutcome, String> {
+        self.catalog
+            .merge_authors(source_name, target_name)
+            .map_err(|e| e.to_string())
+    }
+
     /// Vocabulary matching `query` and `known`, plus the header counts.
     ///
     /// The counts deliberately cover the whole table, not just the page's
@@ -1478,6 +1617,205 @@ impl LibraryService {
 /// Unwrap a query result, or record why it failed and fall back to the empty
 /// value. This is the one place the "a failed read shows as empty" policy
 /// lives; it used to be repeated, silently, in every page.
+#[derive(Default)]
+struct AuthorAccum {
+    /// Display spellings seen on books, with counts — the most-used
+    /// spelling names the entry when no profile canonicalizes it.
+    candidates: std::collections::HashMap<String, usize>,
+    books: std::collections::HashSet<i64>,
+    read: std::collections::HashSet<i64>,
+    series: std::collections::HashSet<String>,
+    spellings: Vec<String>,
+    profile: Option<usize>,
+}
+
+/// Fold the library's books into one index entry per author
+/// (decision 117). Pure work over the reads `authors()` made.
+fn aggregate_author_index(
+    books: &[Book],
+    finished: &std::collections::HashSet<i64>,
+    profiles: &[AuthorProfile],
+) -> Vec<AuthorIndexEntry> {
+    use std::collections::HashMap;
+
+    let mut profile_by_key: HashMap<String, usize> = HashMap::new();
+    for (index, profile) in profiles.iter().enumerate() {
+        let mut claim = |key: String| {
+            if !key.is_empty() {
+                profile_by_key.entry(key).or_insert(index);
+            }
+        };
+        claim(profile.normalized_name.trim().to_string());
+        claim(crate::author::normalize_author_name(&profile.canonical_name));
+        claim(crate::author::normalize_author_name(&profile.sort_name));
+        for alias in &profile.aliases {
+            claim(crate::author::normalize_author_name(alias));
+        }
+    }
+
+    let mut by_key: HashMap<String, AuthorAccum> = HashMap::new();
+    for book in books {
+        if book.authors.trim().is_empty() {
+            continue;
+        }
+        for raw_name in crate::author::split_author_names(&book.authors) {
+            let key = crate::author::normalize_author_name(&raw_name);
+            if key.is_empty() {
+                continue;
+            }
+            let (identity, profile_index) = match profile_by_key.get(&key) {
+                Some(&index) => {
+                    let profile = &profiles[index];
+                    let identity = if profile.normalized_name.trim().is_empty() {
+                        crate::author::normalize_author_name(&profile.canonical_name)
+                    } else {
+                        profile.normalized_name.trim().to_string()
+                    };
+                    (identity, Some(index))
+                }
+                None => (key, None),
+            };
+            let acc = by_key.entry(identity).or_default();
+            if profile_index.is_some() {
+                acc.profile = profile_index;
+            }
+            *acc.candidates
+                .entry(crate::author::display_author_name(&raw_name))
+                .or_insert(0) += 1;
+            acc.spellings.push(raw_name);
+            acc.books.insert(book.id);
+            if finished.contains(&book.id) || book.progress >= 100 {
+                acc.read.insert(book.id);
+            }
+            if let Some(series) = book.series.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                acc.series
+                    .insert(series.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" "));
+            }
+        }
+    }
+
+    let mut entries: Vec<AuthorIndexEntry> = by_key
+        .into_iter()
+        .map(|(normalized_name, acc)| {
+            let profile = acc.profile.map(|index| &profiles[index]);
+            let name = profile
+                .map(|p| p.canonical_name.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| {
+                    let mut candidates: Vec<(String, usize)> =
+                        acc.candidates.iter().map(|(n, c)| (n.clone(), *c)).collect();
+                    candidates
+                        .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+                    candidates
+                        .into_iter()
+                        .next()
+                        .map(|(n, _)| n)
+                        .unwrap_or_default()
+                });
+            let sort_name = profile
+                .map(|p| p.sort_name.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| crate::author::sort_author_name(&name));
+
+            let mut aliases: Vec<String> = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            let mut push_alias = |alias: &str| {
+                let alias = alias.trim();
+                if !alias.is_empty()
+                    && seen.insert(crate::author::normalize_author_name(alias))
+                {
+                    aliases.push(alias.to_string());
+                }
+            };
+            for spelling in &acc.spellings {
+                push_alias(spelling);
+            }
+            if let Some(profile) = profile {
+                for alias in &profile.aliases {
+                    push_alias(alias);
+                }
+            }
+
+            AuthorIndexEntry {
+                name,
+                sort_name,
+                normalized_name,
+                book_count: acc.books.len(),
+                read_count: acc.read.len(),
+                series_count: acc.series.len(),
+                known_works: profile
+                    .filter(|p| !p.works.is_empty())
+                    .map(|p| p.work_count.max(p.works.len() as i64)),
+                bio: profile.map(|p| p.bio.clone()).unwrap_or_default(),
+                birth_year: profile.and_then(|p| published_year(&p.birth_date)),
+                death_year: profile.and_then(|p| published_year(&p.death_date)),
+                top_subjects: profile
+                    .map(|p| p.top_subjects.clone())
+                    .unwrap_or_default(),
+                photo_path: profile.and_then(|p| p.photo_path.clone()),
+                aliases,
+                has_profile: profile.is_some(),
+            }
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        a.sort_name
+            .to_lowercase()
+            .cmp(&b.sort_name.to_lowercase())
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    entries
+}
+
+/// File a hand-picked portrait into the authors directory and
+/// return its file name. Content-hashed, so picking the same image
+/// twice is one file and a changed image never reads back stale
+/// through the cover cache.
+fn store_author_portrait(name: &str, bytes: &[u8]) -> std::result::Result<String, String> {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    let ext = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "png"
+    } else if bytes.starts_with(&[0xFF, 0xD8]) {
+        "jpg"
+    } else if bytes.starts_with(b"GIF8") {
+        "gif"
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "webp"
+    } else {
+        "img"
+    };
+    let mut stem: String = crate::author::normalize_author_name(name)
+        .chars()
+        .take(32)
+        .collect();
+    if stem.is_empty() {
+        stem = "author".to_string();
+    }
+    let file_name = format!("custom-{stem}-{:016x}.{ext}", hasher.finish());
+    let dir = crate::paths::authors_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create the authors folder: {e}"))?;
+    let path = dir.join(&file_name);
+    if path.is_file() {
+        return Ok(file_name);
+    }
+    let tmp = dir.join(format!(".{file_name}.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, bytes).map_err(|e| format!("Could not save the portrait: {e}"))?;
+    match std::fs::rename(&tmp, &path) {
+        Ok(()) => Ok(file_name),
+        Err(err) => {
+            let _ = std::fs::remove_file(&tmp);
+            if path.is_file() {
+                Ok(file_name)
+            } else {
+                Err(format!("Could not save the portrait: {err}"))
+            }
+        }
+    }
+}
+
 /// The first plausible four-digit year in a free-form published string
 /// (`1969`, `1969-06-01`, `June 1969`). The catalog stores whatever the
 /// file's metadata said, so a series row that wants a year has to dig it
@@ -2045,6 +2383,96 @@ mod tests {
         );
         assert_eq!(alpha.entries[1].year, Some(2003));
         assert_eq!(alpha.entries[2].position, 3.0);
+    }
+
+    #[test]
+    fn authors_index_folds_spellings_and_counts_books() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let cat = svc.catalog();
+        let seed_author = |uuid: &str, title: &str, authors: &str, series: Option<&str>| {
+            cat.insert_book(
+                uuid,
+                title,
+                authors,
+                series,
+                "",
+                BookFormat::Epub,
+                &format!("{uuid}.epub"),
+                &format!("hash-{uuid}"),
+                None,
+                &[],
+            )
+            .unwrap()
+        };
+
+        let first = seed_author(
+            "idx-1",
+            "A Wizard of Earthsea",
+            "Le Guin, Ursula K.",
+            Some("Earthsea"),
+        );
+        seed_author(
+            "idx-2",
+            "The Tombs of Atuan",
+            "Ursula K. Le Guin",
+            Some("Earthsea"),
+        );
+        seed_author("idx-3", "The Dispossessed", "Ursula Le Guin", None);
+        seed_author(
+            "idx-4",
+            "A Shared Book",
+            "Ursula K. Le Guin; Another Author",
+            None,
+        );
+        cat.set_book_finished(first, true).unwrap();
+
+        let profile = AuthorProfile {
+            canonical_name: "Ursula K. Le Guin".into(),
+            sort_name: "Le Guin, Ursula K.".into(),
+            normalized_name: crate::author::normalize_author_name("Ursula K. Le Guin"),
+            birth_date: "21 October 1929".into(),
+            death_date: "22 January 2018".into(),
+            work_count: 12,
+            works: vec![
+                crate::db::AuthorWork {
+                    title: "A Wizard of Earthsea".into(),
+                    ..crate::db::AuthorWork::default()
+                },
+                crate::db::AuthorWork {
+                    title: "The Tombs of Atuan".into(),
+                    ..crate::db::AuthorWork::default()
+                },
+            ],
+            aliases: vec!["Ursula Le Guin".into()],
+            ..AuthorProfile::default()
+        };
+        cat.upsert_author_profile(&profile).unwrap();
+        // A cached profile with no books left is not an author *in
+        // the library* and stays off the index.
+        let ghost = AuthorProfile {
+            canonical_name: "Ghost Author".into(),
+            normalized_name: crate::author::normalize_author_name("Ghost Author"),
+            ..AuthorProfile::default()
+        };
+        cat.upsert_author_profile(&ghost).unwrap();
+
+        let snap = svc.authors();
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert_eq!(snap.entries.len(), 2);
+        assert_eq!(snap.entries[0].name, "Another Author");
+        assert_eq!(snap.entries[0].book_count, 1);
+
+        let le_guin = &snap.entries[1];
+        assert_eq!(le_guin.name, "Ursula K. Le Guin");
+        assert_eq!(le_guin.book_count, 4);
+        assert_eq!(le_guin.read_count, 1);
+        assert_eq!(le_guin.series_count, 1);
+        assert_eq!(le_guin.known_works, Some(12));
+        assert_eq!(le_guin.birth_year, Some(1929));
+        assert_eq!(le_guin.death_year, Some(2018));
+        assert!(le_guin.has_profile);
+        assert!(le_guin.aliases.iter().any(|a| a == "Ursula Le Guin"));
     }
 
     #[test]

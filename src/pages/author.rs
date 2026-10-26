@@ -9,16 +9,21 @@
 //!
 //! The grouping (cached bibliography merged with owned books) lives in
 //! `LibraryService::author_page`; this file only renders it. Dialogs:
-//! Create shelf (§31) and the author-scoped Annotations dialog
-//! (decision 115) at the bottom of the file.
+//! Edit author and Merge into another author (decision 112), Create
+//! shelf (§31), and the author-scoped Annotations dialog
+//! (decision 115).
 
-use crate::author::{self, display_author_name, initials};
-use crate::db::{Annotation, AuthorProfile, Catalog, HighlightColor, ShelfKind};
+use crate::author::{self, display_author_name, initials, normalize_author_name, sort_author_name};
+use crate::db::{
+    Annotation, AuthorProfile, Catalog, HighlightColor, ShelfKind, AUTHOR_FIELD_ALIASES,
+    AUTHOR_FIELD_BIO, AUTHOR_FIELD_BIRTH_DATE, AUTHOR_FIELD_DEATH_DATE, AUTHOR_FIELD_NAME,
+    AUTHOR_FIELD_PHOTO, AUTHOR_FIELD_SORT_NAME,
+};
 use crate::models::{Book, BookFormat};
 use crate::pages::history::pretty_day;
 use crate::service::{
-    AuthorEntrySnapshot, AuthorGroupSnapshot, AuthorPageSnapshot, LibraryService,
-    AUTHOR_SHELF_PREF_PREFIX,
+    AuthorEditInput, AuthorEntrySnapshot, AuthorGroupSnapshot, AuthorIndexEntry,
+    AuthorPageSnapshot, AuthorPortraitEdit, LibraryService, AUTHOR_SHELF_PREF_PREFIX,
 };
 use crate::shelf_rules::{Rule, RuleField, RuleOp, RuleSet};
 use crate::widgets::book_row::{cache_decoded_cover, cover_widget};
@@ -75,6 +80,13 @@ pub enum AuthorPageMsg {
     Loaded(Box<AuthorPageLoad>),
     ToggleGroup(usize),
     ClosePanel,
+    OpenEditAuthor,
+    OpenMergeAuthor,
+    /// An edit or merge renamed the identity this page is about;
+    /// follow it to the new name and re-read.
+    IdentityChanged {
+        name: String,
+    },
     OpenCreateShelf,
     OpenAnnotations,
     AddAllToReadingList,
@@ -474,6 +486,8 @@ impl Component for AuthorPageModel {
                         }
                         Ok("shelf") => sender.input(AuthorPageMsg::OpenCreateShelf),
                         Ok("annotations") => sender.input(AuthorPageMsg::OpenAnnotations),
+                        Ok("edit-author") => sender.input(AuthorPageMsg::OpenEditAuthor),
+                        Ok("merge-author") => sender.input(AuthorPageMsg::OpenMergeAuthor),
                         _ => {}
                     }
                 }
@@ -497,6 +511,20 @@ impl Component for AuthorPageModel {
                 if self.open_group_title.take().is_none() {
                     rebuild = false;
                 }
+            }
+            AuthorPageMsg::OpenEditAuthor => {
+                present_edit_author_dialog(root, self, &sender);
+                rebuild = false;
+            }
+            AuthorPageMsg::OpenMergeAuthor => {
+                present_merge_author_dialog(root, self, &sender);
+                rebuild = false;
+            }
+            AuthorPageMsg::IdentityChanged { name } => {
+                self.requested_name = name;
+                self.snapshot = None;
+                self.open_group_title = None;
+                request_snapshot(&self.service, &self.requested_name, &sender);
             }
             AuthorPageMsg::OpenCreateShelf => {
                 present_create_shelf_dialog(root, self, &sender);
@@ -738,10 +766,12 @@ impl AuthorPageModel {
         name: &str,
         sender: &ComponentSender<Self>,
     ) {
-        // Edit author… and Merge into another author… belong to this menu
-        // (decision 112) but their dialogs are not designed yet; like the
-        // book page's Edit book, they stay out until they are.
         let menu = menu_popover(MenuWidth::Wide);
+
+        let s = sender.clone();
+        menu.add_item("Edit author…", move || {
+            s.input(AuthorPageMsg::OpenEditAuthor);
+        });
 
         match snap.shelf {
             Some((shelf_id, _)) => {
@@ -785,6 +815,12 @@ impl AuthorPageModel {
         let s = sender.clone();
         menu.add_item("Export highlights…", move || {
             s.input(AuthorPageMsg::ExportHighlights);
+        });
+        menu.add_separator();
+
+        let s = sender.clone();
+        menu.add_item("Merge into another author…", move || {
+            s.input(AuthorPageMsg::OpenMergeAuthor);
         });
 
         let more = menu_button("view-more-symbolic", "Author actions", menu);
@@ -1812,6 +1848,800 @@ fn spawn_author_fetch(model: &AuthorPageModel, sender: &ComponentSender<AuthorPa
             let _ = tx.send(AuthorPageMsg::Fetched(Box::new(result)));
         },
     );
+}
+
+// ---------------------------------------------------------------------------
+// Edit author dialog (decision 112)
+// ---------------------------------------------------------------------------
+
+/// A form label that says when its field is already hand-edited —
+/// locked against metadata refresh (decision 48).
+fn locked_label(base: &str, profile: Option<&AuthorProfile>, field: &str) -> String {
+    if profile.is_some_and(|p| p.manual_fields.iter().any(|f| f == field)) {
+        format!("{base} · edited")
+    } else {
+        base.to_string()
+    }
+}
+
+/// The neutral initials disc, sized for the slot it stands in.
+fn author_initials_disc(name: &str, size: i32) -> gtk::Widget {
+    let disc = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    disc.add_css_class("kalam-authorpage-portrait-initials");
+    disc.set_size_request(size, size);
+    disc.set_halign(gtk::Align::Start);
+    let label = gtk::Label::new(Some(&initials(name)));
+    label.add_css_class("kalam-authorpage-initials-text");
+    label.set_halign(gtk::Align::Center);
+    label.set_valign(gtk::Align::Center);
+    label.set_vexpand(true);
+    disc.append(&label);
+    disc.upcast()
+}
+
+/// The aliases the form shows: the profile's, minus the canonical
+/// and sort spellings the name fields already own.
+fn alias_field_initial(
+    profile: Option<&AuthorProfile>,
+    author: &str,
+    sort_name: &str,
+    current_name: &str,
+) -> String {
+    let Some(profile) = profile else {
+        return String::new();
+    };
+    let excluded: HashSet<String> = [
+        normalize_author_name(author),
+        normalize_author_name(sort_name),
+        normalize_author_name(current_name),
+        profile.normalized_name.trim().to_string(),
+    ]
+    .into_iter()
+    .filter(|k| !k.is_empty())
+    .collect();
+    let mut seen = HashSet::new();
+    profile
+        .aliases
+        .iter()
+        .map(|a| a.trim())
+        .filter(|a| !a.is_empty())
+        .filter(|a| {
+            let key = normalize_author_name(a);
+            !excluded.contains(&key) && seen.insert(key)
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn present_edit_author_dialog(
+    anchor: &gtk::Overlay,
+    model: &AuthorPageModel,
+    sender: &ComponentSender<AuthorPageModel>,
+) {
+    let Some(snap) = &model.snapshot else { return };
+    let profile = snap.profile.clone();
+    let current_name = model.requested_name.clone();
+    let author = display_name(model);
+    let service = model.service.clone();
+    let effective_sort = profile
+        .as_ref()
+        .map(|p| p.sort_name.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| sort_author_name(&author));
+
+    let shell = dialog_shell(DialogSize::Form, Some(&author));
+
+    // --- Portrait -----------------------------------------------------
+    let portrait_state: Rc<RefCell<AuthorPortraitEdit>> =
+        Rc::new(RefCell::new(AuthorPortraitEdit::Keep));
+    let portrait_holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+    let portrait_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    portrait_host.set_size_request(PORTRAIT, PORTRAIT);
+    portrait_host.set_valign(gtk::Align::Start);
+    let portrait_status = gtk::Label::new(None);
+    portrait_status.add_css_class("kalam-ui-meta");
+    portrait_status.set_halign(gtk::Align::Start);
+    portrait_status.set_wrap(true);
+    portrait_status.set_xalign(0.0);
+    portrait_status.set_max_width_chars(44);
+
+    let anchor_for_choose = anchor.clone();
+    let state_for_choose = portrait_state.clone();
+    let holder_for_choose = portrait_holder.clone();
+    let choose_button = boxed_ghost_button("Choose…", move || {
+        let dialog = gtk::FileDialog::builder()
+            .title("Choose a portrait image")
+            .modal(true)
+            .build();
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some("Images"));
+        for suffix in ["png", "jpg", "jpeg", "webp", "gif"] {
+            filter.add_suffix(suffix);
+        }
+        let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+        filters.append(&filter);
+        dialog.set_filters(Some(&filters));
+        let window = anchor_for_choose
+            .root()
+            .and_then(|r| r.downcast::<gtk::Window>().ok())
+            .or_else(|| {
+                relm4::main_application()
+                    .active_window()
+                    .and_then(|w| w.downcast::<gtk::Window>().ok())
+            });
+        let state = state_for_choose.clone();
+        let holder = holder_for_choose.clone();
+        dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+            let Ok(file) = res else { return };
+            let Some(path) = file.path() else { return };
+            match std::fs::read(&path) {
+                Ok(bytes) if bytes.is_empty() => {
+                    crate::notify::error("Could not use that image", "That image file is empty.");
+                }
+                Ok(bytes) if bytes.len() > 20 * 1024 * 1024 => {
+                    crate::notify::error(
+                        "Could not use that image",
+                        "That image is larger than 20 MB.",
+                    );
+                }
+                Ok(bytes) => {
+                    if gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from(&bytes[..]))
+                        .is_err()
+                    {
+                        crate::notify::error(
+                            "Could not use that image",
+                            "That file is not an image Kalam can read.",
+                        );
+                        return;
+                    }
+                    *state.borrow_mut() = AuthorPortraitEdit::Replace(bytes);
+                    if let Some(refresh) = holder.borrow().clone() {
+                        refresh();
+                    }
+                }
+                Err(err) => {
+                    crate::notify::error("Could not read that file", &err.to_string());
+                }
+            }
+        });
+    });
+
+    let profile_for_remove = profile.clone();
+    let state_for_remove = portrait_state.clone();
+    let holder_for_remove = portrait_holder.clone();
+    let remove_button = boxed_ghost_button("Remove", move || {
+        let next = match &*state_for_remove.borrow() {
+            AuthorPortraitEdit::Replace(_)
+                if profile_for_remove
+                    .as_ref()
+                    .is_none_or(|p| p.photo_file.is_none()) =>
+            {
+                AuthorPortraitEdit::Keep
+            }
+            _ => AuthorPortraitEdit::Remove,
+        };
+        *state_for_remove.borrow_mut() = next;
+        if let Some(refresh) = holder_for_remove.borrow().clone() {
+            refresh();
+        }
+    });
+
+    {
+        let host = portrait_host.clone();
+        let status = portrait_status.clone();
+        let state = portrait_state.clone();
+        let profile = profile.clone();
+        let author = author.clone();
+        let remove = remove_button.clone();
+        let refresh: Rc<dyn Fn()> = Rc::new(move || {
+            clear_box(&host);
+            match &*state.borrow() {
+                AuthorPortraitEdit::Keep => {
+                    match profile.as_ref().and_then(|p| p.photo_path.as_deref()) {
+                        Some(path) => {
+                            let widget = cover_widget(Some(path), PORTRAIT, PORTRAIT);
+                            widget.add_css_class("kalam-authorpage-portrait");
+                            widget.set_size_request(PORTRAIT, PORTRAIT);
+                            host.append(&widget);
+                            status.set_text(
+                                if profile.is_some_and(|p| {
+                                    p.manual_fields.iter().any(|f| f == AUTHOR_FIELD_PHOTO)
+                                }) {
+                                    "Your portrait. Metadata fetches leave it alone."
+                                } else {
+                                    "Portrait from Open Library."
+                                },
+                            );
+                        }
+                        None => {
+                            host.append(&author_initials_disc(&author, PORTRAIT));
+                            status.set_text("Initials are shown until a portrait is set.");
+                        }
+                    }
+                    remove.set_sensitive(
+                        profile.as_ref().is_some_and(|p| p.photo_file.is_some()),
+                    );
+                }
+                AuthorPortraitEdit::Remove => {
+                    host.append(&author_initials_disc(&author, PORTRAIT));
+                    status.set_text("The portrait will be removed when you save.");
+                    remove.set_sensitive(false);
+                }
+                AuthorPortraitEdit::Replace(bytes) => {
+                    match gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from(&bytes[..])) {
+                        Ok(texture) => {
+                            let picture = gtk::Picture::for_paintable(&texture);
+                            picture.add_css_class("kalam-authorpage-portrait");
+                            picture.set_size_request(PORTRAIT, PORTRAIT);
+                            picture.set_content_fit(gtk::ContentFit::Cover);
+                            host.append(&picture);
+                        }
+                        Err(_) => host.append(&author_initials_disc(&author, PORTRAIT)),
+                    }
+                    status.set_text("New portrait selected — press Save to keep it.");
+                    remove.set_sensitive(true);
+                }
+            }
+        });
+        *portrait_holder.borrow_mut() = Some(refresh.clone());
+        refresh();
+    }
+
+    let portrait_row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    portrait_row.append(&portrait_host);
+    let portrait_side = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    portrait_side.set_hexpand(true);
+    portrait_side.set_valign(gtk::Align::Center);
+    let portrait_caption = gtk::Label::new(Some(
+        &locked_label("Portrait", profile.as_ref(), AUTHOR_FIELD_PHOTO).to_uppercase(),
+    ));
+    portrait_caption.add_css_class("kalam-ui-field-label");
+    portrait_caption.set_halign(gtk::Align::Start);
+    portrait_side.append(&portrait_caption);
+    portrait_side.append(&portrait_status);
+    let portrait_buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    portrait_buttons.set_halign(gtk::Align::Start);
+    portrait_buttons.append(&choose_button);
+    portrait_buttons.append(&remove_button);
+    portrait_side.append(&portrait_buttons);
+    portrait_row.append(&portrait_side);
+    shell.body().append(&portrait_row);
+
+    // --- Name fields ----------------------------------------------------
+    let name_field = text_field(
+        &locked_label("Name", profile.as_ref(), AUTHOR_FIELD_NAME),
+        &author,
+        &author,
+    );
+    name_field.widget().set_margin_top(20);
+    shell.body().append(&name_field.widget());
+
+    let sort_field = text_field(
+        &locked_label("Sort name", profile.as_ref(), AUTHOR_FIELD_SORT_NAME),
+        &effective_sort,
+        &effective_sort,
+    );
+    sort_field.widget().set_margin_top(16);
+    shell.body().append(&sort_field.widget());
+
+    // The sort name follows the name until the reader types in it
+    // themselves (or already locked one by hand on an earlier edit).
+    let sort_dirty = Rc::new(Cell::new(profile.is_some_and(|p| {
+        p.manual_fields.iter().any(|f| f == AUTHOR_FIELD_SORT_NAME)
+    })));
+    let updating_sort = Rc::new(Cell::new(false));
+    {
+        let dirty = sort_dirty.clone();
+        let updating = updating_sort.clone();
+        sort_field.entry().connect_changed(move |_| {
+            if !updating.get() {
+                dirty.set(true);
+            }
+        });
+    }
+    {
+        let dirty = sort_dirty;
+        let updating = updating_sort;
+        let sort_entry = sort_field.entry();
+        name_field.entry().connect_changed(move |entry| {
+            if !dirty.get() {
+                updating.set(true);
+                sort_entry.set_text(&sort_author_name(&entry.text().to_string()));
+                updating.set(false);
+            }
+        });
+    }
+
+    let dates_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    dates_row.set_margin_top(16);
+    let birth_field = text_field(
+        &locked_label("Born", profile.as_ref(), AUTHOR_FIELD_BIRTH_DATE),
+        "e.g. 21 October 1929",
+        profile.as_ref().map(|p| p.birth_date.as_str()).unwrap_or(""),
+    );
+    birth_field.widget().set_hexpand(true);
+    dates_row.append(&birth_field.widget());
+    let death_field = text_field(
+        &locked_label("Died", profile.as_ref(), AUTHOR_FIELD_DEATH_DATE),
+        "e.g. 22 January 2018",
+        profile.as_ref().map(|p| p.death_date.as_str()).unwrap_or(""),
+    );
+    death_field.widget().set_hexpand(true);
+    dates_row.append(&death_field.widget());
+    shell.body().append(&dates_row);
+
+    let aliases_field = text_field(
+        &locked_label("Also known as", profile.as_ref(), AUTHOR_FIELD_ALIASES),
+        "Other names, separated by semicolons",
+        &alias_field_initial(profile.as_ref(), &author, &effective_sort, &current_name),
+    );
+    aliases_field.widget().set_margin_top(16);
+    shell.body().append(&aliases_field.widget());
+
+    let bio_caption = gtk::Label::new(Some(
+        &locked_label("Biography", profile.as_ref(), AUTHOR_FIELD_BIO).to_uppercase(),
+    ));
+    bio_caption.add_css_class("kalam-ui-field-label");
+    bio_caption.set_halign(gtk::Align::Start);
+    bio_caption.set_margin_top(16);
+    shell.body().append(&bio_caption);
+
+    let bio_view = gtk::TextView::new();
+    bio_view.add_css_class("kalam-author-bio-editor");
+    bio_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    bio_view.set_accepts_tab(false);
+    bio_view.set_left_margin(10);
+    bio_view.set_right_margin(10);
+    bio_view.set_top_margin(8);
+    bio_view.set_bottom_margin(8);
+    bio_view
+        .buffer()
+        .set_text(profile.as_ref().map(|p| p.bio.as_str()).unwrap_or(""));
+    let bio_scroll = gtk::ScrolledWindow::builder()
+        .min_content_height(132)
+        .max_content_height(132)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .child(&bio_view)
+        .build();
+    bio_scroll.add_css_class("kalam-author-bio-editor-scroll");
+    bio_scroll.set_margin_top(6);
+    shell.body().append(&bio_scroll);
+
+    let lock_note = gtk::Label::new(Some(
+        "Fields you change here stay as you set them when metadata is fetched again.",
+    ));
+    lock_note.add_css_class("kalam-ui-meta");
+    lock_note.set_halign(gtk::Align::Start);
+    lock_note.set_wrap(true);
+    lock_note.set_xalign(0.0);
+    lock_note.set_max_width_chars(52);
+    lock_note.set_margin_top(12);
+    shell.body().append(&lock_note);
+
+    let status = gtk::Label::new(None);
+    status.add_css_class("kalam-ui-meta");
+    status.set_halign(gtk::Align::Start);
+    status.set_wrap(true);
+    status.set_xalign(0.0);
+    status.set_max_width_chars(52);
+    status.set_margin_top(8);
+    shell.body().append(&status);
+
+    // --- Footer ---------------------------------------------------------
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    let footer = shell.footer();
+    let slot_for_cancel = slot.clone();
+    footer.append(&boxed_ghost_button("Cancel", move || {
+        if let Some(dialog) = slot_for_cancel.borrow().clone() {
+            dialog.close();
+        }
+    }));
+
+    let slot_for_save = slot.clone();
+    let s = sender.input_sender().clone();
+    let footer_for_save = footer.clone();
+    footer.append(&primary_button("Save author", move || {
+        let name = name_field.value().trim().to_string();
+        if name.is_empty() {
+            status.set_text("The author needs a name.");
+            return;
+        }
+        let buffer = bio_view.buffer();
+        let input = AuthorEditInput {
+            name,
+            sort_name: sort_field.value(),
+            bio: buffer
+                .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                .to_string(),
+            birth_date: birth_field.value(),
+            death_date: death_field.value(),
+            aliases: aliases_field
+                .value()
+                .split([';', '\n'])
+                .map(|a| a.trim().to_string())
+                .filter(|a| !a.is_empty())
+                .collect(),
+            portrait: portrait_state.borrow().clone(),
+        };
+        footer_for_save.set_sensitive(false);
+        status.set_text("Saving…");
+        let service = service.clone();
+        let current_name = current_name.clone();
+        let slot = slot_for_save.clone();
+        let s = s.clone();
+        let footer = footer_for_save.clone();
+        let status = status.clone();
+        crate::tasks::spawn(
+            "Saving author",
+            move |_reporter| service.edit_author(&current_name, input),
+            |_| {},
+            move |result| match result {
+                Ok(outcome) => {
+                    crate::notify::success(
+                        "Author updated",
+                        &if outcome.books_updated > 0 {
+                            format!(
+                                "{} book{} now under {}.",
+                                outcome.books_updated,
+                                if outcome.books_updated == 1 { "" } else { "s" },
+                                outcome.name
+                            )
+                        } else {
+                            outcome.name.clone()
+                        },
+                    );
+                    if let Some(dialog) = slot.borrow().clone() {
+                        dialog.close();
+                    }
+                    let _ = s.send(AuthorPageMsg::IdentityChanged {
+                        name: outcome.name,
+                    });
+                }
+                Err(err) => {
+                    footer.set_sensitive(true);
+                    status.set_text(&err);
+                    crate::notify::error("Could not save the author", &err);
+                }
+            },
+        );
+    }));
+
+    match present_dialog(anchor, "Edit author", DialogExit::UnsavedInput, &shell) {
+        Some(dialog) => *slot.borrow_mut() = Some(dialog),
+        None => crate::notify::error(
+            "Could not open the dialog",
+            "The edit-author dialog could not be opened.",
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Merge into another author dialog (decision 112)
+// ---------------------------------------------------------------------------
+
+fn present_merge_author_dialog(
+    anchor: &gtk::Overlay,
+    model: &AuthorPageModel,
+    sender: &ComponentSender<AuthorPageModel>,
+) {
+    let Some(snap) = &model.snapshot else { return };
+    let source_name = model.requested_name.clone();
+    let source_profile = snap.profile.clone();
+    let source_display = display_name(model);
+    let source_books = snap.owned_books.len();
+    let service = model.service.clone();
+
+    let shell = dialog_shell(DialogSize::Form, Some(&source_display));
+
+    let intro = gtk::Label::new(Some(&format!(
+        "Move every book by {source_display} to another author. \
+         {source_display} stays as an alternate name, so old spellings \
+         still find the same author."
+    )));
+    intro.add_css_class("kalam-ui-meta");
+    intro.set_halign(gtk::Align::Start);
+    intro.set_wrap(true);
+    intro.set_xalign(0.0);
+    intro.set_max_width_chars(52);
+    shell.body().append(&intro);
+
+    let search_field = text_field("Merge into", "Search authors…", "");
+    search_field.widget().set_margin_top(16);
+    shell.body().append(&search_field.widget());
+
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    list_host.set_margin_top(8);
+    list_host.set_margin_bottom(8);
+    list_host.set_margin_start(8);
+    list_host.set_margin_end(8);
+    let list_scroll = gtk::ScrolledWindow::builder()
+        .min_content_height(264)
+        .max_content_height(264)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .child(&list_host)
+        .build();
+    list_scroll.add_css_class("kalam-author-merge-scroll");
+    list_scroll.set_margin_top(12);
+    shell.body().append(&list_scroll);
+
+    let summary = gtk::Label::new(Some("Loading authors…"));
+    summary.add_css_class("kalam-ui-meta");
+    summary.set_halign(gtk::Align::Start);
+    summary.set_wrap(true);
+    summary.set_xalign(0.0);
+    summary.set_max_width_chars(52);
+    summary.set_margin_top(12);
+    shell.body().append(&summary);
+
+    let candidates: Rc<RefCell<Vec<AuthorIndexEntry>>> = Rc::new(RefCell::new(Vec::new()));
+    let loaded = Rc::new(Cell::new(false));
+    let load_error: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let selected: Rc<RefCell<Option<AuthorIndexEntry>>> = Rc::new(RefCell::new(None));
+
+    // Footer first: the list rebuild enables Merge when a target is
+    // chosen, so it needs the button handle.
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    let footer = shell.footer();
+    let slot_for_cancel = slot.clone();
+    footer.append(&boxed_ghost_button("Cancel", move || {
+        if let Some(dialog) = slot_for_cancel.borrow().clone() {
+            dialog.close();
+        }
+    }));
+
+    let slot_for_merge = slot.clone();
+    let s = sender.input_sender().clone();
+    let selected_for_merge = selected.clone();
+    let service_for_merge = service.clone();
+    let footer_for_merge = footer.clone();
+    let summary_for_merge = summary.clone();
+    let merge_button = primary_button("Merge authors", move || {
+        let Some(target) = selected_for_merge.borrow().clone() else {
+            return;
+        };
+        footer_for_merge.set_sensitive(false);
+        summary_for_merge.set_text("Merging…");
+        let service = service_for_merge.clone();
+        let source_name = source_name.clone();
+        let slot = slot_for_merge.clone();
+        let s = s.clone();
+        let footer = footer_for_merge.clone();
+        let summary = summary_for_merge.clone();
+        crate::tasks::spawn(
+            "Merging authors",
+            move |_reporter| service.merge_authors(&source_name, &target.name),
+            |_| {},
+            move |result| match result {
+                Ok(outcome) => {
+                    crate::notify::success(
+                        "Authors merged",
+                        &format!(
+                            "{} book{} now under {}.",
+                            outcome.books_updated,
+                            if outcome.books_updated == 1 { "" } else { "s" },
+                            outcome.name
+                        ),
+                    );
+                    if let Some(dialog) = slot.borrow().clone() {
+                        dialog.close();
+                    }
+                    let _ = s.send(AuthorPageMsg::IdentityChanged {
+                        name: outcome.name,
+                    });
+                }
+                Err(err) => {
+                    footer.set_sensitive(true);
+                    summary.set_text(&err);
+                    crate::notify::error("Could not merge the authors", &err);
+                }
+            },
+        );
+    });
+    merge_button.set_sensitive(false);
+    footer.append(&merge_button);
+
+    // The candidate list, rebuilt on search, selection and load.
+    let holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
+    {
+        let host = list_host.clone();
+        let candidates = candidates.clone();
+        let loaded = loaded.clone();
+        let load_error = load_error.clone();
+        let selected = selected.clone();
+        let search = search_field.clone();
+        let summary = summary.clone();
+        let merge_button = merge_button.clone();
+        let holder = holder.clone();
+        let rebuild: Rc<dyn Fn()> = Rc::new(move || {
+            clear_box(&host);
+            let chosen = selected.borrow().clone();
+            match &chosen {
+                Some(target) => {
+                    merge_button.set_sensitive(true);
+                    summary.set_text(&format!(
+                        "{source_books} book{} will move to {}.",
+                        if source_books == 1 { "" } else { "s" },
+                        target.name
+                    ));
+                }
+                None => {
+                    merge_button.set_sensitive(false);
+                    summary.set_text(if loaded.get() {
+                        "Choose the author who should keep these books."
+                    } else {
+                        "Loading authors…"
+                    });
+                }
+            }
+
+            if !loaded.get() {
+                let label = gtk::Label::new(Some("Loading authors…"));
+                label.add_css_class("kalam-ui-meta");
+                label.set_halign(gtk::Align::Start);
+                host.append(&label);
+                return;
+            }
+            let entries = candidates.borrow().clone();
+            if entries.is_empty() {
+                let text = match load_error.borrow().clone() {
+                    Some(err) => format!("Authors could not be loaded: {err}"),
+                    None => "No other authors in your library.".to_string(),
+                };
+                let label = gtk::Label::new(Some(&text));
+                label.add_css_class("kalam-ui-meta");
+                label.set_halign(gtk::Align::Start);
+                label.set_wrap(true);
+                label.set_xalign(0.0);
+                label.set_max_width_chars(48);
+                host.append(&label);
+                return;
+            }
+
+            let query = normalize_author_name(search.value().trim());
+            let visible: Vec<&AuthorIndexEntry> = entries
+                .iter()
+                .filter(|entry| {
+                    query.is_empty()
+                        || normalize_author_name(&entry.name).contains(&query)
+                        || normalize_author_name(&entry.sort_name).contains(&query)
+                        || entry
+                            .aliases
+                            .iter()
+                            .any(|alias| normalize_author_name(alias).contains(&query))
+                })
+                .collect();
+            if visible.is_empty() {
+                let label = gtk::Label::new(Some("No authors match that search."));
+                label.add_css_class("kalam-ui-meta");
+                label.set_halign(gtk::Align::Start);
+                host.append(&label);
+                return;
+            }
+
+            for entry in visible {
+                let is_chosen = chosen
+                    .as_ref()
+                    .is_some_and(|c| c.normalized_name == entry.normalized_name);
+                let row_button = gtk::Button::new();
+                row_button.add_css_class("kalam-author-merge-row");
+                if is_chosen {
+                    row_button.add_css_class("selected");
+                }
+                row_button.set_can_focus(true);
+
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+                row.set_valign(gtk::Align::Center);
+                row.append(&author_initials_disc(&entry.name, 40));
+
+                let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                info.set_hexpand(true);
+                info.set_valign(gtk::Align::Center);
+                let name = gtk::Label::new(Some(&entry.name));
+                name.add_css_class("kalam-ui-body");
+                name.set_halign(gtk::Align::Start);
+                name.set_xalign(0.0);
+                name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                info.append(&name);
+                let meta = gtk::Label::new(Some(&format!(
+                    "{} in library · {} read",
+                    entry.book_count, entry.read_count
+                )));
+                meta.add_css_class("kalam-ui-meta");
+                meta.set_halign(gtk::Align::Start);
+                info.append(&meta);
+                row.append(&info);
+
+                if is_chosen {
+                    let check = gtk::Image::from_icon_name("object-select-symbolic");
+                    check.set_pixel_size(18);
+                    check.add_css_class("kalam-author-merge-check");
+                    check.set_valign(gtk::Align::Center);
+                    row.append(&check);
+                }
+                row_button.set_child(Some(&row));
+                set_accessible_label(&row_button, &format!("Merge into {}", entry.name));
+
+                let picked = entry.clone();
+                let selected = selected.clone();
+                let holder = holder.clone();
+                row_button.connect_clicked(move |_| {
+                    *selected.borrow_mut() = Some(picked.clone());
+                    if let Some(rebuild) = holder.borrow().clone() {
+                        rebuild();
+                    }
+                });
+                host.append(&row_button);
+            }
+        });
+        *holder.borrow_mut() = Some(rebuild.clone());
+        rebuild();
+    }
+    {
+        let holder = holder.clone();
+        search_field.entry().connect_changed(move |_| {
+            if let Some(rebuild) = holder.borrow().clone() {
+                rebuild();
+            }
+        });
+    }
+
+    // Load the roster off the UI thread, minus the source identity.
+    {
+        let mut source_keys: HashSet<String> = HashSet::new();
+        let mut claim = |value: &str| {
+            let key = normalize_author_name(value);
+            if !key.is_empty() {
+                source_keys.insert(key);
+            }
+        };
+        claim(&source_name);
+        claim(&source_display);
+        if let Some(profile) = &source_profile {
+            claim(&profile.canonical_name);
+            claim(&profile.sort_name);
+            if !profile.normalized_name.trim().is_empty() {
+                source_keys.insert(profile.normalized_name.trim().to_string());
+            }
+            for alias in &profile.aliases {
+                claim(alias);
+            }
+        }
+        let candidates = candidates.clone();
+        let loaded = loaded.clone();
+        let load_error = load_error.clone();
+        let holder = holder.clone();
+        crate::tasks::spawn_internal(
+            "Reading authors",
+            move |_reporter| service.authors(),
+            |_| {},
+            move |snap| {
+                let mut entries = snap.entries;
+                entries.retain(|entry| {
+                    !source_keys.contains(&entry.normalized_name)
+                        && !entry
+                            .aliases
+                            .iter()
+                            .any(|alias| source_keys.contains(&normalize_author_name(alias)))
+                });
+                if entries.is_empty() {
+                    *load_error.borrow_mut() = snap.errors.into_iter().next();
+                }
+                *candidates.borrow_mut() = entries;
+                loaded.set(true);
+                if let Some(rebuild) = holder.borrow().clone() {
+                    rebuild();
+                }
+            },
+        );
+    }
+
+    match present_dialog(anchor, "Merge into another author", DialogExit::UnsavedInput, &shell) {
+        Some(dialog) => *slot.borrow_mut() = Some(dialog),
+        None => crate::notify::error(
+            "Could not open the dialog",
+            "The merge dialog could not be opened.",
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------

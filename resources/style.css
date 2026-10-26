@@ -8208,3 +8208,105 @@ entry.kalam-settings-entry.rejected {
 .kalam-settings-nested-rows > .kalam-settings-row + .kalam-settings-row {
   border-top: none;
 }
+
+/* ------------------------------------------------------------------ */
+/* Authors index and author management (decisions 112, 117)          */
+/* Undesigned surfaces in the author page's language: same insets,    */
+/* outlined radius-14 cards, circular portraits, Meta counts.        */
+/* ------------------------------------------------------------------ */
+
+.kalam-authorspage-inner {
+  padding: 24px 32px 48px 32px;
+}
+
+entry.kalam-authors-search {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid @kalam_border;
+  border-radius: 10px;
+  background: @kalam_bg;
+  color: @kalam_text;
+  font-size: 13px;
+}
+entry.kalam-authors-search:focus-within {
+  border-color: @kalam_accent;
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+
+.kalam-authors-group {
+  font-family: "Playfair Display", "Literata", Georgia, serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: @kalam_text;
+}
+
+.kalam-authorspage-inner flowboxchild {
+  background: transparent;
+  padding: 0;
+}
+
+button.kalam-authors-card {
+  background-color: @kalam_bg;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  box-shadow: none;
+  padding: 19px;
+}
+button.kalam-authors-card:hover {
+  border-color: alpha(@kalam_text_dim, 0.6);
+  background-color: @kalam_card;
+}
+button.kalam-authors-card:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-authors-chevron { color: @kalam_text_dim; }
+
+/* Edit author biography editor. */
+.kalam-author-bio-editor-scroll {
+  border: 1px solid @kalam_border;
+  border-radius: 10px;
+  background: @kalam_bg;
+}
+.kalam-author-bio-editor-scroll:focus-within {
+  border-color: @kalam_accent;
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+textview.kalam-author-bio-editor {
+  background: transparent;
+  color: @kalam_text;
+  font-size: 13px;
+}
+textview.kalam-author-bio-editor text {
+  background: transparent;
+  color: @kalam_text;
+}
+
+/* Merge target rows: quiet until chosen, then the card wash and an
+   accent border say which author will absorb the books. */
+.kalam-author-merge-scroll {
+  border: 1px solid @kalam_border;
+  border-radius: 10px;
+  background: @kalam_bg;
+}
+button.kalam-author-merge-row {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 8px 10px;
+}
+button.kalam-author-merge-row:hover {
+  background-color: @kalam_card;
+}
+button.kalam-author-merge-row.selected {
+  background-color: @kalam_card;
+  border-color: @kalam_accent;
+}
+button.kalam-author-merge-row:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-author-merge-check { color: @kalam_accent; }

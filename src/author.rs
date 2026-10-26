@@ -500,6 +500,9 @@ fn fetch_author_profile(
         aliases: dedup_names(aliases),
         fetched_at: String::new(),
         source_url,
+        // A fetch never invents hand edits; `upsert_author_profile`
+        // carries the stored locks forward and re-applies them.
+        manual_fields: Vec::new(),
     })
 }
 
@@ -800,7 +803,7 @@ fn normalize_bits(text: &str) -> String {
         .collect()
 }
 
-fn normalize_title(title: &str) -> String {
+pub(crate) fn normalize_title(title: &str) -> String {
     normalize_bits(title)
 }
 

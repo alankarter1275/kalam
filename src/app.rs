@@ -6,6 +6,7 @@ use crate::pages::{downloads::DownloadsModel,
     all_books::{AllBooksModel, AllBooksMsg, AllBooksOut},
     analytics::AnalyticsModel,
     author::{AuthorPageModel, AuthorPageOut},
+    authors::{AuthorsModel, AuthorsOut},
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
     comics::{ComicsModel, ComicsMsg, ComicsOut},
@@ -132,6 +133,7 @@ enum PageSlot {
     TagBooks(Controller<TagBooksModel>),
     Analytics(Controller<AnalyticsModel>),
     TaskManager(Controller<TaskManagerModel>),
+    Authors(Controller<AuthorsModel>),
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
     Series(Controller<SeriesPageModel>),
@@ -166,6 +168,7 @@ impl PageSlot {
             PageSlot::TagBooks(c) => c.widget().clone().upcast(),
             PageSlot::Analytics(c) => c.widget().clone().upcast(),
             PageSlot::TaskManager(c) => c.widget().clone().upcast(),
+            PageSlot::Authors(c) => c.widget().clone().upcast(),
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Series(c) => c.widget().clone().upcast(),
@@ -258,6 +261,9 @@ fn cache_key(route: &Route) -> Option<String> {
         Route::Module(NavItem::Library) => Some("library".into()),
         Route::Module(NavItem::Shelves) | Route::ShelvesGrid => Some("shelves".into()),
         Route::Module(NavItem::Settings) => Some("settings".into()),
+        // The authors index changes with every book edit and author
+        // merge; rebuild it rather than serving a cached roster.
+        Route::Module(NavItem::Authors) | Route::AuthorsIndex => None,
         Route::Module(item) => Some(format!("mod:{}", item.label())),
         Route::ComponentPreview => Some("components".into()),
         // Everything below reflects data the user is actively changing.
@@ -604,6 +610,16 @@ impl AppModel {
                         }
                     });
                 PageSlot::TagBooks(ctrl)
+            }
+            Route::Module(NavItem::Authors) | Route::AuthorsIndex => {
+                let ctrl = AuthorsModel::builder()
+                    .launch(crate::service::LibraryService::new(catalog.clone()))
+                    .forward(sender.input_sender(), |out| match out {
+                        AuthorsOut::OpenAuthor { name } => {
+                            AppMsg::Push(Route::AuthorPage { author: name })
+                        }
+                    });
+                PageSlot::Authors(ctrl)
             }
             Route::AuthorPage { author } => {
                 let ctrl = AuthorPageModel::builder()
@@ -1749,6 +1765,7 @@ impl Component for AppModel {
             AppMsg::Navigate(item) => {
                 let route = match item {
                     NavItem::Shelves => Route::ShelvesGrid,
+                    NavItem::Authors => Route::AuthorsIndex,
                     other => Route::Module(other),
                 };
                 self.close_floating();
@@ -2507,6 +2524,7 @@ fn route_by_name(name: &str) -> Option<Route> {
     let route = match name.as_str() {
         "home" => Route::Module(NavItem::Home),
         "library" => Route::Module(NavItem::Library),
+        "authors" => Route::AuthorsIndex,
         "downloads" => Route::Module(NavItem::Downloads),
         "comics" => Route::Module(NavItem::Comics),
         "browse" => Route::Module(NavItem::RemoteBrowse),
@@ -2534,6 +2552,7 @@ fn known_route_names() -> Vec<&'static str> {
     vec![
         "home",
         "library",
+        "authors",
         "downloads",
         "comics",
         "browse",
@@ -2576,6 +2595,7 @@ fn route_label(route: &Route) -> &'static str {
     match route {
         Route::Module(NavItem::Home) => "route_open:home",
         Route::Module(NavItem::Library) => "route_open:library",
+        Route::Module(NavItem::Authors) => "route_open:authors",
         Route::Module(NavItem::Shelves) => "route_open:shelves",
         Route::Module(NavItem::Downloads) => "route_open:downloads",
         Route::Module(NavItem::Comics) => "route_open:comics",
@@ -2596,6 +2616,7 @@ fn route_label(route: &Route) -> &'static str {
         Route::ShelvesGrid => "route_open:shelves_grid",
         Route::ShelfDetail { .. } => "route_open:shelf_detail",
         Route::TagBooks { .. } => "route_open:tag_books",
+        Route::AuthorsIndex => "route_open:authors",
         Route::AuthorPage { .. } => "route_open:author",
         Route::BookPage { .. } => "route_open:book",
         Route::SeriesPage { .. } => "route_open:series",

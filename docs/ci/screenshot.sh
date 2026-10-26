@@ -476,9 +476,9 @@ if [ -z "$MIN_SETTLE" ]; then
       ;;
   esac
   # The selected-drawing popover is scheduled the same way and for
-  # the same reason.
+  # the same reason, as are the Pages Edit proof states.
   case "$PDF_ACTION" in
-    drawing-selected|drawing-text|drawing-sticky)
+    drawing-selected|drawing-text|drawing-sticky|pages-edit|pages-edit-drag|pages-edit-delete|pages-edit-unsaved)
       MIN_SETTLE=13
       ;;
   esac

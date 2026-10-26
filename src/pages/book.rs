@@ -68,6 +68,9 @@ pub enum BookPageOut {
         #[allow(dead_code)] // carried for the open/delete round-trip; some arms ignore it
         book_id: i64,
     },
+    /// Open the deep editor on this book (the ⋯ menu's Edit book…,
+    /// decision 86) — straight to the workspace, no picker.
+    EditBook,
 }
 
 /// What the page's worker delivers: the service snapshot plus the
@@ -120,6 +123,8 @@ pub enum BookPageMsg {
     ToggleDescription,
     /// Ask before removing the book (the ⋯ menu's destructive item).
     ConfirmDelete,
+    /// Open the deep editor on this book (the ⋯ menu's Edit book…).
+    EditBook,
     /// Reveal the book's folder — the file footer's button, the ⋯ menu
     /// item, and the file-missing state's "Locate file" primary.
     LocateFile,
@@ -1516,6 +1521,12 @@ fn fill_actions(host: &gtk::Box, model: &BookPageModel, sender: &ComponentSender
 
     let menu = menu_popover(MenuWidth::Wide);
     menu.add_submenu("Shelves", shelves_menu);
+    if matches!(book.format, BookFormat::Epub) {
+        let s = sender.clone();
+        menu.add_item("Edit book…", move || {
+            s.input(BookPageMsg::EditBook);
+        });
+    }
     if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr) {
         let s = sender.clone();
         menu.add_item("Remaster…", move || {

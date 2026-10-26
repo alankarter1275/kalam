@@ -56,7 +56,7 @@ use crate::db::{
     ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
 };
 use crate::models::{
-    Book, ComicCredit, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
+    Book, BookFormat, ComicCredit, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
     COMIC_SERIES_FIELD_DESCRIPTION, COMIC_SERIES_FIELD_END_DATE, COMIC_SERIES_FIELD_GENRES,
     COMIC_SERIES_FIELD_KNOWN_CHAPTERS, COMIC_SERIES_FIELD_KNOWN_VOLUMES,
     COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE,
@@ -2425,6 +2425,7 @@ fn dashboard_feed(
 // ---------------------------------------------------------------------------
 
 /// One row of the editor picker (decision 142).
+#[derive(Debug)]
 pub struct EditorPickerEntry {
     pub book: Book,
     /// When the newest editor snapshot was taken — the picker's

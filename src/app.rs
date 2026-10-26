@@ -20,6 +20,8 @@ use crate::pages::{downloads::DownloadsModel,
     lookup_history::LookupHistoryModel,
     placeholder::PlaceholderPageModel,
     pdf_reader::{PdfReaderInit, PdfReaderModel, PdfReaderOut},
+    editor_picker::{EditorPickerModel, EditorPickerMsg, EditorPickerOut},
+    epub_editor::{EpubEditorModel, EpubEditorOut},
     reader::{ReaderModel, ReaderOut},
     reading_list::{ReadingListModel, ReadingListOut},
     review::{ReviewModel, ReviewOut},
@@ -155,6 +157,8 @@ impl PageSlot {
     fn widget(&self) -> gtk::Widget {
         match self {
             PageSlot::Downloads(c) => c.widget().clone().upcast(),
+            PageSlot::EditorPicker(c) => c.widget().clone().upcast(),
+            PageSlot::EpubEditor(c) => c.widget().clone().upcast(),
             PageSlot::Home(c) => c.widget().clone().upcast(),
             PageSlot::Library(c) => c.widget().clone().upcast(),
             PageSlot::AllBooks(c) => c.widget().clone().upcast(),
@@ -292,7 +296,7 @@ impl AppModel {
     }
 
     fn show_back_chip(&self) -> bool {
-        !self.history.is_empty() && !self.route.is_reader()
+        !self.history.is_empty() && !self.route.owns_its_surface()
     }
 
     fn close_floating(&mut self) {
@@ -938,6 +942,27 @@ impl AppModel {
                     });
                 PageSlot::RemoteDetail(ctrl)
             }
+            Route::Module(NavItem::Editor) => {
+                let ctrl = EditorPickerModel::builder()
+                    .launch(crate::service::LibraryService::new(catalog.clone()))
+                    .forward(sender.input_sender(), |out| match out {
+                        EditorPickerOut::OpenEditor { book_id } => {
+                            AppMsg::Push(Route::EditorWorkspace { book_id })
+                        }
+                    });
+                PageSlot::EditorPicker(ctrl)
+            }
+            Route::EditorWorkspace { book_id } => {
+                let ctrl = EpubEditorModel::builder()
+                    .launch((
+                        crate::service::LibraryService::new(catalog.clone()),
+                        *book_id,
+                    ))
+                    .forward(sender.input_sender(), |out| match out {
+                        EpubEditorOut::Leave => AppMsg::Back,
+                    });
+                PageSlot::EpubEditor(ctrl)
+            }
         }
     }
 
@@ -968,6 +993,7 @@ impl AppModel {
             Route::Reader { .. }
                 | Route::PdfReader { .. }
                 | Route::ComicsReader { .. }
+                | Route::EditorWorkspace { .. }
         );
         self.detach_current(content_host);
 
@@ -1813,6 +1839,7 @@ impl Component for AppModel {
                         Route::Reader { .. }
                             | Route::PdfReader { .. }
                             | Route::ComicsReader { .. }
+                            | Route::EditorWorkspace { .. }
                     );
 
                     self.detach_current(&widgets.content_host);
@@ -1821,6 +1848,11 @@ impl Component for AppModel {
                     let page = self.take_or_build(&sender);
                     widgets.content_host.append(&page.widget());
                     self.page = Some(page);
+                    // A cached picker must re-read which books were
+                    // edited (its rows carry the edited state).
+                    if let Some(PageSlot::EditorPicker(ctrl)) = &self.page {
+                        let _ = ctrl.sender().send(EditorPickerMsg::Refresh);
+                    }
                     sync_content_classes(&widgets.content_host, &self.route, self.show_back_chip());
                 }
             }
@@ -2306,7 +2338,7 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
 }
 
 fn sync_content_classes(content_host: &gtk::Box, route: &Route, show_back_chip: bool) {
-    if route.is_reader() || matches!(route, Route::Module(NavItem::Settings)) {
+    if route.owns_its_surface() || matches!(route, Route::Module(NavItem::Settings)) {
         content_host.add_css_class("kalam-content-flush");
     } else {
         content_host.remove_css_class("kalam-content-flush");
@@ -2552,6 +2584,10 @@ fn route_by_name(name: &str) -> Option<Route> {
         let book_id = id.parse::<i64>().ok().filter(|id| *id > 0)?;
         return Some(Route::ComicsReader { book_id });
     }
+    if let Some(id) = name.strip_prefix("edit-book-") {
+        let book_id = id.parse::<i64>().ok().filter(|id| *id > 0)?;
+        return Some(Route::EditorWorkspace { book_id });
+    }
     for (prefix, reader) in [("book-", false), ("read-", true)] {
         if let Some(id) = name.strip_prefix(prefix) {
             // A positive integer or nothing. `book-`, `book-abc` and `book--1`
@@ -2568,6 +2604,7 @@ fn route_by_name(name: &str) -> Option<Route> {
         "home" => Route::Module(NavItem::Home),
         "library" => Route::Module(NavItem::Library),
         "authors" => Route::AuthorsIndex,
+        "editor" => Route::Module(NavItem::Editor),
         "downloads" => Route::Module(NavItem::Downloads),
         "comics" => Route::Module(NavItem::Comics),
         "browse" => Route::Module(NavItem::RemoteBrowse),
@@ -2596,6 +2633,7 @@ fn known_route_names() -> Vec<&'static str> {
         "home",
         "library",
         "authors",
+        "editor",
         "downloads",
         "comics",
         "browse",
@@ -2617,8 +2655,9 @@ fn known_route_names() -> Vec<&'static str> {
 
 /// The names that take an id, for the error message only. They are not in
 /// `known_route_names` because that list is asserted to resolve as it stands.
-const ROUTE_ID_FORMS: [&str; 7] = [
+const ROUTE_ID_FORMS: [&str; 8] = [
     "book-<id>",
+    "edit-book-<id>",
     "read-<id>",
     "pdf-read-<id>",
     "comic-read-<id>",
@@ -2643,6 +2682,8 @@ fn route_label(route: &Route) -> &'static str {
         Route::Module(NavItem::Shelves) => "route_open:shelves",
         Route::Module(NavItem::Downloads) => "route_open:downloads",
         Route::Module(NavItem::Comics) => "route_open:comics",
+        Route::Module(NavItem::Editor) => "route_open:editor",
+        Route::EditorWorkspace { .. } => "route_open:editor_workspace",
         Route::Module(NavItem::RemoteBrowse) => "route_open:remote_browse",
         Route::Module(NavItem::Fanfiction) => "route_open:fanfiction",
         Route::Module(NavItem::Settings) => "route_open:settings",

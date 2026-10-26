@@ -75,6 +75,7 @@ pub enum EpubEditorMsg {
     Saved(Result<(), String>),
     BackPressed,
     DiscardAndLeave,
+    DiscardCloseTab { path: String },
     DialogSaveAndContinue,
     SetViewMode(ViewMode),
     SetRightTab(RightTab),
@@ -633,6 +634,10 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::DiscardAndLeave => {
                 let _ = sender.output(EpubEditorOut::Leave);
             }
+            EpubEditorMsg::DiscardCloseTab { path } => {
+                self.after_save = AfterSave::Nothing;
+                self.close_tab(&path, &sender);
+            }
             EpubEditorMsg::SetViewMode(mode) => {
                 self.view_mode = mode;
                 self.apply_view_mode();
@@ -665,9 +670,9 @@ impl Component for EpubEditorModel {
                     if let Some(buffer) = &tab.buffer {
                         let mut iter = match (offset, line) {
                             (Some(offset), _) => buffer.iter_at_offset(offset),
-                            (None, Some(line)) => {
-                                buffer.iter_at_line((line.saturating_sub(1)) as i32)
-                            }
+                            (None, Some(line)) => buffer
+                                .iter_at_line((line.saturating_sub(1)) as i32)
+                                .unwrap_or_else(|| buffer.end_iter()),
                             (None, None) => return,
                         };
                         buffer.place_cursor(&iter);
@@ -688,9 +693,9 @@ impl Component for EpubEditorModel {
             }
             EpubEditorMsg::ShowInFolder => {
                 if let Ok(Some(book)) = self.service.catalog().get_book(self.book_id) {
-                    open_in_file_manager(&book.file_path.clone());
+                    crate::pages::book::open_in_file_manager(&book.file_path.clone());
                 } else if let Some(book) = &self.book {
-                    open_in_file_manager(&book.file_path.clone());
+                    crate::pages::book::open_in_file_manager(&book.file_path.clone());
                 }
             }
         }
@@ -781,9 +786,11 @@ impl EpubEditorModel {
                 }
                 buffer.set_style_scheme(current_style_scheme(&self.service).as_ref());
                 buffer.set_highlight_syntax(true);
-                buffer.begin_not_undoable_action();
+                // Loading a file is not an edit: keep it out of the
+                // undo history so Ctrl+Z can never empty a fresh tab.
+                buffer.set_max_undo_levels(0);
                 buffer.set_text(&text);
-                buffer.end_not_undoable_action();
+                buffer.set_max_undo_levels(-1);
                 buffer.set_modified(false);
 
                 let view = sourceview5::View::with_buffer(&buffer);
@@ -1111,20 +1118,20 @@ impl EpubEditorModel {
         message.set_halign(gtk::Align::Start);
         message.set_xalign(0.0);
         message.set_wrap(true);
-        shell.body.append(&message);
+        shell.body().append(&message);
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_anyway = slot.clone();
         let s = sender.input_sender().clone();
         shell
-            .footer
+            .footer()
             .append(&boxed_ghost_button("Save anyway", move || {
                 close_slot(&slot_anyway);
                 let _ = s.send(EpubEditorMsg::SaveAnywayPressed);
             }));
         let slot_problems = slot.clone();
         let s = sender.input_sender().clone();
-        shell.footer.append(&primary_button("Show problems", move || {
+        shell.footer().append(&primary_button("Show problems", move || {
             close_slot(&slot_problems);
             let _ = s.send(EpubEditorMsg::SetRightTab(RightTab::Problems));
         }));
@@ -1154,7 +1161,7 @@ impl EpubEditorModel {
         message.set_halign(gtk::Align::Start);
         message.set_xalign(0.0);
         message.set_wrap(true);
-        shell.body.append(&message);
+        shell.body().append(&message);
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let after = match &action {
@@ -1167,7 +1174,7 @@ impl EpubEditorModel {
         let s = sender.input_sender().clone();
         let discard_action = action.clone();
         shell
-            .footer
+            .footer()
             .append(&boxed_ghost_button("Discard", move || {
                 close_slot(&slot_discard);
                 match &discard_action {
@@ -1183,13 +1190,13 @@ impl EpubEditorModel {
             }));
         let slot_keep = slot.clone();
         shell
-            .footer
+            .footer()
             .append(&boxed_ghost_button("Keep editing", move || {
                 close_slot(&slot_keep);
             }));
         let slot_save = slot.clone();
         let s = sender.input_sender().clone();
-        shell.footer.append(&primary_button("Save", move || {
+        shell.footer().append(&primary_button("Save", move || {
             close_slot(&slot_save);
             let _ = s.send(EpubEditorMsg::DialogSaveAndContinue);
         }));

@@ -160,7 +160,7 @@ impl EditorPickerModel {
         );
     }
 
-    fn rebuild(&self, widgets: &EditorPickerWidgets, sender: &ComponentSender<Self>) {
+    fn rebuild(&self, widgets: &EditorPickerModelWidgets, sender: &ComponentSender<Self>) {
         clear_box(&widgets.content_host);
         if !self.loaded {
             return;

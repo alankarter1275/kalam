@@ -1363,6 +1363,16 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_patches_book
                 ON patches(book_id, status);
+            CREATE TABLE IF NOT EXISTS editor_snapshots (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                label         TEXT NOT NULL,
+                file_name     TEXT NOT NULL,
+                files_changed INTEGER NOT NULL DEFAULT 0,
+                created_at    TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_editor_snapshots_book
+                ON editor_snapshots(book_id, id);
             "#,
         )?;
 

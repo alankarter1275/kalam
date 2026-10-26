@@ -11,6 +11,7 @@ pub enum NavItem {
     Shelves,
     Downloads,
     Comics,
+    Editor,
     RemoteBrowse,
     Fanfiction,
     Settings,
@@ -37,6 +38,7 @@ impl NavItem {
         NavItem::Authors,
         NavItem::Shelves,
         NavItem::Comics,
+        NavItem::Editor,
         NavItem::Settings,
     ];
 
@@ -48,6 +50,7 @@ impl NavItem {
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",
             NavItem::Comics => "Comics",
+            NavItem::Editor => "Editor",
             NavItem::RemoteBrowse => "Browse",
             NavItem::Fanfiction => "Fanfic",
             NavItem::Settings => "Settings",
@@ -93,6 +96,10 @@ pub enum Route {
         author: String,
     },
     BookPage {
+        book_id: i64,
+    },
+    /// The deep EPUB editor workspace for one book (decisions 118–143).
+    EditorWorkspace {
         book_id: i64,
     },
     /// The full book-series page. The first author is part of the route
@@ -145,6 +152,7 @@ impl Route {
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } => NavItem::Library,
             Route::AuthorsIndex | Route::AuthorPage { .. } => NavItem::Authors,
+            Route::EditorWorkspace { .. } => NavItem::Editor,
             Route::BookPage { .. } | Route::SeriesPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {

@@ -24,6 +24,7 @@ use crate::db::Catalog;
 pub enum ShortcutAction {
     GoHome,
     GoLibrary,
+    GoEditor,
     OpenSettings,
     Back,
     Notifications,
@@ -38,9 +39,10 @@ pub enum ShortcutAction {
 }
 
 impl ShortcutAction {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::GoHome,
         Self::GoLibrary,
+        Self::GoEditor,
         Self::OpenSettings,
         Self::Back,
         Self::Notifications,
@@ -79,6 +81,7 @@ impl ShortcutAction {
         match self {
             Self::GoHome => "Go to Home",
             Self::GoLibrary => "Go to Library",
+            Self::GoEditor => "Go to Editor",
             Self::OpenSettings => "Open Settings",
             Self::Back => "Back",
             Self::Notifications => "Notification history",
@@ -97,6 +100,7 @@ impl ShortcutAction {
         match self {
             Self::GoHome => ShortcutBinding::alt(gdk::Key::_1),
             Self::GoLibrary => ShortcutBinding::alt(gdk::Key::_2),
+            Self::GoEditor => ShortcutBinding::alt(gdk::Key::_3),
             Self::OpenSettings => ShortcutBinding::ctrl(gdk::Key::comma),
             Self::Back => ShortcutBinding::alt(gdk::Key::Left),
             Self::Notifications => ShortcutBinding::ctrl_shift(gdk::Key::n),
@@ -123,6 +127,7 @@ pub const SHORTCUT_GROUPS: &[(&str, &[ShortcutAction])] = &[
         &[
             ShortcutAction::GoHome,
             ShortcutAction::GoLibrary,
+            ShortcutAction::GoEditor,
             ShortcutAction::OpenSettings,
             ShortcutAction::Back,
             ShortcutAction::Notifications,

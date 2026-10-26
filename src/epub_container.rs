@@ -117,6 +117,19 @@ pub struct EpubContainer {
     bytes: HashMap<String, Vec<u8>>,
 }
 
+/// Hand-written so load results can ride in Relm4 messages (which
+/// require `Debug`) without ever printing a book's bytes into a log.
+impl std::fmt::Debug for EpubContainer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "EpubContainer {{ opf: {:?}, files: {} }}",
+            self.opf_path,
+            self.files.len()
+        )
+    }
+}
+
 impl EpubContainer {
     pub fn open(epub_path: &Path) -> Result<Self> {
         let file = fs::File::open(epub_path)

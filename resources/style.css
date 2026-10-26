@@ -5110,6 +5110,91 @@ button.kalam-pdf-draw-delete:focus-visible {
     outline-offset: 2px;
 }
 
+button.kalam-pdf-draw-shape-kind {
+    min-width: 38px;
+    padding: 0;
+    border-radius: 10px;
+}
+
+button.kalam-pdf-draw-shape-width {
+    min-width: 52px;
+    padding: 0 10px;
+}
+
+.kalam-pdf-draw-switch-label {
+    color: @kalam_text;
+    font-size: 13px;
+}
+
+/* The text box while it is being typed on the page: the board's
+   accent outline over the paper ground it will keep. */
+textview.kalam-pdf-text-editor {
+    background: @kalam_paper;
+    color: @kalam_paper_ink;
+    border: 1.5px solid @kalam_accent;
+    border-radius: 4px;
+    caret-color: @kalam_accent;
+}
+
+textview.kalam-pdf-text-editor text {
+    background: transparent;
+    color: inherit;
+}
+
+textview.kalam-pdf-text-editor-clear,
+textview.kalam-pdf-text-editor-clear text {
+    background: transparent;
+}
+
+textview.kalam-pdf-text-size-s { font-size: 11px; }
+textview.kalam-pdf-text-size-m { font-size: 15px; }
+textview.kalam-pdf-text-size-l { font-size: 21px; }
+
+textview.kalam-pdf-text-color-yellow { color: @kalam_hl_yellow; }
+textview.kalam-pdf-text-color-green { color: @kalam_hl_green; }
+textview.kalam-pdf-text-color-blue { color: @kalam_hl_blue; }
+textview.kalam-pdf-text-color-pink { color: @kalam_hl_pink; }
+textview.kalam-pdf-text-color-orange { color: @kalam_hl_orange; }
+textview.kalam-pdf-text-color-ink { color: @kalam_paper_ink; }
+
+textview.kalam-pdf-text-editor:focus-within {
+    outline: 2px solid alpha(@kalam_accent, 0.35);
+    outline-offset: 1px;
+}
+
+/* The sticky note's card: pin colours and a bin over a hairline,
+   the words underneath on the card's own ground. */
+button.kalam-pdf-draw-sticky-delete {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: @kalam_danger;
+}
+
+button.kalam-pdf-draw-sticky-delete:hover {
+    background: alpha(@kalam_danger, 0.1);
+}
+
+button.kalam-pdf-draw-sticky-delete:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+textview.kalam-pdf-sticky-editor,
+textview.kalam-pdf-sticky-editor text {
+    background: transparent;
+    color: @kalam_text;
+    font-size: 13.5px;
+}
+
+textview.kalam-pdf-sticky-editor {
+    caret-color: @kalam_accent;
+}
+
 /* Whole-book open states (decision 73): the shared dashed state
    card at the password boards' larger measure. The ground is the
    reader's own, opaque, so a half-built skeleton never shows

@@ -990,6 +990,9 @@ def seed_pdf_fixture(
                 separators=(",", ":"),
             )
 
+        def geometry(payload):
+            return json.dumps(payload, separators=(",", ":"))
+
         conn.executemany(
             "INSERT INTO pdf_drawings (book_id, page_id, kind, color, "
             "opacity, width_pts, geometry, created_at, updated_at) "
@@ -1038,6 +1041,72 @@ def seed_pdf_fixture(
                             [92, 205], [84, 172], [95, 150],
                         ],
                     ),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-4",
+                    "shape",
+                    "blue",
+                    0.35,
+                    3.0,
+                    geometry({
+                        "type": "shape",
+                        "shape": "rectangle",
+                        "start": [40, 246],
+                        "end": [365, 286],
+                        "filled": True,
+                    }),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-4",
+                    "shape",
+                    "orange",
+                    1.0,
+                    3.0,
+                    geometry({
+                        "type": "shape",
+                        "shape": "arrow",
+                        "start": [318, 326],
+                        "end": [360, 292],
+                        "filled": False,
+                    }),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-5",
+                    "text",
+                    "ink",
+                    1.0,
+                    1.0,
+                    geometry({
+                        "type": "text",
+                        "rect": [205, 455, 180, 42],
+                        "text": "Compare with p. 24",
+                        "size": "m",
+                        "paper_background": True,
+                    }),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-5",
+                    "sticky",
+                    "yellow",
+                    1.0,
+                    1.0,
+                    geometry({
+                        "type": "sticky",
+                        "point": [92, 272],
+                        "text": "Check this against p. 24",
+                    }),
                     stamp,
                     stamp,
                 ),

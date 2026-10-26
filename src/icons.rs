@@ -142,6 +142,38 @@ fn install() {
             "kalam-draw-eraser-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M3.5 15.2 13.2 5.5a1.8 1.8 0 0 1 2.5 0l4 4a1.8 1.8 0 0 1 0 2.5l-6.2 6.3H7.4l-3.9-3.1zm6.2.8h3l5-5-2-2z" /></svg>"#,
         ),
+        // Shape, text and sticky-note tools, plus the four shape
+        // outlines: the same filled/even-odd construction, so the
+        // square-and-circle pair and the note's plus survive
+        // symbolic recolouring at 18px.
+        (
+            "kalam-draw-shape-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M3 8h12v12H3zM5.2 10.2h7.6v7.6H5.2zM10 8.5a5.5 5.5 0 1 0 11 0 5.5 5.5 0 1 0-11 0zM12.2 8.5a3.3 3.3 0 1 0 6.6 0 3.3 3.3 0 1 0-6.6 0z" /></svg>"#,
+        ),
+        (
+            "kalam-draw-text-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v3.2h-6.4V20h-3.2V7.2H4z" /></svg>"#,
+        ),
+        (
+            "kalam-draw-sticky-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5 3h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9l-4.4 4v-4H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM11 7v2H9v2h2v2h2v-2h2V9h-2V7z" /></svg>"#,
+        ),
+        (
+            "kalam-shape-rectangle-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M4 5h16v14H4zM6.2 7.2h11.6v9.6H6.2z" /></svg>"#,
+        ),
+        (
+            "kalam-shape-ellipse-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M4 12a8 8 0 1 0 16 0 8 8 0 1 0-16 0zM6.2 12a5.8 5.8 0 1 0 11.6 0 5.8 5.8 0 1 0-11.6 0z" /></svg>"#,
+        ),
+        (
+            "kalam-shape-line-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4.2 18.2 18.2 4.2l1.6 1.6-14 14z" /></svg>"#,
+        ),
+        (
+            "kalam-shape-arrow-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.2 3.8v6.5h-2.2V6.9L6 19l-1.9-1.9 12-12H12.7V2.9z" transform="translate(1.5 1.5) scale(.88)" /></svg>"#,
+        ),
         // The reader's bookmark ribbon (decision 16): a V-notched strip
         // hanging from the top edge. Idle is an outline in the border
         // colour over the page; set is the same shape filled with the

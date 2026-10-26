@@ -778,6 +778,30 @@ jobs:
             THEME=terracotta-light \
             docs/ci/screenshot.sh
 
+      - name: open the PDF shape tool (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-shape-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing-shape \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: edit a PDF text box (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-text-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing-text \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a PDF sticky note (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-sticky-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing-sticky \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # Whole-book open states (decision 73): the same fixture
       # encrypted with the seeder's known password, damaged, or
       # absent. The wrong and unlocked frames submit through the
@@ -1333,6 +1357,8 @@ jobs:
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark \
                       pdf-drawing-dark pdf-drawing-selected-light \
+                      pdf-drawing-shape-dark pdf-drawing-text-dark \
+                      pdf-drawing-sticky-dark \
                       pdf-password-dark pdf-password-light \
                       pdf-password-wrong-dark pdf-password-unlocked-dark \
                       pdf-corrupt-dark pdf-missing-dark; do
@@ -1464,6 +1490,8 @@ jobs:
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark \
                       pdf-drawing-dark pdf-drawing-selected-light \
+                      pdf-drawing-shape-dark pdf-drawing-text-dark \
+                      pdf-drawing-sticky-dark \
                       pdf-password-dark pdf-password-light \
                       pdf-password-wrong-dark pdf-password-unlocked-dark \
                       pdf-corrupt-dark pdf-missing-dark; do

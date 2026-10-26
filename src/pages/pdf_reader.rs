@@ -41,8 +41,9 @@ mod search_results;
 
 pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
 use drawings::{
-    PdfActiveStroke, PdfDrawTool, PdfDrawingDragState, PdfDrawingPaint, PdfDrawingSettings,
-    PdfDrawingWidgets, PdfInkColor, PdfStrokeWidth,
+    PdfActiveShape, PdfActiveStroke, PdfDrawTool, PdfDrawingDragState, PdfDrawingPaint,
+    PdfDrawingSettings, PdfDrawingTextEditor, PdfDrawingWidgets, PdfInkColor, PdfShapeKind,
+    PdfStickyCardState, PdfStrokeWidth, PdfTextSize,
 };
 
 /// The password that unlocked this reading session, shared with
@@ -1425,6 +1426,20 @@ pub enum PdfReaderMsg {
     /// A selected stroke's width in tenths of a point, so the
     /// popover's three choices travel without a float in the message.
     SetSelectedDrawingWidthTenths(i64),
+    SetShapeKind(PdfShapeKind),
+    SetShapeFilled(bool),
+    SetShapeColor(PdfInkColor),
+    SetShapeWidth(PdfStrokeWidth),
+    SetTextSize(PdfTextSize),
+    SetTextColor(PdfInkColor),
+    SetTextPaperBackground(bool),
+    SetSelectedShapeKind(PdfShapeKind),
+    SetSelectedShapeFilled(bool),
+    SetSelectedTextSize(PdfTextSize),
+    SetSelectedTextPaper(bool),
+    CommitDrawingText,
+    EditDrawingText(i64),
+    ShowStickyDrawing(i64),
     CloseDrawingPopover,
     ShowDrawingPopover,
     DrawToolbarZoneHover(bool),
@@ -1646,6 +1661,7 @@ pub struct PdfReaderModel {
     pub drawings: Vec<PdfDrawing>,
     pub drawing_paints: Rc<std::cell::RefCell<Vec<PdfDrawingPaint>>>,
     pub active_drawing: Rc<std::cell::RefCell<Option<PdfActiveStroke>>>,
+    pub active_shape: Rc<std::cell::RefCell<Option<PdfActiveShape>>>,
     pub draw_tool: PdfDrawTool,
     /// The same answer where page gesture closures can read it
     /// before their messages reach the model.
@@ -1661,6 +1677,8 @@ pub struct PdfReaderModel {
     pub drawing_drag: Option<PdfDrawingDragState>,
     pub selected_drawing_id: Option<i64>,
     pub drawing_popover: Option<gtk::Popover>,
+    pub drawing_text_editor: Option<PdfDrawingTextEditor>,
+    pub sticky_card: Option<PdfStickyCardState>,
     pub notes_filter: PdfNotesFilter,
     pub highlight_colour_filter: Option<HighlightColor>,
     pub highlight_search_open: bool,
@@ -2047,6 +2065,7 @@ impl PdfReaderModel {
             drawings: Vec::new(),
             drawing_paints: Rc::new(std::cell::RefCell::new(Vec::new())),
             active_drawing: Rc::new(std::cell::RefCell::new(None)),
+            active_shape: Rc::new(std::cell::RefCell::new(None)),
             draw_tool: PdfDrawTool::Select,
             draw_tool_shared: Rc::new(std::cell::Cell::new(PdfDrawTool::Select)),
             draw_settings,
@@ -2060,6 +2079,8 @@ impl PdfReaderModel {
             drawing_drag: None,
             selected_drawing_id: None,
             drawing_popover: None,
+            drawing_text_editor: None,
+            sticky_card: None,
             notes_filter: PdfNotesFilter::Highlights,
             highlight_colour_filter: None,
             highlight_search_open: false,
@@ -3714,6 +3735,7 @@ impl PdfReaderModel {
         let search_hl_ref = self.search_highlights.clone();
         let drawing_paints_ref = self.drawing_paints.clone();
         let active_drawing_ref = self.active_drawing.clone();
+        let active_shape_ref = self.active_shape.clone();
         let draw_accent_rgb = self.draw_accent_rgb;
         let slot_copy = slot;
         let sel_handle_color = self.handle_color();
@@ -3735,6 +3757,11 @@ impl PdfReaderModel {
             if let Some(stroke) = active_drawing_ref.borrow().as_ref() {
                 if stroke.slot == slot_copy {
                     drawings::paint_active_stroke(cr, stroke, width as f64, height as f64);
+                }
+            }
+            if let Some(shape) = active_shape_ref.borrow().as_ref() {
+                if shape.slot == slot_copy {
+                    drawings::paint_active_shape(cr, shape, width as f64, height as f64);
                 }
             }
 
@@ -4003,6 +4030,7 @@ impl PdfReaderModel {
         // The recognizing signal is parented to a page overlay that is
         // about to be dropped with the rest of the viewport.
         self.dismiss_recognizing_popover();
+        self.commit_drawing_text_editor();
         self.dismiss_drawing_popover();
         self.dismiss_dict_popover();
         self.page_pictures.clear();
@@ -5715,7 +5743,11 @@ impl Component for PdfReaderModel {
                 .widget()
                 .and_then(|widget| widget.root())
                 .and_then(|root| root.focus())
-                .is_some_and(|focus| focus.is::<gtk::Editable>() || focus.is::<gtk::Text>());
+                .is_some_and(|focus| {
+                    focus.is::<gtk::Editable>()
+                        || focus.is::<gtk::Text>()
+                        || focus.is::<gtk::TextView>()
+                });
             if typing && keyval != Key::Escape {
                 return gtk::glib::Propagation::Proceed;
             }
@@ -5830,7 +5862,11 @@ impl Component for PdfReaderModel {
                         let typing = w
                             .root()
                             .and_then(|r| r.focus())
-                            .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
+                            .is_some_and(|f| {
+                                f.is::<gtk::Editable>()
+                                    || f.is::<gtk::Text>()
+                                    || f.is::<gtk::TextView>()
+                            });
                         if typing {
                             return gtk::glib::Propagation::Proceed;
                         }
@@ -5848,7 +5884,11 @@ impl Component for PdfReaderModel {
                         let typing = w
                             .root()
                             .and_then(|r| r.focus())
-                            .is_some_and(|f| f.is::<gtk::Editable>() || f.is::<gtk::Text>());
+                            .is_some_and(|f| {
+                                f.is::<gtk::Editable>()
+                                    || f.is::<gtk::Text>()
+                                    || f.is::<gtk::TextView>()
+                            });
                         if typing {
                             return gtk::glib::Propagation::Proceed;
                         }
@@ -6515,6 +6555,8 @@ impl Component for PdfReaderModel {
         }
         match msg {
             PdfReaderMsg::Close => {
+                self.commit_drawing_text_editor();
+                self.commit_sticky_card_text();
                 self.save_progress();
                 if let Some(sid) = self.session_id {
                     let elapsed = self.session_start.elapsed().as_secs() as i64;
@@ -6646,6 +6688,8 @@ impl Component for PdfReaderModel {
                 // a layer, so it does not spend an Escape.
                 if self.open_state.is_blocking() {
                     let _ = sender.input_sender().send(PdfReaderMsg::Close);
+                } else if self.drawing_text_editor.is_some() {
+                    self.commit_drawing_text_editor();
                 } else if self.dict_popover.is_some() {
                     self.dismiss_dict_popover();
                 } else if self.drawing_popover.is_some() {
@@ -7292,6 +7336,7 @@ impl Component for PdfReaderModel {
                 self.refresh_notes_panel(&sender);
             }
             PdfReaderMsg::DeleteDrawing(id) => {
+                self.commit_sticky_card_text();
                 if let Some(drawing) = self
                     .drawings
                     .iter()
@@ -7340,44 +7385,141 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::SetSelectedDrawingColor(color) => {
-                if let Some(before) = self.selected_drawing_id.and_then(|id| {
-                    self.drawings
-                        .iter()
-                        .find(|drawing| drawing.id == id)
-                        .cloned()
-                }) {
-                    let mut after = before.clone();
-                    after.color = color.as_str().to_string();
-                    if crate::notify::report(
-                        self.catalog.update_pdf_drawing(&after),
-                        "Could not recolour the drawing",
-                    ) {
-                        self.remember_deleted(PdfDeletedMark::DrawingBefore(Box::new(before)));
-                    }
-                    self.reload_drawings();
-                    self.refresh_drawing_paints();
-                    self.queue_all_drawing_areas();
+                let sticky = self.selected_drawing_id.and_then(|id| {
+                    self.drawings.iter().find(|drawing| drawing.id == id)
+                }).is_some_and(|drawing| {
+                    matches!(
+                        drawing.geometry,
+                        crate::db::PdfDrawingGeometry::Sticky { .. }
+                    )
+                });
+                if sticky {
+                    self.draw_settings.sticky_color = color;
+                    self.draw_settings.persist(&self.catalog);
                 }
+                self.mutate_selected_drawing("Could not recolour the drawing", |drawing| {
+                    drawing.color = color.as_str().to_string();
+                });
             }
             PdfReaderMsg::SetSelectedDrawingWidthTenths(tenths) => {
-                if let Some(before) = self.selected_drawing_id.and_then(|id| {
-                    self.drawings
-                        .iter()
-                        .find(|drawing| drawing.id == id)
-                        .cloned()
-                }) {
-                    let mut after = before.clone();
-                    after.width_pts = (tenths as f64 / 10.0).clamp(0.1, 100.0);
-                    if crate::notify::report(
-                        self.catalog.update_pdf_drawing(&after),
-                        "Could not change the drawing",
-                    ) {
-                        self.remember_deleted(PdfDeletedMark::DrawingBefore(Box::new(before)));
-                    }
-                    self.reload_drawings();
-                    self.refresh_drawing_paints();
-                    self.queue_all_drawing_areas();
+                self.mutate_selected_drawing("Could not change the drawing", |drawing| {
+                    drawing.width_pts = (tenths as f64 / 10.0).clamp(0.1, 100.0);
+                });
+            }
+            PdfReaderMsg::SetShapeKind(kind) => {
+                self.draw_settings.shape_kind = kind;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
                 }
+            }
+            PdfReaderMsg::SetShapeFilled(filled) => {
+                self.draw_settings.shape_filled = filled;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetShapeColor(color) => {
+                self.draw_settings.shape_color = color;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetShapeWidth(width) => {
+                self.draw_settings.shape_width = width;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetTextSize(size) => {
+                self.draw_settings.text_size = size;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetTextColor(color) => {
+                self.draw_settings.text_color = color;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetTextPaperBackground(enabled) => {
+                self.draw_settings.text_paper_background = enabled;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetSelectedShapeKind(kind) => {
+                self.mutate_selected_drawing("Could not change the shape", |drawing| {
+                    if let crate::db::PdfDrawingGeometry::Shape {
+                        shape, filled, ..
+                    } = &mut drawing.geometry
+                    {
+                        *shape = kind.as_str().to_string();
+                        if !kind.can_fill() {
+                            *filled = false;
+                            drawing.opacity = 1.0;
+                        } else if *filled {
+                            drawing.opacity = 0.35;
+                        }
+                    }
+                });
+            }
+            PdfReaderMsg::SetSelectedShapeFilled(filled) => {
+                self.mutate_selected_drawing("Could not change the shape", |drawing| {
+                    if let crate::db::PdfDrawingGeometry::Shape {
+                        shape,
+                        filled: saved,
+                        ..
+                    } = &mut drawing.geometry
+                    {
+                        if PdfShapeKind::from_name(shape).can_fill() {
+                            *saved = filled;
+                            drawing.opacity = if filled { 0.35 } else { 1.0 };
+                        }
+                    }
+                });
+            }
+            PdfReaderMsg::SetSelectedTextSize(size) => {
+                self.mutate_selected_drawing("Could not resize the text", |drawing| {
+                    if let crate::db::PdfDrawingGeometry::Text {
+                        rect,
+                        text,
+                        size: saved,
+                        ..
+                    } = &mut drawing.geometry
+                    {
+                        *saved = size.as_str().to_string();
+                        rect.3 =
+                            Self::text_rect_height(text, size, rect.2, rect.3);
+                    }
+                });
+            }
+            PdfReaderMsg::SetSelectedTextPaper(enabled) => {
+                self.mutate_selected_drawing("Could not change the text box", |drawing| {
+                    if let crate::db::PdfDrawingGeometry::Text {
+                        paper_background,
+                        ..
+                    } = &mut drawing.geometry
+                    {
+                        *paper_background = enabled;
+                    }
+                });
+            }
+            PdfReaderMsg::CommitDrawingText => {
+                self.commit_drawing_text_editor();
+            }
+            PdfReaderMsg::EditDrawingText(id) => {
+                self.edit_drawing_text(id, &sender);
+            }
+            PdfReaderMsg::ShowStickyDrawing(id) => {
+                self.show_sticky_drawing(id, &sender);
             }
             PdfReaderMsg::CloseDrawingPopover => {
                 self.dismiss_drawing_popover();
@@ -8613,7 +8755,7 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::SelectionDragEnd { slot, dx, dy, press_count } => {
                 if !self.draw_tool.is_select() {
-                    self.finish_active_drawing(slot, dx, dy);
+                    self.finish_active_drawing(slot, dx, dy, &sender);
                     return;
                 }
                 if press_count < 2 && self.finish_drawing_move(slot, dx, dy, &sender) {
@@ -8669,9 +8811,12 @@ impl Component for PdfReaderModel {
                 self.update_active_drawing(slot, dx, dy);
             }
             PdfReaderMsg::DrawingDragEnd { slot, dx, dy, .. } => {
-                self.finish_active_drawing(slot, dx, dy);
+                self.finish_active_drawing(slot, dx, dy, &sender);
             }
             PdfReaderMsg::SelectionWordAt { slot, x, y } => {
+                if self.open_drawing_object_at(slot, x, y, &sender) {
+                    return;
+                }
                 let Some(page) = self.page_for_slot(slot) else { return };
                 let _ = self.ensure_page_text(page);
 
@@ -9335,6 +9480,42 @@ impl PdfReaderModel {
             Ok("drawing") => {
                 self.draw_toolbar_visible = true;
                 sender.input(PdfReaderMsg::SetDrawTool(PdfDrawTool::Highlighter));
+            }
+            Ok("drawing-shape") => {
+                self.draw_toolbar_visible = true;
+                sender.input(PdfReaderMsg::SetDrawTool(PdfDrawTool::Shape));
+            }
+            Ok("drawing-text") => {
+                self.draw_toolbar_visible = true;
+                sender.input(PdfReaderMsg::SetDrawTool(PdfDrawTool::TextBox));
+                if let Some(drawing) = self.drawings.iter().find(|drawing| {
+                    matches!(
+                        drawing.geometry,
+                        crate::db::PdfDrawingGeometry::Text { .. }
+                    )
+                }) {
+                    let id = drawing.id;
+                    let s = sender.clone();
+                    glib::timeout_add_local_once(Duration::from_secs(9), move || {
+                        let _ = s.input_sender().send(PdfReaderMsg::EditDrawingText(id));
+                    });
+                }
+            }
+            Ok("drawing-sticky") => {
+                self.draw_toolbar_visible = true;
+                sender.input(PdfReaderMsg::SetDrawTool(PdfDrawTool::Sticky));
+                if let Some(drawing) = self.drawings.iter().find(|drawing| {
+                    matches!(
+                        drawing.geometry,
+                        crate::db::PdfDrawingGeometry::Sticky { .. }
+                    )
+                }) {
+                    let id = drawing.id;
+                    let s = sender.clone();
+                    glib::timeout_add_local_once(Duration::from_secs(9), move || {
+                        let _ = s.input_sender().send(PdfReaderMsg::ShowStickyDrawing(id));
+                    });
+                }
             }
             Ok("drawing-selected") => {
                 self.draw_toolbar_visible = true;

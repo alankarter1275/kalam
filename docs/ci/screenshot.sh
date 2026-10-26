@@ -421,7 +421,8 @@ say "requested comic action: ${COMIC_ACTION:-<none>}"
 # PDF_ACTION is the same ask for the PDF reader (KALAM_PDF_ACTION:
 # chrome, contents, contents-pinned, pages, notes, notes-words,
 # notes-bookmarks, notes-empty, search-results, reading, shortcuts,
-# jump, jump-range, drawing, drawing-selected).
+# jump, jump-range, drawing, drawing-selected, drawing-shape,
+# drawing-text, drawing-sticky).
 PDF_ACTION="${PDF_ACTION:-}"
 say "requested PDF action: ${PDF_ACTION:-<none>}"
 say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"
@@ -477,7 +478,7 @@ if [ -z "$MIN_SETTLE" ]; then
   # The selected-drawing popover is scheduled the same way and for
   # the same reason.
   case "$PDF_ACTION" in
-    drawing-selected)
+    drawing-selected|drawing-text|drawing-sticky)
       MIN_SETTLE=13
       ;;
   esac

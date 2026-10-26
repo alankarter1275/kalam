@@ -788,9 +788,10 @@ impl EpubEditorModel {
                 buffer.set_highlight_syntax(true);
                 // Loading a file is not an edit: keep it out of the
                 // undo history so Ctrl+Z can never empty a fresh tab.
+                let undo_levels = buffer.max_undo_levels();
                 buffer.set_max_undo_levels(0);
                 buffer.set_text(&text);
-                buffer.set_max_undo_levels(-1);
+                buffer.set_max_undo_levels(undo_levels);
                 buffer.set_modified(false);
 
                 let view = sourceview5::View::with_buffer(&buffer);

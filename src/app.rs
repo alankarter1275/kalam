@@ -270,6 +270,9 @@ fn cache_key(route: &Route) -> Option<String> {
         // The authors index changes with every book edit and author
         // merge; rebuild it rather than serving a cached roster.
         Route::Module(NavItem::Authors) | Route::AuthorsIndex => None,
+        // The picker carries each book's edited state; the workspace
+        // owns buffers and undo history. Neither may be cache-served.
+        Route::Module(NavItem::Editor) => None,
         Route::Module(item) => Some(format!("mod:{}", item.label())),
         Route::ComponentPreview => Some("components".into()),
         // Everything below reflects data the user is actively changing.
@@ -278,6 +281,7 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::TagBooks { .. }
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
+        | Route::EditorWorkspace { .. }
         | Route::SeriesPage { .. }
         | Route::ComicSeries { .. }
         | Route::Reader { .. }

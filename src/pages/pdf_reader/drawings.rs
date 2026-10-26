@@ -297,6 +297,11 @@ pub struct PdfDrawingDragState {
     pub kind: PdfDrawingDragKind,
 }
 
+/// A display point resolved against a page: its physical page, the
+/// page's stable identity, the source-space point, and the display
+/// size it was resolved against.
+type SourcePointHit = (usize, String, (f32, f32), (f64, f64));
+
 pub fn source_point_to_display(
     point: (f32, f32),
     source_width: f32,
@@ -454,9 +459,10 @@ pub fn drawing_hit(
     }
 }
 
-fn paint_stroke_path(
-    cr: &cairo::Context,
-    points: &[(f32, f32)],
+/// Everything one stroke needs to reach Cairo: its source-space
+/// points, the page and display they map between, and its ink.
+struct StrokePaint<'a> {
+    points: &'a [(f32, f32)],
     source_width: f32,
     source_height: f32,
     display_width: f64,
@@ -465,33 +471,36 @@ fn paint_stroke_path(
     color: PdfInkColor,
     opacity: f64,
     width_pts: f64,
-) {
-    if points.is_empty() {
+}
+
+fn paint_stroke_path(cr: &cairo::Context, paint: StrokePaint<'_>) {
+    if paint.points.is_empty() {
         return;
     }
     let scale = display_scale(
-        source_width,
-        source_height,
-        display_width,
-        display_height,
-        rotation,
+        paint.source_width,
+        paint.source_height,
+        paint.display_width,
+        paint.display_height,
+        paint.rotation,
     );
-    let line_width = (width_pts.max(0.1) * scale).max(1.0);
-    let (r, g, b) = color.rgb();
-    cr.set_source_rgba(r, g, b, opacity.clamp(0.0, 1.0));
+    let line_width = (paint.width_pts.max(0.1) * scale).max(1.0);
+    let (r, g, b) = paint.color.rgb();
+    cr.set_source_rgba(r, g, b, paint.opacity.clamp(0.0, 1.0));
     cr.set_line_width(line_width);
     cr.set_line_cap(cairo::LineCap::Round);
     cr.set_line_join(cairo::LineJoin::Round);
-    let mapped: Vec<(f64, f64)> = points
+    let mapped: Vec<(f64, f64)> = paint
+        .points
         .iter()
         .map(|point| {
             source_point_to_display(
                 *point,
-                source_width,
-                source_height,
-                display_width,
-                display_height,
-                rotation,
+                paint.source_width,
+                paint.source_height,
+                paint.display_width,
+                paint.display_height,
+                paint.rotation,
             )
         })
         .collect();
@@ -519,15 +528,17 @@ pub fn paint_drawing(
     if let PdfDrawingGeometry::Stroke { points, .. } = &paint.drawing.geometry {
         paint_stroke_path(
             cr,
-            points,
-            paint.source_width,
-            paint.source_height,
-            display_width,
-            display_height,
-            paint.rotation,
-            PdfInkColor::from_name(&paint.drawing.color),
-            paint.drawing.opacity,
-            paint.drawing.width_pts,
+            StrokePaint {
+                points,
+                source_width: paint.source_width,
+                source_height: paint.source_height,
+                display_width,
+                display_height,
+                rotation: paint.rotation,
+                color: PdfInkColor::from_name(&paint.drawing.color),
+                opacity: paint.drawing.opacity,
+                width_pts: paint.drawing.width_pts,
+            },
         );
     }
     if paint.selected {
@@ -571,15 +582,17 @@ pub fn paint_active_stroke(
 ) {
     paint_stroke_path(
         cr,
-        &stroke.points,
-        stroke.source_width,
-        stroke.source_height,
-        display_width,
-        display_height,
-        stroke.rotation,
-        stroke.color,
-        stroke.opacity,
-        stroke.width_pts,
+        StrokePaint {
+            points: &stroke.points,
+            source_width: stroke.source_width,
+            source_height: stroke.source_height,
+            display_width,
+            display_height,
+            rotation: stroke.rotation,
+            color: stroke.color,
+            opacity: stroke.opacity,
+            width_pts: stroke.width_pts,
+        },
     );
 }
 
@@ -966,7 +979,7 @@ impl PdfReaderModel {
         slot: PageSlot,
         x: f64,
         y: f64,
-    ) -> Option<(usize, String, (f32, f32), (f64, f64))> {
+    ) -> Option<SourcePointHit> {
         let page = self.page_for_slot(slot)?;
         let page_id = self.page_id_for_position(page)?;
         let (target_w, target_h) = self.drawing_target_dimensions();

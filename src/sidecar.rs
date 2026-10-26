@@ -233,23 +233,6 @@ fn sidecar_file_for(book: &Book) -> std::path::PathBuf {
 ///
 /// Temp-file-then-rename, so an interrupted write cannot leave a truncated
 /// sidecar that a future rebuild would read as authoritative-but-wrong.
-pub fn write_sidecar(
-    book: &Book,
-    position: Option<(usize, f64)>,
-    marks: &[Annotation],
-    patches: &[PatchRecord],
-) {
-    let mut data = Sidecar::from_parts(book, position, marks, patches);
-    // This form has no catalog to rebuild the PDF snapshot from;
-    // carry the standing one forward rather than overwriting it
-    // with the empty arrays `from_parts` starts from.
-    if let Some(old) = read_sidecar(&sidecar_file_for(book)) {
-        data.pdf_pages = old.pdf_pages;
-        data.pdf_drawings = old.pdf_drawings;
-    }
-    write_sidecar_data(book, &data);
-}
-
 fn write_sidecar_data(book: &Book, data: &Sidecar) {
     let final_path = sidecar_file_for(book);
     // A comic chapter's sidecar sits in `.kalam/`, which may not exist yet

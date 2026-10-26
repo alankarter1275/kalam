@@ -11,6 +11,7 @@
 use super::{
     agent, Candidate, CandidateCredit, CoverRef, FetchError, MetadataSource, SourceId,
 };
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 const API_BASE: &str = "https://api.myanimelist.net/v2/manga";
@@ -264,9 +265,23 @@ struct SerializationEntry {
     node: Named,
 }
 
-fn parse_search_body(body: &str) -> Result<Vec<Candidate>, FetchError> {
-    let parsed: ListResponse =
+/// MAL answers with JSON objects. Without this shape check Serde's
+/// sequence form plus the fields' defaults would accept `[]` as an
+/// empty result, quietly turning a changed/error payload into “no
+/// matches” instead of the parse failure it is.
+fn parse_object<T: DeserializeOwned>(body: &str) -> Result<T, FetchError> {
+    let value: serde_json::Value =
         serde_json::from_str(body).map_err(|e| FetchError::Parse(e.to_string()))?;
+    if !value.is_object() {
+        return Err(FetchError::Parse(
+            "MyAnimeList returned a response in an unexpected shape.".to_string(),
+        ));
+    }
+    serde_json::from_value(value).map_err(|e| FetchError::Parse(e.to_string()))
+}
+
+fn parse_search_body(body: &str) -> Result<Vec<Candidate>, FetchError> {
+    let parsed: ListResponse = parse_object(body)?;
     Ok(parsed
         .data
         .into_iter()
@@ -276,8 +291,7 @@ fn parse_search_body(body: &str) -> Result<Vec<Candidate>, FetchError> {
 }
 
 fn parse_detail_body(body: &str) -> Result<Candidate, FetchError> {
-    let parsed: Manga =
-        serde_json::from_str(body).map_err(|e| FetchError::Parse(e.to_string()))?;
+    let parsed: Manga = parse_object(body)?;
     Ok(manga_to_candidate(parsed))
 }
 
@@ -562,6 +576,10 @@ mod tests {
     fn malformed_payload_is_a_parse_error() {
         assert!(matches!(
             parse_search_body("[]"),
+            Err(FetchError::Parse(_))
+        ));
+        assert!(matches!(
+            parse_detail_body("null"),
             Err(FetchError::Parse(_))
         ));
     }

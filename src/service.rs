@@ -1217,6 +1217,7 @@ impl LibraryService {
         current_name: &str,
         input: AuthorEditInput,
     ) -> std::result::Result<crate::db::AuthorEditOutcome, String> {
+        let mut stored_portrait: Option<(String, bool)> = None;
         let photo = match input.portrait {
             AuthorPortraitEdit::Keep => crate::db::AuthorPhotoEdit::Keep,
             AuthorPortraitEdit::Remove => crate::db::AuthorPhotoEdit::Remove,
@@ -1224,24 +1225,32 @@ impl LibraryService {
                 if bytes.is_empty() {
                     return Err("That image file is empty.".into());
                 }
-                let file = store_author_portrait(&input.name, &bytes)?;
+                let (file, created) = store_author_portrait(&input.name, &bytes)?;
+                stored_portrait = Some((file.clone(), created));
                 crate::db::AuthorPhotoEdit::Replace(file)
             }
         };
-        self.catalog
-            .edit_author(
-                current_name,
-                &crate::db::AuthorEdit {
-                    name: input.name,
-                    sort_name: input.sort_name,
-                    bio: input.bio,
-                    birth_date: input.birth_date,
-                    death_date: input.death_date,
-                    aliases: input.aliases,
-                    photo,
-                },
-            )
-            .map_err(|e| e.to_string())
+        let result = self.catalog.edit_author(
+            current_name,
+            &crate::db::AuthorEdit {
+                name: input.name,
+                sort_name: input.sort_name,
+                bio: input.bio,
+                birth_date: input.birth_date,
+                death_date: input.death_date,
+                aliases: input.aliases,
+                photo,
+            },
+        );
+        if result.is_err() {
+            // A rejected edit must not leave a newly stored portrait
+            // orphaned. A file that already existed may belong to a
+            // profile, so only this call's own file is removed.
+            if let Some((file, true)) = stored_portrait {
+                let _ = std::fs::remove_file(crate::paths::authors_dir().join(file));
+            }
+        }
+        result.map_err(|e| e.to_string())
     }
 
     /// Merge one author into another (decision 112); see
@@ -1769,7 +1778,10 @@ fn aggregate_author_index(
 /// return its file name. Content-hashed, so picking the same image
 /// twice is one file and a changed image never reads back stale
 /// through the cover cache.
-fn store_author_portrait(name: &str, bytes: &[u8]) -> std::result::Result<String, String> {
+fn store_author_portrait(
+    name: &str,
+    bytes: &[u8],
+) -> std::result::Result<(String, bool), String> {
     use std::hash::{Hash, Hasher};
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1797,16 +1809,16 @@ fn store_author_portrait(name: &str, bytes: &[u8]) -> std::result::Result<String
     std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create the authors folder: {e}"))?;
     let path = dir.join(&file_name);
     if path.is_file() {
-        return Ok(file_name);
+        return Ok((file_name, false));
     }
     let tmp = dir.join(format!(".{file_name}.{}.tmp", std::process::id()));
     std::fs::write(&tmp, bytes).map_err(|e| format!("Could not save the portrait: {e}"))?;
     match std::fs::rename(&tmp, &path) {
-        Ok(()) => Ok(file_name),
+        Ok(()) => Ok((file_name, true)),
         Err(err) => {
             let _ = std::fs::remove_file(&tmp);
             if path.is_file() {
-                Ok(file_name)
+                Ok((file_name, false))
             } else {
                 Err(format!("Could not save the portrait: {err}"))
             }

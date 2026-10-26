@@ -444,13 +444,20 @@ Deltas:
   today (`RuleField::Author` in `shelf_rules.rs`); "author already has a
   shelf" detection (Open shelf vs Create) needs a rule/name lookup in the
   snapshot. Name-linked-to-author switch is dialog-local state.
-- `FEATURE`/`GAP` Edit author and Merge into another author (decision 112):
-  aliases table exists, merge semantics and both dialogs are undesigned in
-  the set and unbuilt in code. The ⋯ menu ships without them (or disabled)
-  until designed. Fetch (+) on missing works stays disabled (Part 2, decision
-  109) — the design already says so.
-- Authors index page + rail entry (decision 117): no route exists
-  (`Route::AuthorPage` only). `GAP` (own design chat per the inventory).
+- Edit author and Merge into another author (decision 112) are built from
+  the design system: Edit renames the identity across books and comic
+  series, edits the cached profile/portrait and locks changed fields
+  against metadata refresh (decision 48, schema v21); renaming onto a
+  different existing identity is refused in favour of Merge. Merge moves
+  credits, folds profiles/works/locks, retains source spellings as
+  aliases, and migrates author shelves/rules and the series cache in one
+  catalog transaction. Fetch (+) on missing works stays disabled (Part 2,
+  decision 109) — the design already says so.
+- The Authors index page and rail entry (decision 117) are built:
+  `Route::AuthorsIndex` / `src/pages/authors.rs`, fed by
+  `LibraryService::authors`, lists profile-resolved authors with collapsed
+  book/read/series counts, normalized search and Name/Most books/Most read
+  sorting.
 
 ### 5.6 Series page (books) — `series-page-spec.md`, decisions 94–101
 
@@ -709,9 +716,10 @@ chart. The old `works_not_in_library` / `series_progress` /
 last caller. Both this page's dialogs are built: Create shelf (§31,
 author-linked name via the `author.shelf.<normalized>` pref) and the
 author-scope Annotations dialog (decision 115, grouped by book). Edit
-author and Merge stay out of the ⋯ menu — their dialogs are undesigned
-(§5.5), following the Edit book precedent. The screenshot loop gained
-`--author-fixture` (the series fixture's author, cached bibliography
+author and Merge initially stayed out of the ⋯ menu because their dialogs
+were undesigned (§5.5); the later Author management tranche built both,
+plus the Authors index and rail entry, from the design system. The
+screenshot loop gained `--author-fixture` (the series fixture's author, cached bibliography
 plus one mark of each kind) and the `author-book-<id>` route; five
 captures (page Light/Dark, panel, shelf, annotations) exposed and
 closed: GTK4 clamping the ⋯ host's negative margin (now a CSS
@@ -760,8 +768,6 @@ Recorded so they are neither built by accident nor designed away:
 | PDF password open | pdf spec §4 states | MuPDF authenticate + dialogs |
 | PDF Image Tint/Invert | decision 55 | color-matrix step in render path |
 | Comic image adjustments + blank-border crop | comic spec §2 Image pane | draw-time adjust + cached crop analysis |
-| Authors index page | decision 117 | route + page (design pending) |
-| Edit author / Merge authors | decision 112 | dialogs undesigned; merge semantics unbuilt |
 | Fetch missing works (+) | decision 109 | online sources (Part 2) — stays disabled |
 | Find-metadata shared dialog + MAL/Comic Vine | inventory §4, decision 48 | dialog undesigned; two providers unbuilt |
 | In-reader edit / Fix typo | decision 118 | gated on editor reopening (ruling 5) |

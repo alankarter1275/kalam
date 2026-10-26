@@ -61,22 +61,20 @@ impl Catalog {
         } else {
             effective.normalized_name.trim().to_string()
         };
-        let existing = profile_id_by_key(&conn, &key)?
+        let mut existing = profile_id_by_key(&conn, &key)?
             .map(|id| load_author_profile(&conn, id))
             .transpose()?
-            .flatten()
-            .or({
-                let canonical_key =
-                    crate::author::normalize_author_name(&effective.canonical_name);
-                if canonical_key == key {
-                    None
-                } else {
-                    profile_id_by_key(&conn, &canonical_key)?
-                        .map(|id| load_author_profile(&conn, id))
-                        .transpose()?
-                        .flatten()
-                }
-            });
+            .flatten();
+        if existing.is_none() {
+            let canonical_key =
+                crate::author::normalize_author_name(&effective.canonical_name);
+            if canonical_key != key {
+                existing = profile_id_by_key(&conn, &canonical_key)?
+                    .map(|id| load_author_profile(&conn, id))
+                    .transpose()?
+                    .flatten();
+            }
+        }
 
         let existing_id = match &existing {
             Some(existing) => {
@@ -128,7 +126,17 @@ impl Catalog {
         let comic_rows = comic_series_author_rows(&conn)?;
         let rewrites = plan_author_rewrites(&rows, &source_keys, &name);
         let comic_rewrites = plan_comic_rewrites(&comic_rows, &source_keys, &name);
-        if existing.is_none() && rewrites.is_empty() && comic_rewrites.is_empty() {
+        // An edit that only adds biography details to an author with
+        // no cached profile rewrites no credits, so presence cannot
+        // be inferred from the rewrite plans.
+        let source_present = existing.is_some()
+            || rows
+                .iter()
+                .any(|row| authors_match_any(&row.authors, &source_keys))
+            || comic_rows
+                .iter()
+                .any(|row| authors_match_any(&row.1, &source_keys));
+        if !source_present {
             return Err(DbError::Author(
                 "That author is not in your library anymore.".into(),
             ));
@@ -223,10 +231,22 @@ impl Catalog {
             .iter()
             .map(|a| crate::author::normalize_author_name(a))
             .collect();
-        lock(
-            AUTHOR_FIELD_ALIASES,
-            existing.is_some() && old_alias_keys != new_alias_keys,
-        );
+        // A newly created profile's name/sort aliases are generated
+        // identity fallbacks, not hand edits in themselves; an alias
+        // the reader actually typed is locked from the first save.
+        let aliases_changed = if existing.is_some() {
+            old_alias_keys != new_alias_keys
+        } else {
+            let sort_key = crate::author::normalize_author_name(&sort_name);
+            edit.aliases.iter().any(|alias| {
+                let key = crate::author::normalize_author_name(alias);
+                !key.is_empty()
+                    && key != new_key
+                    && key != sort_key
+                    && !source_keys.contains(&key)
+            })
+        };
+        lock(AUTHOR_FIELD_ALIASES, aliases_changed);
 
         match &edit.photo {
             AuthorPhotoEdit::Keep => {}
@@ -317,7 +337,14 @@ impl Catalog {
         let comic_rows = comic_series_author_rows(&conn)?;
         let rewrites = plan_author_rewrites(&rows, &source_keys, &canonical);
         let comic_rewrites = plan_comic_rewrites(&comic_rows, &source_keys, &canonical);
-        if source_profile.is_none() && rewrites.is_empty() && comic_rewrites.is_empty() {
+        let source_present = source_profile.is_some()
+            || rows
+                .iter()
+                .any(|row| authors_match_any(&row.authors, &source_keys))
+            || comic_rows
+                .iter()
+                .any(|row| authors_match_any(&row.1, &source_keys));
+        if !source_present {
             return Err(DbError::Author(
                 "That author is not in your library anymore.".into(),
             ));
@@ -355,13 +382,16 @@ impl Catalog {
 
         let tx = conn.transaction()?;
         apply_author_rewrites(&tx, &rewrites, &comic_rewrites)?;
-        write_author_profile(&tx, &profile, existing_id, &fetched_at)?;
+        // Delete the folded source row first so its aliases are free
+        // for the surviving profile; alias writes never steal a
+        // spelling from another row.
         if let Some(source_id) = delete_source_id {
             tx.execute(
                 "DELETE FROM author_profiles WHERE id = ?1",
                 params![source_id],
             )?;
         }
+        write_author_profile(&tx, &profile, existing_id, &fetched_at)?;
         migrate_author_shelf_links(&tx, &source_keys, &canonical)?;
         migrate_series_cache(&tx, &rewrites, &source_keys, &canonical)?;
         tx.commit()?;
@@ -753,12 +783,14 @@ fn write_author_profile(
         if normalized.is_empty() || !seen.insert(normalized.clone()) {
             continue;
         }
+        // An alias is an identity claim. A profile write never
+        // steals one from a different cached author; Edit validates
+        // collisions up front, and Merge deletes the source row
+        // before writing the folded profile.
         conn.execute(
             "INSERT INTO author_aliases (author_id, alias, normalized_alias)
              VALUES (?1, ?2, ?3)
-             ON CONFLICT(normalized_alias) DO UPDATE SET
-                 author_id = excluded.author_id,
-                 alias = excluded.alias",
+             ON CONFLICT(normalized_alias) DO NOTHING",
             params![author_id, alias, normalized],
         )?;
     }
@@ -1603,6 +1635,55 @@ mod tests {
             catalog.get_book(first).unwrap().unwrap().authors,
             "Author One"
         );
+    }
+
+    #[test]
+    fn edit_author_creates_a_first_profile_without_renaming() {
+        let catalog = Catalog::open_in_memory().unwrap();
+        let author = "New Profile Author";
+        seed_book(&catalog, "edit-first", "First Book", author, None);
+
+        let outcome = catalog
+            .edit_author(
+                author,
+                &AuthorEdit {
+                    name: author.into(),
+                    bio: "Hand-written first bio".into(),
+                    aliases: vec!["N. P. Author".into()],
+                    ..AuthorEdit::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(outcome.books_updated, 0);
+
+        let created = catalog
+            .get_author_profile_by_name("N. P. Author")
+            .unwrap()
+            .unwrap();
+        assert_eq!(created.canonical_name, author);
+        assert_eq!(created.bio, "Hand-written first bio");
+        for field in [AUTHOR_FIELD_BIO, AUTHOR_FIELD_ALIASES] {
+            assert!(
+                created.manual_fields.iter().any(|f| f == field),
+                "missing lock {field}"
+            );
+        }
+
+        let fetched = AuthorProfile {
+            canonical_name: author.into(),
+            sort_name: "Author, New Profile".into(),
+            normalized_name: crate::author::normalize_author_name(author),
+            bio: "Fetched replacement".into(),
+            aliases: vec!["Fetched Alias".into()],
+            ..AuthorProfile::default()
+        };
+        catalog.upsert_author_profile(&fetched).unwrap();
+        let after_fetch = catalog
+            .get_author_profile_by_name(author)
+            .unwrap()
+            .unwrap();
+        assert_eq!(after_fetch.bio, "Hand-written first bio");
+        assert!(after_fetch.aliases.iter().any(|a| a == "N. P. Author"));
     }
 
     #[test]

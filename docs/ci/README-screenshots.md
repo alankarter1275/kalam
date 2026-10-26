@@ -26,7 +26,8 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 | `book-4` + `DIALOG=tags` | The book page's Tag dialog opened over it (`KALAM_DIALOG`), twice: Light and Dark. Book 4 is the first seeded book carrying three tags, so chips and ticked library rows render for real. |
 | `book-1` + `DIALOG=annotations` | The Annotations dialog the same way, twice. The seeder writes no annotations, so these photograph the empty states. |
 | `series-book-21` + `SERIES_FIXTURE=1` | The series page over the seeder's coherent fixture series (Book 1 finished, Book 2 at 42%, Book 3 unread, Book 4 only in the seeded listing cache): the strip in Light and Dark, plus the list view in Light via `SERIES_VIEW=list`. The route anchors on a book id because a series route's name/author do not belong in a shell variable. |
-| `author-book-21` + `SERIES_FIXTURE=1` | The author page for the fixture series' author (`--author-fixture` in the seeder: cached bibliography plus one mark of each kind): the page in Light and Dark, the open-series panel, the Create shelf dialog and the author-scope Annotations dialog. |
+| `author-book-21` + `SERIES_FIXTURE=1` | The author page for the fixture series' author (`--author-fixture` in the seeder: cached bibliography plus one mark of each kind): the page in Light and Dark, the open-series panel, the Create shelf dialog, the author-scope Annotations dialog, and the Edit author / Merge author dialogs in Dark. |
+| `authors` + `SERIES_FIXTURE=1` + `AUTHOR_FIXTURE=1` | The Authors index over the seeded library and cached author profile, in Light and Dark. |
 | `settings` | The redesigned Settings page, 23 captures alternating Terracotta Light/Dark. `SETTINGS_PANE` picks the pane and `SETTINGS_ACTION` stages a drawn state (typeface dropdown open, restart/delete/remove confirms, shelf dropdown, dictionary drag, shortcut recording, notification panel with seeded events / empty / closed-bell unseen dot). The seeder's Settings fixtures supply the library registry, a watch folder (or none with `SETTINGS_EMPTY_WATCH=1`), Google Books key/country/rejected state, EPUB `.orig` backups, and the four bundled dictionary rows (or none with `SETTINGS_EMPTY_DICTS=1`). |
 
 The seeder writes real EPUBs and covers under readable author/title folders
@@ -74,7 +75,8 @@ The job commits text reports to:
 - `ci-logs/series-light-latest.txt`
 - `ci-logs/series-dark-latest.txt`
 - `ci-logs/series-list-light-latest.txt`
-- `ci-logs/author-{light,dark,panel-light,shelf-light,annotations-dark}-latest.txt`
+- `ci-logs/author-{light,dark,panel-light,shelf-light,annotations-dark,edit-dark,merge-dark}-latest.txt`
+- `ci-logs/authors-{light,dark}-latest.txt`
 - `ci-logs/settings-*-latest.txt` (one per Settings capture, 23 today)
 
 The report includes route checks, timing spans, main-loop stalls, pixel

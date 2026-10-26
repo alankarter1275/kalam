@@ -1038,6 +1038,34 @@ jobs:
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      - name: open the authors index (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-authors-light SETTLE=20 ROUTE=authors \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the authors index (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-authors-dark SETTLE=20 ROUTE=authors \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the edit-author dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-edit-dark SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=edit-author THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the merge-author dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-merge-dark SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=merge-author THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       # Settings (decisions 144-158): every pane, plus the drawn states
       # a route alone cannot reach -- open dropdowns, the three
       # confirmations, populated/empty watch folders and dictionaries,
@@ -1339,6 +1367,18 @@ jobs:
           cp ci-shots-author-annotations-dark/report.txt ci-logs/author-annotations-dark-latest.txt 2>/dev/null \
             || echo "(no author-annotations-dark report produced)" > ci-logs/author-annotations-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-annotations-dark-latest.txt
+          cp ci-shots-authors-light/report.txt ci-logs/authors-light-latest.txt 2>/dev/null \
+            || echo "(no authors-light report produced)" > ci-logs/authors-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/authors-light-latest.txt
+          cp ci-shots-authors-dark/report.txt ci-logs/authors-dark-latest.txt 2>/dev/null \
+            || echo "(no authors-dark report produced)" > ci-logs/authors-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/authors-dark-latest.txt
+          cp ci-shots-author-edit-dark/report.txt ci-logs/author-edit-dark-latest.txt 2>/dev/null \
+            || echo "(no author-edit-dark report produced)" > ci-logs/author-edit-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-edit-dark-latest.txt
+          cp ci-shots-author-merge-dark/report.txt ci-logs/author-merge-dark-latest.txt 2>/dev/null \
+            || echo "(no author-merge-dark report produced)" > ci-logs/author-merge-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-merge-dark-latest.txt
           # Settings has enough panes and states that spelling out 23
           # report/PNG pairs would bury the publish step. The slug is
           # the OUT suffix and the published PNG name, so this loop is
@@ -1466,6 +1506,14 @@ jobs:
             ci-logs/author-shelf-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-annotations-dark/03-author-book-21-settled.png \
             ci-logs/author-annotations-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-authors-light/03-authors-settled.png \
+            ci-logs/authors-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-authors-dark/03-authors-settled.png \
+            ci-logs/authors-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-author-edit-dark/03-author-book-21-settled.png \
+            ci-logs/author-edit-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-author-merge-dark/03-author-book-21-settled.png \
+            ci-logs/author-merge-terracotta-dark.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/reader-latest.txt \
@@ -1489,7 +1537,9 @@ jobs:
             ci-logs/series-list-light-latest.txt \
             ci-logs/author-light-latest.txt ci-logs/author-dark-latest.txt \
             ci-logs/author-panel-light-latest.txt ci-logs/author-shelf-light-latest.txt \
-            ci-logs/author-annotations-dark-latest.txt
+            ci-logs/author-annotations-dark-latest.txt \
+            ci-logs/authors-light-latest.txt ci-logs/authors-dark-latest.txt \
+            ci-logs/author-edit-dark-latest.txt ci-logs/author-merge-dark-latest.txt
           for shot in settings-appearance-light settings-appearance-dark \
                       settings-reading-light settings-reading-dropdown-dark \
                       settings-libraries-light settings-libraries-open-dark \
@@ -1564,7 +1614,11 @@ jobs:
                       ci-logs/author-terracotta-dark.png \
                       ci-logs/author-panel-terracotta-light.png \
                       ci-logs/author-shelf-terracotta-light.png \
-                      ci-logs/author-annotations-terracotta-dark.png; do
+                      ci-logs/author-annotations-terracotta-dark.png \
+                      ci-logs/authors-terracotta-light.png \
+                      ci-logs/authors-terracotta-dark.png \
+                      ci-logs/author-edit-terracotta-dark.png \
+                      ci-logs/author-merge-terracotta-dark.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

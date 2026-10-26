@@ -1,2 +1,35 @@
-(no comics-reading-dark report produced)
---- run 40414603308 ---
+=== kalam screenshot run ===
+books=20 out=ci-shots-comics-reading-dark settle=20 output=1600x1000
+config home: /home/runner/work/kalam/kalam/ci-shots-comics-reading-dark/config-home
+binary: 71991000 bytes
+
+=== seeding 20 books ===
+seed-library: 22 books, 20 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4094.sock
+sway up: {
+  "human_readable": "1.11",
+  "variant": "sway",
+  "major": 1,
+  "minor": 11,
+  "patch": 0,
+  "loaded_config_file_name
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+requested route: comic-read-22
+requested theme: terracotta-dark
+requested dialog: <none>
+requested series view: <remembered>
+requested settings pane: <default>
+requested reader action: <none>
+requested comic action: reading
+requested PDF action: <none>
+settings fixture: 0 empty-dicts=0
+windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
+readiness: min=5s max=30s stable_max_changed=0.5%
+FATAL: kalam exited during startup. Its output:
+  /home/runner/work/kalam/kalam/target/release/kalam: error while loading shared libraries: libgtksourceview-5.so.0: cannot open shared object file: No such file or directory
+--- run 40415500607 ---

@@ -1233,10 +1233,9 @@ impl ComicsReaderModel {
             set(self.mark_read_on_advance);
         }
         if let Some(slider) = &self.zoom_slider {
-            let scale = slider.scale();
-            if (scale.value() - self.zoom_percent as f64).abs() > f64::EPSILON {
-                scale.set_value(self.zoom_percent as f64);
-            }
+            // Silent: a sync echo is queued behind any preset apply
+            // already in flight and would arrive as a stale edit.
+            slider.set_value_silently(self.zoom_percent as f64);
         }
         if let Some(btn) = &self.use_defaults_btn {
             let differs = self.settings_differ_from_defaults();
@@ -1272,10 +1271,7 @@ impl ComicsReaderModel {
             (&self.warmth_slider, self.image_settings.warmth),
         ] {
             if let Some(slider) = slider {
-                let scale = slider.scale();
-                if (scale.value() - value as f64).abs() > f64::EPSILON {
-                    scale.set_value(value as f64);
-                }
+                slider.set_value_silently(value as f64);
             }
         }
         if let Some(set) = &self.set_grayscale_switch {

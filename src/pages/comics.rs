@@ -34,6 +34,7 @@ pub struct ComicSeriesGroup {
     pub cover_path: Option<PathBuf>,
     pub chapters: Vec<Book>,
     pub total_chapters: usize,
+    pub completed_count: usize,
     pub unread_count: usize,
     pub next_to_read: Option<Book>,
     /// The catalog's series record when this group came from the
@@ -41,6 +42,14 @@ pub struct ComicSeriesGroup {
     /// `group_comics_into_series` fallback) have no record to edit or
     /// fetch metadata into, and say so instead of pretending.
     pub series: Option<ComicSeries>,
+}
+
+impl ComicSeriesGroup {
+    /// Every chapter finished. “Nothing unread” is not the same
+    /// claim: a chapter at 33% is neither unread nor completed.
+    fn all_completed(&self) -> bool {
+        self.total_chapters > 0 && self.completed_count >= self.total_chapters
+    }
 }
 
 #[derive(Debug)]
@@ -151,6 +160,7 @@ pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<
         });
 
         let total_chapters = chapters.len();
+        let completed_count = chapters.iter().filter(|c| c.progress >= 100).count();
         let unread_count = chapters.iter().filter(|c| c.progress == 0).count();
         let next_to_read = chapters
             .iter()
@@ -169,6 +179,7 @@ pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<
             cover_path,
             chapters,
             total_chapters,
+            completed_count,
             unread_count,
             next_to_read,
             series: None,
@@ -250,6 +261,7 @@ impl ComicsModel {
                 authors: s.credits_summary(),
                 cover_path: s.cover_path.clone(),
                 total_chapters: s.total_chapters,
+                completed_count: s.completed_chapters,
                 unread_count: s.unread_chapters,
                 chapters,
                 next_to_read,
@@ -419,10 +431,12 @@ fn build_series_card(
     title_lbl.set_halign(gtk::Align::Start);
     top_click_area.append(&title_lbl);
 
-    let sub_text = if group.unread_count == 0 && group.total_chapters > 0 {
+    let sub_text = if group.all_completed() {
         format!("{} ch · All read ✓", group.total_chapters)
-    } else if group.unread_count < group.total_chapters {
+    } else if group.unread_count > 0 && group.unread_count < group.total_chapters {
         format!("{} ch · {} unread", group.total_chapters, group.unread_count)
+    } else if group.unread_count == 0 && group.total_chapters > 0 {
+        format!("{} ch · In progress", group.total_chapters)
     } else {
         format!(
             "{} chapter{}",
@@ -446,7 +460,7 @@ fn build_series_card(
     card.append(&top_click_area);
 
     if let Some(ref next) = group.next_to_read {
-        let resume_lbl = if group.unread_count == 0 && group.total_chapters > 0 {
+        let resume_lbl = if group.all_completed() {
             "Ch. 1".to_string()
         } else if next.progress > 0 {
             if next.series_index > 0.0 {
@@ -614,7 +628,7 @@ fn build_series_drawer_view(
         }
     }
 
-    let completed_count = group.total_chapters.saturating_sub(group.unread_count);
+    let completed_count = group.completed_count;
     let stats_text = format!(
         "{} chapter{} · {} completed · {} unread",
         group.total_chapters,
@@ -638,7 +652,7 @@ fn build_series_drawer_view(
     info_box.append(&pbar);
 
     if let Some(ref next) = group.next_to_read {
-        let resume_lbl = if group.unread_count == 0 && group.total_chapters > 0 {
+        let resume_lbl = if group.all_completed() {
             "Restart Series (Ch. 1)".to_string()
         } else if next.progress > 0 {
             if next.series_index > 0.0 {
@@ -1510,11 +1524,13 @@ mod tests {
 
         // Berserk
         assert_eq!(groups[0].total_chapters, 1);
+        assert_eq!(groups[0].completed_count, 0);
         assert_eq!(groups[0].unread_count, 1);
         assert_eq!(groups[0].next_to_read.as_ref().unwrap().id, 5);
 
         // One Piece chapters sorted: 1, 2, 3, 4
         assert_eq!(groups[1].total_chapters, 4);
+        assert_eq!(groups[1].completed_count, 2); // Ch 3 at 45% is neither
         assert_eq!(groups[1].unread_count, 1); // only Ch 4 is 0%
         let op_ch_ids: Vec<i64> = groups[1].chapters.iter().map(|c| c.id).collect();
         assert_eq!(op_ch_ids, vec![2, 1, 3, 4]);
@@ -1535,9 +1551,27 @@ mod tests {
 
         let (groups, _) = group_comics_into_series(&books);
         assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].completed_count, 2);
         assert_eq!(groups[0].unread_count, 0);
+        assert!(groups[0].all_completed());
         // When all completed, next_to_read is first chapter
         assert_eq!(groups[0].next_to_read.as_ref().unwrap().id, 1);
+    }
+
+    #[test]
+    fn test_started_chapter_is_neither_unread_nor_completed() {
+        let books = vec![
+            make_test_book(1, "Meridian 01", Some("Meridian"), 1.0, 100),
+            make_test_book(2, "Meridian 02", Some("Meridian"), 2.0, 33),
+        ];
+
+        let (groups, _) = group_comics_into_series(&books);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].total_chapters, 2);
+        assert_eq!(groups[0].completed_count, 1);
+        assert_eq!(groups[0].unread_count, 0);
+        assert!(!groups[0].all_completed());
+        assert_eq!(groups[0].next_to_read.as_ref().unwrap().id, 2);
     }
 
     #[test]

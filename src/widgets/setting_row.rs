@@ -74,6 +74,7 @@ fn format_slider_value(value: f64, decimals: usize, suffix: &str) -> String {
 pub struct SliderRow {
     root: gtk::Box,
     scale: gtk::Scale,
+    suppress_change: Rc<Cell<bool>>,
 }
 
 impl SliderRow {
@@ -83,6 +84,22 @@ impl SliderRow {
 
     pub fn scale(&self) -> gtk::Scale {
         self.scale.clone()
+    }
+
+    /// Mirror external state without emitting the change callback.
+    ///
+    /// A plain `scale.set_value` during a model sync is not harmless:
+    /// the callback's message is queued *behind* any edits already in
+    /// flight, so two rapid external changes can leave stale 100% and
+    /// 45% messages taking turns undoing each other forever. Syncing
+    /// through here keeps a repaint a repaint.
+    pub fn set_value_silently(&self, value: f64) {
+        if (self.scale.value() - value).abs() <= f64::EPSILON {
+            return;
+        }
+        self.suppress_change.set(true);
+        self.scale.set_value(value);
+        self.suppress_change.set(false);
     }
 }
 
@@ -117,14 +134,22 @@ pub fn slider_row(
     scale.set_hexpand(true);
 
     let suffix = suffix.to_owned();
+    let suppress_change = Rc::new(Cell::new(false));
+    let suppress_cb = suppress_change.clone();
     scale.connect_value_changed(move |scale| {
         let current = scale.value();
         value.set_label(&format_slider_value(current, decimals, &suffix));
-        on_change(current);
+        if !suppress_cb.get() {
+            on_change(current);
+        }
     });
     root.append(&scale);
 
-    SliderRow { root, scale }
+    SliderRow {
+        root,
+        scale,
+        suppress_change,
+    }
 }
 
 #[derive(Clone)]

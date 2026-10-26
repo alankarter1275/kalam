@@ -8505,6 +8505,11 @@ button.kalam-author-merge-row:focus-visible {
 .kalam-editor {
   background: @kalam_bg;
 }
+/* ScrolledWindow viewports paint the default view colour where the
+   child does not reach; keep every editor pane on the page colour. */
+.kalam-editor viewport {
+  background: transparent;
+}
 
 /* Picker (§40) */
 .kalam-editorpicker-search {
@@ -8585,6 +8590,7 @@ button.kalam-ed-tree-section:hover {
 }
 button.kalam-ed-tree-row {
   background: transparent;
+  font-weight: 400;
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -8689,6 +8695,7 @@ button.kalam-ed-flat-tab.active {
 }
 button.kalam-ed-outline-row {
   background: transparent;
+  font-weight: 400;
   border: none;
   border-radius: 0;
   box-shadow: none;

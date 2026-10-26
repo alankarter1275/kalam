@@ -812,6 +812,7 @@ impl EpubEditorModel {
                 buffer.set_text(&text);
                 buffer.set_max_undo_levels(undo_levels);
                 buffer.set_modified(false);
+                buffer.place_cursor(&buffer.start_iter());
 
                 let view = sourceview5::View::with_buffer(&buffer);
                 view.add_css_class("kalam-ed-source");

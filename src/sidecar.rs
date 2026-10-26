@@ -21,7 +21,7 @@
 //! saved word without abusing custom fields. Nothing else reads a stray
 //! `metadata.opf` either, so the compatibility argument is imaginary.
 
-use crate::db::{Annotation, Catalog, PatchRecord};
+use crate::db::{Annotation, Catalog, PatchRecord, PdfDrawing, PdfDrawingGeometry, PdfPageIdentity};
 use crate::models::Book;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -30,8 +30,9 @@ use std::path::Path;
 /// looking at instead of guessing from which fields are present. v2 adds
 /// `patches` — additively: v1 files read clean through the serde default,
 /// and a v1 reader ignores the unknown field, so the bump is a signal, not
-/// a compatibility break.
-const SIDECAR_VERSION: u32 = 2;
+/// a compatibility break. v3 adds `pdf_pages` and `pdf_drawings` the same
+/// additive way.
+const SIDECAR_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SidecarHighlight {
@@ -73,6 +74,36 @@ pub struct SidecarPatch {
     pub before_hash: String,
 }
 
+/// One object drawn on a PDF page (decisions 66, 72). Geometry is the
+/// database's own JSON shape in source-page points, against the stable
+/// page identity beside it in `pdf_pages`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SidecarPdfDrawing {
+    pub id: i64,
+    pub page_id: String,
+    pub color: String,
+    pub opacity: f64,
+    pub width_pts: f64,
+    pub geometry: PdfDrawingGeometry,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<&PdfDrawing> for SidecarPdfDrawing {
+    fn from(drawing: &PdfDrawing) -> Self {
+        Self {
+            id: drawing.id,
+            page_id: drawing.page_id.clone(),
+            color: drawing.color.clone(),
+            opacity: drawing.opacity,
+            width_pts: drawing.width_pts,
+            geometry: drawing.geometry.clone(),
+            created_at: drawing.created_at.clone(),
+            updated_at: drawing.updated_at.clone(),
+        }
+    }
+}
+
 /// Everything worth keeping about one book, in one file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sidecar {
@@ -101,6 +132,12 @@ pub struct Sidecar {
     /// discard records written by older app versions.
     #[serde(default)]
     pub patches: Vec<SidecarPatch>,
+    /// Stable PDF page identities in current page order (decision 69).
+    #[serde(default)]
+    pub pdf_pages: Vec<PdfPageIdentity>,
+    /// Objects drawn on those pages (decision 72).
+    #[serde(default)]
+    pub pdf_drawings: Vec<SidecarPdfDrawing>,
 }
 
 impl Sidecar {
@@ -158,6 +195,8 @@ impl Sidecar {
                     before_hash: p.before_hash.clone(),
                 })
                 .collect(),
+            pdf_pages: Vec::new(),
+            pdf_drawings: Vec::new(),
         }
     }
 }
@@ -200,7 +239,18 @@ pub fn write_sidecar(
     marks: &[Annotation],
     patches: &[PatchRecord],
 ) {
-    let data = Sidecar::from_parts(book, position, marks, patches);
+    let mut data = Sidecar::from_parts(book, position, marks, patches);
+    // This form has no catalog to rebuild the PDF snapshot from;
+    // carry the standing one forward rather than overwriting it
+    // with the empty arrays `from_parts` starts from.
+    if let Some(old) = read_sidecar(&sidecar_file_for(book)) {
+        data.pdf_pages = old.pdf_pages;
+        data.pdf_drawings = old.pdf_drawings;
+    }
+    write_sidecar_data(book, &data);
+}
+
+fn write_sidecar_data(book: &Book, data: &Sidecar) {
     let final_path = sidecar_file_for(book);
     // A comic chapter's sidecar sits in `.kalam/`, which may not exist yet
     // even though the series folder does — create it. For every other book
@@ -217,7 +267,7 @@ pub fn write_sidecar(
     }
     let tmp = final_path.with_extension("json.tmp");
 
-    let json = match serde_json::to_string_pretty(&data) {
+    let json = match serde_json::to_string_pretty(data) {
         Ok(j) => j,
         Err(err) => {
             eprintln!("kalam: could not encode {}: {err}", final_path.display());
@@ -244,7 +294,15 @@ pub fn refresh_for_book(catalog: &Catalog, book_id: i64) {
     let position = catalog.get_reading_progress(book_id).ok().flatten();
     let marks = catalog.get_annotations_for_book(book_id).unwrap_or_default();
     let patches = catalog.get_patches_for_book(book_id).unwrap_or_default();
-    write_sidecar(&book, position, &marks, &patches);
+    let mut data = Sidecar::from_parts(&book, position, &marks, &patches);
+    data.pdf_pages = catalog.pdf_page_identities(book_id).unwrap_or_default();
+    data.pdf_drawings = catalog
+        .pdf_drawings_for_book(book_id)
+        .unwrap_or_default()
+        .iter()
+        .map(SidecarPdfDrawing::from)
+        .collect();
+    write_sidecar_data(&book, &data);
 }
 
 /// Read a sidecar back. Used by the survey below, never during normal reading.

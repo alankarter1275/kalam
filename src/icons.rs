@@ -126,6 +126,22 @@ fn install() {
             "kalam-columns-3-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="5" width="4" height="14" rx="1" /><rect x="10" y="5" width="4" height="14" rx="1" /><rect x="17" y="5" width="4" height="14" rx="1" /></svg>"#,
         ),
+        // The PDF annotation toolbar (decision 66): cursor, pen and
+        // eraser as filled silhouettes, like the pin — symbolic
+        // recolouring is fill based, so each reads at toolbar size
+        // without stroked detail to lose.
+        (
+            "kalam-draw-select-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5.2 2.8 19.4 12l-7.8 1.4 3 7-2.4 1-3-6.9-4.6 4.2z" /></svg>"#,
+        ),
+        (
+            "kalam-draw-pen-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M2.8 21.2 4 15.8 15.9 3.9a2.25 2.25 0 0 1 3.2 0l1.2 1.2a2.25 2.25 0 0 1 0 3.2L8.4 20.2zM6 17.1l9.2-9.2 1.1 1.1L7.1 18.2z" /></svg>"#,
+        ),
+        (
+            "kalam-draw-eraser-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M3.5 15.2 13.2 5.5a1.8 1.8 0 0 1 2.5 0l4 4a1.8 1.8 0 0 1 0 2.5l-6.2 6.3H7.4l-3.9-3.1zm6.2.8h3l5-5-2-2z" /></svg>"#,
+        ),
         // The reader's bookmark ribbon (decision 16): a V-notched strip
         // hanging from the top edge. Idle is an outline in the border
         // colour over the page; set is the same shape filled with the

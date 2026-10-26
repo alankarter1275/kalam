@@ -24,19 +24,26 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::db::{Annotation, Catalog, HighlightColor, ReadingBookmark, SavedWord};
+use crate::db::{
+    Annotation, Catalog, HighlightColor, PdfDrawing, PdfPageIdentity, ReadingBookmark, SavedWord,
+};
 use crate::epub_book::ReadingTheme;
 use crate::pdf::{
     PdfDocument, PdfOpenOutcome, PdfPageText, PdfSearchOutcome, PdfSearchResult, PdfTocEntry,
 };
 use crate::widgets::dialog::{confirmation_dialog, ConfirmationKind};
 
+mod drawings;
 mod image;
 mod notes;
 mod pages_grid;
 mod search_results;
 
 pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
+use drawings::{
+    PdfActiveStroke, PdfDrawTool, PdfDrawingDragState, PdfDrawingPaint, PdfDrawingSettings,
+    PdfDrawingWidgets, PdfInkColor, PdfStrokeWidth,
+};
 
 /// The password that unlocked this reading session, shared with
 /// every worker that opens the file for itself. Memory only
@@ -1310,6 +1317,12 @@ pub enum PdfDeletedMark {
     Annotation(Box<Annotation>),
     Bookmark(Box<ReadingBookmark>),
     SavedWord(Box<SavedWord>),
+    /// A deleted drawing: undo restores the row as it stood.
+    Drawing(Box<PdfDrawing>),
+    /// A drawing this session created: undo removes it.
+    DrawingCreated(Box<PdfDrawing>),
+    /// A drawing before a move or edit: undo writes it back.
+    DrawingBefore(Box<PdfDrawing>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1402,6 +1415,21 @@ pub enum PdfReaderMsg {
     DeleteBookmark(i64),
     DeleteAnnotation(i64),
     DeleteSavedWord(i64),
+    DeleteDrawing(i64),
+    SetDrawTool(PdfDrawTool),
+    SetHighlighterColor(PdfInkColor),
+    SetHighlighterOpacity(u8),
+    SetPenColor(PdfInkColor),
+    SetPenWidth(PdfStrokeWidth),
+    SetSelectedDrawingColor(PdfInkColor),
+    /// A selected stroke's width in tenths of a point, so the
+    /// popover's three choices travel without a float in the message.
+    SetSelectedDrawingWidthTenths(i64),
+    CloseDrawingPopover,
+    DrawToolbarZoneHover(bool),
+    DrawToolbarHover(bool),
+    DrawToolbarRevealDue(u64),
+    DrawToolbarHideDue(u64),
     UndoDelete,
     JumpToPage(usize),
     SetSmartCrop(bool),
@@ -1485,6 +1513,9 @@ pub enum PdfReaderMsg {
     SelectionDragBegin { slot: PageSlot, x: f64, y: f64, is_block: bool },
     SelectionDragUpdate { slot: PageSlot, dx: f64, dy: f64, is_block: bool },
     SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64, press_count: i32 },
+    DrawingDragBegin { slot: PageSlot, x: f64, y: f64 },
+    DrawingDragUpdate { slot: PageSlot, dx: f64, dy: f64 },
+    DrawingDragEnd { slot: PageSlot, dx: f64, dy: f64, press_count: i32 },
     SelectionWordAt { slot: PageSlot, x: f64, y: f64 },
     SelectionLineAt { slot: PageSlot, x: f64, y: f64 },
     PageOcrResult {
@@ -1528,6 +1559,8 @@ pub enum PdfReaderMsg {
     #[allow(dead_code)]
     QuoteSelection,
     LookUpWord(String),
+    ToggleSaveWord,
+    ClearDict,
     #[allow(dead_code)]
     ClearSelection,
     HideZoomOsd(u64),
@@ -1606,6 +1639,27 @@ pub struct PdfReaderModel {
     pub bookmarks: Vec<ReadingBookmark>,
     pub annotations: Vec<Annotation>,
     pub saved_words: Vec<SavedWord>,
+    /// Stable page identities in current page order (decision 69),
+    /// and the drawing objects anchored to them (decision 72).
+    pub page_identities: Vec<PdfPageIdentity>,
+    pub drawings: Vec<PdfDrawing>,
+    pub drawing_paints: Rc<std::cell::RefCell<Vec<PdfDrawingPaint>>>,
+    pub active_drawing: Rc<std::cell::RefCell<Option<PdfActiveStroke>>>,
+    pub draw_tool: PdfDrawTool,
+    /// The same answer where page gesture closures can read it
+    /// before their messages reach the model.
+    pub draw_tool_shared: Rc<std::cell::Cell<PdfDrawTool>>,
+    pub draw_settings: PdfDrawingSettings,
+    pub draw_accent_rgb: [f32; 3],
+    pub draw_toolbar_visible: bool,
+    pub draw_toolbar_zone_hover: bool,
+    pub draw_toolbar_hover: bool,
+    pub draw_toolbar_seq: u64,
+    pub draw_options_open: bool,
+    pub drawing_widgets: Option<PdfDrawingWidgets>,
+    pub drawing_drag: Option<PdfDrawingDragState>,
+    pub selected_drawing_id: Option<i64>,
+    pub drawing_popover: Option<gtk::Popover>,
     pub notes_filter: PdfNotesFilter,
     pub highlight_colour_filter: Option<HighlightColor>,
     pub highlight_search_open: bool,
@@ -1700,6 +1754,12 @@ pub struct PdfReaderModel {
     pub active_selection: std::rc::Rc<std::cell::RefCell<Option<PdfActiveSelection>>>,
     pub selection_drag_state: Option<(PageSlot, f64, f64, Option<PdfHandleDrag>, bool)>,
     pub selection_chip: Option<gtk::Popover>,
+    /// The Define card and the word its save toggle answers for.
+    pub dict_popover: Option<gtk::Popover>,
+    pub dict_lookup_word: Option<String>,
+    pub dict_lookup_def: Option<String>,
+    pub dict_lookup_page: usize,
+    pub dict_context: Option<String>,
     pub ocr_tx: Option<async_channel::Sender<crate::ocr::PdfOcrRequest>>,
     pub ocr_in_progress: HashSet<usize>,
     /// Fingerprint of the book file at the moment an in-flight OCR was
@@ -1929,6 +1989,11 @@ impl PdfReaderModel {
                 3
             };
 
+        // The drawing tools' remembered colour and weight, and the
+        // accent a selected drawing's outline paints in.
+        let draw_settings = PdfDrawingSettings::load(&init.catalog);
+        let draw_accent_rgb = image::rgb_from_hex(ui_theme.accent);
+
         let mut model = Self {
             book_id: init.book_id,
             catalog: init.catalog,
@@ -1977,6 +2042,23 @@ impl PdfReaderModel {
             bookmarks: Vec::new(),
             annotations: Vec::new(),
             saved_words: Vec::new(),
+            page_identities: Vec::new(),
+            drawings: Vec::new(),
+            drawing_paints: Rc::new(std::cell::RefCell::new(Vec::new())),
+            active_drawing: Rc::new(std::cell::RefCell::new(None)),
+            draw_tool: PdfDrawTool::Select,
+            draw_tool_shared: Rc::new(std::cell::Cell::new(PdfDrawTool::Select)),
+            draw_settings,
+            draw_accent_rgb,
+            draw_toolbar_visible: false,
+            draw_toolbar_zone_hover: false,
+            draw_toolbar_hover: false,
+            draw_toolbar_seq: 0,
+            draw_options_open: false,
+            drawing_widgets: None,
+            drawing_drag: None,
+            selected_drawing_id: None,
+            drawing_popover: None,
             notes_filter: PdfNotesFilter::Highlights,
             highlight_colour_filter: None,
             highlight_search_open: false,
@@ -2046,6 +2128,11 @@ impl PdfReaderModel {
             active_selection: std::rc::Rc::new(std::cell::RefCell::new(None)),
             selection_drag_state: None,
             selection_chip: None,
+            dict_popover: None,
+            dict_lookup_word: None,
+            dict_lookup_def: None,
+            dict_lookup_page: saved_page,
+            dict_context: None,
             ocr_tx: None,
             ocr_in_progress: HashSet::new(),
             ocr_started_fp: HashMap::new(),
@@ -2070,6 +2157,7 @@ impl PdfReaderModel {
         model.reload_bookmarks();
         model.reload_annotations();
         model.reload_saved_words();
+        model.reload_drawings();
 
         model
     }
@@ -2174,6 +2262,27 @@ impl PdfReaderModel {
             first_visible_page,
             &self.title,
         )
+    }
+
+    /// The annotation toolbar's rest and grace (decision 66):
+    /// up after 250 ms at the bottom centre, away 300 ms after
+    /// the pointer leaves it and its zone.
+    pub fn schedule_draw_toolbar_reveal(&mut self, sender: &ComponentSender<Self>) {
+        self.draw_toolbar_seq = self.draw_toolbar_seq.wrapping_add(1);
+        let seq = self.draw_toolbar_seq;
+        let s = sender.clone();
+        glib::timeout_add_local_once(Duration::from_millis(250), move || {
+            let _ = s.input_sender().send(PdfReaderMsg::DrawToolbarRevealDue(seq));
+        });
+    }
+
+    pub fn schedule_draw_toolbar_hide(&mut self, sender: &ComponentSender<Self>) {
+        self.draw_toolbar_seq = self.draw_toolbar_seq.wrapping_add(1);
+        let seq = self.draw_toolbar_seq;
+        let s = sender.clone();
+        glib::timeout_add_local_once(Duration::from_millis(300), move || {
+            let _ = s.input_sender().send(PdfReaderMsg::DrawToolbarHideDue(seq));
+        });
     }
 
     pub fn schedule_left_close(&mut self, sender: &ComponentSender<Self>) {
@@ -2920,6 +3029,16 @@ impl PdfReaderModel {
     }
 
     pub fn cleanup_memory(&mut self) {
+        self.dismiss_drawing_popover();
+        self.dismiss_dict_popover();
+        self.drawing_paints.borrow_mut().clear();
+        self.active_drawing.replace(None);
+        self.drawing_drag = None;
+        self.selected_drawing_id = None;
+        self.draw_tool = PdfDrawTool::Select;
+        self.draw_tool_shared.set(PdfDrawTool::Select);
+        self.draw_toolbar_visible = false;
+        self.draw_options_open = false;
         for pic in self.page_pictures.values() {
             pic.set_texture(None);
         }
@@ -3179,6 +3298,10 @@ impl PdfReaderModel {
     /// release sets is what the user sees (pitfalls 34).
     fn park_cursor_at(&self, slot: PageSlot, x: f64, y: f64) {
         let Some(ov) = self.page_overlays.get(&slot) else { return };
+        if !self.draw_tool.is_select() {
+            ov.set_cursor_from_name(Some("crosshair"));
+            return;
+        }
         let over_handle = self
             .active_selection
             .borrow()
@@ -3336,6 +3459,224 @@ impl PdfReaderModel {
         self.selection_chip = Some(popover);
     }
 
+    pub fn dismiss_dict_popover(&mut self) {
+        if let Some(popover) = self.dict_popover.take() {
+            popover.popdown();
+            popover.unparent();
+        }
+    }
+
+    /// The Define card (decision 31's save toggle, on the PDF page):
+    /// the entry's senses under the selection, with the circular
+    /// toggle that keeps the word for the Notes Words list.
+    pub fn show_dict_popover(&mut self, word: String, sender: &ComponentSender<Self>) {
+        let trimmed = word.trim().to_string();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.dismiss_dict_popover();
+        let selection = self.active_selection.borrow().clone();
+        let entry = self.catalog.lookup_entry(&trimmed).unwrap_or_else(|_| crate::db::EntryData {
+            word: trimmed.clone(),
+            ..Default::default()
+        });
+        let shown_word = if entry.word.is_empty() {
+            trimmed.clone()
+        } else {
+            entry.word.clone()
+        };
+        let page = selection
+            .as_ref()
+            .map(|sel| sel.page)
+            .unwrap_or(self.current_page);
+        let context = selection.as_ref().map(|sel| sel.text.clone());
+        self.dict_lookup_word = Some(shown_word.clone());
+        self.dict_lookup_def = entry.senses.first().map(|sense| sense.def.clone());
+        self.dict_lookup_page = page;
+        self.dict_context = context;
+        let _ = self.catalog.log_dict_lookup(
+            &shown_word,
+            Some(self.book_id),
+            Some(page as i64),
+            self.dict_context.as_deref(),
+            !entry.senses.is_empty(),
+        );
+
+        let overlay = selection
+            .as_ref()
+            .and_then(|sel| self.page_overlays.get(&sel.slot).cloned());
+        let (Some(sel), Some(overlay)) = (selection, overlay) else {
+            // A lookup with no page under it (a shortcut, a future
+            // caller) still answers: the toast the reader used before
+            // the card existed.
+            let def = self
+                .dict_lookup_def
+                .clone()
+                .unwrap_or_else(|| "No dictionary definition found".to_string());
+            crate::notify::info(&shown_word, &def);
+            return;
+        };
+
+        self.dismiss_selection_chip();
+        let saved = self
+            .catalog
+            .saved_word_exists(&shown_word, self.book_id)
+            .unwrap_or(false);
+
+        let popover = gtk::Popover::new();
+        popover.set_parent(&overlay);
+        popover.set_autohide(true);
+        popover.set_has_arrow(false);
+        popover.set_position(if sel.bounds.1 > overlay.height() as f64 * 0.62 {
+            gtk::PositionType::Top
+        } else {
+            gtk::PositionType::Bottom
+        });
+        popover.set_pointing_to(Some(&gdk::Rectangle::new(
+            sel.bounds.0 as i32,
+            sel.bounds.1 as i32,
+            sel.bounds.2.max(1.0) as i32,
+            sel.bounds.3.max(1.0) as i32,
+        )));
+        popover.add_css_class("kalam-reader-dict-popover");
+
+        let popup = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        popup.add_css_class("k-popup");
+        popup.set_size_request(380.min((overlay.width() - 32).max(300)), -1);
+
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        header.add_css_class("k-header");
+        let left = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        left.set_hexpand(true);
+        left.set_valign(gtk::Align::Center);
+        let headword = gtk::Label::new(Some(&shown_word));
+        headword.add_css_class("k-word");
+        headword.set_xalign(0.0);
+        headword.set_wrap(true);
+        left.append(&headword);
+        if let Some(pronunciation) = crate::db::pronunciation_for(&shown_word) {
+            let pron = gtk::Label::new(Some(&format!("/{pronunciation}/")));
+            pron.add_css_class("k-pronunciation");
+            pron.set_xalign(0.0);
+            left.append(&pron);
+        }
+        header.append(&left);
+
+        let save = gtk::Button::new();
+        save.add_css_class("k-save-btn");
+        let save_icon = gtk::Image::from_icon_name("list-add-symbolic");
+        save.set_child(Some(&save_icon));
+        save.set_valign(gtk::Align::Center);
+        save.set_sensitive(!entry.senses.is_empty());
+        save.update_property(&[gtk::accessible::Property::Label("Save word")]);
+        let apply_save = |btn: &gtk::Button, icon: &gtk::Image, is_saved: bool| {
+            if is_saved {
+                icon.set_icon_name(Some("object-select-symbolic"));
+                btn.add_css_class("saved");
+                btn.set_tooltip_text(Some("Saved — tap to forget"));
+            } else {
+                icon.set_icon_name(Some("list-add-symbolic"));
+                btn.remove_css_class("saved");
+                btn.set_tooltip_text(Some("Save word"));
+            }
+        };
+        apply_save(&save, &save_icon, saved);
+        let is_saved = std::rc::Rc::new(std::cell::Cell::new(saved));
+        {
+            let tx = sender.input_sender().clone();
+            let icon = save_icon.clone();
+            save.connect_clicked(move |btn| {
+                let next = !is_saved.get();
+                is_saved.set(next);
+                apply_save(btn, &icon, next);
+                let _ = tx.send(PdfReaderMsg::ToggleSaveWord);
+            });
+        }
+        header.append(&save);
+        popup.append(&header);
+
+        let body = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        body.add_css_class("k-body");
+        if entry.senses.is_empty() {
+            let empty = gtk::Label::new(Some("No dictionary definition found"));
+            empty.add_css_class("k-def-text");
+            empty.set_xalign(0.0);
+            empty.set_wrap(true);
+            body.append(&empty);
+            if !entry.suggestions.is_empty() {
+                let flow = gtk::FlowBox::builder()
+                    .selection_mode(gtk::SelectionMode::None)
+                    .column_spacing(6)
+                    .row_spacing(6)
+                    .max_children_per_line(3)
+                    .halign(gtk::Align::Start)
+                    .build();
+                flow.add_css_class("k-chips");
+                for suggestion in &entry.suggestions {
+                    let chip = gtk::Button::with_label(suggestion);
+                    chip.add_css_class("k-chip");
+                    chip.add_css_class("k-chip-syn");
+                    let tx = sender.input_sender().clone();
+                    let next = suggestion.clone();
+                    chip.connect_clicked(move |_| {
+                        let _ = tx.send(PdfReaderMsg::LookUpWord(next.clone()));
+                    });
+                    flow.insert(&chip, -1);
+                }
+                body.append(&flow);
+            }
+        } else {
+            for (index, sense) in entry.senses.iter().enumerate() {
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                row.add_css_class("k-def-item");
+                let num = gtk::Label::new(Some(&format!("{}.", index + 1)));
+                num.add_css_class("k-def-num");
+                num.set_valign(gtk::Align::Start);
+                row.append(&num);
+                let texts = gtk::Box::new(gtk::Orientation::Vertical, 3);
+                texts.set_hexpand(true);
+                if let Some(pos) = &sense.pos {
+                    let pos_label = gtk::Label::new(Some(&pos.to_uppercase()));
+                    pos_label.add_css_class("k-pos-name");
+                    pos_label.set_xalign(0.0);
+                    texts.append(&pos_label);
+                }
+                let def = gtk::Label::new(Some(&sense.def));
+                def.add_css_class("k-def-text");
+                def.set_wrap(true);
+                def.set_xalign(0.0);
+                def.set_halign(gtk::Align::Fill);
+                texts.append(&def);
+                if let Some(example) = &sense.example {
+                    let ex = gtk::Label::new(Some(example));
+                    ex.add_css_class("k-def-example");
+                    ex.set_wrap(true);
+                    ex.set_xalign(0.0);
+                    ex.set_halign(gtk::Align::Fill);
+                    texts.append(&ex);
+                }
+                row.append(&texts);
+                body.append(&row);
+            }
+        }
+        let scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .propagate_natural_height(true)
+            .overlay_scrolling(true)
+            .max_content_height(380)
+            .build();
+        scroll.set_child(Some(&body));
+        popup.append(&scroll);
+        popover.set_child(Some(&popup));
+        let tx = sender.input_sender().clone();
+        popover.connect_closed(move |_| {
+            let _ = tx.send(PdfReaderMsg::ClearDict);
+        });
+        popover.popup();
+        self.dict_popover = Some(popover);
+    }
+
     fn wrap_page(
         &mut self,
         slot: PageSlot,
@@ -3359,16 +3700,43 @@ impl PdfReaderModel {
         overlay.set_valign(pic.valign());
         overlay.set_size_request(target_w, target_h);
         overlay.set_child(Some(&pic));
-        overlay.set_cursor_from_name(Some("text"));
+        overlay.set_cursor_from_name(Some(if self.draw_tool.is_select() {
+            "text"
+        } else {
+            "crosshair"
+        }));
 
         let draw_area = gtk::DrawingArea::new();
         draw_area.set_can_target(false);
 
         let active_sel_ref = self.active_selection.clone();
         let search_hl_ref = self.search_highlights.clone();
+        let drawing_paints_ref = self.drawing_paints.clone();
+        let active_drawing_ref = self.active_drawing.clone();
+        let draw_accent_rgb = self.draw_accent_rgb;
         let slot_copy = slot;
         let sel_handle_color = self.handle_color();
         draw_area.set_draw_func(move |_, cr, width, height| {
+            // Saved drawings and the stroke in flight (decision 66):
+            // source-space objects mapped against this allocation,
+            // under the search tints and the live selection.
+            for paint in drawing_paints_ref.borrow().iter() {
+                if paint.slot == slot_copy {
+                    drawings::paint_drawing(
+                        cr,
+                        paint,
+                        width as f64,
+                        height as f64,
+                        draw_accent_rgb,
+                    );
+                }
+            }
+            if let Some(stroke) = active_drawing_ref.borrow().as_ref() {
+                if stroke.slot == slot_copy {
+                    drawings::paint_active_stroke(cr, stroke, width as f64, height as f64);
+                }
+            }
+
             // 1. Search matches (decision 61, design-system §9):
             // every scoped match on this page in the quiet tint,
             // the current one in the accent with its outline.
@@ -3502,10 +3870,16 @@ impl PdfReaderModel {
         let click = gtk::GestureClick::new();
         click.set_button(1);
         let tx_click = sender.input_sender().clone();
+        let click_tool = self.draw_tool_shared.clone();
         let multi_click = std::rc::Rc::new(std::cell::Cell::new(0i32));
         let mc_for_click = multi_click.clone();
         click.connect_pressed(move |_, n_press, x, y| {
             mc_for_click.set(n_press);
+            // A drawing tool owns the press: no word or line
+            // selection starts under a pen.
+            if !click_tool.get().is_select() {
+                return;
+            }
             if n_press == 2 {
                 let _ = tx_click.send(PdfReaderMsg::SelectionWordAt { slot: slot_copy, x, y });
             } else if n_press >= 3 {
@@ -3519,12 +3893,18 @@ impl PdfReaderModel {
         // by the SelectionDragBegin / SelectionDragEnd handlers.
         let motion = gtk::EventControllerMotion::new();
         let cursor_sel = self.active_selection.clone();
+        let cursor_tool = self.draw_tool_shared.clone();
+        let leave_tool = self.draw_tool_shared.clone();
         let cursor_overlay = overlay.clone();
         let cursor_dragging = self.handle_dragging.clone();
         motion.connect_motion(move |_, x, y| {
             // A grip is being dragged: the closed hand stays until the
             // release, like the EPUB reader.
             if cursor_dragging.get() {
+                return;
+            }
+            if !cursor_tool.get().is_select() {
+                cursor_overlay.set_cursor_from_name(Some("crosshair"));
                 return;
             }
             let over_handle = cursor_sel
@@ -3543,7 +3923,11 @@ impl PdfReaderModel {
         });
         let leave_overlay = overlay.clone();
         motion.connect_leave(move |_| {
-            leave_overlay.set_cursor_from_name(Some("text"));
+            leave_overlay.set_cursor_from_name(Some(if leave_tool.get().is_select() {
+                "text"
+            } else {
+                "crosshair"
+            }));
         });
         overlay.add_controller(motion);
 
@@ -3553,6 +3937,9 @@ impl PdfReaderModel {
         let tx_drag_begin = sender.input_sender().clone();
         let tx_drag_update = sender.input_sender().clone();
         let tx_drag_end = sender.input_sender().clone();
+        let drag_tool_begin = self.draw_tool_shared.clone();
+        let drag_tool_update = self.draw_tool_shared.clone();
+        let drag_tool_end = self.draw_tool_shared.clone();
 
         let drag_ctrl_begin = drag.clone();
         let mc_for_drag = multi_click.clone();
@@ -3564,6 +3951,10 @@ impl PdfReaderModel {
             // tap that clears the selection. The EPUB reader coordinates
             // its gestures the same way.
             if mc_for_drag.get() >= 2 {
+                return;
+            }
+            if !drag_tool_begin.get().is_select() {
+                let _ = tx_drag_begin.send(PdfReaderMsg::DrawingDragBegin { slot: slot_copy, x, y });
                 return;
             }
             let is_block = drag_ctrl_begin.current_event_state().contains(gdk::ModifierType::ALT_MASK);
@@ -3579,6 +3970,10 @@ impl PdfReaderModel {
             if mc_for_update.get() >= 2 {
                 return;
             }
+            if !drag_tool_update.get().is_select() {
+                let _ = tx_drag_update.send(PdfReaderMsg::DrawingDragUpdate { slot: slot_copy, dx, dy });
+                return;
+            }
             let is_block = drag_ctrl_up.current_event_state().contains(gdk::ModifierType::ALT_MASK);
             let _ = tx_drag_update.send(PdfReaderMsg::SelectionDragUpdate { slot: slot_copy, dx, dy, is_block });
         });
@@ -3588,6 +3983,10 @@ impl PdfReaderModel {
             // multi-click's release belongs to the click gesture, never
             // the drag (the EPUB reader gates its drag the same way).
             let press_count = mc_for_end.replace(0);
+            if !drag_tool_end.get().is_select() {
+                let _ = tx_drag_end.send(PdfReaderMsg::DrawingDragEnd { slot: slot_copy, dx, dy, press_count });
+                return;
+            }
             let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy, press_count });
         });
         overlay.add_controller(drag);
@@ -3603,6 +4002,8 @@ impl PdfReaderModel {
         // The recognizing signal is parented to a page overlay that is
         // about to be dropped with the rest of the viewport.
         self.dismiss_recognizing_popover();
+        self.dismiss_drawing_popover();
+        self.dismiss_dict_popover();
         self.page_pictures.clear();
         self.page_overlays.clear();
         self.page_draw_areas.clear();
@@ -4065,6 +4466,8 @@ impl PdfReaderModel {
         else {
             return;
         };
+        self.refresh_drawing_paints();
+        self.queue_all_drawing_areas();
 
         let page_w = (self.base_page_width * self.zoom_level) as i32;
         let page_h = (self.base_page_height * self.zoom_level) as i32;
@@ -4092,6 +4495,8 @@ impl PdfReaderModel {
         ) else {
             return;
         };
+        self.refresh_drawing_paints();
+        self.queue_all_drawing_areas();
 
         let page_w = (self.base_page_width * self.zoom_level) as i32;
         let page_h = (self.base_page_height * self.zoom_level) as i32;
@@ -4799,6 +5204,27 @@ impl Component for PdfReaderModel {
                 },
             },
 
+            // ── The annotation toolbar (decision 66) ────────────────
+            // Bottom centre, summoned by a rest in its zone; the
+            // tool options ride in the same host, 10 above the pill.
+            #[name = "draw_toolbar_revealer"]
+            add_overlay = &gtk::Revealer {
+                #[watch]
+                set_reveal_child: model.draw_toolbar_visible
+                    && model.doc_ready
+                    && !model.open_state.is_blocking(),
+                set_transition_type: gtk::RevealerTransitionType::SlideUp,
+                set_transition_duration: 220,
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::End,
+                set_margin_bottom: 16,
+
+                #[name = "draw_toolbar_host"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                },
+            },
+
             // ── Whole-book open states ────────────────────────────────
             // Above every scrap of reader chrome: a book that will
             // not open gets the plain ground, one dashed card, and
@@ -5086,6 +5512,12 @@ impl Component for PdfReaderModel {
         model.settings_widgets = Some(settings_w);
         model.image_widgets = Some(image_w);
 
+        // The annotation toolbar and its tool options (decision 66).
+        let drawing_widgets = drawings::build_drawing_toolbar(&sender);
+        widgets.draw_toolbar_host.append(&drawing_widgets.root);
+        drawings::sync_drawing_toolbar(&drawing_widgets, &model);
+        model.drawing_widgets = Some(drawing_widgets);
+
         // The panel tab pills (decision 54): the shared segmented
         // control at panel size, stretched across the panel head
         // with each tab taking an equal share.
@@ -5246,6 +5678,9 @@ impl Component for PdfReaderModel {
                 .set_transition_type(gtk::RevealerTransitionType::Crossfade);
             widgets
                 .search_revealer
+                .set_transition_type(gtk::RevealerTransitionType::Crossfade);
+            widgets
+                .draw_toolbar_revealer
                 .set_transition_type(gtk::RevealerTransitionType::Crossfade);
         }
 
@@ -5434,11 +5869,27 @@ impl Component for PdfReaderModel {
             let tx_rm = tx.clone();
             let was_in_zone = std::rc::Rc::new(std::cell::Cell::new(false));
             let was_in_zone_move = was_in_zone.clone();
-            root_motion.connect_motion(move |_, x, y| {
+            // The annotation toolbar's zone rides the same
+            // controller: 252 wide, centred, in the bottom 92.
+            let was_in_draw_zone = std::rc::Rc::new(std::cell::Cell::new(false));
+            let was_in_draw_zone_move = was_in_draw_zone.clone();
+            root_motion.connect_motion(move |controller, x, y| {
                 let in_zone = x < 180.0 && y < 68.0;
                 if in_zone != was_in_zone_move.get() {
                     was_in_zone_move.set(in_zone);
                     let _ = tx_rm.send(PdfReaderMsg::BackZoneHover(in_zone));
+                }
+                let (width, height) = controller
+                    .widget()
+                    .map(|widget| (widget.width() as f64, widget.height() as f64))
+                    .unwrap_or((0.0, 0.0));
+                let in_draw_zone = width > 0.0
+                    && height > 0.0
+                    && (x - width / 2.0).abs() <= 126.0
+                    && y >= height - 92.0;
+                if in_draw_zone != was_in_draw_zone_move.get() {
+                    was_in_draw_zone_move.set(in_draw_zone);
+                    let _ = tx_rm.send(PdfReaderMsg::DrawToolbarZoneHover(in_draw_zone));
                 }
             });
             let tx_leave = tx.clone();
@@ -5446,6 +5897,10 @@ impl Component for PdfReaderModel {
                 if was_in_zone.get() {
                     was_in_zone.set(false);
                     let _ = tx_leave.send(PdfReaderMsg::BackZoneHover(false));
+                }
+                if was_in_draw_zone.get() {
+                    was_in_draw_zone.set(false);
+                    let _ = tx_leave.send(PdfReaderMsg::DrawToolbarZoneHover(false));
                 }
             });
             root.add_controller(root_motion);
@@ -5500,6 +5955,17 @@ impl Component for PdfReaderModel {
                 let _ = tx_leave.send(PdfReaderMsg::RightPanelHover(false));
             });
             widgets.right_panel_box.add_controller(right_panel_motion);
+
+            let draw_toolbar_motion = gtk::EventControllerMotion::new();
+            let tx_enter = tx.clone();
+            draw_toolbar_motion.connect_enter(move |_, _, _| {
+                let _ = tx_enter.send(PdfReaderMsg::DrawToolbarHover(true));
+            });
+            let tx_leave = tx.clone();
+            draw_toolbar_motion.connect_leave(move |_| {
+                let _ = tx_leave.send(PdfReaderMsg::DrawToolbarHover(false));
+            });
+            widgets.draw_toolbar_host.add_controller(draw_toolbar_motion);
         }
 
         // 7. Clicking the location text opens the jump field: it
@@ -5616,6 +6082,7 @@ impl Component for PdfReaderModel {
 
         // Initial child and render triggering
         let child = model.build_viewport_widget(&sender);
+        model.refresh_drawing_paints();
         widgets.viewport_scroll.set_child(Some(&child));
         model.update_scroll_policies(&widgets.viewport_scroll);
 
@@ -6178,6 +6645,25 @@ impl Component for PdfReaderModel {
                 // a layer, so it does not spend an Escape.
                 if self.open_state.is_blocking() {
                     let _ = sender.input_sender().send(PdfReaderMsg::Close);
+                } else if self.dict_popover.is_some() {
+                    self.dismiss_dict_popover();
+                } else if self.drawing_popover.is_some() {
+                    self.dismiss_drawing_popover();
+                } else if !self.draw_tool.is_select() {
+                    self.set_draw_tool(PdfDrawTool::Select);
+                    if let Some(widgets_draw) = &self.drawing_widgets {
+                        drawings::sync_drawing_toolbar(widgets_draw, self);
+                    }
+                } else if self.selected_drawing_id.is_some() {
+                    self.selected_drawing_id = None;
+                    self.refresh_drawing_paints();
+                    self.queue_all_drawing_areas();
+                } else if self.draw_toolbar_visible {
+                    self.draw_toolbar_visible = false;
+                    self.draw_options_open = false;
+                    if let Some(widgets_draw) = &self.drawing_widgets {
+                        drawings::sync_drawing_toolbar(widgets_draw, self);
+                    }
                 } else if self.search_results_open {
                     let _ = sender
                         .input_sender()
@@ -6594,6 +7080,7 @@ impl Component for PdfReaderModel {
                     if self.scroll_mode != PdfScrollMode::PageScrolling {
                         // Container spacing is baked at build time.
                         let child = self.build_viewport_widget(&sender);
+                        self.refresh_drawing_paints();
                         widgets.viewport_scroll.set_child(Some(&child));
                         self.prune_textures();
                         self.trigger_loads(&sender);
@@ -6638,6 +7125,7 @@ impl Component for PdfReaderModel {
                     self.update_scroll_policies(&widgets.viewport_scroll);
 
                     let child = self.build_viewport_widget(&sender);
+                    self.refresh_drawing_paints();
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.prune_textures();
                     self.trigger_loads(&sender);
@@ -6673,6 +7161,7 @@ impl Component for PdfReaderModel {
                     }
                     self.update_scroll_policies(&widgets.viewport_scroll);
                     let child = self.build_viewport_widget(&sender);
+                    self.refresh_drawing_paints();
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.prune_textures();
                     self.trigger_loads(&sender);
@@ -6696,6 +7185,7 @@ impl Component for PdfReaderModel {
                     }
                     self.update_scroll_policies(&widgets.viewport_scroll);
                     let child = self.build_viewport_widget(&sender);
+                    self.refresh_drawing_paints();
                     widgets.viewport_scroll.set_child(Some(&child));
                     self.prune_textures();
                     self.trigger_loads(&sender);
@@ -6717,6 +7207,7 @@ impl Component for PdfReaderModel {
                         }
                         self.update_scroll_policies(&widgets.viewport_scroll);
                         let child = self.build_viewport_widget(&sender);
+                        self.refresh_drawing_paints();
                         widgets.viewport_scroll.set_child(Some(&child));
                         self.prune_textures();
                         self.trigger_loads(&sender);
@@ -6799,6 +7290,140 @@ impl Component for PdfReaderModel {
                 self.reload_saved_words();
                 self.refresh_notes_panel(&sender);
             }
+            PdfReaderMsg::DeleteDrawing(id) => {
+                if let Some(drawing) = self
+                    .drawings
+                    .iter()
+                    .find(|drawing| drawing.id == id)
+                    .cloned()
+                {
+                    self.delete_drawing_row(drawing);
+                }
+            }
+            PdfReaderMsg::SetDrawTool(tool) => {
+                self.set_draw_tool(tool);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetHighlighterColor(color) => {
+                self.draw_settings.highlighter_color = color;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetHighlighterOpacity(percent) => {
+                self.draw_settings.highlighter_opacity_percent = match percent {
+                    40 => 40,
+                    80 => 80,
+                    _ => 60,
+                };
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetPenColor(color) => {
+                self.draw_settings.pen_color = color;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetPenWidth(width) => {
+                self.draw_settings.pen_width = width;
+                self.draw_settings.persist(&self.catalog);
+                if let Some(widgets_draw) = &self.drawing_widgets {
+                    drawings::sync_drawing_toolbar(widgets_draw, self);
+                }
+            }
+            PdfReaderMsg::SetSelectedDrawingColor(color) => {
+                if let Some(before) = self.selected_drawing_id.and_then(|id| {
+                    self.drawings
+                        .iter()
+                        .find(|drawing| drawing.id == id)
+                        .cloned()
+                }) {
+                    let mut after = before.clone();
+                    after.color = color.as_str().to_string();
+                    if crate::notify::report(
+                        self.catalog.update_pdf_drawing(&after),
+                        "Could not recolour the drawing",
+                    ) {
+                        self.remember_deleted(PdfDeletedMark::DrawingBefore(Box::new(before)));
+                    }
+                    self.reload_drawings();
+                    self.refresh_drawing_paints();
+                    self.queue_all_drawing_areas();
+                }
+            }
+            PdfReaderMsg::SetSelectedDrawingWidthTenths(tenths) => {
+                if let Some(before) = self.selected_drawing_id.and_then(|id| {
+                    self.drawings
+                        .iter()
+                        .find(|drawing| drawing.id == id)
+                        .cloned()
+                }) {
+                    let mut after = before.clone();
+                    after.width_pts = (tenths as f64 / 10.0).clamp(0.1, 100.0);
+                    if crate::notify::report(
+                        self.catalog.update_pdf_drawing(&after),
+                        "Could not change the drawing",
+                    ) {
+                        self.remember_deleted(PdfDeletedMark::DrawingBefore(Box::new(before)));
+                    }
+                    self.reload_drawings();
+                    self.refresh_drawing_paints();
+                    self.queue_all_drawing_areas();
+                }
+            }
+            PdfReaderMsg::CloseDrawingPopover => {
+                self.dismiss_drawing_popover();
+            }
+            PdfReaderMsg::DrawToolbarZoneHover(hovering) => {
+                self.draw_toolbar_zone_hover = hovering;
+                if hovering && self.doc_ready {
+                    self.schedule_draw_toolbar_reveal(&sender);
+                } else if !self.draw_toolbar_hover
+                    && self.draw_tool.is_select()
+                    && self.selected_drawing_id.is_none()
+                {
+                    self.schedule_draw_toolbar_hide(&sender);
+                }
+            }
+            PdfReaderMsg::DrawToolbarHover(hovering) => {
+                self.draw_toolbar_hover = hovering;
+                if hovering {
+                    self.draw_toolbar_visible = true;
+                } else if !self.draw_toolbar_zone_hover
+                    && self.draw_tool.is_select()
+                    && self.selected_drawing_id.is_none()
+                {
+                    self.schedule_draw_toolbar_hide(&sender);
+                }
+            }
+            PdfReaderMsg::DrawToolbarRevealDue(seq) => {
+                if seq == self.draw_toolbar_seq
+                    && (self.draw_toolbar_zone_hover || self.draw_toolbar_hover)
+                {
+                    self.draw_toolbar_visible = true;
+                }
+            }
+            PdfReaderMsg::DrawToolbarHideDue(seq) => {
+                if seq == self.draw_toolbar_seq
+                    && !self.draw_toolbar_zone_hover
+                    && !self.draw_toolbar_hover
+                    && self.draw_tool.is_select()
+                    && self.selected_drawing_id.is_none()
+                {
+                    self.draw_toolbar_visible = false;
+                    self.draw_options_open = false;
+                    if let Some(widgets_draw) = &self.drawing_widgets {
+                        drawings::sync_drawing_toolbar(widgets_draw, self);
+                    }
+                }
+            }
             PdfReaderMsg::UndoDelete => {
                 // Decision 30: deletions are direct because Ctrl+Z
                 // brings them back — the row as it stood, restored
@@ -6843,6 +7468,61 @@ impl Component for PdfReaderModel {
                                         .push(PdfDeletedMark::SavedWord(row));
                                     crate::notify::error(
                                         "Could not bring the word back",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        PdfDeletedMark::Drawing(row) => {
+                            match self.catalog.restore_pdf_drawing(&row) {
+                                Ok(()) => {
+                                    self.reload_drawings();
+                                    self.refresh_drawing_paints();
+                                    self.queue_all_drawing_areas();
+                                }
+                                Err(err) => {
+                                    self.deleted_marks
+                                        .push(PdfDeletedMark::Drawing(row));
+                                    crate::notify::error(
+                                        "Could not bring the drawing back",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        PdfDeletedMark::DrawingCreated(row) => {
+                            match self.catalog.delete_pdf_drawing(row.id) {
+                                Ok(()) => {
+                                    if self.selected_drawing_id == Some(row.id) {
+                                        self.selected_drawing_id = None;
+                                        self.dismiss_drawing_popover();
+                                    }
+                                    self.reload_drawings();
+                                    self.refresh_drawing_paints();
+                                    self.queue_all_drawing_areas();
+                                }
+                                Err(err) => {
+                                    self.deleted_marks
+                                        .push(PdfDeletedMark::DrawingCreated(row));
+                                    crate::notify::error(
+                                        "Could not remove the drawing",
+                                        &err.to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        PdfDeletedMark::DrawingBefore(row) => {
+                            match self.catalog.update_pdf_drawing(&row) {
+                                Ok(()) => {
+                                    self.reload_drawings();
+                                    self.refresh_drawing_paints();
+                                    self.queue_all_drawing_areas();
+                                }
+                                Err(err) => {
+                                    self.deleted_marks
+                                        .push(PdfDeletedMark::DrawingBefore(row));
+                                    crate::notify::error(
+                                        "Could not put the drawing back",
                                         &err.to_string(),
                                     );
                                 }
@@ -7453,6 +8133,11 @@ impl Component for PdfReaderModel {
                         _root.grab_focus();
                         self.doc_ready = true;
 
+                        // Stable page identities before any page is
+                        // wrapped: saved drawings anchor to them, and
+                        // the first viewport paints them already.
+                        self.ensure_page_identities();
+
                         self.expand_current_toc_branch();
                         self.refresh_left_panel(widgets, &sender);
                         self.sync_jump_mode_control();
@@ -7470,6 +8155,7 @@ impl Component for PdfReaderModel {
                         // and dimensions are known (the widget built during
                         // init is a skeleton of placeholders).
                         let child = self.build_viewport_widget(&sender);
+                        self.refresh_drawing_paints();
                         widgets.viewport_scroll.set_child(Some(&child));
                         self.update_scroll_policies(&widgets.viewport_scroll);
                         widgets.viewport_scroll.queue_draw();
@@ -7754,6 +8440,14 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::SelectionDragBegin { slot, x, y, is_block } => {
                 let Some(page) = self.page_for_slot(slot) else { return };
+                self.dismiss_dict_popover();
+                if !self.draw_tool.is_select() {
+                    self.begin_active_drawing(slot, x, y);
+                    return;
+                }
+                if !is_block && self.begin_drawing_selection(slot, x, y) {
+                    return;
+                }
                 self.dismiss_selection_chip();
                 let _ = self.ensure_page_text(page);
                 if !self.page_text_cache.contains_key(&page) {
@@ -7795,6 +8489,13 @@ impl Component for PdfReaderModel {
                 self.selection_drag_state = Some((slot, x, y, adjusting, is_block));
             }
             PdfReaderMsg::SelectionDragUpdate { slot, dx, dy, is_block } => {
+                if !self.draw_tool.is_select() {
+                    self.update_active_drawing(slot, dx, dy);
+                    return;
+                }
+                if self.update_drawing_move(slot, dx, dy) {
+                    return;
+                }
                 let Some((drag_slot, start_x, start_y, adjusting, _)) = self.selection_drag_state else {
                     return;
                 };
@@ -7907,6 +8608,13 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::SelectionDragEnd { slot, dx, dy, press_count } => {
+                if !self.draw_tool.is_select() {
+                    self.finish_active_drawing(slot, dx, dy);
+                    return;
+                }
+                if press_count < 2 && self.finish_drawing_move(slot, dx, dy, &sender) {
+                    return;
+                }
                 let drag = self.selection_drag_state.take();
                 self.handle_dragging.set(false);
                 // The release of a multi-click's second or third press:
@@ -7948,6 +8656,16 @@ impl Component for PdfReaderModel {
                 // on exactly what the motion controller would show at
                 // that point.
                 self.park_cursor_at(slot, press_x + dx, press_y + dy);
+            }
+            PdfReaderMsg::DrawingDragBegin { slot, x, y } => {
+                self.dismiss_dict_popover();
+                self.begin_active_drawing(slot, x, y);
+            }
+            PdfReaderMsg::DrawingDragUpdate { slot, dx, dy } => {
+                self.update_active_drawing(slot, dx, dy);
+            }
+            PdfReaderMsg::DrawingDragEnd { slot, dx, dy, .. } => {
+                self.finish_active_drawing(slot, dx, dy);
             }
             PdfReaderMsg::SelectionWordAt { slot, x, y } => {
                 let Some(page) = self.page_for_slot(slot) else { return };
@@ -8192,17 +8910,55 @@ impl Component for PdfReaderModel {
                 self.clear_selection();
             }
             PdfReaderMsg::LookUpWord(word) => {
-                let trimmed = word.trim().to_string();
-                if !trimmed.is_empty() {
-                    let entry = self.catalog.lookup_entry(&trimmed).unwrap_or_else(|_| crate::db::EntryData {
-                        word: trimmed.clone(),
-                        ..Default::default()
-                    });
-                    let def = entry.senses.first().map(|s| s.def.clone()).unwrap_or_else(|| "No dictionary definition found".to_string());
-                    crate::notify::info(&trimmed, &def);
-                    let _ = self.catalog.log_dict_lookup(&trimmed, Some(self.book_id), Some(self.current_page as i64), None, !entry.senses.is_empty());
+                self.show_dict_popover(word, &sender);
+            }
+            PdfReaderMsg::ToggleSaveWord => {
+                let Some(word) = self.dict_lookup_word.clone() else {
+                    return;
+                };
+                let saved = self
+                    .catalog
+                    .saved_word_exists(&word, self.book_id)
+                    .unwrap_or(false);
+                if saved {
+                    let removed: Vec<SavedWord> = self
+                        .saved_words
+                        .iter()
+                        .filter(|row| {
+                            row.book_id == Some(self.book_id)
+                                && row.word.eq_ignore_ascii_case(&word)
+                        })
+                        .cloned()
+                        .collect();
+                    if crate::notify::report(
+                        self.catalog.delete_saved_word_for(&word, self.book_id),
+                        "Could not forget the word",
+                    ) {
+                        for row in removed {
+                            self.remember_deleted(PdfDeletedMark::SavedWord(Box::new(row)));
+                        }
+                        crate::notify::compact("Word forgotten", &word);
+                    }
+                } else if let Some(definition) = self.dict_lookup_def.clone() {
+                    if crate::notify::report(
+                        self.catalog.insert_saved_word(
+                            &word,
+                            &definition,
+                            None,
+                            Some(self.book_id),
+                            Some(self.dict_lookup_page as i64),
+                            self.dict_context.as_deref(),
+                        ),
+                        "Could not save the word",
+                    ) {
+                        crate::notify::compact("Word saved", &word);
+                    }
                 }
-                self.clear_selection();
+                self.reload_saved_words();
+                self.refresh_notes_panel(&sender);
+            }
+            PdfReaderMsg::ClearDict => {
+                self.dismiss_dict_popover();
             }
             PdfReaderMsg::ClearSelection => {
                 self.clear_selection();
@@ -8571,6 +9327,32 @@ impl PdfReaderModel {
                 sender.input(PdfReaderMsg::UpdateSearchQuery(
                     "volcanx".to_string(),
                 ));
+            }
+            Ok("drawing") => {
+                self.draw_toolbar_visible = true;
+                sender.input(PdfReaderMsg::SetDrawTool(PdfDrawTool::Highlighter));
+            }
+            Ok("drawing-selected") => {
+                self.draw_toolbar_visible = true;
+                if let Some(drawing) = self.drawings.first().cloned() {
+                    let position = self
+                        .page_identities
+                        .iter()
+                        .find(|identity| identity.page_id == drawing.page_id)
+                        .map(|identity| identity.position);
+                    let slot = position.and_then(|page| {
+                        self.page_overlays
+                            .keys()
+                            .copied()
+                            .find(|slot| self.page_for_slot(*slot) == Some(page))
+                    });
+                    self.selected_drawing_id = Some(drawing.id);
+                    self.refresh_drawing_paints();
+                    self.queue_all_drawing_areas();
+                    if let Some(slot) = slot {
+                        self.show_selected_drawing_popover(slot, sender);
+                    }
+                }
             }
             Ok("shortcuts") => {
                 sender.input(PdfReaderMsg::SetRightTab(PdfRightTab::Shortcuts));

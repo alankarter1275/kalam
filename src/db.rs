@@ -11,6 +11,7 @@ use thiserror::Error;
 
 mod annotations;
 mod authors;
+mod pdf_annotations;
 mod dictionaries;
 mod history;
 mod lookup_history;
@@ -53,6 +54,8 @@ pub enum DbError {
     ContentSearch(String),
     #[error("ocr cache: {0}")]
     OcrCache(String),
+    #[error("pdf annotation: {0}")]
+    PdfAnnotation(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -74,7 +77,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v19 = the "underline" highlight *colour* retires into the underline
 ///          *style* (decision 28): colour='underline' rows become
 ///          style='underline' in the default yellow
-pub const SCHEMA_VERSION: i64 = 19;
+/// · v20 = stable PDF page identities and page-anchored drawing objects
+///          (decisions 66, 69 and 72)
+pub const SCHEMA_VERSION: i64 = 20;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -204,6 +209,106 @@ pub struct ReadingBookmark {
     pub label: String,
     #[allow(dead_code)] // kept for future date sorting; not displayed
     pub created_at: String,
+}
+
+/// One physical PDF page's durable identity (decisions 69 and 72).
+///
+/// Page-bound drawing objects name the page they live on by `page_id`;
+/// `position` is only that page's current place in the file (1-based).
+/// A later page edit can move positions without moving the objects off
+/// the pages they were drawn on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PdfPageIdentity {
+    pub page_id: String,
+    pub position: usize,
+}
+
+/// The geometry of one object drawn on a PDF page, in source-page
+/// points. The JSON stored in SQLite is this enum verbatim, so a new
+/// object kind is a new variant rather than a schema change.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PdfDrawingGeometry {
+    Stroke {
+        /// `pen` or `highlighter` (decision 66).
+        tool: String,
+        points: Vec<(f32, f32)>,
+    },
+    Shape {
+        /// `rectangle`, `ellipse`, `line` or `arrow`.
+        shape: String,
+        start: (f32, f32),
+        end: (f32, f32),
+        filled: bool,
+    },
+    Text {
+        /// `(x, y, width, height)` in source-page points.
+        rect: (f32, f32, f32, f32),
+        text: String,
+        /// `s`, `m` or `l`.
+        size: String,
+        paper_background: bool,
+    },
+    Sticky {
+        point: (f32, f32),
+        text: String,
+    },
+}
+
+impl PdfDrawingGeometry {
+    /// The stored `kind` column's value for this geometry.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Stroke { tool, .. } if tool == "highlighter" => "highlighter",
+            Self::Stroke { .. } => "pen",
+            Self::Shape { .. } => "shape",
+            Self::Text { .. } => "text",
+            Self::Sticky { .. } => "sticky",
+        }
+    }
+
+    /// Move the whole object by a source-space delta.
+    pub fn translate(&mut self, dx: f32, dy: f32) {
+        match self {
+            Self::Stroke { points, .. } => {
+                for point in points {
+                    point.0 += dx;
+                    point.1 += dy;
+                }
+            }
+            Self::Shape { start, end, .. } => {
+                start.0 += dx;
+                start.1 += dy;
+                end.0 += dx;
+                end.1 += dy;
+            }
+            Self::Text { rect, .. } => {
+                rect.0 += dx;
+                rect.1 += dy;
+            }
+            Self::Sticky { point, .. } => {
+                point.0 += dx;
+                point.1 += dy;
+            }
+        }
+    }
+}
+
+/// One saved PDF drawing object. Colour names are the five highlight
+/// hues plus `ink` (decision 67); width and geometry are source-page
+/// points, never display pixels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfDrawing {
+    pub id: i64,
+    pub book_id: i64,
+    pub page_id: String,
+    pub color: String,
+    pub opacity: f64,
+    pub width_pts: f64,
+    pub geometry: PdfDrawingGeometry,
+    pub created_at: String,
+    #[allow(dead_code)] // written on update; no edited-at stamp is shown yet
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -760,6 +865,38 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_reading_bookmarks_book
                 ON reading_bookmarks(book_id, chapter_index, created_at DESC);
+
+            -- v20: stable PDF page identities (decision 69). A drawing
+            -- names a page by identity; position is only where that page
+            -- currently sits, so a later page edit moves positions, not
+            -- the drawings off their pages.
+            CREATE TABLE IF NOT EXISTS pdf_page_identities (
+                book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                page_id  TEXT    NOT NULL,
+                position INTEGER NOT NULL,
+                PRIMARY KEY (book_id, page_id),
+                UNIQUE (book_id, position)
+            );
+
+            -- v20: objects drawn on PDF pages (decisions 66, 72).
+            -- Geometry is the PdfDrawingGeometry JSON in source-page
+            -- points; SQLite stays the truth and kalam.json its backup.
+            CREATE TABLE IF NOT EXISTS pdf_drawings (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                page_id    TEXT    NOT NULL,
+                kind       TEXT    NOT NULL,
+                color      TEXT    NOT NULL DEFAULT 'ink',
+                opacity    REAL    NOT NULL DEFAULT 1.0,
+                width_pts  REAL    NOT NULL DEFAULT 3.0,
+                geometry   TEXT    NOT NULL,
+                created_at TEXT    NOT NULL,
+                updated_at TEXT    NOT NULL,
+                FOREIGN KEY (book_id, page_id)
+                    REFERENCES pdf_page_identities(book_id, page_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_pdf_drawings_book_page
+                ON pdf_drawings(book_id, page_id, id);
 
             CREATE TABLE IF NOT EXISTS dictionaries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,

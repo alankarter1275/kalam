@@ -833,6 +833,36 @@ def seed_pdf_fixture(
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdf_page_identities (
+            book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            page_id  TEXT    NOT NULL,
+            position INTEGER NOT NULL,
+            PRIMARY KEY (book_id, page_id),
+            UNIQUE (book_id, position)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdf_drawings (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            page_id    TEXT    NOT NULL,
+            kind       TEXT    NOT NULL,
+            color      TEXT    NOT NULL DEFAULT 'ink',
+            opacity    REAL    NOT NULL DEFAULT 1.0,
+            width_pts  REAL    NOT NULL DEFAULT 3.0,
+            geometry   TEXT    NOT NULL DEFAULT '{}',
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL,
+            FOREIGN KEY (book_id, page_id)
+                REFERENCES pdf_page_identities(book_id, page_id)
+                ON DELETE CASCADE
+        )
+        """
+    )
 
     if fixture_state not in {"normal", "password", "corrupt", "missing"}:
         raise ValueError(f"unknown PDF fixture state: {fixture_state}")
@@ -940,6 +970,76 @@ def seed_pdf_fixture(
                     "caldera",
                     "a large crater formed when a volcano collapses after an eruption",
                     None, book_id, 7, "Volcanoes", stamp,
+                ),
+            ],
+        )
+    if fixture_state == "normal" and not notes_empty:
+        # Drawing proof on the opening spread: stable identities for
+        # every page, then an ink underline and a highlighter swipe
+        # on page 4 and a circled passage on page 5, all in the
+        # 420x595 source points the fixture pages are built in.
+        conn.executemany(
+            "INSERT INTO pdf_page_identities (book_id, page_id, position) "
+            "VALUES (?,?,?)",
+            [(book_id, f"page-{page}", page) for page in range(1, 13)],
+        )
+
+        def stroke(tool, points):
+            return json.dumps(
+                {"type": "stroke", "tool": tool, "points": points},
+                separators=(",", ":"),
+            )
+
+        conn.executemany(
+            "INSERT INTO pdf_drawings (book_id, page_id, kind, color, "
+            "opacity, width_pts, geometry, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    book_id,
+                    "page-4",
+                    "pen",
+                    "ink",
+                    1.0,
+                    3.0,
+                    stroke(
+                        "pen",
+                        [
+                            [40, 354], [90, 350], [140, 355], [190, 351],
+                            [240, 355], [290, 350], [340, 354], [365, 352],
+                        ],
+                    ),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-4",
+                    "highlighter",
+                    "yellow",
+                    0.6,
+                    14.0,
+                    stroke("highlighter", [[40, 339], [180, 339], [330, 339]]),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-5",
+                    "pen",
+                    "blue",
+                    1.0,
+                    3.0,
+                    stroke(
+                        "pen",
+                        [
+                            [95, 150], [150, 132], [230, 130], [300, 145],
+                            [330, 180], [305, 215], [225, 230], [140, 226],
+                            [92, 205], [84, 172], [95, 150],
+                        ],
+                    ),
+                    stamp,
+                    stamp,
                 ),
             ],
         )

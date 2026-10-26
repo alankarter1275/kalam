@@ -759,6 +759,25 @@ jobs:
             THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      # Drawing tools (decisions 66-67, 69, 72): the seeded pen and
+      # highlighter strokes on the opening spread, first with the
+      # highlighter's options up, then with the ink stroke selected.
+      - name: open the PDF drawing toolbar (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: select a PDF drawing (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-selected-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing-selected \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
       # Whole-book open states (decision 73): the same fixture
       # encrypted with the seeder's known password, damaged, or
       # absent. The wrong and unlocked frames submit through the
@@ -1313,6 +1332,7 @@ jobs:
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark \
+                      pdf-drawing-dark pdf-drawing-selected-light \
                       pdf-password-dark pdf-password-light \
                       pdf-password-wrong-dark pdf-password-unlocked-dark \
                       pdf-corrupt-dark pdf-missing-dark; do
@@ -1443,6 +1463,7 @@ jobs:
                       pdf-reading-dark pdf-rotated-dark \
                       pdf-image-dark pdf-image-invert-dark \
                       pdf-shortcuts-dark pdf-jump-range-dark \
+                      pdf-drawing-dark pdf-drawing-selected-light \
                       pdf-password-dark pdf-password-light \
                       pdf-password-wrong-dark pdf-password-unlocked-dark \
                       pdf-corrupt-dark pdf-missing-dark; do

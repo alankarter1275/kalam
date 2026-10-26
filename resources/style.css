@@ -4998,6 +4998,118 @@ button.kalam-pdf-jump-close:focus-visible {
     background: transparent;
 }
 
+/* The annotation toolbar (decision 66): a 48-high floating pill at
+   the bottom centre, its tool options in a 252 card 10 above it.
+   The active tool takes the accent fill, as the pin does. */
+.kalam-pdf-draw-toolbar {
+    min-height: 48px;
+    padding: 6px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: @kalam_card;
+}
+
+button.kalam-pdf-draw-tool {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-draw-tool:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-pdf-draw-tool.active {
+    background: @kalam_accent_fill;
+    color: white;
+}
+
+button.kalam-pdf-draw-tool.active:hover {
+    background: @kalam_accent;
+    color: white;
+}
+
+.kalam-pdf-draw-options,
+.kalam-pdf-draw-popover {
+    padding: 12px;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    background: @kalam_card;
+}
+
+popover.kalam-pdf-draw-popover-shell > contents {
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+button.kalam-pdf-draw-color {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+}
+
+button.kalam-pdf-draw-color:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-pdf-draw-color.active {
+    border-color: @kalam_accent;
+}
+
+button.kalam-pdf-draw-option {
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: @kalam_text;
+}
+
+button.kalam-pdf-draw-option:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-pdf-draw-option.active {
+    border-color: @kalam_accent;
+    background: alpha(@kalam_accent, 0.08);
+    color: @kalam_accent;
+}
+
+button.kalam-pdf-draw-delete {
+    min-height: 36px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: @kalam_danger;
+    font-weight: 500;
+}
+
+button.kalam-pdf-draw-delete:hover {
+    background: alpha(@kalam_danger, 0.1);
+}
+
+button.kalam-pdf-draw-tool:focus-visible,
+button.kalam-pdf-draw-color:focus-visible,
+button.kalam-pdf-draw-option:focus-visible,
+button.kalam-pdf-draw-delete:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
 /* Whole-book open states (decision 73): the shared dashed state
    card at the password boards' larger measure. The ground is the
    reader's own, opaque, so a half-built skeleton never shows

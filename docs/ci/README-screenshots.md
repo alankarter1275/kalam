@@ -19,7 +19,7 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 |---|---|
 | `read-1` | The EPUB reader with the first seeded EPUB, including its chrome, panels, selection, dictionary and search proof states. |
 | `comic-read-22` + `COMIC_FIXTURE=1` | The comics reader on the second seeded chapter, including Chapters, Pages, Reading, Image, Shortcuts and page-jump states. |
-| `pdf-read-21` + `PDF_FIXTURE=1` | The PDF reader on the seeded outlined document, including chrome, Contents, Pages, Search, Notes, Reading, Image/Invert, Shortcuts and page-jump states. `PDF_FIXTURE_STATE` also seeds genuinely encrypted, damaged and missing variants; their password, wrong-password, unlocked, corrupt and missing captures exercise the whole-book open states. |
+| `pdf-read-21` + `PDF_FIXTURE=1` | The PDF reader on the seeded outlined document, including chrome, Contents, Pages, Search, Notes, Reading, Image/Invert, Shortcuts, page-jump and drawing-toolbar/selected-drawing states over seeded pen and highlighter strokes. `PDF_FIXTURE_STATE` also seeds genuinely encrypted, damaged and missing variants; their password, wrong-password, unlocked, corrupt and missing captures exercise the whole-book open states. |
 | `tasks` | The task manager's current empty/idle state. |
 | `components` | The hidden redesign component gallery, twice: Terracotta Light and Dark on a tall 1600×3400 output. |
 | `book-1` | The redesigned book details page for the first seeded EPUB, twice: Terracotta Light and Dark at 1600×1200. |

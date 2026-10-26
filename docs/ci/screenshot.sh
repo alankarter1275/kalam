@@ -421,7 +421,7 @@ say "requested comic action: ${COMIC_ACTION:-<none>}"
 # PDF_ACTION is the same ask for the PDF reader (KALAM_PDF_ACTION:
 # chrome, contents, contents-pinned, pages, notes, notes-words,
 # notes-bookmarks, notes-empty, search-results, reading, shortcuts,
-# jump, jump-range).
+# jump, jump-range, drawing, drawing-selected).
 PDF_ACTION="${PDF_ACTION:-}"
 say "requested PDF action: ${PDF_ACTION:-<none>}"
 say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"

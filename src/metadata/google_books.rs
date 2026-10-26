@@ -270,6 +270,7 @@ fn volume_to_candidate(volume: Volume) -> Candidate {
         description: info.description.unwrap_or_default(),
         detail_key: None,
         source: Some(SourceId::GoogleBooks),
+        ..Default::default()
     }
 }
 

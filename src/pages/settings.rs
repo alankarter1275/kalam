@@ -3429,6 +3429,159 @@ fn set_google_chevron(button: &gtk::Button, expanded: bool) {
     button.update_property(&[gtk::accessible::Property::Label(label)]);
 }
 
+fn set_credential_chevron(button: &gtk::Button, source_label: &str, expanded: bool) {
+    let icon = gtk::Image::from_icon_name(if expanded {
+        "pan-up-symbolic"
+    } else {
+        "pan-down-symbolic"
+    });
+    icon.set_pixel_size(16);
+    button.set_child(Some(&icon));
+    let label = if expanded {
+        format!("Hide {source_label} settings")
+    } else {
+        format!("Show {source_label} settings")
+    };
+    button.set_tooltip_text(Some(&label));
+    button.update_property(&[gtk::accessible::Property::Label(label.as_str())]);
+}
+
+/// One credential-bearing source row: its switch, a “needed” chip while
+/// no credential is saved, and the expandable credential field. Saving
+/// follows the Google Books rule — on activate or focus-leave, never
+/// per keystroke — and clears the rejected state, because a newly
+/// typed credential has not been rejected yet.
+#[allow(clippy::too_many_arguments)]
+fn build_credential_source(
+    rows: &gtk::Box,
+    service: &LibraryService,
+    source: crate::metadata::SourceId,
+    enabled: bool,
+    credential_label: &'static str,
+    pref: &'static str,
+    rejected_pref: &'static str,
+    value: &str,
+    rejected: bool,
+    placeholder: &'static str,
+    rejected_text: &'static str,
+    needed_text: &'static str,
+) {
+    let source_label = source.label();
+    let expanded = Rc::new(Cell::new(enabled));
+    let revealer = gtk::Revealer::new();
+    revealer.set_transition_type(if crate::appearance::reduce_motion() {
+        gtk::RevealerTransitionType::Crossfade
+    } else {
+        gtk::RevealerTransitionType::SlideDown
+    });
+    revealer.set_transition_duration(180);
+    revealer.set_reveal_child(expanded.get());
+    let nested = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    nested.add_css_class("kalam-settings-nested-rows");
+    revealer.set_child(Some(&nested));
+
+    let row = pane_row(rows, source_label, None);
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    controls.set_valign(gtk::Align::Center);
+    let needed_chip = settings_chip(needed_text, false);
+    needed_chip.set_visible(value.trim().is_empty());
+    controls.append(&needed_chip);
+
+    let chevron = gtk::Button::new();
+    chevron.add_css_class("kalam-settings-chevron");
+    chevron.set_size_request(36, 36);
+    chevron.set_valign(gtk::Align::Center);
+    chevron.set_sensitive(enabled);
+    set_credential_chevron(&chevron, source_label, expanded.get());
+
+    let source_switch = row_switch(source_label, enabled, {
+        let service = service.clone();
+        let expanded_switch = expanded.clone();
+        let revealer_switch = revealer.clone();
+        let chevron_switch = chevron.clone();
+        move |on| {
+            crate::metadata::set_source_enabled(service.catalog(), source, on);
+            expanded_switch.set(on);
+            revealer_switch.set_reveal_child(on);
+            chevron_switch.set_sensitive(on);
+            set_credential_chevron(&chevron_switch, source_label, on);
+        }
+    });
+    controls.append(&source_switch);
+    controls.append(&chevron);
+    row.append(&controls);
+    rows.append(&revealer);
+
+    {
+        let expanded_chevron = expanded.clone();
+        let revealer_chevron = revealer.clone();
+        chevron.connect_clicked(move |button| {
+            let next = !expanded_chevron.get();
+            expanded_chevron.set(next);
+            revealer_chevron.set_reveal_child(next);
+            set_credential_chevron(button, source_label, next);
+        });
+    }
+
+    let credential_row = pane_row(&nested, credential_label, None);
+    credential_row.add_css_class("nested");
+    credential_row.set_margin_start(20);
+    let credential_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    credential_box.set_valign(gtk::Align::Center);
+    credential_box.set_size_request(280, -1);
+    let entry = gtk::Entry::new();
+    entry.add_css_class("kalam-settings-entry");
+    if rejected {
+        entry.add_css_class("rejected");
+    }
+    entry.set_placeholder_text(Some(placeholder));
+    entry.set_text(value);
+    entry.set_hexpand(true);
+    entry.update_property(&[gtk::accessible::Property::Label(format!(
+        "{source_label} {credential_label}"
+    )
+    .as_str())]);
+    credential_box.append(&entry);
+    let error = gtk::Label::new(Some(rejected_text));
+    error.add_css_class("kalam-settings-error-line");
+    error.set_halign(gtk::Align::Start);
+    error.set_xalign(0.0);
+    error.set_visible(rejected);
+    credential_box.append(&error);
+    credential_row.append(&credential_box);
+
+    let saved = Rc::new(RefCell::new(value.trim().to_string()));
+    let save = {
+        let service = service.clone();
+        let entry = entry.clone();
+        let saved = saved.clone();
+        let error = error.clone();
+        let needed_chip = needed_chip.clone();
+        Rc::new(move || {
+            let value = entry.text().trim().to_string();
+            if *saved.borrow() == value {
+                return;
+            }
+            service.catalog().set_pref(pref, &value);
+            service.catalog().set_pref(rejected_pref, "0");
+            needed_chip.set_visible(value.is_empty());
+            *saved.borrow_mut() = value;
+            entry.remove_css_class("rejected");
+            error.set_visible(false);
+        })
+    };
+    {
+        let save = save.clone();
+        entry.connect_activate(move |_| save());
+    }
+    let focus = gtk::EventControllerFocus::new();
+    {
+        let save = save.clone();
+        focus.connect_leave(move |_| save());
+    }
+    entry.add_controller(focus);
+}
+
 fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &SettingsSnapshot) {
     use crate::metadata::{set_source_enabled, SourceId};
 
@@ -3609,15 +3762,34 @@ fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &Settings
     country_entry.add_controller(country_focus);
 
     let rows = pane_section(host, "Comics");
-    for name in ["MyAnimeList", "Comic Vine"] {
-        let row = pane_row(&rows, name, None);
-        row.append(&settings_chip("Not available yet", false));
-        let sw = gtk::Switch::new();
-        sw.set_sensitive(false);
-        sw.set_valign(gtk::Align::Center);
-        sw.update_property(&[gtk::accessible::Property::Label(name)]);
-        row.append(&sw);
-    }
+    build_credential_source(
+        &rows,
+        service,
+        SourceId::MyAnimeList,
+        snap.source_myanimelist,
+        "Client ID",
+        "meta.myanimelist.client_id",
+        "meta.myanimelist.client_id_rejected",
+        &snap.myanimelist_client_id,
+        snap.myanimelist_client_id_rejected,
+        "MyAnimeList Client ID",
+        "MyAnimeList rejected this Client ID.",
+        "Client ID needed",
+    );
+    build_credential_source(
+        &rows,
+        service,
+        SourceId::ComicVine,
+        snap.source_comic_vine,
+        "API key",
+        "meta.comicvine.key",
+        "meta.comicvine.key_rejected",
+        &snap.comic_vine_key,
+        snap.comic_vine_key_rejected,
+        "Comic Vine API key",
+        "Comic Vine rejected this API key.",
+        "API key needed",
+    );
 }
 
 /// The app's pill switch. `on_toggle` fires only for user changes: the

@@ -340,6 +340,15 @@ pub enum ComicsReaderMsg {
     SetSeriesOverride(bool),
     /// Copy the standing choices over the global comic defaults.
     UseSettingsAsDefaults,
+    /// Saved presets: named whole-panel setups shared across libraries.
+    /// Applying one is a Reading edit, so it follows the same per-series
+    /// record rule as moving any other control in the pane.
+    ShowSavePresetForm,
+    CancelSavePreset,
+    PresetNameChanged(String),
+    SaveCurrentPreset,
+    ApplyPreset(String),
+    DeletePreset(String),
     ToggleLeftPanel,
     ToggleRightPanel,
     OpenLeftPanel,

@@ -1616,8 +1616,9 @@ def seed_settings_fixture(
 
     A bare seeded catalog can only show the empty/default half of most
     panes. This fixture supplies the other designed states without driving
-    the UI: two shelves and a watch rule routed into them, a rejected
-    Google Books key, three EPUB original backups, and a libraries
+    the UI: two shelves and a watch rule routed into them, rejected
+    Google Books/MyAnimeList credentials beside a present Comic Vine
+    key, three EPUB original backups, and a libraries
     registry holding the active library, a second folder that can be
     opened, and one whose folder is missing.
 
@@ -1724,6 +1725,12 @@ def seed_settings_fixture(
         "meta.googlebooks.key": "AIza-fixture-key",
         "meta.googlebooks.country": "GB",
         "meta.googlebooks.key_rejected": "1",
+        "meta.myanimelist.enabled": "1",
+        "meta.myanimelist.client_id": "fixture-mal-client-id",
+        "meta.myanimelist.client_id_rejected": "1",
+        "meta.comicvine.enabled": "1",
+        "meta.comicvine.key": "fixture-comic-vine-key",
+        "meta.comicvine.key_rejected": "0",
     }
     for key, value in prefs.items():
         conn.execute(

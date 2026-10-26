@@ -611,8 +611,8 @@ trust it. "Snapshot" = a `LibraryService` snapshot already feeds the page.
 | Saved quotes | `saved_quotes.rs` | `QuotesSnapshot` | Page exports quotes to `~/Quotes.md`; the all-data Markdown export is `export.rs`. |
 | Saved words / Review | `saved_words.rs`, `review.rs` (SM-2-style flashcards) | `WordsSnapshot` | CSV + Anki + Markdown exports exist (page messages). Review is a full screen, not just filters. |
 | Lookup history | `lookup_history.rs` | `LookupHistorySnapshot` | Includes misses (`dict_lookups`). |
-| Comics hub | `comics.rs` (1,301) | comic series queries | Groups local series + remote placeholders; `Route::ComicSeries`. |
-| Metadata editor | `metadata_editor.rs` (1,156) | Open Library + Google Books (`src/metadata/`) | MyAnimeList / Comic Vine providers do **not** exist — inventory's metadata-chat sources list is aspirational (`FEATURE` if pursued). Locked hand-edited fields: `metadata_overrides` table exists. |
+| Comics hub | `comics.rs` (1,301 at audit) | comic series queries | Groups local series + remote placeholders; `Route::ComicSeries`. The later comic-metadata tranche made relational drawer groups carry the full series record and added Edit details / Find metadata actions. |
+| Metadata editor + comic-series Find dialog | `metadata_editor.rs`, `comic_series_metadata.rs` | Book sources Open Library + Google Books; comic sources MyAnimeList + Comic Vine (`src/metadata/`) | The later tranche built the two comic providers through the existing metadata service/Settings architecture. Comic application is series-level, field-reviewed and source-attributed, with schema-22 hand-edit locks; chapter titles/covers are not rewritten. Book hand-edits continue to use `metadata_overrides`. |
 | Settings | `settings.rs` (2,552), 6 tabs: Appearance, Storage & Backup, Dictionaries, Book Files, Metadata Sources, Notifications | `SettingsSnapshot` + FS worker | Designed in chat 8 (decisions 144–158) — see §5.8. The old draft-pane names (Reading, Integrations, Keyboard Shortcuts) are now real panes; watch folders & libraries move out of Storage/Book Files into their own. |
 | Dialogs | `widgets/in_app_dialog.rs` (scrim, focus trap `focus_trap.rs`), 23 present-sites | — | The designed dialog (420/560, decision 75) maps onto this component + tokens; one restyle propagates widely. Native file choosers remain native. |
 | Browse / Downloads / Remote | `browse.rs`, `downloads.rs`, `remote_detail.rs`, `sources/` scaffolding | remote tables | Part 2: routes and queue exist, no registered source (README/ARCH agree). Stay hidden. |
@@ -752,6 +752,15 @@ tranche-5 note in §5.8. Two tranche-2b deviations still want
 owner confirmation (the extra “Watch this folder” pause switch;
 dropped legacy per-format `import_*` toggles). Next is the EPUB
 reader.
+The later Comics saved-presets / metadata tranche added named
+whole-panel presets to the comics Reading pane and built the
+MyAnimeList and Comic Vine providers at comic-series level. Its
+Find dialog is title-first and manual-search by default, fetches
+details on selection, reviews only differing nonempty fields with
+hand-edited fields locked, and can refresh or merely re-link the
+stored external record. The §6 inventory is updated for that
+surface; unrelated line counts in this audit remain the
+2026-10-22 snapshot.
 
 ## 8. Designed-but-unbuilt features (inventory only — ruling 4)
 
@@ -769,7 +778,6 @@ Recorded so they are neither built by accident nor designed away:
 | PDF Image Tint/Invert | decision 55 | color-matrix step in render path |
 | Comic image adjustments + blank-border crop | comic spec §2 Image pane | draw-time adjust + cached crop analysis |
 | Fetch missing works (+) | decision 109 | online sources (Part 2) — stays disabled |
-| Find-metadata shared dialog + MAL/Comic Vine | inventory §4, decision 48 | dialog undesigned; two providers unbuilt |
 | In-reader edit / Fix typo | decision 118 | gated on editor reopening (ruling 5) |
 
 ## 9. Still unspecified in the design set (values, not approvals)

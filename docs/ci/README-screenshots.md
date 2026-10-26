@@ -18,7 +18,8 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 | Route | What it opens |
 |---|---|
 | `read-1` | The EPUB reader with the first seeded EPUB, including its chrome, panels, selection, dictionary and search proof states. |
-| `comic-read-22` + `COMIC_FIXTURE=1` | The comics reader on the second seeded chapter, including Chapters, Pages, Reading, Image, Shortcuts and page-jump states. |
+| `comic-read-22` + `COMIC_FIXTURE=1` | The comics reader on the second seeded chapter, including Chapters, Pages, Reading, saved presets, Image, Shortcuts and page-jump states. |
+| `comic-series-book-22` + `COMIC_FIXTURE=1` | The comic-series drawer for that chapter's series, its Edit details dialog, the Find metadata search dialog, and a synthetic local Find review state staged by `DIALOG=find-comic-series-review`, so the metadata proof makes no provider request. |
 | `pdf-read-21` + `PDF_FIXTURE=1` | The PDF reader on the seeded outlined document, including chrome, Contents, Pages, Search, Notes, Reading, Image/Invert, Shortcuts, page-jump and drawing states over seeded strokes, shapes, a text box and a sticky note. `PDF_FIXTURE_STATE` also seeds genuinely encrypted, damaged and missing variants; their password, wrong-password, unlocked, corrupt and missing captures exercise the whole-book open states. |
 | `tasks` | The task manager's current empty/idle state. |
 | `components` | The hidden redesign component gallery, twice: Terracotta Light and Dark on a tall 1600×3400 output. |
@@ -28,7 +29,7 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 | `series-book-21` + `SERIES_FIXTURE=1` | The series page over the seeder's coherent fixture series (Book 1 finished, Book 2 at 42%, Book 3 unread, Book 4 only in the seeded listing cache): the strip in Light and Dark, plus the list view in Light via `SERIES_VIEW=list`. The route anchors on a book id because a series route's name/author do not belong in a shell variable. |
 | `author-book-21` + `SERIES_FIXTURE=1` | The author page for the fixture series' author (`--author-fixture` in the seeder: cached bibliography plus one mark of each kind): the page in Light and Dark, the open-series panel, the Create shelf dialog, the author-scope Annotations dialog, and the Edit author / Merge author dialogs in Dark. |
 | `authors` + `SERIES_FIXTURE=1` + `AUTHOR_FIXTURE=1` | The Authors index over the seeded library and cached author profile, in Light and Dark. |
-| `settings` | The redesigned Settings page, 23 captures alternating Terracotta Light/Dark. `SETTINGS_PANE` picks the pane and `SETTINGS_ACTION` stages a drawn state (typeface dropdown open, restart/delete/remove confirms, shelf dropdown, dictionary drag, shortcut recording, notification panel with seeded events / empty / closed-bell unseen dot). The seeder's Settings fixtures supply the library registry, a watch folder (or none with `SETTINGS_EMPTY_WATCH=1`), Google Books key/country/rejected state, EPUB `.orig` backups, and the four bundled dictionary rows (or none with `SETTINGS_EMPTY_DICTS=1`). |
+| `settings` | The redesigned Settings page, 23 captures alternating Terracotta Light/Dark. `SETTINGS_PANE` picks the pane and `SETTINGS_ACTION` stages a drawn state (typeface dropdown open, restart/delete/remove confirms, shelf dropdown, dictionary drag, shortcut recording, notification panel with seeded events / empty / closed-bell unseen dot). The seeder's Settings fixtures supply the library registry, a watch folder (or none with `SETTINGS_EMPTY_WATCH=1`), Google Books key/country/rejected state, rejected MyAnimeList and present Comic Vine fixture credentials, EPUB `.orig` backups, and the four bundled dictionary rows (or none with `SETTINGS_EMPTY_DICTS=1`). |
 
 The seeder writes real EPUBs and covers under readable author/title folders
 with short-id suffixes. It creates a minimal schema-version-1 catalog; Kalam
@@ -62,6 +63,7 @@ The job commits text reports to:
 - `ci-logs/reader-latest.txt`
 - `ci-logs/reader-*-latest.txt` for the EPUB proof states
 - `ci-logs/comics-*-latest.txt`
+- `ci-logs/comic-series-*-latest.txt`
 - `ci-logs/pdf-*-latest.txt`
 - `ci-logs/tasks-latest.txt`
 - `ci-logs/components-light-latest.txt`
@@ -99,7 +101,8 @@ are committed as
 `ci-logs/author-terracotta-{light,dark}.png`,
 `ci-logs/author-panel-terracotta-light.png`,
 `ci-logs/author-shelf-terracotta-light.png`,
-`ci-logs/author-annotations-terracotta-dark.png` and
+`ci-logs/author-annotations-terracotta-dark.png`,
+`ci-logs/comics-*.png`, `ci-logs/comic-series-*.png` and
 `ci-logs/settings-*.png`, because a redesign
 nobody can look at is not verified and the agent cannot download artifacts.
 

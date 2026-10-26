@@ -1722,6 +1722,7 @@ impl Component for AppModel {
         if let Some(name) = std::env::var_os("KALAM_ROUTE") {
             let name = name.to_string_lossy().to_string();
             match series_route_for_book(&model.catalog, &name)
+                .or_else(|| comic_series_route_for_book(&model.catalog, &name))
                 .or_else(|| author_route_for_book(&model.catalog, &name))
                 .or_else(|| route_by_name(&name))
             {
@@ -2462,6 +2463,34 @@ fn series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
     })
 }
 
+/// The comic-series route a `KALAM_ROUTE=comic-series-book-<id>` value
+/// refers to: the drawer for the series that chapter belongs to. The
+/// relational series wins; an unmigrated chapter falls back to the
+/// same series name its Comics grouping would infer.
+fn comic_series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
+    let normalized = name.trim().to_ascii_lowercase();
+    let book_id = normalized
+        .strip_prefix("comic-series-book-")?
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)?;
+    if let Some((series, _chapter)) = catalog.get_comic_series_for_book(book_id).ok().flatten() {
+        return Some(Route::ComicSeries {
+            series_name: series.title,
+        });
+    }
+    let book = catalog.get_book(book_id).ok().flatten()?;
+    let series_name = book
+        .series
+        .as_deref()
+        .map(str::trim)
+        .filter(|series| !series.is_empty())
+        .map(|series| crate::comics::sanitize_comic_series(series).0)
+        .filter(|series| !series.trim().is_empty())
+        .or_else(|| crate::comics::parse_comic_title(&book.title).series)?;
+    Some(Route::ComicSeries { series_name })
+}
+
 /// The author route a `KALAM_ROUTE=author-book-<id>` value refers to: the
 /// anchor book's first author, exactly what its own author link opens.
 /// Same catalog-dependent reasoning as [`series_route_for_book`].
@@ -2574,12 +2603,13 @@ fn known_route_names() -> Vec<&'static str> {
 
 /// The names that take an id, for the error message only. They are not in
 /// `known_route_names` because that list is asserted to resolve as it stands.
-const ROUTE_ID_FORMS: [&str; 6] = [
+const ROUTE_ID_FORMS: [&str; 7] = [
     "book-<id>",
     "read-<id>",
     "pdf-read-<id>",
     "comic-read-<id>",
     "series-book-<id>",
+    "comic-series-book-<id>",
     "author-book-<id>",
 ];
 

@@ -42,7 +42,10 @@ pub use lookup_history::DictLookup;
 pub use pronunciation::pronunciation_for;
 #[allow(unused_imports)]
 pub use search::{build_search_sql, parse_search_query, RatingOp, SearchFilter, StatusFilter};
-pub use series::{series_key, SeriesWork};
+pub use series::{
+    remove_comic_series_cover, series_key, write_comic_series_cover, ComicSeriesEdit,
+    ComicSeriesMetadataPatch, ComicSeriesUpdateOutcome, SeriesWork,
+};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -60,6 +63,10 @@ pub enum DbError {
     /// person who asked for the change, so it is shown as-is.
     #[error("{0}")]
     Author(String),
+    /// A rejected comic-series edit or metadata application, likewise
+    /// written for the person who asked for the change.
+    #[error("{0}")]
+    ComicSeries(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -85,7 +92,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 ///          (decisions 66, 69 and 72)
 /// · v21 = hand-edited author fields, locked against metadata refresh
 ///          (decisions 48 and 112)
-pub const SCHEMA_VERSION: i64 = 21;
+/// · v22 = fetched comic-series metadata, its source link and cover,
+///          and hand-edited field locks (decisions 46 and 48)
+pub const SCHEMA_VERSION: i64 = 22;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -1262,7 +1271,27 @@ impl Catalog {
                 status         TEXT NOT NULL DEFAULT 'Ongoing',
                 created_at     TEXT NOT NULL,
                 updated_at     TEXT NOT NULL,
-                last_read_at   TEXT
+                last_read_at   TEXT,
+                -- v22: fetched comic-series metadata (decision 46).
+                -- Credits/genres/manual locks are JSON lists; the
+                -- manual list names COMIC_SERIES_FIELD_* values a
+                -- refresh must not overwrite (decision 48).
+                original_title TEXT NOT NULL DEFAULT '',
+                credits_json   TEXT NOT NULL DEFAULT '[]',
+                publisher      TEXT NOT NULL DEFAULT '',
+                serialization  TEXT NOT NULL DEFAULT '',
+                published      TEXT NOT NULL DEFAULT '',
+                end_date       TEXT NOT NULL DEFAULT '',
+                media_type     TEXT NOT NULL DEFAULT '',
+                genres_json    TEXT NOT NULL DEFAULT '[]',
+                known_volumes  INTEGER NOT NULL DEFAULT 0,
+                known_chapters INTEGER NOT NULL DEFAULT 0,
+                metadata_source TEXT NOT NULL DEFAULT '',
+                metadata_source_id TEXT NOT NULL DEFAULT '',
+                metadata_source_url TEXT NOT NULL DEFAULT '',
+                metadata_fetched_at TEXT NOT NULL DEFAULT '',
+                manual_fields_json TEXT NOT NULL DEFAULT '[]',
+                cover_file     TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_comic_series_sort_title 
                 ON comic_series(sort_title);
@@ -1422,6 +1451,29 @@ impl Catalog {
             "manual_fields_json",
             "TEXT NOT NULL DEFAULT '[]'",
         )?;
+
+        // v22: fetched comic-series metadata and its hand-edited
+        // locks (decisions 46/48, COMIC_SERIES_FIELD_*).
+        for (column, ty) in [
+            ("original_title", "TEXT NOT NULL DEFAULT ''"),
+            ("credits_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("publisher", "TEXT NOT NULL DEFAULT ''"),
+            ("serialization", "TEXT NOT NULL DEFAULT ''"),
+            ("published", "TEXT NOT NULL DEFAULT ''"),
+            ("end_date", "TEXT NOT NULL DEFAULT ''"),
+            ("media_type", "TEXT NOT NULL DEFAULT ''"),
+            ("genres_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("known_volumes", "INTEGER NOT NULL DEFAULT 0"),
+            ("known_chapters", "INTEGER NOT NULL DEFAULT 0"),
+            ("metadata_source", "TEXT NOT NULL DEFAULT ''"),
+            ("metadata_source_id", "TEXT NOT NULL DEFAULT ''"),
+            ("metadata_source_url", "TEXT NOT NULL DEFAULT ''"),
+            ("metadata_fetched_at", "TEXT NOT NULL DEFAULT ''"),
+            ("manual_fields_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("cover_file", "TEXT"),
+        ] {
+            add_column_if_missing(&conn, "comic_series", column, ty)?;
+        }
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {

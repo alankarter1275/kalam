@@ -51,12 +51,19 @@
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
 use crate::db::{
-    Annotation, AuthorProfile, Catalog, Dictionary, DictLookup, EventKind, LibrarySession,
-    LibraryStats, QuoteRef, ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord,
-    SessionRow, Shelf, SortKey,
+    Annotation, AuthorProfile, Catalog, ComicSeriesMetadataPatch, ComicSeriesUpdateOutcome,
+    Dictionary, DictLookup, EventKind, LibrarySession, LibraryStats, QuoteRef, ReadingBookmark,
+    ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
+};
+use crate::models::{
+    Book, ComicCredit, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
+    COMIC_SERIES_FIELD_DESCRIPTION, COMIC_SERIES_FIELD_END_DATE, COMIC_SERIES_FIELD_GENRES,
+    COMIC_SERIES_FIELD_KNOWN_CHAPTERS, COMIC_SERIES_FIELD_KNOWN_VOLUMES,
+    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE,
+    COMIC_SERIES_FIELD_PUBLISHED, COMIC_SERIES_FIELD_PUBLISHER,
+    COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS, COMIC_SERIES_FIELD_TITLE,
 };
 use crate::watch_folder::WatchFolderRule;
-use crate::models::Book;
 use std::sync::Arc;
 
 /// Reads the catalog on behalf of the UI.
@@ -71,6 +78,16 @@ pub struct LibraryService {
 /// Collected read failures. Empty in the normal case, so the happy path costs
 /// no allocation.
 pub type Errors = Vec<String>;
+
+/// The result of applying one reviewed comic candidate: the catalog
+/// outcome, plus the cover side of the story. A cover download or
+/// cleanup failure does not fail the metadata save the reader just
+/// reviewed; it is reported beside it instead.
+#[derive(Debug, Clone, Default)]
+pub struct ComicSeriesMetadataApplyOutcome {
+    pub update: ComicSeriesUpdateOutcome,
+    pub cover_error: Option<String>,
+}
 
 /// Everything the Home page draws, fetched together.
 #[derive(Debug, Default)]
@@ -278,8 +295,7 @@ pub struct SettingsSnapshot {
     /// Watch-folder rules and the shelf list they route into (Book Files).
     pub watch_rules: Vec<WatchFolderRule>,
     pub shelves: Vec<Shelf>,
-    /// Metadata source toggles and the Google Books key/country prefs
-    /// (Metadata Sources).
+    /// Metadata source toggles and credential prefs (Metadata Sources).
     pub source_open_library: bool,
     pub source_google_books: bool,
     pub google_books_key: String,
@@ -288,6 +304,12 @@ pub struct SettingsSnapshot {
     /// Metadata sources pane shows the rejected-key state. Written by the
     /// fetcher via `enabled_sources`, cleared on key save or success.
     pub google_books_key_rejected: bool,
+    pub source_myanimelist: bool,
+    pub myanimelist_client_id: String,
+    pub myanimelist_client_id_rejected: bool,
+    pub source_comic_vine: bool,
+    pub comic_vine_key: String,
+    pub comic_vine_key_rejected: bool,
     /// EPUB polish-on-import and metadata writeback toggles (Book Files).
     pub clean_on_import: bool,
     pub writeback_enabled: bool,
@@ -577,6 +599,31 @@ impl LibraryService {
     /// place the service does not cover yet.
     pub fn catalog(&self) -> &Arc<Catalog> {
         &self.catalog
+    }
+
+    /// Save one hand edit of a comic series. The catalog owns the
+    /// transaction and hand-edit lock bookkeeping; callers run this
+    /// on a worker like every other write.
+    pub fn update_comic_series_details(
+        &self,
+        series_id: i64,
+        edit: &crate::db::ComicSeriesEdit,
+    ) -> Result<crate::db::ComicSeriesUpdateOutcome, String> {
+        self.catalog
+            .update_comic_series_details(series_id, edit)
+            .map_err(|err| err.to_string())
+    }
+
+    /// Apply one reviewed comic-metadata candidate to its series.
+    /// This performs network and disk work for the cover, so callers
+    /// run it on a worker, never while drawing the review dialog.
+    pub fn apply_comic_series_candidate(
+        &self,
+        series_id: i64,
+        candidate: &crate::metadata::Candidate,
+        selected_fields: &[String],
+    ) -> Result<ComicSeriesMetadataApplyOutcome, String> {
+        apply_comic_series_candidate(&self.catalog, series_id, candidate, selected_fields)
     }
 
     // -- snapshots ---------------------------------------------------------
@@ -1061,9 +1108,11 @@ impl LibraryService {
             Ok(rows) => (rows, None),
             Err(err) => (Vec::new(), Some(err.to_string())),
         };
-        let (source_open_library, source_google_books) = (
+        let (source_open_library, source_google_books, source_myanimelist, source_comic_vine) = (
             crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::OpenLibrary),
             crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::GoogleBooks),
+            crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::MyAnimeList),
+            crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::ComicVine),
         );
         SettingsSnapshot {
             dicts,
@@ -1084,6 +1133,26 @@ impl LibraryService {
             google_books_key_rejected: self
                 .catalog
                 .get_pref("meta.googlebooks.key_rejected")
+                .map(|v| v == "1")
+                .unwrap_or(false),
+            source_myanimelist,
+            myanimelist_client_id: self
+                .catalog
+                .get_pref("meta.myanimelist.client_id")
+                .unwrap_or_default(),
+            myanimelist_client_id_rejected: self
+                .catalog
+                .get_pref("meta.myanimelist.client_id_rejected")
+                .map(|v| v == "1")
+                .unwrap_or(false),
+            source_comic_vine,
+            comic_vine_key: self
+                .catalog
+                .get_pref("meta.comicvine.key")
+                .unwrap_or_default(),
+            comic_vine_key_rejected: self
+                .catalog
+                .get_pref("meta.comicvine.key_rejected")
                 .map(|v| v == "1")
                 .unwrap_or(false),
             clean_on_import: crate::epub_sanitizer::clean_on_import_enabled(&self.catalog),
@@ -1999,6 +2068,217 @@ fn author_groups(
         rank(a).cmp(&rank(b)).then_with(|| a.title.cmp(&b.title))
     });
     groups
+}
+
+fn comic_field_selected(selected_fields: &[String], field: &str) -> bool {
+    selected_fields.iter().any(|selected| selected == field)
+}
+
+fn comic_credits_from_candidate(candidate: &crate::metadata::Candidate) -> Vec<ComicCredit> {
+    if !candidate.credits.is_empty() {
+        return candidate
+            .credits
+            .iter()
+            .map(|credit| ComicCredit {
+                role: credit.role.clone(),
+                name: credit.name.clone(),
+            })
+            .collect();
+    }
+    candidate
+        .authors
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| ComicCredit {
+            role: String::new(),
+            name: name.to_string(),
+        })
+        .collect()
+}
+
+/// Convert a reviewed candidate into the catalog's patch shape. Only
+/// fields the reader left ticked in review carry values; the source
+/// identity always travels, so accepting “this is that series” works
+/// even when no field needed changing.
+fn comic_series_patch_from_candidate(
+    candidate: &crate::metadata::Candidate,
+    selected_fields: &[String],
+    cover_file: Option<String>,
+) -> Result<ComicSeriesMetadataPatch, String> {
+    let source = candidate
+        .source
+        .ok_or_else(|| "This result does not say which source it came from.".to_string())?;
+    if source.kind() != crate::metadata::SourceKind::Comic {
+        return Err(format!(
+            "{} does not describe comic series.",
+            source.label()
+        ));
+    }
+
+    let mut patch = ComicSeriesMetadataPatch {
+        source: source.key().to_string(),
+        source_id: candidate.external_id.clone().unwrap_or_default(),
+        source_url: candidate.source_url.clone().unwrap_or_default(),
+        proposed_fields: selected_fields.to_vec(),
+        ..Default::default()
+    };
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_TITLE) {
+        patch.title = Some(candidate.title.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_ORIGINAL_TITLE) {
+        patch.original_title = Some(candidate.original_title.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_CREDITS) {
+        patch.credits = Some(comic_credits_from_candidate(candidate));
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_DESCRIPTION) {
+        patch.description = Some(candidate.description.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_STATUS) {
+        patch.status = Some(candidate.status.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_PUBLISHER) {
+        patch.publisher = Some(candidate.publisher.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_SERIALIZATION) {
+        patch.serialization = Some(candidate.serialization.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_PUBLISHED) {
+        patch.published = if candidate.published.trim().is_empty() {
+            candidate.first_year.map(|year| year.to_string())
+        } else {
+            Some(candidate.published.clone())
+        };
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_END_DATE) {
+        patch.end_date = Some(candidate.end_date.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_MEDIA_TYPE) {
+        patch.media_type = Some(candidate.media_type.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_GENRES) {
+        patch.genres = Some(candidate.tags.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_KNOWN_VOLUMES) {
+        patch.known_volumes = candidate.known_volumes;
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_KNOWN_CHAPTERS) {
+        patch.known_chapters = candidate.known_chapters;
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_COVER) {
+        patch.cover_file = cover_file;
+    }
+    Ok(patch)
+}
+
+/// Apply one reviewed comic candidate end to end: download and write
+/// its cover when the cover was picked, let the catalog make the
+/// field/lock decisions transactionally, then remove whichever cover
+/// file the committed row no longer points at. Runs on a worker.
+pub fn apply_comic_series_candidate(
+    catalog: &Catalog,
+    series_id: i64,
+    candidate: &crate::metadata::Candidate,
+    selected_fields: &[String],
+) -> Result<ComicSeriesMetadataApplyOutcome, String> {
+    // Validate the source before any cover bytes move.
+    let _ = comic_series_patch_from_candidate(candidate, selected_fields, None)?;
+    let current = catalog
+        .get_comic_series(series_id)
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "That series is no longer in your library.".to_string())?;
+
+    let cover_selected = comic_field_selected(selected_fields, COMIC_SERIES_FIELD_COVER);
+    let cover_locked = current.is_manual_field(COMIC_SERIES_FIELD_COVER);
+    let mut cover_error: Option<String> = None;
+    let mut written_cover: Option<String> = None;
+
+    if cover_selected && !cover_locked {
+        if let Some(cover) = &candidate.cover {
+            match crate::metadata::fetch_cover(cover) {
+                Ok(bytes) => match catalog.series_folder_name_for(series_id) {
+                    Ok(folder) => {
+                        match crate::db::write_comic_series_cover(&folder, series_id, &bytes) {
+                            Ok(relative) => written_cover = Some(relative),
+                            Err(err) => {
+                                cover_error = Some(format!(
+                                    "The fetched cover could not be saved: {err}"
+                                ));
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        cover_error = Some(format!(
+                            "The fetched cover could not be saved: {err}"
+                        ));
+                    }
+                },
+                Err(err) => {
+                    cover_error = Some(format!("The cover could not be downloaded: {err}"));
+                }
+            }
+        }
+    }
+
+    let patch = comic_series_patch_from_candidate(
+        candidate,
+        selected_fields,
+        written_cover.clone(),
+    )?;
+    let mut update = match catalog.apply_comic_series_metadata(series_id, &patch) {
+        Ok(update) => update,
+        Err(err) => {
+            if let Some(file) = &written_cover {
+                let _ = crate::db::remove_comic_series_cover(file);
+            }
+            return Err(err.to_string());
+        }
+    };
+
+    if cover_selected
+        && cover_locked
+        && !update
+            .protected_fields
+            .iter()
+            .any(|field| field == COMIC_SERIES_FIELD_COVER)
+    {
+        update
+            .protected_fields
+            .push(COMIC_SERIES_FIELD_COVER.to_string());
+    }
+
+    if let Some(file) = &written_cover {
+        let cover_applied = update
+            .applied_fields
+            .iter()
+            .any(|field| field == COMIC_SERIES_FIELD_COVER);
+        if !cover_applied {
+            if let Err(err) = crate::db::remove_comic_series_cover(file) {
+                if cover_error.is_none() {
+                    cover_error = Some(format!(
+                        "The unused fetched cover could not be removed: {err}"
+                    ));
+                }
+            }
+        }
+    }
+    if let Some(old) = &update.replaced_cover_file {
+        if written_cover.as_deref() != Some(old.as_str()) {
+            if let Err(err) = crate::db::remove_comic_series_cover(old) {
+                if cover_error.is_none() {
+                    cover_error = Some(format!(
+                        "The old series cover could not be removed: {err}"
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(ComicSeriesMetadataApplyOutcome {
+        update,
+        cover_error,
+    })
 }
 
 fn take<T: Default>(result: crate::db::Result<T>, what: &str, errors: &mut Errors) -> T {
@@ -3281,6 +3561,55 @@ mod tests {
         let snap = svc.analytics();
         assert!(snap.errors.is_empty());
         assert_eq!(snap.goal, 24);
+    }
+
+    #[test]
+    fn comic_candidate_patch_keeps_only_reviewed_fields() {
+        let candidate = crate::metadata::Candidate {
+            title: "The Paper Meridian".into(),
+            authors: "Ada Meridian".into(),
+            publisher: "Meridian Press".into(),
+            published: String::new(),
+            first_year: Some(2021),
+            description: "A mapmaker loses the north.".into(),
+            tags: vec!["Adventure".into()],
+            credits: vec![crate::metadata::CandidateCredit {
+                role: "Story & Art".into(),
+                name: "Ada Meridian".into(),
+            }],
+            status: "Ongoing".into(),
+            known_chapters: Some(42),
+            external_id: Some("99".into()),
+            source_url: Some("https://myanimelist.net/manga/99".into()),
+            source: Some(crate::metadata::SourceId::MyAnimeList),
+            ..Default::default()
+        };
+        let selected = vec![
+            COMIC_SERIES_FIELD_TITLE.to_string(),
+            COMIC_SERIES_FIELD_CREDITS.to_string(),
+            COMIC_SERIES_FIELD_PUBLISHED.to_string(),
+            COMIC_SERIES_FIELD_GENRES.to_string(),
+            COMIC_SERIES_FIELD_KNOWN_CHAPTERS.to_string(),
+        ];
+        let patch =
+            comic_series_patch_from_candidate(&candidate, &selected, None).unwrap();
+        assert_eq!(patch.title.as_deref(), Some("The Paper Meridian"));
+        assert_eq!(patch.published.as_deref(), Some("2021"));
+        assert_eq!(patch.known_chapters, Some(42));
+        assert_eq!(patch.genres.as_deref(), Some(&["Adventure".to_string()][..]));
+        assert_eq!(patch.credits.as_ref().unwrap()[0].role, "Story & Art");
+        // Unreviewed fields carry nothing, even though the candidate
+        // knows them; identity still travels for the source link.
+        assert!(patch.publisher.is_none());
+        assert!(patch.description.is_none());
+        assert!(patch.status.is_none());
+        assert_eq!(patch.source, "myanimelist");
+        assert_eq!(patch.source_id, "99");
+
+        // A book source cannot be dressed up as a comic series.
+        let mut book_candidate = candidate.clone();
+        book_candidate.source = Some(crate::metadata::SourceId::OpenLibrary);
+        assert!(comic_series_patch_from_candidate(&book_candidate, &selected, None).is_err());
     }
 
     #[test]

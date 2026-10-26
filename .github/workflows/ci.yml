@@ -593,6 +593,51 @@ jobs:
             THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
+      # Saved whole-panel presets and comic-series metadata
+      # (decision 46): the preset section/form, the enriched series
+      # drawer, and its Edit details / Find metadata dialogs. The
+      # review capture is staged from a synthetic local candidate,
+      # so no provider request or credential is involved.
+      - name: open the comic saved-presets panel (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-presets-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=presets \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic series drawer (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comic-series-dark SETTLE=20 \
+            ROUTE=comic-series-book-22 COMIC_FIXTURE=1 \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic series edit dialog (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comic-series-edit-dark SETTLE=20 \
+            ROUTE=comic-series-book-22 COMIC_FIXTURE=1 \
+            DIALOG=edit-comic-series THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic series find dialog (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comic-series-find-dark SETTLE=20 \
+            ROUTE=comic-series-book-22 COMIC_FIXTURE=1 \
+            DIALOG=find-comic-series THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic series metadata review (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comic-series-find-review-dark SETTLE=20 \
+            ROUTE=comic-series-book-22 COMIC_FIXTURE=1 \
+            DIALOG=find-comic-series-review THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
       # PDF reader (decisions 52-58): the pure page with its summoned
       # Back+Bubble in both modes, then Contents floating and pinned,
       # Shortcuts, and the page-jump field's out-of-range state. The
@@ -1411,11 +1456,23 @@ jobs:
                       comics-chapters-dark comics-pages-dark \
                       comics-reading-dark comics-reading-strip-dark \
                       comics-image-light comics-image-adjusted-dark \
-                      comics-shortcuts-dark comics-jump-range-dark; do
+                      comics-shortcuts-dark comics-jump-range-dark \
+                      comics-presets-dark; do
             cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
               || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-comic-read-22-settled.png" \
+              "ci-logs/$shot.png" 2>/dev/null || true
+          done
+          # The comic-series drawer/dialog frames settle on the
+          # chapter-anchored series route rather than the reader.
+          for shot in comic-series-dark comic-series-edit-dark \
+                      comic-series-find-dark \
+                      comic-series-find-review-dark; do
+            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
+              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
+            cp "ci-shots-$shot/03-comic-series-book-22-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true
           done
           # The PDF reader frames, by the same slug rule: the OUT
@@ -1562,7 +1619,14 @@ jobs:
                       comics-chapters-dark comics-pages-dark \
                       comics-reading-dark comics-reading-strip-dark \
                       comics-image-light comics-image-adjusted-dark \
-                      comics-shortcuts-dark comics-jump-range-dark; do
+                      comics-shortcuts-dark comics-jump-range-dark \
+                      comics-presets-dark; do
+            git add -f "ci-logs/$shot-latest.txt"
+            if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
+          done
+          for shot in comic-series-dark comic-series-edit-dark \
+                      comic-series-find-dark \
+                      comic-series-find-review-dark; do
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done

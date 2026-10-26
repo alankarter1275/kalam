@@ -392,10 +392,11 @@ say "requested route: $ROUTE"
 # evidence of which theme was photographed.
 THEME="${THEME:-}"
 say "requested theme: ${THEME:-<saved/default>}"
-# DIALOG asks the book page to open one of its dialogs over itself once
-# loaded (KALAM_DIALOG=tags|annotations). No route reaches a dialog, so
-# without this the loop could photograph every page and still never see
-# the two dialogs the book page owns.
+# DIALOG asks the loaded page to open one of its dialogs over itself
+# (KALAM_DIALOG values include book tags/annotations, author edit/merge,
+# and comic-series edit/find/find-review). No route reaches a dialog,
+# so without this the loop could photograph every page and still never
+# see the dialogs those pages own.
 DIALOG="${DIALOG:-}"
 say "requested dialog: ${DIALOG:-<none>}"
 # SERIES_VIEW asks the series page to open on its strip or list view
@@ -414,8 +415,8 @@ say "requested settings pane: ${SETTINGS_PANE:-<default>}"
 READER_ACTION="${READER_ACTION:-}"
 say "requested reader action: ${READER_ACTION:-<none>}"
 # COMIC_ACTION is the same ask for the comics reader
-# (KALAM_COMIC_ACTION: chrome, chapters, pages, reading, shortcuts,
-# jump, jump-range).
+# (KALAM_COMIC_ACTION: chrome, chapters, pages, reading, presets,
+# image, shortcuts, jump, jump-range).
 COMIC_ACTION="${COMIC_ACTION:-}"
 say "requested comic action: ${COMIC_ACTION:-<none>}"
 # PDF_ACTION is the same ask for the PDF reader (KALAM_PDF_ACTION:

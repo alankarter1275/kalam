@@ -15,7 +15,11 @@ GTK4 and Relm4.
   Word Memory term opens its word card; ordinary words are looked up by
   selecting them or using the reader's Dictionary action.
 - Manage tags, shelves, reading lists, ratings, metadata and library folders.
-- Use Open Library and Google Books when fetching metadata. Reading and library
+- Save named whole-panel reading presets for comics and apply them like the
+  equivalent manual Reading and Image changes.
+- Use Open Library and Google Books when fetching book metadata, and
+  MyAnimeList or Comic Vine when fetching comic-series metadata. The comic
+  providers need credentials configured in Settings. Reading and library
   features do not require those services.
 
 EPUB content editing is currently removed. The reader, library and navigation

@@ -18,6 +18,12 @@ use serde::{Deserialize, Serialize};
 pub(crate) const MIN_ZOOM_PERCENT: u32 = 25;
 pub(crate) const MAX_ZOOM_PERCENT: u32 = 300;
 
+/// The global saved-presets record. The `reader.*` prefix is load-bearing:
+/// library switching treats those keys as app-wide, so a reader's named
+/// setups follow them from one library to the next.
+pub(crate) const COMIC_PRESETS_PREF: &str = "reader.comic.presets.v1";
+pub(crate) const MAX_PRESET_NAME_CHARS: usize = 60;
+
 /// Everything shown by the comics Reading and Image panes, as one
 /// value. Keeping the whole right panel in one record is the
 /// all-or-nothing rule (decision 40): a series either follows the
@@ -307,6 +313,137 @@ impl ComicReadingSettings {
     }
 }
 
+/// One named, user-saved comics setup. A preset is deliberately the whole
+/// Reading + Image record, not a partial overlay: applying “Manga” should
+/// not leave last night's warmth or crop choice hiding inside it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ComicSettingsPreset {
+    pub(crate) name: String,
+    pub(crate) settings: ComicReadingSettings,
+}
+
+impl ComicSettingsPreset {
+    pub(crate) fn summary(&self) -> String {
+        self.settings.summary()
+    }
+}
+
+impl ComicReadingSettings {
+    /// The short shape shown under a preset's name. It names the choices a
+    /// reader uses to tell presets apart without turning the row into a
+    /// dump of every switch in the record.
+    pub(crate) fn summary(&self) -> String {
+        let settings = self.clone().canonical();
+        let fit = match settings.fit_mode {
+            FitMode::Width => "Width",
+            FitMode::Height => "Height",
+            FitMode::Screen => "Screen",
+            FitMode::Original => "Original",
+        };
+        let mut parts = vec![
+            settings.direction.short_label().to_string(),
+            settings.page_style.label().to_string(),
+            fit.to_string(),
+            format!("{}%", settings.zoom_percent),
+        ];
+        if settings.image != ComicImageSettings::default() {
+            parts.push("Image adjusted".to_string());
+        }
+        parts.join(" · ")
+    }
+}
+
+/// Names are display labels, so whitespace is presentation rather than
+/// identity: trim the ends and collapse runs inside before comparing or
+/// storing a name.
+pub(crate) fn normalise_preset_name(name: &str) -> String {
+    name.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn preset_name_key(name: &str) -> String {
+    normalise_preset_name(name).to_lowercase()
+}
+
+fn sort_presets(presets: &mut [ComicSettingsPreset]) {
+    presets.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then_with(|| a.name.cmp(&b.name))
+    });
+}
+
+/// Add a preset, or replace the one whose name differs only by case or
+/// spacing. Returns whether an existing preset was replaced, so the UI can
+/// say so instead of silently pretending a second copy was made.
+pub(crate) fn upsert_preset(
+    presets: &mut Vec<ComicSettingsPreset>,
+    name: &str,
+    settings: ComicReadingSettings,
+) -> bool {
+    let name = normalise_preset_name(name);
+    if name.is_empty() {
+        return false;
+    }
+    let key = preset_name_key(&name);
+    let settings = settings.canonical();
+    if let Some(existing) = presets
+        .iter_mut()
+        .find(|preset| preset_name_key(&preset.name) == key)
+    {
+        existing.name = name;
+        existing.settings = settings;
+        sort_presets(presets);
+        return true;
+    }
+    presets.push(ComicSettingsPreset { name, settings });
+    sort_presets(presets);
+    false
+}
+
+pub(crate) fn remove_preset(presets: &mut Vec<ComicSettingsPreset>, name: &str) -> bool {
+    let key = preset_name_key(name);
+    let before = presets.len();
+    presets.retain(|preset| preset_name_key(&preset.name) != key);
+    presets.len() != before
+}
+
+fn canonical_preset_list(raw: Vec<ComicSettingsPreset>) -> Vec<ComicSettingsPreset> {
+    let mut out: Vec<ComicSettingsPreset> = Vec::new();
+    for preset in raw {
+        let name = normalise_preset_name(&preset.name);
+        if name.is_empty() {
+            continue;
+        }
+        let key = preset_name_key(&name);
+        if out.iter().any(|p| preset_name_key(&p.name) == key) {
+            continue;
+        }
+        out.push(ComicSettingsPreset {
+            name,
+            settings: preset.settings.canonical(),
+        });
+    }
+    sort_presets(&mut out);
+    out
+}
+
+pub(crate) fn load_presets(catalog: &Catalog) -> Vec<ComicSettingsPreset> {
+    let Some(raw) = catalog.get_pref(COMIC_PRESETS_PREF) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<ComicSettingsPreset>>(&raw)
+        .map(canonical_preset_list)
+        .unwrap_or_default()
+}
+
+pub(crate) fn store_presets(catalog: &Catalog, presets: &[ComicSettingsPreset]) {
+    let presets = canonical_preset_list(presets.to_vec());
+    if let Ok(raw) = serde_json::to_string(&presets) {
+        catalog.set_pref(COMIC_PRESETS_PREF, &raw);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,5 +542,79 @@ mod tests {
 
         ComicReadingSettings::clear_legacy_book(&catalog, 8);
         assert!(ComicReadingSettings::legacy_book(&catalog, 8, &globals).is_none());
+    }
+
+    #[test]
+    fn saved_presets_round_trip_through_the_global_pref() {
+        let catalog = Catalog::open_in_memory().expect("memory catalog");
+        let manga = ComicReadingSettings {
+            direction: ReadingDirection::Rtl,
+            page_style: PageStyle::Double,
+            zoom_percent: 125,
+            image: ComicImageSettings {
+                brightness: 12,
+                ..ComicImageSettings::default()
+            },
+            ..ComicReadingSettings::default()
+        };
+        let mut presets = Vec::new();
+        assert!(!upsert_preset(&mut presets, "  Manga   night ", manga.clone()));
+        assert!(!upsert_preset(
+            &mut presets,
+            "Western",
+            ComicReadingSettings::default()
+        ));
+        store_presets(&catalog, &presets);
+
+        let loaded = load_presets(&catalog);
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].name, "Manga night");
+        assert_eq!(loaded[0].settings, manga);
+        assert_eq!(loaded[1].name, "Western");
+        assert!(loaded[0].summary().contains("RTL · Spread"));
+        assert!(loaded[0].summary().contains("Image adjusted"));
+    }
+
+    #[test]
+    fn preset_names_overwrite_case_insensitively_and_remove_the_same_way() {
+        let mut presets = Vec::new();
+        assert!(!upsert_preset(
+            &mut presets,
+            "Manga",
+            ComicReadingSettings::default()
+        ));
+        let replacement = ComicReadingSettings {
+            zoom_percent: 80,
+            ..ComicReadingSettings::default()
+        };
+        assert!(upsert_preset(&mut presets, "manga", replacement.clone()));
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0].name, "manga");
+        assert_eq!(presets[0].settings, replacement);
+
+        assert!(remove_preset(&mut presets, "MANGA"));
+        assert!(presets.is_empty());
+        assert!(!remove_preset(&mut presets, "MANGA"));
+    }
+
+    #[test]
+    fn malformed_and_duplicate_preset_records_are_ignored_safely() {
+        let catalog = Catalog::open_in_memory().expect("memory catalog");
+        catalog.set_pref(COMIC_PRESETS_PREF, "{not json");
+        assert!(load_presets(&catalog).is_empty());
+
+        catalog.set_pref(
+            COMIC_PRESETS_PREF,
+            r#"[
+                {"name":"  ", "settings":{}},
+                {"name":"One", "settings":{"direction":"Webtoon", "zoom_percent":999}},
+                {"name":"one", "settings":{}}
+            ]"#,
+        );
+        let loaded = load_presets(&catalog);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "One");
+        assert_eq!(loaded[0].settings.page_style, PageStyle::LongStrip);
+        assert_eq!(loaded[0].settings.zoom_percent, MAX_ZOOM_PERCENT);
     }
 }

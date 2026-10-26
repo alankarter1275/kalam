@@ -41,6 +41,16 @@ use std::time::Duration;
 
 use crate::db::ReadingBookmark;
 
+/// The live widgets for one saved-preset row. The row's settings ride
+/// along so the ordinary settings sync can keep the “Current” marker
+/// truthful after any individual control is nudged.
+struct PresetRowWidgets {
+    name: String,
+    settings: ComicReadingSettings,
+    apply_button: gtk::Button,
+    current_label: gtk::Label,
+}
+
 pub struct ComicsReaderModel {
     pub title: String,
     pub provider: Arc<dyn provider::ImageProvider>,
@@ -78,6 +88,22 @@ pub struct ComicsReaderModel {
     pub set_mark_read_switch: Option<Rc<dyn Fn(bool)>>,
     pub zoom_slider: Option<crate::widgets::setting_row::SliderRow>,
     pub use_defaults_btn: Option<gtk::Button>,
+    /// Named whole-panel setups (`reader.comic.presets.v1`). They are
+    /// loaded once when the reader opens and rebuilt only when the list
+    /// itself changes; the Current marker is then kept in step by the
+    /// normal settings sync.
+    pub saved_presets: Vec<reading_settings::ComicSettingsPreset>,
+    pub preset_sender: Option<relm4::Sender<ComicsReaderMsg>>,
+    pub preset_list_host: Option<gtk::Box>,
+    pub preset_empty_label: Option<gtk::Label>,
+    pub preset_rows: Vec<PresetRowWidgets>,
+    pub preset_form: Option<gtk::Box>,
+    pub preset_name_entry: Option<gtk::Entry>,
+    pub preset_form_note: Option<gtk::Label>,
+    pub preset_save_button: Option<gtk::Button>,
+    pub preset_name_draft: String,
+    pub preset_form_open: bool,
+    pub preset_form_error: String,
     /// Image-pane handles, in `ComicBackground::ALL` order for the
     /// colour dots. The guarded setters and slider rows mirror the
     /// Reading pane's pattern.
@@ -372,6 +398,11 @@ impl ComicsReaderModel {
         } else {
             (ComicReadingSettings::default(), false)
         };
+        let saved_presets = init
+            .catalog
+            .as_ref()
+            .map(|catalog| reading_settings::load_presets(catalog))
+            .unwrap_or_default();
 
         Self {
             title: init.title,
@@ -401,6 +432,18 @@ impl ComicsReaderModel {
             set_mark_read_switch: None,
             zoom_slider: None,
             use_defaults_btn: None,
+            saved_presets,
+            preset_sender: None,
+            preset_list_host: None,
+            preset_empty_label: None,
+            preset_rows: Vec::new(),
+            preset_form: None,
+            preset_name_entry: None,
+            preset_form_note: None,
+            preset_save_button: None,
+            preset_name_draft: String::new(),
+            preset_form_open: false,
+            preset_form_error: String::new(),
             image_background_buttons: Vec::new(),
             brightness_slider: None,
             contrast_slider: None,
@@ -548,6 +591,155 @@ impl ComicsReaderModel {
         self.auto_next_chapter = settings.auto_next_chapter;
         self.mark_read_on_advance = settings.mark_read_on_advance;
         self.image_settings = settings.image;
+    }
+
+    fn active_preset_name(&self) -> Option<&str> {
+        let current = self.current_reading_settings();
+        self.saved_presets
+            .iter()
+            .find(|preset| preset.settings == current)
+            .map(|preset| preset.name.as_str())
+    }
+
+    fn persist_presets(&self) {
+        if let Some(catalog) = &self.catalog {
+            reading_settings::store_presets(catalog, &self.saved_presets);
+        }
+    }
+
+    fn rebuild_preset_rows(&mut self) {
+        let (Some(host), Some(sender)) = (&self.preset_list_host, &self.preset_sender)
+        else {
+            return;
+        };
+        while let Some(child) = host.first_child() {
+            host.remove(&child);
+        }
+        self.preset_rows.clear();
+
+        for preset in self.saved_presets.clone() {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            row.add_css_class("kalam-comics-preset-row");
+
+            let apply = gtk::Button::new();
+            apply.add_css_class("kalam-comics-preset-apply");
+            apply.set_hexpand(true);
+            apply.set_halign(gtk::Align::Fill);
+            apply.set_tooltip_text(Some(&format!("Apply “{}”", preset.name)));
+            apply.update_property(&[gtk::accessible::Property::Label(
+                &format!("Apply preset {}", preset.name),
+            )]);
+
+            let apply_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let text = gtk::Box::new(gtk::Orientation::Vertical, 1);
+            text.set_hexpand(true);
+            let name = gtk::Label::new(Some(&preset.name));
+            name.add_css_class("kalam-comics-preset-name");
+            name.set_halign(gtk::Align::Start);
+            name.set_xalign(0.0);
+            name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            text.append(&name);
+            let summary = gtk::Label::new(Some(&preset.summary()));
+            summary.add_css_class("kalam-comics-preset-summary");
+            summary.set_halign(gtk::Align::Start);
+            summary.set_xalign(0.0);
+            summary.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            text.append(&summary);
+            apply_content.append(&text);
+
+            let current = gtk::Label::new(Some("Current"));
+            current.add_css_class("kalam-comics-preset-current");
+            current.set_valign(gtk::Align::Center);
+            current.set_visible(false);
+            apply_content.append(&current);
+            apply.set_child(Some(&apply_content));
+
+            {
+                let tx = sender.clone();
+                let name = preset.name.clone();
+                apply.connect_clicked(move |_| {
+                    let _ = tx.send(ComicsReaderMsg::ApplyPreset(name.clone()));
+                });
+            }
+            row.append(&apply);
+
+            let delete = gtk::Button::from_icon_name("user-trash-symbolic");
+            delete.add_css_class("kalam-btn-icon");
+            delete.add_css_class("danger");
+            delete.set_valign(gtk::Align::Center);
+            delete.set_tooltip_text(Some(&format!("Delete “{}”", preset.name)));
+            delete.update_property(&[gtk::accessible::Property::Label(
+                &format!("Delete preset {}", preset.name),
+            )]);
+            {
+                let tx = sender.clone();
+                let name = preset.name.clone();
+                delete.connect_clicked(move |_| {
+                    let _ = tx.send(ComicsReaderMsg::DeletePreset(name.clone()));
+                });
+            }
+            row.append(&delete);
+            host.append(&row);
+
+            self.preset_rows.push(PresetRowWidgets {
+                name: preset.name,
+                settings: preset.settings,
+                apply_button: apply,
+                current_label: current,
+            });
+        }
+
+        if let Some(empty) = &self.preset_empty_label {
+            empty.set_visible(self.saved_presets.is_empty());
+        }
+    }
+
+    fn sync_preset_ui(&self) {
+        let current = self.current_reading_settings();
+        for row in &self.preset_rows {
+            let active = row.settings == current;
+            toggle_active(&row.apply_button, active);
+            row.current_label.set_visible(active);
+        }
+        if let Some(empty) = &self.preset_empty_label {
+            empty.set_visible(self.saved_presets.is_empty());
+        }
+        if let Some(form) = &self.preset_form {
+            form.set_visible(self.preset_form_open);
+        }
+
+        let draft = reading_settings::normalise_preset_name(&self.preset_name_draft);
+        let replacing = (!draft.is_empty()).then(|| {
+            self.saved_presets
+                .iter()
+                .find(|preset| preset.name.to_lowercase() == draft.to_lowercase())
+        });
+        let replacing = replacing.flatten();
+        if let Some(note) = &self.preset_form_note {
+            if !self.preset_form_error.is_empty() {
+                note.set_label(&self.preset_form_error);
+                note.add_css_class("kalam-comics-preset-error");
+            } else if let Some(existing) = replacing {
+                note.set_label(&format!(
+                    "This will replace the existing “{}” preset.",
+                    existing.name
+                ));
+                note.remove_css_class("kalam-comics-preset-error");
+            } else {
+                note.set_label("Presets keep Reading and Image settings together.");
+                note.remove_css_class("kalam-comics-preset-error");
+            }
+        }
+        if let Some(button) = &self.preset_save_button {
+            let valid = !draft.is_empty()
+                && draft.chars().count() <= reading_settings::MAX_PRESET_NAME_CHARS;
+            button.set_sensitive(valid);
+            button.set_label(if replacing.is_some() {
+                "Replace preset"
+            } else {
+                "Save preset"
+            });
+        }
     }
 
     pub fn settings_differ_from_defaults(&self) -> bool {
@@ -1057,6 +1249,7 @@ impl ComicsReaderModel {
                 "Matches your defaults"
             });
         }
+        self.sync_preset_ui();
 
         // The Image pane and the stage it paints (decision 41).
         for class in ["comic-bg-black", "comic-bg-grey", "comic-bg-white"] {
@@ -2390,6 +2583,21 @@ impl Component for ComicsReaderModel {
                                     set_margin_end: 16,
                                 },
 
+                                // Saved presets sit above the
+                                // individual controls because one
+                                // preset replaces the whole record
+                                // those controls edit. Init fills this
+                                // host with the current list and the
+                                // inline save form.
+                                append = &reader_settings_section("Saved presets"),
+                                #[name = "presets_host"]
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 8,
+                                    set_margin_start: 16,
+                                    set_margin_end: 16,
+                                },
+
                                 // Section: PAGE STYLE
                                 append = &reader_settings_section("Page style"),
                                 gtk::Box {
@@ -3029,6 +3237,104 @@ impl Component for ComicsReaderModel {
             model.use_defaults_btn = Some(defaults_btn);
         }
 
+        // Saved presets. The dynamic rows are rebuilt only when a
+        // preset is saved or deleted; the save form itself is built
+        // once and shown or hidden by the ordinary settings sync.
+        {
+            model.preset_sender = Some(sender.input_sender().clone());
+
+            let list_host = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            widgets.presets_host.append(&list_host);
+            model.preset_list_host = Some(list_host);
+
+            let empty = gtk::Label::new(Some(
+                "No saved presets yet. Set the reader up the way you like, then save it here.",
+            ));
+            empty.add_css_class("kalam-comics-preset-empty");
+            empty.set_halign(gtk::Align::Start);
+            empty.set_xalign(0.0);
+            empty.set_wrap(true);
+            widgets.presets_host.append(&empty);
+            model.preset_empty_label = Some(empty);
+
+            let tx = sender.input_sender().clone();
+            let save_current = crate::widgets::pill_button::boxed_ghost_button(
+                "Save current settings…",
+                move || {
+                    let _ = tx.send(ComicsReaderMsg::ShowSavePresetForm);
+                },
+            );
+            save_current.set_hexpand(true);
+            widgets.presets_host.append(&save_current);
+
+            let form = gtk::Box::new(gtk::Orientation::Vertical, 8);
+            form.add_css_class("kalam-comics-inset-card");
+            form.add_css_class("kalam-comics-preset-form");
+            form.set_visible(false);
+
+            let caption = gtk::Label::new(Some("PRESET NAME"));
+            caption.add_css_class("kalam-ui-field-label");
+            caption.set_halign(gtk::Align::Start);
+            caption.set_xalign(0.0);
+            form.append(&caption);
+
+            let entry = gtk::Entry::new();
+            entry.add_css_class("kalam-ui-field");
+            entry.set_placeholder_text(Some("Manga, Western, Night reading…"));
+            entry.set_max_length(reading_settings::MAX_PRESET_NAME_CHARS as i32);
+            entry.set_hexpand(true);
+            entry.update_property(&[gtk::accessible::Property::Label("Preset name")]);
+            {
+                let tx = sender.input_sender().clone();
+                entry.connect_changed(move |entry| {
+                    let _ = tx.send(ComicsReaderMsg::PresetNameChanged(
+                        entry.text().to_string(),
+                    ));
+                });
+                let tx = sender.input_sender().clone();
+                entry.connect_activate(move |_| {
+                    let _ = tx.send(ComicsReaderMsg::SaveCurrentPreset);
+                });
+            }
+            form.append(&entry);
+            model.preset_name_entry = Some(entry);
+
+            let note = gtk::Label::new(Some(
+                "Presets keep Reading and Image settings together.",
+            ));
+            note.add_css_class("kalam-comics-preset-note");
+            note.set_halign(gtk::Align::Start);
+            note.set_xalign(0.0);
+            note.set_wrap(true);
+            form.append(&note);
+            model.preset_form_note = Some(note);
+
+            let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            actions.set_halign(gtk::Align::End);
+            let tx = sender.input_sender().clone();
+            actions.append(&crate::widgets::pill_button::boxed_ghost_button(
+                "Cancel",
+                move || {
+                    let _ = tx.send(ComicsReaderMsg::CancelSavePreset);
+                },
+            ));
+            let tx = sender.input_sender().clone();
+            let save = crate::widgets::pill_button::primary_button(
+                "Save preset",
+                move || {
+                    let _ = tx.send(ComicsReaderMsg::SaveCurrentPreset);
+                },
+            );
+            save.set_sensitive(false);
+            actions.append(&save);
+            model.preset_save_button = Some(save);
+            form.append(&actions);
+
+            widgets.presets_host.append(&form);
+            model.preset_form = Some(form);
+            model.rebuild_preset_rows();
+        }
+
         // The Image pane (decision 41), in board order. It is built
         // with the Reading pane's guarded rows because edits here
         // are edits to the same panel-wide series record.
@@ -3500,6 +3806,38 @@ impl Component for ComicsReaderModel {
                 sender.input(ComicsReaderMsg::SetPageStyle(PageStyle::LongStrip));
                 sender.input(ComicsReaderMsg::SetDirection(ReadingDirection::Rtl));
                 sender.input(ComicsReaderMsg::SetZoomPercent(45));
+                sender.input(ComicsReaderMsg::OpenRightPanel);
+            }
+            Ok("presets") => {
+                // Save two real whole-panel setups, then apply the
+                // second one back: the frame proves persistence, the
+                // summary text and the Current marker together.
+                sender.input(ComicsReaderMsg::SetDirection(ReadingDirection::Ltr));
+                sender.input(ComicsReaderMsg::SetPageStyle(PageStyle::Single));
+                sender.input(ComicsReaderMsg::SetFitMode(FitMode::Screen));
+                sender.input(ComicsReaderMsg::ShowSavePresetForm);
+                sender.input(ComicsReaderMsg::PresetNameChanged(
+                    "Western".to_string(),
+                ));
+                sender.input(ComicsReaderMsg::SaveCurrentPreset);
+
+                sender.input(ComicsReaderMsg::SetDirection(ReadingDirection::Rtl));
+                sender.input(ComicsReaderMsg::SetPageStyle(PageStyle::LongStrip));
+                sender.input(ComicsReaderMsg::SetFitMode(FitMode::Width));
+                sender.input(ComicsReaderMsg::SetZoomPercent(45));
+                sender.input(ComicsReaderMsg::SetImageBackground(
+                    ComicBackground::Black,
+                ));
+                sender.input(ComicsReaderMsg::SetBrightness(10));
+                sender.input(ComicsReaderMsg::ShowSavePresetForm);
+                sender.input(ComicsReaderMsg::PresetNameChanged(
+                    "Manga night".to_string(),
+                ));
+                sender.input(ComicsReaderMsg::SaveCurrentPreset);
+                sender.input(ComicsReaderMsg::ApplyPreset("Western".to_string()));
+                sender.input(ComicsReaderMsg::ApplyPreset(
+                    "Manga night".to_string(),
+                ));
                 sender.input(ComicsReaderMsg::OpenRightPanel);
             }
             Ok("image") => {
@@ -4110,6 +4448,125 @@ impl Component for ComicsReaderModel {
                 }
                 self.trigger_osd("Defaults updated", &sender);
                 self.sync_settings_ui(widgets);
+            }
+            ComicsReaderMsg::ShowSavePresetForm => {
+                self.preset_form_open = true;
+                self.preset_form_error.clear();
+                if let Some(active) = self.active_preset_name().map(str::to_string) {
+                    self.preset_name_draft = active;
+                }
+                if let Some(entry) = &self.preset_name_entry {
+                    if entry.text().as_str() != self.preset_name_draft {
+                        entry.set_text(&self.preset_name_draft);
+                    }
+                    entry.grab_focus();
+                    entry.select_region(0, -1);
+                }
+                self.sync_settings_ui(widgets);
+            }
+            ComicsReaderMsg::CancelSavePreset => {
+                self.preset_form_open = false;
+                self.preset_form_error.clear();
+                self.sync_settings_ui(widgets);
+            }
+            ComicsReaderMsg::PresetNameChanged(name) => {
+                self.preset_name_draft = name;
+                self.preset_form_error.clear();
+                self.sync_settings_ui(widgets);
+            }
+            ComicsReaderMsg::SaveCurrentPreset => {
+                let name = reading_settings::normalise_preset_name(&self.preset_name_draft);
+                if name.is_empty() {
+                    self.preset_form_open = true;
+                    self.preset_form_error = "Give this preset a name.".to_string();
+                    if let Some(entry) = &self.preset_name_entry {
+                        entry.grab_focus();
+                    }
+                    self.sync_settings_ui(widgets);
+                } else if name.chars().count()
+                    > reading_settings::MAX_PRESET_NAME_CHARS
+                {
+                    self.preset_form_open = true;
+                    self.preset_form_error = format!(
+                        "Keep the name to {} characters or fewer.",
+                        reading_settings::MAX_PRESET_NAME_CHARS
+                    );
+                    if let Some(entry) = &self.preset_name_entry {
+                        entry.grab_focus();
+                    }
+                    self.sync_settings_ui(widgets);
+                } else {
+                    let replaced = reading_settings::upsert_preset(
+                        &mut self.saved_presets,
+                        &name,
+                        self.current_reading_settings(),
+                    );
+                    self.persist_presets();
+                    self.preset_name_draft = name.clone();
+                    self.preset_form_open = false;
+                    self.preset_form_error.clear();
+                    if let Some(entry) = &self.preset_name_entry {
+                        if entry.text().as_str() != name {
+                            entry.set_text(&name);
+                        }
+                    }
+                    self.rebuild_preset_rows();
+                    self.trigger_osd(
+                        if replaced {
+                            &format!("Preset “{name}” replaced")
+                        } else {
+                            &format!("Preset “{name}” saved")
+                        },
+                        &sender,
+                    );
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::ApplyPreset(name) => {
+                let Some(preset) = self
+                    .saved_presets
+                    .iter()
+                    .find(|preset| preset.name.to_lowercase() == name.to_lowercase())
+                    .cloned()
+                else {
+                    return;
+                };
+                if self.current_reading_settings() == preset.settings {
+                    self.trigger_osd(&format!("“{}” is already in use", preset.name), &sender);
+                    self.sync_settings_ui(widgets);
+                } else {
+                    self.apply_reading_settings(&preset.settings);
+                    self.store_series_setting();
+                    self.trigger_osd(&format!("Preset “{}”", preset.name), &sender);
+                    self.trigger_loads(&sender);
+                    widgets
+                        .page_indicator_label
+                        .set_label(&self.page_indicator_label());
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        is_webtoon,
+                        self.zoom_percent,
+                    );
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
+                    widgets.viewport_box.set_child(Some(&child));
+                    self.sync_settings_ui(widgets);
+                }
+            }
+            ComicsReaderMsg::DeletePreset(name) => {
+                if reading_settings::remove_preset(&mut self.saved_presets, &name) {
+                    self.persist_presets();
+                    self.rebuild_preset_rows();
+                    self.trigger_osd(&format!("Preset “{name}” deleted"), &sender);
+                    self.sync_settings_ui(widgets);
+                }
             }
             ComicsReaderMsg::ViewportResized => {
                 let curr_w = widgets.viewport_box.width();

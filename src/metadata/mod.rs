@@ -8,7 +8,9 @@
 //! post results back to the GTK main context. Nothing here touches the catalog
 //! — a lookup only ever *offers* values, which the user then reviews.
 
+pub mod comic_vine;
 pub mod google_books;
+pub mod myanimelist;
 pub mod openlibrary;
 pub mod series;
 
@@ -70,23 +72,56 @@ fn humanise_network(raw: &str) -> String {
 pub enum SourceId {
     OpenLibrary,
     GoogleBooks,
+    MyAnimeList,
+    ComicVine,
+}
+
+/// The two shelves Settings keeps separate (decision 153): book sources
+/// answer book-shaped questions, comic sources answer series-shaped ones.
+/// Mixing them in one search would bury each side in the other's noise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceKind {
+    Book,
+    Comic,
 }
 
 impl SourceId {
-    pub const ALL: &'static [SourceId] = &[SourceId::OpenLibrary, SourceId::GoogleBooks];
+    pub const ALL: &'static [SourceId] = &[
+        SourceId::OpenLibrary,
+        SourceId::GoogleBooks,
+        SourceId::MyAnimeList,
+        SourceId::ComicVine,
+    ];
+    pub const BOOKS: &'static [SourceId] = &[SourceId::OpenLibrary, SourceId::GoogleBooks];
+    pub const COMICS: &'static [SourceId] = &[SourceId::MyAnimeList, SourceId::ComicVine];
+
+    pub fn kind(self) -> SourceKind {
+        match self {
+            SourceId::OpenLibrary | SourceId::GoogleBooks => SourceKind::Book,
+            SourceId::MyAnimeList | SourceId::ComicVine => SourceKind::Comic,
+        }
+    }
 
     /// Stable key for preferences.
     pub fn key(self) -> &'static str {
         match self {
             SourceId::OpenLibrary => "openlibrary",
             SourceId::GoogleBooks => "googlebooks",
+            SourceId::MyAnimeList => "myanimelist",
+            SourceId::ComicVine => "comicvine",
         }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|id| id.key() == key)
     }
 
     pub fn label(self) -> &'static str {
         match self {
             SourceId::OpenLibrary => "Open Library",
             SourceId::GoogleBooks => "Google Books",
+            SourceId::MyAnimeList => "MyAnimeList",
+            SourceId::ComicVine => "Comic Vine",
         }
     }
 
@@ -95,6 +130,8 @@ impl SourceId {
         match self {
             SourceId::OpenLibrary => "OL",
             SourceId::GoogleBooks => "GB",
+            SourceId::MyAnimeList => "MAL",
+            SourceId::ComicVine => "CV",
         }
     }
 
@@ -102,19 +139,35 @@ impl SourceId {
         match self {
             SourceId::OpenLibrary => "kalam-badge-ol",
             SourceId::GoogleBooks => "kalam-badge-gb",
+            SourceId::MyAnimeList => "kalam-badge-mal",
+            SourceId::ComicVine => "kalam-badge-cv",
         }
     }
 }
 
 /// Where a cover can be fetched from. Providers differ: Open Library serves
-/// covers by numeric id, Google Books hands back a direct URL.
+/// covers by numeric id, Google Books hands back a direct URL, and the comic
+/// sources offer genuinely different sizes worth keeping apart.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoverRef {
     OpenLibraryId(i64),
     Url(String),
+    UrlPair { full: String, thumbnail: String },
 }
 
-/// One candidate result, flattened into just what the edit dialog needs.
+/// One role-bearing name on a comic candidate: “Story”, “Art”, “Writer”,
+/// “Penciller” and friends. Book candidates leave this empty and use the
+/// flat `authors` string instead.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CandidateCredit {
+    pub role: String,
+    pub name: String,
+}
+
+/// One candidate result, flattened into what the edit dialogs need. The
+/// book fields came first; the comic fields below them stay empty for book
+/// providers rather than forcing a second candidate shape through every
+/// merge and thumbnail path.
 #[derive(Debug, Clone, Default)]
 pub struct Candidate {
     pub title: String,
@@ -131,14 +184,86 @@ pub struct Candidate {
     pub description: String,
     pub detail_key: Option<String>,
     pub source: Option<SourceId>,
+
+    // Comic-series facts (decision 46). `authors` remains as the flat
+    // fallback/summary derived from `credits`, for the book-shaped editor
+    // and for result rows that only have room for one line.
+    pub credits: Vec<CandidateCredit>,
+    pub aliases: Vec<String>,
+    pub original_title: String,
+    /// The magazine a manga runs in; separate from `publisher`, which is
+    /// the book/volume publisher western sources report.
+    pub serialization: String,
+    pub status: String,
+    pub media_type: String,
+    pub end_date: String,
+    pub known_volumes: Option<i64>,
+    /// Chapters for manga, issues for western volumes: the provider's
+    /// count of installments, as distinct from how many are in library.
+    pub known_chapters: Option<i64>,
+    pub rating: Option<f64>,
+    pub external_id: Option<String>,
+    pub source_url: Option<String>,
 }
 
 impl Candidate {
+    /// Unique credit names in first-seen order, for summaries and for the
+    /// flat author line a series keeps beside its role-bearing credits.
+    pub fn credit_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for credit in &self.credits {
+            let name = credit.name.trim();
+            if !name.is_empty()
+                && !names
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(name))
+            {
+                names.push(name.to_string());
+            }
+        }
+        names
+    }
+
+    /// “Story: A · Art: B”, or the flat authors when no roles are known.
+    pub fn credits_summary(&self) -> String {
+        if self.credits.is_empty() {
+            return self.authors.clone();
+        }
+        let mut parts: Vec<String> = Vec::new();
+        for credit in &self.credits {
+            let role = credit.role.trim();
+            let name = credit.name.trim();
+            if name.is_empty() {
+                continue;
+            }
+            let part = if role.is_empty() {
+                name.to_string()
+            } else {
+                format!("{role}: {name}")
+            };
+            if !parts.iter().any(|existing| existing == &part) {
+                parts.push(part);
+            }
+        }
+        parts.join(" · ")
+    }
+
     /// One-line summary for the results list.
     pub fn summary(&self) -> String {
         let mut parts = Vec::new();
         if !self.authors.is_empty() {
             parts.push(self.authors.clone());
+        } else {
+            let names = self.credit_names();
+            if !names.is_empty() {
+                parts.push(names.into_iter().take(3).collect::<Vec<_>>().join(", "));
+            }
+        }
+        if !self.media_type.is_empty() {
+            parts.push(self.media_type.clone());
+        }
+        if !self.status.is_empty() {
+            parts.push(self.status.clone());
         }
         if !self.published.is_empty() {
             parts.push(self.published.clone());
@@ -147,6 +272,15 @@ impl Candidate {
         }
         if !self.publisher.is_empty() {
             parts.push(self.publisher.clone());
+        } else if !self.serialization.is_empty() {
+            parts.push(self.serialization.clone());
+        }
+        if let Some(chapters) = self.known_chapters.filter(|n| *n > 0) {
+            let unit = match self.source {
+                Some(SourceId::ComicVine) => "issues",
+                _ => "chapters",
+            };
+            parts.push(format!("{chapters} {unit}"));
         }
         if self.cover.is_some() {
             parts.push("has cover".into());
@@ -156,6 +290,21 @@ impl Candidate {
 
     /// Key used to spot the same book arriving from two providers.
     fn dedup_key(&self) -> String {
+        // A comic series can legitimately arrive from both comic sources
+        // with different credits and covers; choosing between those is
+        // the reader's call, so comic candidates only dedupe within
+        // their own provider (by its stable id when it gave one).
+        if let Some(source) = self.source.filter(|s| s.kind() == SourceKind::Comic) {
+            if let Some(id) = self
+                .external_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+            {
+                return format!("{}:{id}", source.key());
+            }
+        }
+
         let title = self
             .title
             .to_lowercase()
@@ -173,7 +322,10 @@ impl Candidate {
             .chars()
             .filter(|c| c.is_alphanumeric())
             .collect::<String>();
-        format!("{title}|{author}")
+        match self.source.filter(|s| s.kind() == SourceKind::Comic) {
+            Some(source) => format!("{}:{title}|{author}", source.key()),
+            None => format!("{title}|{author}"),
+        }
     }
 
     /// How complete this candidate is, used to pick a winner when two
@@ -198,6 +350,21 @@ impl Candidate {
         if self.series.is_some() {
             score += 1;
         }
+        if !self.credits.is_empty() {
+            score += 2;
+        }
+        if !self.original_title.is_empty() {
+            score += 1;
+        }
+        if !self.status.is_empty() {
+            score += 1;
+        }
+        if !self.serialization.is_empty() {
+            score += 1;
+        }
+        if self.external_id.is_some() {
+            score += 1;
+        }
         score
     }
 }
@@ -214,45 +381,120 @@ pub trait MetadataSource: Send + Sync {
     fn fetch_description(&self, _detail_key: &str) -> Result<String, FetchError> {
         Ok(String::new())
     }
+
+    /// Fetch the full record behind a search candidate, where search
+    /// payloads are thinner than detail payloads (Comic Vine's volume
+    /// credits are the standing example). Default: search already said
+    /// everything this provider knows.
+    fn fetch_candidate_details(
+        &self,
+        candidate: &Candidate,
+    ) -> Result<Candidate, FetchError> {
+        Ok(candidate.clone())
+    }
+
+    /// Fetch one record by the provider's own stable id — the refresh
+    /// path for a series already linked to this source. Default: this
+    /// provider cannot do that.
+    fn fetch_by_external_id(
+        &self,
+        _external_id: &str,
+    ) -> Result<Option<Candidate>, FetchError> {
+        Ok(None)
+    }
 }
 
-/// Build the provider list, honouring which sources are enabled.
+/// Settings shows a rejected-credential state on the Metadata sources
+/// pane; the flag is a pref so it survives restarts, and it is written
+/// only when it actually changes.
+fn key_state_reporter(
+    catalog: &std::sync::Arc<crate::db::Catalog>,
+    pref: &'static str,
+) -> std::sync::Arc<dyn Fn(bool) + Send + Sync> {
+    let catalog = catalog.clone();
+    std::sync::Arc::new(move |rejected: bool| {
+        let want = if rejected { "1" } else { "0" };
+        if catalog.get_pref(pref).as_deref() != Some(want) {
+            catalog.set_pref(pref, want);
+        }
+    })
+}
+
+fn build_source(
+    catalog: &std::sync::Arc<crate::db::Catalog>,
+    id: SourceId,
+) -> Box<dyn MetadataSource> {
+    match id {
+        SourceId::OpenLibrary => Box::new(openlibrary::OpenLibrary),
+        SourceId::GoogleBooks => Box::new(google_books::GoogleBooks {
+            api_key: catalog.get_pref("meta.googlebooks.key").unwrap_or_default(),
+            country: catalog
+                .get_pref("meta.googlebooks.country")
+                .filter(|c| !c.trim().is_empty())
+                .unwrap_or_else(google_books::detect_country),
+            on_key_state: Some(key_state_reporter(
+                catalog,
+                "meta.googlebooks.key_rejected",
+            )),
+        }),
+        SourceId::MyAnimeList => Box::new(myanimelist::MyAnimeList {
+            client_id: catalog
+                .get_pref("meta.myanimelist.client_id")
+                .unwrap_or_default(),
+            on_key_state: Some(key_state_reporter(
+                catalog,
+                "meta.myanimelist.client_id_rejected",
+            )),
+        }),
+        SourceId::ComicVine => Box::new(comic_vine::ComicVine {
+            api_key: catalog.get_pref("meta.comicvine.key").unwrap_or_default(),
+            on_key_state: Some(key_state_reporter(
+                catalog,
+                "meta.comicvine.key_rejected",
+            )),
+        }),
+    }
+}
+
+/// Build the enabled providers from one explicit source list.
+pub fn enabled_sources_for(
+    catalog: &std::sync::Arc<crate::db::Catalog>,
+    ids: &[SourceId],
+) -> Vec<Box<dyn MetadataSource>> {
+    ids.iter()
+        .copied()
+        .filter(|id| source_enabled(catalog, *id))
+        .map(|id| build_source(catalog, id))
+        .collect()
+}
+
+pub fn enabled_book_sources(
+    catalog: &std::sync::Arc<crate::db::Catalog>,
+) -> Vec<Box<dyn MetadataSource>> {
+    enabled_sources_for(catalog, SourceId::BOOKS)
+}
+
+pub fn enabled_comic_sources(
+    catalog: &std::sync::Arc<crate::db::Catalog>,
+) -> Vec<Box<dyn MetadataSource>> {
+    enabled_sources_for(catalog, SourceId::COMICS)
+}
+
+/// Compatibility name for the book-shaped callers that predated comic
+/// sources: this is the **book** provider list.
 pub fn enabled_sources(
     catalog: &std::sync::Arc<crate::db::Catalog>,
 ) -> Vec<Box<dyn MetadataSource>> {
-    let mut out: Vec<Box<dyn MetadataSource>> = Vec::new();
-    for id in SourceId::ALL {
-        if !source_enabled(catalog, *id) {
-            continue;
-        }
-        match id {
-            SourceId::OpenLibrary => out.push(Box::new(openlibrary::OpenLibrary)),
-            SourceId::GoogleBooks => out.push(Box::new(google_books::GoogleBooks {
-                api_key: catalog.get_pref("meta.googlebooks.key").unwrap_or_default(),
-                country: catalog
-                    .get_pref("meta.googlebooks.country")
-                    .filter(|c| !c.trim().is_empty())
-                    .unwrap_or_else(google_books::detect_country),
-                // Settings shows a rejected-key state on the Metadata
-                // sources pane; the flag is a pref so it survives restarts,
-                // and it is written only when it actually changes.
-                on_key_state: Some({
-                    let catalog = catalog.clone();
-                    std::sync::Arc::new(move |rejected: bool| {
-                        let want = if rejected { "1" } else { "0" };
-                        if catalog
-                            .get_pref("meta.googlebooks.key_rejected")
-                            .as_deref()
-                            != Some(want)
-                        {
-                            catalog.set_pref("meta.googlebooks.key_rejected", want);
-                        }
-                    })
-                }),
-            })),
-        }
-    }
-    out
+    enabled_book_sources(catalog)
+}
+
+/// One provider by id, honouring its Settings switch — for detail and
+/// refresh fetches that already know which service they mean.
+pub fn source_by_id(
+    catalog: &std::sync::Arc<crate::db::Catalog>,
+    id: SourceId,
+) -> Option<Box<dyn MetadataSource>> {
+    source_enabled(catalog, id).then(|| build_source(catalog, id))
 }
 
 /// Sources are on unless explicitly turned off.
@@ -357,6 +599,7 @@ pub fn fetch_cover(cover: &CoverRef) -> Result<Vec<u8>, FetchError> {
     let url = match cover {
         CoverRef::OpenLibraryId(id) => format!("https://covers.openlibrary.org/b/id/{id}-L.jpg"),
         CoverRef::Url(url) => url.clone(),
+        CoverRef::UrlPair { full, .. } => full.clone(),
     };
     download_image(&url)
 }
@@ -366,6 +609,7 @@ pub fn fetch_thumbnail(cover: &CoverRef) -> Result<Vec<u8>, FetchError> {
     let url = match cover {
         CoverRef::OpenLibraryId(id) => format!("https://covers.openlibrary.org/b/id/{id}-M.jpg"),
         CoverRef::Url(url) => url.clone(),
+        CoverRef::UrlPair { thumbnail, .. } => thumbnail.clone(),
     };
     download_image(&url)
 }
@@ -453,6 +697,37 @@ mod tests {
         rich.cover = Some(CoverRef::OpenLibraryId(1));
         rich.description = "text".into();
         assert!(rich.richness() > bare.richness());
+    }
+
+    #[test]
+    fn the_same_comic_from_two_comic_sources_stays_a_choice() {
+        let mut mal = candidate("Berserk", "Kentaro Miura", SourceId::MyAnimeList);
+        mal.external_id = Some("2".into());
+        let mut cv = candidate("Berserk", "Kentaro Miura", SourceId::ComicVine);
+        cv.external_id = Some("12345".into());
+        let merged = merge(vec![mal, cv]);
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn comic_credits_summarise_by_role_and_name() {
+        let mut c = candidate("Berserk", "", SourceId::MyAnimeList);
+        c.credits = vec![
+            CandidateCredit {
+                role: "Story".into(),
+                name: "Kentaro Miura".into(),
+            },
+            CandidateCredit {
+                role: "Art".into(),
+                name: "Kentaro Miura".into(),
+            },
+        ];
+        assert_eq!(c.credit_names(), vec!["Kentaro Miura"]);
+        assert_eq!(
+            c.credits_summary(),
+            "Story: Kentaro Miura · Art: Kentaro Miura"
+        );
+        assert!(c.summary().contains("Kentaro Miura"));
     }
 
     #[test]

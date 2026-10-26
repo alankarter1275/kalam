@@ -18,6 +18,7 @@ pub mod author;
 pub mod authors;
 pub mod book;
 pub mod book_float;
+pub mod comic_series_metadata;
 pub mod comics;
 pub mod comics_reader;
 pub mod component_preview;

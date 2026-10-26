@@ -673,6 +673,41 @@ fn reader_page_click_claims_only_mapped_panels() {
 }
 
 #[test]
+fn author_series_panel_anchors_to_card_border_box() {
+    // Regression pin (2026-10-27): the open-series panel anchored to
+    // its card with compute_point + width()/height(), which speak in
+    // the CSS content box — 20px inside the card's outline on every
+    // side with this card's padding — so the panel floated inset
+    // instead of joining the card flush (§27). It must anchor to
+    // compute_bounds (the border area), and only the revealer may
+    // take the width request: one on the padded panel box is counted
+    // in its content box and inflates the panel past its allocation.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/pages/author.rs");
+    let text = std::fs::read_to_string(&path).expect("author.rs is readable");
+    let start = text
+        .find("fn update_panel(")
+        .expect("the open-series panel builder is still findable");
+    let block = &text[start..];
+    let end = block
+        .find("fn scroll_highlights(")
+        .expect("the panel builder still ends before scroll_highlights");
+    let block = &block[..end];
+
+    assert!(
+        block.contains("compute_bounds(&overlay)"),
+        "the panel must anchor to the card's border area:\n{block}"
+    );
+    assert!(
+        !block.contains("compute_point("),
+        "compute_point anchors to the content box and insets the panel:\n{block}"
+    );
+    assert!(
+        !block.contains("panel_box.set_size_request"),
+        "a width request on the padded panel box inflates the panel:\n{block}"
+    );
+}
+
+#[test]
 fn boundary_scanner_suppresses_workers_not_done_callbacks() {
     // The worker closure is the task layer; the progress and done
     // callbacks run on the main thread and must stay scanned.

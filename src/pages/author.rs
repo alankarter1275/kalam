@@ -1143,19 +1143,26 @@ impl AuthorPageModel {
         // Anchor under the card once it has a real allocation — and
         // keep anchoring it. This waits on the frame clock, not an
         // idle: idles can burn through any retry cap before the first
-        // frame is even allocated, and compute_point on an
-        // unallocated card reads the origin (the panel landed over
-        // the header twice before CI taught us). It stays on the
-        // clock while the panel stands because the card moves under
-        // it — page scroll, window resize, covers settling — and a
-        // one-shot anchor left the panel floating beside its card
-        // instead of joined to it (§27). A rebuild destroys the old
-        // card and this callback with it, then re-anchors from the
-        // new one; closing the panel hides the revealer, which ends
-        // the callback too.
+        // frame is even allocated, and bounds on an unallocated card
+        // read the origin (the panel landed over the header twice
+        // before CI taught us). It stays on the clock while the
+        // panel stands because the card moves under it — page scroll,
+        // window resize, covers settling — and a one-shot anchor left
+        // the panel floating beside its card instead of joined to it
+        // (§27). A rebuild destroys the old card and this callback
+        // with it, then re-anchors from the new one; closing the
+        // panel hides the revealer, which ends the callback too.
+        //
+        // The anchor must come from compute_bounds: that is the
+        // card's border area, the rectangle its outline is drawn in.
+        // compute_point / width() / height() speak in the CSS content
+        // box, which on this card sits one border + 19px of padding
+        // in from every edge — anchoring to it inset the panel 20px
+        // on both sides and started it 20px up inside the card, so
+        // it read as a smaller floating card (§27 wants the panel to
+        // be the card's own lower half, flush at the card's width).
         if let Some(card) = self.card_buttons.get(index).cloned().flatten() {
             let revealer = self.panel_revealer.clone();
-            let panel_box = self.panel_box.clone();
             let overlay = root.clone();
             let tries = Rc::new(Cell::new(0u32));
             let shown = Rc::new(Cell::new(false));
@@ -1165,33 +1172,38 @@ impl AuthorPageModel {
                     return gtk::glib::ControlFlow::Break;
                 }
                 tries.set(tries.get() + 1);
-                let point = (widget.is_mapped() && widget.width() > 1).then(|| {
-                    widget.compute_point(&overlay, &gtk::graphene::Point::new(0.0, 0.0))
-                });
-                let point = point.flatten();
-                if point.is_none() && !shown.get() && tries.get() < 180 {
+                let bounds = (widget.is_mapped() && widget.width() > 1)
+                    .then(|| widget.compute_bounds(&overlay))
+                    .flatten();
+                if bounds.is_none() && !shown.get() && tries.get() < 180 {
                     return gtk::glib::ControlFlow::Continue;
                 }
-                if let Some(point) = point {
+                if let Some(bounds) = bounds {
                     // Sit on the card's bottom pixel row, not below
                     // it: with the card's bottom border transparent
                     // and the panel borderless on top, the overlap is
                     // what makes the side borders read as one line.
+                    // Only the revealer takes the width request; a
+                    // request on the panel box too is counted in its
+                    // content box and inflates the panel by its own
+                    // padding, pushing its right/bottom borders out
+                    // of the revealer's allocation.
                     let geometry = (
-                        point.x() as i32,
-                        point.y() as i32 + widget.height() - 1,
-                        widget.width(),
+                        bounds.x() as i32,
+                        (bounds.y() + bounds.height()) as i32 - 1,
+                        bounds.width() as i32,
                     );
                     if anchored.replace(Some(geometry)) != Some(geometry) {
                         revealer.set_margin_start(geometry.0);
                         revealer.set_margin_top(geometry.1);
                         revealer.set_size_request(geometry.2, -1);
-                        panel_box.set_size_request(geometry.2, -1);
                     }
                 }
-                revealer.set_visible(true);
-                revealer.set_reveal_child(true);
-                shown.set(true);
+                if !shown.get() {
+                    revealer.set_visible(true);
+                    revealer.set_reveal_child(true);
+                    shown.set(true);
+                }
                 gtk::glib::ControlFlow::Continue
             });
         } else {

@@ -257,10 +257,6 @@ impl PagesGridState {
         self.texture_order.retain(|cached| cached != key);
     }
 
-    fn entry(&self, key: &str) -> Option<PdfPagesGridEntry> {
-        self.entries.iter().find(|entry| entry.key == key).cloned()
-    }
-
     fn cell_index(&self, list_item: &gtk::ListItem) -> Option<usize> {
         self.cells
             .iter()

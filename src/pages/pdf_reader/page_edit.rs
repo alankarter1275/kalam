@@ -1634,16 +1634,6 @@ impl PdfReaderModel {
 mod tests {
     use super::*;
 
-    fn item(page: usize) -> PdfPageEditItem {
-        PdfPageEditItem {
-            source: PdfPageEditItemSource::Existing {
-                page_id: format!("page-{page}"),
-                page,
-            },
-            rotation_clockwise: 0,
-        }
-    }
-
     fn edit_state(pages: usize, current: usize) -> PdfPageEditState {
         let identities: Vec<PdfPageIdentity> = (1..=pages)
             .map(|page| PdfPageIdentity {

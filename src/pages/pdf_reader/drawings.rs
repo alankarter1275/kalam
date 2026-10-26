@@ -2167,7 +2167,7 @@ impl PdfReaderModel {
         )
     }
 
-    fn text_rect_height(text: &str, size: PdfTextSize, width: f32, current: f32) -> f32 {
+    pub fn text_rect_height(text: &str, size: PdfTextSize, width: f32, current: f32) -> f32 {
         let font = size.pts();
         let chars_per_line = (((width - 16.0) / (font * 0.52)).floor() as usize).max(1);
         let mut lines = 0usize;

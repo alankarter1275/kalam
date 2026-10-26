@@ -32,14 +32,14 @@ pub enum EpubEditorOut {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ViewMode {
+pub enum ViewMode {
     Code,
     Split,
     Preview,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RightTab {
+pub enum RightTab {
     Preview,
     Outline,
     Problems,
@@ -47,7 +47,7 @@ enum RightTab {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InlineTag {
+pub enum InlineTag {
     Bold,
     Italic,
 }
@@ -62,7 +62,7 @@ enum AfterSave {
 
 #[derive(Debug)]
 pub enum EpubEditorMsg {
-    Loaded(Result<(Book, EpubContainer), String>),
+    Loaded(Box<Result<(Book, EpubContainer), String>>),
     OpenFile { path: String, pin: bool },
     CloseTab { path: String },
     ActivateTab { path: String },
@@ -477,7 +477,8 @@ impl Component for EpubEditorModel {
         _root: &Self::Root,
     ) {
         match message {
-            EpubEditorMsg::Loaded(Ok((book, container))) => {
+            EpubEditorMsg::Loaded(load) => match *load {
+                Ok((book, container)) => {
                 self.title_label.set_label(&book.title);
                 self.collapsed = self
                     .service
@@ -511,12 +512,13 @@ impl Component for EpubEditorModel {
                 self.refresh_problems();
                 self.sync_chrome(&sender);
             }
-            EpubEditorMsg::Loaded(Err(message)) => {
+                Err(message) => {
                 self.title_label.set_label("Editor");
                 self.error_label.set_label(&message);
                 self.body_stack.set_visible_child_name("state");
                 self.status_bar.set_visible(false);
                 self.save_btn.set_visible(false);
+                }
             }
             EpubEditorMsg::OpenFile { path, pin } => {
                 self.open_file(&path, pin, &sender);
@@ -719,7 +721,7 @@ impl EpubEditorModel {
             move |_reporter| service.open_for_editing(book_id),
             |_| {},
             move |result| {
-                let _ = s.send(EpubEditorMsg::Loaded(result));
+                let _ = s.send(EpubEditorMsg::Loaded(Box::new(result)));
             },
         );
     }

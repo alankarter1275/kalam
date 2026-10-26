@@ -36,7 +36,9 @@ pub enum FileKind {
 }
 
 impl FileKind {
-    /// Editable as text in a source tab.
+    /// Editable as text in a source tab. First caller is Check book
+    /// (E2); kept with the kind it describes rather than re-derived there.
+    #[allow(dead_code)]
     pub fn is_text(self) -> bool {
         matches!(self, FileKind::Html | FileKind::Css | FileKind::Xml)
     }
@@ -75,6 +77,8 @@ pub struct EpubFile {
     pub spine_index: Option<usize>,
     /// The EPUB 3 navigation document (`properties="nav"`).
     pub is_nav: bool,
+    /// The OPF cover image; read by Replace cover from E5.
+    #[allow(dead_code)]
     pub is_cover_image: bool,
 }
 
@@ -111,6 +115,8 @@ impl TreeSection {
 /// re-reads from disk anyway (see `write_with_replacements`).
 pub struct EpubContainer {
     pub opf_path: String,
+    /// The EPUB 3 nav document; Edit contents (E4) writes it.
+    #[allow(dead_code)]
     pub nav_path: Option<String>,
     pub ncx_path: Option<String>,
     pub files: Vec<EpubFile>,

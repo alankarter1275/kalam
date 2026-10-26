@@ -568,7 +568,10 @@ impl PdfDocument {
     /// Load a document, authenticating first when MuPDF says it
     /// is locked. Authentication has to happen on the generic
     /// document, before its pages can be counted and before the
-    /// PDF-specific handle used for page labels is taken.
+    /// PDF-specific handle used for page labels is taken. Trust
+    /// `authenticate`'s answer once it succeeds: MuPDF's
+    /// `needs_password` check itself tries the empty password,
+    /// so asking again would undo the successful attempt.
     pub fn open_with_password<P: AsRef<Path>>(
         path: P,
         password: Option<&str>,
@@ -591,13 +594,6 @@ impl PdfDocument {
             PdfPasswordCheck::NotRequired | PdfPasswordCheck::Unlocked => {}
             PdfPasswordCheck::Required => return Ok(PdfOpenOutcome::PasswordRequired),
             PdfPasswordCheck::Wrong => return Ok(PdfOpenOutcome::WrongPassword),
-        }
-        if doc.needs_password().unwrap_or(false) {
-            return Ok(if supplied {
-                PdfOpenOutcome::WrongPassword
-            } else {
-                PdfOpenOutcome::PasswordRequired
-            });
         }
 
         let count = doc

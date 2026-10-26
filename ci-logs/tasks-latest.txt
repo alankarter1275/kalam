@@ -1,2 +1,171 @@
-(no tasks report produced)
---- run 40250920770 ---
+=== kalam screenshot run ===
+books=139 out=ci-shots-tasks settle=20 output=1600x1000
+config home: /home/runner/work/kalam/kalam/ci-shots-tasks/config-home
+binary: 69458424 bytes
+
+=== seeding 139 books ===
+seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.3824.sock
+sway up: {
+  "human_readable": "1.11",
+  "variant": "sway",
+  "major": 1,
+  "minor": 11,
+  "patch": 0,
+  "loaded_config_file_name
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+requested route: tasks
+requested theme: <saved/default>
+requested dialog: <none>
+requested series view: <remembered>
+requested settings pane: <default>
+requested reader action: <none>
+requested comic action: <none>
+requested PDF action: <none>
+settings fixture: 0 empty-dicts=0
+windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
+readiness: min=2s max=30s stable_max_changed=0.5%
+readiness: route and window seen after 2s
+toplevel windows seen: 1
+  shot: 01-tasks (33774 bytes)
+focused: 1
+  shot: 02-tasks-settling (33774 bytes)
+  shot: 03-tasks-settled (stable after 3s)
+navigation: app accepted route 'tasks'
+navigation: 'tasks' is not a grid page; no grid_build expected
+readiness: Home seen after 1s
+  shot: 04-home-for-comparison (70987 bytes)
+readiness: Home stable after 3s
+navigation: 'tasks' differs from Home -- the page really did change
+navigation: OK -- the images below are 'tasks'
+
+=== timing lines from the app ===
+  [timing] startup_fonts           8.7 ms
+  [timing] startup_gtk_init      141.4 ms
+  [timing] startup_splash_show      1.8 ms
+  [timing] icons_write             0.3 ms
+  [timing] icons_theme             0.1 ms
+  [timing] icons_init              0.4 ms
+  [timing] startup_splash_pump    120.4 ms
+  [timing] startup_libraries       0.3 ms
+  [timing] startup_db_open         8.8 ms
+  [timing] startup_theme          88.1 ms
+  [timing] pre_run               369.7 ms
+  [timing] route_open:home         0.4 ms
+  [timing] startup_first_page      0.4 ms
+  [timing] service_home            1.8 ms
+  [timing] init_done            1718.9 ms
+  [timing] window_shown         1722.2 ms
+  [timing] covers_queued            11
+  [timing] home_fill               5.0 ms
+  [timing] page_cache_miss           1
+  [timing] route_open:task_manager      0.8 ms
+  [timing] render_backend     GskCairoRenderer
+  [timing] frame_after:startup_fonts   1724.8 ms
+  [timing] frame_after:startup_gtk_init   1583.4 ms
+  [timing] frame_after:startup_splash_show   1581.5 ms
+  [timing] frame_after:icons_write   1575.4 ms
+  [timing] frame_after:icons_theme   1575.3 ms
+  [timing] frame_after:icons_init   1575.3 ms
+  [timing] frame_after:startup_splash_pump   1461.0 ms
+  [timing] frame_after:startup_libraries   1460.7 ms
+  [timing] frame_after:startup_db_open   1451.9 ms
+  [timing] frame_after:startup_theme   1363.7 ms
+  [timing] frame_after:pre_run   1363.7 ms
+  [timing] frame_after:route_open:home   1362.6 ms
+  [timing] frame_after:startup_first_page   1362.6 ms
+  [timing] frame_after:service_home   1360.8 ms
+  [timing] frame_after:init_done     14.5 ms
+  [timing] frame_after:window_shown     11.2 ms
+  [timing] frame_after:home_fill      3.4 ms
+  [timing] frame_after:route_open:task_manager      2.3 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] frame_after:covers_land      0.2 ms
+  [timing] frame_after:covers_gap      0.2 ms
+  [timing] frame_after:covers_land      0.2 ms
+  [timing] frame_after:covers_gap      0.1 ms
+  [timing] frame_after:covers_land      0.1 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      0.8 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      7.2 ms
+  [timing] frame_after:covers_land      2.6 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land     12.6 ms
+  [timing] frame_after:covers_land      6.5 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_decoded           11
+  [timing] covers_thumb              6
+  [timing] covers_full               5
+  [timing] covers_decode          61.5 ms
+  [timing] covers_decode_max      17.3 ms
+  [timing] frame_after:covers_land     10.7 ms
+  [timing] frame_after:covers_land      4.7 ms
+  [timing] frame_after:covers_decode      0.0 ms
+  [timing] frame_after:covers_decode_max      0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land     13.3 ms
+  [timing] thumbs_backfilled        50
+  [timing] thumbs_backfilled       100
+  [timing] thumbs_backfilled       130
+  [timing] thumbs_backfill_done      130
+
+=== main-thread stalls (roadmap 7.1 watchdog) ===
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 179 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 1351 ms — after task_done:Organizing comic series folders (took 0 ms, ended 20 ms ago)
+  stalls seen -- name the screen and fix it before it spreads
+
+=== screenshot pixel sample ===
+  low colour is a cover warning only on a seeded library-grid route.
+  01-tasks.png: 1600x1000  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  02-tasks-settling.png: 1600x1000  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  03-tasks-settled.png: 1600x1000  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  04-home-for-comparison.png: 1600x1000  coloured=16.9%  lit=100.0%
+  (numbers only -- no threshold is enforced yet; see the docstring)
+
+=== screenshot fingerprints ===
+  d37d3ae4b2df682bb2bad348cbb3c34b  ci-shots-tasks/01-tasks.png
+  d37d3ae4b2df682bb2bad348cbb3c34b  ci-shots-tasks/02-tasks-settling.png
+  d37d3ae4b2df682bb2bad348cbb3c34b  ci-shots-tasks/03-tasks-settled.png
+  4ecf5e0ec399bac51c978a6ede7b71ea  ci-shots-tasks/04-home-for-comparison.png
+
+=== app stderr (non-timing lines) ===
+  
+  (process:3880): Gtk-WARNING **: 01:08:38.532: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 179 ms ago)
+  kalam: KALAM_ROUTE=tasks — navigating
+  [stall] UI thread unblocked — was blocked for at least 1351 ms — after task_done:Organizing comic series folders (took 0 ms, ended 20 ms ago)
+
+=== peak memory ===
+books=139 peak_rss_kb=162104 peak_rss_mb=158
+
+=== shutting down ===
+
+=== artifacts ===
+  total 224
+  drwxr-xr-x  3 runner runner  4096 Oct 26 01:08 .
+  drwxr-xr-x 20 runner runner  4096 Oct 26 01:08 ..
+  -rw-r--r--  1 runner runner 33774 Oct 26 01:08 01-tasks.png
+  -rw-r--r--  1 runner runner 33774 Oct 26 01:08 02-tasks-settling.png
+  -rw-r--r--  1 runner runner 33774 Oct 26 01:08 03-tasks-settled.png
+  -rw-r--r--  1 runner runner 70987 Oct 26 01:08 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner  4096 Oct 26 01:08 config-home
+  -rw-r--r--  1 runner runner     0 Oct 26 01:08 grim.log
+  -rw-r--r--  1 runner runner  6525 Oct 26 01:08 kalam-home.log
+  -rw-r--r--  1 runner runner  3862 Oct 26 01:08 kalam.log
+  -rw-r--r--  1 runner runner  6991 Oct 26 01:08 report.txt
+  -rw-r--r--  1 runner runner    88 Oct 26 01:08 sway.log
+  -rw-r--r--  1 runner runner  7184 Oct 26 01:08 tree.json
+--- run 40251352197 ---

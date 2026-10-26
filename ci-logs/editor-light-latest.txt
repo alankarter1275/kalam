@@ -1,0 +1,35 @@
+=== kalam screenshot run ===
+books=20 out=ci-shots-editor-light settle=20 output=1600x1200
+config home: /home/runner/work/kalam/kalam/ci-shots-editor-light/config-home
+binary: 71991000 bytes
+
+=== seeding 20 books ===
+seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5465.sock
+sway up: {
+  "human_readable": "1.11",
+  "variant": "sway",
+  "major": 1,
+  "minor": 11,
+  "patch": 0,
+  "loaded_config_file_name
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+requested route: edit-book-1
+requested theme: terracotta-light
+requested dialog: <none>
+requested series view: <remembered>
+requested settings pane: <default>
+requested reader action: <none>
+requested comic action: <none>
+requested PDF action: <none>
+settings fixture: 0 empty-dicts=0
+windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
+readiness: min=2s max=30s stable_max_changed=0.5%
+FATAL: kalam exited during startup. Its output:
+  /home/runner/work/kalam/kalam/target/release/kalam: error while loading shared libraries: libgtksourceview-5.so.0: cannot open shared object file: No such file or directory
+--- run 40419577791 ---

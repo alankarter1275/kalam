@@ -8009,14 +8009,20 @@ button.kalam-authorpage-card:focus-visible {
   outline-offset: 2px;
 }
 /* Open (§26): the card's bottom edge dissolves into the panel below
-   it — square bottom corners, no bottom border, and no hover wash to
-   split the joined surface in two tones. */
+   it — no border of its own and no hover wash to split the joined
+   surface in two tones. The single outline around card + panel is
+   stroked by the page's Cairo overlay (.kalam-authorpage-panel-
+   outline below): a border whose sides differ — the joined shape's
+   whole point — takes GskBorderNode's mesh-pattern path under the
+   Cairo renderer, which drops the right and bottom sides (seen on
+   GTK 4.22.4 in CI), so a three-sided CSS border cannot be trusted
+   to draw. Padding grows 1px to take the dropped border's place so
+   the content does not shift when the card opens. */
 button.kalam-authorpage-card.open,
 button.kalam-authorpage-card.open:hover {
   background-color: @kalam_bg;
-  border-bottom: 1px solid transparent;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  border: none;
+  padding: 20px;
 }
 .kalam-authorpage-chevron { color: @kalam_text_dim; }
 
@@ -8026,16 +8032,22 @@ button.kalam-authorpage-card.open:hover {
 
 /* Open-series panel (§27): not a floating card but the lower half of
    its series card — directly under it at the card's own width, over
-   the content below, with no top border and square top corners so
-   the two read as one surface. No shadow (decision 104). */
+   the content below, with square top corners so the two read as one
+   surface. No shadow (decision 104). Borderless like the open card:
+   the joined outline is the Cairo overlay below. The radius still
+   clips the background into the panel's half of the joined shape. */
 .kalam-authorpage-panel {
   background-color: @kalam_bg;
-  border: 1px solid @kalam_border;
-  border-top: none;
+  border: none;
   border-radius: 0 0 14px 14px;
   box-shadow: none;
   padding: 20px;
 }
+
+/* The joined card + panel outline, stroked in Cairo (see the .open
+   note above). Only the colour is themed here; the geometry and the
+   radius live in Rust. */
+.kalam-authorpage-panel-outline { color: @kalam_border; }
 button.kalam-authorpage-panel-cover {
   background: transparent;
   border: none;

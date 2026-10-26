@@ -124,6 +124,13 @@ pub struct AuthorPageModel {
     more_host: gtk::Box,
     panel_revealer: gtk::Revealer,
     panel_box: gtk::Box,
+    /// The joined outline around the open card + panel, stroked in
+    /// Cairo. A CSS border with differing sides is not an option:
+    /// GskBorderNode's mesh-pattern path under the Cairo renderer
+    /// drops the right and bottom sides (GTK 4.22.4, seen in CI), so
+    /// the open card and panel are borderless and this draws the one
+    /// rounded rect around both.
+    panel_outline: gtk::DrawingArea,
     /// Shared with the root key handler: while the ⋯ menu is open its Esc
     /// belongs to the menu, not the panel.
     menu_open: Rc<Cell<bool>>,
@@ -363,6 +370,44 @@ impl Component for AuthorPageModel {
         panel_revealer.set_visible(false);
         panel_revealer.set_child(Some(&panel_box));
 
+        // The joined outline around the open card and its panel (see
+        // the field's note): one rounded rect, top corners on the
+        // card, bottom corners on the panel, straight sides through
+        // the seam. The anchoring tick in update_panel sizes it; the
+        // colour is the CSS class's `color`, read at draw time.
+        let panel_outline = gtk::DrawingArea::new();
+        panel_outline.add_css_class("kalam-authorpage-panel-outline");
+        panel_outline.set_halign(gtk::Align::Start);
+        panel_outline.set_valign(gtk::Align::Start);
+        panel_outline.set_can_target(false);
+        panel_outline.set_visible(false);
+        panel_outline.set_draw_func(|area, cr, width, height| {
+            let (w, h) = (width as f64, height as f64);
+            if w < 2.0 || h < 2.0 {
+                return;
+            }
+            // §26/§27 radius 14, stroke centred on the edge so the
+            // outer pixel row matches the closed card's CSS border.
+            let r = 14.0_f64.min(w / 2.0).min(h / 2.0);
+            let (x, y, w, h) = (0.5, 0.5, w - 1.0, h - 1.0);
+            use std::f64::consts::{FRAC_PI_2, PI};
+            cr.new_sub_path();
+            cr.arc(x + w - r, y + r, r, -FRAC_PI_2, 0.0);
+            cr.arc(x + w - r, y + h - r, r, 0.0, FRAC_PI_2);
+            cr.arc(x + r, y + h - r, r, FRAC_PI_2, PI);
+            cr.arc(x + r, y + r, r, PI, 3.0 * FRAC_PI_2);
+            cr.close_path();
+            let colour = area.color();
+            cr.set_source_rgba(
+                colour.red() as f64,
+                colour.green() as f64,
+                colour.blue() as f64,
+                colour.alpha() as f64,
+            );
+            cr.set_line_width(1.0);
+            let _ = cr.stroke();
+        });
+
         let more_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         more_host.add_css_class("kalam-authorpage-more-host");
         more_host.set_halign(gtk::Align::End);
@@ -382,11 +427,15 @@ impl Component for AuthorPageModel {
             more_host: more_host.clone(),
             panel_revealer: panel_revealer.clone(),
             panel_box: panel_box.clone(),
+            panel_outline: panel_outline.clone(),
             menu_open: menu_open.clone(),
         };
         let widgets = view_output!();
 
         root.add_overlay(&panel_revealer);
+        // Above the card and panel it outlines; can_target(false), so
+        // it never eats a click meant for either.
+        root.add_overlay(&panel_outline);
         root.add_overlay(&more_host);
 
         // Esc closes the open panel (decision 108). Bubble phase (the
@@ -1065,6 +1114,7 @@ impl AuthorPageModel {
         let Some((index, snap)) = open else {
             self.panel_revealer.set_reveal_child(false);
             self.panel_revealer.set_visible(false);
+            self.panel_outline.set_visible(false);
             return;
         };
         let group = &snap.groups[index];
@@ -1163,12 +1213,16 @@ impl AuthorPageModel {
         // be the card's own lower half, flush at the card's width).
         if let Some(card) = self.card_buttons.get(index).cloned().flatten() {
             let revealer = self.panel_revealer.clone();
+            let outline = self.panel_outline.clone();
             let overlay = root.clone();
             let tries = Rc::new(Cell::new(0u32));
             let shown = Rc::new(Cell::new(false));
             let anchored = Rc::new(Cell::new(None::<(i32, i32, i32)>));
+            let outlined = Rc::new(Cell::new(None::<(i32, i32, i32, i32)>));
+            let outline_colour = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32, 0.0f32)));
             card.add_tick_callback(move |widget, _clock| {
                 if shown.get() && !revealer.is_visible() {
+                    outline.set_visible(false);
                     return gtk::glib::ControlFlow::Break;
                 }
                 tries.set(tries.get() + 1);
@@ -1180,14 +1234,14 @@ impl AuthorPageModel {
                 }
                 if let Some(bounds) = bounds {
                     // Sit on the card's bottom pixel row, not below
-                    // it: with the card's bottom border transparent
-                    // and the panel borderless on top, the overlap is
-                    // what makes the side borders read as one line.
-                    // Only the revealer takes the width request; a
-                    // request on the panel box too is counted in its
-                    // content box and inflates the panel by its own
-                    // padding, pushing its right/bottom borders out
-                    // of the revealer's allocation.
+                    // it: with both halves borderless the overlap
+                    // keeps the panel's square-topped background
+                    // flush against the card, and the outline below
+                    // draws the side lines straight through the
+                    // seam. Only the revealer takes the width
+                    // request; one on the panel box too is counted
+                    // in its content box and inflates the panel past
+                    // the revealer's allocation.
                     let geometry = (
                         bounds.x() as i32,
                         (bounds.y() + bounds.height()) as i32 - 1,
@@ -1198,15 +1252,50 @@ impl AuthorPageModel {
                         revealer.set_margin_top(geometry.1);
                         revealer.set_size_request(geometry.2, -1);
                     }
+                    // The joined outline spans the card's top to the
+                    // panel's (possibly still sliding) bottom: the
+                    // revealer's measured height is scaled by the
+                    // animation fraction during SlideDown, so its
+                    // allocation height is the visible panel height.
+                    // The colour is re-read every frame so a palette
+                    // switch restrokes without waiting for geometry
+                    // to move (a bare `color` change does not queue
+                    // a DrawingArea redraw on its own).
+                    let rect = (
+                        geometry.0,
+                        bounds.y() as i32,
+                        geometry.2,
+                        geometry.1 + revealer.height() - bounds.y() as i32,
+                    );
+                    let colour = outline.color();
+                    let colour = (
+                        colour.red(),
+                        colour.green(),
+                        colour.blue(),
+                        colour.alpha(),
+                    );
+                    let restroke = outline_colour.replace(colour) != colour;
+                    if outlined.replace(Some(rect)) != Some(rect) {
+                        outline.set_margin_start(rect.0);
+                        outline.set_margin_top(rect.1);
+                        outline.set_size_request(rect.2, rect.3);
+                        outline.queue_draw();
+                    } else if restroke {
+                        outline.queue_draw();
+                    }
                 }
                 if !shown.get() {
                     revealer.set_visible(true);
                     revealer.set_reveal_child(true);
+                    outline.set_visible(true);
                     shown.set(true);
                 }
                 gtk::glib::ControlFlow::Continue
             });
         } else {
+            // No card to anchor to: show the panel where it was, but
+            // never a stale outline around some previous card.
+            self.panel_outline.set_visible(false);
             self.panel_revealer.set_visible(true);
             self.panel_revealer.set_reveal_child(true);
         }

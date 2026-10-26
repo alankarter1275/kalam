@@ -382,6 +382,13 @@ pub fn editor_snapshots_dir(uuid: &str) -> PathBuf {
     data_dir().join("editor-snapshots").join(uuid)
 }
 
+/// Where the editor's generated GtkSourceView scheme lives. Written
+/// by the service from the active palette (decision 127); the page
+/// only points the scheme manager at it.
+pub fn source_scheme_dir() -> PathBuf {
+    data_dir().join("sourceview-schemes")
+}
+
 /// `~/.local/share/kalam/covers` — covers kept for remembered metadata.
 ///
 /// Separate from `library/<uuid>/` because that directory is deleted with the

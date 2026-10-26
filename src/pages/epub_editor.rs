@@ -85,6 +85,7 @@ pub enum EpubEditorMsg {
         offset: Option<i32>,
     },
     ThemeApplied,
+    SchemeReady,
     ShowInFolder,
 }
 
@@ -686,7 +687,19 @@ impl Component for EpubEditorModel {
                 }
             }
             EpubEditorMsg::ThemeApplied => {
-                let scheme = current_style_scheme(&self.service);
+                let service = self.service.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn_internal(
+                    "Refreshing editor colours",
+                    move |_reporter| service.write_editor_style_scheme(),
+                    |_| {},
+                    move |()| {
+                        let _ = s.send(EpubEditorMsg::SchemeReady);
+                    },
+                );
+            }
+            EpubEditorMsg::SchemeReady => {
+                let scheme = current_style_scheme();
                 for tab in &self.tabs {
                     if let Some(buffer) = &tab.buffer {
                         buffer.set_style_scheme(scheme.as_ref());
@@ -775,7 +788,11 @@ impl EpubEditorModel {
         file: &EpubFile,
         sender: &ComponentSender<Self>,
     ) -> (gtk::Widget, Option<sourceview5::Buffer>) {
-        let container = self.container.as_ref().expect("container loaded");
+        let Some(container) = &self.container else {
+            // Only reachable if a click lands mid-load; an empty tab
+            // beats a crash the guardrails exist to prevent.
+            return (gtk::Label::new(None).upcast(), None);
+        };
         match file.kind {
             FileKind::Html | FileKind::Css | FileKind::Xml => {
                 let text = container.text(&file.path).unwrap_or_default();
@@ -786,7 +803,7 @@ impl EpubEditorModel {
                         buffer.set_language(Some(&language));
                     }
                 }
-                buffer.set_style_scheme(current_style_scheme(&self.service).as_ref());
+                buffer.set_style_scheme(current_style_scheme().as_ref());
                 buffer.set_highlight_syntax(true);
                 // Loading a file is not an edit: keep it out of the
                 // undo history so Ctrl+Z can never empty a fresh tab.
@@ -1681,72 +1698,11 @@ fn extract_headings(html: &str) -> Vec<(usize, String, i32)> {
 
 /// The token-generated GtkSourceView style scheme (decision 127):
 /// tags in `accent`, names and text in `text`, values and comments
-/// in `text-2`, comments italic. Written beside the bundled fonts in
-/// the cache and re-registered whenever the palette changes — the
-/// manager reads schemes from disk, so the file is the interface.
-fn current_style_scheme(service: &LibraryService) -> Option<sourceview5::StyleScheme> {
-    let theme = crate::theme::current(service.catalog());
-    let xml = format!(
-        r##"<?xml version="1.0" encoding="UTF-8"?>
-<style-scheme id="kalam" _name="Kalam" version="1.0">
-  <author>Kalam</author>
-  <_description>Generated from the active Kalam palette.</_description>
-  <color name="bg" value="{bg}"/>
-  <color name="text" value="{text}"/>
-  <color name="text2" value="{text2}"/>
-  <color name="accent" value="{accent}"/>
-  <color name="border" value="{border}"/>
-  <color name="surface2" value="{surface2}"/>
-  <color name="danger" value="{danger}"/>
-  <style name="text" foreground="text" background="bg"/>
-  <style name="selection" foreground="text" background="surface2"/>
-  <style name="cursor" foreground="accent"/>
-  <style name="secondary-cursor" foreground="accent"/>
-  <style name="current-line" background="border"/>
-  <style name="line-numbers" foreground="text2" background="bg"/>
-  <style name="current-line-number" foreground="text" background="border"/>
-  <style name="search-match" foreground="text" background="surface2"/>
-  <style name="bracket-match" foreground="text" background="surface2"/>
-  <style name="bracket-mismatch" foreground="danger" background="surface2"/>
-  <style name="def:comment" foreground="text2" italic="true"/>
-  <style name="def:string" foreground="text2"/>
-  <style name="def:keyword" foreground="text"/>
-  <style name="def:type" foreground="text"/>
-  <style name="def:function" foreground="text"/>
-  <style name="def:identifier" foreground="text"/>
-  <style name="def:statement" foreground="text"/>
-  <style name="def:constant" foreground="text"/>
-  <style name="def:number" foreground="text"/>
-  <style name="def:decimal" foreground="text"/>
-  <style name="def:floating-point" foreground="text"/>
-  <style name="def:special-char" foreground="text2"/>
-  <style name="def:preprocessor" foreground="text2"/>
-  <style name="def:error" foreground="danger"/>
-  <style name="xml:tags" foreground="accent"/>
-  <style name="xml:element-name" foreground="accent"/>
-  <style name="xml:attribute-name" foreground="text"/>
-  <style name="xml:attribute-value" foreground="text2"/>
-  <style name="xml:entity" foreground="text2"/>
-  <style name="xml:namespace" foreground="accent"/>
-  <style name="html:tag" foreground="accent"/>
-  <style name="css:property-name" foreground="text"/>
-  <style name="css:at-rule" foreground="accent"/>
-</style-scheme>
-"##,
-        bg = theme.bg,
-        text = theme.text,
-        text2 = theme.text_dim,
-        accent = theme.accent,
-        border = theme.border,
-        surface2 = theme.surface_2,
-        danger = theme.danger,
-    );
-
-    let dir = gtk::glib::user_cache_dir()
-        .join("kalam")
-        .join("sourceview-schemes");
-    std::fs::create_dir_all(&dir).ok()?;
-    std::fs::write(dir.join("kalam.xml"), xml).ok()?;
+/// in `text-2`, comments italic. The service writes the XML from the
+/// active palette on a worker (the UI thread never touches disk);
+/// this only points the scheme manager at the folder and looks it up.
+fn current_style_scheme() -> Option<sourceview5::StyleScheme> {
+    let dir = crate::paths::source_scheme_dir();
     let manager = sourceview5::StyleSchemeManager::default();
     if let Some(path) = dir.to_str() {
         manager.prepend_search_path(path);

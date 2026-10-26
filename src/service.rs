@@ -2457,10 +2457,29 @@ impl LibraryService {
     /// Load a book whole for the workspace. The `Err` text is
     /// user-presentable: the can't-open state card shows it as-is
     /// (decision 143).
+    /// Generate the editor's GtkSourceView scheme from the active
+    /// palette and write it where the page's scheme manager reads
+    /// (decision 127). Best effort: a failure leaves the previous
+    /// scheme in place rather than blocking the editor.
+    pub fn write_editor_style_scheme(&self) {
+        let theme = crate::theme::current(&self.catalog);
+        let dir = crate::paths::source_scheme_dir();
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let _ = std::fs::write(
+                dir.join("kalam.xml"),
+                editor_style_scheme_xml(&theme),
+            );
+        }
+    }
+
     pub fn open_for_editing(
         &self,
         book_id: i64,
     ) -> Result<(Book, crate::epub_container::EpubContainer), String> {
+        // The editor's source colours are a GtkSourceView scheme
+        // generated from the palette; refresh it while we are already
+        // on a worker so the first tab opens in the right colours.
+        self.write_editor_style_scheme();
         let book = self
             .catalog
             .get_book(book_id)
@@ -2532,6 +2551,68 @@ impl LibraryService {
 }
 
 /// "Before save" → `before-save`, for snapshot file names.
+/// The editor's GtkSourceView scheme, generated from palette tokens
+/// (decision 127): tags in accent, names in text, values and
+/// comments in text-2, comments italic, errors danger.
+fn editor_style_scheme_xml(theme: &crate::theme::Theme) -> String {
+    let xml = format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="kalam" _name="Kalam" version="1.0">
+  <author>Kalam</author>
+  <_description>Generated from the active Kalam palette.</_description>
+  <color name="bg" value="{bg}"/>
+  <color name="text" value="{text}"/>
+  <color name="text2" value="{text2}"/>
+  <color name="accent" value="{accent}"/>
+  <color name="border" value="{border}"/>
+  <color name="surface2" value="{surface2}"/>
+  <color name="danger" value="{danger}"/>
+  <style name="text" foreground="text" background="bg"/>
+  <style name="selection" foreground="text" background="surface2"/>
+  <style name="cursor" foreground="accent"/>
+  <style name="secondary-cursor" foreground="accent"/>
+  <style name="current-line" background="border"/>
+  <style name="line-numbers" foreground="text2" background="bg"/>
+  <style name="current-line-number" foreground="text" background="border"/>
+  <style name="search-match" foreground="text" background="surface2"/>
+  <style name="bracket-match" foreground="text" background="surface2"/>
+  <style name="bracket-mismatch" foreground="danger" background="surface2"/>
+  <style name="def:comment" foreground="text2" italic="true"/>
+  <style name="def:string" foreground="text2"/>
+  <style name="def:keyword" foreground="text"/>
+  <style name="def:type" foreground="text"/>
+  <style name="def:function" foreground="text"/>
+  <style name="def:identifier" foreground="text"/>
+  <style name="def:statement" foreground="text"/>
+  <style name="def:constant" foreground="text"/>
+  <style name="def:number" foreground="text"/>
+  <style name="def:decimal" foreground="text"/>
+  <style name="def:floating-point" foreground="text"/>
+  <style name="def:special-char" foreground="text2"/>
+  <style name="def:preprocessor" foreground="text2"/>
+  <style name="def:error" foreground="danger"/>
+  <style name="xml:tags" foreground="accent"/>
+  <style name="xml:element-name" foreground="accent"/>
+  <style name="xml:attribute-name" foreground="text"/>
+  <style name="xml:attribute-value" foreground="text2"/>
+  <style name="xml:entity" foreground="text2"/>
+  <style name="xml:namespace" foreground="accent"/>
+  <style name="html:tag" foreground="accent"/>
+  <style name="css:property-name" foreground="text"/>
+  <style name="css:at-rule" foreground="accent"/>
+</style-scheme>
+"##,
+        bg = theme.bg,
+        text = theme.text,
+        text2 = theme.text_dim,
+        accent = theme.accent,
+        border = theme.border,
+        surface2 = theme.surface_2,
+        danger = theme.danger,
+    );
+    xml
+}
+
 fn snapshot_slug(label: &str) -> String {
     let slug: String = label
         .to_ascii_lowercase()

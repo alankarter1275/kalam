@@ -9342,7 +9342,16 @@ impl PdfReaderModel {
                     self.selected_drawing_id = Some(drawing.id);
                     self.refresh_drawing_paints();
                     self.queue_all_drawing_areas();
-                    self.show_selected_drawing_popover_for_selection(sender);
+                    // A popover proof frame waits out the first
+                    // paint, like the EPUB reader's: shown during
+                    // load, its Wayland popup can keep the parent
+                    // surface from ever presenting.
+                    let s = sender.clone();
+                    glib::timeout_add_local_once(Duration::from_secs(9), move || {
+                        let _ = s
+                            .input_sender()
+                            .send(PdfReaderMsg::ShowDrawingPopover);
+                    });
                 }
             }
             Ok("shortcuts") => {

@@ -474,6 +474,13 @@ if [ -z "$MIN_SETTLE" ]; then
       MIN_SETTLE=13
       ;;
   esac
+  # The selected-drawing popover is scheduled the same way and for
+  # the same reason.
+  case "$PDF_ACTION" in
+    drawing-selected)
+      MIN_SETTLE=13
+      ;;
+  esac
   # The notification proof states seed their events through the live
   # notifier at 0.9 seconds; the seeded error toast then lives for
   # nine seconds. The frames are of the history panel and bell dot,

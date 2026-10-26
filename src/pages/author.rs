@@ -1934,6 +1934,10 @@ fn present_edit_author_dialog(
     // --- Portrait -----------------------------------------------------
     let portrait_state: Rc<RefCell<AuthorPortraitEdit>> =
         Rc::new(RefCell::new(AuthorPortraitEdit::Keep));
+    // The chosen image, decoded on the worker when it was picked, so
+    // the preview only wraps pixels in a texture.
+    let portrait_preview: Rc<RefCell<Option<crate::preload::DecodedPixels>>> =
+        Rc::new(RefCell::new(None));
     let portrait_holder: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
     let portrait_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
     portrait_host.set_size_request(PORTRAIT, PORTRAIT);
@@ -1947,6 +1951,7 @@ fn present_edit_author_dialog(
 
     let anchor_for_choose = anchor.clone();
     let state_for_choose = portrait_state.clone();
+    let preview_for_choose = portrait_preview.clone();
     let holder_for_choose = portrait_holder.clone();
     let choose_button = boxed_ghost_button("Choose…", move || {
         let dialog = gtk::FileDialog::builder()
@@ -1970,39 +1975,43 @@ fn present_edit_author_dialog(
                     .and_then(|w| w.downcast::<gtk::Window>().ok())
             });
         let state = state_for_choose.clone();
+        let preview = preview_for_choose.clone();
         let holder = holder_for_choose.clone();
         dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
             let Ok(file) = res else { return };
             let Some(path) = file.path() else { return };
-            match std::fs::read(&path) {
-                Ok(bytes) if bytes.is_empty() => {
-                    crate::notify::error("Could not use that image", "That image file is empty.");
-                }
-                Ok(bytes) if bytes.len() > 20 * 1024 * 1024 => {
-                    crate::notify::error(
-                        "Could not use that image",
-                        "That image is larger than 20 MB.",
-                    );
-                }
-                Ok(bytes) => {
-                    if gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from(&bytes[..]))
-                        .is_err()
-                    {
-                        crate::notify::error(
-                            "Could not use that image",
-                            "That file is not an image Kalam can read.",
-                        );
-                        return;
+            crate::tasks::spawn_internal(
+                "Reading portrait",
+                move |_reporter| {
+                    let bytes = std::fs::read(&path)
+                        .map_err(|e| format!("Could not read that file: {e}"))?;
+                    if bytes.is_empty() {
+                        return Err("That image file is empty.".to_string());
                     }
-                    *state.borrow_mut() = AuthorPortraitEdit::Replace(bytes);
-                    if let Some(refresh) = holder.borrow().clone() {
-                        refresh();
+                    if bytes.len() > 20 * 1024 * 1024 {
+                        return Err("That image is larger than 20 MB.".to_string());
                     }
-                }
-                Err(err) => {
-                    crate::notify::error("Could not read that file", &err.to_string());
-                }
-            }
+                    let pixels =
+                        crate::preload::decode_rgba_bytes(&bytes, PORTRAIT, PORTRAIT)
+                            .ok_or_else(|| {
+                                "That file is not an image Kalam can read.".to_string()
+                            })?;
+                    Ok((bytes, pixels))
+                },
+                |_| {},
+                move |result| match result {
+                    Ok((bytes, pixels)) => {
+                        *preview.borrow_mut() = Some(pixels);
+                        *state.borrow_mut() = AuthorPortraitEdit::Replace(bytes);
+                        if let Some(refresh) = holder.borrow().clone() {
+                            refresh();
+                        }
+                    }
+                    Err(err) => {
+                        crate::notify::error("Could not use that image", &err);
+                    }
+                },
+            );
         });
     });
 
@@ -2030,6 +2039,7 @@ fn present_edit_author_dialog(
         let host = portrait_host.clone();
         let status = portrait_status.clone();
         let state = portrait_state.clone();
+        let preview = portrait_preview.clone();
         let profile = profile.clone();
         let author = author.clone();
         let remove = remove_button.clone();
@@ -2067,17 +2077,33 @@ fn present_edit_author_dialog(
                     status.set_text("The portrait will be removed when you save.");
                     remove.set_sensitive(false);
                 }
-                AuthorPortraitEdit::Replace(bytes) => {
-                    match gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from(&bytes[..])) {
-                        Ok(texture) => {
+                AuthorPortraitEdit::Replace(_) => {
+                    let preview = preview.borrow();
+                    match preview.as_ref() {
+                        Some(pixels)
+                            if pixels.width > 0
+                                && pixels.height > 0
+                                && pixels.rgba.len()
+                                    == (pixels.width as usize) * (pixels.height as usize) * 4 =>
+                        {
+                            let bytes = gtk::glib::Bytes::from(&pixels.rgba[..]);
+                            let texture: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(
+                                pixels.width,
+                                pixels.height,
+                                gtk::gdk::MemoryFormat::R8g8b8a8,
+                                &bytes,
+                                (pixels.width as usize) * 4,
+                            )
+                            .upcast();
                             let picture = gtk::Picture::for_paintable(&texture);
                             picture.add_css_class("kalam-authorpage-portrait");
                             picture.set_size_request(PORTRAIT, PORTRAIT);
                             picture.set_content_fit(gtk::ContentFit::Cover);
                             host.append(&picture);
                         }
-                        Err(_) => host.append(&author_initials_disc(&author, PORTRAIT)),
+                        _ => host.append(&author_initials_disc(&author, PORTRAIT)),
                     }
+                    drop(preview);
                     status.set_text("New portrait selected — press Save to keep it.");
                     remove.set_sensitive(true);
                 }

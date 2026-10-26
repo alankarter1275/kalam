@@ -1,35 +1,7 @@
-src/app.rs:150:29: [1m[91merror[E0425][0m: cannot find type `EditorPickerModel` in this scope: not found in this scope
-src/app.rs:151:27: [1m[91merror[E0425][0m: cannot find type `EpubEditorModel` in this scope: not found in this scope
-src/pages/editor_picker.rs:163:33: [1m[91merror[E0425][0m: cannot find type `EditorPickerWidgets` in this scope
-src/pages/epub_editor.rs:691:21: [1m[91merror[E0425][0m: cannot find function `open_in_file_manager` in this scope: not found in this scope
-src/pages/epub_editor.rs:693:21: [1m[91merror[E0425][0m: cannot find function `open_in_file_manager` in this scope: not found in this scope
-src/service.rs:2445:50: [1m[91merror[E0433][0m: cannot find type `BookFormat` in this scope: use of undeclared type `BookFormat`
-src/service.rs:2469:35: [1m[91merror[E0433][0m: cannot find type `BookFormat` in this scope: use of undeclared type `BookFormat`
-src/app.rs:683:38: [1m[91merror[E0599][0m: no variant, associated function, or constant named `EditBook` found for enum `pages::book::BookPageOut` in the current scope: variant, associated function, or constant not found in `pages::book::BookPageOut`
-src/app.rs:684:49: [1m[91merror[E0599][0m: no variant named `EditorWorkspace` found for enum `models::Route`: variant not found in `models::Route`
-src/app.rs:1849:37: [1m[91merror[E0599][0m: no variant, associated function, or constant named `GoEditor` found for enum `shortcuts::ShortcutAction` in the current scope: variant, associated function, or constant not found in `shortcuts::ShortcutAction`
-src/app.rs:1853:52: [1m[91merror[E0599][0m: no variant, associated function, or constant named `Editor` found for enum `models::NavItem` in the current scope: variant, associated function, or constant not found in `models::NavItem`
-src/models.rs:65:22: [1m[91merror[E0599][0m: no variant, associated function, or constant named `Editor` found for enum `models::NavItem` in the current scope: variant, associated function, or constant not found in `models::NavItem`
-src/models.rs:176:51: [1m[91merror[E0599][0m: no variant named `EditorWorkspace` found for enum `models::Route`: variant not found in `models::Route`
-src/pages/book.rs:687:26: [1m[91merror[E0599][0m: no variant, associated function, or constant named `EditBook` found for enum `pages::book::BookPageMsg` in the current scope: variant, associated function, or constant not found in `pages::book::BookPageMsg`
-src/pages/book.rs:688:52: [1m[91merror[E0599][0m: no variant, associated function, or constant named `EditBook` found for enum `pages::book::BookPageOut` in the current scope: variant, associated function, or constant not found in `pages::book::BookPageOut`
-src/pages/editor_picker.rs:26:9: [1m[91merror[E0277][0m: `service::EditorPickerEntry` doesn't implement `std::fmt::Debug`: the trait `std::fmt::Debug` is not implemented for `service::EditorPickerEntry`
-src/pages/epub_editor.rs:65:12: [1m[91merror[E0277][0m: `epub_container::EpubContainer` doesn't implement `std::fmt::Debug`: the trait `std::fmt::Debug` is not implemented for `epub_container::EpubContainer`
-src/pages/epub_editor.rs:669:33: [1m[91merror[E0308][0m: `match` arms have incompatible types: expected `TextIter`, found `Option<TextIter>`
-src/pages/epub_editor.rs:784:24: [1m[91merror[E0599][0m: no method named `begin_not_undoable_action` found for struct `sourceview5::Buffer` in the current scope
-src/pages/epub_editor.rs:786:24: [1m[91merror[E0599][0m: no method named `end_not_undoable_action` found for struct `sourceview5::Buffer` in the current scope
-src/pages/epub_editor.rs:1114:15: [1m[91merror[E0616][0m: field `body` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1120:14: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1127:15: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1157:15: [1m[91merror[E0616][0m: field `body` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1170:14: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1178:55: [1m[91merror[E0599][0m: no variant named `DiscardCloseTab` found for enum `pages::epub_editor::EpubEditorMsg`: variant not found in `pages::epub_editor::EpubEditorMsg`
-src/pages/epub_editor.rs:1186:14: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1192:15: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/shortcuts.rs:63:19: [1m[91merror[E0599][0m: no variant, associated function, or constant named `GoEditor` found for enum `shortcuts::ShortcutAction` in the current scope: variant, associated function, or constant not found in `shortcuts::ShortcutAction`
-src/app.rs:156:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `&app::PageSlot::EditorPicker(_)` and `&app::PageSlot::EpubEditor(_)` not covered: patterns `&app::PageSlot::EditorPicker(_)` and `&app::PageSlot::EpubEditor(_)` not covered
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 30 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 30 previous errors
+src/pages/epub_editor.rs:793:44: [1m[91merror[E0600][0m: cannot apply unary operator `-` to type `u32`: cannot apply unary operator `-`
+src/app.rs:265:11: [1m[91merror[E0004][0m: non-exhaustive patterns: `&models::Route::EditorWorkspace { .. }` not covered: pattern `&models::Route::EditorWorkspace { .. }` not covered
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -55,40 +27,12 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/app.rs:150:29: [1m[91merror[E0425][0m: cannot find type `EditorPickerModel` in this scope: not found in this scope
-src/app.rs:151:27: [1m[91merror[E0425][0m: cannot find type `EpubEditorModel` in this scope: not found in this scope
-src/pages/editor_picker.rs:163:33: [1m[91merror[E0425][0m: cannot find type `EditorPickerWidgets` in this scope
-src/pages/epub_editor.rs:691:21: [1m[91merror[E0425][0m: cannot find function `open_in_file_manager` in this scope: not found in this scope
-src/pages/epub_editor.rs:693:21: [1m[91merror[E0425][0m: cannot find function `open_in_file_manager` in this scope: not found in this scope
-src/service.rs:2445:50: [1m[91merror[E0433][0m: cannot find type `BookFormat` in this scope: use of undeclared type `BookFormat`
-src/service.rs:2469:35: [1m[91merror[E0433][0m: cannot find type `BookFormat` in this scope: use of undeclared type `BookFormat`
-src/app.rs:683:38: [1m[91merror[E0599][0m: no variant, associated function, or constant named `EditBook` found for enum `pages::book::BookPageOut` in the current scope: variant, associated function, or constant not found in `pages::book::BookPageOut`
-src/app.rs:684:49: [1m[91merror[E0599][0m: no variant named `EditorWorkspace` found for enum `models::Route`: variant not found in `models::Route`
-src/app.rs:1849:37: [1m[91merror[E0599][0m: no variant, associated function, or constant named `GoEditor` found for enum `shortcuts::ShortcutAction` in the current scope: variant, associated function, or constant not found in `shortcuts::ShortcutAction`
-src/app.rs:1853:52: [1m[91merror[E0599][0m: no variant, associated function, or constant named `Editor` found for enum `models::NavItem` in the current scope: variant, associated function, or constant not found in `models::NavItem`
-src/models.rs:65:22: [1m[91merror[E0599][0m: no variant, associated function, or constant named `Editor` found for enum `models::NavItem` in the current scope: variant, associated function, or constant not found in `models::NavItem`
-src/models.rs:176:51: [1m[91merror[E0599][0m: no variant named `EditorWorkspace` found for enum `models::Route`: variant not found in `models::Route`
-src/pages/book.rs:687:26: [1m[91merror[E0599][0m: no variant, associated function, or constant named `EditBook` found for enum `pages::book::BookPageMsg` in the current scope: variant, associated function, or constant not found in `pages::book::BookPageMsg`
-src/pages/book.rs:688:52: [1m[91merror[E0599][0m: no variant, associated function, or constant named `EditBook` found for enum `pages::book::BookPageOut` in the current scope: variant, associated function, or constant not found in `pages::book::BookPageOut`
-src/pages/editor_picker.rs:26:9: [1m[91merror[E0277][0m: `service::EditorPickerEntry` doesn't implement `std::fmt::Debug`: the trait `std::fmt::Debug` is not implemented for `service::EditorPickerEntry`
-src/pages/epub_editor.rs:65:12: [1m[91merror[E0277][0m: `epub_container::EpubContainer` doesn't implement `std::fmt::Debug`: the trait `std::fmt::Debug` is not implemented for `epub_container::EpubContainer`
-src/pages/epub_editor.rs:669:33: [1m[91merror[E0308][0m: `match` arms have incompatible types: expected `TextIter`, found `Option<TextIter>`
-src/pages/epub_editor.rs:784:24: [1m[91merror[E0599][0m: no method named `begin_not_undoable_action` found for struct `sourceview5::Buffer` in the current scope
-src/pages/epub_editor.rs:786:24: [1m[91merror[E0599][0m: no method named `end_not_undoable_action` found for struct `sourceview5::Buffer` in the current scope
-src/pages/epub_editor.rs:1114:15: [1m[91merror[E0616][0m: field `body` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1120:14: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1127:15: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1157:15: [1m[91merror[E0616][0m: field `body` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1170:14: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1178:55: [1m[91merror[E0599][0m: no variant named `DiscardCloseTab` found for enum `pages::epub_editor::EpubEditorMsg`: variant not found in `pages::epub_editor::EpubEditorMsg`
-src/pages/epub_editor.rs:1186:14: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/pages/epub_editor.rs:1192:15: [1m[91merror[E0616][0m: field `footer` of struct `widgets::dialog::DialogShell` is private: private field
-src/shortcuts.rs:63:19: [1m[91merror[E0599][0m: no variant, associated function, or constant named `GoEditor` found for enum `shortcuts::ShortcutAction` in the current scope: variant, associated function, or constant not found in `shortcuts::ShortcutAction`
-src/app.rs:156:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `&app::PageSlot::EditorPicker(_)` and `&app::PageSlot::EpubEditor(_)` not covered: patterns `&app::PageSlot::EditorPicker(_)` and `&app::PageSlot::EpubEditor(_)` not covered
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 30 previous errors
+src/pages/epub_editor.rs:793:44: [1m[91merror[E0600][0m: cannot apply unary operator `-` to type `u32`: cannot apply unary operator `-`
+src/app.rs:265:11: [1m[91merror[E0004][0m: non-exhaustive patterns: `&models::Route::EditorWorkspace { .. }` not covered: pattern `&models::Route::EditorWorkspace { .. }` not covered
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 30 previous errors
---- run 40412969975 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+--- run 40413963394 ---

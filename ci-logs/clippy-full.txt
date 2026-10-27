@@ -17,14 +17,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/epub_editor.rs:1990:43: [1m[91merror[E0425][0m: cannot find function `toc_flatten` in module `crate::epub_structure`: not found in `crate::epub_structure`
-src/pages/epub_editor.rs:2130:32: [1m[91merror[E0425][0m: cannot find function `toc_flatten` in module `crate::epub_structure`: not found in `crate::epub_structure`
-src/pages/epub_editor.rs:2134:43: [1m[91merror[E0425][0m: cannot find function `toc_unflatten` in module `crate::epub_structure`: not found in `crate::epub_structure`
-src/epub_structure.rs:1518:20: [1m[91merror[E0425][0m: cannot find function `toc_flatten` in this scope: not found in this scope
-src/epub_structure.rs:1521:20: [1m[91merror[E0425][0m: cannot find function `toc_unflatten` in this scope: not found in this scope
-src/epub_structure.rs:1523:20: [1m[91merror[E0425][0m: cannot find function `toc_unflatten` in this scope: not found in this scope
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/epub_editor.rs:5869:33: [1m[91merror[E0308][0m: mismatched types: expected `String`, found `&str`
+src/pages/epub_editor.rs:5484:13: [1m[91merror[0m: variable does not need to be mutable
+src/pages/epub_editor.rs:5589:13: [1m[91merror[E0596][0m: cannot borrow `*self` as mutable, as it is behind a `&` reference: `self` is a `&` reference, so it cannot be borrowed as mutable
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors

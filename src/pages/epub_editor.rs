@@ -5881,6 +5881,7 @@ impl EpubEditorModel {
     /// Pango/Cairo font map (this book only, never the app's)
     /// and give the tab's drawing area its specimen lines.
     fn font_preview_ready(&self, path: &str, disk: &std::path::Path, family: &str) {
+        use pango::prelude::*;
         use pangocairo::prelude::*;
         let found = {
             let mut areas = self.font_areas.borrow_mut();

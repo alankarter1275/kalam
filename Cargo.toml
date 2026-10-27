@@ -127,6 +127,9 @@ kalam-reader = { path = "crates/kalam-reader" }
 chapbook-core = { workspace = true }
 chapbook-epub = { workspace = true }
 chapbook-layout = { workspace = true }
+# Editor font tools (decisions 126, 141): embedded-font family
+# names and the Embed fonts system-font lookup.
+fontdb = { workspace = true }
 
 # Engine diagnostics. The reading engine reports through the `log` facade,
 # which discards everything unless a logger is installed — see `src/logging.rs`.

@@ -2622,7 +2622,6 @@ impl LibraryService {
     /// compression; JPEG has no generic lossless shrink, so the
     /// original comes back and the caller reports no saving.
     pub fn compress_image_lossless(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
-        use image::ImageEncoder as _;
         let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
             .with_guessed_format()
             .map_err(|e| e.to_string())?;
@@ -2701,7 +2700,6 @@ impl LibraryService {
         if reader.format() != Some(image::ImageFormat::Jpeg) {
             return Ok(lossless);
         }
-        use image::ImageEncoder as _;
         let img = reader.decode().map_err(|e| e.to_string())?;
         let mut out: Vec<u8> = Vec::new();
         let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(

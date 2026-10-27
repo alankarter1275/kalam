@@ -15,6 +15,9 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum LibraryOut {
     Section(LibrarySection),
+    /// Shelves are reached from My Library rather than the rail; the
+    /// shelves grid keeps its own route, so it is not a LibrarySection.
+    Shelves,
     Book {
         book_id: i64,
     },
@@ -960,6 +963,20 @@ fn quick_links(sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
             s.output(LibraryOut::Section(target)).ok();
         });
         row.append(&btn);
+
+        // Shelves used to be a rail entry; they live here in My Library
+        // now. The shelves grid has its own route rather than a
+        // LibrarySection, so it gets its own button beside All books.
+        if target == LibrarySection::AllBooks {
+            let shelves_btn = gtk::Button::with_label("Shelves");
+            shelves_btn.add_css_class("kalam-secondary-btn");
+            shelves_btn.set_tooltip_text(Some("Your shelves and the books on them"));
+            let s = sender.clone();
+            shelves_btn.connect_clicked(move |_| {
+                s.output(LibraryOut::Shelves).ok();
+            });
+            row.append(&shelves_btn);
+        }
     }
 
     row

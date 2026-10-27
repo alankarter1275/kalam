@@ -22,21 +22,22 @@ impl NavItem {
     ///
     /// Deliberately missing, and not an oversight:
     ///
+    /// * `Shelves` — shelves live in My Library, so the rail does not
+    ///   spend one of its few slots on a second way into them.
     /// * `Downloads` — the queue page works, but nothing ever registers a
     ///   `Source`, so it can only ever read "0 downloads tracked". Online
     ///   sources are a future track in `ROADMAP.md`; until one exists the
     ///   button advertises a feature the app cannot perform.
     /// * `RemoteBrowse` and `Fanfiction` — same reason, removed earlier.
     ///
-    /// All three stay in the enum, in `label`/`icon`, in `placeholder_copy`
-    /// and in the `KALAM_ROUTE` map, so putting one back is a one-line change
-    /// here and nothing else.
+    /// These stay in the enum, in `label`/`icon`, in `placeholder_copy`
+    /// and in the `KALAM_ROUTE` map, so the underlying routes and pages
+    /// keep working even though the rail does not show them.
     ///
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
         NavItem::Authors,
-        NavItem::Shelves,
         NavItem::Comics,
         NavItem::Editor,
         NavItem::Settings,
@@ -149,7 +150,9 @@ impl Route {
             Route::ComponentPreview => NavItem::Settings,
             Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
-            Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
+            // Shelves live under My Library now, so that rail item is
+            // the one that stays lit while browsing them.
+            Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Library,
             Route::TagBooks { .. } => NavItem::Library,
             Route::AuthorsIndex | Route::AuthorPage { .. } => NavItem::Authors,
             Route::EditorWorkspace { .. } => NavItem::Editor,

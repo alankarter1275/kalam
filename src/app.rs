@@ -459,6 +459,7 @@ impl AppModel {
                     sender.input_sender(),
                     |out| match out {
                         LibraryOut::Section(sec) => AppMsg::Push(Route::LibrarySection(sec)),
+                        LibraryOut::Shelves => AppMsg::Push(Route::ShelvesGrid),
                         LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
                         LibraryOut::Read { book_id } => AppMsg::OpenReader { book_id },
@@ -2781,6 +2782,20 @@ mod tests {
             route_by_name("analytics"),
             Some(Route::LibrarySection(LibrarySection::Analytics))
         );
+    }
+
+    #[test]
+    fn shelves_live_under_my_library_not_the_rail() {
+        // The shelves page and its diagnostic route stay available, but
+        // the rail must not spend a slot on them; My Library is the
+        // entry point and the item that stays active there.
+        assert!(!NavItem::ALL.contains(&NavItem::Shelves));
+        assert_eq!(Route::ShelvesGrid.sidebar_item(), NavItem::Library);
+        assert_eq!(
+            Route::ShelfDetail { shelf_id: 1 }.sidebar_item(),
+            NavItem::Library
+        );
+        assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
     }
 
     #[test]

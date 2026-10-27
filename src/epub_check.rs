@@ -144,7 +144,11 @@ pub fn check_book(
         if file.path == "mimetype" {
             continue;
         }
-        if !file.in_manifest && file.path != "META-INF/container.xml" {
+        // The package document itself never lists itself.
+        if !file.in_manifest
+            && file.path != "META-INF/container.xml"
+            && file.path != opf_path
+        {
             problems.push(problem(
                 Severity::Warning,
                 file,
@@ -820,6 +824,37 @@ mod tests {
         let problems = check_book(&files, "content.opf", None);
         assert!(
             problems.iter().all(|p| !p.message.contains("Unescaped")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn the_opf_itself_is_not_flagged_for_missing_manifest_entry() {
+        let files = vec![
+            CheckFile {
+                path: "OEBPS/content.opf".to_string(),
+                kind: FileKind::Xml,
+                spine_index: None,
+                in_manifest: false,
+                is_nav: false,
+                is_cover_image: false,
+                text: Some("<package/>".to_string()),
+            },
+            CheckFile {
+                path: "META-INF/container.xml".to_string(),
+                kind: FileKind::Xml,
+                spine_index: None,
+                in_manifest: false,
+                is_nav: false,
+                is_cover_image: false,
+                text: Some("<container/>".to_string()),
+            },
+        ];
+        let problems = check_book(&files, "OEBPS/content.opf", None);
+        assert!(
+            problems
+                .iter()
+                .all(|p| !p.message.contains("manifest")),
             "{problems:?}"
         );
     }

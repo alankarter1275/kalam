@@ -192,9 +192,6 @@ enum Floating {
     Shelves {
         return_to: Option<i64>,
     },
-    /// The `w` task dialog. Holds the box its rows are drawn into so the
-    /// app-wide tick can repaint it.
-    Tasks,
 }
 
 pub struct AppModel {

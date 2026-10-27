@@ -580,6 +580,26 @@ impl Component for EpubEditorModel {
                 self.run_check(&sender);
                 self.request_preview_write(&sender);
                 self.sync_chrome(&sender);
+                // CI staging: photograph each right-panel tab.
+                match std::env::var("KALAM_DIALOG").as_deref() {
+                    Ok("editor-problems") => {
+                        sender.input(EpubEditorMsg::SetRightTab(RightTab::Problems));
+                    }
+                    Ok("editor-outline") | Ok("editor-livecss") => {
+                        if let Some(buffer) = self.active_buffer() {
+                            let mid = buffer.iter_at_offset(buffer.char_count() / 2);
+                            buffer.place_cursor(&mid);
+                        }
+                        sender.input(EpubEditorMsg::SetRightTab(
+                            if std::env::var("KALAM_DIALOG").as_deref() == Ok("editor-livecss") {
+                                RightTab::LiveCss
+                            } else {
+                                RightTab::Outline
+                            },
+                        ));
+                    }
+                    _ => {}
+                }
             }
                 Err(message) => {
                 self.title_label.set_label("Editor");

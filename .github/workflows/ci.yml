@@ -1091,6 +1091,27 @@ jobs:
             THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      - name: open the editor Problems tab (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-problems-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-problems THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor Live CSS tab (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-livecss-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-livecss THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor Outline tab (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-outline-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-outline THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       - name: open the author open-series panel (light) and report
         if: matrix.group == 'pages'
         run: |
@@ -1444,6 +1465,15 @@ jobs:
           cp ci-shots-editor-dark/report.txt ci-logs/editor-dark-latest.txt 2>/dev/null \
             || echo "(no editor-dark report produced)" > ci-logs/editor-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-dark-latest.txt
+          cp ci-shots-editor-problems-light/report.txt ci-logs/editor-problems-light-latest.txt 2>/dev/null \
+            || echo "(no editor-problems-light report produced)" > ci-logs/editor-problems-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-problems-light-latest.txt
+          cp ci-shots-editor-livecss-light/report.txt ci-logs/editor-livecss-light-latest.txt 2>/dev/null \
+            || echo "(no editor-livecss-light report produced)" > ci-logs/editor-livecss-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-livecss-light-latest.txt
+          cp ci-shots-editor-outline-dark/report.txt ci-logs/editor-outline-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-outline-dark report produced)" > ci-logs/editor-outline-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-outline-dark-latest.txt
           cp ci-shots-author-panel-light/report.txt ci-logs/author-panel-light-latest.txt 2>/dev/null \
             || echo "(no author-panel-light report produced)" > ci-logs/author-panel-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-panel-light-latest.txt
@@ -1606,6 +1636,12 @@ jobs:
             ci-logs/editor-terracotta-light.png 2>/dev/null || true
           cp ci-shots-editor-dark/03-edit-book-1-settled.png \
             ci-logs/editor-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-problems-light/03-edit-book-1-settled.png \
+            ci-logs/editor-problems-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-livecss-light/03-edit-book-1-settled.png \
+            ci-logs/editor-livecss-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-outline-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-outline-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-author-panel-light/03-author-book-21-settled.png \
             ci-logs/author-panel-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-shelf-light/03-author-book-21-settled.png \
@@ -1647,7 +1683,9 @@ jobs:
             ci-logs/authors-light-latest.txt ci-logs/authors-dark-latest.txt \
             ci-logs/author-edit-dark-latest.txt ci-logs/author-merge-dark-latest.txt \
             ci-logs/editor-picker-light-latest.txt ci-logs/editor-picker-dark-latest.txt \
-            ci-logs/editor-light-latest.txt ci-logs/editor-dark-latest.txt
+            ci-logs/editor-light-latest.txt ci-logs/editor-dark-latest.txt \
+            ci-logs/editor-problems-light-latest.txt ci-logs/editor-livecss-light-latest.txt \
+            ci-logs/editor-outline-dark-latest.txt
           for shot in settings-appearance-light settings-appearance-dark \
                       settings-reading-light settings-reading-dropdown-dark \
                       settings-libraries-light settings-libraries-open-dark \
@@ -1737,7 +1775,10 @@ jobs:
                       ci-logs/editor-picker-terracotta-light.png \
                       ci-logs/editor-picker-terracotta-dark.png \
                       ci-logs/editor-terracotta-light.png \
-                      ci-logs/editor-terracotta-dark.png; do
+                      ci-logs/editor-terracotta-dark.png \
+                      ci-logs/editor-problems-terracotta-light.png \
+                      ci-logs/editor-livecss-terracotta-light.png \
+                      ci-logs/editor-outline-terracotta-dark.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

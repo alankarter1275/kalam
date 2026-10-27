@@ -65,6 +65,16 @@ pub enum InlineTag {
     Italic,
 }
 
+/// The List toolbar menu's choices. `Remove` turns list items
+/// back into paragraphs; the other two also convert between
+/// bulleted and numbered lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListKind {
+    Bulleted,
+    Numbered,
+    Remove,
+}
+
 /// A History version opened for Compare: the old book plus the
 /// identity History knows it by (decision 134).
 type CompareLoad = Result<(EpubContainer, Option<i64>, String, String), String>;
@@ -87,6 +97,17 @@ pub enum EpubEditorMsg {
     BufferChanged,
     CursorMoved { line: i32, col: i32 },
     Format(InlineTag),
+    /// Retag the current block (None = back to a paragraph).
+    FormatHeading(Option<usize>),
+    FormatList(ListKind),
+    OpenHeadingMenu,
+    OpenListMenu,
+    // ── workspace + source-view preferences ──
+    ToggleTree,
+    OpenViewMenu,
+    SetSourceFontSize(i32),
+    ToggleSourceWrap(bool),
+    ToggleSourceLineBreaks(bool),
     SavePressed,
     SaveAnywayPressed,
     Saved(Result<(), String>),
@@ -318,6 +339,9 @@ struct OpenTab {
     kind: FileKind,
     pinned: bool,
     buffer: Option<sourceview5::Buffer>,
+    /// The tab's source view, so font size / wrapping / line-break
+    /// display can be restyled without walking the widget tree.
+    view: Option<sourceview5::View>,
 }
 
 /// The Clean up submenu's instant tools (decision 128): ask scope,
@@ -460,6 +484,11 @@ struct CompareWidgets {
     new_buffer: sourceview5::Buffer,
     old_numbers: sourceview5::Buffer,
     new_numbers: sourceview5::Buffer,
+    /// Kept so the View menu's font size reaches Compare too.
+    old_view: sourceview5::View,
+    new_view: sourceview5::View,
+    old_numbers_view: sourceview5::View,
+    new_numbers_view: sourceview5::View,
     removed_probe: gtk::Label,
     added_probe: gtk::Label,
     vadjustment: gtk::Adjustment,
@@ -546,6 +575,15 @@ pub struct EpubEditorModel {
     save_btn: gtk::Button,
     tree_host: gtk::Box,
     tree_scroller: gtk::ScrolledWindow,
+    /// The workspace splitters (editor-spec §6): the outer paned
+    /// carries file tree | rest, the inner one editing area |
+    /// right panel. Both handles are draggable.
+    outer_paned: gtk::Paned,
+    /// Whether the file tree is open (the top-bar toggle). The
+    /// Preview view mode hides the tree regardless.
+    tree_open: bool,
+    tree_toggle_btn: gtk::Button,
+    tree_toggle_icon: gtk::Image,
     center_box: gtk::Box,
     tab_strip: gtk::Box,
     tab_stack: gtk::Stack,
@@ -553,6 +591,17 @@ pub struct EpubEditorModel {
     right_stack: gtk::Stack,
     right_tab_btns: Vec<(RightTab, gtk::Button)>,
     view_switch_btns: Vec<(ViewMode, gtk::Button)>,
+    /// The formatting toolbar's menu anchors and live menus.
+    heading_btn: gtk::Button,
+    list_btn: gtk::Button,
+    view_btn: gtk::Button,
+    heading_menu: Option<MenuPopover>,
+    list_menu: Option<MenuPopover>,
+    view_menu: Option<MenuPopover>,
+    /// Source-view display preferences, mirrored to prefs.
+    source_font_px: i32,
+    source_wrap: bool,
+    source_line_breaks: bool,
     /// The box the engine preview sits in. Until the first preview
     /// copy is written, a placeholder label fills it; the engine
     /// widget replaces the label once there is something to render.
@@ -587,8 +636,11 @@ pub struct EpubEditorModel {
     check_src: Option<gtk::glib::SourceId>,
     fix_popover: Option<gtk::Popover>,
     // ── E2: outline + Live CSS state ──
-    /// Heading rows of the active file: (level, text, char offset).
-    outline_headings: Vec<(usize, String, i32)>,
+    /// Outline rows as last rendered: (level, text, file, char
+    /// offset). Normally the active file's headings; when that
+    /// file has none, the book's contents take over so the tab
+    /// is never a dead end.
+    outline_headings: Vec<(usize, String, String, i32)>,
     /// The book's parsed stylesheets, cached by content hash so
     /// cursor moves don't re-parse the CSS.
     css_cache_key: u64,
@@ -635,6 +687,9 @@ pub struct EpubEditorModel {
     removed_paths: HashSet<String>,
     // ── E4: Edit contents (decision 136) ──
     toolbar_format: gtk::Box,
+    /// View + Find & replace, at the toolbar's right edge; hidden
+    /// with the formatting tools while the Contents tab is up.
+    toolbar_right: gtk::Box,
     toolbar_contents: gtk::Box,
     contents_host: gtk::Box,
     toc: Vec<crate::epub_structure::TocEntry>,
@@ -718,6 +773,10 @@ struct ReportRow {
     open: Option<String>,
 }
 
+/// The View menu's source font sizes. 13 is the design's mono
+/// size (§36); the rest are the same typeface one step at a time.
+const SOURCE_FONT_SIZES: &[i32] = &[11, 12, 13, 14, 15, 16, 18, 20];
+
 const EMPTY_TAB: &str = "__kalam_empty";
 /// The Edit contents surface rides the tab strip like a file,
 /// but is not one (decision 136).
@@ -740,7 +799,27 @@ impl Component for EpubEditorModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        // ── top bar (56, §32) ──────────────────────────────────────
+        // Workspace + source-view preferences, restored before a
+        // single widget exists so nothing visibly jumps.
+        let pref = |key: &str| service.catalog().get_pref(key);
+        let source_font_px = pref("editor.source_font_px")
+            .and_then(|v| v.parse::<i32>().ok())
+            .filter(|v| SOURCE_FONT_SIZES.contains(v))
+            .unwrap_or(13);
+        let source_wrap = pref("editor.source_wrap").as_deref() == Some("1");
+        let source_line_breaks = pref("editor.source_line_breaks").as_deref() == Some("1");
+        let tree_open = pref("editor.tree_open").as_deref() != Some("0");
+        let tree_width = pref("editor.tree_width")
+            .and_then(|v| v.parse::<i32>().ok())
+            .map(|v| v.clamp(160, 520))
+            .unwrap_or(240);
+        let right_width = pref("editor.right_width")
+            .and_then(|v| v.parse::<i32>().ok())
+            .map(|v| v.clamp(300, 760))
+            .unwrap_or(440);
+
+        // ── top bar (48: the §33 tab-row height, so the chrome
+        // over the source stays one quiet step thinner) ───────────
         let back_btn = gtk::Button::new();
         back_btn.add_css_class("kalam-back-btn");
         let back_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -754,16 +833,31 @@ impl Component for EpubEditorModel {
             back_btn.connect_clicked(move |_| s.input(EpubEditorMsg::BackPressed));
         }
 
+        // The file-tree toggle: folds the tree away to the side
+        // and brings it back, from every view mode.
+        let tree_toggle_icon = crate::icons::symbolic("sidebar-hide-symbolic", 16);
+        let tree_toggle_btn = gtk::Button::new();
+        tree_toggle_btn.add_css_class("kalam-ed-tool-btn");
+        tree_toggle_btn.set_size_request(32, 32);
+        tree_toggle_btn.set_valign(gtk::Align::Center);
+        tree_toggle_btn.set_margin_start(8);
+        tree_toggle_btn.set_child(Some(&tree_toggle_icon));
+        tree_toggle_btn.set_focus_on_click(false);
+        {
+            let s = sender.clone();
+            tree_toggle_btn.connect_clicked(move |_| s.input(EpubEditorMsg::ToggleTree));
+        }
+
         let title_label = gtk::Label::new(Some("Opening…"));
         title_label.add_css_class("kalam-ed-title");
         title_label.set_halign(gtk::Align::Start);
         title_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         let caption = gtk::Label::new(Some("Editing Kalam's copy · original untouched"));
-        caption.add_css_class("kalam-ui-meta");
+        caption.add_css_class("kalam-ui-caption");
         caption.set_halign(gtk::Align::Start);
         let title_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
         title_box.set_valign(gtk::Align::Center);
-        title_box.set_margin_start(16);
+        title_box.set_margin_start(12);
         title_box.append(&title_label);
         title_box.append(&caption);
 
@@ -778,8 +872,9 @@ impl Component for EpubEditorModel {
 
         let top_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         top_bar.add_css_class("kalam-ed-topbar");
-        top_bar.set_size_request(-1, 56);
+        top_bar.set_size_request(-1, 48);
         top_bar.append(&back_btn);
+        top_bar.append(&tree_toggle_btn);
         top_bar.append(&title_box);
         let top_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         top_spacer.set_hexpand(true);
@@ -819,7 +914,7 @@ impl Component for EpubEditorModel {
             .vexpand(true)
             .build();
         tree_scroller.add_css_class("kalam-ed-tree");
-        tree_scroller.set_size_request(240, -1);
+        tree_scroller.set_size_request(tree_width, -1);
         tree_scroller.set_hexpand(false);
         tree_scroller.set_child(Some(&tree_host));
 
@@ -847,6 +942,60 @@ impl Component for EpubEditorModel {
             btn.connect_clicked(move |_| s.input(EpubEditorMsg::Format(tag)));
             toolbar_format.append(&btn);
         }
+        // Link rides the same Insert-link dialog the Tools menu
+        // opens (decision 138): it wraps the selection.
+        let link_btn = gtk::Button::new();
+        link_btn.add_css_class("kalam-ed-tool-btn");
+        link_btn.set_size_request(32, 32);
+        link_btn.set_valign(gtk::Align::Center);
+        link_btn.set_child(Some(&crate::icons::symbolic("insert-link-symbolic", 16)));
+        link_btn.set_tooltip_text(Some("Link — wrap the selection in a link"));
+        link_btn.set_focus_on_click(false);
+        {
+            let s = sender.clone();
+            link_btn.connect_clicked(move |_| s.input(EpubEditorMsg::OpenInsertLink));
+        }
+        toolbar_format.append(&link_btn);
+        // Heading and List are menus (the board's carets): the
+        // heading level / list kind is picked there.
+        let heading_btn = gtk::Button::new();
+        heading_btn.add_css_class("kalam-ed-tool-btn");
+        heading_btn.set_size_request(40, 32);
+        heading_btn.set_valign(gtk::Align::Center);
+        let heading_content = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+        heading_content.set_halign(gtk::Align::Center);
+        let heading_glyph = gtk::Label::new(Some("H"));
+        heading_glyph.add_css_class("kalam-ed-tool-text");
+        heading_content.append(&heading_glyph);
+        let heading_caret = gtk::Label::new(Some("⌄"));
+        heading_caret.add_css_class("kalam-ed-tool-caret");
+        heading_content.append(&heading_caret);
+        heading_btn.set_child(Some(&heading_content));
+        heading_btn.set_tooltip_text(Some("Heading — set the heading level of this block"));
+        heading_btn.set_focus_on_click(false);
+        {
+            let s = sender.clone();
+            heading_btn.connect_clicked(move |_| s.input(EpubEditorMsg::OpenHeadingMenu));
+        }
+        toolbar_format.append(&heading_btn);
+        let list_btn = gtk::Button::new();
+        list_btn.add_css_class("kalam-ed-tool-btn");
+        list_btn.set_size_request(40, 32);
+        list_btn.set_valign(gtk::Align::Center);
+        let list_content = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+        list_content.set_halign(gtk::Align::Center);
+        list_content.append(&crate::icons::symbolic("view-list-bullet-symbolic", 16));
+        let list_caret = gtk::Label::new(Some("⌄"));
+        list_caret.add_css_class("kalam-ed-tool-caret");
+        list_content.append(&list_caret);
+        list_btn.set_child(Some(&list_content));
+        list_btn.set_tooltip_text(Some("List — make the selected lines a list"));
+        list_btn.set_focus_on_click(false);
+        {
+            let s = sender.clone();
+            list_btn.connect_clicked(move |_| s.input(EpubEditorMsg::OpenListMenu));
+        }
+        toolbar_format.append(&list_btn);
         toolbar.append(&toolbar_format);
 
         let toolbar_contents = gtk::Box::new(gtk::Orientation::Horizontal, 16);
@@ -869,6 +1018,36 @@ impl Component for EpubEditorModel {
         toolbar_contents.set_visible(false);
         toolbar.append(&toolbar_contents);
 
+        // The toolbar's right edge (§34): source-view options and
+        // Find & replace as ghost buttons.
+        let toolbar_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        toolbar_spacer.set_hexpand(true);
+        toolbar.append(&toolbar_spacer);
+        let toolbar_right = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        let view_btn = gtk::Button::with_label("View");
+        view_btn.add_css_class("kalam-ed-ghost");
+        view_btn.set_valign(gtk::Align::Center);
+        view_btn.set_tooltip_text(Some(
+            "Editor view — font size, text wrapping, line breaks",
+        ));
+        view_btn.set_focus_on_click(false);
+        {
+            let s = sender.clone();
+            view_btn.connect_clicked(move |_| s.input(EpubEditorMsg::OpenViewMenu));
+        }
+        toolbar_right.append(&view_btn);
+        let find_btn = gtk::Button::with_label("Find & replace");
+        find_btn.add_css_class("kalam-ed-ghost");
+        find_btn.set_valign(gtk::Align::Center);
+        find_btn.set_tooltip_text(Some("Find & replace (Ctrl+Shift+F)"));
+        find_btn.set_focus_on_click(false);
+        {
+            let s = sender.clone();
+            find_btn.connect_clicked(move |_| s.input(EpubEditorMsg::ToggleFind));
+        }
+        toolbar_right.append(&find_btn);
+        toolbar.append(&toolbar_right);
+
         let tab_strip = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         tab_strip.add_css_class("kalam-ed-tabstrip");
         tab_strip.set_size_request(-1, 40);
@@ -888,6 +1067,7 @@ impl Component for EpubEditorModel {
 
         let center_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
         center_box.set_hexpand(true);
+        center_box.set_size_request(320, -1);
         center_box.append(&toolbar);
         center_box.append(&tab_scroller);
         center_box.append(&tab_stack);
@@ -946,17 +1126,65 @@ impl Component for EpubEditorModel {
 
         let right_panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
         right_panel.add_css_class("kalam-ed-side");
-        right_panel.set_size_request(440, -1);
+        right_panel.set_size_request(right_width, -1);
         right_panel.set_hexpand(false);
         right_panel.append(&tab_row);
         right_panel.append(&right_stack);
 
         // ── middle + can't-open state, in a stack ──────────────────
-        let middle = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        middle.set_vexpand(true);
-        middle.append(&tree_scroller);
-        middle.append(&center_box);
-        middle.append(&right_panel);
+        // The Gtk.Paned pair editor-spec §6 names: every divider
+        // drags, and a hidden child hands its space to the other
+        // side — which is what Code / Preview and the tree toggle
+        // all ride on.
+        let inner_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+        inner_paned.add_css_class("kalam-ed-paned");
+        inner_paned.set_hexpand(true);
+        inner_paned.set_vexpand(true);
+        inner_paned.set_wide_handle(true);
+        inner_paned.set_resize_start_child(true);
+        inner_paned.set_resize_end_child(false);
+        inner_paned.set_shrink_start_child(true);
+        inner_paned.set_shrink_end_child(true);
+        inner_paned.set_start_child(Some(&center_box));
+        inner_paned.set_end_child(Some(&right_panel));
+
+        let outer_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+        outer_paned.add_css_class("kalam-ed-paned");
+        outer_paned.set_hexpand(true);
+        outer_paned.set_vexpand(true);
+        outer_paned.set_wide_handle(true);
+        outer_paned.set_resize_start_child(false);
+        outer_paned.set_resize_end_child(true);
+        outer_paned.set_shrink_start_child(true);
+        outer_paned.set_shrink_end_child(true);
+        outer_paned.set_start_child(Some(&tree_scroller));
+        outer_paned.set_end_child(Some(&inner_paned));
+        outer_paned.set_position(tree_width);
+        // Remember where the dividers were left. Hidden-child
+        // layouts (Code / Preview / folded tree) report extreme
+        // positions, so only a fully-shown split may save.
+        {
+            let svc = service.clone();
+            let tree_probe = tree_scroller.clone();
+            outer_paned.connect_position_notify(move |paned| {
+                let pos = paned.position();
+                if tree_probe.is_visible() && pos >= 80 {
+                    svc.catalog()
+                        .set_pref("editor.tree_width", &pos.to_string());
+                }
+            });
+            let svc = service.clone();
+            let center_probe = center_box.clone();
+            let right_probe = right_panel.clone();
+            inner_paned.connect_position_notify(move |paned| {
+                let right = paned.width() - paned.position();
+                if center_probe.is_visible() && right_probe.is_visible() && right >= 160 {
+                    svc.catalog()
+                        .set_pref("editor.right_width", &right.to_string());
+                }
+            });
+        }
+        let middle = outer_paned.clone();
 
         let error_label = gtk::Label::new(None);
         error_label.add_css_class("kalam-ui-meta");
@@ -1318,6 +1546,10 @@ impl Component for EpubEditorModel {
             save_btn,
             tree_host,
             tree_scroller,
+            outer_paned,
+            tree_open,
+            tree_toggle_btn,
+            tree_toggle_icon,
             center_box,
             tab_strip,
             tab_stack,
@@ -1325,6 +1557,15 @@ impl Component for EpubEditorModel {
             right_stack,
             right_tab_btns,
             view_switch_btns,
+            heading_btn,
+            list_btn,
+            view_btn,
+            heading_menu: None,
+            list_menu: None,
+            view_menu: None,
+            source_font_px,
+            source_wrap,
+            source_line_breaks,
             preview_host,
             livecss_host,
             outline_host,
@@ -1382,6 +1623,7 @@ impl Component for EpubEditorModel {
             added_paths: HashSet::new(),
             removed_paths: HashSet::new(),
             toolbar_format,
+            toolbar_right,
             toolbar_contents,
             contents_host: gtk::Box::new(gtk::Orientation::Vertical, 0),
             toc: Vec::new(),
@@ -1402,6 +1644,8 @@ impl Component for EpubEditorModel {
             font_areas: Rc::new(RefCell::new(Vec::new())),
         };
         model.sync_switches();
+        model.apply_view_mode();
+        model.apply_source_settings();
         let widgets = view_output!();
 
         model.request_load(&sender);
@@ -1746,6 +1990,51 @@ impl Component for EpubEditorModel {
                 self.sync_preview_to_cursor();
             }
             EpubEditorMsg::Format(tag) => self.format_inline(tag),
+            EpubEditorMsg::FormatHeading(level) => self.format_heading(level),
+            EpubEditorMsg::FormatList(kind) => self.format_list(kind),
+            EpubEditorMsg::OpenHeadingMenu => self.toggle_heading_menu(&sender),
+            EpubEditorMsg::OpenListMenu => self.toggle_list_menu(&sender),
+            EpubEditorMsg::ToggleTree => {
+                if self.view_mode == ViewMode::Preview {
+                    // Preview hides the tree by definition; asking
+                    // for it back means Split.
+                    self.tree_open = true;
+                    self.view_mode = ViewMode::Split;
+                    self.sync_switches();
+                } else {
+                    self.tree_open = !self.tree_open;
+                }
+                self.service.catalog().set_pref(
+                    "editor.tree_open",
+                    if self.tree_open { "1" } else { "0" },
+                );
+                self.apply_view_mode();
+            }
+            EpubEditorMsg::OpenViewMenu => self.toggle_view_menu(&sender),
+            EpubEditorMsg::SetSourceFontSize(size) => {
+                if SOURCE_FONT_SIZES.contains(&size) {
+                    self.source_font_px = size;
+                    self.service
+                        .catalog()
+                        .set_pref("editor.source_font_px", &size.to_string());
+                    self.apply_source_settings();
+                }
+            }
+            EpubEditorMsg::ToggleSourceWrap(on) => {
+                self.source_wrap = on;
+                self.service
+                    .catalog()
+                    .set_pref("editor.source_wrap", if on { "1" } else { "0" });
+                self.apply_source_settings();
+            }
+            EpubEditorMsg::ToggleSourceLineBreaks(on) => {
+                self.source_line_breaks = on;
+                self.service.catalog().set_pref(
+                    "editor.source_line_breaks",
+                    if on { "1" } else { "0" },
+                );
+                self.apply_source_settings();
+            }
             EpubEditorMsg::SavePressed => {
                 self.after_save = AfterSave::Nothing;
                 self.try_save(false, &sender);
@@ -2818,7 +3107,7 @@ impl EpubEditorModel {
             }
         }
 
-        let (widget, buffer) = self.build_tab_widget(&file, sender);
+        let (widget, buffer, view) = self.build_tab_widget(&file, sender);
         if buffer.is_some() {
             self.pending.remove(path);
         }
@@ -2828,6 +3117,7 @@ impl EpubEditorModel {
             kind: file.kind,
             pinned: pin,
             buffer,
+            view,
         });
         self.activate_tab(path, sender);
     }
@@ -2836,11 +3126,15 @@ impl EpubEditorModel {
         &self,
         file: &EpubFile,
         sender: &ComponentSender<Self>,
-    ) -> (gtk::Widget, Option<sourceview5::Buffer>) {
+    ) -> (
+        gtk::Widget,
+        Option<sourceview5::Buffer>,
+        Option<sourceview5::View>,
+    ) {
         let Some(container) = &self.container else {
             // Only reachable if a click lands mid-load; an empty tab
             // beats a crash the guardrails exist to prevent.
-            return (gtk::Label::new(None).upcast(), None);
+            return (gtk::Label::new(None).upcast(), None, None);
         };
         match file.kind {
             FileKind::Html | FileKind::Css | FileKind::Xml => {
@@ -2876,7 +3170,7 @@ impl EpubEditorModel {
                 view.set_highlight_current_line(true);
                 view.set_tab_width(2);
                 view.set_insert_spaces_instead_of_tabs(true);
-                view.set_wrap_mode(gtk::WrapMode::None);
+                self.apply_source_settings_to_view(&view);
                 view.set_hexpand(true);
                 view.set_vexpand(true);
 
@@ -2912,7 +3206,7 @@ impl EpubEditorModel {
                     .hexpand(true)
                     .child(&view)
                     .build();
-                (scroller.upcast(), Some(buffer))
+                (scroller.upcast(), Some(buffer), Some(view))
             }
             FileKind::Image => {
                 let host = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -2992,7 +3286,7 @@ impl EpubEditorModel {
                 }
                 host.append(&actions);
                 host.append(&where_host);
-                (scroll_host(&host).upcast(), None)
+                (scroll_host(&host).upcast(), None, None)
             }
             FileKind::Font => {
                 // Decision 126: a specimen tab. The preview
@@ -3073,13 +3367,13 @@ impl EpubEditorModel {
                         },
                     );
                 }
-                (scroll_host(&host).upcast(), None)
+                (scroll_host(&host).upcast(), None, None)
             }
             FileKind::Binary => {
                 let host = gtk::Box::new(gtk::Orientation::Vertical, 12);
                 host.set_margin_all(20);
                 host.append(&meta_label(&file_summary(file, container.bytes(&file.path))));
-                (scroll_host(&host).upcast(), None)
+                (scroll_host(&host).upcast(), None, None)
             }
         }
     }
@@ -3089,6 +3383,7 @@ impl EpubEditorModel {
         self.tab_stack.set_visible_child_name(path);
         let contents = path == CONTENTS_TAB;
         self.toolbar_format.set_visible(!contents);
+        self.toolbar_right.set_visible(!contents);
         self.toolbar_contents.set_visible(contents);
         if contents {
             self.maybe_reload_toc();
@@ -3168,6 +3463,9 @@ impl EpubEditorModel {
     }
 
     fn active_view(&self) -> Option<sourceview5::View> {
+        if let Some(view) = self.active_tab().and_then(|t| t.view.clone()) {
+            return Some(view);
+        }
         let path = self.active_path.as_ref()?;
         let scroller = self.tab_stack.child_by_name(path)?;
         let scroller = scroller.downcast::<gtk::ScrolledWindow>().ok()?;
@@ -3334,6 +3632,7 @@ impl EpubEditorModel {
             kind: FileKind::Xml,
             pinned: true,
             buffer: None,
+            view: None,
         });
         self.load_toc();
         self.activate_tab(CONTENTS_TAB, sender);
@@ -4001,6 +4300,138 @@ impl EpubEditorModel {
     }
 
     // ── formatting toolbar ─────────────────────────────────────────
+
+    /// One source view in the current display preferences: the
+    /// font-size class (§36's mono at the picked size), wrapping,
+    /// and visible line breaks through GtkSourceView's own space
+    /// drawer, set to draw newline glyphs and nothing else.
+    fn apply_source_settings_to_view(&self, view: &sourceview5::View) {
+        for size in SOURCE_FONT_SIZES {
+            view.remove_css_class(&format!("kalam-ed-font-{size}"));
+        }
+        view.add_css_class(&format!("kalam-ed-font-{}", self.source_font_px));
+        view.set_wrap_mode(if self.source_wrap {
+            gtk::WrapMode::WordChar
+        } else {
+            gtk::WrapMode::None
+        });
+        let drawer = view.space_drawer();
+        drawer.set_types_for_locations(
+            sourceview5::SpaceLocationFlags::ALL,
+            sourceview5::SpaceTypeFlags::NEWLINE,
+        );
+        drawer.set_enable_matrix(self.source_line_breaks);
+    }
+
+    /// Every open tab follows a View-menu change at once. Focus
+    /// is left alone: the menu may still be open, and its toggles
+    /// should stay reachable.
+    fn apply_source_settings(&self) {
+        for tab in &self.tabs {
+            if let Some(view) = &tab.view {
+                self.apply_source_settings_to_view(view);
+            }
+        }
+        // Compare follows the font size (its number gutters must
+        // stay in step), but never wraps: wrapped lines would
+        // drift from their numbers.
+        for view in [
+            &self.compare_widgets.old_view,
+            &self.compare_widgets.new_view,
+            &self.compare_widgets.old_numbers_view,
+            &self.compare_widgets.new_numbers_view,
+        ] {
+            for size in SOURCE_FONT_SIZES {
+                view.remove_css_class(&format!("kalam-ed-font-{size}"));
+            }
+            view.add_css_class(&format!("kalam-ed-font-{}", self.source_font_px));
+            let drawer = view.space_drawer();
+            drawer.set_types_for_locations(
+                sourceview5::SpaceLocationFlags::ALL,
+                sourceview5::SpaceTypeFlags::NEWLINE,
+            );
+            drawer.set_enable_matrix(self.source_line_breaks);
+        }
+    }
+
+    /// Replace one char range of the active buffer as a single
+    /// undo step and leave the given selection behind.
+    fn replace_active_range(
+        &mut self,
+        start: i32,
+        end: i32,
+        replacement: &str,
+        sel_start: i32,
+        sel_end: i32,
+    ) {
+        let Some(buffer) = self.active_buffer() else {
+            return;
+        };
+        buffer.begin_user_action();
+        let mut from = buffer.iter_at_offset(start);
+        let mut to = buffer.iter_at_offset(end);
+        buffer.delete(&mut from, &mut to);
+        let mut at = buffer.iter_at_offset(start);
+        buffer.insert(&mut at, replacement);
+        let sel_from = buffer.iter_at_offset(sel_start);
+        let sel_to = buffer.iter_at_offset(sel_end);
+        if sel_start == sel_end {
+            buffer.place_cursor(&sel_from);
+        } else {
+            buffer.select_range(&sel_from, &sel_to);
+        }
+        buffer.end_user_action();
+        if let Some(view) = self.active_view() {
+            view.grab_focus();
+        }
+    }
+
+    /// The active buffer's (start, end) char offsets: the
+    /// selection, or the cursor twice.
+    fn active_selection(&self) -> Option<(i32, i32)> {
+        let buffer = self.active_buffer()?;
+        match buffer.selection_bounds() {
+            Some((start, end)) => Some((start.offset(), end.offset())),
+            None => {
+                let at = buffer.cursor_position();
+                Some((at, at))
+            }
+        }
+    }
+
+    /// Heading menu: retag the block the cursor or selection
+    /// sits in (attributes preserved), or wrap a bare selection.
+    fn format_heading(&mut self, level: Option<usize>) {
+        let Some(buffer) = self.active_buffer() else {
+            return;
+        };
+        let Some((start, end)) = self.active_selection() else {
+            return;
+        };
+        let target = match level {
+            Some(level) => format!("h{}", level.clamp(1, 6)),
+            None => "p".to_string(),
+        };
+        let text = buffer_text(&buffer);
+        let (from, to, replacement, sel_from, sel_to) =
+            heading_transform(&text, start.max(0) as usize, end.max(0) as usize, &target);
+        self.replace_active_range(from, to, &replacement, sel_from, sel_to);
+    }
+
+    /// List menu: selected lines/paragraphs become list items;
+    /// inside a list, the same menu converts or removes it.
+    fn format_list(&mut self, kind: ListKind) {
+        let Some(buffer) = self.active_buffer() else {
+            return;
+        };
+        let Some((start, end)) = self.active_selection() else {
+            return;
+        };
+        let text = buffer_text(&buffer);
+        let (from, to, replacement, sel_from, sel_to) =
+            list_transform_at(&text, start.max(0) as usize, end.max(0) as usize, kind);
+        self.replace_active_range(from, to, &replacement, sel_from, sel_to);
+    }
 
     /// Bold/Italic write real `strong`/`em` around the selection, and
     /// pressing again takes them off (decision 127). One user action,
@@ -8700,37 +9131,107 @@ impl EpubEditorModel {
     fn rebuild_outline(&mut self, sender: &ComponentSender<Self>) {
         clear_box(&self.outline_host);
         self.outline_headings.clear();
-        let Some((kind, buffer, path)) = self
+        // The open file's headings first (decision 133) —
+        // literal h1–h6 plus the class-marked blocks real books
+        // use instead.
+        let active = self
             .active_tab()
-            .map(|t| (t.kind, t.buffer.clone(), t.path.clone()))
-        else {
-            return;
-        };
-        if kind != FileKind::Html {
-            self.outline_host.append(&panel_note("No headings"));
+            .map(|t| (t.kind, t.buffer.clone(), t.path.clone()));
+        let mut entries: Vec<(usize, String, String, i32)> = Vec::new();
+        let mut active_html = false;
+        if let Some((kind, Some(buffer), path)) = &active {
+            if *kind == FileKind::Html {
+                active_html = true;
+                entries = extract_headings(&buffer_text(buffer))
+                    .into_iter()
+                    .map(|(level, text, offset)| (level, text, path.clone(), offset))
+                    .collect();
+            }
+        }
+        // No headings here: fall back to the book's contents
+        // (then to spine headings / file names), so the tab
+        // still takes you somewhere instead of saying nothing.
+        let mut fallback_note: Option<&str> = None;
+        if entries.is_empty() {
+            fallback_note = Some(if active_html {
+                "No headings in this file — showing the book's contents."
+            } else {
+                "The book's contents."
+            });
+            let mut toc = Vec::new();
+            if let Some(container) = &self.container {
+                if let Some(nav) = &container.nav_path {
+                    if let Some(text) = self.file_text(nav) {
+                        toc = crate::epub_structure::parse_nav(&text, nav);
+                    }
+                }
+                if toc.is_empty() {
+                    if let Some(ncx) = &container.ncx_path {
+                        if let Some(text) = self.file_text(ncx) {
+                            toc = crate::epub_structure::parse_ncx(&text, ncx);
+                        }
+                    }
+                }
+            }
+            for (depth, entry) in crate::epub_structure::toc_flatten(toc) {
+                if entry.href.is_empty() {
+                    continue;
+                }
+                let offset = match &entry.fragment {
+                    Some(fragment) => self
+                        .file_text(&entry.href)
+                        .map(|text| fragment_offset(&text, fragment))
+                        .unwrap_or(0),
+                    None => 0,
+                };
+                entries.push((depth + 1, entry.text, entry.href, offset));
+            }
+            if entries.is_empty() {
+                if let Some(container) = &self.container {
+                    for file in container.section_files(TreeSection::Text) {
+                        let Some(text) = self.file_text(&file.path) else {
+                            continue;
+                        };
+                        let headings = extract_headings(&text);
+                        if headings.is_empty() {
+                            entries.push((
+                                1,
+                                file_name(&file.path).to_string(),
+                                file.path.clone(),
+                                0,
+                            ));
+                        } else {
+                            entries.extend(headings.into_iter().map(
+                                |(level, text, offset)| {
+                                    (level, text, file.path.clone(), offset)
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        self.outline_headings = entries.clone();
+        if entries.is_empty() {
+            self.outline_host.append(&panel_note(
+                "No headings yet. Select a line and use the Heading menu to make one.",
+            ));
             return;
         }
-        let Some(buffer) = &buffer else {
-            return;
-        };
-        let headings = extract_headings(&buffer_text(buffer));
-        self.outline_headings = headings.clone();
-        if headings.is_empty() {
-            self.outline_host.append(&panel_note("No headings"));
-            return;
+        if let Some(note) = fallback_note {
+            self.outline_host.append(&panel_note(note));
         }
-        for (level, text, offset) in headings {
-            let row = gtk::Button::with_label(&text);
+        for (level, text, path, offset) in entries {
+            let row = gtk::Button::new();
             row.add_css_class("kalam-ed-outline-row");
             row.set_size_request(-1, 36);
-            row.set_margin_start(((level.saturating_sub(1)) as i32) * 16);
-            row.child()
-                .and_then(|c| c.downcast::<gtk::Label>().ok())
-                .inspect(|label| {
-                    label.set_halign(gtk::Align::Start);
-                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                });
-            let path = path.clone();
+            row.set_focus_on_click(false);
+            row.set_tooltip_text(Some(&path));
+            let label = gtk::Label::new(Some(&text));
+            label.set_halign(gtk::Align::Start);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            label.set_margin_start(((level.saturating_sub(1)) as i32) * 16);
+            row.set_child(Some(&label));
             let s = sender.input_sender().clone();
             row.connect_clicked(move |_| {
                 let _ = s.send(EpubEditorMsg::GoTo {
@@ -9136,6 +9637,113 @@ impl EpubEditorModel {
         }
     }
 
+    /// The Heading toolbar menu: paragraph plus the six levels.
+    fn toggle_heading_menu(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(menu) = self.heading_menu.take() {
+            menu.popover().popdown();
+            menu.popover().unparent();
+            return;
+        }
+        let menu = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Short);
+        {
+            let s = sender.input_sender().clone();
+            menu.add_item("Paragraph", move || {
+                let _ = s.send(EpubEditorMsg::FormatHeading(None));
+            });
+        }
+        menu.add_separator();
+        for level in 1..=6usize {
+            let s = sender.input_sender().clone();
+            menu.add_item(&format!("Heading {level}"), move || {
+                let _ = s.send(EpubEditorMsg::FormatHeading(Some(level)));
+            });
+        }
+        let popover = menu.popover();
+        popover.set_parent(&self.heading_btn);
+        popover.popup();
+        self.heading_menu = Some(menu);
+    }
+
+    /// The List toolbar menu.
+    fn toggle_list_menu(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(menu) = self.list_menu.take() {
+            menu.popover().popdown();
+            menu.popover().unparent();
+            return;
+        }
+        let menu = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Short);
+        for (kind, label) in [
+            (ListKind::Bulleted, "Bulleted list"),
+            (ListKind::Numbered, "Numbered list"),
+        ] {
+            let s = sender.input_sender().clone();
+            menu.add_item(label, move || {
+                let _ = s.send(EpubEditorMsg::FormatList(kind));
+            });
+        }
+        menu.add_separator();
+        {
+            let s = sender.input_sender().clone();
+            menu.add_item("Remove list", move || {
+                let _ = s.send(EpubEditorMsg::FormatList(ListKind::Remove));
+            });
+        }
+        let popover = menu.popover();
+        popover.set_parent(&self.list_btn);
+        popover.popup();
+        self.list_menu = Some(menu);
+    }
+
+    /// The View toolbar menu: source font size, wrapping and
+    /// visible line breaks. Rebuilt on each open so the ticks
+    /// always show the standing choices.
+    fn toggle_view_menu(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(menu) = self.view_menu.take() {
+            menu.popover().popdown();
+            menu.popover().unparent();
+            return;
+        }
+        let menu = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Wide);
+        let popover = menu.popover();
+        let fonts = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Short);
+        let fonts_popover = fonts.popover();
+        for size in SOURCE_FONT_SIZES.iter().copied() {
+            let s = sender.input_sender().clone();
+            let pop = popover.clone();
+            let fonts_pop = fonts_popover.clone();
+            fonts.add_check_item(
+                &format!("{size} px"),
+                self.source_font_px == size,
+                move |_| {
+                    fonts_pop.popdown();
+                    pop.popdown();
+                    let _ = s.send(EpubEditorMsg::SetSourceFontSize(size));
+                },
+            );
+        }
+        menu.add_submenu(&format!("Font size · {}", self.source_font_px), fonts);
+        menu.add_separator();
+        {
+            let s = sender.input_sender().clone();
+            menu.add_check_item("Wrap text", self.source_wrap, move |on| {
+                let _ = s.send(EpubEditorMsg::ToggleSourceWrap(on));
+            });
+        }
+        {
+            let s = sender.input_sender().clone();
+            menu.add_check_item(
+                "Show line breaks",
+                self.source_line_breaks,
+                move |on| {
+                    let _ = s.send(EpubEditorMsg::ToggleSourceLineBreaks(on));
+                },
+            );
+        }
+        popover.set_parent(&self.view_btn);
+        popover.popup();
+        self.view_menu = Some(menu);
+    }
+
     /// The Preview mode menu (decision 123), rebuilt on each open
     /// so the tick is always current.
     fn toggle_preview_menu(&mut self, sender: &ComponentSender<Self>) {
@@ -9181,20 +9789,59 @@ impl EpubEditorModel {
         let Some(cursor) = self.cursor_char_offset() else {
             return;
         };
-        let current = self
-            .outline_headings
-            .iter()
-            .rposition(|(_, _, offset)| *offset <= cursor as i32);
+        let Some(active_path) = self.active_path.as_deref() else {
+            return;
+        };
+        // The last heading of this file at or before the cursor;
+        // before the first one, the file's first heading.
+        let mut current = self.outline_headings.iter().rposition(|(_, _, path, offset)| {
+            path.as_str() == active_path && *offset <= cursor as i32
+        });
+        if current.is_none() {
+            current = self
+                .outline_headings
+                .iter()
+                .position(|(_, _, path, _)| path.as_str() == active_path);
+        }
+        if current.is_none() {
+            // Book-contents fallback: the nearest entry at or
+            // before this file in reading order.
+            if let Some(container) = &self.container {
+                let order: Vec<&str> = container
+                    .section_files(TreeSection::Text)
+                    .iter()
+                    .map(|f| f.path.as_str())
+                    .collect();
+                if let Some(active_order) = order.iter().position(|p| *p == active_path) {
+                    current = self
+                        .outline_headings
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, (_, _, path, _))| {
+                            order
+                                .iter()
+                                .position(|p| *p == path.as_str())
+                                .is_some_and(|o| o <= active_order)
+                        })
+                        .map(|(index, _)| index)
+                        .last();
+                }
+            }
+        }
         let mut child = self.outline_host.first_child();
         let mut index = 0usize;
         while let Some(widget) = child {
-            if Some(index) == current {
-                widget.add_css_class("current");
-            } else {
-                widget.remove_css_class("current");
+            // The fallback note rides the same box; only heading
+            // rows count.
+            if widget.has_css_class("kalam-ed-outline-row") {
+                if Some(index) == current {
+                    widget.add_css_class("current");
+                } else {
+                    widget.remove_css_class("current");
+                }
+                index += 1;
             }
             child = widget.next_sibling();
-            index += 1;
         }
     }
 
@@ -9203,6 +9850,9 @@ impl EpubEditorModel {
     /// HTML only (decision 133).
     fn rebuild_livecss(&mut self, sender: &ComponentSender<Self>) {
         clear_box(&self.livecss_host);
+        self.livecss_host.append(&panel_note(
+            "Styles for the element at the source cursor. Click inside a paragraph or heading in the source, then click a rule to open it in its stylesheet.",
+        ));
         let Some(tab) = self.active_tab() else {
             self.livecss_host.append(&panel_note(
                 "Place the cursor inside an element in an HTML file to see the CSS that applies to it.",
@@ -9297,17 +9947,33 @@ impl EpubEditorModel {
             }
         }
 
-        let header = gtk::Label::new(Some(&element.describe()));
+        let chain_text = chain
+            .iter()
+            .map(|e| e.describe())
+            .collect::<Vec<_>>()
+            .join(" › ");
+        let header = gtk::Label::new(Some(&format!("At cursor: {chain_text}")));
         header.add_css_class("kalam-ed-css-element");
         header.set_halign(gtk::Align::Start);
         header.set_margin_start(20);
         header.set_margin_top(16);
         header.set_margin_bottom(8);
+        header.set_wrap(true);
+        header.set_xalign(0.0);
         self.livecss_host.append(&header);
 
         if matched.is_empty() {
-            self.livecss_host
-                .append(&panel_note("No rules in the book's stylesheets match this element."));
+            let note = if rules.is_empty() {
+                "This book has no CSS rules — its stylesheets are empty or missing, so there is nothing to match."
+            } else if matches!(
+                element.tag.as_str(),
+                "html" | "head" | "title" | "meta" | "link" | "style"
+            ) {
+                "The cursor is in the document head, where text styles rarely apply. Click inside the chapter text — a paragraph or heading — to see its rules."
+            } else {
+                "No rules in the book's stylesheets match this element. It is styled only by defaults inherited from its ancestors."
+            };
+            self.livecss_host.append(&panel_note(note));
             return;
         }
 
@@ -9320,6 +9986,7 @@ impl EpubEditorModel {
             let head = gtk::Button::new();
             head.add_css_class("kalam-ed-css-rule");
             head.set_focus_on_click(false);
+            head.set_tooltip_text(Some("Open this rule in its stylesheet"));
             let head_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
             let selector_label = gtk::Label::new(Some(&m.selector));
             selector_label.add_css_class("kalam-ed-css-selector");
@@ -12120,31 +12787,30 @@ impl EpubEditorModel {
     }
 
     fn apply_view_mode(&self) {
-        match self.view_mode {
-            ViewMode::Code => {
-                self.tree_scroller.set_visible(true);
-                self.center_box.set_visible(true);
-                self.right_panel.set_visible(false);
-            }
-            ViewMode::Split => {
-                self.tree_scroller.set_visible(true);
-                self.center_box.set_visible(true);
-                self.right_panel.set_visible(true);
-                self.right_panel.set_size_request(440, -1);
-                self.right_panel.set_hexpand(false);
-            }
-            ViewMode::Preview => {
-                self.tree_scroller.set_visible(false);
-                self.center_box.set_visible(false);
-                self.right_panel.set_visible(true);
-                self.right_panel.set_size_request(-1, -1);
-                self.right_panel.set_hexpand(true);
-                if self.right_tab != RightTab::Preview {
-                    // The Preview switch means the Preview tab too;
-                    // other tabs stay one click away in the tab row.
-                }
-            }
+        // The paneds do the geometry: a hidden child hands its
+        // whole share to the other side, so Code / Split /
+        // Preview and the tree toggle are pure visibility.
+        let show_tree = self.tree_open && self.view_mode != ViewMode::Preview;
+        if show_tree && self.outer_paned.width() > 0 && self.outer_paned.position() < 80 {
+            // Dragged fully shut before it was hidden: reopen at
+            // the design width rather than as a sliver.
+            self.outer_paned.set_position(240);
         }
+        self.tree_scroller.set_visible(show_tree);
+        self.center_box
+            .set_visible(self.view_mode != ViewMode::Preview);
+        self.right_panel
+            .set_visible(self.view_mode != ViewMode::Code);
+        self.tree_toggle_icon.set_icon_name(Some(if show_tree {
+            "sidebar-hide-symbolic"
+        } else {
+            "sidebar-show-symbolic"
+        }));
+        self.tree_toggle_btn.set_tooltip_text(Some(if show_tree {
+            "Hide the file tree"
+        } else {
+            "Show the file tree"
+        }));
     }
 }
 
@@ -12482,10 +13148,12 @@ fn build_compare_page(
         row.append(&scroller);
 
         side.append(&row);
-        (side, head, buffer, numbers_buffer)
+        (side, head, buffer, numbers_buffer, view, numbers_view)
     };
-    let (left, left_head, old_buffer, old_numbers) = make_side(&vadjustment);
-    let (right, _right_head, new_buffer, new_numbers) = make_side(&vadjustment);
+    let (left, left_head, old_buffer, old_numbers, old_view, old_numbers_view) =
+        make_side(&vadjustment);
+    let (right, _right_head, new_buffer, new_numbers, new_view, new_numbers_view) =
+        make_side(&vadjustment);
     _right_head.set_label("CURRENT");
     // The divider is a border on the left column, not a third
     // child: in a homogeneous box a separator child would be
@@ -12507,6 +13175,10 @@ fn build_compare_page(
             new_buffer,
             old_numbers,
             new_numbers,
+            old_view,
+            new_view,
+            old_numbers_view,
+            new_numbers_view,
             removed_probe,
             added_probe,
             vadjustment,
@@ -13030,51 +13702,569 @@ fn bold_positions(text: &str, positions: &[usize]) -> String {
     out
 }
 
-/// Headings in an HTML buffer: (level, visible text, char offset of
-/// the opening tag). A plain scan — the outline needs positions in
-/// the *edited* text, valid XML or not.
-fn extract_headings(html: &str) -> Vec<(usize, String, i32)> {
-    let mut out = Vec::new();
+/// One matched element's byte ranges in possibly-invalid HTML.
+/// All boundaries sit on ASCII tag delimiters, so slicing at
+/// them is always on a char boundary.
+#[derive(Clone)]
+struct BlockRange {
+    name: String,
+    start: usize,
+    end: usize,
+    inner_start: usize,
+    inner_end: usize,
+    open_name_start: usize,
+    open_name_end: usize,
+    close_name_start: usize,
+    close_name_end: usize,
+}
+
+fn char_to_byte(text: &str, char_offset: usize) -> usize {
+    text.char_indices()
+        .nth(char_offset)
+        .map(|(b, _)| b)
+        .unwrap_or(text.len())
+}
+
+fn byte_to_char(text: &str, byte_offset: usize) -> i32 {
+    text[..byte_offset.min(text.len())].chars().count() as i32
+}
+
+/// Matched start/end tag pairs for the wanted names, by a
+/// forgiving scan in the same spirit as `element_chain_at`.
+fn scan_block_ranges(html: &str, wanted: &[&str]) -> Vec<BlockRange> {
+    #[derive(Clone)]
+    struct Open {
+        name: String,
+        start: usize,
+        inner_start: usize,
+        open_name_start: usize,
+        open_name_end: usize,
+    }
     let bytes = html.as_bytes();
+    let mut stack: Vec<Open> = Vec::new();
+    let mut out: Vec<BlockRange> = Vec::new();
     let mut i = 0usize;
-    while i + 2 < bytes.len() {
-        if bytes[i] == b'<'
-            && (bytes[i + 1] == b'h' || bytes[i + 1] == b'H')
-            && (b'1'..=b'6').contains(&bytes[i + 2])
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        if html[i..].starts_with("<!--") {
+            i = html[i + 4..]
+                .find("-->")
+                .map(|n| i + 4 + n + 3)
+                .unwrap_or(bytes.len());
+            continue;
+        }
+        if html[i..].starts_with("<!") || html[i..].starts_with("<?") {
+            i = html[i..].find('>').map(|n| i + n + 1).unwrap_or(bytes.len());
+            continue;
+        }
+        let closing = i + 1 < bytes.len() && bytes[i + 1] == b'/';
+        let raw_start = if closing { i + 2 } else { i + 1 };
+        let mut j = raw_start;
+        while j < bytes.len()
+            && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b':' | b'-'))
         {
-            let level = (bytes[i + 2] - b'0') as usize;
-            let after = i + 3;
-            let boundary_ok = after >= bytes.len()
-                || matches!(bytes[after], b'>' | b' ' | b'\t' | b'\n' | b'\r' | b'/');
-            if boundary_ok {
-                if let Some(gt) = html[after..].find('>') {
-                    let text_start = after + gt + 1;
-                    let close = format!("</h{level}");
-                    let text_end = html[text_start..]
-                        .to_ascii_lowercase()
-                        .find(&close)
-                        .map(|pos| text_start + pos)
+            j += 1;
+        }
+        if j == raw_start {
+            i += 1;
+            continue;
+        }
+        let raw = &html[raw_start..j];
+        let local_delta = raw.rfind(':').map(|n| n + 1).unwrap_or(0);
+        let name_start = raw_start + local_delta;
+        let name = raw[local_delta..].to_ascii_lowercase();
+        let mut k = j;
+        let mut quote = 0u8;
+        while k < bytes.len() {
+            let b = bytes[k];
+            if quote != 0 {
+                if b == quote {
+                    quote = 0;
+                }
+            } else if b == b'"' || b == b'\'' {
+                quote = b;
+            } else if b == b'>' {
+                break;
+            }
+            k += 1;
+        }
+        if k >= bytes.len() {
+            break;
+        }
+        let tag_end = k + 1;
+        if closing {
+            if let Some(pos) = stack.iter().rposition(|o| o.name == name) {
+                let open = stack[pos].clone();
+                stack.truncate(pos);
+                if wanted.iter().any(|w| *w == name) {
+                    out.push(BlockRange {
+                        name: name.clone(),
+                        start: open.start,
+                        end: tag_end,
+                        inner_start: open.inner_start,
+                        inner_end: i,
+                        open_name_start: open.open_name_start,
+                        open_name_end: open.open_name_end,
+                        close_name_start: name_start,
+                        close_name_end: j,
+                    });
+                }
+            }
+        } else {
+            let inner = &html[j..k];
+            let self_closed = inner.trim_end().ends_with('/')
+                || matches!(
+                    name.as_str(),
+                    "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input"
+                        | "link" | "meta" | "source" | "track" | "wbr"
+                );
+            if !self_closed {
+                stack.push(Open {
+                    name,
+                    start: i,
+                    inner_start: tag_end,
+                    open_name_start: name_start,
+                    open_name_end: j,
+                });
+            }
+        }
+        i = tag_end;
+    }
+    out.sort_by_key(|b| (b.start, std::cmp::Reverse(b.end)));
+    out
+}
+
+/// The smallest of `blocks` (restricted to `names`) wholly
+/// containing the byte range.
+fn smallest_containing<'a>(
+    blocks: &'a [BlockRange],
+    names: &[&str],
+    start: usize,
+    end: usize,
+) -> Option<&'a BlockRange> {
+    blocks
+        .iter()
+        .filter(|b| names.iter().any(|n| *n == b.name) && b.start <= start && b.end >= end)
+        .min_by_key(|b| b.end - b.start)
+}
+
+/// `html[start..end]` with every listed block's tag names
+/// swapped for `target` (attributes untouched).
+fn retagged_span(
+    html: &str,
+    start: usize,
+    end: usize,
+    blocks: &[BlockRange],
+    target: &str,
+) -> String {
+    let mut edits: Vec<(usize, usize)> = blocks
+        .iter()
+        .flat_map(|b| {
+            [
+                (b.open_name_start, b.open_name_end),
+                (b.close_name_start, b.close_name_end),
+            ]
+        })
+        .collect();
+    edits.sort_unstable();
+    let mut out = String::with_capacity(end - start);
+    let mut at = start;
+    for (s, e) in edits {
+        if s < at || e > end {
+            continue;
+        }
+        out.push_str(&html[at..s]);
+        out.push_str(target);
+        at = e;
+    }
+    out.push_str(&html[at..end]);
+    out
+}
+
+/// Where a byte offset lands after the retagging above.
+fn map_after_retag(offset: usize, blocks: &[BlockRange], target: &str) -> usize {
+    let mut mapped = offset as isize;
+    for b in blocks {
+        for (s, e) in [
+            (b.open_name_start, b.open_name_end),
+            (b.close_name_start, b.close_name_end),
+        ] {
+            if e <= offset {
+                mapped += target.len() as isize - (e - s) as isize;
+            } else if s < offset {
+                mapped += target.len() as isize - (offset - s) as isize;
+            }
+        }
+    }
+    mapped.max(0) as usize
+}
+
+/// The Heading menu's edit: (replace from, replace to,
+/// replacement, selection from, selection to), all char offsets
+/// but the replacement itself. Blocks intersecting the
+/// selection are retagged whole; a bare selection is wrapped;
+/// a bare cursor gets an empty pair to type into.
+fn heading_transform(
+    html: &str,
+    start_char: usize,
+    end_char: usize,
+    target: &str,
+) -> (i32, i32, String, i32, i32) {
+    let start = char_to_byte(html, start_char);
+    let end = char_to_byte(html, end_char);
+    let blocks = scan_block_ranges(html, &["p", "h1", "h2", "h3", "h4", "h5", "h6"]);
+    let mut hits: Vec<BlockRange> = blocks
+        .iter()
+        .filter(|b| {
+            if start == end {
+                b.start <= start && start <= b.end
+            } else {
+                b.end > start && b.start < end
+            }
+        })
+        .cloned()
+        .collect();
+    if start == end && hits.len() > 1 {
+        // Nested candidates around a cursor: the innermost wins.
+        hits.sort_by_key(|b| b.end - b.start);
+        hits.truncate(1);
+    }
+    if !hits.is_empty() {
+        let span_start = hits.iter().map(|b| b.start).min().unwrap_or(start);
+        let span_end = hits.iter().map(|b| b.end).max().unwrap_or(end);
+        let replacement = retagged_span(html, span_start, span_end, &hits, target);
+        let contained = hits.len() == 1 && hits[0].start <= start && hits[0].end >= end;
+        let (sel_start, sel_end) = if contained || start == end {
+            (
+                map_after_retag(start, &hits, target),
+                map_after_retag(end, &hits, target),
+            )
+        } else {
+            (span_start, span_start + replacement.len())
+        };
+        // Selection offsets are positions in the *new* text:
+        // count them through the replacement, never by slicing
+        // the old text at a shifted byte offset.
+        let span_start_char = byte_to_char(html, span_start);
+        let sel_start_char = span_start_char
+            + replacement[..sel_start - span_start].chars().count() as i32;
+        let sel_end_char = span_start_char
+            + replacement[..sel_end - span_start].chars().count() as i32;
+        return (
+            span_start_char,
+            byte_to_char(html, span_end),
+            replacement,
+            sel_start_char,
+            sel_end_char,
+        );
+    }
+    if start < end {
+        let replacement = format!("<{target}>{}</{target}>", &html[start..end]);
+        // The inserted tags are pure ASCII, so their byte length
+        // is their char length.
+        let inner_start = start_char as i32 + target.len() as i32 + 2;
+        (
+            start_char as i32,
+            end_char as i32,
+            replacement,
+            inner_start,
+            inner_start + (end_char - start_char) as i32,
+        )
+    } else {
+        let replacement = format!("<{target}></{target}>");
+        let inside = start_char as i32 + target.len() as i32 + 2;
+        (
+            start_char as i32,
+            end_char as i32,
+            replacement,
+            inside,
+            inside,
+        )
+    }
+}
+
+/// Inner markup of the outermost matched blocks with these
+/// names, in document order.
+fn outermost_inners(html: &str, names: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut covered_until = 0usize;
+    for block in scan_block_ranges(html, names) {
+        if block.start < covered_until {
+            continue;
+        }
+        covered_until = block.end;
+        out.push(html[block.inner_start..block.inner_end].trim().to_string());
+    }
+    out
+}
+
+/// One loose line's list tags off, for lists too malformed to
+/// pair up.
+fn strip_line_list_tags(line: &str) -> String {
+    let mut s = line.trim().to_string();
+    loop {
+        let lower = s.to_ascii_lowercase();
+        if lower.starts_with("<li") || lower.starts_with("<ul") || lower.starts_with("<ol") {
+            match s.find('>') {
+                Some(gt) => s = s[gt + 1..].trim_start().to_string(),
+                None => break,
+            }
+        } else {
+            break;
+        }
+    }
+    for close in ["</li>", "</ul>", "</ol>"] {
+        if s.to_ascii_lowercase().ends_with(close) {
+            s.truncate(s.len() - close.len());
+            s = s.trim_end().to_string();
+        }
+    }
+    s
+}
+
+/// The items a List conversion works on: existing `li`s, else
+/// paragraph/heading blocks, else plain lines.
+fn list_items(selected: &str) -> Vec<String> {
+    let items = outermost_inners(selected, &["li"]);
+    if !items.is_empty() {
+        return items;
+    }
+    let items = outermost_inners(selected, &["p", "h1", "h2", "h3", "h4", "h5", "h6"]);
+    if !items.is_empty() {
+        return items;
+    }
+    selected
+        .lines()
+        .map(strip_line_list_tags)
+        .filter(|line| !line.is_empty())
+        .collect()
+}
+
+/// Selected markup as a list — or, for `Remove`, its items
+/// back as paragraphs.
+fn list_transform(selected: &str, kind: ListKind) -> String {
+    let indent: String = selected
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect();
+    if kind == ListKind::Remove {
+        let mut items = outermost_inners(selected, &["li"]);
+        if items.is_empty() {
+            items = outermost_inners(selected, &["ul", "ol"]);
+        }
+        if items.is_empty() {
+            return selected.to_string();
+        }
+        return items
+            .iter()
+            .map(|item| format!("{indent}<p>{}</p>", item.trim()))
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    let mut items = list_items(selected);
+    if items.is_empty() {
+        items.push(String::new());
+    }
+    let tag = if kind == ListKind::Numbered { "ol" } else { "ul" };
+    let mut out = format!("{indent}<{tag}>");
+    for item in &items {
+        out.push_str(&format!("\n{indent}<li>{}</li>", item.trim()));
+    }
+    out.push_str(&format!("\n{indent}</{tag}>"));
+    out
+}
+
+/// The List menu's edit, in the same shape as
+/// `heading_transform`. A cursor or selection inside a list
+/// works on the whole list; otherwise the current block or
+/// line is the material.
+fn list_transform_at(
+    html: &str,
+    start_char: usize,
+    end_char: usize,
+    kind: ListKind,
+) -> (i32, i32, String, i32, i32) {
+    let start = char_to_byte(html, start_char);
+    let end = char_to_byte(html, end_char);
+    let blocks = scan_block_ranges(
+        html,
+        &["ul", "ol", "li", "p", "h1", "h2", "h3", "h4", "h5", "h6"],
+    );
+    let (from, to) =
+        if let Some(list) = smallest_containing(&blocks, &["ul", "ol"], start, end) {
+            (list.start, list.end)
+        } else if start == end {
+            match smallest_containing(
+                &blocks,
+                &["li", "p", "h1", "h2", "h3", "h4", "h5", "h6"],
+                start,
+                end,
+            ) {
+                Some(block) => (block.start, block.end),
+                None => {
+                    let line_start = html[..start].rfind('\n').map(|n| n + 1).unwrap_or(0);
+                    let line_end = html[start..]
+                        .find('\n')
+                        .map(|n| start + n)
                         .unwrap_or(html.len());
-                    let text = crate::epub::strip_html(&html[text_start..text_end]);
-                    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-                    let char_offset = html[..i].chars().count() as i32;
-                    out.push((
-                        level,
-                        if text.is_empty() {
-                            format!("Heading {level}")
-                        } else {
-                            text
-                        },
-                        char_offset,
-                    ));
-                    i = text_end;
-                    continue;
+                    (line_start, line_end)
+                }
+            }
+        } else if let Some(block) = smallest_containing(
+            &blocks,
+            &["p", "h1", "h2", "h3", "h4", "h5", "h6"],
+            start,
+            end,
+        ) {
+            (block.start, block.end)
+        } else {
+            (start, end)
+        };
+    let replacement = list_transform(&html[from..to], kind);
+    let from_char = byte_to_char(html, from);
+    let sel_end_char = from_char + replacement.chars().count() as i32;
+    (
+        from_char,
+        byte_to_char(html, to),
+        replacement,
+        from_char,
+        sel_end_char,
+    )
+}
+
+/// Whether a non-heading element's class/id/`epub:type` marks
+/// it as a heading, and at what level. Real books are full of
+/// `<p class="chapter-title">` where an `h2` belongs; without
+/// this the Outline of such a book is empty.
+fn class_heading_level(elem: &crate::epub_css::Elem) -> Option<usize> {
+    let mut tokens: Vec<String> = elem.classes.clone();
+    if let Some(id) = &elem.id {
+        tokens.push(id.clone());
+    }
+    if let Some(kind) = elem.attr("epub:type") {
+        tokens.extend(kind.split_whitespace().map(str::to_string));
+    }
+    for token in &tokens {
+        let norm: String = token
+            .to_ascii_lowercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if norm.is_empty() {
+            continue;
+        }
+        // heading2 / h2 spell the level out.
+        for prefix in ["heading", "h"] {
+            if let Some(rest) = norm.strip_prefix(prefix) {
+                if rest.len() == 1 {
+                    if let Some(level) = rest.chars().next().and_then(|c| c.to_digit(10)) {
+                        if (1..=6).contains(&level) {
+                            return Some(level as usize);
+                        }
+                    }
                 }
             }
         }
-        i += 1;
+        if norm.contains("subtitle") {
+            return Some(3);
+        }
+        if norm.contains("sectiontitle") || norm.contains("sectionhead") {
+            return Some(3);
+        }
+        if norm == "title" || norm.contains("booktitle") {
+            return Some(1);
+        }
+        if norm.contains("chaptertitle")
+            || norm.contains("chapterhead")
+            || norm.contains("title")
+            || norm.contains("heading")
+            || norm.contains("headline")
+        {
+            return Some(2);
+        }
+        if norm == "chapter" || norm == "head" {
+            return Some(2);
+        }
+    }
+    None
+}
+
+/// Headings in an HTML buffer: (level, visible text, char offset
+/// of the opening tag). A plain scan — the outline needs
+/// positions in the *edited* text, valid XML or not. Literal
+/// `h1`–`h6` first and always; short class-marked blocks with
+/// no nested blocks join them, so books that style paragraphs
+/// as headings still outline.
+fn extract_headings(html: &str) -> Vec<(usize, String, i32)> {
+    let ranges = scan_block_ranges(
+        html,
+        &[
+            "h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "section", "header",
+        ],
+    );
+    let mut out = Vec::new();
+    let mut covered_until = 0usize;
+    for range in &ranges {
+        if range.start < covered_until {
+            continue;
+        }
+        let inner = &html[range.inner_start..range.inner_end];
+        let text = crate::epub::strip_html(inner);
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let literal = (range.name.len() == 2 && range.name.starts_with('h'))
+            .then(|| range.name[1..].parse::<usize>().unwrap_or(1));
+        let level = match literal {
+            Some(level) => level,
+            None => {
+                // A styled-paragraph heading is one short block,
+                // never a wrapper around the chapter.
+                if text.is_empty() || text.chars().count() > 180 {
+                    continue;
+                }
+                let wraps_block = ranges
+                    .iter()
+                    .any(|other| other.start > range.start && other.end < range.end);
+                if wraps_block {
+                    continue;
+                }
+                let attrs = &html[range.open_name_end..range.inner_start.saturating_sub(1)];
+                let elem = crate::epub_css::elem_from_start_tag(&range.name, attrs);
+                match class_heading_level(&elem) {
+                    Some(level) => level,
+                    None => continue,
+                }
+            }
+        };
+        covered_until = range.end;
+        out.push((
+            level,
+            if text.is_empty() {
+                format!("Heading {level}")
+            } else {
+                text
+            },
+            byte_to_char(html, range.start),
+        ));
     }
     out
+}
+
+/// The char offset of the element carrying `id="fragment"` —
+/// where a contents entry with that fragment should land.
+fn fragment_offset(html: &str, fragment: &str) -> i32 {
+    if fragment.is_empty() {
+        return 0;
+    }
+    for needle in [format!("id=\"{fragment}\""), format!("id='{fragment}'")] {
+        if let Some(at) = html.find(&needle) {
+            let tag_start = html[..at].rfind('<').unwrap_or(at);
+            return byte_to_char(html, tag_start);
+        }
+    }
+    0
 }
 
 /// The token-generated GtkSourceView style scheme (decision 127):
@@ -13090,4 +14280,76 @@ fn current_style_scheme() -> Option<sourceview5::StyleScheme> {
     }
     manager.force_rescan();
     manager.scheme("kalam")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heading_retags_the_current_block_keeping_attributes() {
+        let html = "<p class=\"x\">Café</p>";
+        // Cursor inside "Café" (char 15, after "Ca").
+        let (from, to, replacement, sel_from, sel_to) = heading_transform(html, 15, 15, "h2");
+        assert_eq!((from, to), (0, 21));
+        assert_eq!(replacement, "<h2 class=\"x\">Café</h2>");
+        assert_eq!((sel_from, sel_to), (16, 16));
+    }
+
+    #[test]
+    fn heading_wraps_a_bare_selection() {
+        let html = "<body>Hello</body>";
+        let (from, to, replacement, sel_from, sel_to) = heading_transform(html, 6, 11, "h3");
+        assert_eq!((from, to), (6, 11));
+        assert_eq!(replacement, "<h3>Hello</h3>");
+        assert_eq!((sel_from, sel_to), (10, 15));
+    }
+
+    #[test]
+    fn list_turns_paragraphs_into_items() {
+        let html = "<p>One</p>\n<p>Two</p>";
+        let (_, _, replacement, _, _) =
+            list_transform_at(html, 0, html.chars().count(), ListKind::Bulleted);
+        assert_eq!(
+            replacement,
+            "<ul>\n<li>One</li>\n<li>Two</li>\n</ul>"
+        );
+    }
+
+    #[test]
+    fn list_converts_and_removes_from_inside() {
+        let html = "<ul><li>One</li><li>Two</li></ul>";
+        let (_, _, numbered, _, _) = list_transform_at(html, 9, 9, ListKind::Numbered);
+        assert_eq!(
+            numbered,
+            "<ol>\n<li>One</li>\n<li>Two</li>\n</ol>"
+        );
+        let (_, _, removed, _, _) = list_transform_at(html, 9, 9, ListKind::Remove);
+        assert_eq!(removed, "<p>One</p>\n<p>Two</p>");
+    }
+
+    #[test]
+    fn outline_sees_class_marked_headings() {
+        let html = "<h1>Real</h1>\n<p class=\"chapter-title\">Chapter One</p>\n\
+                    <p>Body text that is not a heading at all.</p>\n\
+                    <div class=\"chapter\"><p>Wrapped chapter body</p></div>";
+        let headings: Vec<(usize, String)> = extract_headings(html)
+            .into_iter()
+            .map(|(level, text, _)| (level, text))
+            .collect();
+        assert_eq!(
+            headings,
+            vec![
+                (1, "Real".to_string()),
+                (2, "Chapter One".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn fragment_offsets_are_char_offsets() {
+        let html = "<p>é</p><h2 id=\"x\">T</h2>";
+        assert_eq!(fragment_offset(html, "x"), 8);
+        assert_eq!(fragment_offset(html, "missing"), 0);
+    }
 }

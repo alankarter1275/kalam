@@ -8564,7 +8564,7 @@ button.kalam-editorpicker-row:hover {
 }
 .kalam-ed-title {
   font-family: "Playfair Display", "Literata", Georgia, serif;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   color: @kalam_text;
 }
@@ -8576,7 +8576,6 @@ button.kalam-editorpicker-row:hover {
 /* File tree (§36) */
 .kalam-ed-tree {
   background: @kalam_bg;
-  border-right: 1px solid @kalam_border;
   padding-top: 8px;
 }
 button.kalam-ed-tree-section {
@@ -8610,7 +8609,8 @@ button.kalam-ed-tree-row:hover {
 }
 button.kalam-ed-tree-row.open {
   background: @kalam_surface_2;
-  font-weight: 600;
+  box-shadow: inset 3px 0 @kalam_accent;
+  font-weight: 700;
 }
 .kalam-ed-dot {
   color: @kalam_accent;
@@ -8633,6 +8633,25 @@ button.kalam-ed-tool-btn {
 button.kalam-ed-tool-btn:hover {
   background: @kalam_hover;
 }
+.kalam-ed-tool-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: @kalam_text;
+}
+.kalam-ed-tool-caret {
+  font-size: 10px;
+  color: @kalam_text_dim;
+}
+/* Workspace splitters: the paned separator carries the 1px
+   divider the tree and side panel used to draw themselves. */
+paned.kalam-ed-paned > separator {
+  background: @kalam_border;
+  min-width: 1px;
+  min-height: 1px;
+}
+paned.kalam-ed-paned > separator:hover {
+  background: @kalam_accent;
+}
 .kalam-ed-tabstrip {
   background: @kalam_bg;
   border-bottom: 1px solid @kalam_border;
@@ -8653,14 +8672,21 @@ button.kalam-ed-filetab:hover {
 }
 button.kalam-ed-filetab.active {
   color: @kalam_text;
+  font-weight: 700;
   border-bottom-color: @kalam_accent;
 }
 .kalam-ed-tab-temporary {
   font-style: italic;
+  color: @kalam_text_dim;
 }
 .kalam-ed-tab-close {
   color: @kalam_text_3;
   font-size: 14px;
+  opacity: 0;
+}
+button.kalam-ed-filetab:hover .kalam-ed-tab-close,
+button.kalam-ed-filetab.active .kalam-ed-tab-close {
+  opacity: 1;
 }
 
 /* Source view (§36): DM Mono 13; colours from the generated scheme. */
@@ -8668,15 +8694,23 @@ button.kalam-ed-filetab.active {
   font-family: "DM Mono", monospace;
   font-size: 13px;
 }
+/* The View menu's sizes: §36's 13px mono, stepped. */
+.kalam-ed-source.kalam-ed-font-11 { font-size: 11px; }
+.kalam-ed-source.kalam-ed-font-12 { font-size: 12px; }
+.kalam-ed-source.kalam-ed-font-13 { font-size: 13px; }
+.kalam-ed-source.kalam-ed-font-14 { font-size: 14px; }
+.kalam-ed-source.kalam-ed-font-15 { font-size: 15px; }
+.kalam-ed-source.kalam-ed-font-16 { font-size: 16px; }
+.kalam-ed-source.kalam-ed-font-18 { font-size: 18px; }
+.kalam-ed-source.kalam-ed-font-20 { font-size: 20px; }
 
 /* Right panel (§§32–33) */
 .kalam-ed-side {
   background: @kalam_bg;
-  border-left: 1px solid @kalam_border;
 }
 .kalam-ed-tabrow {
   border-bottom: 1px solid @kalam_border;
-  padding: 0 20px;
+  padding: 0 16px;
 }
 button.kalam-ed-flat-tab {
   background: transparent;
@@ -8693,6 +8727,7 @@ button.kalam-ed-flat-tab:hover {
 }
 button.kalam-ed-flat-tab.active {
   color: @kalam_text;
+  font-weight: 500;
   border-bottom-color: @kalam_accent;
 }
 .kalam-ed-preview {
@@ -8722,10 +8757,10 @@ button.kalam-ed-outline-row:hover {
 }
 .kalam-ed-problem-title {
   color: @kalam_text;
-  font-size: 13px;
+  font-size: 14px;
 }
 .kalam-ed-problem-btn {
-  min-height: 30px;
+  min-height: 28px;
 }
 
 /* Status bar (decision 122) */
@@ -8901,8 +8936,10 @@ progressbar.kalam-ed-progress progress {
   border-radius: 999px;
 }
 button.kalam-ed-outline-row.current {
-  color: @kalam_accent;
-  font-weight: 600;
+  background: @kalam_surface_2;
+  box-shadow: inset 3px 0 @kalam_accent;
+  color: @kalam_text;
+  font-weight: 700;
 }
 /* ── E4: Edit contents (decision 136) ── */
 button.kalam-ed-toc-row {

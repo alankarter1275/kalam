@@ -1,4 +1,4 @@
-# Kalam design system (v0.8)
+# Kalam design system (v0.10)
 
 Status key: **Final** = approved. **Proposed** = my suggestion, not yet confirmed. **TBD** = undecided.
 
@@ -51,6 +51,7 @@ Ink and Amber from the first mockups are dropped. Plum and Teal are used in the 
 | Caption | DM Sans 400 | 11 | smallest readable text |
 | Label | DM Sans 700 | 10 | uppercase, 0.12em tracking |
 | Reader body | Playfair Display 400 | 18 (user adjustable) | line-height 1.75 to 1.8 (default to confirm); the book text only |
+| Quote large | Playfair Display italic | 18 | line-height 1.6; the Home quote only (Proposed, section 63) |
 
 Fonts must be bundled with the app, not loaded from Google Fonts.
 
@@ -58,7 +59,7 @@ Fonts must be bundled with the app, not loaded from Google Fonts.
 
 - Radii: 6, 10, 14, 22, pill (999). Cards 14, large feature cards and side panels 22, buttons and chips pill, fields 10.
 - Spacing: 4, 8, 12, 16, 24, 32, 48 (20 is also used for padding inside side panels). The old mockups used 36, 40 and 44 for section gaps; use 32 or 48.
-- Nav rail: 68 wide, 44 circular items, active item filled with `accent`.
+- Nav rail: 68 wide, 44 circular items, active item filled with `accent-fill` and its icon drawn in `bg` (section 56).
 - Touch and click targets: 44. Compact controls inside cards may be 32 to 36.
 
 ## 5. Logo (Final)
@@ -77,13 +78,17 @@ From the deep editor (chat 7): workspace layout, flat tabs and ghost buttons, fi
 
 From Settings (chat 8): settings page layout, palette and mode picker, dropdown field and list, rows and chips, rail bell and notification panel, control states (sections 41 to 46).
 
+From Library browsing and My Library (chat 10): library header and toolbar, cover grid and card markers, bulk action bar, list view and columns, search results and syntax help, reading timeline and its card, saved-words sphere, My Library page layout, library control states (sections 47 to 55).
+
+From the app shell and Home (chat 9): navigation rail, search bar and box, search pills and tag marks, Home book, Updates timeline, shelf and timeline ruler, window controls, Home state cards (sections 56 to 66).
+
 ## 7. Not yet designed (TBD)
 
-- **Progress ring:** the mockups use `conic-gradient`. GTK CSS has no conic gradients, so build it as a Cairo-drawn widget.
-- **Feature surface:** the dark navy continue-reading card clashes with Forest, Plum and Teal. It should become a token derived from each palette.
+- **Progress ring (also the timeline and the saved-words sphere, sections 51 and 52, which are Cairo-drawn too):** the mockups use `conic-gradient`. GTK CSS has no conic gradients, so build it as a Cairo-drawn widget.
+- **Feature surface:** resolved in chat 9. Home has no feature card. Continue reading is the open book (section 60), made of `card`, `border` and cover art. The navy card is dropped.
 - **Status and source colours:** green for done (`#10B981` and `#4CAF50` both appear), plus per-source bar colours (MangaDex, AO3, FFN). Pick one set.
 - **Monospace font:** the deep editor's source view needs one and none is defined. Proposed: bundle DM Mono at 13 / 22 (section 34).
-- **Icons:** the mockups use Material Symbols Rounded (a web font). The app needs symbolic SVG icons; choose the set. The reader boards use simple 1.8px stroke icons as placeholders.
+- **Icons:** the mockups use Material Symbols Rounded (a web font). The app needs symbolic SVG icons; choose the set. The reader boards use simple 1.8px stroke icons as placeholders. Chat 9 drew Lucide-style outline icons (22, stroke 1.8) as the working proposal; the set is still to be chosen and bundled.
 - **Cover fallback:** resolved in section 20. **Empty, loading and error states** outside the readers and the book and series pages are still open. Hover, focus and disabled states follow sections 12 and 13 and are drawn per screen.
 
 ## 8. GTK constraints for every design
@@ -168,7 +173,7 @@ Text on a filled accent surface is white and must reach 4.5:1. Use `accent-fill`
 Only Terracotta is applied in the boards. The other palettes' values are computed here and not yet drawn.
 
 ## 12. Control states (new)
-Hover: `border` colour as fill (primary: 10% white overlay on `accent-fill`). Focus: 2px `accent` ring, 2px offset. Disabled: 40% opacity. Switch hover: 5px `border` halo. Thumbnail hover: 2px `text-2` ring. Drawn for the Settings controls in section 46.
+Hover: `border` colour as fill (primary: 10% white overlay on `accent-fill`). Focus: 2px `accent` ring, 2px offset. Disabled: 40% opacity. Switch hover: 5px `border` halo. Thumbnail hover: 2px `text-2` ring. Drawn for the Settings controls in section 46 and the library controls in section 55.
 
 ---
 
@@ -237,7 +242,7 @@ Row 64 high, left padding 44. Node 24 circle at left 0; connecting line 2px at l
 Five stars, 20px, letter spacing 3, half steps. Set: `accent`; empty: `border` colour. The half star is painted (a custom-drawn widget in GTK). Hover previews the value at 60% opacity; clicking the current value clears it; keyboard arrows step by half. Empty label "Not rated yet" in Meta.
 
 ## 17. Menu and submenu (popover)
-`card` fill, 1px `border`, radius 14, padding 6, no arrow. Items 40 high, radius 8, 12 side padding. Dividers: 1px `border`, margins 6 and 8. Widths: 210 (short menus), 240 (the ⋯ menus on the book and Author pages, and the Shelves submenu), 220 (dropdown lists, section 43). Destructive item: `accent` text. A trailing chevron marks a submenu; the open parent item has the `border` fill. **Count badge:** a 22 high chip with an accent border and accent text. Tick circles in a checklist: 22 circle, `accent-fill` with a white tick when on, 1.5px `text-2` ring when off.
+`card` fill, 1px `border`, radius 14, padding 6, no arrow. Items 40 high, radius 8, 12 side padding. Dividers: 1px `border`, margins 6 and 8. Widths: 210 (short menus), 240 (the ⋯ menus on the book and Author pages, and the Shelves submenu), 220 (dropdown lists, section 43), and for the library 260 (Filter menu and its submenus), 280 (shelves menu), 300 (Add books menu and Columns menu). Destructive item: `accent` text. A trailing chevron marks a submenu; the open parent item has the `border` fill. **Count badge:** a 22 high chip with an accent border and accent text. Tick circles in a checklist: 22 circle, `accent-fill` with a white tick when on, 1.5px `text-2` ring when off.
 
 ## 18. Dialog sizes (extends decision 75 and section 13)
 420 wide for forms and confirmations. **560 wide** for list dialogs (the Annotations dialog; 660 high, padding 24). Everything else about dialogs is unchanged.
@@ -248,7 +253,7 @@ One 3px high segment (radius 2) per item, 4 gap, 220 wide in total. Read `accent
 ## 20. Cover states
 - **Fallback (resolves the "Cover fallback" TBD):** `card` fill, 1px `border`, radius 10, padding 20, content at the bottom: Label-style kind, title (Playfair 500, 22), author (Meta, `text-2`). **No accent tint**, so it can sit anywhere.
 - **Missing book (series):** 1.5px dashed `text-2` border, radius 10, centred title and "Not in library" (11px). On the Author page it also carries the fetch button (section 28).
-- **Finished badge:** 22 circle, `accent-fill`, white 14 tick, 8 from the top right.
+- **Finished badge:** 22 circle, `accent-fill`, white 14 tick, 8 from the top right. (Library cards use the double tick of section 48 instead.)
 - **File missing (book page):** cover at 45% opacity, a dashed "File not found" state card under it.
 
 ## 21. Series strip
@@ -401,3 +406,101 @@ Rules as section 12, drawn for the ghost button, primary button, dropdown field,
 - Confirm the 640 settings column, the 220 dropdown list and the Text size percentages.
 - Forest, Plum and Teal versions of the Settings boards.
 - The reader's Theme card should use the section 42 picker.
+
+---
+
+# Additions v0.9 (library chat)
+
+All Proposed unless stated; applied to Terracotta only (Forest, Plum and Teal not checked). No new colour tokens. New sizes: 1.6 : 1 cover ratio (height 1.6 times width), 132 x 211 grid cover, 16 grid gap, 18 format chip, 32 quick-action button, 20 double tick, 18 selection circle, 48 bulk bar, 608 recently added list, 380 x 124 shelf card, 400 x 196 timeline card, 520 x 480 sphere stage, 300 columns menu.
+
+## 47. Library header and toolbar
+Title row: Label "Library" (accent) over the Display title with a 24 chevron in `text-2` (the title is a button), and the filled **Add books** pill at the right (`accent-fill`, white text weight 500, 44 high, padding 0 24, 18 plus icon, 8 gap). Search: a 44 high pill, `card` fill, 1px `border`, padding 0 6 0 18, a 16 search icon, 10 gap, placeholder in `text-2`, and a 32 circle `?` icon button at the right. Toolbar row, 14 below: a **ghost Filter button** (32 high, pill, no border, 12.5px, hover `border` fill) with the count badge (section 17); filter chips (section 10, active chip, 28 high) with a ×; an accent "Clear filters" link; at the right a Meta count, two dropdown fields (section 43, 36 high), a ghost Select button and the small segmented switch (section 22). Popovers: the shelves menu (280 wide, rows with a Meta count, "Manage shelves…", accent "New shelf…"), the Add books menu (300 wide, key chips of section 13, a disabled row at 40% with a "Not available yet" chip). Narrow (about 640): Add books is a 44 circle, the toolbar wraps to two rows, and Group, Select and the view switch move into a 32 ⋯ button.
+
+## 48. Cover grid and card
+Grid: 8 columns at 1280, 12 at 1920, 4 at 640; gap 16; margin 56 (24 at narrow). Cover: ratio 1.6 : 1 (aspect 5 : 8), radius 10, placeholder gradients neutral and the same in every palette. **Format chip:** bottom-left, 6 in, 18 high, padding 0 6, radius 6, `card` fill, 11px bold `text`. **Quick action:** 32 circle, top-right 6 in, `card` fill, 1px `border`, ⋯ icon, shown on hover and focus. **Finished:** a 20 double tick, stroke 1.8, `accent`, no background, 8 from the bottom-right. **Progress:** the 3px bar of section 10, 10 below the cover. **Title:** Playfair 600 14, line height 1.25, two lines then ellipsis, 10 below; **author:** Meta, one line. **Selection mode:** an 18 circle at the top-left (8 in), 1.5px white ring and no fill; selected = `accent-fill` fill, white 12 tick, plus a 2px `accent` outline with 2 offset on the cover. **Hover:** 2px `text-2` ring; **focus:** 2px `accent` ring with 2 offset. **Skeleton card:** a cover and two bars (12 and 10 high, radius 6) in `border`. A 72 high gradient to `bg` fades the last row. **Group heading:** Label style `text-2` with a Meta count, 24 above and 12 below. **Jump strip:** a column of 26 letters, 11px, line height 17, `text-2`, the current letter bold `accent`, 20 from the right edge.
+
+## 49. Bulk action bar
+A floating pill, bottom centre, 32 up: 48 high, `card` fill, 1px `border`, padding 6 8 6 20, 8 gap. "N selected" (13px, count bold), an accent "Select all" (12.5px), ghost buttons (section 33 ghost, 32 high), the accent Remove, and a 32 circle close icon button. A button that needs a minimum selection is disabled at 40%.
+
+## 50. List view and columns
+Row 64 high, hairline above, columns by grid with 16 gap: 36 thumbnail (36 x 50, radius 4), flexible title, then fixed columns (Series 140, Format 64, Progress 120, Rating 70, Added 90, Last read 96, a 32 ⋯). Header: Label style captions in `text-2`, 8 below; the sorted caption is `accent` with an arrow. **Progress cell:** a 72 x 3 bar and the Meta percentage, or an accent double tick (18) and "Read", or "Unread". **Rating cell:** an accent star and the value in Meta. **Hover row:** `border` fill, radius 10. **Columns menu:** the menu of section 17, 300 wide, rows 40 high with a tick circle (22) and the field name, a locked row at 40% with "Always shown", a 48 high bottom fade, a divider, an accent "Reset to default" row and a Meta hint. **Drag:** the dragged column is tinted with `border`, radius 12, from the caption to the last row; the other columns slide aside; a 3px `accent` bar (radius 2) marks the slot. **Resize:** a 2px `accent` line (radius 2) down the list, a 14 x 26 `accent-fill` grip (radius 7) in the header, and a label pill (`card` fill, 1px `border`, radius 14, padding 6 12, 12px) above.
+
+## 51. Reading timeline
+A header line (Label caption at the left; at the right a Meta hint, an accent 12.5px "All impressions ›", an optional "N hidden · Show" and a ghost Expand or Collapse button with a 14 chevron). Axis row 30 high: month initials (11px `text-2`, 1px `border` tick at each month start, 6 padding) over a 1px `border` hairline. Lines: 3px high, radius 3, one of the five highlight colours (section 9) cycling, lanes 16 apart from 34 down, 8 minimum gap, opacity 1 (30% when another line is open). **Open line:** 5px; a 1.5px connector in its colour; the card (400 x 196, `bg` fill, 1px `border`, radius 14, padding 16, cover 48 x 72 radius 6, a 32 circle dustbin button with 1px `border` and `bg` fill, a hairline, the note in Quote style 13, a mood chip, an accent link bottom-right). **Today:** a 1.5px `accent` line with an 11px bold accent label in the axis row. **Current read:** a 6 `accent` dot at the line's end. **Edge fade:** 64 wide gradient from `bg`. **Expand:** lanes 64 high; under each line a title (Playfair 600 12.5) and a Meta 11px line. **Focus:** 2px `accent` ring with 2 offset (3 offset on a 3px line).
+
+## 52. Saved-words sphere
+A stage 520 x 480, clipped, on plain `bg`. Words: Playfair, upright, horizontal or rotated -90 degrees. Size 9.5 to about 38 from frequency, scaled 0.72 to 1 by depth; weight 400, 500, 600 or 700 by frequency bucket; opacity 0.2 at the back to 1 at the front; colour `text`. The hovered word is `accent` weight 700 and opens a 270 wide popover (section 17 look, `card` fill, 1px `border`, radius 14, padding 16): headword Playfair 600 16, an `accent-fill` 22 tick circle, Meta meaning, a hairline and a Meta "Seen N times in M books" line. The small accent link "All words ›" sits at the top right. Packing: front words are placed largest first on the sphere's visible side, centre outwards, each in the first free spot as horizontal or vertical with a 2 gap; back words are packed the same way among themselves and drawn faint. Build as a Cairo and Pango widget (section 8); drift stops with Reduce motion.
+
+## 53. My Library page layout
+Section heading row: 36 high, 48 above and 16 below, Section-style title at the left and at the right an accent 12.5px link plus, for sliding rows, two 36 circle arrow buttons (1px `border`, 12 gap; the left one at 40% at the start). Masthead: the Display title at the left; at the right three blocks of a Label caption over a Display-size Playfair numeral (46, 8 below, with an 18 `text-2` unit), 48 apart, and an accent "All analytics ›" 12 below. **Recently added list:** 608 wide, a fixed height equal to the sphere stage so both end on one line, 8 rows with a hairline above each (not the first) and one below the last, title Playfair 600 14 with ellipsis, the date in Meta. **Shelf card:** 380 x 124, `card` fill, 1px `border`, radius 14, padding 20, title Playfair 600 16, a Meta count, and the cover fan of section 26 at the right. **Sliding rows** (Shelves, Reading list, Highlights) bleed off the right page edge (margin 56), scroll sideways with no visible scrollbar (section 24). **Reading list:** covers 132 x 211, a Label number (01) 8 above. **Series row:** thumbnail 36 x 50, bold title, the segmented bar (section 19) and a Meta line. **Authors:** a 64 circle (`card` fill, 1px `border`, Playfair 500 18 initials), 13px name and a Meta count, 146 wide each. **Empty state:** zeros in the numerals, an empty axis and a dashed state card (section 10) 1168 x 300. **Loading:** `border` blocks for the numerals (90 x 46), timeline lines, list rows, a 400 disc at 50% for the sphere and 380 x 124 shelf cards.
+
+## 54. Search results, syntax help and states
+Result rows as the list rows (section 50). **Book text result:** a 36 x 50 thumbnail, the book title (600) with a Meta chapter, and a 13.5 snippet with line height 1.5 where the match uses the `match` tint in bold with radius 3. A skeleton row (`border` bars) stands for results still loading. Operators in the field: `accent`, weight 600. **Syntax help popover:** 360 wide, `card` fill, 1px `border`, radius 14, padding 20, anchored 8 under the `?` button and right-aligned, Section-style title, rows of an accent 600 operator (84 wide) and a Meta description, a hairline and a Meta closing line. **No matches:** the dashed state card (section 10) with a "Did you mean" suggestion in accent. **Indexing:** the quiet notice (section 30) with a 220 wide 3px progress bar at its right.
+
+## 55. Control states (Library)
+Rules as section 12, drawn for Add books (hover: 10% white overlay), the ghost button (hover `border` fill; the Done state is accent text on a `border` fill), the dropdown (open = accent border), the Grid / List option, the filter chip, the menu item, the cover (section 48), a timeline line (hover 5px, focus ring, dimmed 30% when another is open) and the bulk bar button (disabled 40%).
+
+## Updates to existing sections
+- **Section 6:** extended in place with the library components (sections 47 to 55).
+- **Section 7 (TBD):** the progress ring, the timeline and the saved-words sphere are Cairo-drawn widgets. Placeholder icons also include plus, ⋯, trash, columns, double tick and the arrows. Cover fallback, Feature surface, Progress ring and Icons are otherwise unchanged.
+- **Section 12 and section 17:** extended in place (library controls; popover widths 260, 280 and 300).
+- **Section 20:** library cards use the double tick for finished; the circle badge stays on the series strip and the Author page panel until decided.
+
+## Open (design system)
+- Whether the accent double tick and the white selection ring stay readable on real cover art.
+- Whether the finished double tick replaces the circle badge on the series strip, the Author page panel and the book page.
+- Confirm the 8 column grid at 1280 and the 132 x 211 cover.
+- Forest, Plum and Teal versions of the library boards and My Library.
+
+---
+
+# Additions v0.10 (app shell and Home chat)
+
+All Proposed unless stated; applied to Terracotta only (Forest, Plum and Teal not checked). No new colour tokens. New type size: Quote large (section 63). New sizes: 520 search bar and box, 560 x 360 Home book, 470 and 600 Home columns, 278 hover card, 260 option menu. One new derived use: `text-2` at 25 to 70% opacity for ruler ticks and leader lines (section 61).
+
+## 56. Navigation rail
+68 wide, no fill, no border. A 2px wide divider with rounded ends on the right edge in the `border` colour, inset 28 from the top and 24 from the bottom. The logo (`logo-svg.md`, 38 x 37, `accent`) at the top, 28 down. The main group (Home, My Library, Shelves, Comics, Editor) is centred vertically, 8 gap; the bottom group (bell, Settings) sits above a 24 bottom padding. Items are 44 circles, icons 22 with stroke 1.8 (Lucide-style outline; set not chosen). Idle `text-2`. Hover: `border` fill. Focus: 2px `accent` ring, 2 offset. **Active: `accent-fill` circle with the icon in the `bg` colour** (it reads as cut out). Bell dot: 8, `accent`, 8 from the top and 9 from the right. Tooltip: 32 high, `card` fill, 1px `border`, radius 10, 13px name and an 11px Meta shortcut, to the right of the item after a short delay. Decisions 179 and 180.
+
+## 57. Search bar and box
+Bar: 520 wide, 40 high, 1px `border` underline at rest and in `accent` when focused; magnifier 18, text 14 (hint in `text-2`), a 1.5px `accent` caret; "N results" in Meta at the right, then the **option picker**: a bare 32 x 32 button (radius 8, no outline) with a three-row sliders icon 20 in `text-2`, `border` fill on hover or while its menu is open. Box: attached under the bar, 520 wide, `bg` fill, 1px `border`, no top border, radius 0 0 14 14, scrolling inside with a 48 to 56 fade (section 24). Group heading: Label style, "Name · count", 14 20 4 padding, an accent "See all N ›" (12) at the right. Rows 52 (books, series), 48 (authors), 44 (history); the highlighted row has the `border` fill. The matched text is bold on the `match` tint. Snippets: Quote style 14 with the book and chapter in 11px Meta. History rows: a clock icon, the query, a delete cross. The no-match message is a dashed state card (section 10) inside the box. Option menu: the menu of section 17, 260 wide, with a switch row (section 10) and a Meta caption. Decisions 196 to 200.
+
+## 58. Search pills, dropdown lists and tag marks
+**Pill:** 28 high, 1px `border`, radius 999, 12.5px `text-2`, a 12 chevron; open or active: `accent` border and `text` colour, the chevron flipped. The pills row sits at the top of the box (10 16 padding, a 1px `border` line below). **Apply:** the section 11 primary at 28 high. **Sort and In lists:** the dropdown list of section 43, 220 and 240 wide, rows 36, an accent tick on the current choice. **Tag mark:** a 20 circle. Included: `accent-fill` with a white plus. Excluded: 1.5px `text-2` ring with a minus. Neutral: 1.5px `text-2` ring at 50%. **Tag pill:** 28 high, 1px border, 13px; included has an `accent` border and a plus, excluded is `text-2` and struck through with a minus; a 12 cross. **Facet row:** 44 high, 1px top line, the name (bold when open), the picked count in `accent`, a chevron; open lists use 40 high rows with a mark, the name and a Meta count. **Field:** 36 high, radius 10 (as section 43). Decisions 202 to 205.
+
+## 59. Search results from outside the library (AO3)
+Work blurb: padding 12 20, a 1px `border` line below; title (Playfair 600 14) and "by author" (Meta) on one line, the fandom (Meta), a facts line in `text` Meta (rating, status, words, kudos), a summary in 13px `text-2`. Dashed state cards (section 10) for rate limited, no results and cannot reach, each with a 36 high ghost button.
+
+## 60. Home book
+560 x 360: two pages of 280. Left: cover art with its title printed in it (content, not UI), radius 10 on the outer corners, a 1px `border`. Right: `card` fill, 1px `border`, padding 40 32, radius 10 on the outer corners; a Label chapter line, a Card title chapter name, an excerpt in Playfair 13 with line height 1.85, a 96 fade to `card`, the bookmark ribbon (18 x 36, `accent`, 32 from the right) and a **play button**: 40 circle, `accent-fill`, the triangle in `bg`, 20 from the bottom and right. **Pager:** a column of 5 dots, gap 10: the current one an 8 x 22 `accent` pill, the others 8 circles in `text-2` at 45%. Decision 188.
+
+## 61. Shelf and timeline ruler
+Base line: 2px, `text-2` at 50%, rounded; it is also the axis. Bars: horizontal, radius 0 3 3 0, no border, cover colour (content colour), a 2px band of white at 20% 8 from the left and 6 from the right (content). Thickness 8 to 12 (16 in Weeks with the title inside at 11px, 4 in Years), length 50 to 150 from the page count (Weeks 110 to 140). Dots on the axis: 3.5 `accent` (2 in Years). Ticks: day and week `text-2` at 25 to 30%, month 44 to 54 long at 70%, year 34 to 54 long at full strength; labels 11px `text-2`, month names in Weeks and the year label in Playfair 600 12 `text`; Years adds a Meta "N books" under each year. Today: a 5 radius ring (`bg` fill, 2px `accent`) with "Today" in `accent` 11px. Top fade 40 to `bg`. **Elastic spacing:** a minimum of 17 between bar centres (Months), 18 (Weeks), 6 (Years); dates map to positions by one piecewise function shared by the ruler and the bars. Hover: the bar slides out 14, a 1px `text-2` leader at 40%, and the card. **Hover card:** 278 wide, padding 16, `bg` fill, 1px `border`, radius 14: cover 56 x 84 radius 6, title (Card title), author, stars in `accent` with the number, the date; a row of three Label-over-13px stats; reaction chips (section 10); the note in Quote style. **Zoom readout:** a 32 high pill, `card` fill, 1px `border`, shown only while zooming. Month filter: other bars at 25%, the month label in `accent`, a 28 high accent-bordered pill with a cross. Decisions 190 to 193.
+
+## 62. Updates timeline
+Heading Section style with a Meta line at the right. Line 2px `border` at the left, nodes 10 (filled `accent` for new, 1.5px `text-2` ring on `bg` for seen), rows 56 with the title (13, 600), a Meta line, and the time at the right; 4 rows visible and a 48 fade; scrolls without a visible bar. Decision 189.
+
+## 63. Quote large
+Playfair italic 18, line height 1.6, in `text`; a 1.5px `accent` left rule with 20 padding; the attribution in 11px Meta, 8 below. Home only. Decision 187.
+
+## 64. Home state cards
+The dashed state card of section 10, larger: 600 x 360 (560 x 360 for Nothing in progress), padding 24, centred content: a Section-style title (18), a Meta line, and ghost or primary pills (40 high). The empty shelf is the base line with the "Today" ring and one Quote-style line in `text-2`. Skeletons use `border` fill, radius 6. Decision 194.
+
+## 65. Window controls
+Three 32 round icon buttons (minimise, maximise, close), gap 4, icons 16 in `text-2`, transparent, `border` fill on hover (all three alike). At the top right over the page. Decision 181.
+
+## 66. Toast with a link
+The after-tool pill (section 39) with a trailing `accent` link ("Undo", "View"). Decision 184.
+
+## Updates to existing sections
+- **Section 3:** the type table has the Quote large row.
+- **Section 4:** the nav rail line points to section 56.
+- **Section 6:** extended in place with the chat 9 components (sections 56 to 66).
+- **Section 7 (TBD):** Feature surface is resolved (Home has no feature card); Icons gets the Lucide-style proposal; Progress ring is unchanged (Home uses 3px bars, section 19).
+- **Section 17 and 43:** the option menu (260 wide) and the Sort and In lists reuse them.
+
+## Open (design system)
+- Choose and bundle the icon set (Lucide-style icons were used).
+- Whether Quote large becomes a shared size or stays Home only.
+- Whether the `text-2` at 25 to 70% opacity for ticks and leader lines should be a named token.
+- Forest, Plum and Teal versions of the chat 9 boards, in particular the stencil icon in `bg` on `accent-fill`.
+- Cover dominant colours are content, not tokens; confirm that rule.

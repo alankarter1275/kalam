@@ -115,7 +115,7 @@ impl TreeSection {
 /// A whole EPUB read into memory: the manifest's view of its files
 /// plus every entry's bytes. Books are a few megabytes; holding them
 /// whole keeps tab-opening and tool passes simple, and the save path
-/// re-reads from disk anyway (see `write_with_replacements`).
+/// re-reads from disk anyway (see `rewrite_epub`).
 pub struct EpubContainer {
     pub opf_path: String,
     /// The EPUB 3 nav document; Edit contents (E4) writes it.
@@ -502,22 +502,6 @@ fn decode_text(bytes: &[u8]) -> String {
         .unwrap_or(text)
 }
 
-/// Rewrite the EPUB at `epub_path` with `replacements` applied,
-/// keeping every other entry's stored bytes exactly. Entries named
-/// in `replacements` but absent from the archive are appended. The
-/// replacement is verified to open before it replaces the book.
-pub fn write_with_replacements(
-    epub_path: &Path,
-    replacements: &HashMap<String, Vec<u8>>,
-) -> Result<()> {
-    rewrite_epub(
-        epub_path,
-        epub_path,
-        replacements,
-        &std::collections::HashSet::new(),
-    )
-}
-
 /// Write a rewritten copy of the EPUB at `source` to `dest`, applying
 /// `replacements` and omitting `removals`. With `dest == source` this
 /// is the in-place save; with a different `dest` it is how the editor
@@ -746,7 +730,13 @@ mod tests {
             "OEBPS/text/ch1.xhtml".to_string(),
             b"<html><body><p>Edited</p></body></html>".to_vec(),
         );
-        write_with_replacements(&path, &replacements).expect("rewrite");
+        rewrite_epub(
+            &path,
+            &path,
+            &replacements,
+            &std::collections::HashSet::new(),
+        )
+        .expect("rewrite");
 
         let book = EpubContainer::open(&path).expect("reopen");
         assert_eq!(

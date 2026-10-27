@@ -10,12 +10,6 @@
 //! document (`../text/chapter01.xhtml#start`). `rel_href` and the
 //! container's `resolve_href` convert between them.
 
-// Several tools below (split/merge, semantics, spell check)
-// gain their editor UI in later E4 commits; until then only
-// this module's tests exercise them. Drop this when the last
-// E4 surface lands.
-#![allow(dead_code)]
-
 use crate::epub_container::resolve_href;
 
 // ── shared helpers ──────────────────────────────────────────────────
@@ -89,15 +83,19 @@ fn esc(text: &str, attr: bool) -> String {
 }
 
 /// Byte spans of an element: `(start_tag_start, inner_start,
-/// inner_end, end_tag_end)`, found by local name with quick-xml.
-/// `accept` inspects the start tag's attributes (raw key/value
-/// pairs, keys as written, e.g. `epub:type`). Nested elements with
-/// the same name are counted so the *matching* end tag is found.
+/// inner_end, end_tag_end)`.
+pub type ElementSpan = (usize, usize, usize, usize);
+
+/// Find an element's [`ElementSpan`] by local name with
+/// quick-xml. `accept` inspects the start tag's attributes (raw
+/// key/value pairs, keys as written, e.g. `epub:type`). Nested
+/// elements with the same name are counted so the *matching*
+/// end tag is found.
 pub fn element_span(
     text: &str,
     local: &str,
     accept: &dyn Fn(&[(String, String)]) -> bool,
-) -> Option<(usize, usize, usize, usize)> {
+) -> Option<ElementSpan> {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_str(text);
     let mut depth = 0usize;
@@ -795,11 +793,16 @@ pub fn set_cover_meta(opf: &str, cover_id: &str) -> String {
 /// `frag_base_path` — for split pieces that is the *original*
 /// file, since the links were written against it; normally it
 /// equals `self_path`. External links are never touched.
+/// Where a link target moves to: given (container path,
+/// fragment), return the new (path, fragment) or `None` to keep.
+pub type LinkMap<'a> =
+    dyn Fn(&str, Option<&str>) -> Option<(String, Option<String>)> + 'a;
+
 pub fn rewrite_links(
     text: &str,
     self_path: &str,
     frag_base_path: &str,
-    map: &dyn Fn(&str, Option<&str>) -> Option<(String, Option<String>)>,
+    map: &LinkMap<'_>,
 ) -> String {
     let Ok(re) = regex::Regex::new(r#"(?i)(\b(?:href|src)\s*=\s*)("([^"]*)"|'([^']*)')"#)
     else {
@@ -918,10 +921,7 @@ fn top_level_blocks(body: &str) -> Vec<(usize, usize, String)> {
             {
                 let inner = scan_blocks(&body[s + inner_s..s + inner_e], s + inner_s);
                 if inner.iter().filter(|b| !b.2.is_empty()).count() > 1 {
-                    let mut wrapped: Vec<(usize, usize, String)> = inner
-                        .into_iter()
-                        .map(|(bs, be, t)| (bs, be, t))
-                        .collect();
+                    let mut wrapped: Vec<(usize, usize, String)> = inner;
                     // The first/last "blocks" absorb the wrapper
                     // shell by extending their spans.
                     if let Some(first) = wrapped.first_mut() {

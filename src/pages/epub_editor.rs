@@ -299,7 +299,7 @@ enum ToolUndoEntry {
 /// rails, container mutations ride beside them, and Save
 /// replays the whole shape (added/removed path sets included).
 #[derive(Debug)]
-struct StructurePlan {
+pub(crate) struct StructurePlan {
     summary: String,
     snapshot_label: String,
     /// (path, new text) — OPF included where it changes. Paths
@@ -372,6 +372,10 @@ struct SpellUi {
     suggestions: gtk::Box,
 }
 
+/// One tab's pre-structure state: (path, pinned, (text,
+/// modified) for buffered tabs).
+type TabSnapshot = (String, bool, Option<(String, bool)>);
+
 /// The working state before a structure run — the pill's Undo
 /// for operations buffers alone cannot take back.
 struct StructureUndo {
@@ -381,7 +385,7 @@ struct StructureUndo {
     added_paths: HashSet<String>,
     removed_paths: HashSet<String>,
     /// (path, pinned, (text, modified) for buffered tabs)
-    tabs: Vec<(String, bool, Option<(String, bool)>)>,
+    tabs: Vec<TabSnapshot>,
     active_path: Option<String>,
 }
 
@@ -3040,7 +3044,7 @@ impl EpubEditorModel {
         let fragment = crate::epub_structure::headings_with_ids(&text)
             .into_iter()
             .filter(|h| h.2 <= offset)
-            .last()
+            .next_back()
             .and_then(|h| h.3);
         let mut flat = self.toc_flat();
         if let Some((_, entry)) = flat.get_mut(sel) {
@@ -3941,8 +3945,7 @@ impl EpubEditorModel {
         words.sort();
         words.dedup();
         if let Ok(raw) = serde_json::to_string(&words) {
-            let _ = self
-                .service
+            self.service
                 .catalog()
                 .set_pref("editor.personal_dictionary", &raw);
         }
@@ -3998,9 +4001,7 @@ impl EpubEditorModel {
             }
             let (src_start, src_end) = stripped.source_span(start, end);
             // A word split by markup is not ours to rewrite.
-            if src_chars[src_start..src_end.min(src_chars.len())]
-                .iter()
-                .any(|c| *c == '<')
+            if src_chars[src_start..src_end.min(src_chars.len())].contains(&'<')
             {
                 continue;
             }
@@ -7324,7 +7325,7 @@ impl EpubEditorModel {
         for (name, bytes) in imported {
             let bare = file_name(&name).to_string();
             let media = crate::epub_container::guess_media_type(&bare);
-            let kind = crate::epub_container::classify(&bare, &media);
+            let kind = crate::epub_container::classify(&bare, media);
             if let Some(existing) = container
                 .files
                 .iter()

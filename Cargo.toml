@@ -80,6 +80,7 @@ rbook = { version = "0.7", default-features = false, features = [
 sha1 = "0.10"
 
 quick-xml = "0.42"
+regex = "1"
 url = "2"
 
 futures-channel = { version = "0.3", default-features = false, features = [

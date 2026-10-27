@@ -23,6 +23,14 @@ pub struct CssRule {
     pub declarations: Vec<CssDecl>,
     /// 1-based line of the selector in its source text.
     pub line: usize,
+    /// Byte span of the whole rule in its source text (comment
+    /// stripping preserves length, so spans index the original).
+    /// Remove unused CSS (E3) cuts dead rules out by span.
+    pub span: (usize, usize),
+    /// Inside a conditional group (@media/@supports/…). The
+    /// cleaner never removes nested rules: whether they apply
+    /// depends on the reading context, not the markup.
+    pub nested: bool,
 }
 
 /// One element in the ancestor chain (root first, element last).
@@ -59,12 +67,76 @@ impl Elem {
     }
 }
 
+/// One element from a start tag's inner text (` id="a" class="b"`).
+pub fn elem_from_start_tag(tag: &str, inner: &str) -> Elem {
+    let mut elem = Elem {
+        tag: tag.to_string(),
+        ..Default::default()
+    };
+    let bytes = inner.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b'/') {
+            i += 1;
+        }
+        let start = i;
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b':' | b'-' | b'_' | b'.'))
+        {
+            i += 1;
+        }
+        if i == start {
+            i += 1;
+            continue;
+        }
+        let name = inner[start..i].to_ascii_lowercase();
+        let mut value = String::new();
+        let mut j = i;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'=' {
+            j += 1;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
+                let q = bytes[j];
+                let vstart = j + 1;
+                let mut k = vstart;
+                while k < bytes.len() && bytes[k] != q {
+                    k += 1;
+                }
+                value = inner[vstart..k].to_string();
+                i = (k + 1).min(bytes.len());
+            } else {
+                let vstart = j;
+                let mut k = vstart;
+                while k < bytes.len() && !bytes[k].is_ascii_whitespace() && bytes[k] != b'/' {
+                    k += 1;
+                }
+                value = inner[vstart..k].to_string();
+                i = k;
+            }
+        }
+        match name.as_str() {
+            "id" => elem.id = Some(value.clone()),
+            "class" => {
+                elem.classes = value.split_whitespace().map(str::to_string).collect();
+            }
+            _ => {}
+        }
+        elem.attrs.push((name, value));
+    }
+    elem
+}
+
 // ── parsing ────────────────────────────────────────────────────────
 
 pub fn parse_rules(css: &str) -> Vec<CssRule> {
     let cleaned = strip_comments(css);
     let mut rules = Vec::new();
-    parse_block(&cleaned, 0, &mut rules);
+    parse_block(&cleaned, 0, 0, false, &mut rules);
     rules
 }
 
@@ -112,7 +184,13 @@ fn strip_comments(css: &str) -> String {
     out
 }
 
-fn parse_block(text: &str, base_line: usize, rules: &mut Vec<CssRule>) {
+fn parse_block(
+    text: &str,
+    base_line: usize,
+    base_byte: usize,
+    nested: bool,
+    rules: &mut Vec<CssRule>,
+) {
     let bytes = text.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
@@ -181,7 +259,7 @@ fn parse_block(text: &str, base_line: usize, rules: &mut Vec<CssRule>) {
                 // Conditional group: the conditions decide at read
                 // time; the panel shows the rules regardless.
                 // The body's first line is the prelude's own line.
-                parse_block(body, line - 1, rules);
+                parse_block(body, line - 1, base_byte + body_start, true, rules);
             }
             // @font-face/@page/@keyframes hold no element rules.
         } else if !prelude.is_empty() {
@@ -196,6 +274,8 @@ fn parse_block(text: &str, base_line: usize, rules: &mut Vec<CssRule>) {
                     selectors,
                     declarations,
                     line,
+                    span: (base_byte + first, base_byte + j),
+                    nested,
                 });
             }
         }

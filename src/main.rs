@@ -19,6 +19,7 @@ mod epub_container;
 mod epub_check;
 mod epub_css;
 mod epub_metadata;
+mod epub_tools;
 pub mod epub_sanitizer;
 mod export;
 mod epub_writer;

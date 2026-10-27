@@ -2534,6 +2534,17 @@ impl LibraryService {
         Ok(())
     }
 
+    /// A tool's snapshot (decision 135): taken after the tool has
+    /// computed its changes but before any of them is applied.
+    pub fn editor_snapshot(
+        &self,
+        book: &Book,
+        label: &str,
+        files_changed: i64,
+    ) -> Result<(), String> {
+        self.take_editor_snapshot(book, label, files_changed)
+    }
+
     /// The snapshot every editor write takes first (decision 135):
     /// the whole book copied aside and the row History lists.
     fn take_editor_snapshot(

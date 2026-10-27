@@ -1299,10 +1299,26 @@ impl Component for EpubEditorModel {
                         }
                     }
                     Ok("editor-spell") => {
-                        // A deterministic typo for the camera.
+                        // Deterministic typos for the camera, and a
+                        // stand-in dictionary that knows the rest
+                        // of the chapter (CI installs none).
                         if let Some(buffer) = self.active_buffer() {
                             let mut at = buffer.iter_at_offset(0);
                             buffer.insert(&mut at, "Teh quikc ckecking speling. ");
+                            let text = buffer_text(&buffer);
+                            let stripped = strip_map(&text);
+                            let mut dict: HashSet<String> =
+                                crate::epub_structure::spell_words(&stripped.text)
+                                    .into_iter()
+                                    .map(|(_, _, w)| fold_word(&w))
+                                    .collect();
+                            for typo in ["teh", "quikc", "ckecking", "speling"] {
+                                dict.remove(typo);
+                            }
+                            for good in ["the", "quick", "checking", "spelling"] {
+                                dict.insert(good.to_string());
+                            }
+                            self.spell_dict = Some(Rc::new(dict));
                         }
                         self.start_spell_check(&sender);
                     }
@@ -1876,9 +1892,17 @@ impl Component for EpubEditorModel {
             // ── E4: spell check ──
             EpubEditorMsg::OpenSpellCheck => self.start_spell_check(&sender),
             EpubEditorMsg::SpellReady(words) => {
-                self.spell_dict = Some(Rc::new(words.into_iter().collect()));
-                if let Some(path) = self.active_path.clone() {
-                    self.begin_spell(&path, &sender);
+                if words.is_empty() {
+                    self.show_pill(
+                        "No dictionary is installed — add one in Settings → Dictionaries",
+                        false,
+                        &sender,
+                    );
+                } else {
+                    self.spell_dict = Some(Rc::new(words.into_iter().collect()));
+                    if let Some(path) = self.active_path.clone() {
+                        self.begin_spell(&path, &sender);
+                    }
                 }
             }
             EpubEditorMsg::SpellPick(word) => {
@@ -2434,8 +2458,9 @@ impl EpubEditorModel {
             if n == 1 { "y" } else { "ies" }
         ));
         let kind = match &self.container {
-            Some(c) if c.ncx_path.is_some() => "NCX",
+            Some(c) if c.nav_path.is_some() && c.ncx_path.is_some() => "Nav + NCX",
             Some(c) if c.nav_path.is_some() => "Nav",
+            Some(c) if c.ncx_path.is_some() => "NCX",
             _ => "Contents",
         };
         self.status_type.set_label(kind);

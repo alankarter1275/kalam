@@ -8881,8 +8881,9 @@ button.kalam-ed-thumb.selected {
   font-family: "Literata", serif;
   font-size: 15px;
 }
-button.kalam-ed-accent-text {
+button.kalam-ui-pill-button.kalam-ed-accent-text {
   color: @kalam_accent;
+  border-color: transparent;
 }
 .kalam-ed-css-element {
   font-family: "DM Mono", monospace;

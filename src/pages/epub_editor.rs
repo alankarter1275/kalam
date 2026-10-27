@@ -5182,6 +5182,7 @@ impl EpubEditorModel {
             return;
         };
         let inner = path.to_string();
+        let reply_path = path.to_string();
         let service = self.service.clone();
         let s = sender.input_sender().clone();
         crate::tasks::spawn_internal(
@@ -5191,7 +5192,7 @@ impl EpubEditorModel {
             move |result| match result {
                 Ok(dest) => {
                     let _ = s.send(EpubEditorMsg::EditingExported(
-                        path.to_string(),
+                        reply_path.clone(),
                         dest,
                     ));
                 }

@@ -9,8 +9,8 @@ not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m pangocairo-sys v0.22.9
 [1m[92m  Downloaded[0m pangocairo v0.22.9
+[1m[92m  Downloaded[0m pangocairo-sys v0.22.9
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
 [1m[92m   Compiling[0m pango-sys v0.22.9
 [1m[92m   Compiling[0m pangocairo-sys v0.22.9
@@ -37,18 +37,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m relm4 v0.11.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/epub_editor.rs:301:25: [1m[91merror[0m: type `pages::epub_editor::SubsetPreview` is more private than the item `pages::epub_editor::EpubEditorMsg::SubsetPreviewsReady::0`: field `pages::epub_editor::EpubEditorMsg::SubsetPreviewsReady::0` is reachable at visibility `pub(crate)`
-src/font_subset.rs:31:27: [1m[91merror[0m: using `chunks_exact` with a constant chunk size
-src/font_subset.rs:87:19: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
-src/font_subset.rs:114:15: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
-src/font_subset.rs:215:15: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
-src/font_subset.rs:343:5: [1m[91merror[0m: this loop could be written as a `while let` loop: help: try: `while let (Some(flags), Some(component)) = (u16_at(glyph, at), u16_at(glyph, at + 2)) { .. }`
-src/font_subset.rs:424:27: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!new_glyf.len().is_multiple_of(4)`
-src/pages/epub_editor.rs:309:26: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/epub_editor.rs:5981:21: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/epub_editor.rs:6734:28: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/epub_editor.rs:7873:19: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/epub_editor.rs:12622:25: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `(digits.len() - index).is_multiple_of(3)`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 12 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 44.25s

@@ -191,9 +191,9 @@ pub fn cache_decoded_cover(decoded: &crate::preload::DecodedCover) {
 }
 
 /// Cover width (px). Height = width × 1.6 (standard ebook portrait).
-pub const COVER_W: i32 = 128;
+pub const COVER_W: i32 = 132;
 pub const COVER_ASPECT: f64 = 1.6;
-pub const COVER_H: i32 = ((COVER_W as f64) * COVER_ASPECT) as i32; // 204
+pub const COVER_H: i32 = ((COVER_W as f64) * COVER_ASPECT) as i32; // 211
 
 /// Full card width — locked; labels cannot grow past this.
 pub const CARD_W: i32 = COVER_W;
@@ -203,8 +203,8 @@ const AUTHOR_AREA_H: i32 = 18;
 const GAP: i32 = 6;
 pub const CARD_H: i32 = COVER_H + GAP + TITLE_AREA_H + AUTHOR_AREA_H;
 
-/// Columns in the library grid (uniform cells).
-const GRID_COLS: i32 = 6;
+/// Column count used by the library grid (uniform cells).
+const DEFAULT_GRID_COLS: i32 = 6;
 const COL_SPACING: u32 = 16;
 const ROW_SPACING: u32 = 20;
 
@@ -354,7 +354,7 @@ fn row_count(books: usize) -> i32 {
     if books == 0 {
         return 0;
     }
-    ((books as i32) + GRID_COLS - 1) / GRID_COLS
+    ((books as i32) + DEFAULT_GRID_COLS - 1) / DEFAULT_GRID_COLS
 }
 
 /// Height in pixels of one row, including the gap beneath it.
@@ -414,8 +414,8 @@ fn grid_height(books: usize) -> i32 {
 
 /// Where card `index` sits, in pixels from the grid's top-left.
 fn card_position(index: usize) -> (i32, i32) {
-    let col = (index as i32) % GRID_COLS;
-    let row = (index as i32) / GRID_COLS;
+    let col = (index as i32) % DEFAULT_GRID_COLS;
+    let row = (index as i32) / DEFAULT_GRID_COLS;
     (col * (CARD_W + COL_SPACING as i32), row * ROW_PITCH)
 }
 
@@ -441,9 +441,9 @@ fn card_position(index: usize) -> (i32, i32) {
 /// once from the book count. Positions therefore do not depend on which cards
 /// happen to be mounted, which is precisely the property this needs.
 ///
-/// Layout maths matches the old grid exactly — same `GRID_COLS`, same
-/// spacings, same card size — so the result is pixel-identical to what the
-/// user sees today.
+/// Layout maths matches the old grid exactly — same `DEFAULT_GRID_COLS`,
+/// same spacings, same card size — so the result is pixel-identical to what
+/// the user sees today.
 fn build_windowed_grid(
     books: &[Book],
     click_hint: &'static str,
@@ -472,7 +472,7 @@ fn build_windowed_grid(
     // count alone. Nothing here depends on which cards are mounted, so the
     // scrollbar cannot change length while scrolling.
     if total_rows > 0 {
-        let full_w = GRID_COLS * CARD_W + (GRID_COLS - 1) * COL_SPACING as i32;
+        let full_w = DEFAULT_GRID_COLS * CARD_W + (DEFAULT_GRID_COLS - 1) * COL_SPACING as i32;
         grid.set_size_request(full_w, grid_height(books.len()));
     }
 
@@ -496,8 +496,8 @@ fn build_windowed_grid(
                 return;
             }
 
-            let want_from = (first as usize) * GRID_COLS as usize;
-            let want_to = (((last + 1) as usize) * GRID_COLS as usize).min(books.len());
+            let want_from = (first as usize) * DEFAULT_GRID_COLS as usize;
+            let want_to = (((last + 1) as usize) * DEFAULT_GRID_COLS as usize).min(books.len());
 
             let mut mounted = mounted.borrow_mut();
 
@@ -666,8 +666,8 @@ fn build_book_grid_hinted(
         cell.set_halign(gtk::Align::Start);
         cell.append(&card);
 
-        let col = (i as i32) % GRID_COLS;
-        let row = (i as i32) / GRID_COLS;
+        let col = (i as i32) % DEFAULT_GRID_COLS;
+        let row = (i as i32) / DEFAULT_GRID_COLS;
         grid.attach(&cell, col, row, 1, 1);
     }
 
@@ -744,7 +744,7 @@ fn build_windowed_grid_selectable(
     let total_rows = row_count(books.len());
 
     if total_rows > 0 {
-        let full_w = GRID_COLS * CARD_W + (GRID_COLS - 1) * COL_SPACING as i32;
+        let full_w = DEFAULT_GRID_COLS * CARD_W + (DEFAULT_GRID_COLS - 1) * COL_SPACING as i32;
         grid.set_size_request(full_w, grid_height(books.len()));
     }
 
@@ -764,8 +764,8 @@ fn build_windowed_grid_selectable(
                 return;
             }
 
-            let want_from = (first as usize) * GRID_COLS as usize;
-            let want_to = (((last + 1) as usize) * GRID_COLS as usize).min(books.len());
+            let want_from = (first as usize) * DEFAULT_GRID_COLS as usize;
+            let want_to = (((last + 1) as usize) * DEFAULT_GRID_COLS as usize).min(books.len());
 
             let mut mounted = mounted.borrow_mut();
 
@@ -884,8 +884,8 @@ pub fn build_book_grid_selectable(
         cell.set_halign(gtk::Align::Start);
         cell.append(&card);
 
-        let col = (i as i32) % GRID_COLS;
-        let row = (i as i32) / GRID_COLS;
+        let col = (i as i32) % DEFAULT_GRID_COLS;
+        let row = (i as i32) / DEFAULT_GRID_COLS;
         grid.attach(&cell, col, row, 1, 1);
     }
 
@@ -1311,7 +1311,7 @@ mod tests {
         if last < first {
             return 0;
         }
-        (last - first + 1) * GRID_COLS
+        (last - first + 1) * DEFAULT_GRID_COLS
     }
 
     #[test]
@@ -1490,7 +1490,7 @@ mod tests {
             "144 books reserved {small} px and 2,000 books {big} px -- a small \
              library is holding open space it does not need"
         );
-        assert_eq!(small, 6796, "24 rows of cards and 23 gaps");
+        assert_eq!(small, 6964, "24 rows of cards and 23 gaps");
     }
 
     #[test]
@@ -1559,14 +1559,14 @@ mod tests {
         // Second card: one card width plus one column gap to the right.
         assert_eq!(card_position(1), (CARD_W + COL_SPACING as i32, 0));
         // First card of the second row: back to x=0, down one row pitch.
-        assert_eq!(card_position(GRID_COLS as usize), (0, ROW_PITCH));
+        assert_eq!(card_position(DEFAULT_GRID_COLS as usize), (0, ROW_PITCH));
         // Last column, then wrap.
-        let last_col = (GRID_COLS - 1) as usize;
+        let last_col = (DEFAULT_GRID_COLS - 1) as usize;
         assert_eq!(card_position(last_col).1, 0, "row 0 must not wrap early");
         assert_eq!(
             card_position(last_col + 1).0,
             0,
-            "column {GRID_COLS} must wrap to the next row"
+            "column {DEFAULT_GRID_COLS} must wrap to the next row"
         );
     }
 

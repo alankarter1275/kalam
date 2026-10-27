@@ -22,6 +22,8 @@ impl NavItem {
     ///
     /// Deliberately missing, and not an oversight:
     ///
+    /// * `Authors` — dropped from the rail by decision 179; the authors
+    ///   index and author pages still exist, they just have no rail entry.
     /// * `Shelves` — shelves live in My Library, so the rail does not
     ///   spend one of its few slots on a second way into them.
     /// * `Downloads` — the queue page works, but nothing ever registers a
@@ -37,7 +39,6 @@ impl NavItem {
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
-        NavItem::Authors,
         NavItem::Comics,
         NavItem::Editor,
         NavItem::Settings,
@@ -46,7 +47,7 @@ impl NavItem {
     pub fn label(self) -> &'static str {
         match self {
             NavItem::Home => "Home",
-            NavItem::Library => "Library",
+            NavItem::Library => "My Library",
             NavItem::Authors => "Authors",
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",

@@ -37,11 +37,11 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -52,11 +52,14 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test db::tests::book_first_opened_is_none_not_an_error_for_a_never_opened_book ... ok
 test db::tests::books_by_ids_on_no_ids_is_not_an_error ... ok
-test downloads::tests::locked_writes_are_visible_to_later_reads_when_nothing_panicked ... ok
 test dict::tests::unrecognized_format_error_names_the_expected_formats ... ok
+test downloads::tests::locked_writes_are_visible_to_later_reads_when_nothing_panicked ... ok
 test epub_check::tests::broken_links_and_fragments_are_errors ... ok
 test epub_container::tests::xml_problem_reports_line_of_first_error ... ok
 test epub_metadata::tests::missing_metadata_block_is_an_error_not_a_panic ... ok
+test epub_structure::tests::nav_and_ncx_parse_to_the_same_tree ... FAILED
+test epub_structure::tests::render_round_trips_both_forms ... FAILED
+test epub_structure::tests::spell_suggestions_find_harrowed ... FAILED
 test metadata::comic_vine::tests::missing_api_key_is_an_actionable_error ... ok
 test metadata::google_books::tests::empty_payload_is_not_an_error ... ok
 test metadata::google_books::tests::error_envelope_parses ... ok
@@ -79,8 +82,9 @@ test service::tests::shelves_are_returned_and_an_empty_grid_is_not_an_error ... 
 test service::tests::there_are_no_quotes_at_all_is_not_an_error ... ok
 test tasks::tests::reporting_after_the_ui_is_gone_is_not_an_error ... ok
 test thumbs::tests::missing_source_is_not_an_error ... ok
-test result: ok. 687 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 2.38s
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
-test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
---- run 40480601278 ---
+thread 'epub_structure::tests::nav_and_ncx_parse_to_the_same_tree' (6232) panicked at src/epub_structure.rs:1478:9:
+thread 'epub_structure::tests::render_round_trips_both_forms' (6234) panicked at src/epub_structure.rs:1490:9:
+thread 'epub_structure::tests::spell_suggestions_find_harrowed' (6237) panicked at src/epub_structure.rs:1597:9:
+test result: FAILED. 694 passed; 3 failed; 3 ignored; 0 measured; 0 filtered out; finished in 2.39s
+[1m[91merror[0m: test failed, to rerun pass `-p kalam --bin kalam`
+--- run 40502581693 ---

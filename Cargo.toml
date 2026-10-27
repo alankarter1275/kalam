@@ -80,7 +80,6 @@ rbook = { version = "0.7", default-features = false, features = [
 sha1 = "0.10"
 
 quick-xml = "0.42"
-regex = "1"
 url = "2"
 
 futures-channel = { version = "0.3", default-features = false, features = [
@@ -153,6 +152,7 @@ async-channel = "2"
 # EPUB (zip + OPF XML)
 zip = { version = "2", default-features = false, features = ["deflate"] }
 roxmltree = "0.20"
+regex = "1"
 quick-xml = "0.37"
 flate2 = "1"
 epub-builder = "0.8.3"

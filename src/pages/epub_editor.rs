@@ -970,6 +970,14 @@ impl Component for EpubEditorModel {
                 self.sync_chrome(&sender);
                 // CI staging: photograph each right-panel tab.
                 match std::env::var("KALAM_DIALOG").as_deref() {
+                    Ok("editor-find") => {
+                        self.toggle_find(&sender);
+                        self.find_entry.set_text("the");
+                    }
+                    Ok("editor-palette") => {
+                        self.toggle_palette(&sender);
+                        self.palette_entry.set_text("ref");
+                    }
                     Ok("editor-problems") => {
                         sender.input(EpubEditorMsg::SetRightTab(RightTab::Problems));
                     }

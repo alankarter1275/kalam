@@ -421,7 +421,7 @@ fn reformat_css(text: &str) -> Option<String> {
     let mut chars = text.chars().peekable();
     let mut in_str: Option<char> = None;
     let mut in_comment = false;
-    let mut emit = |lines: &mut Vec<String>, indent: usize, s: &str| {
+    let emit = |lines: &mut Vec<String>, indent: usize, s: &str| {
         let s = s.trim();
         if !s.is_empty() {
             lines.push(format!("{}{}", "  ".repeat(indent), s));

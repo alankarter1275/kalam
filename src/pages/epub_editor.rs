@@ -1063,7 +1063,7 @@ impl EpubEditorModel {
         }
         self.rebuild_tab_strip(sender);
         self.rebuild_tree(sender);
-        self.update_preview();
+        self.sync_preview_to_cursor();
         self.rebuild_outline(sender);
     }
 
@@ -1092,7 +1092,7 @@ impl EpubEditorModel {
         self.rebuild_tab_strip(sender);
         self.rebuild_tree(sender);
         self.sync_chrome(sender);
-        self.update_preview();
+        self.sync_preview_to_cursor();
         self.rebuild_outline(sender);
     }
 
@@ -1656,14 +1656,17 @@ impl EpubEditorModel {
     fn rebuild_outline(&mut self, sender: &ComponentSender<Self>) {
         clear_box(&self.outline_host);
         self.outline_headings.clear();
-        let Some(tab) = self.active_tab() else {
+        let Some((kind, buffer, path)) = self
+            .active_tab()
+            .map(|t| (t.kind, t.buffer.clone(), t.path.clone()))
+        else {
             return;
         };
-        if tab.kind != FileKind::Html {
+        if kind != FileKind::Html {
             self.outline_host.append(&panel_note("No headings"));
             return;
         }
-        let Some(buffer) = &tab.buffer else {
+        let Some(buffer) = &buffer else {
             return;
         };
         let headings = extract_headings(&buffer_text(buffer));
@@ -1672,7 +1675,6 @@ impl EpubEditorModel {
             self.outline_host.append(&panel_note("No headings"));
             return;
         }
-        let path = tab.path.clone();
         for (level, text, offset) in headings {
             let row = gtk::Button::with_label(&text);
             row.add_css_class("kalam-ed-outline-row");
@@ -2103,6 +2105,7 @@ impl EpubEditorModel {
         }
         let Some(buffer) = &tab.buffer else { return };
         let html = buffer_text(buffer);
+        let tab_path = tab.path.clone();
         let Some(cursor) = self.cursor_char_offset() else {
             return;
         };
@@ -2120,7 +2123,7 @@ impl EpubEditorModel {
         for (css, first_line) in style_blocks(&html) {
             for mut rule in crate::epub_css::parse_rules(&css) {
                 rule.line += first_line.saturating_sub(1);
-                rules.push((tab.path.clone(), rule));
+                rules.push((tab_path.clone(), rule));
             }
         }
 
@@ -2161,7 +2164,7 @@ impl EpubEditorModel {
                     selector: "style attribute".to_string(),
                     spec: (u32::MAX, 0, 0),
                     order: usize::MAX,
-                    path: tab.path.clone(),
+                    path: tab_path.clone(),
                     line: 0,
                     decls,
                 });
@@ -2686,7 +2689,7 @@ fn strip_map(html: &str) -> StripMap {
     let chars: Vec<char> = html.chars().collect();
     let mut text = String::new();
     let mut map: Vec<usize> = Vec::new();
-    let mut push = |c: char, at: usize, text: &mut String, map: &mut Vec<usize>| {
+    let push = |c: char, at: usize, text: &mut String, map: &mut Vec<usize>| {
         if c.is_whitespace() || c == '\u{00a0}' {
             if !map.is_empty() && !text.ends_with(' ') {
                 text.push(' ');

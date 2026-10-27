@@ -3421,8 +3421,7 @@ impl EpubEditorModel {
         if let Some(buffer) = self.active_buffer() {
             if let Some((a, b)) = buffer.selection_bounds() {
                 let text = buffer.text(&a, &b, false);
-                if !text.is_empty() && !text.contains('
-') {
+                if !text.is_empty() && !text.contains('\n') {
                     self.find_entry.set_text(&text);
                 }
             }
@@ -3528,12 +3527,9 @@ impl EpubEditorModel {
                 }
                 let start = text[..b0].chars().count();
                 let end = start + text[b0..b1].chars().count();
-                let line = text[..b0].bytes().filter(|b| *b == b'
-').count() + 1;
-                let line_start = text[..b0].rfind('
-').map(|n| n + 1).unwrap_or(0);
-                let line_end = text[b1..].find('
-').map(|n| b1 + n).unwrap_or(text.len());
+                let line = text[..b0].bytes().filter(|b| *b == b'\n').count() + 1;
+                let line_start = text[..b0].rfind('\n').map(|n| n + 1).unwrap_or(0);
+                let line_end = text[b1..].find('\n').map(|n| b1 + n).unwrap_or(text.len());
                 let before_full = &text[line_start..b0];
                 let after_full = &text[b1..line_end];
                 let before_chars: Vec<char> = before_full.chars().collect();
@@ -3554,8 +3550,7 @@ impl EpubEditorModel {
                     end,
                     line,
                     before: before.trim_start().to_string(),
-                    matched: text[b0..b1].replace('
-', " "),
+                    matched: text[b0..b1].replace('\n', " "),
                     after,
                 };
                 let markup = format!(
@@ -3655,8 +3650,7 @@ impl EpubEditorModel {
         let a = buffer.iter_at_offset(start as i32);
         let b = buffer.iter_at_offset(end as i32);
         let current_text = buffer.text(&a, &b, false).to_string();
-        if current_text.replace('
-', " ") != matched {
+        if current_text.replace('\n', " ") != matched {
             // The buffer moved under the results; refresh them.
             self.run_find(sender);
             return;

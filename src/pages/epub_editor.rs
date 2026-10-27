@@ -3555,9 +3555,9 @@ impl EpubEditorModel {
                 };
                 let markup = format!(
                     "{}<span background=\"{tint}\">{}</span>{}",
-                    gtk::glib::markup_escape_text(hit.before.trim_end()),
+                    gtk::glib::markup_escape_text(&hit.before),
                     gtk::glib::markup_escape_text(&hit.matched),
-                    gtk::glib::markup_escape_text(hit.after.trim_start()),
+                    gtk::glib::markup_escape_text(&hit.after),
                 );
                 let index = self.find_hits.len();
                 let row = gtk::Button::new();

@@ -1,11 +1,17 @@
-src/pages/epub_editor.rs:5885:13: [1m[91merror[0m: unused import: `pangocairo::prelude::*`
-src/pages/epub_editor.rs:5898:21: [1m[91merror[E0599][0m: no method named `add_font_file` found for struct `pango::FontMap` in the current scope: method not found in `pango::FontMap`
-src/pages/epub_editor.rs:6829:55: [1m[91merror[E0505][0m: cannot move out of `add_row` because it is borrowed: move out of `add_row` occurs here
-src/pages/epub_editor.rs:7670:37: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
-src/service.rs:2755:9: [1m[91merror[E0597][0m: `db` does not live long enough: borrowed value does not live long enough
-src/service.rs:2801:9: [1m[91merror[E0597][0m: `db` does not live long enough: borrowed value does not live long enough
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+src/pages/epub_editor.rs:301:25: [1m[91merror[0m: type `pages::epub_editor::SubsetPreview` is more private than the item `pages::epub_editor::EpubEditorMsg::SubsetPreviewsReady::0`: field `pages::epub_editor::EpubEditorMsg::SubsetPreviewsReady::0` is reachable at visibility `pub(crate)`
+src/font_subset.rs:31:27: [1m[91merror[0m: using `chunks_exact` with a constant chunk size
+src/font_subset.rs:87:19: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
+src/font_subset.rs:114:15: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
+src/font_subset.rs:215:15: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
+src/font_subset.rs:343:5: [1m[91merror[0m: this loop could be written as a `while let` loop: help: try: `while let (Some(flags), Some(component)) = (u16_at(glyph, at), u16_at(glyph, at + 2)) { .. }`
+src/font_subset.rs:424:27: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!new_glyf.len().is_multiple_of(4)`
+src/pages/epub_editor.rs:309:26: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:5981:21: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:6734:28: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:7873:19: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:12622:25: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `(digits.len() - index).is_multiple_of(3)`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 12 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -22,25 +28,44 @@ glib-2.0: 2.88.0
 [1m[92m  Downloaded[0m pangocairo-sys v0.22.9
 [1m[92m  Downloaded[0m pangocairo v0.22.9
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m   Compiling[0m pango-sys v0.22.9
 [1m[92m   Compiling[0m pangocairo-sys v0.22.9
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
-[1m[92m    Checking[0m pangocairo v0.22.9
+[1m[92m    Checking[0m gdk4-sys v0.11.5
+[1m[92m    Checking[0m pango v0.22.9
+[1m[92m    Checking[0m gsk4-sys v0.11.5
+[1m[92m    Checking[0m gtk4-sys v0.11.5
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
+[1m[92m    Checking[0m libadwaita-sys v0.9.2
+[1m[92m    Checking[0m sourceview5-sys v0.11.2
+[1m[92m    Checking[0m gdk4 v0.11.5
+[1m[92m    Checking[0m pangocairo v0.22.9
+[1m[92m    Checking[0m gsk4 v0.11.5
+[1m[92m    Checking[0m gtk4 v0.11.5
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m libadwaita v0.9.2
+[1m[92m    Checking[0m sourceview5 v0.11.2
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/epub_editor.rs:5885:13: [1m[91merror[0m: unused import: `pangocairo::prelude::*`
-src/pages/epub_editor.rs:5898:21: [1m[91merror[E0599][0m: no method named `add_font_file` found for struct `pango::FontMap` in the current scope: method not found in `pango::FontMap`
-src/pages/epub_editor.rs:6829:55: [1m[91merror[E0505][0m: cannot move out of `add_row` because it is borrowed: move out of `add_row` occurs here
-src/pages/epub_editor.rs:7670:37: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
-src/service.rs:2755:9: [1m[91merror[E0597][0m: `db` does not live long enough: borrowed value does not live long enough
-src/service.rs:2801:9: [1m[91merror[E0597][0m: `db` does not live long enough: borrowed value does not live long enough
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m relm4 v0.11.0
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/pages/epub_editor.rs:301:25: [1m[91merror[0m: type `pages::epub_editor::SubsetPreview` is more private than the item `pages::epub_editor::EpubEditorMsg::SubsetPreviewsReady::0`: field `pages::epub_editor::EpubEditorMsg::SubsetPreviewsReady::0` is reachable at visibility `pub(crate)`
+src/font_subset.rs:31:27: [1m[91merror[0m: using `chunks_exact` with a constant chunk size
+src/font_subset.rs:87:19: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
+src/font_subset.rs:114:15: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
+src/font_subset.rs:215:15: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!out.len().is_multiple_of(4)`
+src/font_subset.rs:343:5: [1m[91merror[0m: this loop could be written as a `while let` loop: help: try: `while let (Some(flags), Some(component)) = (u16_at(glyph, at), u16_at(glyph, at + 2)) { .. }`
+src/font_subset.rs:424:27: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!new_glyf.len().is_multiple_of(4)`
+src/pages/epub_editor.rs:309:26: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:5981:21: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:6734:28: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:7873:19: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:12622:25: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `(digits.len() - index).is_multiple_of(3)`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 12 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
---- run 40531598468 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
+--- run 40532862022 ---

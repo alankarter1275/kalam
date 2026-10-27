@@ -7950,7 +7950,7 @@ impl EpubEditorModel {
         let tab_btns: Rc<RefCell<Vec<gtk::Button>>> = Rc::new(RefCell::new(Vec::new()));
         for (i, title) in ["Lossless", "Smaller"].into_iter().enumerate() {
             let btn = gtk::Button::with_label(title);
-            btn.add_css_class("kalam-ed-rep-tab");
+            btn.add_css_class("kalam-ed-texttab");
             if i == 0 {
                 btn.add_css_class("active");
             }
@@ -8094,8 +8094,8 @@ impl EpubEditorModel {
         stop_btn.set_visible(false);
         let primary = gtk::Button::with_label("Start checking");
         primary.add_css_class("kalam-ui-pill-button");
-        primary.add_css_class("boxed-primary");
-        primary.set_size_request(96, 34);
+        primary.add_css_class("primary");
+        primary.set_size_request(-1, crate::style::size::CONTROL);
         primary.set_sensitive(total > 0);
         if total == 0 {
             primary.set_label("Done");
@@ -9076,7 +9076,10 @@ impl EpubEditorModel {
         let name = file_name(target);
         let mut out = Vec::new();
         for file in &container.files {
+            // The manifest declares every file; a declaration is
+            // not a use, or nothing could ever read "Not used".
             if !file.kind.is_text()
+                || file.path == container.opf_path
                 || file.path == target
                 || self.removed_paths.contains(&file.path)
             {
@@ -12310,9 +12313,12 @@ fn build_reorder_rows(list: &gtk::Box, order: &Rc<RefCell<Vec<String>>>) {
 /// ring when off. Returns the disc for `set_tick` to flip.
 fn tick_circle(on: bool) -> gtk::Box {
     let circle = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    circle.add_css_class("kalam-ed-tick");
+    circle.add_css_class("kalam-ed-tickbox");
     circle.set_size_request(18, 18);
     circle.set_valign(gtk::Align::Center);
+    // The mark inside expands to centre itself; without this,
+    // that wish propagates up and the circle eats the row.
+    circle.set_hexpand(false);
     let mark = gtk::Label::new(Some("✓"));
     mark.add_css_class("kalam-ed-tick-mark");
     mark.set_hexpand(true);

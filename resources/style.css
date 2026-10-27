@@ -8852,12 +8852,12 @@ button.kalam-ed-report-head:hover {
   color: @kalam_text;
 }
 /* Tick circles (Tag mapper, Subset/Embed fonts, Filter style). */
-.kalam-ed-tick {
+.kalam-ed-tickbox {
   border-radius: 999px;
   border: 1px solid @kalam_text_dim;
   background: transparent;
 }
-.kalam-ed-tick.on {
+.kalam-ed-tickbox.on {
   background: @kalam_accent_fill;
   border-color: @kalam_accent_fill;
 }

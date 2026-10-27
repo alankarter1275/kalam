@@ -33,14 +33,17 @@ browsing or downloads.
 
 ## Build and run
 
-Kalam requires Linux, Rust, GTK 4.16 or newer, libadwaita 0.9, Relm4 0.11,
-the native libraries needed by MuPDF and OCR.
+Kalam requires Linux, Rust, GTK 4.16 or newer, GtkSourceView 5,
+libadwaita 0.9, Relm4 0.11, and the native libraries needed by MuPDF and OCR.
 
 On Arch Linux:
 
 ```bash
-sudo pacman -S --needed rust gtk4 libadwaita base-devel pkgconf
+sudo pacman -S --needed rust gtk4 gtksourceview5 libadwaita base-devel pkgconf
 ```
+
+On Debian or Ubuntu, install the corresponding development packages used by
+CI, including `libgtksourceview-5-dev`.
 
 Build and run the app:
 

@@ -86,15 +86,18 @@ fn esc(text: &str, attr: bool) -> String {
 /// inner_end, end_tag_end)`.
 pub type ElementSpan = (usize, usize, usize, usize);
 
+/// A start-tag filter over raw attribute key/value pairs (keys
+/// as written, e.g. `epub:type`).
+pub type AttrAccept<'a> = dyn Fn(&[(String, String)]) -> bool + 'a;
+
 /// Find an element's [`ElementSpan`] by local name with
-/// quick-xml. `accept` inspects the start tag's attributes (raw
-/// key/value pairs, keys as written, e.g. `epub:type`). Nested
-/// elements with the same name are counted so the *matching*
-/// end tag is found.
+/// quick-xml. `accept` inspects the start tag's attributes.
+/// Nested elements with the same name are counted so the
+/// *matching* end tag is found.
 pub fn element_span(
     text: &str,
     local: &str,
-    accept: &dyn Fn(&[(String, String)]) -> bool,
+    accept: &AttrAccept<'_>,
 ) -> Option<ElementSpan> {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_str(text);

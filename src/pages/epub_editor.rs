@@ -3043,8 +3043,7 @@ impl EpubEditorModel {
         };
         let fragment = crate::epub_structure::headings_with_ids(&text)
             .into_iter()
-            .filter(|h| h.2 <= offset)
-            .next_back()
+            .rfind(|h| h.2 <= offset)
             .and_then(|h| h.3);
         let mut flat = self.toc_flat();
         if let Some((_, entry)) = flat.get_mut(sel) {

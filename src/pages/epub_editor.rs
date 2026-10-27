@@ -3563,11 +3563,19 @@ impl EpubEditorModel {
                 let row = gtk::Button::new();
                 row.add_css_class("kalam-ed-find-row");
                 row.set_focus_on_click(false);
+                let nums = gtk::Label::new(Some(&format!("{}", hit.line)));
+                nums.add_css_class("kalam-ui-meta");
+                nums.set_width_chars(4);
+                nums.set_xalign(1.0);
                 let label = gtk::Label::new(None);
                 label.set_markup(&markup);
                 label.set_halign(gtk::Align::Start);
+                label.set_hexpand(true);
                 label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                row.set_child(Some(&label));
+                let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                row_box.append(&nums);
+                row_box.append(&label);
+                row.set_child(Some(&row_box));
                 let s = sender.input_sender().clone();
                 row.connect_clicked(move |_| {
                     let _ = s.send(EpubEditorMsg::FindJump(index));

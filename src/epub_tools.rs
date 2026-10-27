@@ -311,12 +311,10 @@ fn reformat_markup(text: &str) -> String {
     // Is the element on top of the stack raw (pre/script/…)?
     let mut raw_stack: Vec<String> = Vec::new();
 
-    let flush = |lines: &mut Vec<String>, current: &mut String, indent: usize, force: bool| {
+    let flush = |lines: &mut Vec<String>, current: &mut String, indent: usize| {
         let trimmed = current.trim_end();
-        if !trimmed.is_empty() || force {
-            if !trimmed.is_empty() {
-                lines.push(format!("{}{}", "  ".repeat(indent), trimmed));
-            }
+        if !trimmed.is_empty() {
+            lines.push(format!("{}{}", "  ".repeat(indent), trimmed));
         }
         current.clear();
     };
@@ -324,7 +322,7 @@ fn reformat_markup(text: &str) -> String {
     for token in tokens {
         match token {
             Token::Misc(raw) => {
-                flush(&mut lines, &mut current, indent, false);
+                flush(&mut lines, &mut current, indent);
                 lines.push(format!("{}{}", "  ".repeat(indent), raw));
             }
             Token::Text(raw) => {
@@ -352,27 +350,27 @@ fn reformat_markup(text: &str) -> String {
                     } else if inline {
                         current.push_str(&raw);
                     } else {
-                        flush(&mut lines, &mut current, indent, false);
+                        flush(&mut lines, &mut current, indent);
                         indent = indent.saturating_sub(1);
                         current.push_str(&raw);
-                        flush(&mut lines, &mut current, indent, false);
+                        flush(&mut lines, &mut current, indent);
                     }
                 } else if self_closed {
                     if inline {
                         current.push_str(&raw);
                     } else {
-                        flush(&mut lines, &mut current, indent, false);
+                        flush(&mut lines, &mut current, indent);
                         lines.push(format!("{}{}", "  ".repeat(indent), raw));
                     }
                 } else if RAW.contains(&name.as_str()) {
-                    flush(&mut lines, &mut current, indent, false);
+                    flush(&mut lines, &mut current, indent);
                     lines.push(format!("{}{}", "  ".repeat(indent), raw));
                     indent += 1;
                     raw_stack.push(name);
                 } else if inline {
                     current.push_str(&raw);
                 } else {
-                    flush(&mut lines, &mut current, indent, false);
+                    flush(&mut lines, &mut current, indent);
                     current.push_str(&raw);
                     indent += 1;
                     // The open tag stays on its own line only when a
@@ -385,7 +383,7 @@ fn reformat_markup(text: &str) -> String {
             }
         }
     }
-    flush(&mut lines, &mut current, indent, false);
+    flush(&mut lines, &mut current, indent);
     // No leading blank line; one trailing newline.
     while lines.first().is_some_and(|l| l.trim().is_empty()) {
         lines.remove(0);

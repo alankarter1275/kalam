@@ -1,10 +1,13 @@
-src/pages/epub_editor.rs:1066:14: [1m[91merror[E0599][0m: no method named `update_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
-src/pages/epub_editor.rs:1095:14: [1m[91merror[E0599][0m: no method named `update_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
-src/pages/epub_editor.rs:1670:9: [1m[91merror[E0506][0m: cannot assign to `self.outline_headings` because it is borrowed: `self.outline_headings` is assigned to here but it was already borrowed
-src/pages/epub_editor.rs:2116:9: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
-src/pages/epub_editor.rs:2689:9: [1m[91merror[0m: variable does not need to be mutable
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
+src/epub_css.rs:27:9: [1m[91merror[0m: field `order` is never read
+src/epub_css.rs:423:9: [1m[91merror[0m: field `0` is never read
+src/epub_css.rs:426:10: [1m[91merror[0m: field `0` is never read
+src/pages/epub_editor.rs:128:25: [1m[91merror[0m: field `0` is never read
+src/pages/epub_editor.rs:105:5: [1m[91merror[0m: variant `TogglePreviewMenu` is never constructed
+src/pages/epub_editor.rs:162:5: [1m[91merror[0m: field `preview_label` is never read
+src/epub_check.rs:590:17: [1m[91merror[0m: this `if` can be collapsed into the outer `match`
+src/pages/epub_editor.rs:2173:9: [1m[91merror[0m: consider using `sort_by_key`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 8 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -27,21 +30,24 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
-[1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m tempfile v3.27.0
+[1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m insta v1.49.0
 [1m[92m    Checking[0m rusty-fork v0.3.1
 [1m[92m    Checking[0m epub-builder v0.8.3
 [1m[92m    Checking[0m proptest v1.12.0
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/epub_editor.rs:1066:14: [1m[91merror[E0599][0m: no method named `update_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
-src/pages/epub_editor.rs:1095:14: [1m[91merror[E0599][0m: no method named `update_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
-src/pages/epub_editor.rs:1670:9: [1m[91merror[E0506][0m: cannot assign to `self.outline_headings` because it is borrowed: `self.outline_headings` is assigned to here but it was already borrowed
-src/pages/epub_editor.rs:2116:9: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
-src/pages/epub_editor.rs:2689:9: [1m[91merror[0m: variable does not need to be mutable
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/epub_css.rs:27:9: [1m[91merror[0m: field `order` is never read
+src/epub_css.rs:423:9: [1m[91merror[0m: field `0` is never read
+src/epub_css.rs:426:10: [1m[91merror[0m: field `0` is never read
+src/pages/epub_editor.rs:128:25: [1m[91merror[0m: field `0` is never read
+src/pages/epub_editor.rs:105:5: [1m[91merror[0m: variant `TogglePreviewMenu` is never constructed
+src/pages/epub_editor.rs:162:5: [1m[91merror[0m: field `preview_label` is never read
+src/epub_check.rs:590:17: [1m[91merror[0m: this `if` can be collapsed into the outer `match`
+src/pages/epub_editor.rs:2173:9: [1m[91merror[0m: consider using `sort_by_key`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
---- run 40465756982 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 8 previous errors
+--- run 40466017335 ---

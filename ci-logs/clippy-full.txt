@@ -20,16 +20,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/app.rs:197:5: [1m[91merror[0m: variant `Tasks` is never constructed
-src/pages/task_manager.rs:253:17: [1m[91merror[0m: enum `Badge` is never used
-src/pages/task_manager.rs:264:15: [1m[91merror[0m: function `badge` is never used
-src/pages/task_manager.rs:284:15: [1m[91merror[0m: function `apply_badge` is never used
-src/pages/task_manager.rs:327:15: [1m[91merror[0m: function `build_tasks_dialog` is never used
-src/pages/task_manager.rs:347:15: [1m[91merror[0m: function `fill_tasks_dialog` is never used
-src/pages/task_manager.rs:367:4: [1m[91merror[0m: function `clear_box` is never used
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 18.27s

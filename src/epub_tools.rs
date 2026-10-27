@@ -283,21 +283,15 @@ fn push_text(out: &mut Vec<Token>, text: &str, from: usize, to: usize) -> usize 
     to
 }
 
+/// Whitespace runs become one space — including at the edges,
+/// where a single space is render-significant between inlines.
 fn collapse_ws(text: &str) -> String {
     let mut out = String::new();
-    let mut pending = false;
-    for c in text.chars() {
-        if c.is_whitespace() {
-            pending = true;
-        } else {
-            if pending && !out.is_empty() {
-                out.push(' ');
-            }
-            pending = false;
-            out.push(c);
-        }
+    if text.starts_with(char::is_whitespace) {
+        out.push(' ');
     }
-    if pending && !out.is_empty() {
+    out.push_str(&text.split_whitespace().collect::<Vec<_>>().join(" "));
+    if text.ends_with(char::is_whitespace) && !out.ends_with(' ') {
         out.push(' ');
     }
     out
@@ -343,10 +337,9 @@ fn reformat_markup(text: &str) -> String {
                 if closing {
                     if let Some(pos) = raw_stack.iter().rposition(|n| *n == name) {
                         raw_stack.remove(pos);
+                        current.push_str(&raw);
                         let body = std::mem::take(&mut current);
                         lines.push(format!("{}{body}", "  ".repeat(indent)));
-                        indent = indent.saturating_sub(1);
-                        lines.push(format!("{}{}", "  ".repeat(indent), raw));
                     } else if inline {
                         current.push_str(&raw);
                     } else {
@@ -363,9 +356,10 @@ fn reformat_markup(text: &str) -> String {
                         lines.push(format!("{}{}", "  ".repeat(indent), raw));
                     }
                 } else if RAW.contains(&name.as_str()) {
+                    // Open tag, verbatim body and close tag stay
+                    // one unbroken entry; only the open tag indents.
                     flush(&mut lines, &mut current, indent);
-                    lines.push(format!("{}{}", "  ".repeat(indent), raw));
-                    indent += 1;
+                    current.push_str(&raw);
                     raw_stack.push(name);
                 } else if inline {
                     current.push_str(&raw);
@@ -736,8 +730,8 @@ mod tests {
     fn reformats_markup_and_keeps_pre_verbatim() {
         let html = "<html><head><title>T</title></head><body><p>Hello <em>there</em> world</p><pre>  a\n b</pre></body></html>";
         let out = reformat(html, FileKind::Html).expect("reformat");
-        assert!(out.contains("<p>\n      Hello <em>there</em> world\n    </p>") || out.contains("Hello <em>there</em> world"), "{out}");
-        assert!(out.contains("  a\n b"), "{out}");
+        assert!(out.contains("Hello <em>there</em> world"), "{out}");
+        assert!(out.contains("<pre>  a\n b</pre>"), "{out}");
     }
 
     #[test]

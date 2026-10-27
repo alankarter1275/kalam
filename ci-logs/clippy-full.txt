@@ -37,4 +37,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m relm4 v0.11.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 44.25s
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 41.28s

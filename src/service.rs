@@ -2515,17 +2515,27 @@ impl LibraryService {
         &self,
         book: &Book,
         replacements: &std::collections::HashMap<String, Vec<u8>>,
+        removals: &std::collections::HashSet<String>,
         snapshot_label: &str,
     ) -> Result<(), String> {
-        self.take_editor_snapshot(book, snapshot_label, replacements.len() as i64)?;
+        self.take_editor_snapshot(
+            book,
+            snapshot_label,
+            (replacements.len() + removals.len()) as i64,
+        )?;
 
         let backup = crate::epub_metadata::backup_path(&book.file_path);
         if !backup.exists() {
             let _ = std::fs::copy(&book.file_path, &backup);
         }
 
-        crate::epub_container::write_with_replacements(&book.file_path, replacements)
-            .map_err(|e| e.to_string())?;
+        crate::epub_container::rewrite_epub(
+            &book.file_path,
+            &book.file_path,
+            replacements,
+            removals,
+        )
+        .map_err(|e| e.to_string())?;
 
         if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
             let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
@@ -2574,6 +2584,7 @@ impl LibraryService {
         &self,
         book: &Book,
         replacements: &std::collections::HashMap<String, Vec<u8>>,
+        removals: &std::collections::HashSet<String>,
     ) -> Result<std::path::PathBuf, String> {
         let dest = crate::paths::editor_preview_path(&book.uuid);
         if let Some(parent) = dest.parent() {
@@ -2583,10 +2594,51 @@ impl LibraryService {
             &book.file_path,
             &dest,
             replacements,
-            &std::collections::HashSet::new(),
+            removals,
         )
         .map_err(|e| e.to_string())?;
         Ok(dest)
+    }
+
+    /// Read a user-chosen file for the editor (Add files, Replace
+    /// from file, Insert image). The page chooses; the service
+    /// touches disk.
+    pub fn read_editor_import(&self, path: &std::path::Path) -> Result<Vec<u8>, String> {
+        std::fs::read(path).map_err(|e| e.to_string())
+    }
+
+    /// Write an exported editor file to a user-chosen path.
+    pub fn write_editor_export(
+        &self,
+        path: &std::path::Path,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        std::fs::write(path, bytes).map_err(|e| e.to_string())
+    }
+
+    /// Materialise a working copy of one book file so an external
+    /// app can open it (tree menu, decision 125). Written under
+    /// the cache with its real name so the external app titles it
+    /// sensibly.
+    pub fn materialize_editor_file(
+        &self,
+        book: &Book,
+        inner_path: &str,
+        bytes: &[u8],
+    ) -> Result<std::path::PathBuf, String> {
+        let dir = crate::paths::reader_cache_dir(&book.uuid).join("editor-external");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let name = inner_path.rsplit('/').next().unwrap_or("file");
+        let dest = dir.join(name);
+        std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+        Ok(dest)
+    }
+
+    /// Every distinct headword key in the merged dictionary store,
+    /// for the editor's spell check (decision 137). Keys are
+    /// already case/diacritic-folded in `combined_words`.
+    pub fn spell_wordlist(&self) -> Result<Vec<String>, String> {
+        self.catalog.spell_headwords().map_err(|e| e.to_string())
     }
 
     /// Remove one file from the book (Problems' Remove, decision

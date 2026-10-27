@@ -155,6 +155,24 @@ pub enum EpubEditorMsg {
     PaletteMove(i32),
     PaletteAccept,
     PaletteRun(usize),
+    // ── E4: Edit contents (decision 136) ──
+    OpenContents,
+    TocSelect(usize),
+    TocMoveSelection(i32),
+    /// +1 indents the selected subtree, −1 outdents it.
+    TocIndent(i32),
+    TocAddEntry,
+    TocGenerate,
+    TocRenameStart(usize),
+    /// Empty text cancels the rename (names are never blank).
+    TocRenameCommit(String),
+    TocDelete,
+    /// Drag: flattened indices; `after` = drop below the row.
+    TocDrop {
+        from: usize,
+        to: usize,
+        after: bool,
+    },
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -213,6 +231,7 @@ enum PaletteAction {
     Save,
     CheckBook,
     FindReplace,
+    EditContents,
     Tool(InstantTool),
     View(ViewMode),
     Tab(RightTab),
@@ -319,9 +338,31 @@ pub struct EpubEditorModel {
     palette_host: gtk::Box,
     palette_items: Vec<PaletteItem>,
     palette_selected: usize,
+    // ── E4: structural state ──
+    /// Files created since the last save; Save writes their
+    /// current bytes even when no dirty flag names them.
+    added_paths: HashSet<String>,
+    /// Archive entries to omit at the next save: deletions,
+    /// merge-aways and rename sources.
+    removed_paths: HashSet<String>,
+    // ── E4: Edit contents (decision 136) ──
+    toolbar_format: gtk::Box,
+    toolbar_contents: gtk::Box,
+    contents_host: gtk::Box,
+    toc: Vec<crate::epub_structure::TocEntry>,
+    /// Flattened-row index of the selected entry.
+    toc_selected: Option<usize>,
+    toc_editing: Option<usize>,
+    /// Hash of the nav+NCX texts the working TOC last came
+    /// from (or was written to): a mismatch means the files
+    /// were hand-edited and win on re-entry.
+    toc_source_hash: u64,
 }
 
 const EMPTY_TAB: &str = "__kalam_empty";
+/// The Edit contents surface rides the tab strip like a file,
+/// but is not one (decision 136).
+const CONTENTS_TAB: &str = "__kalam_contents";
 
 #[relm4::component(pub)]
 impl Component for EpubEditorModel {
@@ -412,9 +453,14 @@ impl Component for EpubEditorModel {
         tree_scroller.set_child(Some(&tree_host));
 
         // ── editing area: toolbar, tab strip, stack ───────────────
+        // The 48px toolbar row holds two toolboxes: formatting for
+        // source tabs, contents actions for the Contents tab
+        // (decision 136 puts them "in the formatting toolbar's
+        // position"). `activate_tab` shows one, hides the other.
         let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         toolbar.add_css_class("kalam-ed-toolbar");
         toolbar.set_size_request(-1, 48);
+        let toolbar_format = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         for (icon, tip, tag) in [
             ("format-text-bold-symbolic", "Bold (strong)", InlineTag::Bold),
             ("format-text-italic-symbolic", "Italic (em)", InlineTag::Italic),
@@ -428,8 +474,29 @@ impl Component for EpubEditorModel {
             btn.set_focus_on_click(false);
             let s = sender.clone();
             btn.connect_clicked(move |_| s.input(EpubEditorMsg::Format(tag)));
-            toolbar.append(&btn);
+            toolbar_format.append(&btn);
         }
+        toolbar.append(&toolbar_format);
+
+        let toolbar_contents = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+        {
+            let add_btn = gtk::Button::with_label("+ Add entry");
+            add_btn.add_css_class("kalam-ed-ghost");
+            add_btn.set_valign(gtk::Align::Center);
+            add_btn.set_focus_on_click(false);
+            let s = sender.clone();
+            add_btn.connect_clicked(move |_| s.input(EpubEditorMsg::TocAddEntry));
+            toolbar_contents.append(&add_btn);
+            let gen_btn = gtk::Button::with_label("Generate from headings");
+            gen_btn.add_css_class("kalam-ed-ghost");
+            gen_btn.set_valign(gtk::Align::Center);
+            gen_btn.set_focus_on_click(false);
+            let s = sender.clone();
+            gen_btn.connect_clicked(move |_| s.input(EpubEditorMsg::TocGenerate));
+            toolbar_contents.append(&gen_btn);
+        }
+        toolbar_contents.set_visible(false);
+        toolbar.append(&toolbar_contents);
 
         let tab_strip = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         tab_strip.add_css_class("kalam-ed-tabstrip");
@@ -918,6 +985,15 @@ impl Component for EpubEditorModel {
             palette_host,
             palette_items: Vec::new(),
             palette_selected: 0,
+            added_paths: HashSet::new(),
+            removed_paths: HashSet::new(),
+            toolbar_format,
+            toolbar_contents,
+            contents_host: gtk::Box::new(gtk::Orientation::Vertical, 0),
+            toc: Vec::new(),
+            toc_selected: None,
+            toc_editing: None,
+            toc_source_hash: 0,
         };
         model.sync_switches();
         let widgets = view_output!();
@@ -1095,6 +1171,8 @@ impl Component for EpubEditorModel {
                 }
                 let pending_saved: Vec<(String, String)> =
                     self.pending.drain().collect();
+                self.added_paths.clear();
+                self.removed_paths.clear();
                 if let Some(container) = &mut self.container {
                     for (path, bytes) in saved {
                         container.set_bytes(&path, bytes);
@@ -1121,11 +1199,13 @@ impl Component for EpubEditorModel {
                 self.sync_chrome(&sender);
             }
             EpubEditorMsg::BackPressed => {
-                let dirty = self.dirty_paths();
-                if dirty.is_empty() {
+                if !self.has_unsaved() {
                     let _ = sender.output(EpubEditorOut::Leave);
                 } else {
-                    let n = dirty.len();
+                    let n = self
+                        .dirty_paths()
+                        .union(&self.removed_paths)
+                        .count();
                     self.present_unsaved_dialog(
                         &format!(
                             "Save changes to {n} file{}?",
@@ -1258,10 +1338,18 @@ impl Component for EpubEditorModel {
                 crate::notify::error("That didn't work", &message);
             }
             EpubEditorMsg::PreviewGoToWord { chapter, fraction, word } => {
-                self.preview_word_jump(chapter, fraction, &word, &sender);
+                if self.contents_active() {
+                    self.toc_retarget(chapter, fraction, &word, &sender);
+                } else {
+                    self.preview_word_jump(chapter, fraction, &word, &sender);
+                }
             }
             EpubEditorMsg::PreviewTextSelected => {
-                self.preview_selection_jump(&sender);
+                if self.contents_active() {
+                    self.toc_retarget_selection(&sender);
+                } else {
+                    self.preview_selection_jump(&sender);
+                }
             }
             EpubEditorMsg::GoToCssRule { path, line } => {
                 sender.input(EpubEditorMsg::GoTo {
@@ -1346,6 +1434,53 @@ impl Component for EpubEditorModel {
                 self.palette_selected = index;
                 sender.input(EpubEditorMsg::PaletteAccept);
             }
+            EpubEditorMsg::OpenContents => self.open_contents(&sender),
+            EpubEditorMsg::TocSelect(index) => {
+                self.toc_selected = Some(index);
+                self.rebuild_contents(&sender);
+                self.mark_toc_target();
+            }
+            EpubEditorMsg::TocMoveSelection(delta) => {
+                if self.toc_editing.is_some() {
+                    return;
+                }
+                let count = crate::epub_structure::toc_count(&self.toc);
+                if count > 0 {
+                    let cur = self.toc_selected.unwrap_or(0) as i32;
+                    self.toc_selected =
+                        Some((cur + delta).clamp(0, count as i32 - 1) as usize);
+                    self.rebuild_contents(&sender);
+                    self.mark_toc_target();
+                }
+            }
+            EpubEditorMsg::TocIndent(delta) => {
+                if self.toc_editing.is_none() {
+                    self.toc_indent(delta, &sender);
+                }
+            }
+            EpubEditorMsg::TocAddEntry => self.toc_add_entry(&sender),
+            EpubEditorMsg::TocGenerate => self.toc_generate(&sender),
+            EpubEditorMsg::TocRenameStart(index) => {
+                let index = if index == usize::MAX {
+                    self.toc_selected.unwrap_or(0)
+                } else {
+                    index
+                };
+                if index < crate::epub_structure::toc_count(&self.toc) {
+                    self.toc_selected = Some(index);
+                    self.toc_editing = Some(index);
+                    self.rebuild_contents(&sender);
+                }
+            }
+            EpubEditorMsg::TocRenameCommit(text) => self.toc_rename_commit(text, &sender),
+            EpubEditorMsg::TocDelete => {
+                if self.toc_editing.is_none() {
+                    self.toc_delete(&sender);
+                }
+            }
+            EpubEditorMsg::TocDrop { from, to, after } => {
+                self.toc_drop(from, to, after, &sender)
+            }
             EpubEditorMsg::ClosePanels => {
                 self.find_panel.set_visible(false);
                 self.palette_panel.set_visible(false);
@@ -1424,6 +1559,12 @@ impl EpubEditorModel {
     // ── tabs ───────────────────────────────────────────────────────
 
     fn open_file(&mut self, path: &str, pin: bool, sender: &ComponentSender<Self>) {
+        // A second press on a navigation file opens Edit contents
+        // instead of pinning its source (decision 136).
+        if pin && self.tabs.iter().any(|t| t.path == path) && self.is_navigation_file(path) {
+            self.open_contents(sender);
+            return;
+        }
         if self.tabs.iter().any(|t| t.path == path) {
             if pin {
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.path == path) {
@@ -1577,12 +1718,27 @@ impl EpubEditorModel {
     fn activate_tab(&mut self, path: &str, sender: &ComponentSender<Self>) {
         self.active_path = Some(path.to_string());
         self.tab_stack.set_visible_child_name(path);
-        if let Some(tab) = self.tabs.iter().find(|t| t.path == path) {
-            self.status_type.set_label(tab.kind.label());
-            if let Some(buffer) = &tab.buffer {
-                let iter = buffer.iter_at_offset(buffer.cursor_position());
-                self.status_pos
-                    .set_label(&format!("Ln {}, Col {}", iter.line() + 1, iter.line_offset() + 1));
+        let contents = path == CONTENTS_TAB;
+        self.toolbar_format.set_visible(!contents);
+        self.toolbar_contents.set_visible(contents);
+        if contents {
+            self.maybe_reload_toc();
+            self.rebuild_contents(sender);
+            self.mark_toc_target();
+        } else {
+            if let Some(view) = self.preview_view.as_ref() {
+                view.clear_search_matches();
+            }
+            if let Some(tab) = self.tabs.iter().find(|t| t.path == path) {
+                self.status_type.set_label(tab.kind.label());
+                if let Some(buffer) = &tab.buffer {
+                    let iter = buffer.iter_at_offset(buffer.cursor_position());
+                    self.status_pos.set_label(&format!(
+                        "Ln {}, Col {}",
+                        iter.line() + 1,
+                        iter.line_offset() + 1
+                    ));
+                }
             }
         }
         self.rebuild_tab_strip(sender);
@@ -1662,6 +1818,7 @@ impl EpubEditorModel {
 
     fn dirty_paths(&self) -> HashSet<String> {
         let mut dirty: HashSet<String> = self.pending.keys().cloned().collect();
+        dirty.extend(self.added_paths.iter().cloned());
         dirty.extend(
             self.tabs
                 .iter()
@@ -1669,6 +1826,796 @@ impl EpubEditorModel {
                 .map(|t| t.path.clone()),
         );
         dirty
+    }
+
+    // ── E4: Edit contents (decision 136) ───────────────────────
+    //
+    // The Contents tab edits the book's navigation as data. Every
+    // change writes through to nav.xhtml / toc.ncx as ordinary
+    // buffer/pending text, so Save, Check book and the Preview
+    // need no special cases; the tab itself is just a view.
+
+    fn is_navigation_file(&self, path: &str) -> bool {
+        self.container
+            .as_ref()
+            .map(|c| {
+                c.nav_path.as_deref() == Some(path) || c.ncx_path.as_deref() == Some(path)
+            })
+            .unwrap_or(false)
+    }
+
+    fn contents_active(&self) -> bool {
+        self.active_path.as_deref() == Some(CONTENTS_TAB)
+    }
+
+    fn toc_dirty(&self) -> bool {
+        let Some(container) = &self.container else {
+            return false;
+        };
+        [container.nav_path.as_ref(), container.ncx_path.as_ref()]
+            .into_iter()
+            .flatten()
+            .any(|p| self.is_modified(p))
+    }
+
+    fn toc_hash_now(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        if let Some(container) = &self.container {
+            for path in [&container.nav_path, &container.ncx_path]
+                .into_iter()
+                .flatten()
+            {
+                self.file_text(path).hash(&mut hasher);
+            }
+        }
+        hasher.finish()
+    }
+
+    fn load_toc(&mut self) {
+        let mut entries = Vec::new();
+        if let Some(container) = &self.container {
+            if let Some(nav) = &container.nav_path {
+                if let Some(text) = self.file_text(nav) {
+                    entries = crate::epub_structure::parse_nav(&text, nav);
+                }
+            }
+            if entries.is_empty() {
+                if let Some(ncx) = &container.ncx_path {
+                    if let Some(text) = self.file_text(ncx) {
+                        entries = crate::epub_structure::parse_ncx(&text, ncx);
+                    }
+                }
+            }
+        }
+        self.toc = entries;
+        self.toc_source_hash = self.toc_hash_now();
+        self.toc_selected = (!self.toc.is_empty()).then_some(0);
+        self.toc_editing = None;
+    }
+
+    fn maybe_reload_toc(&mut self) {
+        if self.toc_hash_now() != self.toc_source_hash {
+            self.load_toc();
+        }
+    }
+
+    fn open_contents(&mut self, sender: &ComponentSender<Self>) {
+        if self.tabs.iter().any(|t| t.path == CONTENTS_TAB) {
+            self.activate_tab(CONTENTS_TAB, sender);
+            return;
+        }
+        let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        panel.add_css_class("kalam-ed-contents");
+        let hint = gtk::Label::new(Some(
+            "Tab indents · Shift+Tab outdents · drag to reorder · double-click renames",
+        ));
+        hint.add_css_class("kalam-ui-meta");
+        hint.set_halign(gtk::Align::Start);
+        hint.set_margin_start(20);
+        hint.set_margin_top(12);
+        hint.set_margin_bottom(8);
+        panel.append(&hint);
+        let scroller = scroll_host(&self.contents_host);
+        scroller.set_vexpand(true);
+        panel.append(&scroller);
+        {
+            // Contents keys. Bubble phase: a rename Entry inside
+            // a row eats its own editing keys first; what it does
+            // not want (Tab, arrows, F2) reaches the panel before
+            // the window turns them into focus travel.
+            let keys = gtk::EventControllerKey::new();
+            let s = sender.input_sender().clone();
+            keys.connect_key_pressed(move |_, keyval, _, _| {
+                let stop = gtk::glib::Propagation::Stop;
+                match keyval {
+                    gtk::gdk::Key::Tab => {
+                        let _ = s.send(EpubEditorMsg::TocIndent(1));
+                        stop
+                    }
+                    gtk::gdk::Key::ISO_Left_Tab => {
+                        let _ = s.send(EpubEditorMsg::TocIndent(-1));
+                        stop
+                    }
+                    gtk::gdk::Key::Up => {
+                        let _ = s.send(EpubEditorMsg::TocMoveSelection(-1));
+                        stop
+                    }
+                    gtk::gdk::Key::Down => {
+                        let _ = s.send(EpubEditorMsg::TocMoveSelection(1));
+                        stop
+                    }
+                    gtk::gdk::Key::Delete | gtk::gdk::Key::BackSpace => {
+                        let _ = s.send(EpubEditorMsg::TocDelete);
+                        stop
+                    }
+                    gtk::gdk::Key::F2 => {
+                        // usize::MAX = "the selected row".
+                        let _ = s.send(EpubEditorMsg::TocRenameStart(usize::MAX));
+                        stop
+                    }
+                    _ => gtk::glib::Propagation::Proceed,
+                }
+            });
+            panel.add_controller(keys);
+        }
+        self.tab_stack.add_named(&panel, Some(CONTENTS_TAB));
+        self.tabs.push(OpenTab {
+            path: CONTENTS_TAB.to_string(),
+            kind: FileKind::Xml,
+            pinned: true,
+            buffer: None,
+        });
+        self.load_toc();
+        self.activate_tab(CONTENTS_TAB, sender);
+    }
+
+    fn sync_contents_status(&self) {
+        let n = crate::epub_structure::toc_count(&self.toc);
+        self.status_pos.set_label(&format!(
+            "{n} entr{}",
+            if n == 1 { "y" } else { "ies" }
+        ));
+        let kind = match &self.container {
+            Some(c) if c.ncx_path.is_some() => "NCX",
+            Some(c) if c.nav_path.is_some() => "Nav",
+            _ => "Contents",
+        };
+        self.status_type.set_label(kind);
+    }
+
+    fn rebuild_contents(&self, sender: &ComponentSender<Self>) {
+        clear_box(&self.contents_host);
+        self.sync_contents_status();
+        let flat = crate::epub_structure::toc_flatten(self.toc.clone());
+        if flat.is_empty() {
+            let label = gtk::Label::new(Some(
+                "No contents yet — add an entry or generate from headings",
+            ));
+            label.add_css_class("kalam-ui-meta");
+            label.set_halign(gtk::Align::Start);
+            label.set_margin_all(20);
+            self.contents_host.append(&label);
+            return;
+        }
+        for (index, (depth, entry)) in flat.iter().enumerate() {
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-ed-toc-row");
+            if self.toc_selected == Some(index) {
+                row.add_css_class("selected");
+            }
+            row.set_size_request(-1, 36);
+            row.set_focus_on_click(false);
+
+            let content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            content.set_margin_start(12 + (*depth as i32) * 24);
+            content.set_margin_end(12);
+            if self.toc_editing == Some(index) {
+                let entry_widget = gtk::Entry::new();
+                entry_widget.add_css_class("kalam-ed-entry");
+                entry_widget.set_text(&entry.text);
+                entry_widget.set_hexpand(true);
+                let s = sender.input_sender().clone();
+                entry_widget.connect_activate(move |e| {
+                    let _ = s.send(EpubEditorMsg::TocRenameCommit(e.text().to_string()));
+                });
+                let focus = entry_widget.clone();
+                gtk::glib::idle_add_local_once(move || {
+                    focus.grab_focus();
+                    focus.select_region(0, -1);
+                });
+                content.append(&entry_widget);
+            } else {
+                let name = gtk::Label::new(Some(&entry.text));
+                name.set_halign(gtk::Align::Start);
+                name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                if *depth == 0 {
+                    name.add_css_class("kalam-ed-toc-part");
+                }
+                content.append(&name);
+                let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                spacer.set_hexpand(true);
+                content.append(&spacer);
+                if !entry.href.is_empty() {
+                    let target = gtk::Label::new(Some(file_name(&entry.href)));
+                    target.add_css_class("kalam-ui-meta");
+                    content.append(&target);
+                }
+            }
+            row.set_child(Some(&content));
+
+            {
+                let s = sender.clone();
+                row.connect_clicked(move |_| {
+                    s.input(EpubEditorMsg::TocSelect(index));
+                });
+            }
+            {
+                // Double-click renames in place.
+                let gesture = gtk::GestureClick::new();
+                gesture.set_button(1);
+                let s = sender.input_sender().clone();
+                gesture.connect_pressed(move |_, n, _, _| {
+                    if n == 2 {
+                        let _ = s.send(EpubEditorMsg::TocRenameStart(index));
+                    }
+                });
+                row.add_controller(gesture);
+            }
+            {
+                let provider = gtk::gdk::ContentProvider::for_value(&(index as i64).to_value());
+                let source = gtk::DragSource::new();
+                source.set_actions(gtk::gdk::DragAction::MOVE);
+                source.set_content(Some(&provider));
+                let row_begin = row.clone();
+                source.connect_drag_begin(move |source, _| {
+                    row_begin.set_opacity(0.4);
+                    let paintable = gtk::WidgetPaintable::new(Some(&row_begin));
+                    source.set_icon(Some(&paintable), 14, 18);
+                });
+                let row_end = row.clone();
+                source.connect_drag_end(move |_, _, _| row_end.set_opacity(1.0));
+                let row_cancel = row.clone();
+                source.connect_drag_cancel(move |_, _, _| {
+                    row_cancel.set_opacity(1.0);
+                    false
+                });
+                row.add_controller(source);
+            }
+            {
+                let target = gtk::DropTarget::new(
+                    i64::static_type(),
+                    gtk::gdk::DragAction::MOVE,
+                );
+                let row_motion = row.clone();
+                target.connect_enter(move |_, _, y| {
+                    set_toc_drop(&row_motion, y);
+                    gtk::gdk::DragAction::MOVE
+                });
+                let row_motion2 = row.clone();
+                target.connect_motion(move |_, _, y| {
+                    set_toc_drop(&row_motion2, y);
+                    gtk::gdk::DragAction::MOVE
+                });
+                let row_leave = row.clone();
+                target.connect_leave(move |_| {
+                    row_leave.remove_css_class("drop-before");
+                    row_leave.remove_css_class("drop-after");
+                });
+                let row_drop = row.clone();
+                let s = sender.input_sender().clone();
+                target.connect_drop(move |_, value, _, y| {
+                    let after = y >= row_drop.height() as f64 / 2.0;
+                    row_drop.remove_css_class("drop-before");
+                    row_drop.remove_css_class("drop-after");
+                    let Ok(from) = value.get::<i64>() else {
+                        return false;
+                    };
+                    let _ = s.send(EpubEditorMsg::TocDrop {
+                        from: from as usize,
+                        to: index,
+                        after,
+                    });
+                    true
+                });
+                row.add_controller(target);
+            }
+            self.contents_host.append(&row);
+        }
+    }
+
+    /// Rows of the working TOC with depths — every contents edit
+    /// happens on this flat form, then unflattens back.
+    fn toc_flat(&self) -> Vec<(usize, crate::epub_structure::TocEntry)> {
+        crate::epub_structure::toc_flatten(self.toc.clone())
+    }
+
+    fn toc_set_flat(&mut self, flat: Vec<(usize, crate::epub_structure::TocEntry)>) {
+        self.toc = crate::epub_structure::toc_unflatten(flat);
+    }
+
+    /// Length of the subtree run starting at flat index `i`
+    /// (the entry plus its deeper followers).
+    fn toc_run_len(flat: &[(usize, crate::epub_structure::TocEntry)], i: usize) -> usize {
+        let depth = flat[i].0;
+        let mut len = 1;
+        while i + len < flat.len() && flat[i + len].0 > depth {
+            len += 1;
+        }
+        len
+    }
+
+    fn toc_indent(&mut self, delta: i32, sender: &ComponentSender<Self>) {
+        let Some(sel) = self.toc_selected else { return };
+        let mut flat = self.toc_flat();
+        if sel >= flat.len() {
+            return;
+        }
+        let run = Self::toc_run_len(&flat, sel);
+        if delta > 0 {
+            // Indent: at most one deeper than the previous row.
+            if sel == 0 || flat[sel].0 > flat[sel - 1].0 {
+                return;
+            }
+            for row in &mut flat[sel..sel + run] {
+                row.0 += 1;
+            }
+        } else {
+            if flat[sel].0 == 0 {
+                return;
+            }
+            for row in &mut flat[sel..sel + run] {
+                row.0 -= 1;
+            }
+        }
+        self.toc_set_flat(flat);
+        self.toc_changed(sender);
+    }
+
+    fn toc_add_entry(&mut self, sender: &ComponentSender<Self>) {
+        let mut flat = self.toc_flat();
+        let fallback_href = self
+            .container
+            .as_ref()
+            .and_then(|c| {
+                c.files
+                    .iter()
+                    .filter(|f| f.spine_index.is_some() && f.kind == FileKind::Html)
+                    .min_by_key(|f| f.spine_index)
+                    .map(|f| f.path.clone())
+            })
+            .unwrap_or_default();
+        let (at, depth, href) = match self.toc_selected {
+            Some(sel) if sel < flat.len() => (
+                sel + Self::toc_run_len(&flat, sel),
+                flat[sel].0,
+                flat[sel].1.href.clone(),
+            ),
+            _ => (flat.len(), 0, fallback_href),
+        };
+        flat.insert(
+            at,
+            (
+                depth,
+                crate::epub_structure::TocEntry::leaf("New entry".to_string(), href, None),
+            ),
+        );
+        self.toc_set_flat(flat);
+        self.toc_selected = Some(at);
+        self.toc_editing = Some(at);
+        self.toc_changed(sender);
+    }
+
+    fn toc_generate(&mut self, sender: &ComponentSender<Self>) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        // Reading order, not manifest order.
+        let mut spined: Vec<&EpubFile> = container
+            .files
+            .iter()
+            .filter(|f| f.kind == FileKind::Html && f.spine_index.is_some() && !f.is_nav)
+            .collect();
+        spined.sort_by_key(|f| f.spine_index);
+        let files: Vec<(String, String)> = spined
+            .iter()
+            .map(|f| (f.path.clone(), self.file_text(&f.path).unwrap_or_default()))
+            .collect();
+        let generated = crate::epub_structure::generate_from_headings(&files);
+        if generated.is_empty() {
+            self.show_pill("No headings found in this book", false, sender);
+            return;
+        }
+        self.toc = generated;
+        self.toc_selected = Some(0);
+        self.toc_editing = None;
+        self.toc_changed(sender);
+    }
+
+    fn toc_rename_commit(&mut self, text: String, sender: &ComponentSender<Self>) {
+        let Some(index) = self.toc_editing.take() else {
+            return;
+        };
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            self.rebuild_contents(sender);
+            return;
+        }
+        let mut flat = self.toc_flat();
+        if let Some((_, entry)) = flat.get_mut(index) {
+            entry.text = text;
+        }
+        self.toc_set_flat(flat);
+        self.toc_changed(sender);
+    }
+
+    fn toc_delete(&mut self, sender: &ComponentSender<Self>) {
+        let Some(sel) = self.toc_selected else { return };
+        let mut flat = self.toc_flat();
+        if sel >= flat.len() {
+            return;
+        }
+        let run = Self::toc_run_len(&flat, sel);
+        flat.drain(sel..sel + run);
+        self.toc_set_flat(flat);
+        self.toc_selected = if self.toc.is_empty() {
+            None
+        } else {
+            Some(sel.min(crate::epub_structure::toc_count(&self.toc) - 1))
+        };
+        self.toc_changed(sender);
+    }
+
+    fn toc_drop(&mut self, from: usize, to: usize, after: bool, sender: &ComponentSender<Self>) {
+        let mut flat = self.toc_flat();
+        if from >= flat.len() || to >= flat.len() || from == to {
+            return;
+        }
+        let run = Self::toc_run_len(&flat, from);
+        // Dropping into the dragged subtree is meaningless.
+        if to > from && to < from + run {
+            return;
+        }
+        let target_depth = flat[to].0;
+        let insert_at = if after {
+            to + Self::toc_run_len(&flat, to)
+        } else {
+            to
+        };
+        let piece: Vec<(usize, crate::epub_structure::TocEntry)> =
+            flat.drain(from..from + run).collect();
+        let insert_at = if insert_at > from {
+            insert_at - run
+        } else {
+            insert_at
+        };
+        // The moved run adopts the target row's depth, keeping
+        // its internal offsets.
+        let shift = target_depth as i32 - piece[0].0 as i32;
+        let piece: Vec<(usize, crate::epub_structure::TocEntry)> = piece
+            .into_iter()
+            .map(|(d, e)| ((d as i32 + shift).max(0) as usize, e))
+            .collect();
+        let landed = insert_at.min(flat.len());
+        for (i, row) in piece.into_iter().enumerate() {
+            flat.insert(landed + i, row);
+        }
+        self.toc_set_flat(flat);
+        self.toc_selected = Some(landed);
+        self.toc_changed(sender);
+    }
+
+    /// Write the working TOC back to nav.xhtml and toc.ncx as
+    /// ordinary text edits (buffers where open, pending where
+    /// not), then refresh everything that follows text changes.
+    fn toc_changed(&mut self, sender: &ComponentSender<Self>) {
+        let (nav_path, ncx_path, opf_path, title) = match (&self.container, &self.book) {
+            (Some(c), Some(b)) => (
+                c.nav_path.clone(),
+                c.ncx_path.clone(),
+                c.opf_path.clone(),
+                b.title.clone(),
+            ),
+            _ => return,
+        };
+        if nav_path.is_none() && ncx_path.is_none() && !self.toc.is_empty() {
+            // A book with no navigation document at all gains a
+            // nav.xhtml, registered in the OPF.
+            if let Some(container) = &mut self.container {
+                let dir = crate::epub_structure::parent_dir(&opf_path);
+                let mut candidate = format!("{dir}nav.xhtml");
+                let mut n = 1;
+                while container.file(&candidate).is_some() {
+                    n += 1;
+                    candidate = format!("{dir}nav{n}.xhtml");
+                }
+                let text = crate::epub_structure::render_nav(None, &self.toc, &candidate);
+                container.add_file(
+                    EpubFile {
+                        path: candidate.clone(),
+                        kind: FileKind::Html,
+                        media_type: "application/xhtml+xml".to_string(),
+                        spine_index: None,
+                        is_nav: true,
+                        is_cover_image: false,
+                        in_manifest: true,
+                    },
+                    text.into_bytes(),
+                );
+                self.added_paths.insert(candidate);
+            }
+            if let Some(opf_text) = self.opf_text_for_current_files() {
+                self.set_text_quiet(&opf_path, &opf_text);
+            }
+            self.rebuild_tree(sender);
+        } else {
+            if let Some(nav) = &nav_path {
+                let current = self.file_text(nav);
+                let text =
+                    crate::epub_structure::render_nav(current.as_deref(), &self.toc, nav);
+                self.set_text_quiet(nav, &text);
+            }
+            if let Some(ncx) = &ncx_path {
+                let current = self.file_text(ncx);
+                let text = crate::epub_structure::render_ncx(
+                    current.as_deref(),
+                    &self.toc,
+                    ncx,
+                    &title,
+                );
+                self.set_text_quiet(ncx, &text);
+            }
+        }
+        self.toc_source_hash = self.toc_hash_now();
+        self.run_check(sender);
+        self.request_preview_write(sender);
+        self.sync_chrome(sender);
+        self.rebuild_contents(sender);
+        self.mark_toc_target();
+    }
+
+    /// Replace a file's text without snapshot or pill: the
+    /// buffer where one is open (one undo step), a pending edit
+    /// where not. Contents writes and OPF rebuilds ride this.
+    fn set_text_quiet(&mut self, path: &str, text: &str) {
+        if let Some(buffer) = self
+            .tabs
+            .iter()
+            .find(|t| t.path == path)
+            .and_then(|t| t.buffer.clone())
+        {
+            if buffer_text(&buffer) == text {
+                return;
+            }
+            let cursor = buffer.cursor_position();
+            buffer.begin_user_action();
+            let (mut a, mut b) = (buffer.start_iter(), buffer.end_iter());
+            buffer.delete(&mut a, &mut b);
+            let mut at = buffer.start_iter();
+            buffer.insert(&mut at, text);
+            buffer.end_user_action();
+            let pos = buffer.iter_at_offset(cursor.min(buffer.char_count()));
+            buffer.place_cursor(&pos);
+        } else if self.file_text(path).as_deref() != Some(text) {
+            self.pending.insert(path.to_string(), text.to_string());
+        }
+    }
+
+    /// The OPF rewritten to match the container's current file
+    /// list, preserving ids, properties and everything outside
+    /// manifest/spine. Structure ops (E4) all lean on this.
+    fn opf_text_for_current_files(&self) -> Option<String> {
+        let container = self.container.as_ref()?;
+        let opf_path = container.opf_path.clone();
+        let current = self.file_text(&opf_path)?;
+        let (old_items, old_spine, _) =
+            crate::epub_structure::parse_opf_data(&current, &opf_path);
+        let old_id_path: HashMap<String, String> = old_items
+            .iter()
+            .map(|i| (i.id.clone(), i.href.clone()))
+            .collect();
+        let old_linear: HashMap<String, bool> = old_spine
+            .iter()
+            .filter_map(|(id, linear)| old_id_path.get(id).map(|p| (p.clone(), *linear)))
+            .collect();
+        let mut used: HashSet<String> = old_items.iter().map(|i| i.id.clone()).collect();
+        let mut items: Vec<crate::epub_structure::OpfItem> = Vec::new();
+        let mut id_by_path: HashMap<String, String> = HashMap::new();
+        for file in container.files.iter().filter(|f| f.in_manifest) {
+            let old = old_items.iter().find(|i| i.href == file.path);
+            let id = match old {
+                Some(o) => o.id.clone(),
+                None => mint_opf_id(&file.path, &mut used),
+            };
+            used.insert(id.clone());
+            let mut properties: Vec<String> =
+                old.map(|o| o.properties.clone()).unwrap_or_default();
+            sync_opf_prop(&mut properties, "nav", file.is_nav);
+            sync_opf_prop(&mut properties, "cover-image", file.is_cover_image);
+            let media_type = if file.media_type.is_empty() {
+                crate::epub_container::guess_media_type(&file.path).to_string()
+            } else {
+                file.media_type.clone()
+            };
+            id_by_path.insert(file.path.clone(), id.clone());
+            items.push(crate::epub_structure::OpfItem {
+                id,
+                href: file.path.clone(),
+                media_type,
+                properties,
+            });
+        }
+        let mut spined: Vec<&EpubFile> = container
+            .files
+            .iter()
+            .filter(|f| f.in_manifest && f.spine_index.is_some())
+            .collect();
+        spined.sort_by_key(|f| f.spine_index);
+        let spine: Vec<(String, bool)> = spined
+            .iter()
+            .filter_map(|f| {
+                id_by_path.get(&f.path).map(|id| {
+                    (
+                        id.clone(),
+                        old_linear.get(&f.path).copied().unwrap_or(true),
+                    )
+                })
+            })
+            .collect();
+        let toc_id = container
+            .ncx_path
+            .as_ref()
+            .and_then(|p| id_by_path.get(p))
+            .cloned();
+        Some(crate::epub_structure::rebuild_opf(
+            &current,
+            &opf_path,
+            &items,
+            &spine,
+            toc_id.as_deref(),
+        ))
+    }
+
+    /// Ring the selected entry's target heading in the Preview
+    /// (the reader's current-search-match accent ring, decision
+    /// 136's "2px accent outline"), and take the preview there.
+    fn mark_toc_target(&mut self) {
+        if !self.contents_active() {
+            return;
+        }
+        let Some(view) = self.preview_view.as_ref() else {
+            return;
+        };
+        let flat = self.toc_flat();
+        let Some((_, entry)) = self.toc_selected.and_then(|i| flat.get(i)) else {
+            view.clear_search_matches();
+            return;
+        };
+        if entry.href.is_empty() {
+            view.clear_search_matches();
+            return;
+        }
+        let spine_index = self
+            .container
+            .as_ref()
+            .and_then(|c| c.file(&entry.href))
+            .and_then(|f| f.spine_index);
+        let mut marked = false;
+        if !entry.text.trim().is_empty() {
+            let results = view.search(entry.text.trim());
+            let hit = results
+                .iter()
+                .find(|r| Some(r.chapter) == spine_index)
+                .or_else(|| results.first());
+            if let Some(hit) = hit {
+                let end = kalam_reader::LayeredLocator {
+                    char_offset: hit.locator.char_offset
+                        + entry.text.trim().chars().count() as u32,
+                    ..hit.locator.clone()
+                };
+                view.set_search_matches([(hit.locator.clone(), end, true)]);
+                view.goto_locator(&hit.locator, true);
+                self.preview_chapter = hit.chapter as i32;
+                marked = true;
+            }
+        }
+        if !marked {
+            view.clear_search_matches();
+            let href = match &entry.fragment {
+                Some(f) => format!("{}#{}", entry.href, f),
+                None => entry.href.clone(),
+            };
+            if !view.follow_link(&href) {
+                if let Some(index) = spine_index {
+                    view.goto_chapter(index, 0.0);
+                    self.preview_chapter = index as i32;
+                }
+            }
+        }
+    }
+
+    /// A click in the Preview while Contents is active moves the
+    /// selected entry's target there (decision 136): the file
+    /// clicked in, fragmented to the nearest heading above the
+    /// click that carries an id.
+    fn toc_retarget(
+        &mut self,
+        chapter: usize,
+        fraction: f64,
+        word: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(sel) = self.toc_selected else { return };
+        let Some(path) = self.spine_path(chapter) else {
+            return;
+        };
+        let Some(text) = self.file_text(&path) else {
+            return;
+        };
+        let map = strip_map(&text);
+        let needle = normalize_ws(word);
+        let offset = if needle.is_empty() {
+            0
+        } else {
+            let target = (fraction * map.text.chars().count() as f64) as usize;
+            let mut best: Option<usize> = None;
+            for (at, _) in map.text.match_indices(&needle) {
+                let at_chars = map.text[..at].chars().count();
+                match best {
+                    Some(prev)
+                        if (prev as i64 - target as i64).abs()
+                            <= (at_chars as i64 - target as i64).abs() => {}
+                    _ => best = Some(at_chars),
+                }
+            }
+            best.map(|at| map.source_span(at, at + needle.chars().count()).0)
+                .unwrap_or(0)
+        };
+        let fragment = crate::epub_structure::headings_with_ids(&text)
+            .into_iter()
+            .filter(|h| h.2 <= offset)
+            .last()
+            .and_then(|h| h.3);
+        let mut flat = self.toc_flat();
+        if let Some((_, entry)) = flat.get_mut(sel) {
+            entry.href = path;
+            entry.fragment = fragment;
+        }
+        self.toc_set_flat(flat);
+        self.toc_changed(sender);
+    }
+
+    /// Selection form of the same move: retarget to the
+    /// selection's chapter and nearest heading id.
+    fn toc_retarget_selection(&mut self, sender: &ComponentSender<Self>) {
+        let Some(view) = self.preview_view.as_ref() else {
+            return;
+        };
+        let Some(captured) = view.capture_highlight(kalam_reader::HighlightColor::Yellow)
+        else {
+            return;
+        };
+        let start = captured.start;
+        let exact = start.quote.exact.clone();
+        self.toc_retarget(start.spine_index, start.spine_fraction, &exact, sender);
+    }
+
+    /// A file's current bytes, for saves and exports: text files
+    /// from their buffer/pending/container text, others from
+    /// the container's bytes.
+    fn file_bytes(&self, path: &str) -> Option<Vec<u8>> {
+        let container = self.container.as_ref()?;
+        let file = container.file(path)?;
+        if file.kind.is_text() {
+            self.file_text(path).map(String::into_bytes)
+        } else {
+            container.bytes(path).map(|b| b.to_vec())
+        }
+    }
+
+    /// Any unsaved work at all, structural deletions included.
+    fn has_unsaved(&self) -> bool {
+        !self.dirty_paths().is_empty() || !self.removed_paths.is_empty()
     }
 
     // ── formatting toolbar ─────────────────────────────────────────
@@ -1752,7 +2699,18 @@ impl EpubEditorModel {
         for (path, text) in &self.pending {
             replacements.insert(path.clone(), text.clone().into_bytes());
         }
-        if replacements.is_empty() {
+        // Files born during this session must be written even
+        // when neither a buffer edit nor a pending edit names
+        // them (their bytes live in the container).
+        for path in &self.added_paths {
+            if !replacements.contains_key(path) {
+                if let Some(bytes) = self.file_bytes(path) {
+                    replacements.insert(path.clone(), bytes);
+                }
+            }
+        }
+        let removals = self.removed_paths.clone();
+        if replacements.is_empty() && removals.is_empty() {
             // A Save from the unsaved dialog with everything already
             // saved (possible after Save anyway): just continue.
             match std::mem::replace(&mut self.after_save, AfterSave::Nothing) {
@@ -1786,7 +2744,9 @@ impl EpubEditorModel {
         let s = sender.input_sender().clone();
         crate::tasks::spawn_internal(
             "Saving edits",
-            move |_reporter| service.save_editor_changes(&book, &replacements, "Before save"),
+            move |_reporter| {
+                service.save_editor_changes(&book, &replacements, &removals, "Before save")
+            },
             |_| {},
             move |result| {
                 let _ = s.send(EpubEditorMsg::Saved(result));
@@ -2023,7 +2983,11 @@ impl EpubEditorModel {
             btn.set_focus_on_click(false);
 
             let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            let name = gtk::Label::new(Some(file_name(&tab.path)));
+            let name = gtk::Label::new(Some(if tab.path == CONTENTS_TAB {
+                "Contents"
+            } else {
+                file_name(&tab.path)
+            }));
             if !tab.pinned {
                 name.add_css_class("kalam-ed-tab-temporary");
             }
@@ -2033,6 +2997,7 @@ impl EpubEditorModel {
                 .as_ref()
                 .map(|b| b.is_modified())
                 .unwrap_or(false)
+                || (tab.path == CONTENTS_TAB && self.toc_dirty())
             {
                 let dot = gtk::Label::new(Some("•"));
                 dot.add_css_class("kalam-ed-dot");
@@ -2314,11 +3279,20 @@ impl EpubEditorModel {
             }
             replacements.insert(path.clone(), text.clone().into_bytes());
         }
+        for path in &self.added_paths {
+            if replacements.contains_key(path) {
+                continue;
+            }
+            if let Some(bytes) = self.file_bytes(path) {
+                replacements.insert(path.clone(), bytes);
+            }
+        }
+        let removals = self.removed_paths.clone();
         let service = self.service.clone();
         let s = sender.input_sender().clone();
         crate::tasks::spawn_internal(
             "Preparing preview",
-            move |_reporter| service.write_editor_preview(&book, &replacements),
+            move |_reporter| service.write_editor_preview(&book, &replacements, &removals),
             |_| {},
             move |result| {
                 if let Ok(path) = result {
@@ -2391,6 +3365,10 @@ impl EpubEditorModel {
             old.close();
         }
         self.preview_chapter = chapter as i32;
+        // A fresh engine forgot the contents mark; re-ring it.
+        if self.contents_active() {
+            self.mark_toc_target();
+        }
     }
 
     /// Source → preview: keep the preview on the chapter being
@@ -3032,8 +4010,12 @@ impl EpubEditorModel {
             });
         }
         let s = sender.input_sender().clone();
-        menu.add_item("Find & replace", move || {
+        menu.add_item_with_hint("Find & replace…", "Ctrl+Shift+F", move || {
             let _ = s.send(EpubEditorMsg::ToggleFind);
+        });
+        let s = sender.input_sender().clone();
+        menu.add_item("Edit contents…", move || {
+            let _ = s.send(EpubEditorMsg::OpenContents);
         });
         menu.add_separator();
         let clean = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
@@ -3049,11 +4031,6 @@ impl EpubEditorModel {
             });
         }
         menu.add_submenu("Clean up", clean);
-        menu.add_separator();
-        let s = sender.input_sender().clone();
-        menu.add_item("Command palette", move || {
-            let _ = s.send(EpubEditorMsg::TogglePalette);
-        });
         menu.popover().set_parent(&self.tools_btn);
         menu.popover().popup();
         self.tools_menu = Some(menu);
@@ -3772,6 +4749,7 @@ impl EpubEditorModel {
             item("Save", "", Some("Ctrl+S"), PaletteAction::Save),
             item("Check book", "", None, PaletteAction::CheckBook),
             item("Find & replace", "", Some("Ctrl+F"), PaletteAction::FindReplace),
+            item("Edit contents", "", None, PaletteAction::EditContents),
             item("Smarten punctuation", "Clean up", None, PaletteAction::Tool(InstantTool::Smarten)),
             item("Reformat code", "Clean up", None, PaletteAction::Tool(InstantTool::Reformat)),
             item("Remove unused CSS", "Clean up", None, PaletteAction::Tool(InstantTool::RemoveUnusedCss)),
@@ -3871,6 +4849,7 @@ impl EpubEditorModel {
                 sender.input(EpubEditorMsg::SetRightTab(RightTab::Problems))
             }
             PaletteAction::FindReplace => self.toggle_find(sender),
+            PaletteAction::EditContents => self.open_contents(sender),
             PaletteAction::Tool(kind) => self.present_scope_dialog(kind, sender),
             PaletteAction::View(mode) => sender.input(EpubEditorMsg::SetViewMode(mode)),
             PaletteAction::Tab(tab) => sender.input(EpubEditorMsg::SetRightTab(tab)),
@@ -3884,7 +4863,8 @@ impl EpubEditorModel {
 
     fn sync_chrome(&mut self, sender: &ComponentSender<Self>) {
         let dirty = self.dirty_paths();
-        self.save_btn.set_sensitive(!dirty.is_empty() && !self.saving);
+        self.save_btn
+            .set_sensitive(self.has_unsaved() && !self.saving);
         if dirty != self.shown_dirty {
             self.shown_dirty = dirty;
             self.rebuild_tab_strip(sender);
@@ -3942,6 +4922,63 @@ impl EpubEditorModel {
 }
 
 // ── helpers ────────────────────────────────────────────────────────
+
+/// The 3px accent drop bar on a contents row, before or after
+/// by pointer half (decision 136's "drag to reorder").
+fn set_toc_drop(row: &gtk::Button, y: f64) {
+    if y >= row.height() as f64 / 2.0 {
+        row.remove_css_class("drop-before");
+        row.add_css_class("drop-after");
+    } else {
+        row.remove_css_class("drop-after");
+        row.add_css_class("drop-before");
+    }
+}
+
+/// A fresh manifest id for a file the OPF never had: the file
+/// stem, sanitised to an XML name, numbered until unique.
+fn mint_opf_id(path: &str, used: &mut HashSet<String>) -> String {
+    let stem = file_name(path).rsplit_once('.').map(|(s, _)| s).unwrap_or(path);
+    let mut base: String = stem
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if base.is_empty()
+        || !base
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_alphabetic() || c == '_')
+            .unwrap_or(false)
+    {
+        base = format!("id-{base}");
+    }
+    let mut candidate = base.clone();
+    let mut n = 1;
+    while used.contains(&candidate) {
+        n += 1;
+        candidate = format!("{base}-{n}");
+    }
+    used.insert(candidate.clone());
+    candidate
+}
+
+/// Keep one flag in a manifest `properties` list in step with
+/// the container's view (OPF rebuilds preserve the rest).
+fn sync_opf_prop(properties: &mut Vec<String>, name: &str, on: bool) {
+    if on {
+        if !properties.iter().any(|p| p == name) {
+            properties.push(name.to_string());
+        }
+    } else {
+        properties.retain(|p| p != name);
+    }
+}
 
 fn scroll_host(child: &impl IsA<gtk::Widget>) -> gtk::ScrolledWindow {
     let scroller = gtk::ScrolledWindow::builder()

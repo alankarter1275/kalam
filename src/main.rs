@@ -21,6 +21,7 @@ mod epub_css;
 mod epub_metadata;
 mod epub_tools;
 pub mod epub_sanitizer;
+mod epub_structure;
 mod export;
 mod epub_writer;
 mod folders;

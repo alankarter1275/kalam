@@ -254,6 +254,74 @@ impl EpubContainer {
             FileKind::Xml | FileKind::Binary => TreeSection::Contents,
         }
     }
+
+    // ── E4: structural edits ───────────────────────────────────
+    // The editor's structure tools mutate the in-memory book and
+    // let Save replay the result (snapshot first, as always).
+    // These keep `files`, `bytes` and the nav/NCX pointers in
+    // step so the tree, Check book and the Preview always agree.
+
+    /// Add a file the book did not have (split piece, import…).
+    pub fn add_file(&mut self, file: EpubFile, bytes: Vec<u8>) {
+        self.bytes.insert(file.path.clone(), bytes);
+        if file.is_nav {
+            self.nav_path = Some(file.path.clone());
+        }
+        self.files.push(file);
+    }
+
+    /// Drop a file from the book (delete, merge-away).
+    pub fn remove_file(&mut self, path: &str) {
+        self.files.retain(|f| f.path != path);
+        self.bytes.remove(path);
+        if self.nav_path.as_deref() == Some(path) {
+            self.nav_path = None;
+        }
+        if self.ncx_path.as_deref() == Some(path) {
+            self.ncx_path = None;
+        }
+    }
+
+    /// Move a file to a new container path.
+    pub fn rename_file(&mut self, old: &str, new: &str) {
+        if let Some(bytes) = self.bytes.remove(old) {
+            self.bytes.insert(new.to_string(), bytes);
+        }
+        for file in &mut self.files {
+            if file.path == old {
+                file.path = new.to_string();
+            }
+        }
+        if self.nav_path.as_deref() == Some(old) {
+            self.nav_path = Some(new.to_string());
+        }
+        if self.ncx_path.as_deref() == Some(old) {
+            self.ncx_path = Some(new.to_string());
+        }
+        if self.opf_path == old {
+            self.opf_path = new.to_string();
+        }
+    }
+
+    /// Whole-state capture/restore for the structure-undo pill:
+    /// the file list plus every entry's bytes. Books are a few
+    /// megabytes; cloning beats reconstructing an inverse op.
+    pub fn snapshot_state(&self) -> (Vec<EpubFile>, HashMap<String, Vec<u8>>) {
+        (self.files.clone(), self.bytes.clone())
+    }
+
+    pub fn restore_state(&mut self, files: Vec<EpubFile>, bytes: HashMap<String, Vec<u8>>) {
+        self.nav_path = files.iter().find(|f| f.is_nav).map(|f| f.path.clone());
+        if self
+            .ncx_path
+            .as_ref()
+            .is_some_and(|p| !files.iter().any(|f| &f.path == p))
+        {
+            self.ncx_path = None;
+        }
+        self.files = files;
+        self.bytes = bytes;
+    }
 }
 
 struct ParsedOpf {
@@ -397,7 +465,7 @@ fn classify(path: &str, media_type: &str) -> FileKind {
     FileKind::Binary
 }
 
-fn guess_media_type(path: &str) -> &'static str {
+pub(crate) fn guess_media_type(path: &str) -> &'static str {
     match path
         .to_ascii_lowercase()
         .rsplit('.')

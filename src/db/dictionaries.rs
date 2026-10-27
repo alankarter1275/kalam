@@ -512,6 +512,24 @@ impl Catalog {
         Ok(n)
     }
 
+    /// Distinct folded headword keys from the merged store: the
+    /// deep editor's spell-check vocabulary (decision 137). Keys
+    /// carrying spaces or digits are phrases/compounds a spell
+    /// check tokeniser never produces, so they are skipped.
+    pub fn spell_headwords(&self) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT DISTINCT key FROM combined_words")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let key = row?;
+            if key.chars().all(|c| c.is_alphabetic() || c == '\'' || c == '-') {
+                out.push(key);
+            }
+        }
+        Ok(out)
+    }
+
     /// The full popup entry for a lookup: senses from the merged store
     /// (parsed into numbered senses with POS), synonym/antonym chips and
     /// idiom cards from the auxiliary packs, and suggestions when there

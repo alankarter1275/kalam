@@ -62,7 +62,32 @@ impl MenuPopover {
         count: usize,
         on_select: impl Fn() + 'static,
     ) {
-        self.add_action_item(label, Some(count), false, on_select);
+        self.add_action_item(
+            label,
+            Some(count_badge(count).upcast::<gtk::Widget>()),
+            false,
+            on_select,
+        );
+    }
+
+    /// Add an action row with a muted shortcut hint on its right
+    /// edge (the editor's Tools menu: Ctrl+Shift+F, F7).
+    pub fn add_item_with_hint(
+        &self,
+        label: &str,
+        hint: &str,
+        on_select: impl Fn() + 'static,
+    ) {
+        let hint_label = gtk::Label::new(Some(hint));
+        hint_label.add_css_class("kalam-ui-menu-hint");
+        hint_label.set_halign(gtk::Align::End);
+        hint_label.set_valign(gtk::Align::Center);
+        self.add_action_item(
+            label,
+            Some(hint_label.upcast::<gtk::Widget>()),
+            false,
+            on_select,
+        );
     }
 
     /// Add a destructive action row. §17 uses accent text for destructive
@@ -160,11 +185,10 @@ impl MenuPopover {
     fn add_action_item(
         &self,
         label: &str,
-        count: Option<usize>,
+        trailing: Option<gtk::Widget>,
         destructive: bool,
         on_select: impl Fn() + 'static,
     ) {
-        let trailing = count.map(|count| count_badge(count).upcast::<gtk::Widget>());
         let button = gtk::Button::new();
         style_item_button(&button, destructive);
         button.set_child(Some(&item_content(label, None, trailing)));

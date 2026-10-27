@@ -7503,6 +7503,11 @@ menubutton.kalam-ui-menu-item.destructive {
     font-size: 16px;
 }
 
+.kalam-ui-menu-hint {
+    color: @kalam_text_dim;
+    font-size: 12px;
+}
+
 .kalam-ui-menu-check {
     min-width: 22px;
     min-height: 22px;
@@ -8029,6 +8034,8 @@ button.kalam-authorpage-card.open:hover {
 /* Fan covers 56 × 84, radius 4 (§26). GTK CSS cannot clip a painted
    texture to a radius; the class rounds the generated/dashed faces. */
 .kalam-authorpage-fan-cover { border-radius: 4px; }
+
+/* Open-series panel (§27): not a floating carr { border-radius: 4px; }
 
 /* Open-series panel (§27): not a floating card but the lower half of
    its series card — directly under it at the card's own width, over
@@ -8758,6 +8765,32 @@ button.kalam-ed-outline-row.current {
   color: @kalam_accent;
   font-weight: 600;
 }
+/* ── E4: Edit contents (decision 136) ── */
+button.kalam-ed-toc-row {
+  background: transparent;
+  font-weight: 400;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  color: @kalam_text;
+  padding: 0;
+}
+button.kalam-ed-toc-row:hover {
+  background: @kalam_hover;
+}
+button.kalam-ed-toc-row.selected {
+  background: @kalam_surface_2;
+  box-shadow: inset 3px 0 @kalam_accent;
+}
+.kalam-ed-toc-part {
+  font-weight: 500;
+}
+button.kalam-ed-toc-row.drop-before {
+  box-shadow: inset 0 3px @kalam_accent;
+}
+button.kalam-ed-toc-row.drop-after {
+  box-shadow: inset 0 -3px @kalam_accent;
+}
 .kalam-ed-css-element {
   font-family: "DM Mono", monospace;
   font-size: 13px;
@@ -8905,6 +8938,44 @@ button.kalam-ed-find-row:hover {
 /* E3: command palette (section 38) */
 .kalam-ed-palette {
   background: @kalam_card;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+}
+entry.kalam-ed-palette-entry {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: @kalam_text;
+  font-size: 15px;
+  padding: 0 18px;
+}
+.kalam-ed-palette-sep {
+  background: @kalam_border;
+}
+button.kalam-ed-palette-row {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 0 12px;
+}
+button.kalam-ed-palette-row.selected {
+  background: @kalam_hover;
+}
+button.kalam-ed-palette-row:hover {
+  background: @kalam_hover;
+}
+.kalam-ed-palette-label {
+  color: @kalam_text;
+  font-size: 13.5px;
+}
+.kalam-ed-keychip {
+  border: 1px solid @kalam_border;
+  border-radius: 6px;
+  color: @kalam_text_dim;
+  font-size: 11px;
+  padding: 2px 7px;
+}
   border: 1px solid @kalam_border;
   border-radius: 14px;
 }

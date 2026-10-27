@@ -1126,6 +1126,48 @@ jobs:
             DIALOG=editor-palette THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      - name: open Edit contents (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-contents-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-contents THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the Split dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-split-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-split THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the Reorder dialog (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-reorder-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-reorder THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Spell check (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-spell-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-spell THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Insert character (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-char-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-char THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the Personal dictionary (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-dict-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-dict THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       - name: open the author open-series panel (light) and report
         if: matrix.group == 'pages'
         run: |
@@ -1494,6 +1536,24 @@ jobs:
           cp ci-shots-editor-palette-dark/report.txt ci-logs/editor-palette-dark-latest.txt 2>/dev/null \
             || echo "(no editor-palette-dark report produced)" > ci-logs/editor-palette-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-palette-dark-latest.txt
+          cp ci-shots-editor-contents-light/report.txt ci-logs/editor-contents-light-latest.txt 2>/dev/null \
+            || echo "(no editor-contents-light report produced)" > ci-logs/editor-contents-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-contents-light-latest.txt
+          cp ci-shots-editor-split-dark/report.txt ci-logs/editor-split-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-split-dark report produced)" > ci-logs/editor-split-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-split-dark-latest.txt
+          cp ci-shots-editor-reorder-light/report.txt ci-logs/editor-reorder-light-latest.txt 2>/dev/null \
+            || echo "(no editor-reorder-light report produced)" > ci-logs/editor-reorder-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-reorder-light-latest.txt
+          cp ci-shots-editor-spell-light/report.txt ci-logs/editor-spell-light-latest.txt 2>/dev/null \
+            || echo "(no editor-spell-light report produced)" > ci-logs/editor-spell-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-spell-light-latest.txt
+          cp ci-shots-editor-char-dark/report.txt ci-logs/editor-char-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-char-dark report produced)" > ci-logs/editor-char-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-char-dark-latest.txt
+          cp ci-shots-editor-dict-light/report.txt ci-logs/editor-dict-light-latest.txt 2>/dev/null \
+            || echo "(no editor-dict-light report produced)" > ci-logs/editor-dict-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-dict-light-latest.txt
           cp ci-shots-author-panel-light/report.txt ci-logs/author-panel-light-latest.txt 2>/dev/null \
             || echo "(no author-panel-light report produced)" > ci-logs/author-panel-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-panel-light-latest.txt
@@ -1666,6 +1726,18 @@ jobs:
             ci-logs/editor-find-terracotta-light.png 2>/dev/null || true
           cp ci-shots-editor-palette-dark/03-edit-book-1-settled.png \
             ci-logs/editor-palette-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-contents-light/03-edit-book-1-settled.png \
+            ci-logs/editor-contents-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-split-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-split-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-reorder-light/03-edit-book-1-settled.png \
+            ci-logs/editor-reorder-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-spell-light/03-edit-book-1-settled.png \
+            ci-logs/editor-spell-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-char-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-char-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-dict-light/03-edit-book-1-settled.png \
+            ci-logs/editor-dict-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-panel-light/03-author-book-21-settled.png \
             ci-logs/author-panel-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-shelf-light/03-author-book-21-settled.png \
@@ -1710,7 +1782,10 @@ jobs:
             ci-logs/editor-light-latest.txt ci-logs/editor-dark-latest.txt \
             ci-logs/editor-problems-light-latest.txt ci-logs/editor-livecss-light-latest.txt \
             ci-logs/editor-outline-dark-latest.txt \
-            ci-logs/editor-find-light-latest.txt ci-logs/editor-palette-dark-latest.txt
+            ci-logs/editor-find-light-latest.txt ci-logs/editor-palette-dark-latest.txt \
+            ci-logs/editor-contents-light-latest.txt ci-logs/editor-split-dark-latest.txt \
+            ci-logs/editor-reorder-light-latest.txt ci-logs/editor-spell-light-latest.txt \
+            ci-logs/editor-char-dark-latest.txt ci-logs/editor-dict-light-latest.txt
           for shot in settings-appearance-light settings-appearance-dark \
                       settings-reading-light settings-reading-dropdown-dark \
                       settings-libraries-light settings-libraries-open-dark \
@@ -1805,7 +1880,13 @@ jobs:
                       ci-logs/editor-livecss-terracotta-light.png \
                       ci-logs/editor-outline-terracotta-dark.png \
                       ci-logs/editor-find-terracotta-light.png \
-                      ci-logs/editor-palette-terracotta-dark.png; do
+                      ci-logs/editor-palette-terracotta-dark.png \
+                      ci-logs/editor-contents-terracotta-light.png \
+                      ci-logs/editor-split-terracotta-dark.png \
+                      ci-logs/editor-reorder-terracotta-light.png \
+                      ci-logs/editor-spell-terracotta-light.png \
+                      ci-logs/editor-char-terracotta-dark.png \
+                      ci-logs/editor-dict-terracotta-light.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

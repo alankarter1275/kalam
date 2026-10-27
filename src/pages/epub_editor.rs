@@ -1280,6 +1280,31 @@ impl Component for EpubEditorModel {
                     Ok("editor-problems") => {
                         sender.input(EpubEditorMsg::SetRightTab(RightTab::Problems));
                     }
+                    Ok("editor-contents") => {
+                        self.open_contents(&sender);
+                    }
+                    Ok("editor-split") => {
+                        self.present_split_dialog(1, &sender);
+                    }
+                    Ok("editor-reorder") => {
+                        self.present_reorder_dialog(&sender);
+                    }
+                    Ok("editor-char") => {
+                        if self.capture_insert_anchor() {
+                            self.present_insert_char_dialog(&sender);
+                        }
+                    }
+                    Ok("editor-spell") => {
+                        // A deterministic typo for the camera.
+                        if let Some(buffer) = self.active_buffer() {
+                            let mut at = buffer.iter_at_offset(0);
+                            buffer.insert(&mut at, "Teh quikc ckecking speling. ");
+                        }
+                        self.start_spell_check(&sender);
+                    }
+                    Ok("editor-dict") => {
+                        self.present_personal_dict_dialog(&sender);
+                    }
                     Ok("editor-outline") | Ok("editor-livecss") => {
                         if let Some(buffer) = self.active_buffer() {
                             let mid = buffer.iter_at_offset(buffer.char_count() / 2);
@@ -3441,16 +3466,16 @@ impl EpubEditorModel {
             })
         };
         {
-            let mode = mode.clone();
+            let m = mode.clone();
             let sync = sync_mode.clone();
             book_row.connect_clicked(move |_| {
-                mode.set(0);
+                m.set(0);
                 sync();
             });
-            let mode = mode.clone();
+            let m = mode.clone();
             let sync = sync_mode.clone();
             web_row.connect_clicked(move |_| {
-                mode.set(1);
+                m.set(1);
                 sync();
             });
         }
@@ -3785,15 +3810,16 @@ impl EpubEditorModel {
             })
         };
         {
-            let parts = parts.clone();
+            let p = parts.clone();
             let sync = sync_parts.clone();
             parts_row.connect_clicked(move |_| {
-                parts.set(true);
+                p.set(true);
                 sync();
             });
+            let p = parts.clone();
             let sync = sync_parts.clone();
             chapters_row.connect_clicked(move |_| {
-                parts.set(false);
+                p.set(false);
                 sync();
             });
         }
@@ -3804,9 +3830,10 @@ impl EpubEditorModel {
         let (spine_row, spine_tick) = option_row("Add to the reading order", "");
         spine_row.set_size_request(-1, 40);
         set_tick(&spine_tick, true);
+        let spine_cell = to_spine.clone();
         spine_row.connect_clicked(move |_| {
-            to_spine.set(!to_spine.get());
-            set_tick(&spine_tick, to_spine.get());
+            spine_cell.set(!spine_cell.get());
+            set_tick(&spine_tick, spine_cell.get());
         });
         shell.body().append(&spine_row);
 
@@ -3905,8 +3932,6 @@ impl EpubEditorModel {
         self.service
             .catalog()
             .get_pref("editor.personal_dictionary")
-            .ok()
-            .flatten()
             .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
             .unwrap_or_default()
     }
@@ -4324,13 +4349,13 @@ impl EpubEditorModel {
                     let x = gtk::Label::new(Some("✕"));
                     remove.set_child(Some(&x));
                     let words = words.clone();
-                    let list = list.clone();
+                    let list_rm = list.clone();
                     let s = s.clone();
                     let gone = word.clone();
                     remove.connect_clicked(move |btn| {
                         words.borrow_mut().retain(|w| w != &gone);
                         if let Some(parent) = btn.parent() {
-                            list.remove(&parent);
+                            list_rm.remove(&parent);
                         }
                         let _ = s.send(EpubEditorMsg::PersonalRemove(gone.clone()));
                     });

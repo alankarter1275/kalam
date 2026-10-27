@@ -502,8 +502,10 @@ mod tests {
         let wrapped = build_woff(&parsed, DM_MONO);
         let out = subset_font(&wrapped, &chars("Aa")).expect("subset woff");
         assert_eq!(&out[..4], b"wOFF");
+        // fontdb reads bare sfnt only — unwrap before asking it.
+        let reparsed = parse_woff(&out).expect("reparse woff");
         let mut db = fontdb::Database::new();
-        db.load_font_data(out);
+        db.load_font_data(reparsed.build());
         assert_eq!(db.faces().count(), 1);
     }
 }

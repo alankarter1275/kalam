@@ -9824,7 +9824,7 @@ impl EpubEditorModel {
                                 .is_some_and(|o| o <= active_order)
                         })
                         .map(|(index, _)| index)
-                        .last();
+                        .next_back();
                 }
             }
         }

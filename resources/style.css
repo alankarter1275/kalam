@@ -8790,6 +8790,9 @@ button.kalam-ed-history-row.selected {
   font-weight: 600;
   color: @kalam_text;
 }
+.kalam-ed-compare-left {
+  border-right: 1px solid @kalam_border;
+}
 .kalam-ed-compare-colhead {
   font-size: 10px;
   font-weight: 600;

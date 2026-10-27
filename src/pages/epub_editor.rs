@@ -1504,16 +1504,27 @@ impl Component for EpubEditorModel {
                             if let (Some(kind), Some(text)) =
                                 (kind, self.file_text(&path))
                             {
+                                // Mutate whatever the fixture
+                                // offers: reword its longest line
+                                // on the old side and drop the
+                                // doctype there, so the frame shows
+                                // a paired row and an added row.
                                 let mut lines: Vec<&str> =
                                     text.split('\n').collect();
                                 let mut old_text = text.clone();
-                                if lines.len() > 12 {
-                                    let edited = format!(
-                                        "{} (earlier wording)",
-                                        lines[6].trim_end()
-                                    );
-                                    lines[6] = Box::leak(edited.into_boxed_str());
-                                    lines.remove(9);
+                                if let Some(longest) = (0..lines.len())
+                                    .max_by_key(|&at| lines[at].len())
+                                {
+                                    let edited = lines[longest]
+                                        .replacen(' ', " (earlier) ", 1);
+                                    lines[longest] =
+                                        Box::leak(edited.into_boxed_str());
+                                    if let Some(doctype) = lines
+                                        .iter()
+                                        .position(|l| l.contains("DOCTYPE"))
+                                    {
+                                        lines.remove(doctype);
+                                    }
                                     old_text = lines.join("\n");
                                 }
                                 self.compare = Some(CompareState {
@@ -10540,9 +10551,11 @@ fn build_compare_page(
     let (left, left_head, old_buffer, old_numbers) = make_side(&vadjustment);
     let (right, _right_head, new_buffer, new_numbers) = make_side(&vadjustment);
     _right_head.set_label("CURRENT");
+    // The divider is a border on the left column, not a third
+    // child: in a homogeneous box a separator child would be
+    // granted a full third of the width.
+    left.add_css_class("kalam-ed-compare-left");
     cols.append(&left);
-    let divider = gtk::Separator::new(gtk::Orientation::Vertical);
-    cols.append(&divider);
     cols.append(&right);
     page.append(&cols);
 

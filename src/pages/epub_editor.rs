@@ -110,7 +110,6 @@ pub enum EpubEditorMsg {
     PreviewWritten(std::path::PathBuf),
     /// 1.2s after the last change: run Check book.
     CheckDue,
-    CheckDone(Vec<BookProblem>),
     FixClicked(usize),
     /// Apply the staged fix as one undo step.
     FixApply(ProblemFix, String),
@@ -578,7 +577,7 @@ impl Component for EpubEditorModel {
                 if let Some(path) = first {
                     self.open_file(&path, true, &sender);
                 }
-                self.run_check();
+                self.run_check(&sender);
                 self.request_preview_write(&sender);
                 self.sync_chrome(&sender);
             }
@@ -690,7 +689,7 @@ impl Component for EpubEditorModel {
                     AfterSave::CloseTab(path) => self.close_tab(&path, &sender),
                     AfterSave::Nothing => {}
                 }
-                self.run_check();
+                self.run_check(&sender);
                 self.request_preview_write(&sender);
                 self.sync_chrome(&sender);
             }
@@ -751,7 +750,7 @@ impl Component for EpubEditorModel {
                     self.rebuild_outline(&sender);
                 }
                 if tab == RightTab::Problems {
-                    self.run_check();
+                    self.run_check(&sender);
                     self.rebuild_problems(&sender);
                 }
                 if tab == RightTab::LiveCss {
@@ -816,21 +815,7 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::PreviewWritten(path) => self.refresh_preview(&path, &sender),
             EpubEditorMsg::CheckDue => {
                 self.check_src = None;
-                // run_check is pure text work; on the UI thread it
-                // stays trivially in step with the buffers, and a
-                // whole-book pass is well under a frame.
-                self.problems = self.collect_check();
-                self.update_problem_status();
-                if self.right_tab == RightTab::Problems {
-                    self.rebuild_problems(&sender);
-                }
-            }
-            EpubEditorMsg::CheckDone(problems) => {
-                self.problems = problems;
-                self.update_problem_status();
-                if self.right_tab == RightTab::Problems {
-                    self.rebuild_problems(&sender);
-                }
+                self.run_check(&sender);
             }
             EpubEditorMsg::FixClicked(index) => self.present_fix_preview(index, &sender),
             EpubEditorMsg::FixApply(fix, path) => self.apply_fix(&fix, &path, &sender),
@@ -842,14 +827,10 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::RemoveProblem(index) => self.remove_problem_file(index, &sender),
             EpubEditorMsg::FileRemoved(path) => {
                 self.close_tab_quietly(&path);
-                if let (Some(book), Some(container)) = (&self.book, &mut self.container) {
-                    if let Ok(fresh) = EpubContainer::open(&book.file_path) {
-                        *container = fresh;
-                    }
-                }
-                self.rebuild_tree(&sender);
-                self.rebuild_tab_strip(&sender);
-                self.run_check();
+                // Reload the container through the service (the
+                // book changed on disk); Loaded rebuilds the tree
+                // and leaves the other open buffers alone.
+                self.request_load(&sender);
                 self.request_preview_write(&sender);
                 self.sync_chrome(&sender);
             }
@@ -857,10 +838,10 @@ impl Component for EpubEditorModel {
                 crate::notify::error("That didn't work", &message);
             }
             EpubEditorMsg::PreviewGoToWord { chapter, fraction, word } => {
-                self.preview_word_jump(chapter, fraction, &word);
+                self.preview_word_jump(chapter, fraction, &word, &sender);
             }
             EpubEditorMsg::PreviewTextSelected(_) => {
-                self.preview_selection_jump();
+                self.preview_selection_jump(&sender);
             }
             EpubEditorMsg::GoToCssRule { path, line } => {
                 sender.input(EpubEditorMsg::GoTo {
@@ -869,6 +850,17 @@ impl Component for EpubEditorModel {
                     offset: None,
                 });
             }
+        }
+    }
+    fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
+        if let Some(src) = self.check_src.take() {
+            src.remove();
+        }
+        if let Some(src) = self.preview_write_src.take() {
+            src.remove();
+        }
+        if let Some(view) = self.preview_view.take() {
+            view.close();
         }
     }
 }
@@ -1532,6 +1524,10 @@ impl EpubEditorModel {
         }
     }
 
+    /// Problems grouped Errors / Warnings (decision 132): 56px
+    /// rows, a filled dot for errors and a hollow ring for
+    /// warnings, and 28px ghost actions — Fix where one is known,
+    /// Go to always, Remove for files nothing uses.
     fn rebuild_problems(&self, sender: &ComponentSender<Self>) {
         clear_box(&self.problems_host);
         if self.problems.is_empty() {
@@ -1542,23 +1538,37 @@ impl EpubEditorModel {
             self.problems_host.append(&label);
             return;
         }
-        let heading = gtk::Label::new(Some("Errors"));
-        heading.add_css_class("kalam-editorpicker-group");
-        heading.set_halign(gtk::Align::Start);
-        heading.set_margin_start(20);
-        heading.set_margin_top(16);
-        heading.set_margin_bottom(4);
-        self.problems_host.append(&heading);
 
-        for problem in &self.problems {
+        let mut group: Option<Severity> = None;
+        for (index, problem) in self.problems.iter().enumerate() {
+            if group != Some(problem.severity) {
+                group = Some(problem.severity);
+                let heading = gtk::Label::new(Some(match problem.severity {
+                    Severity::Error => "Errors",
+                    Severity::Warning => "Warnings",
+                }));
+                heading.add_css_class("kalam-editorpicker-group");
+                heading.set_halign(gtk::Align::Start);
+                heading.set_margin_start(20);
+                heading.set_margin_top(16);
+                heading.set_margin_bottom(4);
+                self.problems_host.append(&heading);
+            }
+
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             row.add_css_class("kalam-ed-problem-row");
             row.set_size_request(-1, 56);
             row.set_margin_start(20);
             row.set_margin_end(20);
 
-            let marker = gtk::Label::new(Some("●"));
-            marker.add_css_class("kalam-ed-problem-error");
+            let marker = gtk::Label::new(Some(match problem.severity {
+                Severity::Error => "●",
+                Severity::Warning => "○",
+            }));
+            marker.add_css_class(match problem.severity {
+                Severity::Error => "kalam-ed-problem-error",
+                Severity::Warning => "kalam-ed-problem-warning",
+            });
             marker.set_valign(gtk::Align::Center);
             row.append(&marker);
 
@@ -1570,15 +1580,28 @@ impl EpubEditorModel {
             what.set_halign(gtk::Align::Start);
             what.set_ellipsize(gtk::pango::EllipsizeMode::End);
             texts.append(&what);
-            let whereto = gtk::Label::new(Some(&format!(
-                "{} · line {}",
-                file_name(&problem.path),
-                problem.line
-            )));
+            let where_text = if problem.line > 0 {
+                format!("{} · line {}", file_name(&problem.path), problem.line)
+            } else {
+                file_name(&problem.path).to_string()
+            };
+            let whereto = gtk::Label::new(Some(&where_text));
             whereto.add_css_class("kalam-ui-meta");
             whereto.set_halign(gtk::Align::Start);
+            whereto.set_ellipsize(gtk::pango::EllipsizeMode::End);
             texts.append(&whereto);
             row.append(&texts);
+
+            if problem.fix.is_some() {
+                let s = sender.input_sender().clone();
+                let fix = boxed_ghost_button("Fix", move || {
+                    let _ = s.send(EpubEditorMsg::FixClicked(index));
+                });
+                fix.add_css_class("kalam-ed-problem-btn");
+                fix.set_valign(gtk::Align::Center);
+                fix.set_focus_on_click(false);
+                row.append(&fix);
+            }
 
             let path = problem.path.clone();
             let line = problem.line;
@@ -1586,20 +1609,33 @@ impl EpubEditorModel {
             let go = boxed_ghost_button("Go to", move || {
                 let _ = s.send(EpubEditorMsg::GoTo {
                     path: path.clone(),
-                    line: Some(line),
+                    line: Some(line.max(1)),
                     offset: None,
                 });
             });
             go.add_css_class("kalam-ed-problem-btn");
             go.set_valign(gtk::Align::Center);
+            go.set_focus_on_click(false);
             row.append(&go);
+
+            if problem.removable {
+                let s = sender.input_sender().clone();
+                let remove = boxed_ghost_button("Remove", move || {
+                    let _ = s.send(EpubEditorMsg::RemoveProblem(index));
+                });
+                remove.add_css_class("kalam-ed-problem-btn");
+                remove.set_valign(gtk::Align::Center);
+                remove.set_focus_on_click(false);
+                row.append(&remove);
+            }
 
             self.problems_host.append(&row);
         }
     }
 
-    fn rebuild_outline(&self, sender: &ComponentSender<Self>) {
+    fn rebuild_outline(&mut self, sender: &ComponentSender<Self>) {
         clear_box(&self.outline_host);
+        self.outline_headings.clear();
         let Some(tab) = self.active_tab() else {
             return;
         };
@@ -1611,6 +1647,7 @@ impl EpubEditorModel {
             return;
         };
         let headings = extract_headings(&buffer_text(buffer));
+        self.outline_headings = headings.clone();
         if headings.is_empty() {
             self.outline_host.append(&panel_note("No headings"));
             return;
@@ -1638,19 +1675,787 @@ impl EpubEditorModel {
             });
             self.outline_host.append(&row);
         }
+        self.mark_outline_current();
     }
 
-    /// Plain-text preview of the active HTML buffer until the
-    /// engine-backed Preview lands in E2.
-    fn update_preview(&self) {
-        let text = self
-            .active_tab()
-            .filter(|tab| tab.kind == FileKind::Html)
-            .and_then(|tab| tab.buffer.as_ref())
-            .map(|buffer| crate::epub::strip_html(&buffer_text(buffer)))
-            .filter(|text| !text.trim().is_empty())
-            .unwrap_or_else(|| "Nothing to preview".to_string());
-        self.preview_label.set_label(&text);
+    // ── E2: engine Preview (decision 123) ──────────────────────────
+
+    /// Engine preferences for the current Preview mode. "As the
+    /// book ships" is the engine's neutral typography over the app
+    /// palette; "As in Kalam" mirrors the reader's own resolution
+    /// of this book's settings.
+    fn preview_prefs(&self) -> kalam_reader::KalamPrefs {
+        use crate::pages::reader::{book_settings, engine};
+        let catalog = self.service.catalog();
+        match self.preview_mode {
+            PreviewMode::Ships => kalam_reader::KalamPrefs {
+                palette: engine::reader_palette(&crate::theme::current(catalog)),
+                ..kalam_reader::KalamPrefs::default()
+            },
+            PreviewMode::Kalam => {
+                let effective = book_settings::BookReadingSettings::load_book(catalog, self.book_id)
+                    .unwrap_or_else(|| book_settings::BookReadingSettings::load_globals(catalog));
+                let theme = effective
+                    .theme
+                    .as_deref()
+                    .map(|id| (id, crate::theme::choice_by_id(id).resolve()))
+                    .filter(|(id, theme)| theme.id == *id)
+                    .map(|(_, theme)| theme)
+                    .unwrap_or_else(|| crate::theme::current(catalog));
+                engine::engine_prefs(
+                    engine::reader_palette(&theme),
+                    effective.font_px,
+                    effective.line_height,
+                    effective.column_px,
+                    effective.font_family.clone(),
+                    effective.justify,
+                    false,
+                    effective.publisher_styles,
+                )
+            }
+        }
+    }
+
+    fn apply_preview_prefs(&self) {
+        if let Some(view) = &self.preview_view {
+            view.set_prefs(self.preview_prefs());
+        }
+    }
+
+    /// Re-write the preview copy 800ms after typing settles.
+    fn schedule_preview_write(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(src) = self.preview_write_src.take() {
+            src.remove();
+        }
+        let s = sender.input_sender().clone();
+        self.preview_write_src = Some(gtk::glib::timeout_add_local_once(
+            std::time::Duration::from_millis(800),
+            move || {
+                let _ = s.send(EpubEditorMsg::PreviewWriteDue);
+            },
+        ));
+    }
+
+    /// Write the preview copy now (book as saved + open buffers).
+    /// A buffer that isn't well-formed XML right now keeps the
+    /// last good render instead of blanking the preview mid-edit.
+    fn request_preview_write(&self, sender: &ComponentSender<Self>) {
+        let Some(book) = self.book.clone() else {
+            return;
+        };
+        let mut replacements: HashMap<String, Vec<u8>> = HashMap::new();
+        for tab in &self.tabs {
+            let Some(buffer) = &tab.buffer else { continue };
+            if !buffer.is_modified() {
+                continue;
+            }
+            let text = buffer_text(buffer);
+            if matches!(tab.kind, FileKind::Html | FileKind::Xml)
+                && crate::epub_container::xml_problem(&text).is_some()
+            {
+                return;
+            }
+            replacements.insert(tab.path.clone(), text.into_bytes());
+        }
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Preparing preview",
+            move |_reporter| service.write_editor_preview(&book, &replacements),
+            |_| {},
+            move |result| {
+                if let Ok(path) = result {
+                    let _ = s.send(EpubEditorMsg::PreviewWritten(path));
+                }
+            },
+        );
+    }
+
+    /// Open (or re-open) the engine on the freshly written preview
+    /// copy, keeping the reader's place. A copy the engine refuses
+    /// leaves the last good render standing.
+    fn refresh_preview(&mut self, path: &std::path::Path, sender: &ComponentSender<Self>) {
+        let (chapter, fraction) = self
+            .preview_view
+            .as_ref()
+            .map(|view| {
+                let pos = view.position();
+                (pos.chapter, pos.fraction)
+            })
+            .unwrap_or((self.preview_chapter.max(0) as usize, 0.0));
+        let Ok(view) = crate::pages::reader::engine::open_engine(path, self.preview_prefs()) else {
+            return;
+        };
+        let view = Rc::new(view);
+        view.set_mode(kalam_reader::ReadingMode::Scrolled);
+        view.goto_chapter(chapter, fraction);
+
+        // Click-sync, preview → source: a word tap jumps near the
+        // word; a finished selection jumps to the exact span.
+        {
+            let weak = Rc::downgrade(&view);
+            let s = sender.input_sender().clone();
+            view.connect_word_tap(move |word, _x, _y| {
+                if let Some(view) = weak.upgrade() {
+                    let pos = view.position();
+                    let _ = s.send(EpubEditorMsg::PreviewGoToWord {
+                        chapter: pos.chapter,
+                        fraction: pos.fraction,
+                        word: word.to_string(),
+                    });
+                }
+            });
+        }
+        {
+            let s = sender.input_sender().clone();
+            view.connect_selection(move |selected| {
+                if let Some(selected) = selected {
+                    if !selected.text.trim().is_empty() {
+                        let _ = s.send(EpubEditorMsg::PreviewTextSelected(selected.clone()));
+                    }
+                }
+            });
+        }
+
+        let scrollbar =
+            gtk::Scrollbar::new(gtk::Orientation::Vertical, Some(view.vadjustment()));
+        scrollbar.set_halign(gtk::Align::End);
+        scrollbar.set_valign(gtk::Align::Fill);
+        scrollbar.add_css_class("kalam-reader-strip-bar");
+        let overlay = gtk::Overlay::new();
+        overlay.set_hexpand(true);
+        overlay.set_vexpand(true);
+        overlay.set_child(Some(view.widget()));
+        overlay.add_overlay(&scrollbar);
+
+        clear_box(&self.preview_host);
+        self.preview_host.append(&overlay);
+        if let Some(old) = self.preview_view.replace(view) {
+            old.close();
+        }
+        self.preview_chapter = chapter as i32;
+    }
+
+    /// Source → preview: keep the preview on the chapter being
+    /// edited, following big cursor moves within it. Small moves
+    /// leave the preview where the reader scrolled it.
+    fn sync_preview_to_cursor(&mut self) {
+        if self.right_tab != RightTab::Preview {
+            return;
+        }
+        let Some(view) = self.preview_view.as_ref() else {
+            return;
+        };
+        let Some(tab) = self.active_tab() else { return };
+        if tab.kind != FileKind::Html {
+            return;
+        }
+        let Some(spine_index) = self
+            .container
+            .as_ref()
+            .and_then(|c| c.file(&tab.path))
+            .and_then(|f| f.spine_index)
+        else {
+            return;
+        };
+        let Some(buffer) = &tab.buffer else { return };
+        let cursor = buffer.iter_at_mark(&buffer.get_insert()).offset();
+        let map = strip_map(&buffer_text(buffer));
+        let fraction = map.fraction_at(cursor.max(0) as usize);
+        let pos = view.position();
+        if pos.chapter != spine_index || (pos.fraction - fraction).abs() > 0.12 {
+            view.goto_chapter(spine_index, fraction);
+            self.preview_chapter = spine_index as i32;
+        }
+    }
+
+    /// Word tap → the occurrence nearest the tap's place in the
+    /// chapter, selected in the source.
+    fn preview_word_jump(
+        &mut self,
+        chapter: usize,
+        fraction: f64,
+        word: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(path) = self.spine_path(chapter) else {
+            return;
+        };
+        let Some(text) = self.file_text(&path) else {
+            return;
+        };
+        let map = strip_map(&text);
+        let needle = normalize_ws(word);
+        if needle.is_empty() {
+            return;
+        }
+        let target = (fraction * map.text.chars().count() as f64) as usize;
+        let mut best: Option<usize> = None;
+        for (at, _) in map.text.match_indices(&needle) {
+            let at_chars = map.text[..at].chars().count();
+            match best {
+                Some(prev)
+                    if (prev as i64 - target as i64).abs()
+                        <= (at_chars as i64 - target as i64).abs() => {}
+                _ => best = Some(at_chars),
+            }
+        }
+        if let Some(at) = best {
+            self.jump_to_span(&path, &map, at, at + needle.chars().count(), sender);
+        }
+    }
+
+    /// Selection → the exact quoted span in the source, via the
+    /// highlight capture's quote anchor.
+    fn preview_selection_jump(&mut self, sender: &ComponentSender<Self>) {
+        let Some(view) = self.preview_view.as_ref() else {
+            return;
+        };
+        let Some(captured) = view.capture_highlight(kalam_reader::HighlightColor::Yellow) else {
+            return;
+        };
+        let start = captured.start;
+        let Some(path) = self
+            .spine_path(start.spine_index)
+            .or_else(|| (!start.spine_href.is_empty()).then(|| start.spine_href.clone()))
+        else {
+            return;
+        };
+        let Some(text) = self.file_text(&path) else {
+            return;
+        };
+        let map = strip_map(&text);
+        let prefix: String = normalize_ws(&start.quote.prefix)
+            .chars()
+            .rev()
+            .take(20)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        let exact = normalize_ws(&start.quote.exact);
+        if exact.is_empty() {
+            return;
+        }
+        let needle = format!("{prefix}{exact}");
+        let found = map
+            .text
+            .find(&needle)
+            .map(|at| map.text[..at].chars().count() + prefix.chars().count())
+            .or_else(|| map.text.find(&exact).map(|at| map.text[..at].chars().count()));
+        if let Some(at) = found {
+            self.jump_to_span(&path, &map, at, at + exact.chars().count(), sender);
+        }
+    }
+
+    fn spine_path(&self, chapter: usize) -> Option<String> {
+        self.container.as_ref().and_then(|c| {
+            c.files
+                .iter()
+                .find(|f| f.spine_index == Some(chapter))
+                .map(|f| f.path.clone())
+        })
+    }
+
+    /// A file's current text: its open buffer if it has one, else
+    /// the container copy.
+    fn file_text(&self, path: &str) -> Option<String> {
+        if let Some(text) = self
+            .tabs
+            .iter()
+            .find(|t| t.path == path)
+            .and_then(|t| t.buffer.as_ref())
+            .map(buffer_text)
+        {
+            return Some(text);
+        }
+        self.container.as_ref().and_then(|c| c.text(path))
+    }
+
+    /// Open `path` and select the source span a normalized-text
+    /// range maps to.
+    fn jump_to_span(
+        &mut self,
+        path: &str,
+        map: &StripMap,
+        norm_start: usize,
+        norm_end: usize,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.open_file(path, true, sender);
+        let (start, end) = map.source_span(norm_start, norm_end);
+        let Some(buffer) = self
+            .tabs
+            .iter()
+            .find(|t| t.path == path)
+            .and_then(|t| t.buffer.clone())
+        else {
+            return;
+        };
+        let start_iter = buffer.iter_at_offset(start as i32);
+        let end_iter = buffer.iter_at_offset(end as i32);
+        buffer.select_range(&start_iter, &end_iter);
+        if let Some(view) = self.active_view() {
+            let mut iter = start_iter;
+            view.scroll_to_iter(&mut iter, 0.1, false, 0.0, 0.0);
+            view.grab_focus();
+        }
+    }
+
+    /// The Preview mode menu (decision 123), rebuilt on each open
+    /// so the tick is always current.
+    fn toggle_preview_menu(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(menu) = self.preview_menu.take() {
+            menu.popover().popdown();
+            menu.popover().unparent();
+            return;
+        }
+        let Some((_, button)) = self
+            .right_tab_btns
+            .iter()
+            .find(|(tab, _)| *tab == RightTab::Preview)
+        else {
+            return;
+        };
+        let menu = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Short);
+        let popover = menu.popover();
+        for (mode, label) in [
+            (PreviewMode::Ships, "As the book ships"),
+            (PreviewMode::Kalam, "As in Kalam"),
+        ] {
+            let s = sender.input_sender().clone();
+            let pop = popover.clone();
+            menu.add_check_item(label, self.preview_mode == mode, move |_| {
+                pop.popdown();
+                let _ = s.send(EpubEditorMsg::SetPreviewMode(mode));
+            });
+        }
+        popover.set_parent(button);
+        popover.popup();
+        self.preview_menu = Some(menu);
+    }
+
+    // ── E2: Outline mark + Live CSS (decision 133) ─────────────────
+
+    fn cursor_char_offset(&self) -> Option<usize> {
+        let buffer = self.active_buffer()?;
+        Some(buffer.iter_at_mark(&buffer.get_insert()).offset().max(0) as usize)
+    }
+
+    /// Mark the heading the cursor sits under.
+    fn mark_outline_current(&self) {
+        let Some(cursor) = self.cursor_char_offset() else {
+            return;
+        };
+        let current = self
+            .outline_headings
+            .iter()
+            .rposition(|(_, _, offset)| *offset <= cursor as i32);
+        let mut child = self.outline_host.first_child();
+        let mut index = 0usize;
+        while let Some(widget) = child {
+            if Some(index) == current {
+                widget.add_css_class("current");
+            } else {
+                widget.remove_css_class("current");
+            }
+            child = widget.next_sibling();
+            index += 1;
+        }
+    }
+
+    /// Live CSS: the rules matching the element at the cursor, in
+    /// cascade order, overridden declarations struck through.
+    /// HTML only (decision 133).
+    fn rebuild_livecss(&mut self, sender: &ComponentSender<Self>) {
+        clear_box(&self.livecss_host);
+        let Some(tab) = self.active_tab() else {
+            self.livecss_host.append(&panel_note(
+                "Place the cursor inside an element in an HTML file to see the CSS that applies to it.",
+            ));
+            return;
+        };
+        if tab.kind != FileKind::Html {
+            self.livecss_host.append(&panel_note(
+                "Live CSS works in HTML files — it shows the rules that match the element at the cursor.",
+            ));
+            return;
+        }
+        let Some(buffer) = &tab.buffer else { return };
+        let html = buffer_text(buffer);
+        let Some(cursor) = self.cursor_char_offset() else {
+            return;
+        };
+        let chain = element_chain_at(&html, cursor);
+        let Some(element) = chain.last() else {
+            self.livecss_host.append(&panel_note(
+                "Place the cursor inside an element in an HTML file to see the CSS that applies to it.",
+            ));
+            return;
+        };
+        self.refresh_css_cache();
+
+        // Inline <style> blocks of this file join after the sheets.
+        let mut rules: Vec<(String, CssRule)> = self.css_cache.clone();
+        for (css, first_line) in style_blocks(&html) {
+            for mut rule in crate::epub_css::parse_rules(&css) {
+                rule.line += first_line.saturating_sub(1);
+                rules.push((tab.path.clone(), rule));
+            }
+        }
+
+        struct Matched {
+            selector: String,
+            spec: (u32, u32, u32),
+            order: usize,
+            path: String,
+            line: usize,
+            decls: Vec<crate::epub_css::CssDecl>,
+        }
+        let mut matched: Vec<Matched> = Vec::new();
+        for (order, (path, rule)) in rules.iter().enumerate() {
+            let mut best: Option<((u32, u32, u32), &String)> = None;
+            for selector in &rule.selectors {
+                if let Some(spec) = crate::epub_css::selector_matches(selector, &chain) {
+                    if best.is_none_or(|(b, _)| spec > b) {
+                        best = Some((spec, selector));
+                    }
+                }
+            }
+            if let Some((spec, selector)) = best {
+                matched.push(Matched {
+                    selector: selector.clone(),
+                    spec,
+                    order,
+                    path: path.clone(),
+                    line: rule.line,
+                    decls: rule.declarations.clone(),
+                });
+            }
+        }
+        // The style="" attribute outranks every sheet.
+        if let Some(style) = element.attr("style") {
+            let decls = crate::epub_css::parse_declarations(style);
+            if !decls.is_empty() {
+                matched.push(Matched {
+                    selector: "style attribute".to_string(),
+                    spec: (u32::MAX, 0, 0),
+                    order: usize::MAX,
+                    path: tab.path.clone(),
+                    line: 0,
+                    decls,
+                });
+            }
+        }
+        matched.sort_by(|a, b| (a.spec, a.order).cmp(&(b.spec, b.order)));
+
+        // The winning declaration for each property.
+        let mut winner: HashMap<String, (bool, usize, usize)> = HashMap::new();
+        for (mi, m) in matched.iter().enumerate() {
+            for (di, decl) in m.decls.iter().enumerate() {
+                match winner.get(&decl.property) {
+                    Some((important, _, _)) if *important && !decl.important => {}
+                    _ => {
+                        winner.insert(decl.property.clone(), (decl.important, mi, di));
+                    }
+                }
+            }
+        }
+
+        let header = gtk::Label::new(Some(&element.describe()));
+        header.add_css_class("kalam-ed-css-element");
+        header.set_halign(gtk::Align::Start);
+        header.set_margin_start(20);
+        header.set_margin_top(16);
+        header.set_margin_bottom(8);
+        self.livecss_host.append(&header);
+
+        if matched.is_empty() {
+            self.livecss_host
+                .append(&panel_note("No rules in the book's stylesheets match this element."));
+            return;
+        }
+
+        for (mi, m) in matched.iter().enumerate() {
+            let source = if m.line > 0 {
+                format!("{} · line {}", file_name(&m.path), m.line)
+            } else {
+                file_name(&m.path).to_string()
+            };
+            let head = gtk::Button::new();
+            head.add_css_class("kalam-ed-css-rule");
+            head.set_focus_on_click(false);
+            let head_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            let selector_label = gtk::Label::new(Some(&m.selector));
+            selector_label.add_css_class("kalam-ed-css-selector");
+            selector_label.set_halign(gtk::Align::Start);
+            selector_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            head_box.append(&selector_label);
+            let source_label = gtk::Label::new(Some(&source));
+            source_label.add_css_class("kalam-ui-meta");
+            source_label.set_halign(gtk::Align::Start);
+            head_box.append(&source_label);
+            head.set_child(Some(&head_box));
+            let path = m.path.clone();
+            let line = m.line.max(1);
+            let s = sender.input_sender().clone();
+            head.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::GoToCssRule {
+                    path: path.clone(),
+                    line,
+                });
+            });
+            self.livecss_host.append(&head);
+
+            for (di, decl) in m.decls.iter().enumerate() {
+                let text = if decl.important {
+                    format!("{}: {} !important;", decl.property, decl.value)
+                } else {
+                    format!("{}: {};", decl.property, decl.value)
+                };
+                let label = gtk::Label::new(Some(&text));
+                label.add_css_class("kalam-ed-css-decl");
+                if winner.get(&decl.property).is_some_and(|(_, wmi, wdi)| (*wmi, *wdi) != (mi, di)) {
+                    label.add_css_class("overridden");
+                }
+                label.set_halign(gtk::Align::Start);
+                label.set_margin_start(36);
+                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                self.livecss_host.append(&label);
+            }
+        }
+    }
+
+    /// Parse the book's stylesheets into the cache when their text
+    /// changed (open buffers included).
+    fn refresh_css_cache(&mut self) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        let sheets: Vec<(String, String)> = container
+            .section_files(TreeSection::Styles)
+            .iter()
+            .filter(|f| f.kind == FileKind::Css)
+            .filter_map(|f| self.file_text(&f.path).map(|t| (f.path.clone(), t)))
+            .collect();
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for (path, text) in &sheets {
+            path.hash(&mut hasher);
+            text.hash(&mut hasher);
+        }
+        let key = hasher.finish();
+        if key == self.css_cache_key && !self.css_cache.is_empty() {
+            return;
+        }
+        self.css_cache_key = key;
+        self.css_cache = sheets
+            .iter()
+            .flat_map(|(path, text)| {
+                crate::epub_css::parse_rules(text)
+                    .into_iter()
+                    .map(|rule| (path.clone(), rule))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+    }
+
+    // ── E2: Check book (decision 128) ──────────────────────────────
+
+    /// The whole book as the checker sees it: container text with
+    /// open buffers laid over it, so unsaved edits are checked too.
+    fn collect_check(&self) -> Vec<BookProblem> {
+        let Some(container) = &self.container else {
+            return Vec::new();
+        };
+        let files: Vec<crate::epub_check::CheckFile> = container
+            .files
+            .iter()
+            .map(|file| {
+                let buffer_text = self
+                    .tabs
+                    .iter()
+                    .find(|t| t.path == file.path)
+                    .and_then(|t| t.buffer.as_ref())
+                    .map(buffer_text);
+                crate::epub_check::CheckFile {
+                    path: file.path.clone(),
+                    kind: file.kind,
+                    spine_index: file.spine_index,
+                    in_manifest: file.in_manifest,
+                    is_nav: file.is_nav,
+                    is_cover_image: file.is_cover_image,
+                    text: buffer_text.or_else(|| container.text(&file.path)),
+                }
+            })
+            .collect();
+        crate::epub_check::check_book(
+            &files,
+            &container.opf_path,
+            container.ncx_path.as_deref(),
+        )
+    }
+
+    /// Run Check book now. Pure text work on buffers already in
+    /// memory — a whole-book pass is well under a frame, so it runs
+    /// here rather than on a worker that could go stale.
+    fn run_check(&mut self, sender: &ComponentSender<Self>) {
+        self.problems = self.collect_check();
+        self.update_problem_status();
+        if self.right_tab == RightTab::Problems {
+            self.rebuild_problems(sender);
+        }
+    }
+
+    /// Re-check 1.2s after typing settles.
+    fn schedule_check(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(src) = self.check_src.take() {
+            src.remove();
+        }
+        let s = sender.input_sender().clone();
+        self.check_src = Some(gtk::glib::timeout_add_local_once(
+            std::time::Duration::from_millis(1200),
+            move || {
+                let _ = s.send(EpubEditorMsg::CheckDue);
+            },
+        ));
+    }
+
+    /// The fix mini-diff (decision 132): the changed line before
+    /// and after, Skip / Apply at 32px. Apply sends the fix back
+    /// as a message so it lands as one undo step.
+    fn present_fix_preview(&mut self, index: usize, sender: &ComponentSender<Self>) {
+        let Some(problem) = self.problems.get(index) else {
+            return;
+        };
+        let Some(fix) = problem.fix.clone() else {
+            return;
+        };
+        let path = problem.path.clone();
+        if let Some(old) = self.fix_popover.take() {
+            old.popdown();
+            old.unparent();
+        }
+
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        content.set_margin_all(12);
+        content.set_size_request(380, -1);
+        let before = gtk::Label::new(Some(fix.before_line.trim()));
+        before.add_css_class("kalam-ed-diff-line");
+        before.set_halign(gtk::Align::Start);
+        before.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        content.append(&before);
+        let after = gtk::Label::new(Some(fix.after_line.trim()));
+        after.add_css_class("kalam-ed-diff-line");
+        after.add_css_class("kalam-ed-diff-add");
+        after.set_halign(gtk::Align::Start);
+        after.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        content.append(&after);
+
+        let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        buttons.set_halign(gtk::Align::End);
+        let s = sender.input_sender().clone();
+        let skip = boxed_ghost_button("Skip", move || {
+            let _ = s.send(EpubEditorMsg::FixSkip);
+        });
+        skip.set_size_request(-1, 32);
+        buttons.append(&skip);
+        let s = sender.input_sender().clone();
+        let apply = primary_button("Apply fix", move || {
+            let _ = s.send(EpubEditorMsg::FixApply(fix.clone(), path.clone()));
+        });
+        apply.set_size_request(-1, 32);
+        buttons.append(&apply);
+        content.append(&buttons);
+
+        let popover = gtk::Popover::new();
+        popover.set_child(Some(&content));
+        popover.set_parent(&self.problems_host);
+        popover.set_position(gtk::PositionType::Bottom);
+        popover.popup();
+        self.fix_popover = Some(popover);
+    }
+
+    /// Apply one fix as a single undo step. The offsets are bytes
+    /// into the text the checker saw; they only apply if the live
+    /// buffer still holds the same original bytes there.
+    fn apply_fix(&mut self, fix: &ProblemFix, path: &str, sender: &ComponentSender<Self>) {
+        if let Some(popover) = self.fix_popover.take() {
+            popover.popdown();
+            popover.unparent();
+        }
+        self.open_file(path, true, sender);
+        let Some(buffer) = self
+            .tabs
+            .iter()
+            .find(|t| t.path == path)
+            .and_then(|t| t.buffer.clone())
+        else {
+            crate::notify::error("Could not apply the fix", "That file is not editable here.");
+            return;
+        };
+        let text = buffer_text(&buffer);
+        let Some(current) = text.get(fix.start..fix.end) else {
+            crate::notify::error(
+                "Could not apply the fix",
+                "The text changed since the check ran.",
+            );
+            return;
+        };
+        if current != fix.original {
+            crate::notify::error(
+                "Could not apply the fix",
+                "The text changed since the check ran.",
+            );
+            return;
+        }
+        let start_char = text[..fix.start].chars().count() as i32;
+        let end_char = start_char + fix.original.chars().count() as i32;
+        let mut start = buffer.iter_at_offset(start_char);
+        let mut end = buffer.iter_at_offset(end_char);
+        buffer.begin_user_action();
+        buffer.delete(&mut start, &mut end);
+        let mut at = buffer.iter_at_offset(start_char);
+        buffer.insert(&mut at, &fix.replacement);
+        buffer.end_user_action();
+        // The buffer's changed signal re-checks and re-renders.
+    }
+
+    /// Remove an unused file from the book (decision 132). The
+    /// service snapshots first; FileRemoved reloads the workspace.
+    fn remove_problem_file(&self, index: usize, sender: &ComponentSender<Self>) {
+        let Some(problem) = self.problems.get(index) else {
+            return;
+        };
+        if !problem.removable {
+            return;
+        }
+        let Some(book) = self.book.clone() else {
+            return;
+        };
+        let path = problem.path.clone();
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Removing file",
+            {
+                let path = path.clone();
+                move |_reporter| {
+                    service
+                        .remove_editor_file(&book, &path)
+                        .map(|()| path.clone())
+                }
+            },
+            |_| {},
+            move |result| match result {
+                Ok(path) => {
+                    let _ = s.send(EpubEditorMsg::FileRemoved(path));
+                }
+                Err(message) => {
+                    let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                }
+            },
+        );
     }
 
     // ── chrome sync ────────────────────────────────────────────────
@@ -1801,6 +2606,355 @@ fn surrounded_by(
         return false;
     }
     buffer.text(&open_start, start, false) == open && buffer.text(end, &close_end, false) == close
+}
+
+/// Visible text of an HTML file with a map back to the source:
+/// `map[i]` is the source *char* offset of normalized char `i`.
+/// This is the bridge both click-sync directions walk (E2).
+struct StripMap {
+    text: String,
+    map: Vec<usize>,
+}
+
+impl StripMap {
+    /// Source char span covering a normalized char range.
+    fn source_span(&self, norm_start: usize, norm_end: usize) -> (usize, usize) {
+        if self.map.is_empty() {
+            return (0, 0);
+        }
+        let start = self.map[norm_start.min(self.map.len() - 1)];
+        let end = if norm_end > norm_start && norm_end - 1 < self.map.len() {
+            self.map[norm_end - 1] + 1
+        } else {
+            start
+        };
+        (start, end.max(start))
+    }
+
+    /// How far through the visible text a source char offset sits.
+    fn fraction_at(&self, source_char: usize) -> f64 {
+        if self.map.is_empty() {
+            return 0.0;
+        }
+        let idx = self.map.partition_point(|m| *m <= source_char);
+        idx as f64 / self.map.len() as f64
+    }
+}
+
+/// Collapse whitespace the way `strip_map` does, for needles.
+fn normalize_ws(text: &str) -> String {
+    let mut out = String::new();
+    let mut pending_space = false;
+    for c in text.chars() {
+        if c.is_whitespace() || c == '\u{00a0}' {
+            pending_space = !out.is_empty();
+        } else {
+            if pending_space {
+                out.push(' ');
+                pending_space = false;
+            }
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Build the visible-text map: tags, comments and head/style/script
+/// content removed, common entities decoded, whitespace runs
+/// collapsed to one space.
+fn strip_map(html: &str) -> StripMap {
+    let chars: Vec<char> = html.chars().collect();
+    let mut text = String::new();
+    let mut map: Vec<usize> = Vec::new();
+    let mut push = |c: char, at: usize, text: &mut String, map: &mut Vec<usize>| {
+        if c.is_whitespace() || c == '\u{00a0}' {
+            if !map.is_empty() && !text.ends_with(' ') {
+                text.push(' ');
+                map.push(at);
+            }
+        } else {
+            text.push(c);
+            map.push(at);
+        }
+    };
+
+    let mut i = 0usize;
+    let mut skip_depth = 0usize; // inside head/style/script
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '<' {
+            // Comment / CDATA / doctype / PI: skip wholesale.
+            if chars[i..].starts_with(&['<', '!', '-', '-']) {
+                let mut j = i + 4;
+                while j + 2 < chars.len() && !(chars[j] == '-' && chars[j + 1] == '-' && chars[j + 2] == '>') {
+                    j += 1;
+                }
+                i = (j + 3).min(chars.len());
+                continue;
+            }
+            let mut j = i + 1;
+            let closing = j < chars.len() && chars[j] == '/';
+            if closing {
+                j += 1;
+            }
+            let name_start = j;
+            while j < chars.len() && (chars[j].is_ascii_alphanumeric() || chars[j] == ':') {
+                j += 1;
+            }
+            let name: String = chars[name_start..j].iter().collect::<String>().to_ascii_lowercase();
+            // To the closing >, respecting quoted attributes.
+            let mut quote = '\0';
+            let mut k = j;
+            while k < chars.len() {
+                let ch = chars[k];
+                if quote != '\0' {
+                    if ch == quote {
+                        quote = '\0';
+                    }
+                } else if ch == '"' || ch == '\'' {
+                    quote = ch;
+                } else if ch == '>' {
+                    break;
+                }
+                k += 1;
+            }
+            let self_closed = k > j && chars[k - 1] == '/';
+            let skippable = matches!(name.as_str(), "head" | "style" | "script");
+            if skippable {
+                if closing {
+                    skip_depth = skip_depth.saturating_sub(1);
+                } else if !self_closed {
+                    skip_depth += 1;
+                }
+            } else if skip_depth == 0 && matches!(name.as_str(), "br" | "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
+                push(' ', i, &mut text, &mut map);
+            }
+            i = (k + 1).min(chars.len());
+            continue;
+        }
+        if skip_depth > 0 {
+            i += 1;
+            continue;
+        }
+        if c == '&' {
+            let mut j = i + 1;
+            while j < chars.len() && j - i <= 10 && chars[j] != ';' {
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == ';' && j > i + 1 {
+                let entity: String = chars[i + 1..j].iter().collect();
+                let decoded = match entity.as_str() {
+                    "amp" => Some('&'),
+                    "lt" => Some('<'),
+                    "gt" => Some('>'),
+                    "quot" => Some('"'),
+                    "apos" => Some('\''),
+                    "nbsp" => Some(' '),
+                    "mdash" => Some('\u{2014}'),
+                    "ndash" => Some('\u{2013}'),
+                    "hellip" => Some('\u{2026}'),
+                    "rsquo" => Some('\u{2019}'),
+                    "lsquo" => Some('\u{2018}'),
+                    "rdquo" => Some('\u{201d}'),
+                    "ldquo" => Some('\u{201c}'),
+                    _ => entity
+                        .strip_prefix("#x")
+                        .and_then(|n| u32::from_str_radix(n, 16).ok())
+                        .and_then(char::from_u32)
+                        .or_else(|| {
+                            entity
+                                .strip_prefix('#')
+                                .and_then(|n| n.parse::<u32>().ok())
+                                .and_then(char::from_u32)
+                        }),
+                };
+                if let Some(d) = decoded {
+                    push(d, i, &mut text, &mut map);
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+        push(c, i, &mut text, &mut map);
+        i += 1;
+    }
+    // A trailing collapsed space carries no position worth keeping.
+    if text.ends_with(' ') {
+        text.pop();
+        map.pop();
+    }
+    StripMap { text, map }
+}
+
+/// The ancestor chain (root first) of the element at `char_offset`
+/// in possibly-invalid HTML, for Live CSS. A forgiving tag scan:
+/// unclosed elements simply stay open, a close tag pops to its
+/// match if there is one.
+fn element_chain_at(html: &str, char_offset: usize) -> Vec<crate::epub_css::Elem> {
+    let byte_offset = html
+        .char_indices()
+        .nth(char_offset)
+        .map(|(b, _)| b)
+        .unwrap_or(html.len());
+    let before = &html[..byte_offset];
+    let bytes = before.as_bytes();
+    let mut stack: Vec<crate::epub_css::Elem> = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        if before[i..].starts_with("<!--") {
+            i = before[i + 4..].find("-->").map(|n| i + 4 + n + 3).unwrap_or(bytes.len());
+            continue;
+        }
+        if before[i..].starts_with("<!") || before[i..].starts_with("<?") {
+            i = before[i..].find('>').map(|n| i + n + 1).unwrap_or(bytes.len());
+            continue;
+        }
+        let closing = i + 1 < bytes.len() && bytes[i + 1] == b'/';
+        let name_start = if closing { i + 2 } else { i + 1 };
+        let mut j = name_start;
+        while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b':' | b'-')) {
+            j += 1;
+        }
+        if j == name_start {
+            i += 1;
+            continue;
+        }
+        let name = before[name_start..j].to_ascii_lowercase();
+        // Tag end (or the cursor, if it sits inside the tag).
+        let mut k = j;
+        let mut quote = 0u8;
+        while k < bytes.len() {
+            let b = bytes[k];
+            if quote != 0 {
+                if b == quote {
+                    quote = 0;
+                }
+            } else if b == b'"' || b == b'\'' {
+                quote = b;
+            } else if b == b'>' {
+                break;
+            }
+            k += 1;
+        }
+        let complete = k < bytes.len();
+        let tag_inner = &before[j..k];
+        if closing {
+            if let Some(pos) = stack.iter().rposition(|e| e.tag == name) {
+                stack.truncate(pos);
+            }
+        } else {
+            let elem = parse_elem(&name, tag_inner);
+            let self_closed = tag_inner.trim_end().ends_with('/')
+                || matches!(
+                    name.as_str(),
+                    "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link"
+                        | "meta" | "source" | "track" | "wbr"
+                );
+            if !complete {
+                // The cursor is inside this very tag: it is the
+                // current element.
+                stack.push(elem);
+                return stack;
+            }
+            if self_closed {
+                // Just before the cursor and self-contained: not
+                // an ancestor of what follows.
+            } else {
+                stack.push(elem);
+            }
+        }
+        i = (k + 1).min(bytes.len());
+    }
+    stack
+}
+
+/// One element from a start tag's inner text (` id="a" class="b"`).
+fn parse_elem(tag: &str, inner: &str) -> crate::epub_css::Elem {
+    let mut elem = crate::epub_css::Elem {
+        tag: tag.to_string(),
+        ..Default::default()
+    };
+    let bytes = inner.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b'/') {
+            i += 1;
+        }
+        let start = i;
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b':' | b'-' | b'_' | b'.'))
+        {
+            i += 1;
+        }
+        if i == start {
+            i += 1;
+            continue;
+        }
+        let name = inner[start..i].to_ascii_lowercase();
+        let mut value = String::new();
+        let mut j = i;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'=' {
+            j += 1;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
+                let q = bytes[j];
+                let vstart = j + 1;
+                let mut k = vstart;
+                while k < bytes.len() && bytes[k] != q {
+                    k += 1;
+                }
+                value = inner[vstart..k].to_string();
+                i = (k + 1).min(bytes.len());
+            } else {
+                let vstart = j;
+                let mut k = vstart;
+                while k < bytes.len() && !bytes[k].is_ascii_whitespace() && bytes[k] != b'/' {
+                    k += 1;
+                }
+                value = inner[vstart..k].to_string();
+                i = k;
+            }
+        }
+        match name.as_str() {
+            "id" => elem.id = Some(value.clone()),
+            "class" => {
+                elem.classes = value.split_whitespace().map(str::to_string).collect();
+            }
+            _ => {}
+        }
+        elem.attrs.push((name, value));
+    }
+    elem
+}
+
+/// `<style>` blocks of a document: (css text, 1-based line its
+/// content starts on).
+fn style_blocks(html: &str) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
+    let lower = html.to_ascii_lowercase();
+    let mut from = 0usize;
+    while let Some(rel) = lower[from..].find("<style") {
+        let at = from + rel;
+        let Some(gt) = html[at..].find('>') else { break };
+        let content_start = at + gt + 1;
+        let Some(close) = lower[content_start..].find("</style") else {
+            break;
+        };
+        let content_end = content_start + close;
+        let line = html[..content_start].bytes().filter(|b| *b == b'\n').count() + 1;
+        out.push((html[content_start..content_end].to_string(), line));
+        from = content_end;
+    }
+    out
 }
 
 /// Headings in an HTML buffer: (level, visible text, char offset of

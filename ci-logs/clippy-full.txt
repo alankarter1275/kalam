@@ -18,42 +18,20 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
-[1m[92m    Checking[0m tempfile v3.27.0
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m tempfile v3.27.0
 [1m[92m    Checking[0m insta v1.49.0
 [1m[92m    Checking[0m rusty-fork v0.3.1
 [1m[92m    Checking[0m epub-builder v0.8.3
 [1m[92m    Checking[0m proptest v1.12.0
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/epub_editor.rs:581:22: [1m[91merror[E0599][0m: no method named `run_check` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:582:22: [1m[91merror[E0599][0m: no method named `request_preview_write` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:632:22: [1m[91merror[E0599][0m: no method named `schedule_check` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:633:22: [1m[91merror[E0599][0m: no method named `schedule_preview_write` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:638:26: [1m[91merror[E0599][0m: no method named `rebuild_livecss` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
-src/pages/epub_editor.rs:644:26: [1m[91merror[E0599][0m: no method named `mark_outline_current` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:647:26: [1m[91merror[E0599][0m: no method named `rebuild_livecss` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
-src/pages/epub_editor.rs:649:22: [1m[91merror[E0599][0m: no method named `sync_preview_to_cursor` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:693:22: [1m[91merror[E0599][0m: no method named `run_check` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:694:22: [1m[91merror[E0599][0m: no method named `request_preview_write` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:735:26: [1m[91merror[E0599][0m: no method named `toggle_preview_menu` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:754:26: [1m[91merror[E0599][0m: no method named `run_check` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:758:26: [1m[91merror[E0599][0m: no method named `rebuild_livecss` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
-src/pages/epub_editor.rs:807:54: [1m[91merror[E0599][0m: no method named `toggle_preview_menu` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:810:22: [1m[91merror[E0599][0m: no method named `apply_preview_prefs` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
-src/pages/epub_editor.rs:814:22: [1m[91merror[E0599][0m: no method named `request_preview_write` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:816:57: [1m[91merror[E0599][0m: no method named `refresh_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:822:38: [1m[91merror[E0599][0m: no method named `collect_check` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:835:54: [1m[91merror[E0599][0m: no method named `present_fix_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:836:56: [1m[91merror[E0599][0m: no method named `apply_fix` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:842:57: [1m[91merror[E0599][0m: no method named `remove_problem_file` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:852:22: [1m[91merror[E0599][0m: no method named `run_check` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:853:22: [1m[91merror[E0599][0m: no method named `request_preview_write` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:860:22: [1m[91merror[E0599][0m: no method named `preview_word_jump` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:863:22: [1m[91merror[E0599][0m: no method named `preview_selection_jump` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:1231:38: [1m[91merror[E0599][0m: no method named `collect_check` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&mut pages::epub_editor::EpubEditorModel`
-src/pages/epub_editor.rs:1256:14: [1m[91merror[E0599][0m: no method named `collect_check` found for reference `&pages::epub_editor::EpubEditorModel` in the current scope: method not found in `&pages::epub_editor::EpubEditorModel`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 27 previous errors
+src/pages/epub_editor.rs:1066:14: [1m[91merror[E0599][0m: no method named `update_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
+src/pages/epub_editor.rs:1095:14: [1m[91merror[E0599][0m: no method named `update_preview` found for mutable reference `&mut pages::epub_editor::EpubEditorModel` in the current scope
+src/pages/epub_editor.rs:1670:9: [1m[91merror[E0506][0m: cannot assign to `self.outline_headings` because it is borrowed: `self.outline_headings` is assigned to here but it was already borrowed
+src/pages/epub_editor.rs:2116:9: [1m[91merror[E0502][0m: cannot borrow `*self` as mutable because it is also borrowed as immutable: mutable borrow occurs here
+src/pages/epub_editor.rs:2689:9: [1m[91merror[0m: variable does not need to be mutable
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 27 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors

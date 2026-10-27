@@ -8810,6 +8810,44 @@ textview.kalam-ed-linenumbers {
 .kalam-ed-specimen {
   color: @kalam_text;
 }
+/* ── E5: Reports (decision 141) ── */
+button.kalam-ed-texttab {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 2px 1px 6px;
+  font-size: 13px;
+  color: @kalam_text_dim;
+}
+button.kalam-ed-texttab:hover {
+  color: @kalam_text;
+}
+button.kalam-ed-texttab.active {
+  color: @kalam_text;
+  box-shadow: inset 0 -2px @kalam_accent;
+}
+button.kalam-ed-report-head {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: @kalam_text_dim;
+}
+button.kalam-ed-report-head:hover {
+  color: @kalam_text;
+}
+.kalam-ed-report-row {
+  border-top: 1px solid @kalam_border;
+}
+.kalam-ed-report-cell {
+  font-size: 12.5px;
+  color: @kalam_text;
+}
 button.kalam-ed-outline-row.current {
   color: @kalam_accent;
   font-weight: 600;

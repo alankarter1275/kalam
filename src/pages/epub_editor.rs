@@ -286,6 +286,8 @@ pub enum EpubEditorMsg {
     RunReplaceCover(String, Vec<u8>),
     /// The cover bytes, converted to the standing cover's format.
     CoverPrepared(String, Vec<u8>),
+    // ── E5: Reports (decision 141) ──
+    OpenReports,
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -489,6 +491,7 @@ enum PaletteAction {
     PersonalDict,
     History,
     ReplaceCover,
+    Reports,
     Tool(InstantTool),
     View(ViewMode),
     Tab(RightTab),
@@ -641,6 +644,25 @@ pub struct EpubEditorModel {
     /// (book path, drawing area, colour probe) per open font
     /// tab; interior because tab widgets are built from `&self`.
     font_areas: Rc<RefCell<Vec<(String, gtk::DrawingArea, gtk::Label)>>>,
+}
+
+/// One Reports table (decision 141): headers, rows and the
+/// standing sort. `numeric` marks columns that sort by the
+/// row's numeric key rather than its text.
+struct ReportTable {
+    headers: Vec<&'static str>,
+    widths: Vec<i32>,
+    numeric: Vec<bool>,
+    rows: Vec<ReportRow>,
+    sort_col: Option<usize>,
+    sort_desc: bool,
+}
+
+struct ReportRow {
+    cells: Vec<String>,
+    keys: Vec<i64>,
+    /// The file a row click opens, when it names one.
+    open: Option<String>,
 }
 
 const EMPTY_TAB: &str = "__kalam_empty";
@@ -1531,6 +1553,10 @@ impl Component for EpubEditorModel {
                     }
                     Ok("editor-cover") => {
                         self.present_replace_cover_dialog(&sender);
+                    }
+                    Ok("editor-reports") => {
+                        // The board's frame stands on Images.
+                        self.present_reports_dialog_at(2, &sender);
                     }
                     Ok("editor-editing") => {
                         // Export the first image for outside
@@ -2433,6 +2459,7 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::CoverPrepared(name, bytes) => {
                 self.run_replace_cover(name, bytes, &sender)
             }
+            EpubEditorMsg::OpenReports => self.present_reports_dialog(&sender),
             EpubEditorMsg::ExternalReady(path) => {
                 let file = gtk::gio::File::for_path(&path);
                 let _ = gtk::gio::AppInfo::launch_default_for_uri(
@@ -5886,6 +5913,438 @@ impl EpubEditorModel {
         self.finish_structure(plan, sender);
     }
 
+    // ── E5: Reports (decision 141) ──
+
+    fn present_reports_dialog(&mut self, sender: &ComponentSender<Self>) {
+        self.present_reports_dialog_at(0, sender);
+    }
+
+    fn present_reports_dialog_at(
+        &mut self,
+        start: usize,
+        sender: &ComponentSender<Self>,
+    ) {
+        let tables: Vec<(&'static str, ReportTable)> = vec![
+            ("Files", self.report_files()),
+            ("Words", self.report_words()),
+            ("Images", self.report_images()),
+            ("Links", self.report_links()),
+            ("CSS", self.report_css()),
+            ("Fonts", self.report_fonts()),
+        ];
+        let shell = dialog_shell(DialogSize::Wide, None);
+        let tabs_row = gtk::Box::new(gtk::Orientation::Horizontal, 18);
+        shell.body().append(&tabs_row);
+        let stack = gtk::Stack::new();
+        stack.set_vexpand(true);
+        shell.body().append(&stack);
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+
+        let mut tab_switches: Vec<(gtk::Button, String)> = Vec::new();
+        for (index, (name, table)) in tables.into_iter().enumerate() {
+            let page_name = format!("report-{index}");
+            let tab_btn = gtk::Button::with_label(name);
+            tab_btn.add_css_class("kalam-ed-texttab");
+            if index == start {
+                tab_btn.add_css_class("active");
+            }
+            tabs_row.append(&tab_btn);
+            tab_switches.push((tab_btn, page_name.clone()));
+
+            let state = Rc::new(RefCell::new(table));
+            let host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            let header_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+            let header_btns: Rc<RefCell<Vec<gtk::Button>>> =
+                Rc::new(RefCell::new(Vec::new()));
+            {
+                let table = state.borrow();
+                for (col, header) in table.headers.iter().enumerate() {
+                    let btn = gtk::Button::with_label(header);
+                    btn.add_css_class("kalam-ed-report-head");
+                    btn.set_halign(gtk::Align::Start);
+                    let width = table.widths[col];
+                    if width > 0 {
+                        btn.set_size_request(width, -1);
+                    } else {
+                        btn.set_hexpand(true);
+                    }
+                    header_row.append(&btn);
+                    header_btns.borrow_mut().push(btn);
+                }
+            }
+            host.append(&header_row);
+            let rows_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            host.append(&rows_host);
+            let scroll = gtk::ScrolledWindow::new();
+            scroll.set_policy(
+                gtk::PolicyType::Never,
+                gtk::PolicyType::Automatic,
+            );
+            scroll.set_vexpand(true);
+            scroll.set_child(Some(&host));
+            stack.add_named(&scroll, Some(&page_name));
+
+            let render: Rc<dyn Fn()> = {
+                let state = state.clone();
+                let rows_host = rows_host.clone();
+                let header_btns = header_btns.clone();
+                let slot = slot.clone();
+                let s = sender.input_sender().clone();
+                Rc::new(move || {
+                    clear_box(&rows_host);
+                    let table = state.borrow();
+                    for (col, btn) in header_btns.borrow().iter().enumerate() {
+                        let mut label = table.headers[col].to_string();
+                        if table.sort_col == Some(col) {
+                            label.push_str(if table.sort_desc {
+                                " ↓"
+                            } else {
+                                " ↑"
+                            });
+                        }
+                        btn.set_label(&label);
+                    }
+                    if table.rows.is_empty() {
+                        let label = gtk::Label::new(Some("Nothing to report"));
+                        label.add_css_class("kalam-ui-meta");
+                        label.set_halign(gtk::Align::Start);
+                        label.set_margin_top(10);
+                        rows_host.append(&label);
+                        return;
+                    }
+                    let mut order: Vec<usize> =
+                        (0..table.rows.len()).collect();
+                    if let Some(col) = table.sort_col {
+                        let numeric = table.numeric[col];
+                        let desc = table.sort_desc;
+                        order.sort_by(|&a, &b| {
+                            let ord = if numeric {
+                                table.rows[a].keys[col]
+                                    .cmp(&table.rows[b].keys[col])
+                            } else {
+                                table.rows[a].cells[col]
+                                    .to_lowercase()
+                                    .cmp(&table.rows[b].cells[col].to_lowercase())
+                            };
+                            if desc { ord.reverse() } else { ord }
+                        });
+                    }
+                    for at in order {
+                        let row = &table.rows[at];
+                        let line = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+                        line.add_css_class("kalam-ed-report-row");
+                        line.set_size_request(-1, 36);
+                        for (col, cell) in row.cells.iter().enumerate() {
+                            let width = table.widths[col];
+                            match (col, &row.open) {
+                                (0, Some(open)) => {
+                                    let btn = gtk::Button::with_label(cell);
+                                    btn.add_css_class("kalam-ed-ghost");
+                                    btn.set_halign(gtk::Align::Start);
+                                    if width > 0 {
+                                        btn.set_size_request(width, -1);
+                                    } else {
+                                        btn.set_hexpand(true);
+                                    }
+                                    let s = s.clone();
+                                    let slot = slot.clone();
+                                    let open = open.clone();
+                                    btn.connect_clicked(move |_| {
+                                        close_slot(&slot);
+                                        let _ = s.send(EpubEditorMsg::OpenFile {
+                                            path: open.clone(),
+                                            pin: false,
+                                        });
+                                    });
+                                    line.append(&btn);
+                                }
+                                _ => {
+                                    let label = gtk::Label::new(Some(cell));
+                                    label.add_css_class("kalam-ed-report-cell");
+                                    label.set_halign(gtk::Align::Start);
+                                    label.set_xalign(0.0);
+                                    label.set_valign(gtk::Align::Center);
+                                    label.set_ellipsize(
+                                        gtk::pango::EllipsizeMode::End,
+                                    );
+                                    if width > 0 {
+                                        label.set_size_request(width, -1);
+                                    } else {
+                                        label.set_hexpand(true);
+                                    }
+                                    line.append(&label);
+                                }
+                            }
+                        }
+                        rows_host.append(&line);
+                    }
+                })
+            };
+            render();
+            for (col, btn) in header_btns.borrow().iter().enumerate() {
+                let state = state.clone();
+                let render = render.clone();
+                btn.connect_clicked(move |_| {
+                    {
+                        let mut table = state.borrow_mut();
+                        if table.sort_col == Some(col) {
+                            table.sort_desc = !table.sort_desc;
+                        } else {
+                            table.sort_col = Some(col);
+                            table.sort_desc = false;
+                        }
+                    }
+                    render();
+                });
+            }
+        }
+        let tab_btns: Rc<Vec<(gtk::Button, String)>> = Rc::new(tab_switches);
+        for (index, (btn, page_name)) in tab_btns.iter().enumerate() {
+            let stack = stack.clone();
+            let tab_btns = tab_btns.clone();
+            let page_name = page_name.clone();
+            btn.connect_clicked(move |_| {
+                stack.set_visible_child_name(&page_name);
+                for (at, (other, _)) in tab_btns.iter().enumerate() {
+                    if at == index {
+                        other.add_css_class("active");
+                    } else {
+                        other.remove_css_class("active");
+                    }
+                }
+            });
+        }
+
+        stack.set_visible_child_name(&format!("report-{start}"));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Reports",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn report_files(&self) -> ReportTable {
+        let mut rows = Vec::new();
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if self.removed_paths.contains(&file.path) {
+                    continue;
+                }
+                let size = self.file_bytes(&file.path).map(|b| b.len()).unwrap_or(0);
+                rows.push(ReportRow {
+                    cells: vec![
+                        file.path.clone(),
+                        file.kind.label().to_string(),
+                        human_size(size),
+                    ],
+                    keys: vec![0, 0, size as i64],
+                    open: Some(file.path.clone()),
+                });
+            }
+        }
+        ReportTable {
+            headers: vec!["FILE", "KIND", "SIZE"],
+            widths: vec![-1, 90, 80],
+            numeric: vec![false, false, true],
+            rows,
+            sort_col: None,
+            sort_desc: false,
+        }
+    }
+
+    fn report_words(&self) -> ReportTable {
+        let mut rows = Vec::new();
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if file.kind != FileKind::Html
+                    || self.removed_paths.contains(&file.path)
+                {
+                    continue;
+                }
+                let Some(text) = self.file_text(&file.path) else {
+                    continue;
+                };
+                let count = crate::epub_structure::spell_words(
+                    &strip_map(&text).text,
+                )
+                .len();
+                rows.push(ReportRow {
+                    cells: vec![
+                        file_name(&file.path).to_string(),
+                        grouped(count),
+                    ],
+                    keys: vec![0, count as i64],
+                    open: Some(file.path.clone()),
+                });
+            }
+        }
+        ReportTable {
+            headers: vec!["FILE", "WORDS"],
+            widths: vec![-1, 110],
+            numeric: vec![false, true],
+            rows,
+            sort_col: None,
+            sort_desc: false,
+        }
+    }
+
+    fn report_images(&self) -> ReportTable {
+        let mut rows = Vec::new();
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if file.kind != FileKind::Image
+                    || self.removed_paths.contains(&file.path)
+                {
+                    continue;
+                }
+                let size = self.file_bytes(&file.path).map(|b| b.len()).unwrap_or(0);
+                let used = self.referencing_files(&file.path).len();
+                rows.push(ReportRow {
+                    cells: vec![
+                        file_name(&file.path).to_string(),
+                        human_size(size),
+                        match used {
+                            0 => "Not used".to_string(),
+                            1 => "1 file".to_string(),
+                            n => format!("{n} files"),
+                        },
+                    ],
+                    keys: vec![0, size as i64, used as i64],
+                    open: Some(file.path.clone()),
+                });
+            }
+        }
+        ReportTable {
+            headers: vec!["IMAGE", "SIZE", "USED IN"],
+            widths: vec![-1, 80, 110],
+            numeric: vec![false, true, true],
+            rows,
+            sort_col: None,
+            sort_desc: false,
+        }
+    }
+
+    fn report_links(&self) -> ReportTable {
+        let mut rows = Vec::new();
+        if let Some(container) = &self.container {
+            let mut seen: HashSet<(String, String)> = HashSet::new();
+            for file in &container.files {
+                if !file.kind.is_text() || self.removed_paths.contains(&file.path)
+                {
+                    continue;
+                }
+                let Some(text) = self.file_text(&file.path) else {
+                    continue;
+                };
+                for found in crate::epub_check::find_refs(&text, false) {
+                    if found.href.starts_with('#') {
+                        continue;
+                    }
+                    if !seen.insert((found.href.clone(), file.path.clone())) {
+                        continue;
+                    }
+                    let shown = if found.href.chars().count() > 64 {
+                        let cut: String =
+                            found.href.chars().take(63).collect();
+                        format!("{cut}…")
+                    } else {
+                        found.href.clone()
+                    };
+                    rows.push(ReportRow {
+                        cells: vec![
+                            shown,
+                            file_name(&file.path).to_string(),
+                        ],
+                        keys: vec![0, 0],
+                        open: Some(file.path.clone()),
+                    });
+                }
+            }
+        }
+        ReportTable {
+            headers: vec!["LINK", "FOUND IN"],
+            widths: vec![-1, 180],
+            numeric: vec![false, false],
+            rows,
+            sort_col: None,
+            sort_desc: false,
+        }
+    }
+
+    fn report_css(&self) -> ReportTable {
+        let mut rows = Vec::new();
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if file.kind != FileKind::Css
+                    || self.removed_paths.contains(&file.path)
+                {
+                    continue;
+                }
+                let rules = self
+                    .file_text(&file.path)
+                    .map(|text| crate::epub_css::parse_rules(&text).len())
+                    .unwrap_or(0);
+                let size = self.file_bytes(&file.path).map(|b| b.len()).unwrap_or(0);
+                rows.push(ReportRow {
+                    cells: vec![
+                        file_name(&file.path).to_string(),
+                        grouped(rules),
+                        human_size(size),
+                    ],
+                    keys: vec![0, rules as i64, size as i64],
+                    open: Some(file.path.clone()),
+                });
+            }
+        }
+        ReportTable {
+            headers: vec!["STYLESHEET", "RULES", "SIZE"],
+            widths: vec![-1, 80, 80],
+            numeric: vec![false, true, true],
+            rows,
+            sort_col: None,
+            sort_desc: false,
+        }
+    }
+
+    fn report_fonts(&self) -> ReportTable {
+        let mut rows = Vec::new();
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if file.kind != FileKind::Font
+                    || self.removed_paths.contains(&file.path)
+                {
+                    continue;
+                }
+                let size = self.file_bytes(&file.path).map(|b| b.len()).unwrap_or(0);
+                let used_by = self
+                    .referencing_files(&file.path)
+                    .first()
+                    .map(|(p, _)| file_name(p).to_string())
+                    .unwrap_or_else(|| "Not used".to_string());
+                rows.push(ReportRow {
+                    cells: vec![
+                        file_name(&file.path).to_string(),
+                        human_size(size),
+                        used_by,
+                    ],
+                    keys: vec![0, size as i64, 0],
+                    open: Some(file.path.clone()),
+                });
+            }
+        }
+        ReportTable {
+            headers: vec!["FONT", "SIZE", "USED BY"],
+            widths: vec![-1, 80, 140],
+            numeric: vec![false, true, false],
+            rows,
+            sort_col: None,
+            sort_desc: false,
+        }
+    }
+
     // ── save ───────────────────────────────────────────────────────
 
     fn try_save(&mut self, save_anyway: bool, sender: &ComponentSender<Self>) {
@@ -7308,10 +7767,6 @@ impl EpubEditorModel {
         menu.add_item("Personal dictionary…", move || {
             let _ = s.send(EpubEditorMsg::OpenPersonalDict);
         });
-        let s = sender.input_sender().clone();
-        menu.add_item("Replace cover…", move || {
-            let _ = s.send(EpubEditorMsg::OpenReplaceCover);
-        });
         menu.add_separator();
         let insert =
             crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
@@ -7381,6 +7836,24 @@ impl EpubEditorModel {
             });
         }
         menu.add_submenu("Clean up", clean);
+        let fonts_images =
+            crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
+        {
+            let s = sender.input_sender().clone();
+            fonts_images.add_item("Replace cover…", move || {
+                let _ = s.send(EpubEditorMsg::OpenReplaceCover);
+            });
+        }
+        menu.add_submenu("Fonts and images", fonts_images);
+        menu.add_separator();
+        let s = sender.input_sender().clone();
+        menu.add_item("Reports…", move || {
+            let _ = s.send(EpubEditorMsg::OpenReports);
+        });
+        let s = sender.input_sender().clone();
+        menu.add_item_with_hint("Command palette…", "Ctrl+Shift+P", move || {
+            let _ = s.send(EpubEditorMsg::TogglePalette);
+        });
         menu.popover().set_parent(&self.tools_btn);
         menu.popover().popup();
         self.tools_menu = Some(menu);
@@ -9567,6 +10040,7 @@ impl EpubEditorModel {
             item("Personal dictionary…", "", None, PaletteAction::PersonalDict),
             item("History…", "", None, PaletteAction::History),
             item("Replace cover…", "", None, PaletteAction::ReplaceCover),
+            item("Reports…", "", None, PaletteAction::Reports),
             item("Split at cursor", "Structure", None, PaletteAction::SplitCursor),
             item("Split at every heading…", "Structure", None, PaletteAction::SplitDialog(1)),
             item("Split chapter by size…", "Structure", None, PaletteAction::SplitDialog(2)),
@@ -9684,6 +10158,7 @@ impl EpubEditorModel {
             PaletteAction::PersonalDict => self.present_personal_dict_dialog(sender),
             PaletteAction::History => self.open_history(sender),
             PaletteAction::ReplaceCover => self.present_replace_cover_dialog(sender),
+            PaletteAction::Reports => self.present_reports_dialog(sender),
             PaletteAction::SplitCursor => self.run_split(0, 250, sender),
             PaletteAction::SplitDialog(preset) => {
                 self.present_split_dialog(preset, sender)
@@ -10209,6 +10684,19 @@ fn file_summary(file: &EpubFile, bytes: Option<&[u8]>) -> String {
         human_size(bytes.map(|b| b.len()).unwrap_or(0)),
         file.media_type
     )
+}
+
+/// Thousands-grouped counts for Reports: `12,340`.
+fn grouped(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (index, ch) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// Board-style file sizes: `214 KB`, `8.2 MB`.

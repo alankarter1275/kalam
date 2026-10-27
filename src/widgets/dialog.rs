@@ -16,6 +16,9 @@ use std::rc::Rc;
 pub enum DialogSize {
     Form,
     List,
+    /// The editor's Reports (decision 141): tables need the
+    /// extra room the board gives them.
+    Wide,
 }
 
 impl DialogSize {
@@ -23,6 +26,7 @@ impl DialogSize {
         match self {
             Self::Form => 420,
             Self::List => 560,
+            Self::Wide => 640,
         }
     }
 
@@ -30,6 +34,7 @@ impl DialogSize {
         match self {
             Self::Form => None,
             Self::List => Some(660),
+            Self::Wide => Some(660),
         }
     }
 }
@@ -70,7 +75,7 @@ pub fn dialog_shell(size: DialogSize, subtitle: Option<&str>) -> DialogShell {
         crate::style::spacing::MD,
     );
     root.set_hexpand(true);
-    root.set_vexpand(size == DialogSize::List);
+    root.set_vexpand(size != DialogSize::Form);
     // The panel's 24px body padding sits outside this shell. Requesting the
     // remaining width is what makes wrapping labels measure against the
     // approved 420/560 size instead of widening the panel to their unwrapped
@@ -99,7 +104,7 @@ pub fn dialog_shell(size: DialogSize, subtitle: Option<&str>) -> DialogShell {
         crate::style::spacing::MD,
     );
     body.set_hexpand(true);
-    body.set_vexpand(size == DialogSize::List);
+    body.set_vexpand(size != DialogSize::Form);
     root.append(&body);
 
     let footer = gtk::Box::new(

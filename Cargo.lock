@@ -2149,6 +2149,7 @@ dependencies = [
  "env_logger",
  "epub-builder",
  "flate2",
+ "fontdb 0.24.0",
  "gdk-pixbuf",
  "gio",
  "glib",

@@ -5122,12 +5122,12 @@ impl EpubEditorModel {
     }
 
     fn tag_line(buffer: &sourceview5::Buffer, tag: &gtk::TextTag, line: i32) {
-        let start = buffer.iter_at_line(line);
-        let end = if line + 1 < buffer.line_count() {
-            buffer.iter_at_line(line + 1)
-        } else {
-            buffer.end_iter()
+        let Some(start) = buffer.iter_at_line(line) else {
+            return;
         };
+        let end = buffer
+            .iter_at_line(line + 1)
+            .unwrap_or_else(|| buffer.end_iter());
         buffer.apply_tag(tag, &start, &end);
     }
 

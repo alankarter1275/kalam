@@ -180,7 +180,8 @@ fn parse_block(text: &str, base_line: usize, rules: &mut Vec<CssRule>) {
             if matches!(name.as_str(), "media" | "supports" | "layer" | "document") {
                 // Conditional group: the conditions decide at read
                 // time; the panel shows the rules regardless.
-                parse_block(body, line, rules);
+                // The body's first line is the prelude's own line.
+                parse_block(body, line - 1, rules);
             }
             // @font-face/@page/@keyframes hold no element rules.
         } else if !prelude.is_empty() {

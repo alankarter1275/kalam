@@ -8737,3 +8737,55 @@ button.kalam-ed-outline-row:hover {
 button.kalam-ed-switch {
   font-size: 12px;
 }
+
+/* E2: Problems warnings, fix mini-diff, Outline mark, Live CSS */
+.kalam-ed-problem-warning {
+  color: @kalam_text_dim;
+  font-size: 10px;
+}
+.kalam-ed-diff-line {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  color: @kalam_text_dim;
+  padding: 4px 8px;
+}
+.kalam-ed-diff-add {
+  color: @kalam_text;
+  background: alpha(@kalam_accent, 0.12);
+  border-radius: 4px;
+}
+button.kalam-ed-outline-row.current {
+  color: @kalam_accent;
+  font-weight: 600;
+}
+.kalam-ed-css-element {
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: @kalam_text;
+}
+button.kalam-ed-css-rule {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px 20px;
+}
+button.kalam-ed-css-rule:hover {
+  background: @kalam_hover;
+}
+.kalam-ed-css-selector {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  color: @kalam_text;
+}
+.kalam-ed-css-decl {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  color: @kalam_text;
+  padding: 1px 20px 1px 0;
+}
+.kalam-ed-css-decl.overridden {
+  color: @kalam_text_dim;
+  text-decoration: line-through;
+}

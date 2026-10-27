@@ -1224,6 +1224,34 @@ jobs:
             DIALOG=editor-upgrade THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      - name: open Subset fonts (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-subset-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-subset THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Embed fonts (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-embed-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-embed THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Compress images (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-compress-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-compress THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Check external links (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-links-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-links THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       - name: open Insert character (dark) and report
         if: matrix.group == 'pages'
         run: |
@@ -1648,6 +1676,18 @@ jobs:
           cp ci-shots-editor-upgrade-dark/report.txt ci-logs/editor-upgrade-dark-latest.txt 2>/dev/null \
             || echo "(no editor-upgrade-dark report produced)" > ci-logs/editor-upgrade-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-upgrade-dark-latest.txt
+          cp ci-shots-editor-subset-light/report.txt ci-logs/editor-subset-light-latest.txt 2>/dev/null \
+            || echo "(no editor-subset-light report produced)" > ci-logs/editor-subset-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-subset-light-latest.txt
+          cp ci-shots-editor-embed-dark/report.txt ci-logs/editor-embed-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-embed-dark report produced)" > ci-logs/editor-embed-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-embed-dark-latest.txt
+          cp ci-shots-editor-compress-light/report.txt ci-logs/editor-compress-light-latest.txt 2>/dev/null \
+            || echo "(no editor-compress-light report produced)" > ci-logs/editor-compress-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-compress-light-latest.txt
+          cp ci-shots-editor-links-dark/report.txt ci-logs/editor-links-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-links-dark report produced)" > ci-logs/editor-links-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-links-dark-latest.txt
           cp ci-shots-editor-char-dark/report.txt ci-logs/editor-char-dark-latest.txt 2>/dev/null \
             || echo "(no editor-char-dark report produced)" > ci-logs/editor-char-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-char-dark-latest.txt
@@ -1854,6 +1894,14 @@ jobs:
             ci-logs/editor-filterstyle-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-editor-upgrade-dark/03-edit-book-1-settled.png \
             ci-logs/editor-upgrade-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-subset-light/03-edit-book-1-settled.png \
+            ci-logs/editor-subset-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-embed-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-embed-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-compress-light/03-edit-book-1-settled.png \
+            ci-logs/editor-compress-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-links-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-links-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-editor-char-dark/03-edit-book-1-settled.png \
             ci-logs/editor-char-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-editor-dict-light/03-edit-book-1-settled.png \
@@ -1911,6 +1959,8 @@ jobs:
             ci-logs/editor-cover-dark-latest.txt ci-logs/editor-reports-light-latest.txt \
             ci-logs/editor-tagmapper-light-latest.txt ci-logs/editor-filterstyle-dark-latest.txt \
             ci-logs/editor-upgrade-dark-latest.txt \
+            ci-logs/editor-subset-light-latest.txt ci-logs/editor-embed-dark-latest.txt \
+            ci-logs/editor-compress-light-latest.txt ci-logs/editor-links-dark-latest.txt \
             ci-logs/editor-char-dark-latest.txt ci-logs/editor-dict-light-latest.txt
           for shot in settings-appearance-light settings-appearance-dark \
                       settings-reading-light settings-reading-dropdown-dark \
@@ -2021,6 +2071,10 @@ jobs:
                       ci-logs/editor-tagmapper-terracotta-light.png \
                       ci-logs/editor-filterstyle-terracotta-dark.png \
                       ci-logs/editor-upgrade-terracotta-dark.png \
+                      ci-logs/editor-subset-terracotta-light.png \
+                      ci-logs/editor-embed-terracotta-dark.png \
+                      ci-logs/editor-compress-terracotta-light.png \
+                      ci-logs/editor-links-terracotta-dark.png \
                       ci-logs/editor-char-terracotta-dark.png \
                       ci-logs/editor-dict-terracotta-light.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi

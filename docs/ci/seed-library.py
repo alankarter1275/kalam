@@ -230,11 +230,28 @@ def epub_bytes(title: str, author: str, chapters: int = 6, nested: bool = False)
         f"<navMap>{nav_points}</navMap>\n</ncx>\n"
     )
 
+    # The editor's frames need real material: one used and one unused
+    # image (Reports, Compress images, the image tab), one embedded
+    # font from the repo's own assets (the font tab, Subset fonts),
+    # and an external link in the last chapter (Check external
+    # links). The reader never reaches the last chapter in its own
+    # frames, so the additions stay invisible there.
+    font_bytes = b""
+    font_path = os.path.join("assets", "fonts", "DMMono-Regular.ttf")
+    if os.path.exists(font_path):
+        with open(font_path, "rb") as fh:
+            font_bytes = fh.read()
     manifest = [
         '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
         '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>',
         '<item id="css" href="style.css" media-type="text/css"/>',
+        '<item id="map" href="images/map.png" media-type="image/png"/>',
+        '<item id="sketch" href="images/sketch.png" media-type="image/png"/>',
     ]
+    if font_bytes:
+        manifest.append(
+            '<item id="font1" href="fonts/DMMono-Regular.ttf" media-type="font/ttf"/>'
+        )
     spine = []
     for n in range(1, chapters + 1):
         manifest.append(
@@ -261,7 +278,16 @@ def epub_bytes(title: str, author: str, chapters: int = 6, nested: bool = False)
         "body { font-family: serif; line-height: 1.5; margin: 1em; }\n"
         "h1 { font-size: 1.4em; }\n"
         "p { margin: 0 0 0.7em 0; text-align: justify; }\n"
+        # Embed fonts' scan reads declarations whether or not they
+        # are used: one family every Linux has, one it never will.
+        '.colophon { font-family: "DejaVu Sans", sans-serif; }\n'
+        'code { font-family: "Missing Demo Font", monospace; }\n'
     )
+    if font_bytes:
+        css = (
+            '@font-face { font-family: "DM Mono"; '
+            'src: url("fonts/DMMono-Regular.ttf"); }\n'
+        ) + css
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -280,10 +306,20 @@ def epub_bytes(title: str, author: str, chapters: int = 6, nested: bool = False)
         z.writestr("OEBPS/nav.xhtml", nav)
         z.writestr("OEBPS/toc.ncx", ncx)
         z.writestr("OEBPS/style.css", css)
+        z.writestr("OEBPS/images/map.png", png(320, 200, (120, 90, 60)))
+        z.writestr("OEBPS/images/sketch.png", png(160, 160, (70, 100, 130)))
+        if font_bytes:
+            z.writestr("OEBPS/fonts/DMMono-Regular.ttf", font_bytes)
         for n, label in enumerate(labels, start=1):
             body = f"<h1>{escape(label)}</h1>" + "".join(
                 f"<p>{paragraph()}</p>" for _ in range(28)
             )
+            if n == chapters:
+                body += (
+                    '<p><img alt="A map" src="images/map.png"/></p>'
+                    '<p><a href="https://www.gutenberg.org/">'
+                    "Project Gutenberg</a></p>"
+                )
             z.writestr(f"OEBPS/ch{n}.xhtml", xhtml(label, body))
     return buf.getvalue()
 

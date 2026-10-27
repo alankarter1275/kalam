@@ -26,6 +26,7 @@ mod text_diff;
 mod export;
 mod epub_writer;
 mod folders;
+mod font_subset;
 mod fonts;
 mod frames;
 mod icons;

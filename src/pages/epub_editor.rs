@@ -295,6 +295,20 @@ pub enum EpubEditorMsg {
     RunFilterStyle(Vec<String>),
     OpenUpgradeInternals,
     RunUpgradeInternals,
+    // ── E5: Fonts and images (decision 141) ──
+    /// From the menu (everything ticked) or one font tab.
+    OpenSubsetFonts(Option<String>),
+    SubsetPreviewsReady(Vec<SubsetPreview>, Option<String>),
+    RunSubsetFonts(Vec<(String, Vec<u8>)>),
+    OpenEmbedFonts,
+    EmbedScanReady(Vec<(String, Option<std::path::PathBuf>)>),
+    RunEmbedFonts(Vec<(String, std::path::PathBuf)>),
+    /// (family, disk file name, bytes) per embedded font.
+    EmbedLoaded(Vec<(String, String, Vec<u8>)>),
+    OpenCompressImages,
+    CompressPreviewReady(Box<(Vec<(String, Vec<u8>)>, Vec<(String, Vec<u8>)>)>),
+    RunCompressImages(Vec<(String, Vec<u8>)>),
+    OpenCheckLinks,
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -502,6 +516,10 @@ enum PaletteAction {
     TagMapper,
     FilterStyle,
     UpgradeInternals,
+    SubsetFonts,
+    EmbedFonts,
+    CompressImages,
+    CheckLinks,
     Tool(InstantTool),
     View(ViewMode),
     Tab(RightTab),
@@ -654,6 +672,16 @@ pub struct EpubEditorModel {
     /// (book path, drawing area, colour probe) per open font
     /// tab; interior because tab widgets are built from `&self`.
     font_areas: Rc<RefCell<Vec<(String, gtk::DrawingArea, gtk::Label)>>>,
+}
+
+/// One font through the subsetter, before the dialog opens:
+/// its real sizes come from having actually run the engine.
+#[derive(Debug)]
+struct SubsetPreview {
+    path: String,
+    label: String,
+    original: usize,
+    outcome: Result<Vec<u8>, String>,
 }
 
 /// One Reports table (decision 141): headers, rows and the
@@ -1587,6 +1615,25 @@ impl Component for EpubEditorModel {
                     }
                     Ok("editor-upgrade") => {
                         self.present_upgrade_dialog(&sender);
+                    }
+                    Ok("editor-subset") => {
+                        // The seeded book embeds the repo's own
+                        // DM Mono, so the sizes are the engine's
+                        // real work.
+                        self.start_subset_fonts(None, &sender);
+                    }
+                    Ok("editor-embed") => {
+                        // The seeded CSS names DejaVu Sans (on
+                        // every CI box) and Missing Demo Font.
+                        self.start_embed_fonts(&sender);
+                    }
+                    Ok("editor-compress") => {
+                        self.start_compress_images(&sender);
+                    }
+                    Ok("editor-links") => {
+                        // The pre-run state: staging must never
+                        // touch the network.
+                        self.present_check_links_dialog(&sender);
                     }
                     Ok("editor-editing") => {
                         // Export the first image for outside
@@ -2542,6 +2589,99 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::RunUpgradeInternals => {
                 self.run_upgrade_internals(&sender)
             }
+            EpubEditorMsg::OpenSubsetFonts(preselect) => {
+                self.start_subset_fonts(preselect, &sender)
+            }
+            EpubEditorMsg::SubsetPreviewsReady(previews, preselect) => {
+                self.present_subset_fonts_dialog(previews, preselect, &sender)
+            }
+            EpubEditorMsg::RunSubsetFonts(chosen) => {
+                let before: usize = chosen
+                    .iter()
+                    .map(|(path, _)| {
+                        self.file_bytes(path).map(|b| b.len()).unwrap_or(0)
+                    })
+                    .sum();
+                let after: usize = chosen.iter().map(|(_, b)| b.len()).sum();
+                let mut plan = StructurePlan::new(
+                    format!(
+                        "Subset {} {} · {} → {}",
+                        chosen.len(),
+                        if chosen.len() == 1 { "font" } else { "fonts" },
+                        human_size(before),
+                        human_size(after)
+                    ),
+                    "Before subset fonts",
+                );
+                plan.byte_changes = chosen;
+                self.finish_structure(plan, &sender);
+            }
+            EpubEditorMsg::OpenEmbedFonts => self.start_embed_fonts(&sender),
+            EpubEditorMsg::EmbedScanReady(candidates) => {
+                self.present_embed_fonts_dialog(candidates, &sender)
+            }
+            EpubEditorMsg::RunEmbedFonts(chosen) => {
+                let service = self.service.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn_internal(
+                    "Reading the chosen fonts",
+                    move |_reporter| {
+                        let mut out = Vec::new();
+                        for (family, path) in &chosen {
+                            let bytes = service.read_editor_import(path)?;
+                            let name = path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "font.ttf".to_string());
+                            out.push((family.clone(), name, bytes));
+                        }
+                        Ok::<_, String>(out)
+                    },
+                    |_| {},
+                    move |result| match result {
+                        Ok(loaded) => {
+                            let _ = s.send(EpubEditorMsg::EmbedLoaded(loaded));
+                        }
+                        Err(message) => {
+                            let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
+            }
+            EpubEditorMsg::EmbedLoaded(loaded) => {
+                self.run_embed_loaded(loaded, &sender)
+            }
+            EpubEditorMsg::OpenCompressImages => {
+                self.start_compress_images(&sender)
+            }
+            EpubEditorMsg::CompressPreviewReady(pair) => {
+                let (lossless, smaller) = *pair;
+                self.present_compress_dialog(lossless, smaller, &sender);
+            }
+            EpubEditorMsg::RunCompressImages(wins) => {
+                let before: usize = wins
+                    .iter()
+                    .map(|(path, _)| {
+                        self.file_bytes(path).map(|b| b.len()).unwrap_or(0)
+                    })
+                    .sum();
+                let after: usize = wins.iter().map(|(_, b)| b.len()).sum();
+                let mut plan = StructurePlan::new(
+                    format!(
+                        "Compressed {} {} · {} → {}",
+                        wins.len(),
+                        if wins.len() == 1 { "image" } else { "images" },
+                        human_size(before),
+                        human_size(after)
+                    ),
+                    "Before compress images",
+                );
+                plan.byte_changes = wins;
+                self.finish_structure(plan, &sender);
+            }
+            EpubEditorMsg::OpenCheckLinks => {
+                self.present_check_links_dialog(&sender)
+            }
             EpubEditorMsg::ExternalReady(path) => {
                 let file = gtk::gio::File::for_path(&path);
                 let _ = gtk::gio::AppInfo::launch_default_for_uri(
@@ -2871,6 +3011,15 @@ impl EpubEditorModel {
                 };
                 host.append(&meta_label(&meta));
                 let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                {
+                    let s = sender.input_sender().clone();
+                    let p = file.path.clone();
+                    actions.append(&boxed_ghost_button("Subset font", move || {
+                        let _ = s.send(EpubEditorMsg::OpenSubsetFonts(Some(
+                            p.clone(),
+                        )));
+                    }));
+                }
                 {
                     let remove = gtk::Button::with_label("Remove");
                     remove.add_css_class("kalam-ed-ghost");
@@ -6627,7 +6776,7 @@ impl EpubEditorModel {
                                         entry.0 = !entry.0;
                                     }
                                 }
-                                set_tick(&circle, rules.borrow()[index].0);
+                                set_tick_circle(&circle, rules.borrow()[index].0);
                                 persist();
                                 recount();
                             });
@@ -6868,7 +7017,7 @@ impl EpubEditorModel {
                 let mut state = chosen.get();
                 state[index] = !state[index];
                 chosen.set(state);
-                set_tick(&circle, state[index]);
+                set_tick_circle(&circle, state[index]);
                 recount();
             });
             list.append(&row);
@@ -7102,6 +7251,931 @@ impl EpubEditorModel {
             return;
         }
         self.finish_structure(plan, sender);
+    }
+
+    // ── E5: Subset and Embed fonts (decision 141) ──
+
+    /// Every character the book's visible text uses, plus the
+    /// printable ASCII range so a subset font can still set a
+    /// line the author writes tomorrow.
+    fn book_chars(&self) -> HashSet<char> {
+        let mut chars: HashSet<char> =
+            (0x20u8..=0x7e).map(|b| b as char).collect();
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if file.kind != FileKind::Html
+                    || self.removed_paths.contains(&file.path)
+                {
+                    continue;
+                }
+                if let Some(text) = self.file_text(&file.path) {
+                    chars.extend(strip_map(&text).text.chars());
+                }
+            }
+        }
+        chars
+    }
+
+    fn start_subset_fonts(
+        &mut self,
+        preselect: Option<String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let fonts: Vec<(String, Vec<u8>)> = self
+            .container
+            .as_ref()
+            .map(|c| {
+                c.files
+                    .iter()
+                    .filter(|f| {
+                        f.kind == FileKind::Font
+                            && !self.removed_paths.contains(&f.path)
+                    })
+                    .filter_map(|f| {
+                        self.file_bytes(&f.path).map(|b| (f.path.clone(), b))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if fonts.is_empty() {
+            self.show_pill("No fonts in this book", false, sender);
+            return;
+        }
+        let chars = self.book_chars();
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Measuring the subsets",
+            move |_reporter| {
+                fonts
+                    .into_iter()
+                    .map(|(path, bytes)| SubsetPreview {
+                        label: service
+                            .font_family(&bytes)
+                            .unwrap_or_else(|| file_name(&path).to_string()),
+                        original: bytes.len(),
+                        outcome: service.editor_subset_font(&bytes, &chars),
+                        path,
+                    })
+                    .collect::<Vec<_>>()
+            },
+            |_| {},
+            move |previews| {
+                let _ = s.send(EpubEditorMsg::SubsetPreviewsReady(
+                    previews,
+                    preselect.clone(),
+                ));
+            },
+        );
+    }
+
+    fn present_subset_fonts_dialog(
+        &mut self,
+        previews: Vec<SubsetPreview>,
+        preselect: Option<String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let shrinkable = |p: &SubsetPreview| {
+            p.outcome
+                .as_ref()
+                .map(|bytes| bytes.len() < p.original)
+                .unwrap_or(false)
+        };
+        let ticked: Rc<RefCell<Vec<bool>>> = Rc::new(RefCell::new(
+            previews
+                .iter()
+                .map(|p| {
+                    shrinkable(p)
+                        && preselect
+                            .as_ref()
+                            .map(|want| want == &p.path)
+                            .unwrap_or(true)
+                })
+                .collect(),
+        ));
+        let previews: Rc<Vec<SubsetPreview>> = Rc::new(previews);
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("Keeps only the characters the book uses"),
+        );
+        let saving_label = gtk::Label::new(None);
+        saving_label.add_css_class("kalam-ui-meta");
+        saving_label.set_halign(gtk::Align::Start);
+        saving_label.set_xalign(0.0);
+        saving_label.set_wrap(true);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let subset_btn = {
+            let slot = slot.clone();
+            let ticked = ticked.clone();
+            let previews = previews.clone();
+            let s = sender.input_sender().clone();
+            primary_button("Subset", move || {
+                let chosen: Vec<(String, Vec<u8>)> = previews
+                    .iter()
+                    .zip(ticked.borrow().iter())
+                    .filter(|(_, on)| **on)
+                    .filter_map(|(p, _)| {
+                        p.outcome
+                            .as_ref()
+                            .ok()
+                            .map(|bytes| (p.path.clone(), bytes.clone()))
+                    })
+                    .collect();
+                close_slot(&slot);
+                let _ = s.send(EpubEditorMsg::RunSubsetFonts(chosen));
+            })
+        };
+        let recount: Rc<dyn Fn()> = {
+            let ticked = ticked.clone();
+            let previews = previews.clone();
+            let saving_label = saving_label.clone();
+            let subset_btn = subset_btn.clone();
+            Rc::new(move || {
+                let mut saving = 0usize;
+                let mut any = false;
+                for (p, on) in previews.iter().zip(ticked.borrow().iter()) {
+                    if *on {
+                        if let Ok(bytes) = &p.outcome {
+                            saving += p.original.saturating_sub(bytes.len());
+                            any = true;
+                        }
+                    }
+                }
+                subset_btn.set_sensitive(any);
+                saving_label.set_label(&if saving > 0 {
+                    format!(
+                        "Saves about {}. Fonts you add later may need \
+                         subsetting again.",
+                        human_size(saving)
+                    )
+                } else {
+                    "Fonts you add later may need subsetting again.".to_string()
+                });
+            })
+        };
+
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        for (index, preview) in previews.iter().enumerate() {
+            let (meta_text, can) = match &preview.outcome {
+                Ok(bytes) if bytes.len() < preview.original => (
+                    format!(
+                        "{} → {}",
+                        human_size(preview.original),
+                        human_size(bytes.len())
+                    ),
+                    true,
+                ),
+                Ok(_) => (format!("{} · no saving", human_size(preview.original)), false),
+                Err(message) => {
+                    let why = if message.contains("WOFF2") {
+                        "WOFF2 — cannot subset yet"
+                    } else if message.contains("CFF") {
+                        "CFF — cannot subset yet"
+                    } else {
+                        "Cannot subset"
+                    };
+                    (why.to_string(), false)
+                }
+            };
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-ed-tickrow");
+            if index > 0 {
+                row.add_css_class("kalam-ed-report-row");
+            }
+            row.set_size_request(-1, 48);
+            row.set_sensitive(can);
+            let inner = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            let circle = tick_circle(ticked.borrow()[index]);
+            inner.append(&circle);
+            let label = gtk::Label::new(Some(&preview.label));
+            label.set_halign(gtk::Align::Start);
+            label.set_valign(gtk::Align::Center);
+            label.set_hexpand(true);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            inner.append(&label);
+            let meta = gtk::Label::new(Some(&meta_text));
+            meta.add_css_class("kalam-ui-meta");
+            meta.set_valign(gtk::Align::Center);
+            inner.append(&meta);
+            row.set_child(Some(&inner));
+            {
+                let ticked = ticked.clone();
+                let recount = recount.clone();
+                row.connect_clicked(move |_| {
+                    let now = {
+                        let mut all = ticked.borrow_mut();
+                        all[index] = !all[index];
+                        all[index]
+                    };
+                    set_tick_circle(&circle, now);
+                    recount();
+                });
+            }
+            list.append(&row);
+        }
+        shell.body().append(&list);
+        shell.body().append(&saving_label);
+        recount();
+
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        shell.footer().append(&subset_btn);
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Subset fonts",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn start_embed_fonts(&mut self, sender: &ComponentSender<Self>) {
+        let mut used: Vec<String> = Vec::new();
+        let mut embedded: Vec<Vec<u8>> = Vec::new();
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if self.removed_paths.contains(&file.path) {
+                    continue;
+                }
+                match file.kind {
+                    FileKind::Css => {
+                        if let Some(text) = self.file_text(&file.path) {
+                            for rule in crate::epub_css::parse_rules(&text) {
+                                for decl in &rule.declarations {
+                                    let prop = decl.property.to_ascii_lowercase();
+                                    if prop == "font-family" {
+                                        for part in decl.value.split(',') {
+                                            let name = part
+                                                .trim()
+                                                .trim_matches(|c| c == '"' || c == '\'')
+                                                .trim()
+                                                .to_string();
+                                            if !name.is_empty() {
+                                                used.push(name);
+                                            }
+                                        }
+                                    } else if prop == "font" {
+                                        // The shorthand: only quoted
+                                        // family names are read, the
+                                        // rest is sizes and weights.
+                                        for part in decl.value.split(',') {
+                                            let part = part.trim();
+                                            if let Some(start) =
+                                                part.find(['"', '\''])
+                                            {
+                                                let rest = &part[start + 1..];
+                                                if let Some(end) =
+                                                    rest.find(part[start..].chars().next().unwrap_or('"'))
+                                                {
+                                                    let name = rest[..end].trim().to_string();
+                                                    if !name.is_empty() {
+                                                        used.push(name);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    FileKind::Font => {
+                        if let Some(bytes) = self.file_bytes(&file.path) {
+                            embedded.push(bytes);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Checking which fonts are missing",
+            move |_reporter| service.embed_font_candidates(used, embedded),
+            |_| {},
+            move |candidates| {
+                let _ = s.send(EpubEditorMsg::EmbedScanReady(candidates));
+            },
+        );
+    }
+
+    fn present_embed_fonts_dialog(
+        &mut self,
+        candidates: Vec<(String, Option<std::path::PathBuf>)>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("Used by your CSS but not in the book"),
+        );
+        let ticked: Rc<RefCell<Vec<bool>>> = Rc::new(RefCell::new(
+            candidates.iter().map(|(_, p)| p.is_some()).collect(),
+        ));
+        let candidates: Rc<Vec<(String, Option<std::path::PathBuf>)>> =
+            Rc::new(candidates);
+        if candidates.is_empty() {
+            let label = gtk::Label::new(Some(
+                "Every font your CSS names is already in the book.",
+            ));
+            label.add_css_class("kalam-ui-meta");
+            label.set_halign(gtk::Align::Start);
+            shell.body().append(&label);
+        }
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        for (index, (family, found)) in candidates.iter().enumerate() {
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-ed-tickrow");
+            if index > 0 {
+                row.add_css_class("kalam-ed-report-row");
+            }
+            row.set_size_request(-1, 48);
+            row.set_sensitive(found.is_some());
+            let inner = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            if found.is_some() {
+                let circle = tick_circle(true);
+                inner.append(&circle);
+                let ticked = ticked.clone();
+                row.connect_clicked(move |_| {
+                    let now = {
+                        let mut all = ticked.borrow_mut();
+                        all[index] = !all[index];
+                        all[index]
+                    };
+                    set_tick_circle(&circle, now);
+                });
+            } else {
+                let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                spacer.set_size_request(18, 18);
+                inner.append(&spacer);
+            }
+            let label = gtk::Label::new(Some(family));
+            label.set_halign(gtk::Align::Start);
+            label.set_valign(gtk::Align::Center);
+            label.set_hexpand(true);
+            inner.append(&label);
+            let meta = gtk::Label::new(Some(if found.is_some() {
+                "On this computer"
+            } else {
+                "Not found on this computer"
+            }));
+            meta.add_css_class("kalam-ui-meta");
+            meta.set_valign(gtk::Align::Center);
+            inner.append(&meta);
+            row.set_child(Some(&inner));
+            list.append(&row);
+        }
+        shell.body().append(&list);
+        if !candidates.is_empty() {
+            let licence = gtk::Label::new(Some(
+                "Check that the font licence allows embedding.",
+            ));
+            licence.add_css_class("kalam-ui-meta");
+            licence.set_halign(gtk::Align::Start);
+            shell.body().append(&licence);
+        }
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        if candidates.is_empty() {
+            let slot_done = slot.clone();
+            shell.footer().append(&primary_button("Done", move || {
+                close_slot(&slot_done);
+            }));
+        } else {
+            let slot_cancel = slot.clone();
+            shell.footer().append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
+            let slot2 = slot.clone();
+            let ticked = ticked.clone();
+            let candidates = candidates.clone();
+            let s = sender.input_sender().clone();
+            let embed_btn = primary_button("Embed", move || {
+                let chosen: Vec<(String, std::path::PathBuf)> = candidates
+                    .iter()
+                    .zip(ticked.borrow().iter())
+                    .filter(|(_, on)| **on)
+                    .filter_map(|((family, found), _)| {
+                        found.clone().map(|path| (family.clone(), path))
+                    })
+                    .collect();
+                close_slot(&slot2);
+                let _ = s.send(EpubEditorMsg::RunEmbedFonts(chosen));
+            });
+            embed_btn.set_sensitive(candidates.iter().any(|(_, p)| p.is_some()));
+            shell.footer().append(&embed_btn);
+        }
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Embed fonts",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn run_embed_loaded(
+        &mut self,
+        loaded: Vec<(String, String, Vec<u8>)>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        if loaded.is_empty() {
+            self.show_pill("Nothing to embed", false, sender);
+            return;
+        }
+        let Some(css_path) = container
+            .files
+            .iter()
+            .find(|f| f.kind == FileKind::Css)
+            .map(|f| f.path.clone())
+        else {
+            self.show_pill(
+                "Add a stylesheet first — @font-face has nowhere to live",
+                false,
+                sender,
+            );
+            return;
+        };
+        let dir = container
+            .files
+            .iter()
+            .find(|f| f.kind == FileKind::Font)
+            .map(|f| crate::epub_structure::parent_dir(&f.path))
+            .unwrap_or_else(|| crate::epub_structure::parent_dir(&container.opf_path));
+        let summary = if loaded.len() == 1 {
+            format!("Embedded {}", loaded[0].0)
+        } else {
+            format!("Embedded {} fonts", loaded.len())
+        };
+        let mut plan = StructurePlan::new(summary, "Before embed fonts");
+        let mut faces = String::new();
+        let mut taken: Vec<String> =
+            container.files.iter().map(|f| f.path.clone()).collect();
+        for (family, name, bytes) in loaded {
+            let mut path = format!("{dir}{}", file_name(&name));
+            let mut n = 1;
+            while taken.contains(&path) {
+                n += 1;
+                let bare = file_name(&name);
+                let (stem, ext) = match bare.rsplit_once('.') {
+                    Some((stem, ext)) => (stem.to_string(), format!(".{ext}")),
+                    None => (bare.to_string(), String::new()),
+                };
+                path = format!("{dir}{stem}{n}{ext}");
+            }
+            taken.push(path.clone());
+            let href = crate::epub_structure::rel_href(
+                &crate::epub_structure::parent_dir(&css_path),
+                &path,
+                None,
+            );
+            faces.push_str(&format!(
+                "@font-face {{ font-family: \"{family}\"; src: url(\"{href}\"); }}\n"
+            ));
+            let media = crate::epub_container::guess_media_type(&path);
+            plan.new_files.push((
+                EpubFile {
+                    path,
+                    kind: FileKind::Font,
+                    media_type: media.to_string(),
+                    spine_index: None,
+                    is_nav: false,
+                    is_cover_image: false,
+                    in_manifest: true,
+                },
+                bytes,
+            ));
+        }
+        let css_text = self.file_text(&css_path).unwrap_or_default();
+        let new_css = match css_text
+            .lines()
+            .next()
+            .filter(|line| line.trim_start().to_ascii_lowercase().starts_with("@charset"))
+        {
+            Some(first) => {
+                let at = first.len() + 1;
+                format!(
+                    "{}{}\n{}",
+                    &css_text[..at.min(css_text.len())],
+                    faces.trim_end(),
+                    &css_text[at.min(css_text.len())..]
+                )
+            }
+            None => format!("{faces}{css_text}"),
+        };
+        plan.text_changes.push((css_path, new_css));
+        self.finish_structure(plan, sender);
+    }
+
+    // ── E5: Compress images + Check external links ──
+
+    fn start_compress_images(&mut self, sender: &ComponentSender<Self>) {
+        let images: Vec<(String, Vec<u8>)> = self
+            .container
+            .as_ref()
+            .map(|c| {
+                c.files
+                    .iter()
+                    .filter(|f| {
+                        f.kind == FileKind::Image
+                            && !self.removed_paths.contains(&f.path)
+                    })
+                    .filter_map(|f| {
+                        self.file_bytes(&f.path).map(|b| (f.path.clone(), b))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if images.is_empty() {
+            self.show_pill("No images in this book", false, sender);
+            return;
+        }
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Measuring image savings",
+            move |_reporter| {
+                let mut lossless = Vec::new();
+                let mut smaller = Vec::new();
+                for (path, bytes) in &images {
+                    if let Ok(out) = service.compress_book_image(bytes, false) {
+                        if out.len() < bytes.len() {
+                            lossless.push((path.clone(), out));
+                        }
+                    }
+                    if let Ok(out) = service.compress_book_image(bytes, true) {
+                        if out.len() < bytes.len() {
+                            smaller.push((path.clone(), out));
+                        }
+                    }
+                }
+                (lossless, smaller)
+            },
+            |_| {},
+            move |pair| {
+                let _ =
+                    s.send(EpubEditorMsg::CompressPreviewReady(Box::new(pair)));
+            },
+        );
+    }
+
+    fn present_compress_dialog(
+        &mut self,
+        lossless: Vec<(String, Vec<u8>)>,
+        smaller: Vec<(String, Vec<u8>)>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let images = self
+            .container
+            .as_ref()
+            .map(|c| {
+                c.files
+                    .iter()
+                    .filter(|f| f.kind == FileKind::Image)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let total: usize = images
+            .iter()
+            .map(|f| self.file_bytes(&f.path).map(|b| b.len()).unwrap_or(0))
+            .sum();
+        let n = images.len();
+        let subtitle = format!(
+            "{n} {} · {}",
+            if n == 1 { "image" } else { "images" },
+            human_size(total)
+        );
+        let shell = dialog_shell(DialogSize::Form, Some(&subtitle));
+        // Savings per mode, from the real re-encoded bytes.
+        let saving = |wins: &Vec<(String, Vec<u8>)>| -> usize {
+            wins.iter()
+                .map(|(path, out)| {
+                    self.file_bytes(path)
+                        .map(|b| b.len())
+                        .unwrap_or(0)
+                        .saturating_sub(out.len())
+                })
+                .sum()
+        };
+        let lossless_saving = saving(&lossless);
+        let smaller_saving = saving(&smaller);
+        let wins: Rc<(Vec<(String, Vec<u8>)>, Vec<(String, Vec<u8>)>)> =
+            Rc::new((lossless, smaller));
+        let mode = Rc::new(std::cell::Cell::new(false)); // false = Lossless
+
+        let body_label = gtk::Label::new(None);
+        body_label.set_halign(gtk::Align::Start);
+        body_label.set_xalign(0.0);
+        body_label.set_wrap(true);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let compress_btn = {
+            let slot = slot.clone();
+            let wins = wins.clone();
+            let mode = mode.clone();
+            let s = sender.input_sender().clone();
+            primary_button("Compress", move || {
+                let chosen = if mode.get() { wins.1.clone() } else { wins.0.clone() };
+                close_slot(&slot);
+                let _ = s.send(EpubEditorMsg::RunCompressImages(chosen));
+            })
+        };
+        let refresh_body: Rc<dyn Fn()> = {
+            let mode = mode.clone();
+            let body_label = body_label.clone();
+            let compress_btn = compress_btn.clone();
+            Rc::new(move || {
+                let (text, any) = if mode.get() {
+                    if smaller_saving > 0 {
+                        (
+                            format!(
+                                "JPEGs take a slightly gentler quality. \
+                                 Estimated saving {}.",
+                                human_size(smaller_saving)
+                            ),
+                            true,
+                        )
+                    } else {
+                        ("No further saving that way.".to_string(), false)
+                    }
+                } else if lossless_saving > 0 {
+                    (
+                        format!(
+                            "Same pixels, smaller files. Estimated saving {}.",
+                            human_size(lossless_saving)
+                        ),
+                        true,
+                    )
+                } else {
+                    (
+                        "Every image is already as small as lossless gets."
+                            .to_string(),
+                        false,
+                    )
+                };
+                body_label.set_label(&text);
+                compress_btn.set_sensitive(any);
+            })
+        };
+
+        // The mode tabs: text tabs, flat, 28px.
+        let tabs = gtk::Box::new(gtk::Orientation::Horizontal, 20);
+        tabs.set_margin_start(2);
+        let tab_btns: Rc<RefCell<Vec<gtk::Button>>> = Rc::new(RefCell::new(Vec::new()));
+        for (i, title) in ["Lossless", "Smaller"].into_iter().enumerate() {
+            let btn = gtk::Button::with_label(title);
+            btn.add_css_class("kalam-ed-rep-tab");
+            if i == 0 {
+                btn.add_css_class("active");
+            }
+            {
+                let mode = mode.clone();
+                let refresh_body = refresh_body.clone();
+                let tab_btns = tab_btns.clone();
+                btn.connect_clicked(move |clicked| {
+                    mode.set(i == 1);
+                    for other in tab_btns.borrow().iter() {
+                        other.remove_css_class("active");
+                    }
+                    clicked.add_css_class("active");
+                    refresh_body();
+                });
+            }
+            tab_btns.borrow_mut().push(btn.clone());
+            tabs.append(&btn);
+        }
+        shell.body().append(&tabs);
+        shell.body().append(&body_label);
+        refresh_body();
+
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        shell.footer().append(&compress_btn);
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Compress images",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    /// Decision 141's only network tool: it runs solely when the
+    /// author presses Start, and opening a book never touches
+    /// the network.
+    fn present_check_links_dialog(&mut self, _sender: &ComponentSender<Self>) {
+        let mut links: Vec<(String, String, usize)> = Vec::new(); // url, file, line
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if !(file.kind == FileKind::Html || file.kind == FileKind::Css)
+                    || self.removed_paths.contains(&file.path)
+                {
+                    continue;
+                }
+                let Some(text) = self.file_text(&file.path) else {
+                    continue;
+                };
+                for found in crate::epub_check::find_refs(&text, false) {
+                    let url = found.href.trim();
+                    let lower = url.to_ascii_lowercase();
+                    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+                        continue;
+                    }
+                    let url = url.split('#').next().unwrap_or(url).to_string();
+                    if url.is_empty()
+                        || links.iter().any(|(seen, _, _)| *seen == url)
+                    {
+                        continue;
+                    }
+                    links.push((url, file.path.clone(), found.line));
+                }
+            }
+        }
+        let shell = dialog_shell(
+            DialogSize::List,
+            Some("Kalam asks the web about each link"),
+        );
+        let total = links.len();
+        let mut status_labels: Vec<gtk::Label> = Vec::new();
+        let mut source_labels: Vec<gtk::Label> = Vec::new();
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        if links.is_empty() {
+            let label = gtk::Label::new(Some(
+                "This book links nowhere outside itself.",
+            ));
+            label.add_css_class("kalam-ui-meta");
+            label.set_halign(gtk::Align::Start);
+            list.append(&label);
+        }
+        for (index, (url, file, line)) in links.iter().enumerate() {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            row.set_margin_top(9);
+            row.set_margin_bottom(9);
+            if index > 0 {
+                row.add_css_class("kalam-ed-report-row");
+            }
+            let texts = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            texts.set_hexpand(true);
+            let url_label = gtk::Label::new(Some(url));
+            url_label.add_css_class("kalam-ed-mono");
+            url_label.set_halign(gtk::Align::Start);
+            url_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+            texts.append(&url_label);
+            let source = gtk::Label::new(Some(&format!(
+                "{} · line {line}",
+                file_name(file)
+            )));
+            source.add_css_class("kalam-ui-meta");
+            source.set_halign(gtk::Align::Start);
+            source.set_visible(false);
+            texts.append(&source);
+            source_labels.push(source);
+            row.append(&texts);
+            let status = gtk::Label::new(Some("Not checked"));
+            status.add_css_class("kalam-ui-meta");
+            status.set_valign(gtk::Align::Start);
+            row.append(&status);
+            status_labels.push(status);
+            list.append(&row);
+        }
+        let scrolled = gtk::ScrolledWindow::new();
+        scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scrolled.set_vexpand(true);
+        scrolled.set_min_content_height(220);
+        scrolled.set_child(Some(&list));
+        shell.body().append(&scrolled);
+
+        let progress = gtk::ProgressBar::new();
+        progress.add_css_class("kalam-ed-progress");
+        progress.set_visible(false);
+        shell.body().append(&progress);
+        let checked_label = gtk::Label::new(Some(""));
+        checked_label.add_css_class("kalam-ui-meta");
+        checked_label.set_halign(gtk::Align::Start);
+        shell.body().append(&checked_label);
+
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let stop_btn = {
+            let flag = stop_flag.clone();
+            boxed_ghost_button("Stop", move || {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+        };
+        stop_btn.set_visible(false);
+        let primary = gtk::Button::with_label("Start checking");
+        primary.add_css_class("kalam-ui-pill-button");
+        primary.add_css_class("boxed-primary");
+        primary.set_size_request(96, 34);
+        primary.set_sensitive(total > 0);
+        if total == 0 {
+            primary.set_label("Done");
+            primary.set_sensitive(true);
+        }
+        {
+            let service = self.service.clone();
+            let urls: Vec<String> =
+                links.into_iter().map(|(url, _, _)| url).collect();
+            let labels = Rc::new(status_labels);
+            let sources = Rc::new(source_labels);
+            let started = Rc::new(std::cell::Cell::new(false));
+            let slot2 = slot.clone();
+            let flag = stop_flag.clone();
+            let stop_btn2 = stop_btn.clone();
+            let progress2 = progress.clone();
+            let checked2 = checked_label.clone();
+            primary.connect_clicked(move |btn| {
+                if started.get() {
+                    // Now wearing the Done hat.
+                    flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                    close_slot(&slot2);
+                    return;
+                }
+                started.set(true);
+                btn.set_label("Done");
+                stop_btn2.set_visible(true);
+                progress2.set_visible(true);
+                checked2.set_label(&format!("0 of {total} checked"));
+                let urls = urls.clone();
+                let service = service.clone();
+                let flag2 = flag.clone();
+                let labels2 = labels.clone();
+                let sources2 = sources.clone();
+                let progress3 = progress2.clone();
+                let checked3 = checked2.clone();
+                let checked4 = checked2.clone();
+                let stop3 = stop_btn2.clone();
+                crate::tasks::spawn_internal(
+                    "Checking external links",
+                    move |reporter| {
+                        let mut done = 0usize;
+                        for (index, url) in urls.iter().enumerate() {
+                            if flag2.load(std::sync::atomic::Ordering::SeqCst) {
+                                break;
+                            }
+                            let verdict = service.check_external_link(url);
+                            done += 1;
+                            reporter.step(done, urls.len(), format!("{index}|{verdict}"));
+                        }
+                        done
+                    },
+                    move |update| {
+                        if let Some((index, verdict)) =
+                            update.detail.split_once('|')
+                        {
+                            if let Ok(index) = index.parse::<usize>() {
+                                if let Some(label) = labels2.get(index) {
+                                    label.set_label(verdict);
+                                }
+                                if verdict != "Works" {
+                                    if let Some(source) = sources2.get(index) {
+                                        source.set_visible(true);
+                                    }
+                                }
+                            }
+                        }
+                        progress3.set_fraction(
+                            update.done as f64 / update.total.max(1) as f64,
+                        );
+                        checked3.set_label(&format!(
+                            "{} of {} checked",
+                            update.done, update.total
+                        ));
+                    },
+                    move |done: usize| {
+                        stop3.set_visible(false);
+                        if done < total {
+                            checked4.set_label(&format!(
+                                "Stopped — {done} of {total} checked"
+                            ));
+                        } else {
+                            checked4.set_label(&format!("{total} of {total} checked"));
+                        }
+                    },
+                );
+            });
+        }
+        shell.footer().append(&stop_btn);
+        shell.footer().append(&primary);
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Check external links",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
     }
 
     // ── save ───────────────────────────────────────────────────────
@@ -8613,8 +9687,24 @@ impl EpubEditorModel {
             crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
         {
             let s = sender.input_sender().clone();
+            fonts_images.add_item("Subset fonts…", move || {
+                let _ = s.send(EpubEditorMsg::OpenSubsetFonts(None));
+            });
+            let s = sender.input_sender().clone();
+            fonts_images.add_item("Embed fonts…", move || {
+                let _ = s.send(EpubEditorMsg::OpenEmbedFonts);
+            });
+            let s = sender.input_sender().clone();
+            fonts_images.add_item("Compress images…", move || {
+                let _ = s.send(EpubEditorMsg::OpenCompressImages);
+            });
+            let s = sender.input_sender().clone();
             fonts_images.add_item("Replace cover…", move || {
                 let _ = s.send(EpubEditorMsg::OpenReplaceCover);
+            });
+            let s = sender.input_sender().clone();
+            fonts_images.add_item("Check external links…", move || {
+                let _ = s.send(EpubEditorMsg::OpenCheckLinks);
             });
         }
         menu.add_submenu("Fonts and images", fonts_images);
@@ -10830,6 +11920,10 @@ impl EpubEditorModel {
             item("Filter style information…", "Clean up", None, PaletteAction::FilterStyle),
             item("Tag mapper…", "Clean up", None, PaletteAction::TagMapper),
             item("Upgrade book internals…", "Clean up", None, PaletteAction::UpgradeInternals),
+            item("Subset fonts…", "Fonts and images", None, PaletteAction::SubsetFonts),
+            item("Embed fonts…", "Fonts and images", None, PaletteAction::EmbedFonts),
+            item("Compress images…", "Fonts and images", None, PaletteAction::CompressImages),
+            item("Check external links…", "Fonts and images", None, PaletteAction::CheckLinks),
             item("Smarten punctuation", "Clean up", None, PaletteAction::Tool(InstantTool::Smarten)),
             item("Reformat code", "Clean up", None, PaletteAction::Tool(InstantTool::Reformat)),
             item("Remove unused CSS", "Clean up", None, PaletteAction::Tool(InstantTool::RemoveUnusedCss)),
@@ -10938,6 +12032,12 @@ impl EpubEditorModel {
             PaletteAction::TagMapper => self.present_tag_mapper_dialog(sender),
             PaletteAction::FilterStyle => self.present_filter_style_dialog(sender),
             PaletteAction::UpgradeInternals => self.present_upgrade_dialog(sender),
+            PaletteAction::SubsetFonts => {
+                self.start_subset_fonts(None, sender)
+            }
+            PaletteAction::EmbedFonts => self.start_embed_fonts(sender),
+            PaletteAction::CompressImages => self.start_compress_images(sender),
+            PaletteAction::CheckLinks => self.present_check_links_dialog(sender),
             PaletteAction::SplitCursor => self.run_split(0, 250, sender),
             PaletteAction::SplitDialog(preset) => {
                 self.present_split_dialog(preset, sender)
@@ -11200,7 +12300,7 @@ fn tick_circle(on: bool) -> gtk::Box {
     mark.set_hexpand(true);
     mark.set_valign(gtk::Align::Center);
     circle.append(&mark);
-    set_tick(&circle, on);
+    set_tick_circle(&circle, on);
     circle
 }
 
@@ -11220,7 +12320,7 @@ fn valid_tag_rule(from: &str, to: &str) -> bool {
     from_ok && name_ok(to, false)
 }
 
-fn set_tick(circle: &gtk::Box, on: bool) {
+fn set_tick_circle(circle: &gtk::Box, on: bool) {
     if on {
         circle.add_css_class("on");
     } else {

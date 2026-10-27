@@ -2681,6 +2681,37 @@ impl LibraryService {
         Ok(out)
     }
 
+    /// One image through the Compress images engine (decision
+    /// 141). Lossless never loses a pixel. Smaller additionally
+    /// re-encodes JPEGs at a gentler quality; formats never
+    /// change, so a swapped-in file never lies about its
+    /// extension or the manifest's media type.
+    pub fn compress_book_image(
+        &self,
+        bytes: &[u8],
+        smaller: bool,
+    ) -> Result<Vec<u8>, String> {
+        let lossless = self.compress_image_lossless(bytes)?;
+        if !smaller {
+            return Ok(lossless);
+        }
+        let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+        if reader.format() != Some(image::ImageFormat::Jpeg) {
+            return Ok(lossless);
+        }
+        use image::ImageEncoder as _;
+        let img = reader.decode().map_err(|e| e.to_string())?;
+        let mut out: Vec<u8> = Vec::new();
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+            std::io::Cursor::new(&mut out),
+            80,
+        );
+        img.write_with_encoder(encoder).map_err(|e| e.to_string())?;
+        Ok(if out.len() < lossless.len() { out } else { lossless })
+    }
+
     /// Materialise an embedded font and learn its family name,
     /// for the specimen tab (decision 126). The page loads the
     /// file into a private Pango font map for the preview only.
@@ -2705,6 +2736,133 @@ impl LibraryService {
                     .to_string()
             });
         Ok((dest, family))
+    }
+
+    /// Subset an embedded font to the glyphs for `chars`
+    /// (decision 141). The pure engine refuses what it cannot
+    /// honestly cut (CFF, WOFF2); the dialog shows real sizes
+    /// from having already run it.
+    pub fn editor_subset_font(
+        &self,
+        bytes: &[u8],
+        chars: &std::collections::HashSet<char>,
+    ) -> Result<Vec<u8>, String> {
+        crate::font_subset::subset_font(bytes, chars)
+    }
+
+    /// A font file's family name, when it parses.
+    pub fn font_family(&self, bytes: &[u8]) -> Option<String> {
+        let mut db = fontdb::Database::new();
+        db.load_font_data(bytes.to_vec());
+        db.faces()
+            .next()
+            .and_then(|face| face.families.first().map(|(name, _)| name.clone()))
+    }
+
+    /// Embed fonts' scan (decision 141): of the families the
+    /// book's CSS names, which the book lacks, and where each
+    /// lives on this computer when it does. Generic families
+    /// are the reader's business and never appear.
+    pub fn embed_font_candidates(
+        &self,
+        used: Vec<String>,
+        embedded: Vec<Vec<u8>>,
+    ) -> Vec<(String, Option<std::path::PathBuf>)> {
+        const GENERIC: [&str; 8] = [
+            "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui",
+            "ui-serif", "ui-sans-serif",
+        ];
+        let have: Vec<String> = embedded
+            .iter()
+            .filter_map(|bytes| self.font_family(bytes))
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
+        let mut seen: Vec<String> = Vec::new();
+        let mut out = Vec::new();
+        for family in used {
+            let key = family.to_ascii_lowercase();
+            if GENERIC.contains(&key.as_str())
+                || have.contains(&key)
+                || seen.contains(&key)
+            {
+                continue;
+            }
+            seen.push(key);
+            let found = self.find_system_font(&family);
+            out.push((family, found));
+        }
+        out
+    }
+
+    /// Where a font family lives on this computer, for Embed
+    /// fonts (decision 141). Collections are skipped — embedding
+    /// a whole TTC for one face would bloat the book.
+    pub fn find_system_font(&self, family: &str) -> Option<std::path::PathBuf> {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        db.faces()
+            .find(|face| {
+                face.families
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case(family))
+            })
+            .and_then(|face| match &face.source {
+                fontdb::Source::File(path) => Some(path.clone()),
+                _ => None,
+            })
+    }
+
+    /// One external link's verdict, board-worded ("Works",
+    /// "404 Not found", "Moved to https", …). Sync HTTP on the
+    /// caller's worker thread; never on the UI thread, and only
+    /// ever from the Check external links dialog.
+    pub fn check_external_link(&self, url: &str) -> String {
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(10))
+            .redirects(0)
+            .build();
+        let result = agent
+            .head(url)
+            .set("User-Agent", "Mozilla/5.0 (compatible; Kalam)")
+            .call();
+        let result = match result {
+            Err(ureq::Error::Status(405, _)) => agent
+                .get(url)
+                .set("User-Agent", "Mozilla/5.0 (compatible; Kalam)")
+                .call(),
+            other => other,
+        };
+        let verdict = |code: u16, location: Option<String>| -> String {
+            match code {
+                200..=299 => "Works".to_string(),
+                300..=399 => {
+                    let moved_https = url.starts_with("http://")
+                        && location
+                            .as_deref()
+                            .map(|l| l.starts_with("https://"))
+                            .unwrap_or(false);
+                    if moved_https {
+                        "Moved to https".to_string()
+                    } else {
+                        "Moved".to_string()
+                    }
+                }
+                404 => "404 Not found".to_string(),
+                410 => "410 Gone".to_string(),
+                other => format!("{other}"),
+            }
+        };
+        match result {
+            Ok(response) => verdict(
+                response.status(),
+                response.header("location").map(str::to_string),
+            ),
+            Err(ureq::Error::Status(code, response)) => verdict(
+                code,
+                response.header("location").map(str::to_string),
+            ),
+            Err(_) => "Could not reach".to_string(),
+        }
     }
 
     /// Put one book file in `~/Kalam/Editing` for outside editing

@@ -8880,6 +8880,26 @@ button.kalam-ed-tickrow:hover {
   font-family: "DM Mono", monospace;
   font-size: 12.5px;
 }
+
+/* Check external links: a 3px bar, border-colored trough,
+   accent fill. */
+progressbar.kalam-ed-progress {
+  min-height: 3px;
+}
+
+progressbar.kalam-ed-progress trough {
+  background: @kalam_border;
+  border: none;
+  min-height: 3px;
+  border-radius: 999px;
+}
+
+progressbar.kalam-ed-progress progress {
+  background: @kalam_accent;
+  border: none;
+  min-height: 3px;
+  border-radius: 999px;
+}
 button.kalam-ed-outline-row.current {
   color: @kalam_accent;
   font-weight: 600;

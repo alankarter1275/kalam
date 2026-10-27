@@ -21,14 +21,14 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
-[1m[92m    Checking[0m tempfile v3.27.0
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m tempfile v3.27.0
 [1m[92m    Checking[0m insta v1.49.0
 [1m[92m    Checking[0m rusty-fork v0.3.1
-[1m[92m    Checking[0m epub-builder v0.8.3
 [1m[92m    Checking[0m proptest v1.12.0
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m epub-builder v0.8.3
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.65s
---- run 40466330216 ---
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 19.33s
+--- run 40466803792 ---

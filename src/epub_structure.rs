@@ -387,7 +387,11 @@ pub fn parse_nav(text: &str, nav_path: &str) -> Vec<TocEntry> {
         return Vec::new();
     };
     fn node_text(node: roxmltree::Node) -> String {
+        // Only text nodes: roxmltree also reports an element's
+        // first text child through `text()`, which would count
+        // every word twice.
         node.descendants()
+            .filter(|n| n.is_text())
             .filter_map(|n| n.text())
             .collect::<Vec<_>>()
             .join(" ")
@@ -1292,8 +1296,9 @@ pub fn word_known(word: &str, known: &std::collections::HashSet<String>) -> bool
 }
 
 /// Norvig-style suggestions: known words one edit away, then two
-/// edits away if needed. Ranked by edit distance, then by length
-/// closeness, then alphabetically; at most six.
+/// edits away if needed. Ranked by edit distance, then longest
+/// shared prefix, then length closeness, then alphabetically; at
+/// most six.
 pub fn suggestions(word: &str, known: &std::collections::HashSet<String>) -> Vec<String> {
     let w: String = word
         .chars()
@@ -1337,8 +1342,29 @@ pub fn suggestions(word: &str, known: &std::collections::HashSet<String>) -> Vec
         .into_iter()
         .filter(|c| known.contains(c))
         .collect();
-    found.sort();
-    found.dedup();
+    // Within one edit-distance tier: longest shared prefix with
+    // the typo first (the strongest single signal a set without
+    // frequencies has), then length closeness, then A–Z.
+    let rank = |list: &mut Vec<String>| {
+        let prefix = |s: &str| {
+            s.chars()
+                .zip(w.chars())
+                .take_while(|(x, y)| x == y)
+                .count()
+        };
+        list.sort_by(|a, b| {
+            prefix(b)
+                .cmp(&prefix(a))
+                .then_with(|| {
+                    (a.len() as i32 - w.len() as i32)
+                        .abs()
+                        .cmp(&(b.len() as i32 - w.len() as i32).abs())
+                })
+                .then_with(|| a.cmp(b))
+        });
+        list.dedup();
+    };
+    rank(&mut found);
     if found.len() < 3 {
         let mut second: Vec<String> = Vec::new();
         for e1 in edits1(&w) {
@@ -1351,16 +1377,10 @@ pub fn suggestions(word: &str, known: &std::collections::HashSet<String>) -> Vec
                 break;
             }
         }
-        second.sort();
-        second.dedup();
-        second.sort_by_key(|c| (c.len() as i32 - w.len() as i32).abs());
+        rank(&mut second);
+        // Two-edit candidates always follow one-edit ones.
         found.extend(second);
     }
-    found.sort_by(|a, b| {
-        let la = (a.len() as i32 - w.len() as i32).abs();
-        let lb = (b.len() as i32 - w.len() as i32).abs();
-        la.cmp(&lb).then_with(|| a.cmp(b))
-    });
     found.dedup();
     found.truncate(6);
     // Restore the original's capitalisation pattern.

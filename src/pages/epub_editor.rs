@@ -835,7 +835,7 @@ impl Component for EpubEditorModel {
 
         // The file-tree toggle: folds the tree away to the side
         // and brings it back, from every view mode.
-        let tree_toggle_icon = crate::icons::symbolic("sidebar-hide-symbolic", 16);
+        let tree_toggle_icon = crate::icons::symbolic("pan-start-symbolic", 16);
         let tree_toggle_btn = gtk::Button::new();
         tree_toggle_btn.add_css_class("kalam-ed-tool-btn");
         tree_toggle_btn.set_size_request(32, 32);
@@ -12802,9 +12802,9 @@ impl EpubEditorModel {
         self.right_panel
             .set_visible(self.view_mode != ViewMode::Code);
         self.tree_toggle_icon.set_icon_name(Some(if show_tree {
-            "sidebar-hide-symbolic"
+            "pan-start-symbolic"
         } else {
-            "sidebar-show-symbolic"
+            "pan-end-symbolic"
         }));
         self.tree_toggle_btn.set_tooltip_text(Some(if show_tree {
             "Hide the file tree"

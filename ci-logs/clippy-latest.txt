@@ -1,15 +1,7 @@
-src/pages/epub_editor.rs:178:20: [1m[91merror[0m: type `pages::epub_editor::StructurePlan` is more private than the item `pages::epub_editor::EpubEditorMsg::ApplyStructure::0`: field `pages::epub_editor::EpubEditorMsg::ApplyStructure::0` is reachable at visibility `pub(crate)`
-src/epub_container.rs:509:8: [1m[91merror[0m: function `write_with_replacements` is never used
-src/epub_structure.rs:99:13: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/epub_structure.rs:802:10: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/epub_structure.rs:922:37: [1m[91merror[0m: unnecessary map of the identity function: help: remove the call to `map`
-src/pages/epub_editor.rs:384:11: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/epub_editor.rs:3040:24: [1m[91merror[0m: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
-src/pages/epub_editor.rs:3944:13: [1m[91merror[0m: this let-binding has unit value
-src/pages/epub_editor.rs:4001:16: [1m[91merror[0m: using `contains()` instead of `iter().any()` is more efficient: help: try: `src_chars[src_start..src_end.min(src_chars.len())].contains(&'<')`
-src/pages/epub_editor.rs:7327:63: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `media`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 9 previous errors
+src/epub_structure.rs:97:13: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:3044:24: [1m[91merror[0m: called `filter(..).next_back()` on an `DoubleEndedIterator`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -33,17 +25,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/epub_editor.rs:178:20: [1m[91merror[0m: type `pages::epub_editor::StructurePlan` is more private than the item `pages::epub_editor::EpubEditorMsg::ApplyStructure::0`: field `pages::epub_editor::EpubEditorMsg::ApplyStructure::0` is reachable at visibility `pub(crate)`
-src/epub_container.rs:509:8: [1m[91merror[0m: function `write_with_replacements` is never used
-src/epub_structure.rs:99:13: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/epub_structure.rs:802:10: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/epub_structure.rs:922:37: [1m[91merror[0m: unnecessary map of the identity function: help: remove the call to `map`
-src/pages/epub_editor.rs:384:11: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-src/pages/epub_editor.rs:3040:24: [1m[91merror[0m: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
-src/pages/epub_editor.rs:3944:13: [1m[91merror[0m: this let-binding has unit value
-src/pages/epub_editor.rs:4001:16: [1m[91merror[0m: using `contains()` instead of `iter().any()` is more efficient: help: try: `src_chars[src_start..src_end.min(src_chars.len())].contains(&'<')`
-src/pages/epub_editor.rs:7327:63: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `media`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
+src/epub_structure.rs:97:13: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:3044:24: [1m[91merror[0m: called `filter(..).next_back()` on an `DoubleEndedIterator`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 9 previous errors
---- run 40497829260 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+--- run 40501186668 ---

@@ -16,15 +16,19 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/epub_editor.rs:3908:14: [1m[91merror[E0599][0m: no method named `ok` found for enum `std::option::Option<T>` in the current scope
-src/pages/epub_editor.rs:3910:24: [1m[91merror[E0277][0m: the size for values of type `str` cannot be known at compilation time: doesn't have a size known at compile-time
-src/pages/epub_editor.rs:3450:24: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value borrowed here after move
-src/pages/epub_editor.rs:3795:42: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value used here after move
-src/pages/epub_editor.rs:3820:57: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value used here after move
-src/pages/epub_editor.rs:4338:21: [1m[91merror[E0382][0m: borrow of moved value: `list`: value borrowed here after move
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/epub_editor.rs:178:20: [1m[91merror[0m: type `pages::epub_editor::StructurePlan` is more private than the item `pages::epub_editor::EpubEditorMsg::ApplyStructure::0`: field `pages::epub_editor::EpubEditorMsg::ApplyStructure::0` is reachable at visibility `pub(crate)`
+src/epub_container.rs:509:8: [1m[91merror[0m: function `write_with_replacements` is never used
+src/epub_structure.rs:99:13: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/epub_structure.rs:802:10: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/epub_structure.rs:922:37: [1m[91merror[0m: unnecessary map of the identity function: help: remove the call to `map`
+src/pages/epub_editor.rs:384:11: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:3040:24: [1m[91merror[0m: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
+src/pages/epub_editor.rs:3944:13: [1m[91merror[0m: this let-binding has unit value
+src/pages/epub_editor.rs:4001:16: [1m[91merror[0m: using `contains()` instead of `iter().any()` is more efficient: help: try: `src_chars[src_start..src_end.min(src_chars.len())].contains(&'<')`
+src/pages/epub_editor.rs:7327:63: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `media`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 9 previous errors

@@ -1262,6 +1262,86 @@ impl Component for EpubEditorModel {
                     offset: None,
                 });
             }
+            EpubEditorMsg::OpenToolsMenu => self.toggle_tools_menu(&sender),
+            EpubEditorMsg::ToolChosen(kind) => self.present_scope_dialog(kind, &sender),
+            EpubEditorMsg::RunInstantTool(kind, whole_book) => {
+                match self.compute_tool_changes(kind, whole_book) {
+                    Some((summary, changes)) => {
+                        self.start_apply(kind.snapshot_label(), summary, changes, &sender)
+                    }
+                    None => self.show_pill("Nothing to change", false, &sender),
+                }
+            }
+            EpubEditorMsg::ApplyChanges { summary, changes } => {
+                self.apply_changes(&summary, changes, &sender)
+            }
+            EpubEditorMsg::PillUndo => self.undo_tool(&sender),
+            EpubEditorMsg::PillHide => {
+                self.pill_src = None;
+                self.pill.set_visible(false);
+            }
+            EpubEditorMsg::ToggleFind => self.toggle_find(&sender),
+            EpubEditorMsg::FindChanged => self.run_find(&sender),
+            EpubEditorMsg::FindSetScope(scope) => {
+                self.find_scope = scope;
+                self.sync_find_scope_btns();
+                self.run_find(&sender);
+            }
+            EpubEditorMsg::FindJump(index) => self.jump_to_hit(index, &sender),
+            EpubEditorMsg::FindNext => {
+                if !self.find_hits.is_empty() {
+                    let next = self
+                        .find_current
+                        .map(|c| (c + 1) % self.find_hits.len())
+                        .unwrap_or(0);
+                    self.jump_to_hit(next, &sender);
+                }
+            }
+            EpubEditorMsg::FindReplaceOne => self.replace_one(&sender),
+            EpubEditorMsg::FindReplaceAll => self.replace_all(&sender),
+            EpubEditorMsg::SavedSearchesMenu => self.toggle_saved_menu(&sender),
+            EpubEditorMsg::SaveThisSearch => {
+                let pair = (
+                    self.find_entry.text().to_string(),
+                    self.replace_entry.text().to_string(),
+                );
+                if !pair.0.is_empty() {
+                    let mut saved = self.saved_searches();
+                    saved.retain(|p| *p != pair);
+                    saved.insert(0, pair);
+                    saved.truncate(12);
+                    self.store_saved_searches(&saved);
+                }
+            }
+            EpubEditorMsg::UseSavedSearch(find, replace) => {
+                self.find_entry.set_text(&find);
+                self.replace_entry.set_text(&replace);
+                self.run_find(&sender);
+            }
+            EpubEditorMsg::TogglePalette => self.toggle_palette(&sender),
+            EpubEditorMsg::PaletteChanged => self.rebuild_palette(&sender),
+            EpubEditorMsg::PaletteMove(delta) => {
+                let len = self.palette_items.len();
+                if len > 0 {
+                    self.palette_selected =
+                        (self.palette_selected as i32 + delta).rem_euclid(len as i32) as usize;
+                    self.build_palette_rows(&sender);
+                }
+            }
+            EpubEditorMsg::PaletteAccept => {
+                if let Some(item) = self.palette_items.get(self.palette_selected).cloned() {
+                    self.palette_panel.set_visible(false);
+                    self.run_palette_action(item.action, &sender);
+                }
+            }
+            EpubEditorMsg::PaletteRun(index) => {
+                self.palette_selected = index;
+                sender.input(EpubEditorMsg::PaletteAccept);
+            }
+            EpubEditorMsg::ClosePanels => {
+                self.find_panel.set_visible(false);
+                self.palette_panel.set_visible(false);
+            }
         }
     }
     fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
@@ -1269,6 +1349,9 @@ impl Component for EpubEditorModel {
             src.remove();
         }
         if let Some(src) = self.preview_write_src.take() {
+            src.remove();
+        }
+        if let Some(src) = self.pill_src.take() {
             src.remove();
         }
         if let Some(view) = self.preview_view.take() {
@@ -1282,6 +1365,37 @@ impl Component for EpubEditorModel {
 enum UnsavedAction {
     Leave,
     CloseTab(String),
+}
+
+impl InstantTool {
+    fn label(self) -> &'static str {
+        match self {
+            InstantTool::Smarten => "Smarten punctuation",
+            InstantTool::Reformat => "Reformat code",
+            InstantTool::RemoveUnusedCss => "Remove unused CSS",
+            InstantTool::FixHtml => "Fix HTML",
+        }
+    }
+
+    fn snapshot_label(self) -> String {
+        format!("Before {}", self.label())
+    }
+
+    fn applies_to(self, kind: FileKind) -> bool {
+        match self {
+            InstantTool::Smarten | InstantTool::FixHtml => kind == FileKind::Html,
+            InstantTool::Reformat => matches!(kind, FileKind::Html | FileKind::Css | FileKind::Xml),
+            InstantTool::RemoveUnusedCss => kind == FileKind::Css,
+        }
+    }
+
+    fn whole_meta(self) -> &'static str {
+        match self {
+            InstantTool::Smarten | InstantTool::FixHtml => "Every HTML file",
+            InstantTool::Reformat => "Every text file",
+            InstantTool::RemoveUnusedCss => "Every stylesheet",
+        }
+    }
 }
 
 impl EpubEditorModel {
@@ -2889,6 +3003,873 @@ impl EpubEditorModel {
         );
     }
 
+    // ── E3: Tools menu, instant tools, after-tool pill ─────────────
+
+    fn toggle_tools_menu(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(menu) = self.tools_menu.take() {
+            menu.popover().popdown();
+            menu.popover().unparent();
+            return;
+        }
+        let menu = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Wide);
+        let count = self.problems.len();
+        let s = sender.input_sender().clone();
+        if count > 0 {
+            menu.add_item_with_count("Check book", count, move || {
+                let _ = s.send(EpubEditorMsg::SetRightTab(RightTab::Problems));
+            });
+        } else {
+            menu.add_item("Check book", move || {
+                let _ = s.send(EpubEditorMsg::SetRightTab(RightTab::Problems));
+            });
+        }
+        let s = sender.input_sender().clone();
+        menu.add_item("Find & replace", move || {
+            let _ = s.send(EpubEditorMsg::ToggleFind);
+        });
+        menu.add_separator();
+        let clean = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
+        for kind in [
+            InstantTool::Reformat,
+            InstantTool::Smarten,
+            InstantTool::RemoveUnusedCss,
+            InstantTool::FixHtml,
+        ] {
+            let s = sender.input_sender().clone();
+            clean.add_item(kind.label(), move || {
+                let _ = s.send(EpubEditorMsg::ToolChosen(kind));
+            });
+        }
+        menu.add_submenu("Clean up", clean);
+        menu.add_separator();
+        let s = sender.input_sender().clone();
+        menu.add_item("Command palette", move || {
+            let _ = s.send(EpubEditorMsg::TogglePalette);
+        });
+        menu.popover().set_parent(&self.tools_btn);
+        menu.popover().popup();
+        self.tools_menu = Some(menu);
+    }
+
+    /// "This file or Whole book?" (decision 128): two option rows
+    /// (section 38) and the tool's own name on the filled button.
+    fn present_scope_dialog(&self, kind: InstantTool, sender: &ComponentSender<Self>) {
+        fn set_tick(tick: &gtk::Label, on: bool) {
+            if on {
+                tick.add_css_class("on");
+            } else {
+                tick.remove_css_class("on");
+            }
+        }
+        fn option_row(title: &str, meta: &str) -> (gtk::Button, gtk::Label) {
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-ed-option");
+            row.set_size_request(-1, 52);
+            let h = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+            let tick = gtk::Label::new(Some("✓"));
+            tick.add_css_class("kalam-ed-tick");
+            tick.set_size_request(22, 22);
+            tick.set_valign(gtk::Align::Center);
+            h.append(&tick);
+            let texts = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            texts.set_valign(gtk::Align::Center);
+            let t = gtk::Label::new(Some(title));
+            t.add_css_class("kalam-ed-option-title");
+            t.set_halign(gtk::Align::Start);
+            texts.append(&t);
+            let m = gtk::Label::new(Some(meta));
+            m.add_css_class("kalam-ui-meta");
+            m.set_halign(gtk::Align::Start);
+            texts.append(&m);
+            h.append(&texts);
+            row.set_child(Some(&h));
+            (row, tick)
+        }
+
+        let this_file = self
+            .active_tab()
+            .filter(|t| kind.applies_to(t.kind))
+            .map(|t| file_name(&t.path).to_string());
+        let whole = Rc::new(std::cell::Cell::new(this_file.is_none()));
+
+        let shell = dialog_shell(DialogSize::Form, None);
+        let (row_file, tick_file) = option_row(
+            "This file",
+            this_file.as_deref().unwrap_or("No suitable file open"),
+        );
+        row_file.set_sensitive(this_file.is_some());
+        let (row_book, tick_book) = option_row("Whole book", kind.whole_meta());
+        set_tick(&tick_file, !whole.get());
+        set_tick(&tick_book, whole.get());
+        {
+            let whole = whole.clone();
+            let tick_file = tick_file.clone();
+            let tick_book = tick_book.clone();
+            row_file.connect_clicked(move |_| {
+                whole.set(false);
+                set_tick(&tick_file, true);
+                set_tick(&tick_book, false);
+            });
+        }
+        {
+            let whole = whole.clone();
+            row_book.connect_clicked(move |_| {
+                whole.set(true);
+                set_tick(&tick_file, false);
+                set_tick(&tick_book, true);
+            });
+        }
+        shell.body().append(&row_file);
+        shell.body().append(&row_book);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_run = slot.clone();
+        let s = sender.input_sender().clone();
+        shell.footer().append(&primary_button(kind.label(), move || {
+            close_slot(&slot_run);
+            let _ = s.send(EpubEditorMsg::RunInstantTool(kind, whole.get()));
+        }));
+
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            kind.label(),
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    /// Work out a tool's whole-file replacements without touching
+    /// anything; `None` means there is nothing to do.
+    fn compute_tool_changes(
+        &self,
+        kind: InstantTool,
+        whole_book: bool,
+    ) -> Option<(String, Vec<(String, String)>)> {
+        let container = self.container.as_ref()?;
+        let targets: Vec<String> = if whole_book {
+            container
+                .files
+                .iter()
+                .filter(|f| kind.applies_to(f.kind))
+                .map(|f| f.path.clone())
+                .collect()
+        } else {
+            vec![self.active_tab().filter(|t| kind.applies_to(t.kind))?.path.clone()]
+        };
+
+        let mut changes: Vec<(String, String)> = Vec::new();
+        let mut total = 0usize;
+        match kind {
+            InstantTool::Smarten => {
+                for path in targets {
+                    let Some(text) = self.file_text(&path) else { continue };
+                    let (new, n) = crate::epub_tools::smarten_html(&text);
+                    if n > 0 && new != text {
+                        total += n;
+                        changes.push((path, new));
+                    }
+                }
+            }
+            InstantTool::Reformat => {
+                for path in targets {
+                    let Some(text) = self.file_text(&path) else { continue };
+                    let Some(fkind) = container.file(&path).map(|f| f.kind) else {
+                        continue;
+                    };
+                    if let Some(new) = crate::epub_tools::reformat(&text, fkind) {
+                        if new != text {
+                            changes.push((path, new));
+                        }
+                    }
+                }
+            }
+            InstantTool::RemoveUnusedCss => {
+                let mut chains: Vec<Vec<crate::epub_css::Elem>> = Vec::new();
+                for file in &container.files {
+                    if file.kind == FileKind::Html {
+                        if let Some(text) = self.file_text(&file.path) {
+                            chains.extend(crate::epub_tools::all_element_chains(&text));
+                        }
+                    }
+                }
+                for path in targets {
+                    let Some(text) = self.file_text(&path) else { continue };
+                    let (new, n) = crate::epub_tools::remove_unused_css(&text, &chains);
+                    if n > 0 && new != text {
+                        total += n;
+                        changes.push((path, new));
+                    }
+                }
+            }
+            InstantTool::FixHtml => {
+                let problems = self.collect_check();
+                for path in targets {
+                    let mut fixes: Vec<&ProblemFix> = problems
+                        .iter()
+                        .filter(|p| p.path == path)
+                        .filter_map(|p| p.fix.as_ref())
+                        .collect();
+                    if fixes.is_empty() {
+                        continue;
+                    }
+                    let Some(text) = self.file_text(&path) else { continue };
+                    fixes.sort_by_key(|f| std::cmp::Reverse(f.start));
+                    let mut new = text;
+                    let mut applied = 0usize;
+                    for fix in fixes {
+                        if new.get(fix.start..fix.end) == Some(fix.original.as_str()) {
+                            new.replace_range(fix.start..fix.end, &fix.replacement);
+                            applied += 1;
+                        }
+                    }
+                    if applied > 0 {
+                        total += applied;
+                        changes.push((path, new));
+                    }
+                }
+            }
+        }
+        if changes.is_empty() {
+            return None;
+        }
+        let files_word = |n: usize| if n == 1 { "file" } else { "files" };
+        let summary = if changes.len() == 1 {
+            let name = file_name(&changes[0].0);
+            match kind {
+                InstantTool::Smarten => format!("{total} punctuation marks smartened in {name}"),
+                InstantTool::Reformat => format!("Reformatted {name}"),
+                InstantTool::RemoveUnusedCss => {
+                    format!("{total} {} removed from {name}", if total == 1 { "rule" } else { "rules" })
+                }
+                InstantTool::FixHtml => {
+                    format!("{total} {} applied in {name}", if total == 1 { "fix" } else { "fixes" })
+                }
+            }
+        } else {
+            match kind {
+                InstantTool::Smarten => {
+                    format!("{total} punctuation marks smartened in {} {}", changes.len(), files_word(changes.len()))
+                }
+                InstantTool::Reformat => {
+                    format!("Reformatted {} {}", changes.len(), files_word(changes.len()))
+                }
+                InstantTool::RemoveUnusedCss => {
+                    format!("{total} rules removed from {} {}", changes.len(), files_word(changes.len()))
+                }
+                InstantTool::FixHtml => {
+                    format!("{total} fixes applied in {} {}", changes.len(), files_word(changes.len()))
+                }
+            }
+        };
+        Some((summary, changes))
+    }
+
+    /// Snapshot first (decision 135), then apply on the UI thread.
+    fn start_apply(
+        &self,
+        snapshot_label: String,
+        summary: String,
+        changes: Vec<(String, String)>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(book) = self.book.clone() else {
+            return;
+        };
+        let files = changes.len() as i64;
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Taking snapshot",
+            move |_reporter| {
+                service
+                    .editor_snapshot(&book, &snapshot_label, files)
+                    .map(|()| (summary, changes))
+            },
+            |_| {},
+            move |result| match result {
+                Ok((summary, changes)) => {
+                    let _ = s.send(EpubEditorMsg::ApplyChanges { summary, changes });
+                }
+                Err(message) => {
+                    let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                }
+            },
+        );
+    }
+
+    /// Apply whole-file replacements: one undo step per open
+    /// buffer, a pending edit per unopened file.
+    fn apply_changes(
+        &mut self,
+        summary: &str,
+        changes: Vec<(String, String)>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let mut undo = ToolUndo { entries: Vec::new() };
+        for (path, new_text) in &changes {
+            if let Some(buffer) = self
+                .tabs
+                .iter()
+                .find(|t| &t.path == path)
+                .and_then(|t| t.buffer.clone())
+            {
+                let cursor = buffer.cursor_position();
+                buffer.begin_user_action();
+                let (mut a, mut b) = (buffer.start_iter(), buffer.end_iter());
+                buffer.delete(&mut a, &mut b);
+                let mut at = buffer.start_iter();
+                buffer.insert(&mut at, new_text);
+                buffer.end_user_action();
+                let pos = buffer.iter_at_offset(cursor.min(buffer.char_count()));
+                buffer.place_cursor(&pos);
+                undo.entries.push(ToolUndoEntry::Buffer(path.clone()));
+            } else {
+                let before = self.pending.insert(path.clone(), new_text.clone());
+                undo.entries.push(ToolUndoEntry::Pending(path.clone(), before));
+            }
+        }
+        self.tool_undo = Some(undo);
+        self.show_pill(summary, true, sender);
+        self.run_check(sender);
+        self.request_preview_write(sender);
+        self.sync_chrome(sender);
+        if self.find_panel.is_visible() {
+            self.run_find(sender);
+        }
+    }
+
+    fn undo_tool(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(undo) = self.tool_undo.take() {
+            for entry in undo.entries {
+                match entry {
+                    ToolUndoEntry::Buffer(path) => {
+                        if let Some(buffer) = self
+                            .tabs
+                            .iter()
+                            .find(|t| t.path == path)
+                            .and_then(|t| t.buffer.clone())
+                        {
+                            buffer.undo();
+                        }
+                    }
+                    ToolUndoEntry::Pending(path, before) => match before {
+                        Some(text) => {
+                            self.pending.insert(path, text);
+                        }
+                        None => {
+                            self.pending.remove(&path);
+                        }
+                    },
+                }
+            }
+        }
+        self.hide_pill();
+        self.run_check(sender);
+        self.request_preview_write(sender);
+        self.sync_chrome(sender);
+    }
+
+    /// The after-tool pill (section 39): bottom centre, gone in
+    /// six seconds. Undo stays valid for buffers after it fades
+    /// (it is ordinary buffer undo), but the pill is the way back
+    /// for files that were never opened.
+    fn show_pill(&mut self, text: &str, with_undo: bool, sender: &ComponentSender<Self>) {
+        if let Some(src) = self.pill_src.take() {
+            src.remove();
+        }
+        self.pill_label.set_label(text);
+        self.pill_undo_btn.set_visible(with_undo);
+        self.pill.set_visible(true);
+        let s = sender.input_sender().clone();
+        self.pill_src = Some(gtk::glib::timeout_add_local_once(
+            std::time::Duration::from_millis(6000),
+            move || {
+                let _ = s.send(EpubEditorMsg::PillHide);
+            },
+        ));
+    }
+
+    fn hide_pill(&mut self) {
+        if let Some(src) = self.pill_src.take() {
+            src.remove();
+        }
+        self.pill.set_visible(false);
+    }
+
+    // ── E3: Find & replace (decision 131) ──────────────────────────
+
+    fn toggle_find(&mut self, sender: &ComponentSender<Self>) {
+        if self.find_panel.is_visible() {
+            self.find_panel.set_visible(false);
+            return;
+        }
+        self.palette_panel.set_visible(false);
+        if let Some(buffer) = self.active_buffer() {
+            if let Some((a, b)) = buffer.selection_bounds() {
+                let text = buffer.text(&a, &b, false);
+                if !text.is_empty() && !text.contains('
+') {
+                    self.find_entry.set_text(&text);
+                }
+            }
+        }
+        self.sync_find_scope_btns();
+        self.find_panel.set_visible(true);
+        self.find_entry.grab_focus();
+        self.find_entry.select_region(0, -1);
+        self.run_find(sender);
+    }
+
+    fn sync_find_scope_btns(&self) {
+        for (scope, btn) in &self.find_scope_btns {
+            if *scope == self.find_scope {
+                btn.add_css_class("active");
+            } else {
+                btn.remove_css_class("active");
+            }
+        }
+    }
+
+    fn find_files(&self) -> Vec<String> {
+        let Some(container) = &self.container else {
+            return Vec::new();
+        };
+        match self.find_scope {
+            FindScope::ThisFile => self
+                .active_tab()
+                .filter(|t| matches!(t.kind, FileKind::Html | FileKind::Css | FileKind::Xml))
+                .map(|t| vec![t.path.clone()])
+                .unwrap_or_default(),
+            FindScope::AllText => container
+                .files
+                .iter()
+                .filter(|f| matches!(f.kind, FileKind::Html | FileKind::Css))
+                .map(|f| f.path.clone())
+                .collect(),
+            FindScope::WholeBook => container
+                .files
+                .iter()
+                .filter(|f| matches!(f.kind, FileKind::Html | FileKind::Css | FileKind::Xml))
+                .map(|f| f.path.clone())
+                .collect(),
+        }
+    }
+
+    fn searcher(&self) -> Result<crate::epub_tools::Searcher, String> {
+        crate::epub_tools::Searcher::new(
+            &self.find_entry.text(),
+            crate::epub_tools::SearchOptions {
+                match_case: self.chip_case.is_active(),
+                whole_word: self.chip_word.is_active(),
+                regex: self.chip_regex.is_active(),
+            },
+        )
+    }
+
+    fn run_find(&mut self, sender: &ComponentSender<Self>) {
+        const MAX_HITS: usize = 300;
+        clear_box(&self.find_results_host);
+        self.find_hits.clear();
+        self.find_current = None;
+        let query = self.find_entry.text();
+        if query.is_empty() {
+            self.find_count.set_label("");
+            return;
+        }
+        let searcher = match self.searcher() {
+            Ok(searcher) => searcher,
+            Err(message) => {
+                self.find_count.set_label(&message);
+                return;
+            }
+        };
+        let theme = crate::theme::current(self.service.catalog());
+        let tint = format!("{}{}", theme.text, if theme.dark { "1a" } else { "14" });
+
+        let mut total = 0usize;
+        let mut files_with = 0usize;
+        for path in self.find_files() {
+            let Some(text) = self.file_text(&path) else { continue };
+            let spans = searcher.find_all(&text);
+            if spans.is_empty() {
+                continue;
+            }
+            files_with += 1;
+            total += spans.len();
+            if self.find_scope != FindScope::ThisFile {
+                let heading = gtk::Label::new(Some(&format!(
+                    "{} — {}",
+                    file_name(&path),
+                    spans.len()
+                )));
+                heading.add_css_class("kalam-editorpicker-group");
+                heading.set_halign(gtk::Align::Start);
+                heading.set_margin_top(10);
+                heading.set_margin_bottom(2);
+                self.find_results_host.append(&heading);
+            }
+            for (b0, b1) in spans {
+                if self.find_hits.len() >= MAX_HITS {
+                    break;
+                }
+                let start = text[..b0].chars().count();
+                let end = start + text[b0..b1].chars().count();
+                let line = text[..b0].bytes().filter(|b| *b == b'
+').count() + 1;
+                let line_start = text[..b0].rfind('
+').map(|n| n + 1).unwrap_or(0);
+                let line_end = text[b1..].find('
+').map(|n| b1 + n).unwrap_or(text.len());
+                let before_full = &text[line_start..b0];
+                let after_full = &text[b1..line_end];
+                let before_chars: Vec<char> = before_full.chars().collect();
+                let before = if before_chars.len() > 40 {
+                    format!("…{}", before_chars[before_chars.len() - 40..].iter().collect::<String>())
+                } else {
+                    before_full.to_string()
+                };
+                let after_chars: Vec<char> = after_full.chars().collect();
+                let after = if after_chars.len() > 40 {
+                    format!("{}…", after_chars[..40].iter().collect::<String>())
+                } else {
+                    after_full.to_string()
+                };
+                let hit = FindHit {
+                    path: path.clone(),
+                    start,
+                    end,
+                    line,
+                    before: before.trim_start().to_string(),
+                    matched: text[b0..b1].replace('
+', " "),
+                    after,
+                };
+                let markup = format!(
+                    "{}<span background=\"{tint}\">{}</span>{}",
+                    gtk::glib::markup_escape_text(hit.before.trim_end()),
+                    gtk::glib::markup_escape_text(&hit.matched),
+                    gtk::glib::markup_escape_text(hit.after.trim_start()),
+                );
+                let index = self.find_hits.len();
+                let row = gtk::Button::new();
+                row.add_css_class("kalam-ed-find-row");
+                row.set_focus_on_click(false);
+                let label = gtk::Label::new(None);
+                label.set_markup(&markup);
+                label.set_halign(gtk::Align::Start);
+                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                row.set_child(Some(&label));
+                let s = sender.input_sender().clone();
+                row.connect_clicked(move |_| {
+                    let _ = s.send(EpubEditorMsg::FindJump(index));
+                });
+                self.find_results_host.append(&row);
+                self.find_hits.push(hit);
+            }
+        }
+        if total == 0 {
+            self.find_count.set_label("No matches");
+        } else {
+            let mut label = format!(
+                "{total} {} in {files_with} {}",
+                if total == 1 { "match" } else { "matches" },
+                if files_with == 1 { "file" } else { "files" }
+            );
+            if total > self.find_hits.len() {
+                label.push_str(&format!(" · showing first {}", self.find_hits.len()));
+            }
+            self.find_count.set_label(&label);
+        }
+    }
+
+    fn jump_to_hit(&mut self, index: usize, sender: &ComponentSender<Self>) {
+        let Some(hit) = self.find_hits.get(index) else {
+            return;
+        };
+        let (path, start, end) = (hit.path.clone(), hit.start, hit.end);
+        self.open_file(&path, true, sender);
+        if let Some(buffer) = self
+            .tabs
+            .iter()
+            .find(|t| t.path == path)
+            .and_then(|t| t.buffer.clone())
+        {
+            let a = buffer.iter_at_offset(start as i32);
+            let b = buffer.iter_at_offset(end as i32);
+            buffer.select_range(&a, &b);
+            if let Some(view) = self.active_view() {
+                let mut iter = a;
+                view.scroll_to_iter(&mut iter, 0.1, false, 0.0, 0.0);
+            }
+        }
+        self.find_current = Some(index);
+        // Keep the typing loop in the panel: Enter goes to the
+        // next match without a mouse trip.
+        self.find_entry.grab_focus();
+    }
+
+    fn replace_one(&mut self, sender: &ComponentSender<Self>) {
+        let Some(current) = self.find_current else {
+            if !self.find_hits.is_empty() {
+                self.jump_to_hit(0, sender);
+            }
+            return;
+        };
+        let Some(hit) = self.find_hits.get(current) else {
+            return;
+        };
+        let (path, start, end, matched) = (
+            hit.path.clone(),
+            hit.start,
+            hit.end,
+            hit.matched.clone(),
+        );
+        if !self.tabs.iter().any(|t| t.path == path) {
+            // Open it first; the next press replaces.
+            self.jump_to_hit(current, sender);
+            return;
+        }
+        let Ok(searcher) = self.searcher() else { return };
+        let Some(buffer) = self
+            .tabs
+            .iter()
+            .find(|t| t.path == path)
+            .and_then(|t| t.buffer.clone())
+        else {
+            return;
+        };
+        let a = buffer.iter_at_offset(start as i32);
+        let b = buffer.iter_at_offset(end as i32);
+        let current_text = buffer.text(&a, &b, false).to_string();
+        if current_text.replace('
+', " ") != matched {
+            // The buffer moved under the results; refresh them.
+            self.run_find(sender);
+            return;
+        }
+        let replacement = searcher
+            .replace_all(&current_text, &self.replace_entry.text())
+            .0;
+        let (mut a, mut b) = (a, b);
+        buffer.begin_user_action();
+        buffer.delete(&mut a, &mut b);
+        let mut at = buffer.iter_at_offset(start as i32);
+        buffer.insert(&mut at, &replacement);
+        buffer.end_user_action();
+        self.run_find(sender);
+        if !self.find_hits.is_empty() {
+            let next = current.min(self.find_hits.len() - 1);
+            self.jump_to_hit(next, sender);
+        }
+    }
+
+    fn replace_all(&mut self, sender: &ComponentSender<Self>) {
+        let Ok(searcher) = self.searcher() else { return };
+        let replacement = self.replace_entry.text().to_string();
+        let mut changes: Vec<(String, String)> = Vec::new();
+        let mut total = 0usize;
+        for path in self.find_files() {
+            let Some(text) = self.file_text(&path) else { continue };
+            let (new, n) = searcher.replace_all(&text, &replacement);
+            if n > 0 {
+                total += n;
+                changes.push((path, new));
+            }
+        }
+        if changes.is_empty() {
+            self.show_pill("No matches to replace", false, sender);
+            return;
+        }
+        let summary = format!(
+            "{total} {} in {} {}",
+            if total == 1 { "replacement" } else { "replacements" },
+            changes.len(),
+            if changes.len() == 1 { "file" } else { "files" }
+        );
+        self.start_apply("Before Replace all".to_string(), summary, changes, sender);
+    }
+
+    fn saved_searches(&self) -> Vec<(String, String)> {
+        self.service
+            .catalog()
+            .get_pref("editor.saved_searches")
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default()
+    }
+
+    fn store_saved_searches(&self, saved: &[(String, String)]) {
+        if let Ok(raw) = serde_json::to_string(saved) {
+            self.service.catalog().set_pref("editor.saved_searches", &raw);
+        }
+    }
+
+    fn toggle_saved_menu(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(menu) = self.saved_menu.take() {
+            menu.popover().popdown();
+            menu.popover().unparent();
+            return;
+        }
+        let menu = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
+        for (find, replace) in self.saved_searches() {
+            let label = if replace.is_empty() {
+                find.clone()
+            } else {
+                format!("{find} → {replace}")
+            };
+            let s = sender.input_sender().clone();
+            menu.add_item(&label, move || {
+                let _ = s.send(EpubEditorMsg::UseSavedSearch(find.clone(), replace.clone()));
+            });
+        }
+        menu.add_separator();
+        let s = sender.input_sender().clone();
+        menu.add_item("Save this search", move || {
+            let _ = s.send(EpubEditorMsg::SaveThisSearch);
+        });
+        menu.popover().set_parent(&self.find_panel);
+        menu.popover().popup();
+        self.saved_menu = Some(menu);
+    }
+
+    // ── E3: command palette (decision 129) ─────────────────────────
+
+    fn toggle_palette(&mut self, sender: &ComponentSender<Self>) {
+        if self.palette_panel.is_visible() {
+            self.palette_panel.set_visible(false);
+            return;
+        }
+        self.find_panel.set_visible(false);
+        self.palette_panel.set_visible(true);
+        self.palette_entry.set_text("");
+        self.palette_entry.grab_focus();
+        self.rebuild_palette(sender);
+    }
+
+    fn palette_commands(&self) -> Vec<PaletteItem> {
+        let item = |label: &str, detail: &str, shortcut: Option<&'static str>, action: PaletteAction| PaletteItem {
+            label: label.to_string(),
+            detail: detail.to_string(),
+            shortcut,
+            action,
+        };
+        let mut items = vec![
+            item("Save", "", Some("Ctrl+S"), PaletteAction::Save),
+            item("Check book", "", None, PaletteAction::CheckBook),
+            item("Find & replace", "", Some("Ctrl+F"), PaletteAction::FindReplace),
+            item("Smarten punctuation", "Clean up", None, PaletteAction::Tool(InstantTool::Smarten)),
+            item("Reformat code", "Clean up", None, PaletteAction::Tool(InstantTool::Reformat)),
+            item("Remove unused CSS", "Clean up", None, PaletteAction::Tool(InstantTool::RemoveUnusedCss)),
+            item("Fix HTML", "Clean up", None, PaletteAction::Tool(InstantTool::FixHtml)),
+            item("Code view", "View", None, PaletteAction::View(ViewMode::Code)),
+            item("Split view", "View", None, PaletteAction::View(ViewMode::Split)),
+            item("Preview view", "View", None, PaletteAction::View(ViewMode::Preview)),
+            item("Preview tab", "Right panel", None, PaletteAction::Tab(RightTab::Preview)),
+            item("Outline tab", "Right panel", None, PaletteAction::Tab(RightTab::Outline)),
+            item("Problems tab", "Right panel", None, PaletteAction::Tab(RightTab::Problems)),
+            item("Live CSS tab", "Right panel", None, PaletteAction::Tab(RightTab::LiveCss)),
+        ];
+        if let Some(container) = &self.container {
+            let mut files: Vec<&EpubFile> = container.files.iter().collect();
+            files.sort_by(|a, b| a.path.cmp(&b.path));
+            for file in files {
+                items.push(item(
+                    file_name(&file.path),
+                    &file.path,
+                    None,
+                    PaletteAction::OpenFile(file.path.clone()),
+                ));
+            }
+        }
+        items
+    }
+
+    fn rebuild_palette(&mut self, sender: &ComponentSender<Self>) {
+        let query = self.palette_entry.text().to_string().to_lowercase();
+        let mut matched: Vec<PaletteItem> = self
+            .palette_commands()
+            .into_iter()
+            .filter(|item| {
+                fuzzy_positions(&item.label, &query).is_some()
+                    || item.detail.to_lowercase().contains(&query)
+            })
+            .collect();
+        matched.sort_by_key(|item| !item.label.to_lowercase().starts_with(&query));
+        self.palette_items = matched;
+        self.palette_selected = 0;
+        self.build_palette_rows(sender);
+    }
+
+    fn build_palette_rows(&self, sender: &ComponentSender<Self>) {
+        clear_box(&self.palette_host);
+        if self.palette_items.is_empty() {
+            let label = gtk::Label::new(Some("No commands"));
+            label.add_css_class("kalam-ui-meta");
+            label.set_halign(gtk::Align::Start);
+            label.set_margin_all(12);
+            self.palette_host.append(&label);
+            return;
+        }
+        let query = self.palette_entry.text().to_string().to_lowercase();
+        for (index, item) in self.palette_items.iter().enumerate() {
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-ed-palette-row");
+            if index == self.palette_selected {
+                row.add_css_class("selected");
+            }
+            row.set_size_request(-1, 40);
+            row.set_focus_on_click(false);
+            let h = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            let label = gtk::Label::new(None);
+            let positions = fuzzy_positions(&item.label, &query).unwrap_or_default();
+            label.set_markup(&bold_positions(&item.label, &positions));
+            label.add_css_class("kalam-ed-palette-label");
+            label.set_halign(gtk::Align::Start);
+            label.set_hexpand(true);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            h.append(&label);
+            if !item.detail.is_empty() {
+                let detail = gtk::Label::new(Some(&item.detail));
+                detail.add_css_class("kalam-ui-meta");
+                detail.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                h.append(&detail);
+            }
+            if let Some(shortcut) = item.shortcut {
+                let chip = gtk::Label::new(Some(shortcut));
+                chip.add_css_class("kalam-ed-keychip");
+                chip.set_valign(gtk::Align::Center);
+                h.append(&chip);
+            }
+            row.set_child(Some(&h));
+            let s = sender.input_sender().clone();
+            row.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::PaletteRun(index));
+            });
+            self.palette_host.append(&row);
+        }
+    }
+
+    fn run_palette_action(&mut self, action: PaletteAction, sender: &ComponentSender<Self>) {
+        match action {
+            PaletteAction::Save => sender.input(EpubEditorMsg::SavePressed),
+            PaletteAction::CheckBook => {
+                sender.input(EpubEditorMsg::SetRightTab(RightTab::Problems))
+            }
+            PaletteAction::FindReplace => self.toggle_find(sender),
+            PaletteAction::Tool(kind) => self.present_scope_dialog(kind, sender),
+            PaletteAction::View(mode) => sender.input(EpubEditorMsg::SetViewMode(mode)),
+            PaletteAction::Tab(tab) => sender.input(EpubEditorMsg::SetRightTab(tab)),
+            PaletteAction::OpenFile(path) => {
+                sender.input(EpubEditorMsg::OpenFile { path, pin: true })
+            }
+        }
+    }
+
     // ── chrome sync ────────────────────────────────────────────────
 
     fn sync_chrome(&mut self, sender: &ComponentSender<Self>) {
@@ -3278,7 +4259,7 @@ fn element_chain_at(html: &str, char_offset: usize) -> Vec<crate::epub_css::Elem
                 stack.truncate(pos);
             }
         } else {
-            let elem = parse_elem(&name, tag_inner);
+            let elem = crate::epub_css::elem_from_start_tag(&name, tag_inner);
             let self_closed = tag_inner.trim_end().ends_with('/')
                 || matches!(
                     name.as_str(),
@@ -3303,70 +4284,6 @@ fn element_chain_at(html: &str, char_offset: usize) -> Vec<crate::epub_css::Elem
     stack
 }
 
-/// One element from a start tag's inner text (` id="a" class="b"`).
-fn parse_elem(tag: &str, inner: &str) -> crate::epub_css::Elem {
-    let mut elem = crate::epub_css::Elem {
-        tag: tag.to_string(),
-        ..Default::default()
-    };
-    let bytes = inner.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() {
-        while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b'/') {
-            i += 1;
-        }
-        let start = i;
-        while i < bytes.len()
-            && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b':' | b'-' | b'_' | b'.'))
-        {
-            i += 1;
-        }
-        if i == start {
-            i += 1;
-            continue;
-        }
-        let name = inner[start..i].to_ascii_lowercase();
-        let mut value = String::new();
-        let mut j = i;
-        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
-            j += 1;
-        }
-        if j < bytes.len() && bytes[j] == b'=' {
-            j += 1;
-            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
-                j += 1;
-            }
-            if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
-                let q = bytes[j];
-                let vstart = j + 1;
-                let mut k = vstart;
-                while k < bytes.len() && bytes[k] != q {
-                    k += 1;
-                }
-                value = inner[vstart..k].to_string();
-                i = (k + 1).min(bytes.len());
-            } else {
-                let vstart = j;
-                let mut k = vstart;
-                while k < bytes.len() && !bytes[k].is_ascii_whitespace() && bytes[k] != b'/' {
-                    k += 1;
-                }
-                value = inner[vstart..k].to_string();
-                i = k;
-            }
-        }
-        match name.as_str() {
-            "id" => elem.id = Some(value.clone()),
-            "class" => {
-                elem.classes = value.split_whitespace().map(str::to_string).collect();
-            }
-            _ => {}
-        }
-        elem.attrs.push((name, value));
-    }
-    elem
-}
-
 /// `<style>` blocks of a document: (css text, 1-based line its
 /// content starts on).
 fn style_blocks(html: &str) -> Vec<(String, usize)> {
@@ -3384,6 +4301,54 @@ fn style_blocks(html: &str) -> Vec<(String, usize)> {
         let line = html[..content_start].bytes().filter(|b| *b == b'\n').count() + 1;
         out.push((html[content_start..content_end].to_string(), line));
         from = content_end;
+    }
+    out
+}
+
+/// Subsequence match for the command palette: the char indices of
+/// `needle`'s letters inside `haystack`, case-insensitive.
+fn fuzzy_positions(haystack: &str, needle: &str) -> Option<Vec<usize>> {
+    if needle.is_empty() {
+        return Some(Vec::new());
+    }
+    let hay: Vec<char> = haystack.chars().collect();
+    let mut positions = Vec::new();
+    let mut at = 0usize;
+    for wanted in needle.chars() {
+        let mut found = false;
+        while at < hay.len() {
+            if hay[at].to_ascii_lowercase() == wanted {
+                positions.push(at);
+                at += 1;
+                found = true;
+                break;
+            }
+            at += 1;
+        }
+        if !found {
+            return None;
+        }
+    }
+    Some(positions)
+}
+
+/// Pango markup with the given char positions bolded (§38).
+fn bold_positions(text: &str, positions: &[usize]) -> String {
+    let mut out = String::new();
+    let mut open = false;
+    for (index, c) in text.chars().enumerate() {
+        let hit = positions.contains(&index);
+        if hit && !open {
+            out.push_str("<b>");
+            open = true;
+        } else if !hit && open {
+            out.push_str("</b>");
+            open = false;
+        }
+        out.push_str(&gtk::glib::markup_escape_text(&c.to_string()));
+    }
+    if open {
+        out.push_str("</b>");
     }
     out
 }

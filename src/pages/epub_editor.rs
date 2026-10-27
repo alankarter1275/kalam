@@ -275,6 +275,17 @@ pub enum EpubEditorMsg {
     EditingExported(String, std::path::PathBuf),
     /// Bring the edited copy back into the book.
     EditingImport(String, std::path::PathBuf),
+    // ── E5: image and font tabs, Replace cover (decisions 126, 139) ──
+    CompressImageTab(String),
+    /// (book path, re-encoded bytes, original length).
+    ImageCompressed(String, Vec<u8>, usize),
+    /// (book path, materialised font file, family name).
+    FontPreviewReady(String, std::path::PathBuf, String),
+    OpenReplaceCover,
+    /// (disk file name, chosen image bytes).
+    RunReplaceCover(String, Vec<u8>),
+    /// The cover bytes, converted to the standing cover's format.
+    CoverPrepared(String, Vec<u8>),
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -477,6 +488,7 @@ enum PaletteAction {
     SpellCheck,
     PersonalDict,
     History,
+    ReplaceCover,
     Tool(InstantTool),
     View(ViewMode),
     Tab(RightTab),
@@ -625,6 +637,10 @@ pub struct EpubEditorModel {
     // ── E5: History and Compare ──
     compare_widgets: CompareWidgets,
     compare: Option<CompareState>,
+    // ── E5: font specimen tabs ──
+    /// (book path, drawing area, colour probe) per open font
+    /// tab; interior because tab widgets are built from `&self`.
+    font_areas: Rc<RefCell<Vec<(String, gtk::DrawingArea, gtk::Label)>>>,
 }
 
 const EMPTY_TAB: &str = "__kalam_empty";
@@ -1308,6 +1324,7 @@ impl Component for EpubEditorModel {
             spell_ui: None,
             compare_widgets,
             compare: None,
+            font_areas: Rc::new(RefCell::new(Vec::new())),
         };
         model.sync_switches();
         let widgets = view_output!();
@@ -1493,6 +1510,27 @@ impl Component for EpubEditorModel {
                                 self.render_compare();
                             }
                         }
+                    }
+                    Ok("editor-image") | Ok("editor-font") => {
+                        let want = if std::env::var("KALAM_DIALOG").as_deref()
+                            == Ok("editor-font")
+                        {
+                            FileKind::Font
+                        } else {
+                            FileKind::Image
+                        };
+                        let target = self.container.as_ref().and_then(|c| {
+                            c.files
+                                .iter()
+                                .find(|f| f.kind == want)
+                                .map(|f| f.path.clone())
+                        });
+                        if let Some(path) = target {
+                            self.open_file(&path, true, &sender);
+                        }
+                    }
+                    Ok("editor-cover") => {
+                        self.present_replace_cover_dialog(&sender);
                     }
                     Ok("editor-editing") => {
                         // Export the first image for outside
@@ -2307,6 +2345,94 @@ impl Component for EpubEditorModel {
                     },
                 );
             }
+            // ── E5: image and font tabs, Replace cover ──
+            EpubEditorMsg::CompressImageTab(path) => {
+                let Some(bytes) = self.file_bytes(&path) else {
+                    return;
+                };
+                let original = bytes.len();
+                let service = self.service.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn_internal(
+                    "Compressing the image",
+                    move |_reporter| service.compress_image_lossless(&bytes),
+                    |_| {},
+                    move |result| match result {
+                        Ok(smaller) => {
+                            let _ = s.send(EpubEditorMsg::ImageCompressed(
+                                path.clone(),
+                                smaller,
+                                original,
+                            ));
+                        }
+                        Err(message) => {
+                            let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
+            }
+            EpubEditorMsg::ImageCompressed(path, bytes, original) => {
+                if bytes.len() < original {
+                    let mut plan = StructurePlan::new(
+                        format!(
+                            "Compressed {}: {} → {}",
+                            file_name(&path),
+                            human_size(original),
+                            human_size(bytes.len())
+                        ),
+                        "Before compress image",
+                    );
+                    plan.byte_changes.push((path, bytes));
+                    self.finish_structure(plan, &sender);
+                } else {
+                    self.show_pill(
+                        "Already as small as lossless gets",
+                        false,
+                        &sender,
+                    );
+                }
+            }
+            EpubEditorMsg::FontPreviewReady(path, disk, family) => {
+                self.font_preview_ready(&path, &disk, &family)
+            }
+            EpubEditorMsg::OpenReplaceCover => {
+                self.present_replace_cover_dialog(&sender)
+            }
+            EpubEditorMsg::RunReplaceCover(name, bytes) => {
+                let cover_ext = self
+                    .container
+                    .as_ref()
+                    .and_then(|c| c.files.iter().find(|f| f.is_cover_image))
+                    .and_then(|f| {
+                        f.path
+                            .rsplit('.')
+                            .next()
+                            .map(|ext| ext.to_string())
+                    });
+                let service = self.service.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn_internal(
+                    "Preparing the new cover",
+                    move |_reporter| {
+                        service.prepare_cover_image(&bytes, cover_ext.as_deref())
+                    },
+                    |_| {},
+                    move |result| match result {
+                        Ok(prepared) => {
+                            let _ = s.send(EpubEditorMsg::CoverPrepared(
+                                name.clone(),
+                                prepared,
+                            ));
+                        }
+                        Err(message) => {
+                            let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
+            }
+            EpubEditorMsg::CoverPrepared(name, bytes) => {
+                self.run_replace_cover(name, bytes, &sender)
+            }
             EpubEditorMsg::ExternalReady(path) => {
                 let file = gtk::gio::File::for_path(&path);
                 let _ = gtk::gio::AppInfo::launch_default_for_uri(
@@ -2527,19 +2653,156 @@ impl EpubEditorModel {
             FileKind::Image => {
                 let host = gtk::Box::new(gtk::Orientation::Vertical, 12);
                 host.set_margin_all(20);
-                if let Some(bytes) = container.bytes(&file.path) {
+                let bytes = container.bytes(&file.path);
+                let mut dims = None;
+                if let Some(bytes) = bytes {
                     let glib_bytes = gtk::glib::Bytes::from(bytes);
                     if let Ok(texture) = gtk::gdk::Texture::from_bytes(&glib_bytes) {
+                        dims = Some((texture.width(), texture.height()));
                         let picture = gtk::Picture::for_paintable(&texture);
                         picture.set_content_fit(gtk::ContentFit::Contain);
                         picture.set_size_request(-1, 420);
                         host.append(&picture);
                     }
                 }
-                host.append(&meta_label(&file_summary(file, container.bytes(&file.path))));
+                // Decision 126: dimensions, size, where it is used,
+                // and the three things you can do about it.
+                let used = self.referencing_files(&file.path);
+                let size = human_size(bytes.map(|b| b.len()).unwrap_or(0));
+                let usage = match used.len() {
+                    0 => "not used in any file".to_string(),
+                    1 => "used in 1 file".to_string(),
+                    n => format!("used in {n} files"),
+                };
+                let meta = match dims {
+                    Some((w, h)) => format!("{w} x {h} · {size} · {usage}"),
+                    None => format!("{size} · {usage}"),
+                };
+                host.append(&meta_label(&meta));
+
+                let where_host = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                where_host.set_visible(false);
+                for (used_path, line) in &used {
+                    let row = gtk::Button::with_label(&format!(
+                        "{} · line {line}",
+                        file_name(used_path)
+                    ));
+                    row.add_css_class("kalam-ed-ghost");
+                    row.set_halign(gtk::Align::Start);
+                    let s = sender.input_sender().clone();
+                    let p = used_path.clone();
+                    let line = *line;
+                    row.connect_clicked(move |_| {
+                        let _ = s.send(EpubEditorMsg::GoTo {
+                            path: p.clone(),
+                            line: Some(line),
+                            offset: None,
+                        });
+                    });
+                    where_host.append(&row);
+                }
+
+                let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                {
+                    let s = sender.input_sender().clone();
+                    let p = file.path.clone();
+                    actions.append(&boxed_ghost_button("Replace image…", move || {
+                        let _ = s.send(EpubEditorMsg::TreeReplace(p.clone()));
+                    }));
+                }
+                {
+                    let s = sender.input_sender().clone();
+                    let p = file.path.clone();
+                    actions.append(&boxed_ghost_button("Compress", move || {
+                        let _ = s.send(EpubEditorMsg::CompressImageTab(p.clone()));
+                    }));
+                }
+                if !used.is_empty() {
+                    let toggle = gtk::Button::with_label("Show where used");
+                    toggle.add_css_class("kalam-ed-ghost");
+                    let host2 = where_host.clone();
+                    toggle.connect_clicked(move |_| {
+                        host2.set_visible(!host2.is_visible());
+                    });
+                    actions.append(&toggle);
+                }
+                host.append(&actions);
+                host.append(&where_host);
                 (scroll_host(&host).upcast(), None)
             }
-            FileKind::Font | FileKind::Binary => {
+            FileKind::Font => {
+                // Decision 126: a specimen tab. The preview
+                // itself is async (the font materialises through
+                // the service); the frame and facts draw now.
+                let host = gtk::Box::new(gtk::Orientation::Vertical, 12);
+                host.set_margin_all(20);
+                let eyebrow = gtk::Label::new(Some("EMBEDDED FONT"));
+                eyebrow.add_css_class("kalam-ed-compare-colhead");
+                eyebrow.set_halign(gtk::Align::Start);
+                host.append(&eyebrow);
+                let area = gtk::DrawingArea::new();
+                area.set_content_height(196);
+                area.set_hexpand(true);
+                host.append(&area);
+                let probe = crate::widgets::paint::color_probe("kalam-ed-specimen");
+                host.append(&probe);
+                let used = self.referencing_files(&file.path);
+                let size = human_size(
+                    container
+                        .bytes(&file.path)
+                        .map(|b| b.len())
+                        .unwrap_or(0),
+                );
+                let meta = match used.first() {
+                    Some((used_path, line)) => format!(
+                        "Used by {}, line {line} · {size}",
+                        file_name(used_path)
+                    ),
+                    None => format!("Not used in any file · {size}"),
+                };
+                host.append(&meta_label(&meta));
+                let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                {
+                    let remove = gtk::Button::with_label("Remove");
+                    remove.add_css_class("kalam-ed-ghost");
+                    let s = sender.input_sender().clone();
+                    let p = file.path.clone();
+                    remove.connect_clicked(move |_| {
+                        let _ = s.send(EpubEditorMsg::TreeDelete(p.clone()));
+                    });
+                    actions.append(&remove);
+                }
+                host.append(&actions);
+                self.font_areas
+                    .borrow_mut()
+                    .push((file.path.clone(), area, probe));
+                if let (Some(book), Some(bytes)) =
+                    (self.book.clone(), self.file_bytes(&file.path))
+                {
+                    let inner = file.path.clone();
+                    let reply_path = file.path.clone();
+                    let service = self.service.clone();
+                    let s = sender.input_sender().clone();
+                    crate::tasks::spawn_internal(
+                        "Preparing the font specimen",
+                        move |_reporter| {
+                            service.editor_font_preview(&book, &inner, &bytes)
+                        },
+                        |_| {},
+                        move |result| {
+                            if let Ok((disk, family)) = result {
+                                let _ = s.send(EpubEditorMsg::FontPreviewReady(
+                                    reply_path.clone(),
+                                    disk,
+                                    family,
+                                ));
+                            }
+                        },
+                    );
+                }
+                (scroll_host(&host).upcast(), None)
+            }
+            FileKind::Binary => {
                 let host = gtk::Box::new(gtk::Orientation::Vertical, 12);
                 host.set_margin_all(20);
                 host.append(&meta_label(&file_summary(file, container.bytes(&file.path))));
@@ -5217,13 +5480,26 @@ impl EpubEditorModel {
             DialogSize::Form,
             Some("A copy is in ~/Kalam/Editing/"),
         );
+        let file_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let file_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        file_text.set_hexpand(true);
+        let file_name_label = gtk::Label::new(Some(&name));
+        file_name_label.add_css_class("kalam-ed-history-name");
+        file_name_label.set_halign(gtk::Align::Start);
+        file_text.append(&file_name_label);
+        let waiting = gtk::Label::new(Some("Waiting for changes is automatic"));
+        waiting.add_css_class("kalam-ui-meta");
+        waiting.set_halign(gtk::Align::Start);
+        file_text.append(&waiting);
+        file_row.append(&file_text);
         let status = gtk::Label::new(Some("Not changed yet"));
         status.add_css_class("kalam-ui-meta");
-        status.set_halign(gtk::Align::Start);
-        shell.body().append(&status);
+        status.set_valign(gtk::Align::Center);
+        file_row.append(&status);
+        shell.body().append(&file_row);
         let copy = gtk::Label::new(Some(
-            "Edit the copy in the app you like. Bring it back when \
-             you're done — a snapshot of the book is kept first.",
+            "Edit it in any app, save, then bring it back. \
+             A snapshot is kept first.",
         ));
         copy.add_css_class("kalam-ui-meta");
         copy.set_halign(gtk::Align::Start);
@@ -5339,6 +5615,275 @@ impl EpubEditorModel {
         ) {
             *slot.borrow_mut() = Some(dialog);
         }
+    }
+
+    // ── E5: font specimen + Replace cover (decisions 126, 139) ──
+
+    /// The embedded font reached disk: load it into a private
+    /// Pango/Cairo font map (this book only, never the app's)
+    /// and give the tab's drawing area its specimen lines.
+    fn font_preview_ready(&self, path: &str, disk: &std::path::Path, family: &str) {
+        use pangocairo::prelude::*;
+        let found = {
+            let mut areas = self.font_areas.borrow_mut();
+            areas.retain(|(_, area, _)| area.root().is_some());
+            areas
+                .iter()
+                .find(|(p, _, _)| p == path)
+                .map(|(_, area, probe)| (area.clone(), probe.clone()))
+        };
+        let Some((area, probe)) = found else {
+            return;
+        };
+        let font_map = pangocairo::FontMap::new();
+        if font_map.add_font_file(disk).is_err() {
+            return;
+        }
+        let context = font_map.create_context();
+        let lines: [(&str, f64); 4] = [
+            (family, 30.0),
+            ("The road bent north past the mill.", 17.0),
+            ("She counted the lamps.", 24.0),
+            ("Aa Bb Cc 0123", 30.0),
+        ];
+        let mut layouts: Vec<(pango::Layout, f64)> = Vec::new();
+        let mut y = 4.0f64;
+        for (text, size) in lines {
+            let layout = pango::Layout::new(&context);
+            let description =
+                pango::FontDescription::from_string(&format!("{family} {size}"));
+            layout.set_font_description(Some(&description));
+            layout.set_text(text);
+            let height = layout.pixel_size().1 as f64;
+            layouts.push((layout, y));
+            y += height + 10.0;
+        }
+        area.set_content_height((y + 4.0) as i32);
+        let keep_map = font_map;
+        area.set_draw_func(move |_area, cr, _width, _height| {
+            let _keep = &keep_map;
+            let rgba = crate::widgets::paint::probe_color(&probe);
+            crate::widgets::paint::set_source(cr, rgba, rgba.alpha() as f64);
+            for (layout, at) in &layouts {
+                cr.move_to(0.0, *at);
+                pangocairo::functions::update_layout(cr, layout);
+                pangocairo::functions::show_layout(cr, layout);
+            }
+        });
+        area.queue_draw();
+    }
+
+    /// The 420 Replace cover dialog (decision 139): the current
+    /// cover, a chooser, and Replace once a picture is chosen.
+    fn present_replace_cover_dialog(&mut self, sender: &ComponentSender<Self>) {
+        let Some(book) = self.book.clone() else {
+            return;
+        };
+        let cover_path = self
+            .container
+            .as_ref()
+            .and_then(|c| c.files.iter().find(|f| f.is_cover_image))
+            .map(|f| f.path.clone());
+        let shell = dialog_shell(DialogSize::Form, Some(&book.title));
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+        let mut current_text = "This book has no cover image yet".to_string();
+        if let Some(path) = &cover_path {
+            if let Some(bytes) = self.file_bytes(path) {
+                let glib_bytes = gtk::glib::Bytes::from(&bytes[..]);
+                if let Ok(texture) = gtk::gdk::Texture::from_bytes(&glib_bytes) {
+                    current_text = format!(
+                        "Current cover, {} x {}",
+                        texture.width(),
+                        texture.height()
+                    );
+                    let picture = gtk::Picture::for_paintable(&texture);
+                    picture.set_content_fit(gtk::ContentFit::Contain);
+                    picture.set_size_request(96, 144);
+                    row.append(&picture);
+                }
+            }
+        }
+        let side = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        side.set_valign(gtk::Align::Center);
+        let current_label = gtk::Label::new(Some(&current_text));
+        current_label.add_css_class("kalam-ui-meta");
+        current_label.set_halign(gtk::Align::Start);
+        current_label.set_xalign(0.0);
+        current_label.set_wrap(true);
+        side.append(&current_label);
+        let chosen_label = gtk::Label::new(None);
+        chosen_label.add_css_class("kalam-ui-meta");
+        chosen_label.set_halign(gtk::Align::Start);
+        chosen_label.set_xalign(0.0);
+        chosen_label.set_wrap(true);
+        row.append(&side);
+        shell.body().append(&row);
+
+        let chosen: Rc<RefCell<Option<(String, Vec<u8>)>>> =
+            Rc::new(RefCell::new(None));
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+
+        let replace_btn = {
+            let chosen = chosen.clone();
+            let slot = slot.clone();
+            let s = sender.input_sender().clone();
+            primary_button("Replace", move || {
+                if let Some((name, bytes)) = chosen.borrow().clone() {
+                    close_slot(&slot);
+                    let _ = s.send(EpubEditorMsg::RunReplaceCover(name, bytes));
+                }
+            })
+        };
+        replace_btn.set_sensitive(false);
+
+        let choose_btn = {
+            let chosen = chosen.clone();
+            let chosen_label = chosen_label.clone();
+            let replace_btn = replace_btn.clone();
+            let service = self.service.clone();
+            let window = self.host_window();
+            let s_failed = sender.input_sender().clone();
+            boxed_ghost_button("Choose image…", move || {
+                let dialog = gtk::FileDialog::builder()
+                    .title("Choose a cover image")
+                    .modal(true)
+                    .build();
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("Images"));
+                for suffix in ["png", "jpg", "jpeg", "gif", "webp", "svg"] {
+                    filter.add_suffix(suffix);
+                }
+                let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+                filters.append(&filter);
+                dialog.set_filters(Some(&filters));
+                let chosen = chosen.clone();
+                let chosen_label = chosen_label.clone();
+                let replace_btn = replace_btn.clone();
+                let service = service.clone();
+                let s_failed = s_failed.clone();
+                dialog.open(
+                    window.as_ref(),
+                    gtk::gio::Cancellable::NONE,
+                    move |result| {
+                        let Ok(file) = result else {
+                            return;
+                        };
+                        let Some(disk) = file.path() else {
+                            return;
+                        };
+                        let name = disk
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "cover".to_string());
+                        crate::tasks::spawn_internal(
+                            "Reading the chosen image",
+                            move |_reporter| service.read_editor_import(&disk),
+                            |_| {},
+                            move |result| match result {
+                                Ok(bytes) => {
+                                    let dims = gtk::glib::Bytes::from(&bytes[..]);
+                                    let text =
+                                        match gtk::gdk::Texture::from_bytes(&dims) {
+                                            Ok(texture) => format!(
+                                                "New cover: {name}, {} x {}",
+                                                texture.width(),
+                                                texture.height()
+                                            ),
+                                            Err(_) => format!("New cover: {name}"),
+                                        };
+                                    chosen_label.set_label(&text);
+                                    *chosen.borrow_mut() = Some((name, bytes));
+                                    replace_btn.set_sensitive(true);
+                                }
+                                Err(message) => {
+                                    let _ = s_failed
+                                        .send(EpubEditorMsg::ActionFailed(message));
+                                }
+                            },
+                        );
+                    },
+                );
+            })
+        };
+        side.append(&choose_btn);
+        side.append(&chosen_label);
+
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        shell.footer().append(&replace_btn);
+
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Replace cover",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    /// Swap the cover bytes in, or — coverless book — land a new
+    /// cover file beside the images and crown it.
+    fn run_replace_cover(
+        &mut self,
+        name: String,
+        bytes: Vec<u8>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        let mut plan = StructurePlan::new(
+            "Replaced the cover".to_string(),
+            "Before replace cover",
+        );
+        let current = container
+            .files
+            .iter()
+            .find(|f| f.is_cover_image)
+            .map(|f| f.path.clone());
+        match current {
+            Some(path) => plan.byte_changes.push((path, bytes)),
+            None => {
+                let dir = container
+                    .files
+                    .iter()
+                    .find(|f| f.kind == FileKind::Image)
+                    .map(|f| crate::epub_structure::parent_dir(&f.path))
+                    .unwrap_or_else(|| {
+                        crate::epub_structure::parent_dir(&container.opf_path)
+                    });
+                let ext = name
+                    .rsplit('.')
+                    .next()
+                    .filter(|e| !e.is_empty() && e.len() <= 5)
+                    .unwrap_or("jpg");
+                let mut path = format!("{dir}cover.{ext}");
+                let mut n = 1;
+                while container.file(&path).is_some() {
+                    n += 1;
+                    path = format!("{dir}cover{n}.{ext}");
+                }
+                let media = crate::epub_container::guess_media_type(&path);
+                plan.new_files.push((
+                    EpubFile {
+                        path: path.clone(),
+                        kind: FileKind::Image,
+                        media_type: media.to_string(),
+                        spine_index: None,
+                        is_nav: false,
+                        is_cover_image: true,
+                        in_manifest: true,
+                    },
+                    bytes,
+                ));
+                plan.set_cover = Some(path);
+            }
+        }
+        self.finish_structure(plan, sender);
     }
 
     // ── save ───────────────────────────────────────────────────────
@@ -6208,6 +6753,46 @@ impl EpubEditorModel {
         self.container.as_ref().and_then(|c| c.text(path))
     }
 
+    /// Text files that point at `target`, each with the 1-based
+    /// line of the first pointer — the image/font tabs' "used in
+    /// N files" (decision 126) and Reports' unused flags. A
+    /// pointer is the href the file would actually write
+    /// (relative to its own folder) or the bare file name, which
+    /// covers root-relative and in-folder references alike.
+    fn referencing_files(&self, target: &str) -> Vec<(String, usize)> {
+        let Some(container) = &self.container else {
+            return Vec::new();
+        };
+        let name = file_name(target);
+        let mut out = Vec::new();
+        for file in &container.files {
+            if !file.kind.is_text()
+                || file.path == target
+                || self.removed_paths.contains(&file.path)
+            {
+                continue;
+            }
+            let Some(text) = self.file_text(&file.path) else {
+                continue;
+            };
+            let href = crate::epub_structure::rel_href(
+                &crate::epub_structure::parent_dir(&file.path),
+                target,
+                None,
+            );
+            let at = text
+                .find(&href)
+                .or_else(|| if href != name { text.find(name) } else { None });
+            if let Some(offset) = at {
+                out.push((
+                    file.path.clone(),
+                    text[..offset].matches('\n').count() + 1,
+                ));
+            }
+        }
+        out
+    }
+
     /// Open `path` and select the source span a normalized-text
     /// range maps to.
     fn jump_to_span(
@@ -6722,6 +7307,10 @@ impl EpubEditorModel {
         let s = sender.input_sender().clone();
         menu.add_item("Personal dictionary…", move || {
             let _ = s.send(EpubEditorMsg::OpenPersonalDict);
+        });
+        let s = sender.input_sender().clone();
+        menu.add_item("Replace cover…", move || {
+            let _ = s.send(EpubEditorMsg::OpenReplaceCover);
         });
         menu.add_separator();
         let insert =
@@ -8977,6 +9566,7 @@ impl EpubEditorModel {
             item("Spell check", "", Some("F7"), PaletteAction::SpellCheck),
             item("Personal dictionary…", "", None, PaletteAction::PersonalDict),
             item("History…", "", None, PaletteAction::History),
+            item("Replace cover…", "", None, PaletteAction::ReplaceCover),
             item("Split at cursor", "Structure", None, PaletteAction::SplitCursor),
             item("Split at every heading…", "Structure", None, PaletteAction::SplitDialog(1)),
             item("Split chapter by size…", "Structure", None, PaletteAction::SplitDialog(2)),
@@ -9093,6 +9683,7 @@ impl EpubEditorModel {
             PaletteAction::SpellCheck => self.start_spell_check(sender),
             PaletteAction::PersonalDict => self.present_personal_dict_dialog(sender),
             PaletteAction::History => self.open_history(sender),
+            PaletteAction::ReplaceCover => self.present_replace_cover_dialog(sender),
             PaletteAction::SplitCursor => self.run_split(0, 250, sender),
             PaletteAction::SplitDialog(preset) => {
                 self.present_split_dialog(preset, sender)
@@ -9612,15 +10203,23 @@ fn file_name(path: &str) -> &str {
 }
 
 fn file_summary(file: &EpubFile, bytes: Option<&[u8]>) -> String {
-    let size = bytes.map(|b| b.len()).unwrap_or(0);
-    let size = if size >= 1024 * 1024 {
+    format!(
+        "{} · {} · {}",
+        file.path,
+        human_size(bytes.map(|b| b.len()).unwrap_or(0)),
+        file.media_type
+    )
+}
+
+/// Board-style file sizes: `214 KB`, `8.2 MB`.
+fn human_size(size: usize) -> String {
+    if size >= 1024 * 1024 {
         format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
     } else if size >= 1024 {
         format!("{:.0} KB", size as f64 / 1024.0)
     } else {
         format!("{size} B")
-    };
-    format!("{} · {} · {}", file.path, size, file.media_type)
+    }
 }
 
 fn buffer_text(buffer: &sourceview5::Buffer) -> String {

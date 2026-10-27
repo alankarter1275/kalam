@@ -115,6 +115,10 @@ libadwaita = { version = "0.9", features = ["v1_4"] }
 gtk = { version = "0.11", package = "gtk4", features = ["v4_12"] }
 # Deep EPUB editor source view (editor-spec §6); pairs with gtk4 0.11.
 sourceview5 = "0.11"
+# Font specimen tabs (decision 126): a private Pango/Cairo font
+# map loads the book's embedded font file just for the preview.
+pango = { version = "0.22", features = ["v1_50"] }
+pangocairo = "0.22"
 gdk-pixbuf = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 glib = "0.22"

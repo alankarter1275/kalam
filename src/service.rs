@@ -2616,6 +2616,97 @@ impl LibraryService {
         std::fs::write(path, bytes).map_err(|e| e.to_string())
     }
 
+    /// Re-encode one image as small as lossless allows (image
+    /// tabs' Compress, decision 126; the whole-book dialog of
+    /// decision 141 reuses it). PNG re-encodes at best
+    /// compression; JPEG has no generic lossless shrink, so the
+    /// original comes back and the caller reports no saving.
+    pub fn compress_image_lossless(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        use image::ImageEncoder as _;
+        let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+        let format = reader.format();
+        let img = reader.decode().map_err(|e| e.to_string())?;
+        let mut out: Vec<u8> = Vec::new();
+        match format {
+            Some(image::ImageFormat::Png) => {
+                let encoder = image::codecs::png::PngEncoder::new_with_quality(
+                    std::io::Cursor::new(&mut out),
+                    image::codecs::png::CompressionType::Best,
+                    image::codecs::png::FilterType::Adaptive,
+                );
+                img.write_with_encoder(encoder).map_err(|e| e.to_string())?;
+                Ok(out)
+            }
+            Some(image::ImageFormat::Gif) => {
+                img.write_to(
+                    &mut std::io::Cursor::new(&mut out),
+                    image::ImageFormat::Gif,
+                )
+                .map_err(|e| e.to_string())?;
+                Ok(out)
+            }
+            _ => Ok(bytes.to_vec()),
+        }
+    }
+
+    /// Make a chosen replacement cover match the standing cover
+    /// file's format (decision 139), so the bytes the editor
+    /// swaps in never lie about the manifest's media type. Only
+    /// JPEG/PNG targets convert; anything else passes through.
+    pub fn prepare_cover_image(
+        &self,
+        bytes: &[u8],
+        target_ext: Option<&str>,
+    ) -> Result<Vec<u8>, String> {
+        let Some(ext) = target_ext else {
+            return Ok(bytes.to_vec());
+        };
+        let want = match ext.to_ascii_lowercase().as_str() {
+            "jpg" | "jpeg" => image::ImageFormat::Jpeg,
+            "png" => image::ImageFormat::Png,
+            _ => return Ok(bytes.to_vec()),
+        };
+        let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+        if reader.format() == Some(want) {
+            return Ok(bytes.to_vec());
+        }
+        let img = reader.decode().map_err(|e| e.to_string())?;
+        let mut out: Vec<u8> = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut out), want)
+            .map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    /// Materialise an embedded font and learn its family name,
+    /// for the specimen tab (decision 126). The page loads the
+    /// file into a private Pango font map for the preview only.
+    pub fn editor_font_preview(
+        &self,
+        book: &Book,
+        inner_path: &str,
+        bytes: &[u8],
+    ) -> Result<(std::path::PathBuf, String), String> {
+        let dest = self.materialize_editor_file(book, inner_path, bytes)?;
+        let mut db = fontdb::Database::new();
+        db.load_font_data(bytes.to_vec());
+        let family = db
+            .faces()
+            .next()
+            .and_then(|face| face.families.first().map(|(name, _)| name.clone()))
+            .unwrap_or_else(|| {
+                inner_path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("Font")
+                    .to_string()
+            });
+        Ok((dest, family))
+    }
+
     /// Put one book file in `~/Kalam/Editing` for outside editing
     /// (decision 140) and say where it landed. The dialog watches
     /// the copy and brings it back with `read_editor_import`.

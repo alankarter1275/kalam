@@ -8806,6 +8806,10 @@ textview.kalam-ed-linenumbers {
 .kalam-ed-diff-added {
   color: @kalam_diff_add;
 }
+/* Specimen ink for font tabs (probe). */
+.kalam-ed-specimen {
+  color: @kalam_text;
+}
 button.kalam-ed-outline-row.current {
   color: @kalam_accent;
   font-weight: 600;

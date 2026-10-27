@@ -2616,6 +2616,22 @@ impl LibraryService {
         std::fs::write(path, bytes).map_err(|e| e.to_string())
     }
 
+    /// Put one book file in `~/Kalam/Editing` for outside editing
+    /// (decision 140) and say where it landed. The dialog watches
+    /// the copy and brings it back with `read_editor_import`.
+    pub fn export_for_editing(
+        &self,
+        inner_path: &str,
+        bytes: &[u8],
+    ) -> Result<std::path::PathBuf, String> {
+        let dir = crate::paths::editing_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let name = inner_path.rsplit('/').next().unwrap_or("file");
+        let dest = dir.join(name);
+        std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+        Ok(dest)
+    }
+
     /// Materialise a working copy of one book file so an external
     /// app can open it (tree menu, decision 125). Written under
     /// the cache with its real name so the external app titles it

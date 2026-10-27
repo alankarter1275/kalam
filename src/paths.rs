@@ -382,6 +382,17 @@ pub fn editor_snapshots_dir(uuid: &str) -> PathBuf {
     data_dir().join("editor-snapshots").join(uuid)
 }
 
+/// `~/Kalam/Editing` — where Export for editing (decision 140)
+/// puts a book file so it can be worked on in an outside app and
+/// brought back. Deliberately in the home folder, not the data
+/// dir: the dialog tells the user exactly this path, and image
+/// editors' Open dialogs should reach it without a treasure map.
+pub fn editing_dir() -> PathBuf {
+    home_dir()
+        .map(|h| h.join("Kalam").join("Editing"))
+        .unwrap_or_else(|| data_dir().join("editing"))
+}
+
 /// The file the editor's live Preview renders: a rewritten copy of
 /// the book carrying the unsaved buffer text (E2). Lives outside the
 /// library folders so no watcher or backup ever mistakes it for a book.

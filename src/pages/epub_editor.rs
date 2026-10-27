@@ -65,6 +65,10 @@ pub enum InlineTag {
     Italic,
 }
 
+/// A History version opened for Compare: the old book plus the
+/// identity History knows it by (decision 134).
+type CompareLoad = Result<(EpubContainer, Option<i64>, String, String), String>;
+
 /// What to do once a save triggered from a dialog finishes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AfterSave {
@@ -213,7 +217,8 @@ pub enum EpubEditorMsg {
     FilesLoaded(Vec<(String, Vec<u8>)>),
     TreeExport(String),
     TreeReplace(String),
-    ReplaceLoaded(String, Vec<u8>),
+    /// (book path, new bytes, the snapshot's History label).
+    ReplaceLoaded(String, Vec<u8>, &'static str),
     TreeOpenExternal(String),
     ExternalReady(std::path::PathBuf),
     // ── E4: Insert dialogs (decision 138) ──
@@ -259,23 +264,17 @@ pub enum EpubEditorMsg {
         label: String,
         created_at: String,
     },
-    CompareLoaded(
-        Box<
-            Result<
-                (
-                    crate::epub_container::EpubContainer,
-                    Option<i64>,
-                    String,
-                    String,
-                ),
-                String,
-            >,
-        >,
-    ),
+    CompareLoaded(Box<CompareLoad>),
     CompareBack,
     CompareRestore,
     /// Step between the changed files of a comparison.
     CompareFile(i32),
+    // ── E5: Export for editing (decision 140) ──
+    TreeExportForEditing(String),
+    /// (book path, the copy in ~/Kalam/Editing).
+    EditingExported(String, std::path::PathBuf),
+    /// Bring the edited copy back into the book.
+    EditingImport(String, std::path::PathBuf),
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -1495,6 +1494,19 @@ impl Component for EpubEditorModel {
                             }
                         }
                     }
+                    Ok("editor-editing") => {
+                        // Export the first image for outside
+                        // editing; the dialog opens on the reply.
+                        let image = self.container.as_ref().and_then(|c| {
+                            c.files
+                                .iter()
+                                .find(|f| f.kind == FileKind::Image)
+                                .map(|f| f.path.clone())
+                        });
+                        if let Some(path) = image.or_else(|| self.active_path.clone()) {
+                            self.start_export_for_editing(&path, &sender);
+                        }
+                    }
                     Ok("editor-outline") | Ok("editor-livecss") => {
                         if let Some(buffer) = self.active_buffer() {
                             let mid = buffer.iter_at_offset(buffer.char_count() / 2);
@@ -2020,8 +2032,8 @@ impl Component for EpubEditorModel {
             }
             EpubEditorMsg::TreeExport(path) => self.pick_export_file(&path, &sender),
             EpubEditorMsg::TreeReplace(path) => self.pick_replace_file(&path, &sender),
-            EpubEditorMsg::ReplaceLoaded(path, bytes) => {
-                self.run_replace_loaded(path, bytes, &sender)
+            EpubEditorMsg::ReplaceLoaded(path, bytes, label) => {
+                self.run_replace_loaded(path, bytes, label, &sender)
             }
             EpubEditorMsg::TreeOpenExternal(path) => self.open_external(&path, &sender),
             // ── E4: Insert dialogs ──
@@ -2266,6 +2278,34 @@ impl Component for EpubEditorModel {
                 if moved {
                     self.render_compare();
                 }
+            }
+            // ── E5: Export for editing (decision 140) ──
+            EpubEditorMsg::TreeExportForEditing(path) => {
+                self.start_export_for_editing(&path, &sender)
+            }
+            EpubEditorMsg::EditingExported(path, dest) => {
+                self.present_editing_dialog(&path, dest, &sender)
+            }
+            EpubEditorMsg::EditingImport(path, dest) => {
+                let service = self.service.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn_internal(
+                    "Reading the edited file",
+                    move |_reporter| service.read_editor_import(&dest),
+                    |_| {},
+                    move |result| match result {
+                        Ok(bytes) => {
+                            let _ = s.send(EpubEditorMsg::ReplaceLoaded(
+                                path,
+                                bytes,
+                                "Before import edited file",
+                            ));
+                        }
+                        Err(message) => {
+                            let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
             }
             EpubEditorMsg::ExternalReady(path) => {
                 let file = gtk::gio::File::for_path(&path);
@@ -5131,6 +5171,175 @@ impl EpubEditorModel {
         buffer.apply_tag(tag, &start, &end);
     }
 
+    // ── E5: Export for editing (decision 140) ──
+
+    fn start_export_for_editing(
+        &self,
+        path: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(bytes) = self.file_bytes(path) else {
+            return;
+        };
+        let inner = path.to_string();
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Copying the file for editing",
+            move |_reporter| service.export_for_editing(&inner, &bytes),
+            |_| {},
+            move |result| match result {
+                Ok(dest) => {
+                    let _ = s.send(EpubEditorMsg::EditingExported(
+                        path.to_string(),
+                        dest,
+                    ));
+                }
+                Err(message) => {
+                    let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                }
+            },
+        );
+    }
+
+    /// The 420 dialog that walks a file out to another app and
+    /// back (decision 140): Kalam watches the copy, says when it
+    /// changed, and Import returns it through the replace rail.
+    fn present_editing_dialog(
+        &mut self,
+        path: &str,
+        dest: std::path::PathBuf,
+        sender: &ComponentSender<Self>,
+    ) {
+        let name = file_name(path).to_string();
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("A copy is in ~/Kalam/Editing/"),
+        );
+        let status = gtk::Label::new(Some("Not changed yet"));
+        status.add_css_class("kalam-ui-meta");
+        status.set_halign(gtk::Align::Start);
+        shell.body().append(&status);
+        let copy = gtk::Label::new(Some(
+            "Edit the copy in the app you like. Bring it back when \
+             you're done — a snapshot of the book is kept first.",
+        ));
+        copy.add_css_class("kalam-ui-meta");
+        copy.set_halign(gtk::Align::Start);
+        copy.set_xalign(0.0);
+        copy.set_wrap(true);
+        shell.body().append(&copy);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        {
+            let dest = dest.clone();
+            shell.footer().append(&boxed_ghost_button(
+                "Show in folder",
+                move || {
+                    crate::pages::book::open_in_file_manager(&dest);
+                },
+            ));
+        }
+        {
+            let dest = dest.clone();
+            shell.footer().append(&boxed_ghost_button("Open in app", move || {
+                let file = gtk::gio::File::for_path(&dest);
+                let _ = gtk::gio::AppInfo::launch_default_for_uri(
+                    file.uri().as_str(),
+                    None::<&gtk::gio::AppLaunchContext>,
+                );
+            }));
+        }
+        {
+            let slot = slot.clone();
+            let s = sender.input_sender().clone();
+            let path = path.to_string();
+            let dest = dest.clone();
+            shell.footer().append(&primary_button("Import changes", move || {
+                close_slot(&slot);
+                let _ = s.send(EpubEditorMsg::EditingImport(
+                    path.clone(),
+                    dest.clone(),
+                ));
+            }));
+        }
+
+        // Watch the Editing folder (many apps save by rename,
+        // which a file monitor on the copy itself would lose)
+        // and speak only about our copy. The tick keeps the
+        // "N min ago" honest and retires the monitor once the
+        // dialog is gone.
+        let changed_at: Rc<std::cell::Cell<Option<std::time::Instant>>> =
+            Rc::new(std::cell::Cell::new(None));
+        let monitor: Rc<RefCell<Option<gtk::gio::FileMonitor>>> =
+            Rc::new(RefCell::new(None));
+        if let Some(dir) = dest.parent().map(std::path::Path::to_path_buf) {
+            let gio_dir = gtk::gio::File::for_path(&dir);
+            let flags = gtk::gio::FileMonitorFlags::SEND_MOVED;
+            if let Ok(found) =
+                gio_dir.monitor_directory(flags, gtk::gio::Cancellable::NONE)
+            {
+                let watch = dest.clone();
+                let changed_at = changed_at.clone();
+                let status = status.clone();
+                found.connect_changed(move |_mon, file, other, event| {
+                    use gtk::gio::FileMonitorEvent;
+                    let touches = [Some(file), other]
+                        .into_iter()
+                        .flatten()
+                        .any(|f| f.path().as_deref() == Some(watch.as_path()));
+                    if !touches {
+                        return;
+                    }
+                    match event {
+                        FileMonitorEvent::Created
+                        | FileMonitorEvent::Changed
+                        | FileMonitorEvent::ChangesDoneHint
+                        | FileMonitorEvent::MovedIn
+                        | FileMonitorEvent::Moved
+                        | FileMonitorEvent::Renamed => {
+                            changed_at.set(Some(std::time::Instant::now()));
+                            status.set_label("Changed just now");
+                        }
+                        _ => {}
+                    }
+                });
+                *monitor.borrow_mut() = Some(found);
+            }
+        }
+        {
+            let status = status.clone();
+            let changed_at = changed_at.clone();
+            let monitor = monitor.clone();
+            let _tick = gtk::glib::timeout_add_local(std::time::Duration::from_secs(20), move || {
+                if status.root().is_none() {
+                    *monitor.borrow_mut() = None;
+                    return gtk::glib::ControlFlow::Break;
+                }
+                if let Some(when) = changed_at.get() {
+                    let mins = when.elapsed().as_secs() / 60;
+                    status.set_label(&if mins == 0 {
+                        "Changed just now".to_string()
+                    } else if mins == 1 {
+                        "Changed 1 min ago".to_string()
+                    } else {
+                        format!("Changed {mins} min ago")
+                    });
+                }
+                gtk::glib::ControlFlow::Continue
+            });
+        }
+
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            &format!("Edit {name} outside Kalam"),
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
     // ── save ───────────────────────────────────────────────────────
 
     fn try_save(&mut self, save_anyway: bool, sender: &ComponentSender<Self>) {
@@ -7937,6 +8146,11 @@ impl EpubEditorModel {
             menu.add_item("Replace from file…", move || {
                 let _ = s.send(EpubEditorMsg::TreeReplace(p.clone()));
             });
+            let s = sender.input_sender().clone();
+            let p = path.to_string();
+            menu.add_item("Export for editing…", move || {
+                let _ = s.send(EpubEditorMsg::TreeExportForEditing(p.clone()));
+            });
         }
         let s = sender.input_sender().clone();
         let p = path.to_string();
@@ -8099,6 +8313,7 @@ impl EpubEditorModel {
         &mut self,
         path: String,
         bytes: Vec<u8>,
+        snapshot_label: &str,
         sender: &ComponentSender<Self>,
     ) {
         let kind = self
@@ -8108,7 +8323,7 @@ impl EpubEditorModel {
             .map(|f| f.kind);
         let mut plan = StructurePlan::new(
             format!("Replaced {}", file_name(&path)),
-            "Before replace file",
+            snapshot_label,
         );
         match String::from_utf8(bytes.clone()) {
             Ok(text) if kind.map(|k| k.is_text()).unwrap_or(false) => {
@@ -8225,7 +8440,11 @@ impl EpubEditorModel {
                 |_| {},
                 move |result| match result {
                     Ok(bytes) => {
-                        let _ = s2.send(EpubEditorMsg::ReplaceLoaded(target.clone(), bytes));
+                        let _ = s2.send(EpubEditorMsg::ReplaceLoaded(
+                            target.clone(),
+                            bytes,
+                            "Before replace file",
+                        ));
                     }
                     Err(message) => {
                         let _ = s2.send(EpubEditorMsg::ActionFailed(message));

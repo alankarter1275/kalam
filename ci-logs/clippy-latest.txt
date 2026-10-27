@@ -1,4 +1,4 @@
-src/pages/epub_editor.rs:263:9: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:5187:9: [1m[91merror[E0521][0m: borrowed data escapes outside of method: `path` escapes the method body here, argument requires that `'1` must outlive `'static`
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
@@ -24,8 +24,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/epub_editor.rs:263:9: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/epub_editor.rs:5187:9: [1m[91merror[E0521][0m: borrowed data escapes outside of method: `path` escapes the method body here, argument requires that `'1` must outlive `'static`
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 40519853629 ---
+--- run 40520468577 ---

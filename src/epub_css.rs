@@ -23,8 +23,6 @@ pub struct CssRule {
     pub declarations: Vec<CssDecl>,
     /// 1-based line of the selector in its source text.
     pub line: usize,
-    /// Source order across the sheet, for cascade ties.
-    pub order: usize,
 }
 
 /// One element in the ancestor chain (root first, element last).
@@ -66,8 +64,7 @@ impl Elem {
 pub fn parse_rules(css: &str) -> Vec<CssRule> {
     let cleaned = strip_comments(css);
     let mut rules = Vec::new();
-    let mut order = 0usize;
-    parse_block(&cleaned, 0, &mut rules, &mut order);
+    parse_block(&cleaned, 0, &mut rules);
     rules
 }
 
@@ -115,7 +112,7 @@ fn strip_comments(css: &str) -> String {
     out
 }
 
-fn parse_block(text: &str, base_line: usize, rules: &mut Vec<CssRule>, order: &mut usize) {
+fn parse_block(text: &str, base_line: usize, rules: &mut Vec<CssRule>) {
     let bytes = text.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
@@ -183,7 +180,7 @@ fn parse_block(text: &str, base_line: usize, rules: &mut Vec<CssRule>, order: &m
             if matches!(name.as_str(), "media" | "supports" | "layer" | "document") {
                 // Conditional group: the conditions decide at read
                 // time; the panel shows the rules regardless.
-                parse_block(body, line, rules, order);
+                parse_block(body, line, rules);
             }
             // @font-face/@page/@keyframes hold no element rules.
         } else if !prelude.is_empty() {
@@ -198,9 +195,7 @@ fn parse_block(text: &str, base_line: usize, rules: &mut Vec<CssRule>, order: &m
                     selectors,
                     declarations,
                     line,
-                    order: *order,
                 });
-                *order += 1;
             }
         }
         i = j;
@@ -410,8 +405,8 @@ fn compound_specificity(compound: &str) -> (u32, u32, u32) {
     for part in compound_parts(compound) {
         match part {
             Part::Id => spec.0 += 1,
-            Part::Class | Part::Attr(_) | Part::PseudoClass => spec.1 += 1,
-            Part::Tag(_) | Part::PseudoElement => spec.2 += 1,
+            Part::Class | Part::Attr | Part::PseudoClass => spec.1 += 1,
+            Part::Tag | Part::PseudoElement => spec.2 += 1,
             Part::Universal => {}
         }
     }
@@ -420,10 +415,10 @@ fn compound_specificity(compound: &str) -> (u32, u32, u32) {
 
 enum Part {
     Universal,
-    Tag(String),
+    Tag,
     Id,
     Class,
-    Attr(String),
+    Attr,
     PseudoClass,
     PseudoElement,
 }
@@ -457,7 +452,7 @@ fn compound_parts(compound: &str) -> Vec<Part> {
             if tag == "*" {
                 parts.push(Part::Universal);
             } else {
-                parts.push(Part::Tag(tag.to_ascii_lowercase()));
+                parts.push(Part::Tag);
             }
             i = j;
         }
@@ -474,7 +469,7 @@ fn compound_parts(compound: &str) -> Vec<Part> {
             }
             b'[' => {
                 let end = compound[i..].find(']').map(|n| i + n).unwrap_or(bytes.len() - 1);
-                parts.push(Part::Attr(compound[i + 1..end].to_string()));
+                parts.push(Part::Attr);
                 i = end + 1;
             }
             b':' => {

@@ -100,9 +100,6 @@ pub enum EpubEditorMsg {
     SchemeReady,
     ShowInFolder,
     // ── E2: engine preview, Check book, Live CSS ──
-    /// The active Preview tab was pressed again: open its menu
-    /// (decision 123).
-    TogglePreviewMenu,
     SetPreviewMode(PreviewMode),
     /// 800ms after the last change: write the preview copy.
     PreviewWriteDue,
@@ -125,7 +122,7 @@ pub enum EpubEditorMsg {
         word: String,
     },
     /// A selection finished in the preview.
-    PreviewTextSelected(kalam_reader::SelectedText),
+    PreviewTextSelected,
     /// A Live CSS rule header was clicked.
     GoToCssRule {
         path: String,
@@ -159,10 +156,9 @@ pub struct EpubEditorModel {
     right_stack: gtk::Stack,
     right_tab_btns: Vec<(RightTab, gtk::Button)>,
     view_switch_btns: Vec<(ViewMode, gtk::Button)>,
-    preview_label: gtk::Label,
     /// The box the engine preview sits in. Until the first preview
-    /// copy is written, `preview_label` fills it; the engine widget
-    /// replaces the label once there is something to render.
+    /// copy is written, a placeholder label fills it; the engine
+    /// widget replaces the label once there is something to render.
     preview_host: gtk::Box,
     livecss_host: gtk::Box,
     outline_host: gtk::Box,
@@ -501,7 +497,6 @@ impl Component for EpubEditorModel {
             right_stack,
             right_tab_btns,
             view_switch_btns,
-            preview_label,
             preview_host,
             livecss_host,
             outline_host,
@@ -823,7 +818,6 @@ impl Component for EpubEditorModel {
                     crate::pages::book::open_in_file_manager(&book.file_path.clone());
                 }
             }
-            EpubEditorMsg::TogglePreviewMenu => self.toggle_preview_menu(&sender),
             EpubEditorMsg::SetPreviewMode(mode) => {
                 self.preview_mode = mode;
                 self.apply_preview_prefs();
@@ -860,7 +854,7 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::PreviewGoToWord { chapter, fraction, word } => {
                 self.preview_word_jump(chapter, fraction, &word, &sender);
             }
-            EpubEditorMsg::PreviewTextSelected(_) => {
+            EpubEditorMsg::PreviewTextSelected => {
                 self.preview_selection_jump(&sender);
             }
             EpubEditorMsg::GoToCssRule { path, line } => {
@@ -1833,7 +1827,7 @@ impl EpubEditorModel {
             view.connect_selection(move |selected| {
                 if let Some(selected) = selected {
                     if !selected.text.trim().is_empty() {
-                        let _ = s.send(EpubEditorMsg::PreviewTextSelected(selected.clone()));
+                        let _ = s.send(EpubEditorMsg::PreviewTextSelected);
                     }
                 }
             });
@@ -2170,7 +2164,7 @@ impl EpubEditorModel {
                 });
             }
         }
-        matched.sort_by(|a, b| (a.spec, a.order).cmp(&(b.spec, b.order)));
+        matched.sort_by_key(|m| (m.spec, m.order));
 
         // The winning declaration for each property.
         let mut winner: HashMap<String, (bool, usize, usize)> = HashMap::new();

@@ -586,11 +586,7 @@ fn find_bare_ampersands(text: &str) -> Vec<usize> {
                 in_tag = true;
             }
             b'>' => in_tag = false,
-            b'&' if !in_tag => {
-                if !is_entity_ref(&text[i + 1..]) {
-                    out.push(i);
-                }
-            }
+            b'&' if !in_tag && !is_entity_ref(&text[i + 1..]) => out.push(i),
             _ => {}
         }
         i += 1;

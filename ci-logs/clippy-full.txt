@@ -27,14 +27,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/epub_css.rs:27:9: [1m[91merror[0m: field `order` is never read
-src/epub_css.rs:423:9: [1m[91merror[0m: field `0` is never read
-src/epub_css.rs:426:10: [1m[91merror[0m: field `0` is never read
-src/pages/epub_editor.rs:128:25: [1m[91merror[0m: field `0` is never read
-src/pages/epub_editor.rs:105:5: [1m[91merror[0m: variant `TogglePreviewMenu` is never constructed
-src/pages/epub_editor.rs:162:5: [1m[91merror[0m: field `preview_label` is never read
-src/epub_check.rs:590:17: [1m[91merror[0m: this `if` can be collapsed into the outer `match`
-src/pages/epub_editor.rs:2173:9: [1m[91merror[0m: consider using `sort_by_key`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 8 previous errors
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.65s

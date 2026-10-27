@@ -27,6 +27,7 @@ mod stats;
 
 mod tags;
 
+pub use editor::EditorVersion;
 pub use tags::BulkMetadataEdit;
 pub(crate) use series::heuristic_series_key;
 pub use dictionaries::{

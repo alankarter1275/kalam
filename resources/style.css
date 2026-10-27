@@ -8761,6 +8761,51 @@ button.kalam-ed-switch {
   background: alpha(@kalam_accent, 0.12);
   border-radius: 4px;
 }
+/* ── E5: History and Compare (decision 134) ── */
+button.kalam-ed-history-row {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  color: @kalam_text;
+  padding: 0;
+}
+button.kalam-ed-history-row:hover {
+  background: @kalam_hover;
+}
+button.kalam-ed-history-row.selected {
+  background: @kalam_surface_2;
+  box-shadow: inset 3px 0 @kalam_accent;
+}
+.kalam-ed-history-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: @kalam_text;
+}
+.kalam-ed-compare-header {
+  border-bottom: 1px solid @kalam_border;
+}
+.kalam-ed-compare-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: @kalam_text;
+}
+.kalam-ed-compare-colhead {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  color: @kalam_text_dim;
+}
+textview.kalam-ed-linenumbers {
+  color: @kalam_text_dim;
+}
+/* Colour probes: the diff tags read these foregrounds. */
+.kalam-ed-diff-removed {
+  color: @kalam_search_match;
+}
+.kalam-ed-diff-added {
+  color: @kalam_diff_add;
+}
 button.kalam-ed-outline-row.current {
   color: @kalam_accent;
   font-weight: 600;

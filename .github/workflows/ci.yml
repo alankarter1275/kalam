@@ -1154,6 +1154,20 @@ jobs:
             DIALOG=editor-spell THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
+      - name: open History (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-history-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-history THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Compare (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-compare-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-compare THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
       - name: open Insert character (dark) and report
         if: matrix.group == 'pages'
         run: |
@@ -1548,6 +1562,12 @@ jobs:
           cp ci-shots-editor-spell-light/report.txt ci-logs/editor-spell-light-latest.txt 2>/dev/null \
             || echo "(no editor-spell-light report produced)" > ci-logs/editor-spell-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-spell-light-latest.txt
+          cp ci-shots-editor-history-light/report.txt ci-logs/editor-history-light-latest.txt 2>/dev/null \
+            || echo "(no editor-history-light report produced)" > ci-logs/editor-history-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-history-light-latest.txt
+          cp ci-shots-editor-compare-light/report.txt ci-logs/editor-compare-light-latest.txt 2>/dev/null \
+            || echo "(no editor-compare-light report produced)" > ci-logs/editor-compare-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-compare-light-latest.txt
           cp ci-shots-editor-char-dark/report.txt ci-logs/editor-char-dark-latest.txt 2>/dev/null \
             || echo "(no editor-char-dark report produced)" > ci-logs/editor-char-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-char-dark-latest.txt
@@ -1734,6 +1754,10 @@ jobs:
             ci-logs/editor-reorder-terracotta-light.png 2>/dev/null || true
           cp ci-shots-editor-spell-light/03-edit-book-1-settled.png \
             ci-logs/editor-spell-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-history-light/03-edit-book-1-settled.png \
+            ci-logs/editor-history-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-compare-light/03-edit-book-1-settled.png \
+            ci-logs/editor-compare-terracotta-light.png 2>/dev/null || true
           cp ci-shots-editor-char-dark/03-edit-book-1-settled.png \
             ci-logs/editor-char-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-editor-dict-light/03-edit-book-1-settled.png \
@@ -1785,6 +1809,7 @@ jobs:
             ci-logs/editor-find-light-latest.txt ci-logs/editor-palette-dark-latest.txt \
             ci-logs/editor-contents-light-latest.txt ci-logs/editor-split-dark-latest.txt \
             ci-logs/editor-reorder-light-latest.txt ci-logs/editor-spell-light-latest.txt \
+            ci-logs/editor-history-light-latest.txt ci-logs/editor-compare-light-latest.txt \
             ci-logs/editor-char-dark-latest.txt ci-logs/editor-dict-light-latest.txt
           for shot in settings-appearance-light settings-appearance-dark \
                       settings-reading-light settings-reading-dropdown-dark \
@@ -1885,6 +1910,8 @@ jobs:
                       ci-logs/editor-split-terracotta-dark.png \
                       ci-logs/editor-reorder-terracotta-light.png \
                       ci-logs/editor-spell-terracotta-light.png \
+                      ci-logs/editor-history-terracotta-light.png \
+                      ci-logs/editor-compare-terracotta-light.png \
                       ci-logs/editor-char-terracotta-dark.png \
                       ci-logs/editor-dict-terracotta-light.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi

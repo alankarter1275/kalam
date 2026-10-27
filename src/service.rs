@@ -2641,6 +2641,88 @@ impl LibraryService {
         self.catalog.spell_headwords().map_err(|e| e.to_string())
     }
 
+    /// The editor's History (decision 134): every snapshot,
+    /// newest first, with the untouched original last while its
+    /// `.orig` backup stands.
+    pub fn editor_history(&self, book: &Book) -> Vec<crate::db::EditorVersion> {
+        let dir = crate::paths::editor_snapshots_dir(&book.uuid);
+        let mut out: Vec<crate::db::EditorVersion> = self
+            .catalog
+            .editor_snapshots(book.id)
+            .into_iter()
+            .map(|s| crate::db::EditorVersion {
+                missing: !dir.join(&s.file_name).exists(),
+                snapshot_id: Some(s.id),
+                label: s.label,
+                created_at: s.created_at,
+                files_changed: Some(s.files_changed),
+            })
+            .collect();
+        if crate::epub_metadata::backup_path(&book.file_path).exists() {
+            out.push(crate::db::EditorVersion {
+                snapshot_id: None,
+                label: "Original file".to_string(),
+                created_at: book.added_at.clone(),
+                files_changed: None,
+                missing: false,
+            });
+        }
+        out
+    }
+
+    fn editor_version_path(
+        &self,
+        book: &Book,
+        snapshot_id: Option<i64>,
+    ) -> Result<std::path::PathBuf, String> {
+        match snapshot_id {
+            None => Ok(crate::epub_metadata::backup_path(&book.file_path)),
+            Some(id) => self
+                .catalog
+                .editor_snapshots(book.id)
+                .into_iter()
+                .find(|s| s.id == id)
+                .map(|s| crate::paths::editor_snapshots_dir(&book.uuid).join(s.file_name))
+                .ok_or_else(|| "That snapshot no longer exists.".to_string()),
+        }
+    }
+
+    /// Open one History version read-only, for Compare.
+    pub fn open_editor_version(
+        &self,
+        book: &Book,
+        snapshot_id: Option<i64>,
+    ) -> Result<crate::epub_container::EpubContainer, String> {
+        let path = self.editor_version_path(book, snapshot_id)?;
+        crate::epub_container::EpubContainer::open(&path).map_err(|e| e.to_string())
+    }
+
+    /// Put a History version back as the book (decision 134): a
+    /// snapshot of the current book is kept first, the version
+    /// is verified to open before it replaces anything, then
+    /// the stored hash and reader cache are refreshed exactly
+    /// as after a save.
+    pub fn restore_editor_version(
+        &self,
+        book: &Book,
+        snapshot_id: Option<i64>,
+    ) -> Result<(), String> {
+        let source = self.editor_version_path(book, snapshot_id)?;
+        crate::epub_container::EpubContainer::open(&source).map_err(|e| e.to_string())?;
+        self.take_editor_snapshot(book, "Before restore", 0)?;
+        let tmp = book.file_path.with_extension("epub.kalam-restore");
+        std::fs::copy(&source, &tmp).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::rename(&tmp, &book.file_path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.to_string());
+        }
+        if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
+            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+        }
+        let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
+        Ok(())
+    }
+
     /// Remove one file from the book (Problems' Remove, decision
     /// 132): snapshot first, then rewrite without the file and
     /// without its manifest (and spine, if any) entries.

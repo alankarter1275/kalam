@@ -25,6 +25,23 @@ pub struct EditorSnapshot {
     pub created_at: String,
 }
 
+/// One entry of the editor's History list (decision 134): a
+/// snapshot row, or — `snapshot_id: None` — the untouched
+/// original file the book was added with (the `.orig` backup).
+/// `missing` marks a row whose file is gone; History shows it
+/// but cannot restore or compare it.
+#[derive(Debug, Clone)]
+pub struct EditorVersion {
+    pub snapshot_id: Option<i64>,
+    pub label: String,
+    /// ISO-8601 UTC, as stored (`created_at` for snapshots, the
+    /// book's `added_at` for the original).
+    pub created_at: String,
+    /// Files the operation changed; `None` for the original.
+    pub files_changed: Option<i64>,
+    pub missing: bool,
+}
+
 impl Catalog {
     pub fn add_editor_snapshot(
         &self,

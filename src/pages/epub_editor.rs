@@ -5,13 +5,14 @@
 //! view), the right panel (Preview, Outline, Problems, Live CSS) and
 //! the status bar with the Code / Split / Preview switch.
 //!
-//! This lands in tranches like the readers did. E1 is the shell,
+//! This landed in tranches like the readers did. E1 is the shell,
 //! source editing and the save path (snapshots, validation, both
-//! save dialogs); the right panel's Preview is a plain-text render
-//! until the engine-backed one arrives in E2, where Live CSS also
-//! lands. Tools, Find & replace and the command palette are E3, so
-//! the top bar has no Tools/History buttons yet — dead controls are
-//! not drawn (the same rule the book page's ⋯ menu followed).
+//! save dialogs); E2 the engine-backed Preview, Check book and Live
+//! CSS; E3 Tools, Find & replace and the command palette; E4 Edit
+//! contents, the structure tools, the Insert dialogs and Spell
+//! check; E5 opens with History and Compare (decision 134) — dead
+//! controls are never drawn (the same rule the book page's ⋯ menu
+//! followed).
 
 use crate::epub_check::{BookProblem, ProblemFix, Severity};
 use crate::epub_container::{EpubContainer, EpubFile, FileKind, TreeSection};
@@ -241,6 +242,40 @@ pub enum EpubEditorMsg {
     OpenPersonalDict,
     PersonalAdd(String),
     PersonalRemove(String),
+    // ── E5: History and Compare (decision 134) ──
+    OpenHistory,
+    HistoryLoaded(Vec<crate::db::EditorVersion>),
+    RestoreVersion {
+        id: Option<i64>,
+        label: String,
+    },
+    RestoreConfirmed {
+        id: Option<i64>,
+        label: String,
+    },
+    VersionRestored(String),
+    CompareVersion {
+        id: Option<i64>,
+        label: String,
+        created_at: String,
+    },
+    CompareLoaded(
+        Box<
+            Result<
+                (
+                    crate::epub_container::EpubContainer,
+                    Option<i64>,
+                    String,
+                    String,
+                ),
+                String,
+            >,
+        >,
+    ),
+    CompareBack,
+    CompareRestore,
+    /// Step between the changed files of a comparison.
+    CompareFile(i32),
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -364,6 +399,39 @@ struct SpellSession {
     picked: Option<String>,
 }
 
+/// One changed text file of a comparison (decision 134).
+struct CompareEntry {
+    path: String,
+    kind: FileKind,
+    old_text: String,
+    new_text: String,
+}
+
+/// A running comparison against one History version.
+struct CompareState {
+    version_id: Option<i64>,
+    label: String,
+    created_at: String,
+    entries: Vec<CompareEntry>,
+    at: usize,
+}
+
+/// The Compare page's widgets, built once at init.
+struct CompareWidgets {
+    title: gtk::Label,
+    meta: gtk::Label,
+    prev_btn: gtk::Button,
+    next_btn: gtk::Button,
+    left_head: gtk::Label,
+    old_buffer: sourceview5::Buffer,
+    new_buffer: sourceview5::Buffer,
+    old_numbers: sourceview5::Buffer,
+    new_numbers: sourceview5::Buffer,
+    removed_probe: gtk::Label,
+    added_probe: gtk::Label,
+    vadjustment: gtk::Adjustment,
+}
+
 /// The widgets of an open Spell check dialog the model drives.
 struct SpellUi {
     slot: Rc<RefCell<Option<InAppDialog>>>,
@@ -409,6 +477,7 @@ enum PaletteAction {
     InsertInlineContents,
     SpellCheck,
     PersonalDict,
+    History,
     Tool(InstantTool),
     View(ViewMode),
     Tab(RightTab),
@@ -554,6 +623,9 @@ pub struct EpubEditorModel {
     spell_dict: Option<Rc<HashSet<String>>>,
     spell: Option<SpellSession>,
     spell_ui: Option<SpellUi>,
+    // ── E5: History and Compare ──
+    compare_widgets: CompareWidgets,
+    compare: Option<CompareState>,
 }
 
 const EMPTY_TAB: &str = "__kalam_empty";
@@ -634,6 +706,18 @@ impl Component for EpubEditorModel {
             });
         }
         top_bar.append(&tools_btn);
+        let history_btn = gtk::Button::with_label("History");
+        history_btn.add_css_class("kalam-ed-ghost");
+        history_btn.set_valign(gtk::Align::Center);
+        history_btn.set_margin_end(8);
+        history_btn.set_focus_on_click(false);
+        {
+            let s = sender.input_sender().clone();
+            history_btn.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::OpenHistory);
+            });
+        }
+        top_bar.append(&history_btn);
         top_bar.append(&save_btn);
 
         // ── file tree (240, §36) ───────────────────────────────────
@@ -807,6 +891,8 @@ impl Component for EpubEditorModel {
         body_stack.set_vexpand(true);
         body_stack.add_named(&middle, Some("workspace"));
         body_stack.add_named(&error_host, Some("state"));
+        let (compare_page, compare_widgets) = build_compare_page(&sender);
+        body_stack.add_named(&compare_page, Some("compare"));
         body_stack.set_visible_child_name("workspace");
 
         // ── status bar (32, decision 122) ──────────────────────────
@@ -1221,6 +1307,8 @@ impl Component for EpubEditorModel {
             spell_dict: None,
             spell: None,
             spell_ui: None,
+            compare_widgets,
+            compare: None,
         };
         model.sync_switches();
         let widgets = view_output!();
@@ -1324,6 +1412,88 @@ impl Component for EpubEditorModel {
                     }
                     Ok("editor-dict") => {
                         self.present_personal_dict_dialog(&sender);
+                    }
+                    Ok("editor-history") => {
+                        // A board-shaped stand-in: CI books have
+                        // never been saved from the editor, so the
+                        // real history is empty.
+                        let now = crate::db::chrono_like_now();
+                        let today = now.get(..11).unwrap_or("2026-10-27T");
+                        let mk = |id, label: &str, created_at: String, files_changed| {
+                            crate::db::EditorVersion {
+                                snapshot_id: id,
+                                label: label.to_string(),
+                                created_at,
+                                files_changed,
+                                missing: false,
+                            }
+                        };
+                        self.present_history_dialog(
+                            vec![
+                                mk(
+                                    Some(3),
+                                    "Before save",
+                                    format!("{today}14:32:00Z"),
+                                    Some(3),
+                                ),
+                                mk(
+                                    Some(2),
+                                    "Before Replace all",
+                                    format!("{today}14:10:00Z"),
+                                    Some(5),
+                                ),
+                                mk(
+                                    None,
+                                    "Original file",
+                                    "2026-09-12T09:15:00Z".to_string(),
+                                    None,
+                                ),
+                            ],
+                            &sender,
+                        );
+                    }
+                    Ok("editor-compare") => {
+                        // Compare the open chapter against a
+                        // lightly rewritten twin of itself.
+                        let now = crate::db::chrono_like_now();
+                        let today = now.get(..11).unwrap_or("2026-10-27T");
+                        if let Some(path) = self.active_path.clone() {
+                            let kind = self
+                                .container
+                                .as_ref()
+                                .and_then(|c| c.file(&path))
+                                .map(|f| f.kind);
+                            if let (Some(kind), Some(text)) =
+                                (kind, self.file_text(&path))
+                            {
+                                let mut lines: Vec<&str> =
+                                    text.split('\n').collect();
+                                let mut old_text = text.clone();
+                                if lines.len() > 12 {
+                                    let edited = format!(
+                                        "{} (earlier wording)",
+                                        lines[6].trim_end()
+                                    );
+                                    lines[6] = Box::leak(edited.into_boxed_str());
+                                    lines.remove(9);
+                                    old_text = lines.join("\n");
+                                }
+                                self.compare = Some(CompareState {
+                                    version_id: Some(3),
+                                    label: "Before save".to_string(),
+                                    created_at: format!("{today}14:32:00Z"),
+                                    entries: vec![CompareEntry {
+                                        path,
+                                        kind,
+                                        old_text,
+                                        new_text: text,
+                                    }],
+                                    at: 0,
+                                });
+                                self.body_stack.set_visible_child_name("compare");
+                                self.render_compare();
+                            }
+                        }
                     }
                     Ok("editor-outline") | Ok("editor-livecss") => {
                         if let Some(buffer) = self.active_buffer() {
@@ -1954,6 +2124,148 @@ impl Component for EpubEditorModel {
                 let mut words = self.personal_words();
                 words.retain(|w| w != &word);
                 self.save_personal(&words);
+            }
+            // ── E5: History and Compare (decision 134) ──
+            EpubEditorMsg::OpenHistory => self.open_history(&sender),
+            EpubEditorMsg::HistoryLoaded(versions) => {
+                self.present_history_dialog(versions, &sender)
+            }
+            EpubEditorMsg::RestoreVersion { id, label } => {
+                if self.has_unsaved() {
+                    let s = sender.input_sender().clone();
+                    let picked = label.clone();
+                    let _ = crate::widgets::dialog::confirmation_dialog(
+                        &self.root_overlay,
+                        "Discard unsaved edits?",
+                        "Restoring replaces the book with this version. \
+                         Your unsaved edits would be lost — the current \
+                         saved state is kept as a snapshot first.",
+                        "Cancel",
+                        "Restore this version",
+                        crate::widgets::dialog::ConfirmationKind::Destructive,
+                        move || {
+                            let _ = s.send(EpubEditorMsg::RestoreConfirmed {
+                                id,
+                                label: picked.clone(),
+                            });
+                        },
+                    );
+                } else {
+                    sender.input(EpubEditorMsg::RestoreConfirmed { id, label });
+                }
+            }
+            EpubEditorMsg::RestoreConfirmed { id, label } => {
+                let Some(book) = self.book.clone() else {
+                    return;
+                };
+                let service = self.service.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn_internal(
+                    "Restoring an earlier version",
+                    move |_reporter| {
+                        service
+                            .restore_editor_version(&book, id)
+                            .map(|_| label)
+                    },
+                    |_| {},
+                    move |result| match result {
+                        Ok(label) => {
+                            let _ = s.send(EpubEditorMsg::VersionRestored(label));
+                        }
+                        Err(message) => {
+                            let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
+            }
+            EpubEditorMsg::VersionRestored(label) => {
+                let paths: Vec<String> = self.tabs.iter().map(|t| t.path.clone()).collect();
+                for path in paths {
+                    self.close_tab_quietly(&path);
+                }
+                self.pending.clear();
+                self.added_paths.clear();
+                self.removed_paths.clear();
+                self.active_path = None;
+                self.compare = None;
+                self.body_stack.set_visible_child_name("workspace");
+                self.request_load(&sender);
+                self.show_pill(&format!("Restored “{label}”"), false, &sender);
+            }
+            EpubEditorMsg::CompareVersion {
+                id,
+                label,
+                created_at,
+            } => {
+                let Some(book) = self.book.clone() else {
+                    return;
+                };
+                let service = self.service.clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn_internal(
+                    "Opening an earlier version",
+                    move |_reporter| {
+                        service
+                            .open_editor_version(&book, id)
+                            .map(|container| (container, id, label, created_at))
+                    },
+                    |_| {},
+                    move |result| {
+                        let _ = s.send(EpubEditorMsg::CompareLoaded(Box::new(result)));
+                    },
+                );
+            }
+            EpubEditorMsg::CompareLoaded(load) => match *load {
+                Ok((old_container, id, label, created_at)) => {
+                    let entries = self.build_compare_entries(&old_container);
+                    if entries.is_empty() {
+                        self.show_pill(
+                            "Nothing differs from this version",
+                            false,
+                            &sender,
+                        );
+                    } else {
+                        self.compare = Some(CompareState {
+                            version_id: id,
+                            label,
+                            created_at,
+                            entries,
+                            at: 0,
+                        });
+                        self.body_stack.set_visible_child_name("compare");
+                        self.render_compare();
+                    }
+                }
+                Err(message) => {
+                    sender.input(EpubEditorMsg::ActionFailed(message));
+                }
+            },
+            EpubEditorMsg::CompareBack => {
+                self.compare = None;
+                self.body_stack.set_visible_child_name("workspace");
+            }
+            EpubEditorMsg::CompareRestore => {
+                if let Some(state) = &self.compare {
+                    sender.input(EpubEditorMsg::RestoreVersion {
+                        id: state.version_id,
+                        label: state.label.clone(),
+                    });
+                }
+            }
+            EpubEditorMsg::CompareFile(delta) => {
+                let moved = match &mut self.compare {
+                    Some(state) if !state.entries.is_empty() => {
+                        let next = (state.at as i32 + delta)
+                            .clamp(0, state.entries.len() as i32 - 1) as usize;
+                        let changed = next != state.at;
+                        state.at = next;
+                        changed
+                    }
+                    _ => false,
+                };
+                if moved {
+                    self.render_compare();
+                }
             }
             EpubEditorMsg::ExternalReady(path) => {
                 let file = gtk::gio::File::for_path(&path);
@@ -4423,6 +4735,400 @@ impl EpubEditorModel {
         ) {
             *slot.borrow_mut() = Some(dialog);
         }
+    }
+
+    // ── E5: History and Compare (decision 134) ──
+
+    fn open_history(&mut self, sender: &ComponentSender<Self>) {
+        let Some(book) = self.book.clone() else {
+            return;
+        };
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Reading the book's history",
+            move |_reporter| service.editor_history(&book),
+            |_| {},
+            move |versions| {
+                let _ = s.send(EpubEditorMsg::HistoryLoaded(versions));
+            },
+        );
+    }
+
+    fn present_history_dialog(
+        &mut self,
+        versions: Vec<crate::db::EditorVersion>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let title = self
+            .book
+            .as_ref()
+            .map(|b| b.title.clone())
+            .unwrap_or_default();
+        let shell = dialog_shell(
+            DialogSize::List,
+            Some(&format!(
+                "{title} · a snapshot is kept before each save"
+            )),
+        );
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(320);
+        scroll.set_child(Some(&list));
+        shell.body().append(&scroll);
+
+        let versions: Rc<Vec<crate::db::EditorVersion>> = Rc::new(versions);
+        let selected: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(0));
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+
+        let compare_btn = {
+            let versions = versions.clone();
+            let selected = selected.clone();
+            let slot = slot.clone();
+            let s = sender.input_sender().clone();
+            boxed_ghost_button("Compare", move || {
+                if let Some(version) = versions.get(selected.get()) {
+                    if version.missing {
+                        return;
+                    }
+                    let message = EpubEditorMsg::CompareVersion {
+                        id: version.snapshot_id,
+                        label: version.label.clone(),
+                        created_at: version.created_at.clone(),
+                    };
+                    close_slot(&slot);
+                    let _ = s.send(message);
+                }
+            })
+        };
+        let restore_btn = {
+            let versions = versions.clone();
+            let selected = selected.clone();
+            let slot = slot.clone();
+            let s = sender.input_sender().clone();
+            primary_button("Restore this version", move || {
+                if let Some(version) = versions.get(selected.get()) {
+                    if version.missing {
+                        return;
+                    }
+                    let message = EpubEditorMsg::RestoreVersion {
+                        id: version.snapshot_id,
+                        label: version.label.clone(),
+                    };
+                    close_slot(&slot);
+                    let _ = s.send(message);
+                }
+            })
+        };
+        shell.footer().append(&compare_btn);
+        shell.footer().append(&restore_btn);
+
+        if versions.is_empty() {
+            let label = gtk::Label::new(Some(
+                "No earlier versions yet — a snapshot is kept before each save.",
+            ));
+            label.add_css_class("kalam-ui-meta");
+            label.set_halign(gtk::Align::Start);
+            label.set_margin_top(8);
+            list.append(&label);
+            compare_btn.set_sensitive(false);
+            restore_btn.set_sensitive(false);
+        }
+        let rows: Rc<RefCell<Vec<gtk::Button>>> = Rc::new(RefCell::new(Vec::new()));
+        for (index, version) in versions.iter().enumerate() {
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-ed-history-row");
+            if index == 0 {
+                row.add_css_class("selected");
+            }
+            row.set_size_request(-1, 64);
+            let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            text.set_valign(gtk::Align::Center);
+            text.set_margin_start(16);
+            let name = gtk::Label::new(Some(&version.label));
+            name.add_css_class("kalam-ed-history-name");
+            name.set_halign(gtk::Align::Start);
+            text.append(&name);
+            let meta = gtk::Label::new(Some(&Self::version_meta(version)));
+            meta.add_css_class("kalam-ui-meta");
+            meta.set_halign(gtk::Align::Start);
+            text.append(&meta);
+            row.set_child(Some(&text));
+            {
+                let versions = versions.clone();
+                let selected = selected.clone();
+                let rows = rows.clone();
+                let compare_btn = compare_btn.clone();
+                let restore_btn = restore_btn.clone();
+                row.connect_clicked(move |_| {
+                    selected.set(index);
+                    for (at, other) in rows.borrow().iter().enumerate() {
+                        if at == index {
+                            other.add_css_class("selected");
+                        } else {
+                            other.remove_css_class("selected");
+                        }
+                    }
+                    let usable = versions
+                        .get(index)
+                        .map(|v| !v.missing)
+                        .unwrap_or(false);
+                    compare_btn.set_sensitive(usable);
+                    restore_btn.set_sensitive(usable);
+                });
+            }
+            rows.borrow_mut().push(row.clone());
+            list.append(&row);
+        }
+        if let Some(first) = versions.first() {
+            compare_btn.set_sensitive(!first.missing);
+            restore_btn.set_sensitive(!first.missing);
+        }
+
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "History",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    /// "Today 14:32 · 3 files changed", or "Added 12 Sep 2026"
+    /// for the original file (decision 134's row copy).
+    fn version_meta(version: &crate::db::EditorVersion) -> String {
+        if version.snapshot_id.is_none() {
+            return format!("Added {}", Self::pretty_date(&version.created_at));
+        }
+        let mut text = Self::version_when(&version.created_at);
+        if let Some(count) = version.files_changed {
+            text.push_str(&format!(
+                " · {count} file{} changed",
+                if count == 1 { "" } else { "s" }
+            ));
+        }
+        if version.missing {
+            text.push_str(" · snapshot file missing");
+        }
+        text
+    }
+
+    fn version_when(iso: &str) -> String {
+        let now = crate::db::chrono_like_now();
+        let time = iso.get(11..16).unwrap_or_default();
+        if iso.get(..10) == now.get(..10) && !time.is_empty() {
+            format!("Today {time}")
+        } else if time.is_empty() {
+            Self::pretty_date(iso)
+        } else {
+            format!("{} · {time}", Self::pretty_date(iso))
+        }
+    }
+
+    fn pretty_date(iso: &str) -> String {
+        const MONTHS: [&str; 12] = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+            "Nov", "Dec",
+        ];
+        let year = iso.get(0..4).unwrap_or_default();
+        let month: usize = iso.get(5..7).and_then(|m| m.parse().ok()).unwrap_or(0);
+        let day: u32 = iso.get(8..10).and_then(|d| d.parse().ok()).unwrap_or(0);
+        match MONTHS.get(month.wrapping_sub(1)) {
+            Some(name) if day > 0 && !year.is_empty() => {
+                format!("{day} {name} {year}")
+            }
+            _ => iso.get(..10).unwrap_or(iso).to_string(),
+        }
+    }
+
+    /// Every text file whose current words differ from the
+    /// opened version, current book order first.
+    fn build_compare_entries(
+        &self,
+        old: &EpubContainer,
+    ) -> Vec<CompareEntry> {
+        let mut paths: Vec<String> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        if let Some(current) = &self.container {
+            for file in &current.files {
+                if seen.insert(file.path.clone()) {
+                    paths.push(file.path.clone());
+                }
+            }
+        }
+        for file in &old.files {
+            if seen.insert(file.path.clone()) {
+                paths.push(file.path.clone());
+            }
+        }
+        let mut entries = Vec::new();
+        for path in paths {
+            let kind = self
+                .container
+                .as_ref()
+                .and_then(|c| c.file(&path))
+                .or_else(|| old.file(&path))
+                .map(|f| f.kind);
+            let Some(kind) = kind.filter(|k| k.is_text()) else {
+                continue;
+            };
+            let old_text = old.text(&path).unwrap_or_default();
+            let new_text = if self.removed_paths.contains(&path) {
+                String::new()
+            } else {
+                self.file_text(&path).unwrap_or_default()
+            };
+            if old_text != new_text {
+                entries.push(CompareEntry {
+                    path,
+                    kind,
+                    old_text,
+                    new_text,
+                });
+            }
+        }
+        entries
+    }
+
+    /// Paint the standing comparison: aligned lines and true
+    /// line numbers into the four buffers, removed lines on the
+    /// `match` tint and added lines on `diff-add` (decision 134).
+    fn render_compare(&mut self) {
+        let Some(state) = self.compare.as_ref() else {
+            return;
+        };
+        let Some(entry) = state.entries.get(state.at) else {
+            return;
+        };
+        let (rows, hunks) =
+            crate::text_diff::align(&entry.old_text, &entry.new_text);
+        let old_lines = crate::text_diff::lines_of(&entry.old_text);
+        let new_lines = crate::text_diff::lines_of(&entry.new_text);
+        let mut old_src = String::new();
+        let mut new_src = String::new();
+        let mut old_nums = String::new();
+        let mut new_nums = String::new();
+        for (index, row) in rows.iter().enumerate() {
+            if index > 0 {
+                old_src.push('\n');
+                new_src.push('\n');
+                old_nums.push('\n');
+                new_nums.push('\n');
+            }
+            if let Some(line) = row.old {
+                old_src.push_str(old_lines.get(line).copied().unwrap_or_default());
+                old_nums.push_str(&(line + 1).to_string());
+            }
+            if let Some(line) = row.new {
+                new_src.push_str(new_lines.get(line).copied().unwrap_or_default());
+                new_nums.push_str(&(line + 1).to_string());
+            }
+        }
+
+        let widgets = &self.compare_widgets;
+        if let Some(id) = entry.kind.language_id() {
+            if let Some(language) =
+                sourceview5::LanguageManager::default().language(id)
+            {
+                widgets.old_buffer.set_language(Some(&language));
+                widgets.new_buffer.set_language(Some(&language));
+            }
+        }
+        let scheme = current_style_scheme();
+        widgets.old_buffer.set_style_scheme(scheme.as_ref());
+        widgets.new_buffer.set_style_scheme(scheme.as_ref());
+        widgets.old_buffer.set_text(&old_src);
+        widgets.new_buffer.set_text(&new_src);
+        widgets.old_numbers.set_text(&old_nums);
+        widgets.new_numbers.set_text(&new_nums);
+
+        let removed_tag = Self::diff_tag(
+            &widgets.old_buffer,
+            "kalam-diff-removed",
+            &widgets.removed_probe,
+        );
+        let added_tag = Self::diff_tag(
+            &widgets.new_buffer,
+            "kalam-diff-added",
+            &widgets.added_probe,
+        );
+        for (index, row) in rows.iter().enumerate() {
+            if row.kind == crate::text_diff::RowKind::Same {
+                continue;
+            }
+            let line = index as i32;
+            if row.kind == crate::text_diff::RowKind::Removed {
+                Self::tag_line(&widgets.old_buffer, &removed_tag, line);
+            }
+            if row.new.is_some() {
+                Self::tag_line(&widgets.new_buffer, &added_tag, line);
+            }
+        }
+
+        widgets
+            .title
+            .set_label(&format!("Compare · {}", file_name(&entry.path)));
+        let changes = if hunks == 1 {
+            "1 change".to_string()
+        } else {
+            format!("{hunks} changes")
+        };
+        widgets.meta.set_label(&if state.entries.len() > 1 {
+            format!(
+                "{changes} · file {} of {}",
+                state.at + 1,
+                state.entries.len()
+            )
+        } else {
+            changes
+        });
+        let head = if state.version_id.is_none() {
+            state.label.to_uppercase()
+        } else {
+            match state.created_at.get(11..16) {
+                Some(time) => format!("{} · {time}", state.label.to_uppercase()),
+                None => state.label.to_uppercase(),
+            }
+        };
+        widgets.left_head.set_label(&head);
+        let many = state.entries.len() > 1;
+        widgets.prev_btn.set_visible(many);
+        widgets.next_btn.set_visible(many);
+        widgets.prev_btn.set_sensitive(state.at > 0);
+        widgets
+            .next_btn
+            .set_sensitive(state.at + 1 < state.entries.len());
+        widgets.vadjustment.set_value(0.0);
+    }
+
+    /// The paragraph-background tag for one side of the diff,
+    /// created once per buffer from the token colour its probe
+    /// label resolves (the `widgets/paint.rs` pattern).
+    fn diff_tag(
+        buffer: &sourceview5::Buffer,
+        name: &str,
+        probe: &gtk::Label,
+    ) -> gtk::TextTag {
+        if let Some(tag) = buffer.tag_table().lookup(name) {
+            return tag;
+        }
+        let tag = gtk::TextTag::new(Some(name));
+        let rgba = crate::widgets::paint::probe_color(probe);
+        tag.set_paragraph_background_rgba(Some(&rgba));
+        buffer.tag_table().add(&tag);
+        tag
+    }
+
+    fn tag_line(buffer: &sourceview5::Buffer, tag: &gtk::TextTag, line: i32) {
+        let start = buffer.iter_at_line(line);
+        let end = if line + 1 < buffer.line_count() {
+            buffer.iter_at_line(line + 1)
+        } else {
+            buffer.end_iter()
+        };
+        buffer.apply_tag(tag, &start, &end);
     }
 
     // ── save ───────────────────────────────────────────────────────
@@ -8050,6 +8756,7 @@ impl EpubEditorModel {
             item("Edit contents", "", None, PaletteAction::EditContents),
             item("Spell check", "", Some("F7"), PaletteAction::SpellCheck),
             item("Personal dictionary…", "", None, PaletteAction::PersonalDict),
+            item("History…", "", None, PaletteAction::History),
             item("Split at cursor", "Structure", None, PaletteAction::SplitCursor),
             item("Split at every heading…", "Structure", None, PaletteAction::SplitDialog(1)),
             item("Split chapter by size…", "Structure", None, PaletteAction::SplitDialog(2)),
@@ -8165,6 +8872,7 @@ impl EpubEditorModel {
             PaletteAction::EditContents => self.open_contents(sender),
             PaletteAction::SpellCheck => self.start_spell_check(sender),
             PaletteAction::PersonalDict => self.present_personal_dict_dialog(sender),
+            PaletteAction::History => self.open_history(sender),
             PaletteAction::SplitCursor => self.run_split(0, 250, sender),
             PaletteAction::SplitDialog(preset) => {
                 self.present_split_dialog(preset, sender)
@@ -8412,6 +9120,163 @@ fn build_reorder_rows(list: &gtk::Box, order: &Rc<RefCell<Vec<String>>>) {
         row.add_controller(target);
         list.append(&row);
     }
+}
+
+/// The Compare page (decision 134): a header over two
+/// side-by-side source columns with number gutters, all four
+/// scrollers sharing one vertical adjustment so the columns
+/// cannot drift apart. Buffers are filled per comparison by
+/// `render_compare`.
+fn build_compare_page(
+    sender: &ComponentSender<EpubEditorModel>,
+) -> (gtk::Box, CompareWidgets) {
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    header.add_css_class("kalam-ed-compare-header");
+    header.set_size_request(-1, 56);
+    header.set_margin_start(20);
+    header.set_margin_end(20);
+    let title = gtk::Label::new(None);
+    title.add_css_class("kalam-ed-compare-title");
+    title.set_valign(gtk::Align::Center);
+    header.append(&title);
+    let meta = gtk::Label::new(None);
+    meta.add_css_class("kalam-ui-meta");
+    meta.set_valign(gtk::Align::Center);
+    header.append(&meta);
+    let removed_probe = crate::widgets::paint::color_probe("kalam-ed-diff-removed");
+    header.append(&removed_probe);
+    let added_probe = crate::widgets::paint::color_probe("kalam-ed-diff-added");
+    header.append(&added_probe);
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    header.append(&spacer);
+    let prev_btn = gtk::Button::with_label("‹");
+    prev_btn.add_css_class("kalam-ed-ghost");
+    prev_btn.set_valign(gtk::Align::Center);
+    prev_btn.set_tooltip_text(Some("Previous changed file"));
+    {
+        let s = sender.input_sender().clone();
+        prev_btn.connect_clicked(move |_| {
+            let _ = s.send(EpubEditorMsg::CompareFile(-1));
+        });
+    }
+    header.append(&prev_btn);
+    let next_btn = gtk::Button::with_label("›");
+    next_btn.add_css_class("kalam-ed-ghost");
+    next_btn.set_valign(gtk::Align::Center);
+    next_btn.set_tooltip_text(Some("Next changed file"));
+    {
+        let s = sender.input_sender().clone();
+        next_btn.connect_clicked(move |_| {
+            let _ = s.send(EpubEditorMsg::CompareFile(1));
+        });
+    }
+    header.append(&next_btn);
+    let s = sender.input_sender().clone();
+    let back = boxed_ghost_button("Back to editor", move || {
+        let _ = s.send(EpubEditorMsg::CompareBack);
+    });
+    back.set_valign(gtk::Align::Center);
+    header.append(&back);
+    let s = sender.input_sender().clone();
+    let restore = primary_button("Restore this version", move || {
+        let _ = s.send(EpubEditorMsg::CompareRestore);
+    });
+    restore.set_valign(gtk::Align::Center);
+    header.append(&restore);
+    page.append(&header);
+
+    let cols = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    cols.set_homogeneous(true);
+    cols.set_vexpand(true);
+    let vadjustment = gtk::Adjustment::new(0.0, 0.0, 0.0, 1.0, 10.0, 0.0);
+
+    let make_side = |vadjustment: &gtk::Adjustment| {
+        let side = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        side.set_hexpand(true);
+        let head = gtk::Label::new(None);
+        head.add_css_class("kalam-ed-compare-colhead");
+        head.set_halign(gtk::Align::Start);
+        head.set_margin_start(20);
+        head.set_margin_top(10);
+        head.set_margin_bottom(6);
+        side.append(&head);
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row.set_vexpand(true);
+
+        let numbers_buffer = sourceview5::Buffer::new(None::<&gtk::TextTagTable>);
+        let numbers_view = sourceview5::View::with_buffer(&numbers_buffer);
+        numbers_view.add_css_class("kalam-ed-source");
+        numbers_view.add_css_class("kalam-ed-linenumbers");
+        numbers_view.set_editable(false);
+        numbers_view.set_cursor_visible(false);
+        numbers_view.set_show_line_numbers(false);
+        numbers_view.set_highlight_current_line(false);
+        numbers_view.set_wrap_mode(gtk::WrapMode::None);
+        numbers_view.set_justification(gtk::Justification::Right);
+        numbers_view.set_top_margin(4);
+        let numbers_scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::External)
+            .width_request(52)
+            .vexpand(true)
+            .child(&numbers_view)
+            .build();
+        numbers_scroller.set_vadjustment(Some(vadjustment));
+        row.append(&numbers_scroller);
+
+        let buffer = sourceview5::Buffer::new(None::<&gtk::TextTagTable>);
+        buffer.set_highlight_syntax(true);
+        let view = sourceview5::View::with_buffer(&buffer);
+        view.add_css_class("kalam-ed-source");
+        view.set_editable(false);
+        view.set_show_line_numbers(false);
+        view.set_highlight_current_line(false);
+        view.set_wrap_mode(gtk::WrapMode::None);
+        view.set_top_margin(4);
+        view.set_hexpand(true);
+        view.set_vexpand(true);
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Automatic)
+            .vscrollbar_policy(gtk::PolicyType::External)
+            .vexpand(true)
+            .hexpand(true)
+            .child(&view)
+            .build();
+        scroller.set_vadjustment(Some(vadjustment));
+        row.append(&scroller);
+
+        side.append(&row);
+        (side, head, buffer, numbers_buffer)
+    };
+    let (left, left_head, old_buffer, old_numbers) = make_side(&vadjustment);
+    let (right, _right_head, new_buffer, new_numbers) = make_side(&vadjustment);
+    _right_head.set_label("CURRENT");
+    cols.append(&left);
+    let divider = gtk::Separator::new(gtk::Orientation::Vertical);
+    cols.append(&divider);
+    cols.append(&right);
+    page.append(&cols);
+
+    (
+        page,
+        CompareWidgets {
+            title,
+            meta,
+            prev_btn,
+            next_btn,
+            left_head,
+            old_buffer,
+            new_buffer,
+            old_numbers,
+            new_numbers,
+            removed_probe,
+            added_probe,
+            vadjustment,
+        },
+    )
 }
 
 /// The 3px accent drop bar on a contents row, before or after

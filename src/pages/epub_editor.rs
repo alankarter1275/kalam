@@ -299,15 +299,15 @@ pub enum EpubEditorMsg {
     /// From the menu (everything ticked) or one font tab.
     OpenSubsetFonts(Option<String>),
     SubsetPreviewsReady(Vec<SubsetPreview>, Option<String>),
-    RunSubsetFonts(Vec<(String, Vec<u8>)>),
+    RunSubsetFonts(ByteChanges),
     OpenEmbedFonts,
     EmbedScanReady(Vec<(String, Option<std::path::PathBuf>)>),
     RunEmbedFonts(Vec<(String, std::path::PathBuf)>),
     /// (family, disk file name, bytes) per embedded font.
     EmbedLoaded(Vec<(String, String, Vec<u8>)>),
     OpenCompressImages,
-    CompressPreviewReady(Box<(Vec<(String, Vec<u8>)>, Vec<(String, Vec<u8>)>)>),
-    RunCompressImages(Vec<(String, Vec<u8>)>),
+    CompressPreviewReady(CompressPreview),
+    RunCompressImages(ByteChanges),
     OpenCheckLinks,
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
@@ -674,10 +674,25 @@ pub struct EpubEditorModel {
     font_areas: Rc<RefCell<Vec<(String, gtk::DrawingArea, gtk::Label)>>>,
 }
 
+/// (container path, new bytes) pairs — the shape every
+/// whole-book binary tool hands the structure rail.
+type ByteChanges = Vec<(String, Vec<u8>)>;
+
+/// Compress images measures both of its modes up front:
+/// (lossless wins, smaller wins).
+type CompressPreview = Box<(ByteChanges, ByteChanges)>;
+
+/// Replace cover's picked file, shared into its chooser reply.
+type ChosenBytes = Rc<RefCell<Option<(String, Vec<u8>)>>>;
+
+/// A dialog whose rows rebuild each other keeps this
+/// self-reference (Tag mapper's row list).
+type SelfSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 /// One font through the subsetter, before the dialog opens:
 /// its real sizes come from having actually run the engine.
 #[derive(Debug)]
-struct SubsetPreview {
+pub(crate) struct SubsetPreview {
     path: String,
     label: String,
     original: usize,
@@ -5978,7 +5993,7 @@ impl EpubEditorModel {
         row.append(&side);
         shell.body().append(&row);
 
-        let chosen: Rc<RefCell<Option<(String, Vec<u8>)>>> =
+        let chosen: ChosenBytes =
             Rc::new(RefCell::new(None));
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
 
@@ -6731,7 +6746,7 @@ impl EpubEditorModel {
             let recount = recount.clone();
             // The rows call back into rebuild when one is removed:
             // an Rc slot filled right below breaks the cycle.
-            let self_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> =
+            let self_slot: SelfSlot =
                 Rc::new(RefCell::new(None));
             let rebuild = {
                 let self_slot = self_slot.clone();
@@ -7870,7 +7885,7 @@ impl EpubEditorModel {
         };
         let lossless_saving = saving(&lossless);
         let smaller_saving = saving(&smaller);
-        let wins: Rc<(Vec<(String, Vec<u8>)>, Vec<(String, Vec<u8>)>)> =
+        let wins: Rc<(ByteChanges, ByteChanges)> =
             Rc::new((lossless, smaller));
         let mode = Rc::new(std::cell::Cell::new(false)); // false = Lossless
 
@@ -12619,7 +12634,7 @@ fn grouped(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (index, ch) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
             out.push(',');
         }
         out.push(ch);

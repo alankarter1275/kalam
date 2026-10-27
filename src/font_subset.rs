@@ -28,11 +28,10 @@ fn i16_at(b: &[u8], at: usize) -> Option<i16> {
 
 fn checksum(data: &[u8]) -> u32 {
     let mut sum: u32 = 0;
-    let mut chunks = data.chunks_exact(4);
-    for chunk in &mut chunks {
-        sum = sum.wrapping_add(u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    let (words, rem) = data.as_chunks::<4>();
+    for word in words {
+        sum = sum.wrapping_add(u32::from_be_bytes(*word));
     }
-    let rem = chunks.remainder();
     if !rem.is_empty() {
         let mut tail = [0u8; 4];
         tail[..rem.len()].copy_from_slice(rem);
@@ -84,7 +83,7 @@ impl Sfnt {
         out.resize(out.len() + self.tables.len() * 16, 0);
         let mut offsets: Vec<(usize, u32)> = Vec::new();
         for table in &self.tables {
-            while out.len() % 4 != 0 {
+            while !out.len().is_multiple_of(4) {
                 out.push(0);
             }
             offsets.push((out.len(), table.data.len() as u32));
@@ -111,7 +110,7 @@ impl Sfnt {
         }
         // Patch checkSumAdjustment so the whole font sums to the
         // magic constant.
-        while out.len() % 4 != 0 {
+        while !out.len().is_multiple_of(4) {
             out.push(0);
         }
         if let Some(head) = self
@@ -212,7 +211,7 @@ fn build_woff(sfnt: &Sfnt, sfnt_bytes: &[u8]) -> Vec<u8> {
     let dir_at = out.len();
     out.resize(out.len() + sfnt.tables.len() * 20, 0);
     for (index, table) in sfnt.tables.iter().enumerate() {
-        while out.len() % 4 != 0 {
+        while !out.len().is_multiple_of(4) {
             out.push(0);
         }
         let offset = out.len();
@@ -340,11 +339,9 @@ fn glyph_components(glyph: &[u8]) -> Vec<u16> {
         return out;
     }
     let mut at = 10usize;
-    loop {
-        let (Some(flags), Some(component)) = (u16_at(glyph, at), u16_at(glyph, at + 2))
-        else {
-            break;
-        };
+    while let (Some(flags), Some(component)) =
+        (u16_at(glyph, at), u16_at(glyph, at + 2))
+    {
         out.push(component);
         at += 4;
         at += if flags & 0x0001 != 0 { 4 } else { 2 };
@@ -421,7 +418,7 @@ fn subset_sfnt(font: &[u8], keep_chars: &HashSet<char>) -> Result<Sfnt, String> 
             if let Some(&(start, end)) = spans.get(gid) {
                 if let Some(glyph) = glyf.get(start..end) {
                     new_glyf.extend_from_slice(glyph);
-                    while new_glyf.len() % 4 != 0 {
+                    while !new_glyf.len().is_multiple_of(4) {
                         new_glyf.push(0);
                     }
                 }

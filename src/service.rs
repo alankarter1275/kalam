@@ -2517,22 +2517,7 @@ impl LibraryService {
         replacements: &std::collections::HashMap<String, Vec<u8>>,
         snapshot_label: &str,
     ) -> Result<(), String> {
-        let dir = crate::paths::editor_snapshots_dir(&book.uuid);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let file_name = format!("{stamp}-{}.epub", snapshot_slug(snapshot_label));
-        std::fs::copy(&book.file_path, dir.join(&file_name)).map_err(|e| e.to_string())?;
-        self.catalog
-            .add_editor_snapshot(
-                book.id,
-                snapshot_label,
-                &file_name,
-                replacements.len() as i64,
-            )
-            .map_err(|e| e.to_string())?;
+        self.take_editor_snapshot(book, snapshot_label, replacements.len() as i64)?;
 
         let backup = crate::epub_metadata::backup_path(&book.file_path);
         if !backup.exists() {
@@ -2548,6 +2533,153 @@ impl LibraryService {
         let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
         Ok(())
     }
+
+    /// The snapshot every editor write takes first (decision 135):
+    /// the whole book copied aside and the row History lists.
+    fn take_editor_snapshot(
+        &self,
+        book: &Book,
+        label: &str,
+        files_changed: i64,
+    ) -> Result<(), String> {
+        let dir = crate::paths::editor_snapshots_dir(&book.uuid);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let file_name = format!("{stamp}-{}.epub", snapshot_slug(label));
+        std::fs::copy(&book.file_path, dir.join(&file_name)).map_err(|e| e.to_string())?;
+        self.catalog
+            .add_editor_snapshot(book.id, label, &file_name, files_changed)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Write the copy the editor's live Preview renders (E2): the
+    /// book as saved, with the open buffers' unsaved text laid over
+    /// it. Never touches the book itself.
+    pub fn write_editor_preview(
+        &self,
+        book: &Book,
+        replacements: &std::collections::HashMap<String, Vec<u8>>,
+    ) -> Result<std::path::PathBuf, String> {
+        let dest = crate::paths::editor_preview_path(&book.uuid);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        crate::epub_container::rewrite_epub(
+            &book.file_path,
+            &dest,
+            replacements,
+            &std::collections::HashSet::new(),
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(dest)
+    }
+
+    /// Remove one file from the book (Problems' Remove, decision
+    /// 132): snapshot first, then rewrite without the file and
+    /// without its manifest (and spine, if any) entries.
+    pub fn remove_editor_file(&self, book: &Book, path: &str) -> Result<(), String> {
+        let container =
+            crate::epub_container::EpubContainer::open(&book.file_path).map_err(|e| e.to_string())?;
+        self.take_editor_snapshot(book, "Before fix", 1)?;
+
+        let backup = crate::epub_metadata::backup_path(&book.file_path);
+        if !backup.exists() {
+            let _ = std::fs::copy(&book.file_path, &backup);
+        }
+
+        let mut replacements: std::collections::HashMap<String, Vec<u8>> =
+            std::collections::HashMap::new();
+        if let Some(opf_text) = container.text(&container.opf_path) {
+            let href = opf_relative_href(&container.opf_path, path);
+            let (stripped, removed_id) = strip_manifest_item(&opf_text, &href);
+            let stripped = match &removed_id {
+                Some(id) => strip_spine_itemref(&stripped, id),
+                None => stripped,
+            };
+            if stripped != opf_text {
+                replacements.insert(container.opf_path.clone(), stripped.into_bytes());
+            }
+        }
+        let removals: std::collections::HashSet<String> = [path.to_string()].into_iter().collect();
+        crate::epub_container::rewrite_epub(&book.file_path, &book.file_path, &replacements, &removals)
+            .map_err(|e| e.to_string())?;
+
+        if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
+            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+        }
+        let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
+        Ok(())
+    }
+}
+
+/// `OEBPS/content.opf` + `OEBPS/images/a.jpg` → `images/a.jpg`;
+/// files outside the OPF folder climb with `../`.
+fn opf_relative_href(opf_path: &str, file_path: &str) -> String {
+    let dir = opf_path.rfind('/').map(|i| &opf_path[..i + 1]).unwrap_or("");
+    if let Some(rest) = file_path.strip_prefix(dir) {
+        return rest.to_string();
+    }
+    let ups = dir.matches('/').count();
+    format!("{}{}", "../".repeat(ups), file_path)
+}
+
+/// The value of `name="…"` inside one tag's text.
+fn tag_attr(tag: &str, name: &str) -> Option<String> {
+    let needle = format!("{name}=\"");
+    let start = tag.find(&needle)? + needle.len();
+    let end = tag[start..].find('"')? + start;
+    Some(tag[start..end].to_string())
+}
+
+/// Remove the `<item … href="href" …>` tag from the OPF, returning
+/// the new text and the removed item's id. Match is on the decoded
+/// href, so `images/my%20pic.jpg` finds `images/my pic.jpg`.
+fn strip_manifest_item(opf: &str, href: &str) -> (String, Option<String>) {
+    let mut search_from = 0usize;
+    while let Some(rel) = opf[search_from..].find("<item") {
+        let at = search_from + rel;
+        let after = opf[at + 5..].chars().next().unwrap_or('>');
+        if !(after.is_whitespace() || after == '/' || after == '>') {
+            search_from = at + 5; // <itemref — not a manifest item
+            continue;
+        }
+        let Some(end_rel) = opf[at..].find('>') else { break };
+        let tag = &opf[at..at + end_rel + 1];
+        let matches = tag_attr(tag, "href")
+            .map(|h| crate::epub::percent_decode(&h) == href)
+            .unwrap_or(false);
+        if matches {
+            let id = tag_attr(tag, "id");
+            let mut out = String::with_capacity(opf.len());
+            out.push_str(&opf[..at]);
+            out.push_str(&opf[at + end_rel + 1..]);
+            return (out, id);
+        }
+        search_from = at + end_rel + 1;
+    }
+    (opf.to_string(), None)
+}
+
+/// Remove `<itemref idref="id" …>` from the spine.
+fn strip_spine_itemref(opf: &str, id: &str) -> String {
+    let mut search_from = 0usize;
+    while let Some(rel) = opf[search_from..].find("<itemref") {
+        let at = search_from + rel;
+        let Some(end_rel) = opf[at..].find('>') else { break };
+        let tag = &opf[at..at + end_rel + 1];
+        if tag_attr(tag, "idref").as_deref() == Some(id) {
+            let mut out = String::with_capacity(opf.len());
+            out.push_str(&opf[..at]);
+            out.push_str(&opf[at + end_rel + 1..]);
+            return out;
+        }
+        search_from = at + end_rel + 1;
+    }
+    opf.to_string()
 }
 
 /// "Before save" → `before-save`, for snapshot file names.

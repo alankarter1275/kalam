@@ -80,6 +80,9 @@ pub struct EpubFile {
     /// The OPF cover image; read by Replace cover from E5.
     #[allow(dead_code)]
     pub is_cover_image: bool,
+    /// Declared in the OPF manifest. Files the manifest never
+    /// mentions exist in the archive only — Check book flags them.
+    pub in_manifest: bool,
 }
 
 /// The tree's four sections (decision 125).
@@ -178,6 +181,7 @@ impl EpubContainer {
                 spine_index: None,
                 is_nav: false,
                 is_cover_image: false,
+                in_manifest: false,
             });
         }
 
@@ -335,6 +339,7 @@ fn parse_opf(opf_xml: &str, opf_path: &str) -> ParsedOpf {
             is_nav: properties.split_whitespace().any(|p| p == "nav"),
             is_cover_image: properties.split_whitespace().any(|p| p == "cover-image")
                 || cover_id.as_deref() == Some(id.as_str()),
+            in_manifest: true,
         });
     }
     out
@@ -342,7 +347,9 @@ fn parse_opf(opf_xml: &str, opf_path: &str) -> ParsedOpf {
 
 /// OPF-relative href → zip entry name: strip the fragment, percent-
 /// decode, join onto the OPF's folder and normalise `.`/`..` away.
-fn resolve_href(opf_dir: &str, href: &str) -> String {
+/// The base is whatever folder the linking file lives in (`""` or
+/// `"OEBPS/"`), so Check book resolves chapter links with it too.
+pub(crate) fn resolve_href(opf_dir: &str, href: &str) -> String {
     let href = href.split('#').next().unwrap_or("");
     let decoded = crate::epub::percent_decode(href);
     if let Some(rest) = decoded.strip_prefix('/') {
@@ -432,9 +439,28 @@ pub fn write_with_replacements(
     epub_path: &Path,
     replacements: &HashMap<String, Vec<u8>>,
 ) -> Result<()> {
-    let tmp = epub_path.with_extension("epub.kalam-tmp");
+    rewrite_epub(
+        epub_path,
+        epub_path,
+        replacements,
+        &std::collections::HashSet::new(),
+    )
+}
+
+/// Write a rewritten copy of the EPUB at `source` to `dest`, applying
+/// `replacements` and omitting `removals`. With `dest == source` this
+/// is the in-place save; with a different `dest` it is how the editor
+/// builds the file its live Preview renders (E2) — the book itself is
+/// never touched by a preview write.
+pub fn rewrite_epub(
+    source: &Path,
+    dest: &Path,
+    replacements: &HashMap<String, Vec<u8>>,
+    removals: &std::collections::HashSet<String>,
+) -> Result<()> {
+    let tmp = dest.with_extension("epub.kalam-tmp");
     let result = (|| -> Result<()> {
-        let src = fs::File::open(epub_path)?;
+        let src = fs::File::open(source)?;
         let mut archive = ZipArchive::new(src)?;
         let dest = fs::File::create(&tmp)?;
         let mut out = ZipWriter::new(dest);
@@ -455,6 +481,9 @@ pub fn write_with_replacements(
             if name == "mimetype" || name.ends_with('/') {
                 continue;
             }
+            if removals.contains(&name) {
+                continue;
+            }
             match replacements.get(&name) {
                 Some(bytes) => {
                     drop(entry);
@@ -467,7 +496,7 @@ pub fn write_with_replacements(
             }
         }
         for (name, bytes) in replacements {
-            if !written.contains(name) && name != "mimetype" {
+            if !written.contains(name) && name != "mimetype" && !removals.contains(name) {
                 out.start_file(name, deflated)?;
                 out.write_all(bytes)?;
             }
@@ -484,8 +513,7 @@ pub fn write_with_replacements(
         let _ = fs::remove_file(&tmp);
         return Err(err);
     }
-    fs::rename(&tmp, epub_path)
-        .with_context(|| format!("replace {}", epub_path.display()))?;
+    fs::rename(&tmp, dest).with_context(|| format!("replace {}", dest.display()))?;
     Ok(())
 }
 

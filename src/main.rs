@@ -16,6 +16,8 @@ mod downloads;
 mod epub;
 mod epub_book;
 mod epub_container;
+mod epub_check;
+mod epub_css;
 mod epub_metadata;
 pub mod epub_sanitizer;
 mod export;

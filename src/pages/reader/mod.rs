@@ -1,6 +1,6 @@
 //! Immersive EPUB reader module.
 
-mod book_settings;
+pub(crate) mod book_settings;
 mod chapter;
 mod chrome;
 pub(crate) mod engine;

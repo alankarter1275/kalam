@@ -382,6 +382,15 @@ pub fn editor_snapshots_dir(uuid: &str) -> PathBuf {
     data_dir().join("editor-snapshots").join(uuid)
 }
 
+/// The file the editor's live Preview renders: a rewritten copy of
+/// the book carrying the unsaved buffer text (E2). Lives outside the
+/// library folders so no watcher or backup ever mistakes it for a book.
+pub fn editor_preview_path(uuid: &str) -> PathBuf {
+    data_dir()
+        .join("editor-preview")
+        .join(format!("{uuid}.epub"))
+}
+
 /// Where the editor's generated GtkSourceView scheme lives. Written
 /// by the service from the active palette (decision 127); the page
 /// only points the scheme manager at it.

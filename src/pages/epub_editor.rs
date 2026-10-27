@@ -13,11 +13,14 @@
 //! the top bar has no Tools/History buttons yet — dead controls are
 //! not drawn (the same rule the book page's ⋯ menu followed).
 
+use crate::epub_check::{BookProblem, ProblemFix, Severity};
 use crate::epub_container::{EpubContainer, EpubFile, FileKind, TreeSection};
+use crate::epub_css::CssRule;
 use crate::models::Book;
 use crate::service::LibraryService;
 use crate::widgets::dialog::{dialog_shell, present_dialog, DialogSize};
 use crate::widgets::in_app_dialog::{DialogExit, InAppDialog};
+use crate::widgets::menu::MenuPopover;
 use crate::widgets::pill_button::{boxed_ghost_button, primary_button};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -44,6 +47,15 @@ pub enum RightTab {
     Outline,
     Problems,
     LiveCss,
+}
+
+/// The Preview tab's arrow menu (decision 123): the engine's
+/// neutral defaults ("As the book ships", the default) or the
+/// reader's own settings for this book ("As in Kalam").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewMode {
+    Ships,
+    Kalam,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,15 +99,39 @@ pub enum EpubEditorMsg {
     ThemeApplied,
     SchemeReady,
     ShowInFolder,
-}
-
-/// One problem in the Problems tab. E1's are XML well-formedness
-/// errors from validation; Check book (E2) adds the rest.
-#[derive(Debug, Clone)]
-struct EditorProblem {
-    path: String,
-    line: usize,
-    message: String,
+    // ── E2: engine preview, Check book, Live CSS ──
+    /// The active Preview tab was pressed again: open its menu
+    /// (decision 123).
+    TogglePreviewMenu,
+    SetPreviewMode(PreviewMode),
+    /// 800ms after the last change: write the preview copy.
+    PreviewWriteDue,
+    /// The preview write finished; hand off to the UI thread.
+    PreviewWritten(std::path::PathBuf),
+    /// 1.2s after the last change: run Check book.
+    CheckDue,
+    CheckDone(Vec<BookProblem>),
+    FixClicked(usize),
+    /// Apply the staged fix as one undo step.
+    FixApply(ProblemFix, String),
+    FixSkip,
+    RemoveProblem(usize),
+    /// The removed path, so open tabs and the tree can follow.
+    FileRemoved(String),
+    ActionFailed(String),
+    /// A word was tapped in the preview.
+    PreviewGoToWord {
+        chapter: usize,
+        fraction: f64,
+        word: String,
+    },
+    /// A selection finished in the preview.
+    PreviewTextSelected(kalam_reader::SelectedText),
+    /// A Live CSS rule header was clicked.
+    GoToCssRule {
+        path: String,
+        line: usize,
+    },
 }
 
 struct OpenTab {
@@ -125,6 +161,11 @@ pub struct EpubEditorModel {
     right_tab_btns: Vec<(RightTab, gtk::Button)>,
     view_switch_btns: Vec<(ViewMode, gtk::Button)>,
     preview_label: gtk::Label,
+    /// The box the engine preview sits in. Until the first preview
+    /// copy is written, `preview_label` fills it; the engine widget
+    /// replaces the label once there is something to render.
+    preview_host: gtk::Box,
+    livecss_host: gtk::Box,
     outline_host: gtk::Box,
     problems_host: gtk::Box,
     status_pos: gtk::Label,
@@ -138,12 +179,28 @@ pub struct EpubEditorModel {
     collapsed: HashSet<String>,
     view_mode: ViewMode,
     right_tab: RightTab,
-    problems: Vec<EditorProblem>,
+    problems: Vec<BookProblem>,
     /// The modified-path set as last rendered, so tree/tab dots only
     /// rebuild when the *set* changes, not on every keystroke.
     shown_dirty: HashSet<String>,
     after_save: AfterSave,
     saving: bool,
+    // ── E2: engine preview state ──
+    preview_view: Option<Rc<kalam_reader::ReaderView>>,
+    preview_mode: PreviewMode,
+    preview_menu: Option<MenuPopover>,
+    preview_write_src: Option<gtk::glib::SourceId>,
+    preview_chapter: i32,
+    // ── E2: Check book state ──
+    check_src: Option<gtk::glib::SourceId>,
+    fix_popover: Option<gtk::Popover>,
+    // ── E2: outline + Live CSS state ──
+    /// Heading rows of the active file: (level, text, char offset).
+    outline_headings: Vec<(usize, String, i32)>,
+    /// The book's parsed stylesheets, cached by content hash so
+    /// cursor moves don't re-parse the CSS.
+    css_cache_key: u64,
+    css_cache: Vec<(String, CssRule)>,
 }
 
 const EMPTY_TAB: &str = "__kalam_empty";
@@ -294,7 +351,10 @@ impl Component for EpubEditorModel {
         preview_label.set_xalign(0.0);
         preview_label.set_yalign(0.0);
         preview_label.set_margin_all(20);
-        let preview_scroller = scroll_host(&preview_label);
+        let preview_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        preview_host.set_hexpand(true);
+        preview_host.set_vexpand(true);
+        preview_host.append(&preview_label);
 
         let outline_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let outline_scroller = scroll_host(&outline_host);
@@ -302,19 +362,15 @@ impl Component for EpubEditorModel {
         let problems_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let problems_scroller = scroll_host(&problems_host);
 
-        let livecss_label = gtk::Label::new(Some(
+        let livecss_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        livecss_host.append(&panel_note(
             "Place the cursor inside an element in an HTML file to see the CSS that applies to it.",
         ));
-        livecss_label.add_css_class("kalam-ui-meta");
-        livecss_label.set_wrap(true);
-        livecss_label.set_xalign(0.0);
-        livecss_label.set_yalign(0.0);
-        livecss_label.set_margin_all(20);
-        let livecss_scroller = scroll_host(&livecss_label);
+        let livecss_scroller = scroll_host(&livecss_host);
 
         let right_stack = gtk::Stack::new();
         right_stack.set_vexpand(true);
-        right_stack.add_named(&preview_scroller, Some("preview"));
+        right_stack.add_named(&preview_host, Some("preview"));
         right_stack.add_named(&outline_scroller, Some("outline"));
         right_stack.add_named(&problems_scroller, Some("problems"));
         right_stack.add_named(&livecss_scroller, Some("livecss"));
@@ -447,6 +503,8 @@ impl Component for EpubEditorModel {
             right_tab_btns,
             view_switch_btns,
             preview_label,
+            preview_host,
+            livecss_host,
             outline_host,
             problems_host,
             status_pos,
@@ -463,6 +521,16 @@ impl Component for EpubEditorModel {
             shown_dirty: HashSet::new(),
             after_save: AfterSave::Nothing,
             saving: false,
+            preview_view: None,
+            preview_mode: PreviewMode::Ships,
+            preview_menu: None,
+            preview_write_src: None,
+            preview_chapter: -1,
+            check_src: None,
+            fix_popover: None,
+            outline_headings: Vec::new(),
+            css_cache_key: 0,
+            css_cache: Vec::new(),
         };
         model.sync_switches();
         let widgets = view_output!();
@@ -510,7 +578,8 @@ impl Component for EpubEditorModel {
                 if let Some(path) = first {
                     self.open_file(&path, true, &sender);
                 }
-                self.refresh_problems();
+                self.run_check();
+                self.request_preview_write(&sender);
                 self.sync_chrome(&sender);
             }
                 Err(message) => {
@@ -559,13 +628,25 @@ impl Component for EpubEditorModel {
             }
             EpubEditorMsg::BufferChanged => {
                 self.pin_temporary_if_edited();
-                self.refresh_problems();
                 self.sync_chrome(&sender);
-                self.update_preview();
-                self.rebuild_outline(&sender);
+                self.schedule_check(&sender);
+                self.schedule_preview_write(&sender);
+                if self.right_tab == RightTab::Outline {
+                    self.rebuild_outline(&sender);
+                }
+                if self.right_tab == RightTab::LiveCss {
+                    self.rebuild_livecss(&sender);
+                }
             }
             EpubEditorMsg::CursorMoved { line, col } => {
                 self.status_pos.set_label(&format!("Ln {line}, Col {col}"));
+                if self.right_tab == RightTab::Outline {
+                    self.mark_outline_current();
+                }
+                if self.right_tab == RightTab::LiveCss {
+                    self.rebuild_livecss(&sender);
+                }
+                self.sync_preview_to_cursor();
             }
             EpubEditorMsg::Format(tag) => self.format_inline(tag),
             EpubEditorMsg::SavePressed => {
@@ -609,7 +690,8 @@ impl Component for EpubEditorModel {
                     AfterSave::CloseTab(path) => self.close_tab(&path, &sender),
                     AfterSave::Nothing => {}
                 }
-                self.refresh_problems();
+                self.run_check();
+                self.request_preview_write(&sender);
                 self.sync_chrome(&sender);
             }
             EpubEditorMsg::Saved(Err(message)) => {
@@ -647,6 +729,12 @@ impl Component for EpubEditorModel {
                 self.sync_switches();
             }
             EpubEditorMsg::SetRightTab(tab) => {
+                // Pressing Preview while it is active opens its
+                // menu instead of doing nothing (decision 123).
+                if tab == RightTab::Preview && self.right_tab == RightTab::Preview {
+                    self.toggle_preview_menu(&sender);
+                    return;
+                }
                 self.right_tab = tab;
                 self.right_stack.set_visible_child_name(match tab {
                     RightTab::Preview => "preview",
@@ -663,8 +751,11 @@ impl Component for EpubEditorModel {
                     self.rebuild_outline(&sender);
                 }
                 if tab == RightTab::Problems {
-                    self.refresh_problems();
+                    self.run_check();
                     self.rebuild_problems(&sender);
+                }
+                if tab == RightTab::LiveCss {
+                    self.rebuild_livecss(&sender);
                 }
             }
             EpubEditorMsg::GoTo { path, line, offset } => {
@@ -712,6 +803,71 @@ impl Component for EpubEditorModel {
                 } else if let Some(book) = &self.book {
                     crate::pages::book::open_in_file_manager(&book.file_path.clone());
                 }
+            }
+            EpubEditorMsg::TogglePreviewMenu => self.toggle_preview_menu(&sender),
+            EpubEditorMsg::SetPreviewMode(mode) => {
+                self.preview_mode = mode;
+                self.apply_preview_prefs();
+            }
+            EpubEditorMsg::PreviewWriteDue => {
+                self.preview_write_src = None;
+                self.request_preview_write(&sender);
+            }
+            EpubEditorMsg::PreviewWritten(path) => self.refresh_preview(&path, &sender),
+            EpubEditorMsg::CheckDue => {
+                self.check_src = None;
+                // run_check is pure text work; on the UI thread it
+                // stays trivially in step with the buffers, and a
+                // whole-book pass is well under a frame.
+                self.problems = self.collect_check();
+                self.update_problem_status();
+                if self.right_tab == RightTab::Problems {
+                    self.rebuild_problems(&sender);
+                }
+            }
+            EpubEditorMsg::CheckDone(problems) => {
+                self.problems = problems;
+                self.update_problem_status();
+                if self.right_tab == RightTab::Problems {
+                    self.rebuild_problems(&sender);
+                }
+            }
+            EpubEditorMsg::FixClicked(index) => self.present_fix_preview(index, &sender),
+            EpubEditorMsg::FixApply(fix, path) => self.apply_fix(&fix, &path, &sender),
+            EpubEditorMsg::FixSkip => {
+                if let Some(popover) = self.fix_popover.take() {
+                    popover.popdown();
+                }
+            }
+            EpubEditorMsg::RemoveProblem(index) => self.remove_problem_file(index, &sender),
+            EpubEditorMsg::FileRemoved(path) => {
+                self.close_tab_quietly(&path);
+                if let (Some(book), Some(container)) = (&self.book, &mut self.container) {
+                    if let Ok(fresh) = EpubContainer::open(&book.file_path) {
+                        *container = fresh;
+                    }
+                }
+                self.rebuild_tree(&sender);
+                self.rebuild_tab_strip(&sender);
+                self.run_check();
+                self.request_preview_write(&sender);
+                self.sync_chrome(&sender);
+            }
+            EpubEditorMsg::ActionFailed(message) => {
+                crate::notify::error("That didn't work", &message);
+            }
+            EpubEditorMsg::PreviewGoToWord { chapter, fraction, word } => {
+                self.preview_word_jump(chapter, fraction, &word);
+            }
+            EpubEditorMsg::PreviewTextSelected(_) => {
+                self.preview_selection_jump();
+            }
+            EpubEditorMsg::GoToCssRule { path, line } => {
+                sender.input(EpubEditorMsg::GoTo {
+                    path,
+                    line: Some(line),
+                    offset: None,
+                });
             }
         }
     }
@@ -1066,12 +1222,16 @@ impl EpubEditorModel {
         }
 
         if !save_anyway {
-            // Validate every changed markup file before saving;
-            // errors ask first, warnings never block (decision 143).
-            self.refresh_problems();
-            if !self.problems.is_empty() {
+            // Errors in the files being saved ask first; warnings
+            // never block (decision 143). Computed synchronously
+            // from the live buffers, so a stale Check book run
+            // can't wave a broken save through.
+            let blockers = self.save_blockers();
+            if !blockers.is_empty() {
+                self.problems = self.collect_check();
+                self.update_problem_status();
                 self.rebuild_problems(sender);
-                self.present_save_with_errors_dialog(sender);
+                self.present_save_with_errors_dialog(&blockers, sender);
                 return;
             }
         }
@@ -1090,29 +1250,22 @@ impl EpubEditorModel {
         );
     }
 
-    /// Recompute validation problems across every open, changed
-    /// markup buffer (E1's Problems; Check book widens this in E2).
-    fn refresh_problems(&mut self) {
-        let mut problems = Vec::new();
-        for tab in &self.tabs {
-            if !matches!(tab.kind, FileKind::Html | FileKind::Xml) {
-                continue;
-            }
-            let Some(buffer) = &tab.buffer else { continue };
-            if !buffer.is_modified() {
-                continue;
-            }
-            if let Some((line, message)) =
-                crate::epub_container::xml_problem(&buffer_text(buffer))
-            {
-                problems.push(EditorProblem {
-                    path: tab.path.clone(),
-                    line,
-                    message,
-                });
-            }
-        }
-        self.problems = problems;
+    /// Errors in the files actually being saved: the only thing
+    /// Save stops for (decision 143). Fresh from the live buffers.
+    fn save_blockers(&self) -> Vec<BookProblem> {
+        self.collect_check()
+            .into_iter()
+            .filter(|p| {
+                p.severity == Severity::Error
+                    && self.tabs.iter().any(|tab| {
+                        tab.path == p.path
+                            && tab.buffer.as_ref().is_some_and(|b| b.is_modified())
+                    })
+            })
+            .collect()
+    }
+
+    fn update_problem_status(&self) {
         let n = self.problems.len();
         self.status_problems.set_visible(n > 0);
         if n > 0 {
@@ -1121,15 +1274,15 @@ impl EpubEditorModel {
                 if n == 1 { "" } else { "s" }
             ));
         }
-        if self.right_tab == RightTab::Problems {
-            // Rebuilt by caller paths that own a sender.
-        }
     }
 
-    fn present_save_with_errors_dialog(&self, sender: &ComponentSender<Self>) {
-        let n = self.problems.len();
-        let first = self
-            .problems
+    fn present_save_with_errors_dialog(
+        &self,
+        blockers: &[BookProblem],
+        sender: &ComponentSender<Self>,
+    ) {
+        let n = blockers.len();
+        let first = blockers
             .first()
             .map(|p| format!("{} line {}: {}", file_name(&p.path), p.line, p.message))
             .unwrap_or_default();

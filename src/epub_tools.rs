@@ -711,6 +711,345 @@ impl Searcher {
     }
 }
 
+// ── Tag mapper (decision 141) ─────────────────────────────────────
+
+/// One tag-mapping rule: `from` is a bare tag (`b`) or a tag with
+/// one class (`div.poem`); `to` is the replacement tag name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagRule {
+    pub from: String,
+    pub to: String,
+}
+
+/// Rename elements by the rules, opening and closing tags in step
+/// — a small stack remembers what each open element became, since
+/// a closing tag carries no class to match on. Attributes,
+/// including the selecting class, are kept exactly as written;
+/// only tag names change. Returns the new text and how many
+/// elements were renamed.
+pub fn retag(html: &str, rules: &[TagRule]) -> (String, usize) {
+    if rules.is_empty() {
+        return (html.to_string(), 0);
+    }
+    let parsed: Vec<(String, Option<String>, String)> = rules
+        .iter()
+        .map(|r| match r.from.split_once('.') {
+            Some((tag, class)) => (
+                tag.to_ascii_lowercase(),
+                Some(class.to_string()),
+                r.to.clone(),
+            ),
+            None => (r.from.to_ascii_lowercase(), None, r.to.clone()),
+        })
+        .collect();
+    let bare = |name: &str| -> Option<String> {
+        parsed
+            .iter()
+            .find(|(tag, class, _)| class.is_none() && tag == name)
+            .map(|(_, _, to)| to.clone())
+    };
+    let for_open = |name: &str, classes: &[&str]| -> Option<String> {
+        parsed
+            .iter()
+            .find(|(tag, class, _)| {
+                tag == name
+                    && match class {
+                        None => true,
+                        Some(want) => classes.iter().any(|c| c == want),
+                    }
+            })
+            .map(|(_, _, to)| to.clone())
+    };
+
+    let bytes = html.as_bytes();
+    let mut out = String::with_capacity(html.len());
+    let mut count = 0usize;
+    let mut stack: Vec<(String, Option<String>)> = Vec::new();
+    let mut pos = 0usize; // input flushed into `out` up to here
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        let rest = &html[i..];
+        if rest.starts_with("<!--") {
+            i = rest.find("-->").map(|e| i + e + 3).unwrap_or(bytes.len());
+            continue;
+        }
+        if rest.starts_with("<![CDATA[") {
+            i = rest.find("]]>").map(|e| i + e + 3).unwrap_or(bytes.len());
+            continue;
+        }
+        let next = bytes.get(i + 1).copied();
+        if matches!(next, Some(b'!') | Some(b'?')) {
+            i = rest.find('>').map(|e| i + e + 1).unwrap_or(bytes.len());
+            continue;
+        }
+        let closing = next == Some(b'/');
+        let name_start = i + if closing { 2 } else { 1 };
+        if !bytes
+            .get(name_start)
+            .map(|b| b.is_ascii_alphabetic())
+            .unwrap_or(false)
+        {
+            i += 1;
+            continue;
+        }
+        let mut name_end = name_start;
+        while name_end < bytes.len()
+            && (bytes[name_end].is_ascii_alphanumeric()
+                || bytes[name_end] == b'-'
+                || bytes[name_end] == b':')
+        {
+            name_end += 1;
+        }
+        let name = html[name_start..name_end].to_ascii_lowercase();
+        // The tag's closing '>', quote-aware.
+        let mut end = name_end;
+        let mut quote: Option<u8> = None;
+        while end < bytes.len() {
+            let b = bytes[end];
+            match quote {
+                Some(q) if b == q => quote = None,
+                Some(_) => {}
+                None if b == b'"' || b == b'\'' => quote = Some(b),
+                None if b == b'>' => break,
+                None => {}
+            }
+            end += 1;
+        }
+        if end >= bytes.len() {
+            break;
+        }
+        let replacement: Option<String> = if closing {
+            match stack.iter().rposition(|(open, _)| *open == name) {
+                Some(at) => {
+                    let (_, renamed) = stack[at].clone();
+                    stack.truncate(at);
+                    renamed.or_else(|| bare(&name))
+                }
+                None => bare(&name),
+            }
+        } else {
+            let inner = &html[name_end..end];
+            let classes = class_tokens(inner);
+            let renamed = for_open(&name, &classes);
+            let self_closing =
+                inner.trim_end().ends_with('/') || VOID.contains(&name.as_str());
+            if renamed.is_some() {
+                count += 1;
+            }
+            if !self_closing {
+                stack.push((name.clone(), renamed.clone()));
+            }
+            renamed
+        };
+        if let Some(new_name) = replacement {
+            if new_name != html[name_start..name_end] {
+                out.push_str(&html[pos..name_start]);
+                out.push_str(&new_name);
+                pos = name_end;
+            }
+        }
+        i = end + 1;
+    }
+    out.push_str(&html[pos..]);
+    (out, count)
+}
+
+/// The class tokens of a start tag's inner text (` id="a" class="x y"`).
+fn class_tokens(inner: &str) -> Vec<&str> {
+    let bytes = inner.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if (i == 0 || bytes[i - 1].is_ascii_whitespace())
+            && inner[i..].to_ascii_lowercase().starts_with("class")
+            && bytes
+                .get(i + 5)
+                .map(|b| b.is_ascii_whitespace() || *b == b'=')
+                .unwrap_or(true)
+        {
+            let mut j = i + 5;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if bytes.get(j) == Some(&b'=') {
+                j += 1;
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if let Some(q) = bytes.get(j).copied() {
+                    if q == b'"' || q == b'\'' {
+                        let start = j + 1;
+                        let mut end = start;
+                        while end < bytes.len() && bytes[end] != q {
+                            end += 1;
+                        }
+                        return inner[start..end].split_ascii_whitespace().collect();
+                    }
+                }
+            }
+            return Vec::new();
+        }
+        i += 1;
+    }
+    Vec::new()
+}
+
+// ── Filter style information (decision 129) ────────────────────────
+
+/// Does `property` fall under the filter set? Entries are exact
+/// property names, or prefixes when they end in `-` (`margin-`
+/// takes the whole family, plus bare `margin` itself).
+fn filtered_property(property: &str, filter: &[&str]) -> bool {
+    let property = property.to_ascii_lowercase();
+    filter.iter().any(|f| {
+        let f = f.to_ascii_lowercase();
+        if let Some(prefix) = f.strip_suffix('-') {
+            property == prefix || property.starts_with(&f)
+        } else {
+            property == f
+        }
+    })
+}
+
+fn render_declarations(decls: &[crate::epub_css::CssDecl]) -> String {
+    let mut out = String::new();
+    for decl in decls {
+        out.push_str(&decl.property);
+        out.push_str(": ");
+        out.push_str(&decl.value);
+        if decl.important {
+            out.push_str(" !important");
+        }
+        out.push_str("; ");
+    }
+    out.trim_end().to_string()
+}
+
+/// Drop declarations whose property is filtered from a
+/// stylesheet. Rules left empty go entirely; rules the filter
+/// never touches keep their exact text. Returns the new
+/// stylesheet and how many declarations went.
+pub fn filter_stylesheet(css: &str, filter: &[&str]) -> (String, usize) {
+    if filter.is_empty() {
+        return (css.to_string(), 0);
+    }
+    let rules = crate::epub_css::parse_rules(css);
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    let mut removed = 0usize;
+    for rule in &rules {
+        let kept: Vec<crate::epub_css::CssDecl> = rule
+            .declarations
+            .iter()
+            .filter(|d| !filtered_property(&d.property, filter))
+            .cloned()
+            .collect();
+        let gone = rule.declarations.len() - kept.len();
+        if gone == 0 {
+            continue;
+        }
+        removed += gone;
+        let text = if kept.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "{} {{ {} }}",
+                rule.selectors.join(", "),
+                render_declarations(&kept)
+            )
+        };
+        edits.push((rule.span.0, rule.span.1, text));
+    }
+    if edits.is_empty() {
+        return (css.to_string(), 0);
+    }
+    let mut out = String::with_capacity(css.len());
+    let mut at = 0usize;
+    for (start, end, text) in edits {
+        if start >= at {
+            out.push_str(&css[at..start]);
+            out.push_str(&text);
+            at = end;
+        }
+    }
+    out.push_str(&css[at..]);
+    (out, removed)
+}
+
+/// The inline half of the filter: `style="…"` attributes in a
+/// document lose the filtered declarations, and an attribute
+/// left with none is removed outright.
+pub fn filter_inline_styles(html: &str, filter: &[&str]) -> (String, usize) {
+    if filter.is_empty() {
+        return (html.to_string(), 0);
+    }
+    let bytes = html.as_bytes();
+    let mut out = String::with_capacity(html.len());
+    let mut removed = 0usize;
+    let mut pos = 0usize;
+    let mut i = 0usize;
+    while i + 5 < bytes.len() {
+        let at_style = (i == 0 || bytes[i - 1].is_ascii_whitespace())
+            && html[i..].to_ascii_lowercase().starts_with("style");
+        if !at_style {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 5;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if bytes.get(j) != Some(&b'=') {
+            i += 1;
+            continue;
+        }
+        j += 1;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let Some(q) = bytes.get(j).copied().filter(|b| *b == b'"' || *b == b'\'')
+        else {
+            i += 1;
+            continue;
+        };
+        let value_start = j + 1;
+        let mut value_end = value_start;
+        while value_end < bytes.len() && bytes[value_end] != q {
+            value_end += 1;
+        }
+        if value_end >= bytes.len() {
+            break;
+        }
+        let decls = crate::epub_css::parse_declarations(&html[value_start..value_end]);
+        let kept: Vec<crate::epub_css::CssDecl> = decls
+            .iter()
+            .filter(|d| !filtered_property(&d.property, filter))
+            .cloned()
+            .collect();
+        let gone = decls.len() - kept.len();
+        if gone > 0 {
+            removed += gone;
+            // Rewrite from the whitespace before `style` (pos
+            // sits before it) so an emptied attribute takes its
+            // separating space with it.
+            let attr_start = i.saturating_sub(1);
+            out.push_str(&html[pos..attr_start]);
+            if !kept.is_empty() {
+                out.push(' ');
+                out.push_str(&html[i..value_start]);
+                out.push_str(&render_declarations(&kept));
+                out.push(q as char);
+            }
+            pos = value_end + 1;
+        }
+        i = value_end + 1;
+    }
+    out.push_str(&html[pos..]);
+    (out, removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -774,5 +1113,76 @@ mod tests {
         let s = Searcher::new("a", SearchOptions::default()).expect("searcher");
         assert_eq!(s.replace_all("a a", "$1").0, "$1 $1");
         assert!(Searcher::new("(", SearchOptions { regex: true, ..Default::default() }).is_err());
+    }
+
+    fn rule(from: &str, to: &str) -> TagRule {
+        TagRule {
+            from: from.to_string(),
+            to: to.to_string(),
+        }
+    }
+
+    #[test]
+    fn retag_renames_pairs_and_counts_elements() {
+        let (out, n) = retag(
+            "<p><b>bold</b> and <b class=\"x\">more</b></p>",
+            &[rule("b", "strong")],
+        );
+        assert_eq!(
+            out,
+            "<p><strong>bold</strong> and <strong class=\"x\">more</strong></p>"
+        );
+        assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn retag_class_rule_only_takes_its_class() {
+        let (out, n) = retag(
+            "<div class=\"poem\">a</div><div class=\"note\">b</div>",
+            &[rule("div.poem", "blockquote")],
+        );
+        assert_eq!(
+            out,
+            "<blockquote class=\"poem\">a</blockquote><div class=\"note\">b</div>"
+        );
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn retag_closing_follows_its_opener_through_nesting() {
+        let (out, _) = retag(
+            "<div class=\"poem\"><p>x</p></div><div>y</div>",
+            &[rule("div.poem", "blockquote")],
+        );
+        assert_eq!(
+            out,
+            "<blockquote class=\"poem\"><p>x</p></blockquote><div>y</div>"
+        );
+    }
+
+    #[test]
+    fn filter_stylesheet_drops_properties_and_empty_rules() {
+        let css = "p { color: red; margin: 0; }\nh1 { color: blue; }\nem { font-style: italic; }";
+        let (out, n) = filter_stylesheet(css, &["color"]);
+        assert_eq!(n, 2);
+        assert!(out.contains("p { margin: 0; }"), "{out}");
+        assert!(!out.contains("h1"), "{out}");
+        assert!(out.contains("em { font-style: italic; }"), "{out}");
+    }
+
+    #[test]
+    fn filter_inline_styles_rewrites_and_removes() {
+        let html = "<p style=\"color: red; margin: 0\">a</p><p style=\"color: blue\">b</p>";
+        let (out, n) = filter_inline_styles(html, &["color"]);
+        assert_eq!(n, 2);
+        assert_eq!(out, "<p style=\"margin: 0;\">a</p><p>b</p>");
+    }
+
+    #[test]
+    fn filter_prefix_takes_the_whole_family() {
+        let css = "p { margin-top: 1em; margin: 0; padding-left: 2em; }";
+        let (out, n) = filter_stylesheet(css, &["margin-"]);
+        assert_eq!(n, 2);
+        assert!(out.contains("padding-left"), "{out}");
     }
 }

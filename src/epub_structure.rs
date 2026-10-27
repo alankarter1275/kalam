@@ -791,6 +791,57 @@ pub fn set_cover_meta(opf: &str, cover_id: &str) -> String {
     opf.to_string()
 }
 
+/// The `<package version="…">` of a package document, when written.
+pub fn opf_package_version(opf: &str) -> Option<String> {
+    let (tag_start, inner_start, _, _) = element_span(opf, "package", &|_| true)?;
+    let tag = &opf[tag_start..inner_start];
+    let re = regex::Regex::new(r#"(?i)version\s*=\s*"([^"]*)"|version\s*=\s*'([^']*)'"#)
+        .ok()?;
+    let caps = re.captures(tag)?;
+    caps.get(1)
+        .or_else(|| caps.get(2))
+        .map(|m| m.as_str().to_string())
+}
+
+/// Bring a package document up to EPUB 3 shape (Upgrade book
+/// internals, decision 129): `version="3.0"`, and a
+/// `dcterms:modified` stamp when the metadata lacks one.
+/// Everything else is preserved as written — manifest and spine
+/// are the save path's business, as always.
+pub fn upgrade_opf(opf: &str, modified_iso: &str) -> String {
+    let mut out = opf.to_string();
+    if let Some((tag_start, inner_start, _, _)) = element_span(&out, "package", &|_| true)
+    {
+        let mut tag = out[tag_start..inner_start].to_string();
+        let re = regex::Regex::new(r#"(?i)version\s*=\s*"[^"]*"|version\s*=\s*'[^']*'"#);
+        if let Ok(re) = re {
+            if re.is_match(&tag) {
+                tag = re.replace(&tag, "version=\"3.0\"").into_owned();
+            } else if let Some(gt) = tag.rfind('>') {
+                tag.insert_str(gt, " version=\"3.0\"");
+            }
+        }
+        let mut next = String::with_capacity(out.len());
+        next.push_str(&out[..tag_start]);
+        next.push_str(&tag);
+        next.push_str(&out[inner_start..]);
+        out = next;
+    }
+    if !out.contains("dcterms:modified") {
+        if let Some((_, _, inner_end, _)) = element_span(&out, "metadata", &|_| true) {
+            let mut next = String::with_capacity(out.len() + 64);
+            next.push_str(&out[..inner_end]);
+            next.push_str(&format!(
+                "<meta property=\"dcterms:modified\">{}</meta>",
+                esc(modified_iso, false)
+            ));
+            next.push_str(&out[inner_end..]);
+            out = next;
+        }
+    }
+    out
+}
+
 // ── link retargeting ────────────────────────────────────────────────
 
 /// Rewrite every `href`/`src` in a document through `map`. The
@@ -1634,5 +1685,21 @@ mod tests {
         ]);
         assert_eq!(toc_count(&wild), 2);
         assert_eq!(wild[0].children[0].text, "B");
+    }
+
+    #[test]
+    fn upgrade_opf_bumps_version_and_stamps_modified() {
+        let opf = "<package version=\"2.0\"><metadata><dc:title>T</dc:title></metadata><manifest/></package>";
+        let out = upgrade_opf(opf, "2026-10-27T14:32:00Z");
+        assert!(out.contains("version=\"3.0\""), "{out}");
+        assert!(
+            out.contains(
+                "<meta property=\"dcterms:modified\">2026-10-27T14:32:00Z</meta>"
+            ),
+            "{out}"
+        );
+        assert_eq!(opf_package_version(&out).as_deref(), Some("3.0"));
+        // A second pass changes nothing.
+        assert_eq!(upgrade_opf(&out, "2027-01-01T00:00:00Z"), out);
     }
 }

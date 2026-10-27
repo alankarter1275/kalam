@@ -288,6 +288,13 @@ pub enum EpubEditorMsg {
     CoverPrepared(String, Vec<u8>),
     // ── E5: Reports (decision 141) ──
     OpenReports,
+    // ── E5: Tag mapper, Filter style, Upgrade internals ──
+    OpenTagMapper,
+    RunTagMapper(Vec<crate::epub_tools::TagRule>),
+    OpenFilterStyle,
+    RunFilterStyle(Vec<String>),
+    OpenUpgradeInternals,
+    RunUpgradeInternals,
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -492,6 +499,9 @@ enum PaletteAction {
     History,
     ReplaceCover,
     Reports,
+    TagMapper,
+    FilterStyle,
+    UpgradeInternals,
     Tool(InstantTool),
     View(ViewMode),
     Tab(RightTab),
@@ -1569,6 +1579,15 @@ impl Component for EpubEditorModel {
                         // The board's frame stands on Images.
                         self.present_reports_dialog_at(2, &sender);
                     }
+                    Ok("editor-tagmapper") => {
+                        self.present_tag_mapper_dialog(&sender);
+                    }
+                    Ok("editor-filterstyle") => {
+                        self.present_filter_style_dialog(&sender);
+                    }
+                    Ok("editor-upgrade") => {
+                        self.present_upgrade_dialog(&sender);
+                    }
                     Ok("editor-editing") => {
                         // Export the first image for outside
                         // editing; the dialog opens on the reply.
@@ -2471,6 +2490,58 @@ impl Component for EpubEditorModel {
                 self.run_replace_cover(name, bytes, &sender)
             }
             EpubEditorMsg::OpenReports => self.present_reports_dialog(&sender),
+            EpubEditorMsg::OpenTagMapper => self.present_tag_mapper_dialog(&sender),
+            EpubEditorMsg::RunTagMapper(rules) => {
+                let (changes, elements) = self.tag_mapper_changes(&rules);
+                if changes.is_empty() {
+                    self.show_pill("Nothing to change", false, &sender);
+                } else {
+                    let summary = format!(
+                        "Renamed {elements} {} in {} {}",
+                        if elements == 1 { "element" } else { "elements" },
+                        changes.len(),
+                        if changes.len() == 1 { "file" } else { "files" }
+                    );
+                    self.start_apply(
+                        "Before tag mapper".to_string(),
+                        summary,
+                        changes,
+                        &sender,
+                    );
+                }
+            }
+            EpubEditorMsg::OpenFilterStyle => {
+                self.present_filter_style_dialog(&sender)
+            }
+            EpubEditorMsg::RunFilterStyle(filter) => {
+                let (changes, declarations) = self.filter_style_changes(&filter);
+                if changes.is_empty() {
+                    self.show_pill("Nothing to change", false, &sender);
+                } else {
+                    let summary = format!(
+                        "Filtered {declarations} {} from {} {}",
+                        if declarations == 1 {
+                            "declaration"
+                        } else {
+                            "declarations"
+                        },
+                        changes.len(),
+                        if changes.len() == 1 { "file" } else { "files" }
+                    );
+                    self.start_apply(
+                        "Before filter style information".to_string(),
+                        summary,
+                        changes,
+                        &sender,
+                    );
+                }
+            }
+            EpubEditorMsg::OpenUpgradeInternals => {
+                self.present_upgrade_dialog(&sender)
+            }
+            EpubEditorMsg::RunUpgradeInternals => {
+                self.run_upgrade_internals(&sender)
+            }
             EpubEditorMsg::ExternalReady(path) => {
                 let file = gtk::gio::File::for_path(&path);
                 let _ = gtk::gio::AppInfo::launch_default_for_uri(
@@ -6356,6 +6427,683 @@ impl EpubEditorModel {
         }
     }
 
+    // ── E5: Tag mapper (decision 141) ──
+
+    /// The standing rules: (active, rule), board defaults first.
+    fn tag_rules(&self) -> Vec<(bool, crate::epub_tools::TagRule)> {
+        let stored: Option<Vec<(bool, String, String)>> = self
+            .service
+            .catalog()
+            .get_pref("editor.tag_rules")
+            .and_then(|raw| serde_json::from_str(&raw).ok());
+        match stored {
+            Some(rows) => rows
+                .into_iter()
+                .map(|(on, from, to)| (on, crate::epub_tools::TagRule { from, to }))
+                .collect(),
+            None => vec![
+                (true, crate::epub_tools::TagRule { from: "b".into(), to: "strong".into() }),
+                (true, crate::epub_tools::TagRule { from: "i".into(), to: "em".into() }),
+                (false, crate::epub_tools::TagRule { from: "div.poem".into(), to: "blockquote".into() }),
+            ],
+        }
+    }
+
+    /// Whole-file replacements for the active rules, plus the
+    /// element count the dialog announces.
+    fn tag_mapper_changes(
+        &self,
+        rules: &[crate::epub_tools::TagRule],
+    ) -> (Vec<(String, String)>, usize) {
+        let mut changes = Vec::new();
+        let mut elements = 0usize;
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if file.kind != FileKind::Html
+                    || self.removed_paths.contains(&file.path)
+                {
+                    continue;
+                }
+                let Some(text) = self.file_text(&file.path) else {
+                    continue;
+                };
+                let (new, n) = crate::epub_tools::retag(&text, rules);
+                if n > 0 && new != text {
+                    elements += n;
+                    changes.push((file.path.clone(), new));
+                }
+            }
+        }
+        (changes, elements)
+    }
+
+    fn present_tag_mapper_dialog(&mut self, sender: &ComponentSender<Self>) {
+        // Recounts run against the texts as the dialog opens;
+        // Apply recomputes against the living book.
+        let texts: Vec<String> = self
+            .container
+            .as_ref()
+            .map(|c| {
+                c.files
+                    .iter()
+                    .filter(|f| {
+                        f.kind == FileKind::Html
+                            && !self.removed_paths.contains(&f.path)
+                    })
+                    .filter_map(|f| self.file_text(&f.path))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let rules: Rc<RefCell<Vec<(bool, crate::epub_tools::TagRule)>>> =
+            Rc::new(RefCell::new(self.tag_rules()));
+        let shell = dialog_shell(
+            DialogSize::List,
+            Some("Change tags across the book"),
+        );
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(260);
+        scroll.set_child(Some(&list));
+        shell.body().append(&scroll);
+
+        let foot_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let count_label = gtk::Label::new(None);
+        count_label.add_css_class("kalam-ui-meta");
+        count_label.set_valign(gtk::Align::Center);
+        foot_row.append(&count_label);
+        shell.body().append(&foot_row);
+
+        let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        add_row.set_visible(false);
+        let from_entry = gtk::Entry::new();
+        from_entry.add_css_class("kalam-ed-entry");
+        from_entry.set_placeholder_text(Some("b or div.poem"));
+        from_entry.set_hexpand(true);
+        add_row.append(&from_entry);
+        let arrow = gtk::Label::new(Some("→"));
+        arrow.add_css_class("kalam-ui-meta");
+        arrow.set_valign(gtk::Align::Center);
+        add_row.append(&arrow);
+        let to_entry = gtk::Entry::new();
+        to_entry.add_css_class("kalam-ed-entry");
+        to_entry.set_placeholder_text(Some("strong"));
+        to_entry.set_hexpand(true);
+        add_row.append(&to_entry);
+        shell.body().append(&add_row);
+
+        let persist: Rc<dyn Fn()> = {
+            let rules = rules.clone();
+            let service = self.service.clone();
+            Rc::new(move || {
+                let rows: Vec<(bool, String, String)> = rules
+                    .borrow()
+                    .iter()
+                    .map(|(on, r)| (*on, r.from.clone(), r.to.clone()))
+                    .collect();
+                if let Ok(raw) = serde_json::to_string(&rows) {
+                    service.catalog().set_pref("editor.tag_rules", &raw);
+                }
+            })
+        };
+        let recount: Rc<dyn Fn()> = {
+            let rules = rules.clone();
+            let count_label = count_label.clone();
+            Rc::new(move || {
+                let active: Vec<crate::epub_tools::TagRule> = rules
+                    .borrow()
+                    .iter()
+                    .filter(|(on, _)| *on)
+                    .map(|(_, r)| r.clone())
+                    .collect();
+                let (mut elements, mut files) = (0usize, 0usize);
+                for text in &texts {
+                    let (_, n) = crate::epub_tools::retag(text, &active);
+                    if n > 0 {
+                        elements += n;
+                        files += 1;
+                    }
+                }
+                count_label.set_label(&if elements == 0 {
+                    "Changes nothing with these rules".to_string()
+                } else {
+                    format!(
+                        "Changes {elements} {} in {files} {}",
+                        if elements == 1 { "element" } else { "elements" },
+                        if files == 1 { "file" } else { "files" }
+                    )
+                });
+            })
+        };
+        let rebuild: Rc<dyn Fn()> = {
+            let list = list.clone();
+            let rules = rules.clone();
+            let persist = persist.clone();
+            let recount = recount.clone();
+            // The rows call back into rebuild when one is removed:
+            // an Rc slot filled right below breaks the cycle.
+            let self_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> =
+                Rc::new(RefCell::new(None));
+            let rebuild = {
+                let self_slot = self_slot.clone();
+                Rc::new(move || {
+                    clear_box(&list);
+                    let current = rules.borrow().clone();
+                    if current.is_empty() {
+                        let label = gtk::Label::new(Some("No rules yet"));
+                        label.add_css_class("kalam-ui-meta");
+                        label.set_halign(gtk::Align::Start);
+                        label.set_margin_top(8);
+                        list.append(&label);
+                        return;
+                    }
+                    for (index, (on, rule)) in current.iter().enumerate() {
+                        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                        row.add_css_class("kalam-ed-report-row");
+                        row.set_size_request(-1, 44);
+                        let toggle = gtk::Button::new();
+                        toggle.add_css_class("kalam-ed-tickrow");
+                        toggle.set_hexpand(true);
+                        let inner = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                        let circle = tick_circle(*on);
+                        inner.append(&circle);
+                        let label = gtk::Label::new(Some(&format!(
+                            "{} → {}",
+                            rule.from, rule.to
+                        )));
+                        label.add_css_class("kalam-ed-mono");
+                        label.set_halign(gtk::Align::Start);
+                        label.set_valign(gtk::Align::Center);
+                        inner.append(&label);
+                        toggle.set_child(Some(&inner));
+                        {
+                            let rules = rules.clone();
+                            let persist = persist.clone();
+                            let recount = recount.clone();
+                            toggle.connect_clicked(move |_| {
+                                {
+                                    let mut all = rules.borrow_mut();
+                                    if let Some(entry) = all.get_mut(index) {
+                                        entry.0 = !entry.0;
+                                    }
+                                }
+                                set_tick(&circle, rules.borrow()[index].0);
+                                persist();
+                                recount();
+                            });
+                        }
+                        row.append(&toggle);
+                        let remove = gtk::Button::new();
+                        remove.add_css_class("kalam-ed-glyph");
+                        remove.set_size_request(32, 32);
+                        remove.set_valign(gtk::Align::Center);
+                        remove.set_child(Some(&gtk::Label::new(Some("✕"))));
+                        {
+                            let rules = rules.clone();
+                            let persist = persist.clone();
+                            let recount = recount.clone();
+                            let self_slot = self_slot.clone();
+                            remove.connect_clicked(move |_| {
+                                rules.borrow_mut().remove(index);
+                                persist();
+                                recount();
+                                if let Some(rebuild) = self_slot.borrow().as_ref() {
+                                    rebuild();
+                                }
+                            });
+                        }
+                        row.append(&remove);
+                        list.append(&row);
+                    }
+                }) as Rc<dyn Fn()>
+            };
+            *self_slot.borrow_mut() = Some(rebuild.clone());
+            rebuild
+        };
+        {
+            let add_row = add_row.clone();
+            let add_btn = boxed_ghost_button("+ Add rule", move || {
+                add_row.set_visible(!add_row.is_visible());
+            });
+            add_btn.add_css_class("kalam-ed-accent-text");
+            foot_row.append(&add_btn);
+        }
+        {
+            let rules = rules.clone();
+            let persist = persist.clone();
+            let recount = recount.clone();
+            let rebuild = rebuild.clone();
+            let from_entry = from_entry.clone();
+            let to_entry = to_entry.clone();
+            let add_row = add_row.clone();
+            add_row.append(&boxed_ghost_button("Add", move || {
+                let from = from_entry.text().trim().to_string();
+                let to = to_entry.text().trim().to_string();
+                if !valid_tag_rule(&from, &to) {
+                    return;
+                }
+                {
+                    let mut all = rules.borrow_mut();
+                    if all.iter().any(|(_, r)| r.from == from) {
+                        return;
+                    }
+                    all.push((
+                        true,
+                        crate::epub_tools::TagRule { from, to },
+                    ));
+                }
+                from_entry.set_text("");
+                to_entry.set_text("");
+                add_row.set_visible(false);
+                persist();
+                rebuild();
+                recount();
+            }));
+        }
+        rebuild();
+        recount();
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        {
+            let slot = slot.clone();
+            let rules = rules.clone();
+            let s = sender.input_sender().clone();
+            shell.footer().append(&primary_button("Apply", move || {
+                let active: Vec<crate::epub_tools::TagRule> = rules
+                    .borrow()
+                    .iter()
+                    .filter(|(on, _)| *on)
+                    .map(|(_, r)| r.clone())
+                    .collect();
+                close_slot(&slot);
+                let _ = s.send(EpubEditorMsg::RunTagMapper(active));
+            }));
+        }
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Tag mapper",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    /// Whole-file replacements for Filter style information:
+    /// declarations dropped from stylesheets, the same from
+    /// inline `style` attributes, one undo step per file.
+    fn filter_style_changes(
+        &self,
+        filter: &[String],
+    ) -> (Vec<(String, String)>, usize) {
+        let props: Vec<&str> = filter.iter().map(String::as_str).collect();
+        let mut changes = Vec::new();
+        let mut declarations = 0usize;
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if self.removed_paths.contains(&file.path) {
+                    continue;
+                }
+                let outcome = match file.kind {
+                    FileKind::Css => self
+                        .file_text(&file.path)
+                        .map(|text| crate::epub_tools::filter_stylesheet(&text, &props)),
+                    FileKind::Html => self
+                        .file_text(&file.path)
+                        .map(|text| crate::epub_tools::filter_inline_styles(&text, &props)),
+                    _ => None,
+                };
+                if let Some((new, n)) = outcome {
+                    if n > 0 {
+                        declarations += n;
+                        changes.push((file.path.clone(), new));
+                    }
+                }
+            }
+        }
+        (changes, declarations)
+    }
+
+    fn present_filter_style_dialog(&mut self, sender: &ComponentSender<Self>) {
+        // (row label, the properties it takes with it)
+        const GROUPS: [(&str, &[&str]); 6] = [
+            ("Colours", &["color", "background", "background-color"]),
+            ("Fonts", &["font", "font-family", "font-size", "font-weight", "font-style"]),
+            ("Margins", &["margin-"]),
+            ("Padding", &["padding-"]),
+            ("Text alignment", &["text-align", "text-indent", "line-height"]),
+            ("Borders", &["border-"]),
+        ];
+        let texts: Vec<(FileKind, String)> = self
+            .container
+            .as_ref()
+            .map(|c| {
+                c.files
+                    .iter()
+                    .filter(|f| {
+                        matches!(f.kind, FileKind::Css | FileKind::Html)
+                            && !self.removed_paths.contains(&f.path)
+                    })
+                    .filter_map(|f| self.file_text(&f.path).map(|t| (f.kind, t)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let chosen: Rc<std::cell::Cell<[bool; 6]>> =
+            Rc::new(std::cell::Cell::new([true, false, false, false, false, false]));
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("Remove chosen CSS wherever it appears"),
+        );
+        let count_label = gtk::Label::new(None);
+        count_label.add_css_class("kalam-ui-meta");
+        count_label.set_halign(gtk::Align::Start);
+
+        let recount: Rc<dyn Fn()> = {
+            let chosen = chosen.clone();
+            let count_label = count_label.clone();
+            Rc::new(move || {
+                let filter: Vec<&str> = GROUPS
+                    .iter()
+                    .zip(chosen.get().iter())
+                    .filter(|(_, on)| **on)
+                    .flat_map(|((_, props), _)| props.iter().copied())
+                    .collect();
+                let (mut decls, mut files) = (0usize, 0usize);
+                for (kind, text) in &texts {
+                    let (_, n) = match kind {
+                        FileKind::Css => {
+                            crate::epub_tools::filter_stylesheet(text, &filter)
+                        }
+                        _ => crate::epub_tools::filter_inline_styles(text, &filter),
+                    };
+                    if n > 0 {
+                        decls += n;
+                        files += 1;
+                    }
+                }
+                count_label.set_label(&if decls == 0 {
+                    "Removes nothing with these choices".to_string()
+                } else {
+                    format!(
+                        "Removes {decls} {} in {files} {}",
+                        if decls == 1 { "declaration" } else { "declarations" },
+                        if files == 1 { "file" } else { "files" }
+                    )
+                });
+            })
+        };
+
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        for (index, (name, props)) in GROUPS.iter().enumerate() {
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-ed-tickrow");
+            if index > 0 {
+                row.add_css_class("kalam-ed-report-row");
+            }
+            row.set_size_request(-1, 44);
+            let inner = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            let circle = tick_circle(chosen.get()[index]);
+            inner.append(&circle);
+            let label = gtk::Label::new(Some(name));
+            label.set_halign(gtk::Align::Start);
+            label.set_valign(gtk::Align::Center);
+            label.set_hexpand(true);
+            inner.append(&label);
+            let shown: Vec<String> = props
+                .iter()
+                .map(|p| p.strip_suffix('-').map(|s| format!("{s}-*")).unwrap_or_else(|| p.to_string()))
+                .collect();
+            let meta = gtk::Label::new(Some(&shown.join(", ")));
+            meta.add_css_class("kalam-ui-meta");
+            meta.set_valign(gtk::Align::Center);
+            inner.append(&meta);
+            row.set_child(Some(&inner));
+            let chosen = chosen.clone();
+            let recount = recount.clone();
+            row.connect_clicked(move |_| {
+                let mut state = chosen.get();
+                state[index] = !state[index];
+                chosen.set(state);
+                set_tick(&circle, state[index]);
+                recount();
+            });
+            list.append(&row);
+        }
+        shell.body().append(&list);
+        shell.body().append(&count_label);
+        recount();
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        {
+            let slot = slot.clone();
+            let chosen = chosen.clone();
+            let s = sender.input_sender().clone();
+            shell.footer().append(&primary_button("Remove", move || {
+                let filter: Vec<String> = GROUPS
+                    .iter()
+                    .zip(chosen.get().iter())
+                    .filter(|(_, on)| **on)
+                    .flat_map(|((_, props), _)| {
+                        props.iter().map(|p| p.to_string())
+                    })
+                    .collect();
+                close_slot(&slot);
+                let _ = s.send(EpubEditorMsg::RunFilterStyle(filter));
+            }));
+        }
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Filter style information",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    // ── E5: Upgrade book internals (decision 129) ──
+
+    /// What an upgrade would do to this book, as dialog rows and
+    /// a nothing-to-do flag.
+    fn upgrade_facts(&self) -> Vec<(&'static str, String, bool)> {
+        let Some(container) = &self.container else {
+            return Vec::new();
+        };
+        let opf = self
+            .file_text(&container.opf_path)
+            .unwrap_or_default();
+        let version = crate::epub_structure::opf_package_version(&opf);
+        let modern = version
+            .as_deref()
+            .map(|v| v.starts_with('3'))
+            .unwrap_or(false);
+        let has_modified = opf.contains("dcterms:modified");
+        let has_nav = container.nav_path.is_some();
+        vec![
+            (
+                "Package version",
+                if modern {
+                    "Already 3.0".to_string()
+                } else {
+                    format!("{} → 3.0", version.as_deref().unwrap_or("Unwritten"))
+                },
+                !modern,
+            ),
+            (
+                "Modified stamp",
+                if has_modified {
+                    "Present".to_string()
+                } else {
+                    "Will be added".to_string()
+                },
+                !has_modified,
+            ),
+            (
+                "Navigation document",
+                if has_nav {
+                    "Present".to_string()
+                } else if container.ncx_path.is_some() {
+                    "Will be created from the contents".to_string()
+                } else {
+                    "Will be created from headings".to_string()
+                },
+                !has_nav,
+            ),
+        ]
+    }
+
+    fn present_upgrade_dialog(&mut self, sender: &ComponentSender<Self>) {
+        let Some(book) = self.book.clone() else {
+            return;
+        };
+        let facts = self.upgrade_facts();
+        let pending = facts.iter().any(|(_, _, todo)| *todo);
+        let shell = dialog_shell(DialogSize::Form, Some(&book.title));
+        if !pending {
+            let label = gtk::Label::new(Some(
+                "This book's internals are up to date.",
+            ));
+            label.add_css_class("kalam-ui-meta");
+            label.set_halign(gtk::Align::Start);
+            shell.body().append(&label);
+        }
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        for (index, (name, state, _)) in facts.iter().enumerate() {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            if index > 0 {
+                row.add_css_class("kalam-ed-report-row");
+            }
+            row.set_size_request(-1, 40);
+            let label = gtk::Label::new(Some(name));
+            label.set_halign(gtk::Align::Start);
+            label.set_valign(gtk::Align::Center);
+            label.set_hexpand(true);
+            row.append(&label);
+            let meta = gtk::Label::new(Some(state));
+            meta.add_css_class("kalam-ui-meta");
+            meta.set_valign(gtk::Align::Center);
+            row.append(&meta);
+            list.append(&row);
+        }
+        shell.body().append(&list);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        if pending {
+            let slot_cancel = slot.clone();
+            shell.footer().append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
+            let slot2 = slot.clone();
+            let s = sender.input_sender().clone();
+            shell.footer().append(&primary_button("Upgrade", move || {
+                close_slot(&slot2);
+                let _ = s.send(EpubEditorMsg::RunUpgradeInternals);
+            }));
+        } else {
+            let slot_done = slot.clone();
+            shell.footer().append(&primary_button("Done", move || {
+                close_slot(&slot_done);
+            }));
+        }
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Upgrade book internals",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn run_upgrade_internals(&mut self, sender: &ComponentSender<Self>) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        let opf_path = container.opf_path.clone();
+        let Some(opf) = self.file_text(&opf_path) else {
+            return;
+        };
+        let mut plan = StructurePlan::new(
+            "Upgraded the book's internals".to_string(),
+            "Before upgrade internals",
+        );
+        let upgraded =
+            crate::epub_structure::upgrade_opf(&opf, &crate::db::chrono_like_now());
+        if upgraded != opf {
+            plan.text_changes.push((opf_path.clone(), upgraded));
+        }
+        if container.nav_path.is_none() {
+            let mut entries = match &container.ncx_path {
+                Some(ncx) => self
+                    .file_text(ncx)
+                    .map(|text| crate::epub_structure::parse_ncx(&text, ncx))
+                    .unwrap_or_default(),
+                None => Vec::new(),
+            };
+            if entries.is_empty() {
+                let mut spined: Vec<&EpubFile> = container
+                    .files
+                    .iter()
+                    .filter(|f| {
+                        f.kind == FileKind::Html
+                            && f.spine_index.is_some()
+                            && !f.is_nav
+                    })
+                    .collect();
+                spined.sort_by_key(|f| f.spine_index);
+                let files: Vec<(String, String)> = spined
+                    .iter()
+                    .map(|f| {
+                        (
+                            f.path.clone(),
+                            self.file_text(&f.path).unwrap_or_default(),
+                        )
+                    })
+                    .collect();
+                entries = crate::epub_structure::generate_from_headings(&files);
+            }
+            if !entries.is_empty() {
+                let dir = crate::epub_structure::parent_dir(&opf_path);
+                let mut nav_path = format!("{dir}nav.xhtml");
+                let mut n = 1;
+                while container.file(&nav_path).is_some() {
+                    n += 1;
+                    nav_path = format!("{dir}nav{n}.xhtml");
+                }
+                let nav_text =
+                    crate::epub_structure::render_nav(None, &entries, &nav_path);
+                plan.new_files.push((
+                    EpubFile {
+                        path: nav_path.clone(),
+                        kind: FileKind::Html,
+                        media_type: "application/xhtml+xml".to_string(),
+                        spine_index: None,
+                        is_nav: true,
+                        is_cover_image: false,
+                        in_manifest: true,
+                    },
+                    nav_text.into_bytes(),
+                ));
+                let mut order = self.spine_order_paths();
+                order.push(nav_path);
+                plan.spine_order = Some(order);
+            }
+        }
+        if plan.text_changes.is_empty() && plan.new_files.is_empty() {
+            self.show_pill("Already up to date", false, sender);
+            return;
+        }
+        self.finish_structure(plan, sender);
+    }
+
     // ── save ───────────────────────────────────────────────────────
 
     fn try_save(&mut self, save_anyway: bool, sender: &ComponentSender<Self>) {
@@ -7844,6 +8592,20 @@ impl EpubEditorModel {
             let s = sender.input_sender().clone();
             clean.add_item(kind.label(), move || {
                 let _ = s.send(EpubEditorMsg::ToolChosen(kind));
+            });
+        }
+        {
+            let s = sender.input_sender().clone();
+            clean.add_item("Filter style information…", move || {
+                let _ = s.send(EpubEditorMsg::OpenFilterStyle);
+            });
+            let s = sender.input_sender().clone();
+            clean.add_item("Tag mapper…", move || {
+                let _ = s.send(EpubEditorMsg::OpenTagMapper);
+            });
+            let s = sender.input_sender().clone();
+            clean.add_item("Upgrade book internals…", move || {
+                let _ = s.send(EpubEditorMsg::OpenUpgradeInternals);
             });
         }
         menu.add_submenu("Clean up", clean);
@@ -10065,6 +10827,9 @@ impl EpubEditorModel {
             item("Insert link…", "Insert", None, PaletteAction::InsertLink),
             item("Insert image…", "Insert", None, PaletteAction::InsertImage),
             item("Insert contents page…", "Insert", None, PaletteAction::InsertInlineContents),
+            item("Filter style information…", "Clean up", None, PaletteAction::FilterStyle),
+            item("Tag mapper…", "Clean up", None, PaletteAction::TagMapper),
+            item("Upgrade book internals…", "Clean up", None, PaletteAction::UpgradeInternals),
             item("Smarten punctuation", "Clean up", None, PaletteAction::Tool(InstantTool::Smarten)),
             item("Reformat code", "Clean up", None, PaletteAction::Tool(InstantTool::Reformat)),
             item("Remove unused CSS", "Clean up", None, PaletteAction::Tool(InstantTool::RemoveUnusedCss)),
@@ -10170,6 +10935,9 @@ impl EpubEditorModel {
             PaletteAction::History => self.open_history(sender),
             PaletteAction::ReplaceCover => self.present_replace_cover_dialog(sender),
             PaletteAction::Reports => self.present_reports_dialog(sender),
+            PaletteAction::TagMapper => self.present_tag_mapper_dialog(sender),
+            PaletteAction::FilterStyle => self.present_filter_style_dialog(sender),
+            PaletteAction::UpgradeInternals => self.present_upgrade_dialog(sender),
             PaletteAction::SplitCursor => self.run_split(0, 250, sender),
             PaletteAction::SplitDialog(preset) => {
                 self.present_split_dialog(preset, sender)
@@ -10416,6 +11184,50 @@ fn build_reorder_rows(list: &gtk::Box, order: &Rc<RefCell<Vec<String>>>) {
         });
         row.add_controller(target);
         list.append(&row);
+    }
+}
+
+/// The boards' tick circle (Tag mapper, Subset fonts, Embed
+/// fonts): an accent disc with a white check when on, a hollow
+/// ring when off. Returns the disc for `set_tick` to flip.
+fn tick_circle(on: bool) -> gtk::Box {
+    let circle = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    circle.add_css_class("kalam-ed-tick");
+    circle.set_size_request(18, 18);
+    circle.set_valign(gtk::Align::Center);
+    let mark = gtk::Label::new(Some("✓"));
+    mark.add_css_class("kalam-ed-tick-mark");
+    mark.set_hexpand(true);
+    mark.set_valign(gtk::Align::Center);
+    circle.append(&mark);
+    set_tick(&circle, on);
+    circle
+}
+
+/// A Tag mapper rule is well-formed when both sides parse as
+/// the mapper reads them: `tag` or `tag.class` into a bare tag.
+fn valid_tag_rule(from: &str, to: &str) -> bool {
+    let name_ok = |s: &str, class: bool| {
+        !s.is_empty()
+            && s.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || (class && c == '_'))
+    };
+    let from_ok = match from.split_once('.') {
+        Some((tag, class)) => name_ok(tag, false) && name_ok(class, true),
+        None => name_ok(from, false),
+    };
+    from_ok && name_ok(to, false)
+}
+
+fn set_tick(circle: &gtk::Box, on: bool) {
+    if on {
+        circle.add_css_class("on");
+    } else {
+        circle.remove_css_class("on");
+    }
+    if let Some(mark) = circle.first_child() {
+        mark.set_visible(on);
     }
 }
 

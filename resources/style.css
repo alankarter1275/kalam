@@ -8851,6 +8851,35 @@ button.kalam-ed-report-head:hover {
   font-size: 12.5px;
   color: @kalam_text;
 }
+/* Tick circles (Tag mapper, Subset/Embed fonts, Filter style). */
+.kalam-ed-tick {
+  border-radius: 999px;
+  border: 1px solid @kalam_text_dim;
+  background: transparent;
+}
+.kalam-ed-tick.on {
+  background: @kalam_accent_fill;
+  border-color: @kalam_accent_fill;
+}
+.kalam-ed-tick-mark {
+  color: white;
+  font-size: 11px;
+}
+button.kalam-ed-tickrow {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  color: @kalam_text;
+}
+button.kalam-ed-tickrow:hover {
+  background: @kalam_hover;
+}
+.kalam-ed-mono {
+  font-family: "DM Mono", monospace;
+  font-size: 12.5px;
+}
 button.kalam-ed-outline-row.current {
   color: @kalam_accent;
   font-weight: 600;

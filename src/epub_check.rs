@@ -692,16 +692,31 @@ fn file_name(path: &str) -> &str {
 }
 
 fn line_of(text: &str, byte: usize) -> usize {
-    text[..byte.min(text.len())].bytes().filter(|b| *b == b'\n').count() + 1
+    // Count on bytes, not a string slice: callers scan byte-by-byte,
+    // so `byte` may fall inside a multi-byte UTF-8 character.
+    text.as_bytes()[..byte.min(text.len())]
+        .iter()
+        .filter(|&&b| b == b'\n')
+        .count()
+        + 1
 }
 
 fn matches_at(text: &str, at: usize, needle: &str) -> bool {
-    text.len() >= at + needle.len() && &text[at..at + needle.len()] == needle
+    // Compare bytes for the same reason: `at` and the end of the
+    // candidate match are not guaranteed to be char boundaries.
+    text.as_bytes()
+        .get(at..at.saturating_add(needle.len()))
+        == Some(needle.as_bytes())
 }
 
 fn find_after(text: &str, from: usize, needle: &str) -> usize {
-    text[from.min(text.len())..]
-        .find(needle)
+    let from = from.min(text.len());
+    if needle.is_empty() {
+        return from;
+    }
+    text.as_bytes()[from..]
+        .windows(needle.len())
+        .position(|window| window == needle.as_bytes())
         .map(|n| from + n + needle.len())
         .unwrap_or(text.len())
 }
@@ -826,6 +841,23 @@ mod tests {
             problems.iter().all(|p| !p.message.contains("Unescaped")),
             "{problems:?}"
         );
+    }
+
+    #[test]
+    fn multibyte_characters_do_not_crash_the_scanners() {
+        // Regression: the byte scanners once sliced the source at
+        // candidate-match boundaries. A non-breaking space (two
+        // UTF-8 bytes) near the start of a chapter could make the
+        // end of an "href" candidate fall inside the character.
+        let text = "abc\u{a0} <a href=\"next.xhtml\">next</a>";
+        let refs = find_refs(text, false);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs.first().map(|r| r.href.as_str()), Some("next.xhtml"));
+
+        // The private helpers must also tolerate offsets that fall
+        // inside a character rather than on one of its boundaries.
+        assert_eq!(line_of("a\n\u{a0}b", 3), 2);
+        assert_eq!(find_after("a\u{a0}-->", 2, "-->"), 6);
     }
 
     #[test]

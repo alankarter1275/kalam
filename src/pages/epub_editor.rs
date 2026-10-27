@@ -128,6 +128,35 @@ pub enum EpubEditorMsg {
         path: String,
         line: usize,
     },
+    // ── E3: tools, Find & replace, command palette ──
+    OpenToolsMenu,
+    /// A Clean up tool was chosen: ask scope, then run it.
+    ToolChosen(InstantTool),
+    RunInstantTool(InstantTool, bool),
+    /// Snapshot taken: apply these whole-file replacements now.
+    ApplyChanges {
+        summary: String,
+        changes: Vec<(String, String)>,
+    },
+    PillUndo,
+    PillHide,
+    ToggleFind,
+    FindChanged,
+    FindSetScope(FindScope),
+    FindJump(usize),
+    FindNext,
+    FindReplaceOne,
+    FindReplaceAll,
+    SavedSearchesMenu,
+    SaveThisSearch,
+    UseSavedSearch(String, String),
+    TogglePalette,
+    PaletteChanged,
+    PaletteMove(i32),
+    PaletteAccept,
+    PaletteRun(usize),
+    /// Escape: fold away whichever floating panel is open.
+    ClosePanels,
 }
 
 struct OpenTab {
@@ -135,6 +164,67 @@ struct OpenTab {
     kind: FileKind,
     pinned: bool,
     buffer: Option<sourceview5::Buffer>,
+}
+
+/// The Clean up submenu's instant tools (decision 128): ask scope,
+/// snapshot, apply, offer Undo in the after-tool pill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstantTool {
+    Smarten,
+    Reformat,
+    RemoveUnusedCss,
+    FixHtml,
+}
+
+/// Find & replace scopes (decision 131).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FindScope {
+    ThisFile,
+    AllText,
+    WholeBook,
+}
+
+/// One found match, ready to render as a result row.
+struct FindHit {
+    path: String,
+    /// Char offsets into the file's current text.
+    start: usize,
+    end: usize,
+    line: usize,
+    before: String,
+    matched: String,
+    after: String,
+}
+
+/// How to take back one tool run (one undo step per file).
+struct ToolUndo {
+    entries: Vec<ToolUndoEntry>,
+}
+
+enum ToolUndoEntry {
+    /// The file has a buffer: one buffer undo restores it.
+    Buffer(String),
+    /// The file had no tab: restore (or drop) its pending edit.
+    Pending(String, Option<String>),
+}
+
+#[derive(Clone)]
+enum PaletteAction {
+    Save,
+    CheckBook,
+    FindReplace,
+    Tool(InstantTool),
+    View(ViewMode),
+    Tab(RightTab),
+    OpenFile(String),
+}
+
+#[derive(Clone)]
+struct PaletteItem {
+    label: String,
+    detail: String,
+    shortcut: Option<&'static str>,
+    action: PaletteAction,
 }
 
 pub struct EpubEditorModel {
@@ -196,6 +286,39 @@ pub struct EpubEditorModel {
     /// cursor moves don't re-parse the CSS.
     css_cache_key: u64,
     css_cache: Vec<(String, CssRule)>,
+    /// Tool and Replace-all edits to files that have no open tab
+    /// (E3). A file's current text is its buffer, else its pending
+    /// edit, else the container copy; Save writes pending edits
+    /// alongside modified buffers.
+    pending: HashMap<String, String>,
+    // ── E3: tools + pill ──
+    tools_btn: gtk::Button,
+    tools_menu: Option<MenuPopover>,
+    tool_undo: Option<ToolUndo>,
+    pill: gtk::Box,
+    pill_label: gtk::Label,
+    pill_undo_btn: gtk::Button,
+    pill_src: Option<gtk::glib::SourceId>,
+    // ── E3: Find & replace ──
+    find_panel: gtk::Box,
+    find_entry: gtk::Entry,
+    replace_entry: gtk::Entry,
+    find_scope_btns: Vec<(FindScope, gtk::Button)>,
+    find_scope: FindScope,
+    chip_case: gtk::ToggleButton,
+    chip_word: gtk::ToggleButton,
+    chip_regex: gtk::ToggleButton,
+    find_count: gtk::Label,
+    find_results_host: gtk::Box,
+    find_hits: Vec<FindHit>,
+    find_current: Option<usize>,
+    saved_menu: Option<MenuPopover>,
+    // ── E3: command palette ──
+    palette_panel: gtk::Box,
+    palette_entry: gtk::Entry,
+    palette_host: gtk::Box,
+    palette_items: Vec<PaletteItem>,
+    palette_selected: usize,
 }
 
 const EMPTY_TAB: &str = "__kalam_empty";
@@ -261,6 +384,18 @@ impl Component for EpubEditorModel {
         let top_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         top_spacer.set_hexpand(true);
         top_bar.append(&top_spacer);
+        let tools_btn = gtk::Button::with_label("Tools");
+        tools_btn.add_css_class("kalam-ed-ghost");
+        tools_btn.set_valign(gtk::Align::Center);
+        tools_btn.set_margin_end(8);
+        tools_btn.set_focus_on_click(false);
+        {
+            let s = sender.input_sender().clone();
+            tools_btn.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::OpenToolsMenu);
+            });
+        }
+        top_bar.append(&tools_btn);
         top_bar.append(&save_btn);
 
         // ── file tree (240, §36) ───────────────────────────────────
@@ -455,16 +590,248 @@ impl Component for EpubEditorModel {
         main_box.append(&status_bar);
         root.set_child(Some(&main_box));
 
+        // ── E3 floating surfaces: after-tool pill, Find & replace,
+        // command palette. All start hidden.
+        let pill_label = gtk::Label::new(None);
+        pill_label.add_css_class("kalam-ed-pill-text");
+        pill_label.set_hexpand(true);
+        pill_label.set_halign(gtk::Align::Start);
+        pill_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        let pill_undo_btn = gtk::Button::with_label("Undo");
+        pill_undo_btn.add_css_class("kalam-ed-pill-undo");
+        pill_undo_btn.set_focus_on_click(false);
+        {
+            let s = sender.input_sender().clone();
+            pill_undo_btn.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::PillUndo);
+            });
+        }
+        let pill = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        pill.add_css_class("kalam-ed-pill");
+        pill.set_size_request(380, 48);
+        pill.set_halign(gtk::Align::Center);
+        pill.set_valign(gtk::Align::End);
+        pill.set_margin_bottom(44);
+        pill.append(&pill_label);
+        pill.append(&pill_undo_btn);
+        pill.set_visible(false);
+        root.add_overlay(&pill);
+
+        // Find & replace (decision 131): 440 card, padding 24.
+        let find_inner = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        find_inner.set_margin_all(24);
+        let find_title = gtk::Label::new(Some("Find & replace"));
+        find_title.add_css_class("kalam-ed-find-title");
+        find_title.set_halign(gtk::Align::Start);
+        let find_close = gtk::Button::new();
+        find_close.add_css_class("kalam-ed-ghost");
+        find_close.set_child(Some(&crate::icons::symbolic("window-close-symbolic", 14)));
+        find_close.set_tooltip_text(Some("Close (Esc)"));
+        find_close.set_focus_on_click(false);
+        {
+            let s = sender.input_sender().clone();
+            find_close.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::ClosePanels);
+            });
+        }
+        let find_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        find_title.set_hexpand(true);
+        find_head.append(&find_title);
+        find_head.append(&find_close);
+        find_inner.append(&find_head);
+
+        let mut find_scope_btns: Vec<(FindScope, gtk::Button)> = Vec::new();
+        let scope_row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+        for (scope, label) in [
+            (FindScope::ThisFile, "This file"),
+            (FindScope::AllText, "All text files"),
+            (FindScope::WholeBook, "Whole book"),
+        ] {
+            let btn = gtk::Button::with_label(label);
+            btn.add_css_class("kalam-ed-flat-tab");
+            btn.add_css_class("kalam-ed-findscope");
+            btn.set_focus_on_click(false);
+            let s = sender.input_sender().clone();
+            btn.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::FindSetScope(scope));
+            });
+            scope_row.append(&btn);
+            find_scope_btns.push((scope, btn));
+        }
+        find_inner.append(&scope_row);
+
+        let find_entry = gtk::Entry::new();
+        find_entry.set_placeholder_text(Some("Find"));
+        find_entry.add_css_class("kalam-ed-entry");
+        {
+            let s = sender.input_sender().clone();
+            find_entry.connect_changed(move |_| {
+                let _ = s.send(EpubEditorMsg::FindChanged);
+            });
+            let s = sender.input_sender().clone();
+            find_entry.connect_activate(move |_| {
+                let _ = s.send(EpubEditorMsg::FindNext);
+            });
+        }
+        find_inner.append(&find_entry);
+        let replace_entry = gtk::Entry::new();
+        replace_entry.set_placeholder_text(Some("Replace with"));
+        replace_entry.add_css_class("kalam-ed-entry");
+        find_inner.append(&replace_entry);
+
+        let chip_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let chip_case = gtk::ToggleButton::with_label("Match case");
+        let chip_word = gtk::ToggleButton::with_label("Whole word");
+        let chip_regex = gtk::ToggleButton::with_label("Regex");
+        for chip in [&chip_case, &chip_word, &chip_regex] {
+            chip.add_css_class("kalam-ed-chip");
+            chip.set_focus_on_click(false);
+            let s = sender.input_sender().clone();
+            chip.connect_toggled(move |_| {
+                let _ = s.send(EpubEditorMsg::FindChanged);
+            });
+            chip_row.append(chip);
+        }
+        find_inner.append(&chip_row);
+
+        let find_count = gtk::Label::new(None);
+        find_count.add_css_class("kalam-ui-meta");
+        find_count.set_halign(gtk::Align::Start);
+        find_inner.append(&find_count);
+
+        let find_results_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let find_scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::External)
+            .max_content_height(240)
+            .propagate_natural_height(true)
+            .child(&find_results_host)
+            .build();
+        find_inner.append(&find_scroller);
+
+        let find_foot = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let saved_link = gtk::Button::with_label("Saved searches");
+        saved_link.add_css_class("kalam-ed-ghost");
+        saved_link.set_focus_on_click(false);
+        {
+            let s = sender.input_sender().clone();
+            saved_link.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::SavedSearchesMenu);
+            });
+        }
+        find_foot.append(&saved_link);
+        let foot_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        foot_spacer.set_hexpand(true);
+        find_foot.append(&foot_spacer);
+        let replace_one = boxed_ghost_button("Replace one", {
+            let s = sender.input_sender().clone();
+            move || {
+                let _ = s.send(EpubEditorMsg::FindReplaceOne);
+            }
+        });
+        find_foot.append(&replace_one);
+        let replace_all = primary_button("Replace all", {
+            let s = sender.input_sender().clone();
+            move || {
+                let _ = s.send(EpubEditorMsg::FindReplaceAll);
+            }
+        });
+        find_foot.append(&replace_all);
+        find_inner.append(&find_foot);
+
+        let find_panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        find_panel.add_css_class("kalam-ed-find");
+        find_panel.set_size_request(440, -1);
+        find_panel.set_halign(gtk::Align::End);
+        find_panel.set_valign(gtk::Align::Start);
+        find_panel.set_margin_top(64);
+        find_panel.set_margin_end(16);
+        find_panel.append(&find_inner);
+        find_panel.set_visible(false);
+        root.add_overlay(&find_panel);
+
+        // Command palette (decision 129, section 38): 640 card.
+        let palette_entry = gtk::Entry::new();
+        palette_entry.set_placeholder_text(Some("Type a command…"));
+        palette_entry.add_css_class("kalam-ed-palette-entry");
+        palette_entry.set_size_request(-1, 52);
+        {
+            let s = sender.input_sender().clone();
+            palette_entry.connect_changed(move |_| {
+                let _ = s.send(EpubEditorMsg::PaletteChanged);
+            });
+            let keys = gtk::EventControllerKey::new();
+            let s = sender.input_sender().clone();
+            keys.connect_key_pressed(move |_, keyval, _, _| {
+                let stop = gtk::glib::Propagation::Stop;
+                match keyval {
+                    gtk::gdk::Key::Down => {
+                        let _ = s.send(EpubEditorMsg::PaletteMove(1));
+                        stop
+                    }
+                    gtk::gdk::Key::Up => {
+                        let _ = s.send(EpubEditorMsg::PaletteMove(-1));
+                        stop
+                    }
+                    gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter => {
+                        let _ = s.send(EpubEditorMsg::PaletteAccept);
+                        stop
+                    }
+                    _ => gtk::glib::Propagation::Proceed,
+                }
+            });
+            palette_entry.add_controller(keys);
+        }
+        let palette_sep = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        palette_sep.add_css_class("kalam-ed-palette-sep");
+        palette_sep.set_size_request(-1, 1);
+        let palette_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        palette_host.set_margin_all(6);
+        let palette_scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::External)
+            .max_content_height(400)
+            .propagate_natural_height(true)
+            .child(&palette_host)
+            .build();
+        let palette_panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        palette_panel.add_css_class("kalam-ed-palette");
+        palette_panel.set_size_request(640, -1);
+        palette_panel.set_halign(gtk::Align::Center);
+        palette_panel.set_valign(gtk::Align::Start);
+        palette_panel.set_margin_top(72);
+        palette_panel.append(&palette_entry);
+        palette_panel.append(&palette_sep);
+        palette_panel.append(&palette_scroller);
+        palette_panel.set_visible(false);
+        root.add_overlay(&palette_panel);
+
         // Ctrl+S saves, from anywhere in the workspace.
         let keys = gtk::EventControllerKey::new();
         {
             let s = sender.clone();
             keys.connect_key_pressed(move |_, keyval, _, state| {
-                if state.contains(gtk::gdk::ModifierType::CONTROL_MASK)
-                    && keyval == gtk::gdk::Key::s
-                {
+                let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+                let stop = gtk::glib::Propagation::Stop;
+                if ctrl && keyval == gtk::gdk::Key::s {
                     s.input(EpubEditorMsg::SavePressed);
-                    return gtk::glib::Propagation::Stop;
+                    return stop;
+                }
+                if ctrl && keyval == gtk::gdk::Key::f {
+                    s.input(EpubEditorMsg::ToggleFind);
+                    return stop;
+                }
+                if ctrl
+                    && state.contains(gtk::gdk::ModifierType::SHIFT_MASK)
+                    && (keyval == gtk::gdk::Key::P || keyval == gtk::gdk::Key::p)
+                {
+                    s.input(EpubEditorMsg::TogglePalette);
+                    return stop;
+                }
+                if keyval == gtk::gdk::Key::Escape {
+                    // Proceed as well, so open popovers still get
+                    // their own Escape.
+                    s.input(EpubEditorMsg::ClosePanels);
                 }
                 gtk::glib::Propagation::Proceed
             });
@@ -525,6 +892,32 @@ impl Component for EpubEditorModel {
             outline_headings: Vec::new(),
             css_cache_key: 0,
             css_cache: Vec::new(),
+            pending: HashMap::new(),
+            tools_btn,
+            tools_menu: None,
+            tool_undo: None,
+            pill,
+            pill_label,
+            pill_undo_btn,
+            pill_src: None,
+            find_panel,
+            find_entry,
+            replace_entry,
+            find_scope_btns,
+            find_scope: FindScope::ThisFile,
+            chip_case,
+            chip_word,
+            chip_regex,
+            find_count,
+            find_results_host,
+            find_hits: Vec::new(),
+            find_current: None,
+            saved_menu: None,
+            palette_panel,
+            palette_entry,
+            palette_host,
+            palette_items: Vec::new(),
+            palette_selected: 0,
         };
         model.sync_switches();
         let widgets = view_output!();
@@ -692,9 +1085,14 @@ impl Component for EpubEditorModel {
                         buffer.set_modified(false);
                     }
                 }
+                let pending_saved: Vec<(String, String)> =
+                    self.pending.drain().collect();
                 if let Some(container) = &mut self.container {
                     for (path, bytes) in saved {
                         container.set_bytes(&path, bytes);
+                    }
+                    for (path, text) in pending_saved {
+                        container.set_bytes(&path, text.into_bytes());
                     }
                 }
                 match std::mem::replace(&mut self.after_save, AfterSave::Nothing) {
@@ -935,6 +1333,9 @@ impl EpubEditorModel {
         }
 
         let (widget, buffer) = self.build_tab_widget(&file, sender);
+        if buffer.is_some() {
+            self.pending.remove(path);
+        }
         self.tab_stack.add_named(&widget, Some(path));
         self.tabs.push(OpenTab {
             path: path.to_string(),
@@ -957,7 +1358,12 @@ impl EpubEditorModel {
         };
         match file.kind {
             FileKind::Html | FileKind::Css | FileKind::Xml => {
-                let text = container.text(&file.path).unwrap_or_default();
+                let text = self
+                    .pending
+                    .get(&file.path)
+                    .cloned()
+                    .or_else(|| container.text(&file.path))
+                    .unwrap_or_default();
                 let buffer = sourceview5::Buffer::new(None::<&gtk::TextTagTable>);
                 if let Some(id) = file.kind.language_id() {
                     if let Some(language) = sourceview5::LanguageManager::default().language(id)
@@ -973,7 +1379,9 @@ impl EpubEditorModel {
                 buffer.set_max_undo_levels(0);
                 buffer.set_text(&text);
                 buffer.set_max_undo_levels(undo_levels);
-                buffer.set_modified(false);
+                // A pending tool edit is a real unsaved change the
+                // moment its file opens (E3).
+                buffer.set_modified(self.pending.contains_key(&file.path));
                 buffer.place_cursor(&buffer.start_iter());
 
                 let view = sourceview5::View::with_buffer(&buffer);
@@ -1120,20 +1528,25 @@ impl EpubEditorModel {
     }
 
     fn is_modified(&self, path: &str) -> bool {
-        self.tabs
-            .iter()
-            .find(|t| t.path == path)
-            .and_then(|t| t.buffer.as_ref())
-            .map(|b| b.is_modified())
-            .unwrap_or(false)
+        self.pending.contains_key(path)
+            || self
+                .tabs
+                .iter()
+                .find(|t| t.path == path)
+                .and_then(|t| t.buffer.as_ref())
+                .map(|b| b.is_modified())
+                .unwrap_or(false)
     }
 
     fn dirty_paths(&self) -> HashSet<String> {
-        self.tabs
-            .iter()
-            .filter(|t| t.buffer.as_ref().map(|b| b.is_modified()).unwrap_or(false))
-            .map(|t| t.path.clone())
-            .collect()
+        let mut dirty: HashSet<String> = self.pending.keys().cloned().collect();
+        dirty.extend(
+            self.tabs
+                .iter()
+                .filter(|t| t.buffer.as_ref().map(|b| b.is_modified()).unwrap_or(false))
+                .map(|t| t.path.clone()),
+        );
+        dirty
     }
 
     // ── formatting toolbar ─────────────────────────────────────────
@@ -1214,6 +1627,9 @@ impl EpubEditorModel {
                 }
             }
         }
+        for (path, text) in &self.pending {
+            replacements.insert(path.clone(), text.clone().into_bytes());
+        }
         if replacements.is_empty() {
             // A Save from the unsaved dialog with everything already
             // saved (possible after Save anyway): just continue.
@@ -1261,13 +1677,7 @@ impl EpubEditorModel {
     fn save_blockers(&self) -> Vec<BookProblem> {
         self.collect_check()
             .into_iter()
-            .filter(|p| {
-                p.severity == Severity::Error
-                    && self.tabs.iter().any(|tab| {
-                        tab.path == p.path
-                            && tab.buffer.as_ref().is_some_and(|b| b.is_modified())
-                    })
-            })
+            .filter(|p| p.severity == Severity::Error && self.is_modified(&p.path))
             .collect()
     }
 
@@ -1773,6 +2183,15 @@ impl EpubEditorModel {
             }
             replacements.insert(tab.path.clone(), text.into_bytes());
         }
+        for (path, text) in &self.pending {
+            let kind = self.container.as_ref().and_then(|c| c.file(path)).map(|f| f.kind);
+            if matches!(kind, Some(FileKind::Html | FileKind::Xml))
+                && crate::epub_container::xml_problem(text).is_some()
+            {
+                return;
+            }
+            replacements.insert(path.clone(), text.clone().into_bytes());
+        }
         let service = self.service.clone();
         let s = sender.input_sender().clone();
         crate::tasks::spawn_internal(
@@ -1974,7 +2393,7 @@ impl EpubEditorModel {
     }
 
     /// A file's current text: its open buffer if it has one, else
-    /// the container copy.
+    /// a pending tool edit, else the container copy.
     fn file_text(&self, path: &str) -> Option<String> {
         if let Some(text) = self
             .tabs
@@ -1984,6 +2403,9 @@ impl EpubEditorModel {
             .map(buffer_text)
         {
             return Some(text);
+        }
+        if let Some(text) = self.pending.get(path) {
+            return Some(text.clone());
         }
         self.container.as_ref().and_then(|c| c.text(path))
     }
@@ -2288,22 +2710,14 @@ impl EpubEditorModel {
         let files: Vec<crate::epub_check::CheckFile> = container
             .files
             .iter()
-            .map(|file| {
-                let buffer_text = self
-                    .tabs
-                    .iter()
-                    .find(|t| t.path == file.path)
-                    .and_then(|t| t.buffer.as_ref())
-                    .map(buffer_text);
-                crate::epub_check::CheckFile {
-                    path: file.path.clone(),
-                    kind: file.kind,
-                    spine_index: file.spine_index,
-                    in_manifest: file.in_manifest,
-                    is_nav: file.is_nav,
-                    is_cover_image: file.is_cover_image,
-                    text: buffer_text.or_else(|| container.text(&file.path)),
-                }
+            .map(|file| crate::epub_check::CheckFile {
+                path: file.path.clone(),
+                kind: file.kind,
+                spine_index: file.spine_index,
+                in_manifest: file.in_manifest,
+                is_nav: file.is_nav,
+                is_cover_image: file.is_cover_image,
+                text: self.file_text(&file.path),
             })
             .collect();
         crate::epub_check::check_book(

@@ -2752,9 +2752,11 @@ impl LibraryService {
     pub fn font_family(&self, bytes: &[u8]) -> Option<String> {
         let mut db = fontdb::Database::new();
         db.load_font_data(bytes.to_vec());
-        db.faces()
+        let found = db
+            .faces()
             .next()
-            .and_then(|face| face.families.first().map(|(name, _)| name.clone()))
+            .and_then(|face| face.families.first().map(|(name, _)| name.clone()));
+        found
     }
 
     /// Embed fonts' scan (decision 141): of the families the
@@ -2798,7 +2800,8 @@ impl LibraryService {
     pub fn find_system_font(&self, family: &str) -> Option<std::path::PathBuf> {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        db.faces()
+        let found = db
+            .faces()
             .find(|face| {
                 face.families
                     .iter()
@@ -2807,7 +2810,8 @@ impl LibraryService {
             .and_then(|face| match &face.source {
                 fontdb::Source::File(path) => Some(path.clone()),
                 _ => None,
-            })
+            });
+        found
     }
 
     /// One external link's verdict, board-worded ("Works",

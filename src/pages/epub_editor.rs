@@ -5882,7 +5882,6 @@ impl EpubEditorModel {
     /// and give the tab's drawing area its specimen lines.
     fn font_preview_ready(&self, path: &str, disk: &std::path::Path, family: &str) {
         use pango::prelude::*;
-        use pangocairo::prelude::*;
         let found = {
             let mut areas = self.font_areas.borrow_mut();
             areas.retain(|(_, area, _)| area.root().is_some());
@@ -6826,7 +6825,8 @@ impl EpubEditorModel {
             let from_entry = from_entry.clone();
             let to_entry = to_entry.clone();
             let add_row = add_row.clone();
-            add_row.append(&boxed_ghost_button("Add", move || {
+            let add_row_hide = add_row.clone();
+            let add_inner = boxed_ghost_button("Add", move || {
                 let from = from_entry.text().trim().to_string();
                 let to = to_entry.text().trim().to_string();
                 if !valid_tag_rule(&from, &to) {
@@ -6844,11 +6844,12 @@ impl EpubEditorModel {
                 }
                 from_entry.set_text("");
                 to_entry.set_text("");
-                add_row.set_visible(false);
+                add_row_hide.set_visible(false);
                 persist();
                 rebuild();
                 recount();
-            }));
+            });
+            add_row.append(&add_inner);
         }
         rebuild();
         recount();
@@ -7654,6 +7655,7 @@ impl EpubEditorModel {
             let slot2 = slot.clone();
             let ticked = ticked.clone();
             let candidates = candidates.clone();
+            let any_found = candidates.iter().any(|(_, p)| p.is_some());
             let s = sender.input_sender().clone();
             let embed_btn = primary_button("Embed", move || {
                 let chosen: Vec<(String, std::path::PathBuf)> = candidates
@@ -7667,7 +7669,7 @@ impl EpubEditorModel {
                 close_slot(&slot2);
                 let _ = s.send(EpubEditorMsg::RunEmbedFonts(chosen));
             });
-            embed_btn.set_sensitive(candidates.iter().any(|(_, p)| p.is_some()));
+            embed_btn.set_sensitive(any_found);
             shell.footer().append(&embed_btn);
         }
         if let Some(dialog) = present_dialog(

@@ -215,6 +215,32 @@ pub enum EpubEditorMsg {
     ReplaceLoaded(String, Vec<u8>),
     TreeOpenExternal(String),
     ExternalReady(std::path::PathBuf),
+    // ── E4: Insert dialogs (decision 138) ──
+    OpenInsertChar,
+    OpenInsertLink,
+    OpenInsertImage,
+    OpenInsertInlineContents,
+    /// Raw text/markup in at the cursor (selection replaced).
+    InsertText(String),
+    /// Wrap the selection (or drop an empty pair) in a link.
+    InsertLink(String),
+    /// (Disk file name, bytes, alt text) for a new book image.
+    InsertImageLoaded(String, Vec<u8>, String),
+    RunInsertInlineContents {
+        after: String,
+        parts: bool,
+        to_spine: bool,
+    },
+    // ── E4: spell check + personal dictionary (decision 137) ──
+    OpenSpellCheck,
+    SpellReady(Vec<String>),
+    SpellPick(String),
+    SpellIgnore,
+    SpellAddWord,
+    SpellChange,
+    OpenPersonalDict,
+    PersonalAdd(String),
+    PersonalRemove(String),
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -314,6 +340,38 @@ impl StructurePlan {
     }
 }
 
+/// One unknown word Spell check is standing on (decision 137).
+#[derive(Debug, Clone)]
+struct SpellHit {
+    word: String,
+    /// Char span in the file's source text.
+    src_start: usize,
+    src_end: usize,
+    /// The visible sentence around the word, for the dialog.
+    sentence: String,
+    /// Char span of the word inside `sentence`.
+    s_start: usize,
+    s_end: usize,
+}
+
+/// A running spell check over one file's hits.
+struct SpellSession {
+    file: String,
+    hits: Vec<SpellHit>,
+    at: usize,
+    /// Folded words ignored this session.
+    ignored: HashSet<String>,
+    picked: Option<String>,
+}
+
+/// The widgets of an open Spell check dialog the model drives.
+struct SpellUi {
+    slot: Rc<RefCell<Option<InAppDialog>>>,
+    count: gtk::Label,
+    sentence: gtk::Label,
+    suggestions: gtk::Box,
+}
+
 /// The working state before a structure run — the pill's Undo
 /// for operations buffers alone cannot take back.
 struct StructureUndo {
@@ -341,6 +399,12 @@ enum PaletteAction {
     Semantics,
     LinkCss,
     AddFiles,
+    InsertChar,
+    InsertLink,
+    InsertImage,
+    InsertInlineContents,
+    SpellCheck,
+    PersonalDict,
     Tool(InstantTool),
     View(ViewMode),
     Tab(RightTab),
@@ -477,6 +541,15 @@ pub struct EpubEditorModel {
     /// Whether Ctrl is currently held (tree click routing).
     ctrl_down: Rc<RefCell<bool>>,
     structure_undo: Option<StructureUndo>,
+    // ── E4: Insert dialogs ──
+    /// (file, char start, char end) captured when an Insert
+    /// dialog opened — where an Add-from-file image lands.
+    insert_anchor: Option<(String, usize, usize)>,
+    // ── E4: spell check ──
+    /// Dictionary headwords, loaded once per editor session.
+    spell_dict: Option<Rc<HashSet<String>>>,
+    spell: Option<SpellSession>,
+    spell_ui: Option<SpellUi>,
 }
 
 const EMPTY_TAB: &str = "__kalam_empty";
@@ -1011,6 +1084,10 @@ impl Component for EpubEditorModel {
                     s.input(EpubEditorMsg::RenameActive);
                     return stop;
                 }
+                if keyval == gtk::gdk::Key::F7 {
+                    s.input(EpubEditorMsg::OpenSpellCheck);
+                    return stop;
+                }
                 if ctrl && keyval == gtk::gdk::Key::s {
                     s.input(EpubEditorMsg::SavePressed);
                     return stop;
@@ -1136,6 +1213,10 @@ impl Component for EpubEditorModel {
             tree_rows: Rc::new(RefCell::new(Vec::new())),
             ctrl_down,
             structure_undo: None,
+            insert_anchor: None,
+            spell_dict: None,
+            spell: None,
+            spell_ui: None,
         };
         model.sync_switches();
         let widgets = view_output!();
@@ -1728,6 +1809,99 @@ impl Component for EpubEditorModel {
                 self.run_replace_loaded(path, bytes, &sender)
             }
             EpubEditorMsg::TreeOpenExternal(path) => self.open_external(&path, &sender),
+            // ── E4: Insert dialogs ──
+            EpubEditorMsg::OpenInsertChar => {
+                if self.capture_insert_anchor() {
+                    self.present_insert_char_dialog(&sender);
+                } else {
+                    self.show_pill("Open a text file first", false, &sender);
+                }
+            }
+            EpubEditorMsg::OpenInsertLink => {
+                if self.capture_insert_anchor() {
+                    self.present_insert_link_dialog(&sender);
+                } else {
+                    self.show_pill("Open a text file first", false, &sender);
+                }
+            }
+            EpubEditorMsg::OpenInsertImage => {
+                if self.capture_insert_anchor() {
+                    self.present_insert_image_dialog(&sender);
+                } else {
+                    self.show_pill("Open a text file first", false, &sender);
+                }
+            }
+            EpubEditorMsg::OpenInsertInlineContents => {
+                self.present_insert_inline_contents_dialog(&sender)
+            }
+            EpubEditorMsg::InsertText(text) => self.insert_text_at_cursor(&text),
+            EpubEditorMsg::InsertLink(href) => self.insert_link_markup(&href),
+            EpubEditorMsg::InsertImageLoaded(name, bytes, alt) => {
+                self.run_insert_image_loaded(name, bytes, alt, &sender)
+            }
+            EpubEditorMsg::RunInsertInlineContents {
+                after,
+                parts,
+                to_spine,
+            } => self.run_insert_inline_contents(after, parts, to_spine, &sender),
+            // ── E4: spell check ──
+            EpubEditorMsg::OpenSpellCheck => self.start_spell_check(&sender),
+            EpubEditorMsg::SpellReady(words) => {
+                self.spell_dict = Some(Rc::new(words.into_iter().collect()));
+                if let Some(path) = self.active_path.clone() {
+                    self.begin_spell(&path, &sender);
+                }
+            }
+            EpubEditorMsg::SpellPick(word) => {
+                if let Some(session) = &mut self.spell {
+                    session.picked = Some(word);
+                }
+                self.spell_render(&sender);
+            }
+            EpubEditorMsg::SpellIgnore => {
+                if let Some(session) = &mut self.spell {
+                    if let Some(hit) = session.hits.get(session.at) {
+                        let folded = fold_word(&hit.word);
+                        session.ignored.insert(folded);
+                    }
+                }
+                self.spell_advance(&sender);
+            }
+            EpubEditorMsg::SpellAddWord => {
+                let word = self
+                    .spell
+                    .as_ref()
+                    .and_then(|s| s.hits.get(s.at))
+                    .map(|h| fold_word(&h.word));
+                if let Some(word) = word {
+                    let mut words = self.personal_words();
+                    if !words.contains(&word) {
+                        words.push(word.clone());
+                        self.save_personal(&words);
+                    }
+                    if let Some(session) = &mut self.spell {
+                        session.ignored.insert(word);
+                    }
+                }
+                self.spell_advance(&sender);
+            }
+            EpubEditorMsg::SpellChange => self.spell_change(&sender),
+            EpubEditorMsg::OpenPersonalDict => {
+                self.present_personal_dict_dialog(&sender)
+            }
+            EpubEditorMsg::PersonalAdd(word) => {
+                let mut words = self.personal_words();
+                let word = fold_word(word.trim());
+                if !word.is_empty() && !words.contains(&word) {
+                    words.push(word);
+                    self.save_personal(&words);
+                }
+            }
+            EpubEditorMsg::PersonalRemove(word) => {
+                let mut words = self.personal_words();
+                words.retain(|w| w != &word);
+                self.save_personal(&words);
+            }
             EpubEditorMsg::ExternalReady(path) => {
                 let file = gtk::gio::File::for_path(&path);
                 let _ = gtk::gio::AppInfo::launch_default_for_uri(
@@ -2943,6 +3117,1261 @@ impl EpubEditorModel {
         buffer.end_user_action();
         if let Some(view) = self.active_view() {
             view.grab_focus();
+        }
+    }
+
+    // ── E4: Insert (decision 138) ──────────────────────────────────
+
+    /// Record where an Insert dialog's result should land. False
+    /// when no editable text tab is in front.
+    fn capture_insert_anchor(&mut self) -> bool {
+        let Some(tab) = self
+            .active_tab()
+            .filter(|t| t.kind.is_text() && t.path != CONTENTS_TAB)
+        else {
+            return false;
+        };
+        let Some(buffer) = tab.buffer.clone() else {
+            return false;
+        };
+        let path = tab.path.clone();
+        let (start, end) = match buffer.selection_bounds() {
+            Some((s, e)) => (s.offset(), e.offset()),
+            None => {
+                let at = buffer.cursor_position();
+                (at, at)
+            }
+        };
+        self.insert_anchor = Some((path, start as usize, end as usize));
+        true
+    }
+
+    /// Text in at the cursor, replacing any selection — the
+    /// buffer-level half of Insert character / image.
+    fn insert_text_at_cursor(&mut self, text: &str) {
+        let Some(buffer) = self.active_buffer() else {
+            return;
+        };
+        buffer.begin_user_action();
+        if let Some((mut start, mut end)) = buffer.selection_bounds() {
+            buffer.delete(&mut start, &mut end);
+        }
+        let mut at = buffer.iter_at_offset(buffer.cursor_position());
+        buffer.insert(&mut at, text);
+        buffer.end_user_action();
+        if let Some(view) = self.active_view() {
+            view.grab_focus();
+        }
+    }
+
+    /// A link around the selection, or an empty pair to type
+    /// into (decision 138's Insert link).
+    fn insert_link_markup(&mut self, href: &str) {
+        let Some(buffer) = self.active_buffer() else {
+            return;
+        };
+        let open = format!("<a href=\"{}\">", esc_attr(href));
+        let close = "</a>";
+        buffer.begin_user_action();
+        if let Some((start, mut end)) = buffer.selection_bounds() {
+            buffer.insert(&mut end, close);
+            let mut at = start;
+            buffer.insert(&mut at, &open);
+            let new_start = buffer.iter_at_offset(at.offset());
+            let new_end =
+                buffer.iter_at_offset(end.offset() + open.chars().count() as i32);
+            buffer.select_range(&new_start, &new_end);
+        } else {
+            let mut at = buffer.iter_at_offset(buffer.cursor_position());
+            buffer.insert(&mut at, &format!("{open}{close}"));
+            let inside = buffer.iter_at_offset(at.offset() - close.chars().count() as i32);
+            buffer.place_cursor(&inside);
+        }
+        buffer.end_user_action();
+        if let Some(view) = self.active_view() {
+            view.grab_focus();
+        }
+    }
+
+    /// The `<img>` an Insert image choice drops into the text.
+    fn img_markup(&self, html_path: &str, image_path: &str, alt: &str) -> String {
+        let dir = crate::epub_structure::parent_dir(html_path);
+        let src = crate::epub_structure::rel_href(&dir, image_path, None);
+        format!(
+            "<img alt=\"{}\" src=\"{}\"/>",
+            esc_attr(alt),
+            esc_attr(&src)
+        )
+    }
+
+    fn present_insert_char_dialog(&self, sender: &ComponentSender<Self>) {
+        let shell = dialog_shell(DialogSize::Form, None);
+        let picked: Rc<RefCell<Option<(char, &'static str)>>> =
+            Rc::new(RefCell::new(None));
+        let search = gtk::Entry::new();
+        search.add_css_class("kalam-ed-entry");
+        search.set_placeholder_text(Some("Search by name"));
+        shell.body().append(&search);
+        let grid = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(220);
+        scroll.set_child(Some(&grid));
+        shell.body().append(&scroll);
+        let chosen = gtk::Label::new(Some("Pick a character"));
+        chosen.add_css_class("kalam-ui-meta");
+        chosen.set_halign(gtk::Align::Start);
+        chosen.set_margin_top(8);
+        shell.body().append(&chosen);
+
+        let s = sender.input_sender().clone();
+        let rebuild = {
+            let grid = grid.clone();
+            let picked = picked.clone();
+            let chosen = chosen.clone();
+            let search = search.clone();
+            move || {
+                clear_box(&grid);
+                let query = search.text().trim().to_lowercase();
+                let mut row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+                let mut in_row = 0;
+                for (glyph, name) in crate::epub_structure::SPECIAL_CHARS {
+                    if !query.is_empty() && !name.to_lowercase().contains(&query) {
+                        continue;
+                    }
+                    if in_row == 8 {
+                        grid.append(&row);
+                        row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+                        in_row = 0;
+                    }
+                    let btn = gtk::Button::new();
+                    btn.add_css_class("kalam-ed-glyph");
+                    if picked.borrow().map(|(g, _)| g) == Some(*glyph) {
+                        btn.add_css_class("selected");
+                    }
+                    btn.set_size_request(40, 40);
+                    let label = gtk::Label::new(Some(&glyph.to_string()));
+                    label.add_css_class("kalam-ed-glyph-label");
+                    btn.set_child(Some(&label));
+                    btn.set_tooltip_text(Some(name));
+                    let picked = picked.clone();
+                    let chosen = chosen.clone();
+                    let glyph = *glyph;
+                    let name = *name;
+                    btn.connect_clicked(move |btn| {
+                        *picked.borrow_mut() = Some((glyph, name));
+                        chosen.set_label(&format!("{name} · U+{:04X}", glyph as u32));
+                        if let Some(grid) = btn.parent().and_then(|row| row.parent()) {
+                            let mut row = grid.first_child();
+                            while let Some(r) = row {
+                                let mut cell = r.first_child();
+                                while let Some(c) = cell {
+                                    c.remove_css_class("selected");
+                                    cell = c.next_sibling();
+                                }
+                                row = r.next_sibling();
+                            }
+                        }
+                        btn.add_css_class("selected");
+                    });
+                    row.append(&btn);
+                    in_row += 1;
+                }
+                if in_row > 0 {
+                    grid.append(&row);
+                }
+            }
+        };
+        let rebuild_search = rebuild.clone();
+        search.connect_changed(move |_| rebuild_search());
+        rebuild();
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_close = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Close", move || {
+            close_slot(&slot_close);
+        }));
+        shell.footer().append(&primary_button("Insert", move || {
+            if let Some((glyph, _)) = *picked.borrow() {
+                let _ = s.send(EpubEditorMsg::InsertText(glyph.to_string()));
+            }
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Insert character",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+            search.grab_focus();
+        }
+    }
+
+    fn present_insert_link_dialog(&self, sender: &ComponentSender<Self>) {
+        let Some((anchor_path, _, _)) = self.insert_anchor.clone() else {
+            return;
+        };
+        let dir = crate::epub_structure::parent_dir(&anchor_path);
+        // (label, detail, href, depth) for every target in the book.
+        let mut targets: Vec<(String, String, String, i32)> = Vec::new();
+        for path in self.spine_order_paths() {
+            targets.push((
+                file_name(&path).to_string(),
+                path.clone(),
+                crate::epub_structure::rel_href(&dir, &path, None),
+                0,
+            ));
+            if let Some(text) = self.file_text(&path) {
+                for (_level, heading, _off, id) in
+                    crate::epub_structure::headings_with_ids(&text)
+                {
+                    if let Some(id) = id {
+                        targets.push((
+                            heading,
+                            file_name(&path).to_string(),
+                            crate::epub_structure::rel_href(&dir, &path, Some(&id)),
+                            1,
+                        ));
+                    }
+                }
+            }
+        }
+        let targets = Rc::new(targets);
+        let picked: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+        let picked_btn: Rc<RefCell<Option<gtk::Button>>> = Rc::new(RefCell::new(None));
+        let mode = Rc::new(std::cell::Cell::new(0u8));
+
+        let shell = dialog_shell(DialogSize::Form, None);
+        let (book_row, book_tick) = option_row("In this book", "");
+        book_row.set_size_request(-1, 40);
+        let (web_row, web_tick) = option_row("Web address", "");
+        web_row.set_size_request(-1, 40);
+        shell.body().append(&book_row);
+        shell.body().append(&web_row);
+
+        let stack = gtk::Stack::new();
+        stack.set_margin_top(8);
+        let book_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let search = gtk::Entry::new();
+        search.add_css_class("kalam-ed-entry");
+        search.set_placeholder_text(Some("Search files and headings"));
+        book_page.append(&search);
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(220);
+        scroll.set_child(Some(&list));
+        book_page.append(&scroll);
+        stack.add_named(&book_page, Some("book"));
+        let web_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let url = gtk::Entry::new();
+        url.add_css_class("kalam-ed-entry");
+        url.set_placeholder_text(Some("https://…"));
+        web_page.append(&url);
+        stack.add_named(&web_page, Some("web"));
+        shell.body().append(&stack);
+
+        let rebuild = {
+            let list = list.clone();
+            let targets = targets.clone();
+            let picked = picked.clone();
+            let picked_btn = picked_btn.clone();
+            let search = search.clone();
+            move || {
+                clear_box(&list);
+                *picked_btn.borrow_mut() = None;
+                let query = search.text().trim().to_lowercase();
+                for (label, detail, href, depth) in targets.iter() {
+                    if !query.is_empty()
+                        && !label.to_lowercase().contains(&query)
+                        && !detail.to_lowercase().contains(&query)
+                    {
+                        continue;
+                    }
+                    let row = gtk::Button::new();
+                    row.add_css_class("kalam-ed-pick-row");
+                    if picked.borrow().as_deref() == Some(href.as_str()) {
+                        row.add_css_class("selected");
+                        *picked_btn.borrow_mut() = Some(row.clone());
+                    }
+                    row.set_size_request(-1, 36);
+                    let h = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                    h.set_margin_start(depth * 18);
+                    let name = gtk::Label::new(Some(label));
+                    name.add_css_class(if *depth == 0 {
+                        "kalam-ed-option-title"
+                    } else {
+                        "kalam-ed-pick-label"
+                    });
+                    name.set_halign(gtk::Align::Start);
+                    name.set_hexpand(true);
+                    name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    h.append(&name);
+                    let meta = gtk::Label::new(Some(detail));
+                    meta.add_css_class("kalam-ui-meta");
+                    meta.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                    h.append(&meta);
+                    row.set_child(Some(&h));
+                    let picked = picked.clone();
+                    let picked_btn = picked_btn.clone();
+                    let href = href.clone();
+                    row.connect_clicked(move |btn| {
+                        if let Some(old) = picked_btn.borrow().as_ref() {
+                            old.remove_css_class("selected");
+                        }
+                        btn.add_css_class("selected");
+                        *picked_btn.borrow_mut() = Some(btn.clone());
+                        *picked.borrow_mut() = Some(href.clone());
+                    });
+                    list.append(&row);
+                }
+            }
+        };
+        let rebuild_search = rebuild.clone();
+        search.connect_changed(move |_| rebuild_search());
+        rebuild();
+
+        let sync_mode: Rc<dyn Fn()> = {
+            let mode = mode.clone();
+            let stack = stack.clone();
+            Rc::new(move || {
+                set_tick(&book_tick, mode.get() == 0);
+                set_tick(&web_tick, mode.get() == 1);
+                stack.set_visible_child_name(if mode.get() == 0 { "book" } else { "web" });
+            })
+        };
+        {
+            let mode = mode.clone();
+            let sync = sync_mode.clone();
+            book_row.connect_clicked(move |_| {
+                mode.set(0);
+                sync();
+            });
+            let mode = mode.clone();
+            let sync = sync_mode.clone();
+            web_row.connect_clicked(move |_| {
+                mode.set(1);
+                sync();
+            });
+        }
+        sync_mode();
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_ok = slot.clone();
+        let s = sender.input_sender().clone();
+        shell.footer().append(&primary_button("Insert", move || {
+            let href = if mode.get() == 0 {
+                picked.borrow().clone()
+            } else {
+                let text = url.text().trim().to_string();
+                (!text.is_empty()).then_some(text)
+            };
+            let Some(href) = href else {
+                return;
+            };
+            close_slot(&slot_ok);
+            let _ = s.send(EpubEditorMsg::InsertLink(href));
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Insert link",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+            search.grab_focus();
+        }
+    }
+
+    fn present_insert_image_dialog(&self, sender: &ComponentSender<Self>) {
+        let (Some(container), Some((anchor_path, _, _))) =
+            (&self.container, self.insert_anchor.clone())
+        else {
+            return;
+        };
+        let images: Vec<String> = container
+            .files
+            .iter()
+            .filter(|f| f.kind == FileKind::Image)
+            .map(|f| f.path.clone())
+            .collect();
+        let picked: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+        let picked_btn: Rc<RefCell<Option<gtk::Button>>> = Rc::new(RefCell::new(None));
+
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("Choose from the book or add one"),
+        );
+        let grid = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let mut row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let mut in_row = 0;
+        for path in &images {
+            if in_row == 4 {
+                grid.append(&row);
+                row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                in_row = 0;
+            }
+            let btn = gtk::Button::new();
+            btn.add_css_class("kalam-ed-thumb");
+            btn.set_size_request(84, 84);
+            btn.set_tooltip_text(Some(path));
+            if let Some(bytes) = self.file_bytes(path) {
+                let glib_bytes = gtk::glib::Bytes::from(bytes.as_slice());
+                if let Ok(texture) = gtk::gdk::Texture::from_bytes(&glib_bytes) {
+                    let picture = gtk::Picture::for_paintable(&texture);
+                    picture.set_content_fit(gtk::ContentFit::Contain);
+                    picture.set_size_request(76, 76);
+                    btn.set_child(Some(&picture));
+                }
+            }
+            let picked = picked.clone();
+            let picked_btn = picked_btn.clone();
+            let path = path.clone();
+            btn.connect_clicked(move |btn| {
+                if let Some(old) = picked_btn.borrow().as_ref() {
+                    old.remove_css_class("selected");
+                }
+                btn.add_css_class("selected");
+                *picked_btn.borrow_mut() = Some(btn.clone());
+                *picked.borrow_mut() = Some(path.clone());
+            });
+            row.append(&btn);
+            in_row += 1;
+        }
+        if in_row > 0 || images.is_empty() {
+            grid.append(&row);
+        }
+        if images.is_empty() {
+            let label = gtk::Label::new(Some("No images in this book yet"));
+            label.add_css_class("kalam-ui-meta");
+            label.set_halign(gtk::Align::Start);
+            grid.append(&label);
+        }
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(190);
+        scroll.set_child(Some(&grid));
+        shell.body().append(&scroll);
+
+        let alt = gtk::Entry::new();
+        alt.add_css_class("kalam-ed-entry");
+        alt.set_placeholder_text(Some("Alt text — what the image shows"));
+        alt.set_margin_top(8);
+        shell.body().append(&alt);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        // Add from file… sits at the footer's leading edge.
+        let slot_add = slot.clone();
+        let s_add = sender.input_sender().clone();
+        let alt_add = alt.clone();
+        let service = self.service.clone();
+        let window = self.host_window();
+        let add_btn = boxed_ghost_button("Add from file…", move || {
+            let dialog = gtk::FileDialog::builder()
+                .title("Add an image")
+                .modal(true)
+                .build();
+            let filter = gtk::FileFilter::new();
+            filter.set_name(Some("Images"));
+            for suffix in ["png", "jpg", "jpeg", "gif", "webp", "svg"] {
+                filter.add_suffix(suffix);
+            }
+            let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+            filters.append(&filter);
+            dialog.set_filters(Some(&filters));
+            let service = service.clone();
+            let s = s_add.clone();
+            let slot = slot_add.clone();
+            let alt = alt_add.clone();
+            dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
+                let Ok(file) = result else {
+                    return;
+                };
+                let Some(path) = file.path() else {
+                    return;
+                };
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "image".to_string());
+                let alt_text = alt.text().to_string();
+                close_slot(&slot);
+                let s2 = s.clone();
+                crate::tasks::spawn_internal(
+                    "Reading image",
+                    move |_reporter| service.read_editor_import(&path),
+                    |_| {},
+                    move |result| match result {
+                        Ok(bytes) => {
+                            let _ = s2.send(EpubEditorMsg::InsertImageLoaded(
+                                name.clone(),
+                                bytes,
+                                alt_text.clone(),
+                            ));
+                        }
+                        Err(message) => {
+                            let _ = s2.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
+            });
+        });
+        add_btn.set_hexpand(true);
+        add_btn.set_halign(gtk::Align::Start);
+        shell.footer().append(&add_btn);
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_ok = slot.clone();
+        let s = sender.input_sender().clone();
+        let dir = crate::epub_structure::parent_dir(&anchor_path);
+        shell.footer().append(&primary_button("Insert", move || {
+            let Some(path) = picked.borrow().clone() else {
+                return;
+            };
+            let src = crate::epub_structure::rel_href(&dir, &path, None);
+            let markup = format!(
+                "<img alt=\"{}\" src=\"{}\"/>",
+                esc_attr(alt.text().trim()),
+                esc_attr(&src)
+            );
+            close_slot(&slot_ok);
+            let _ = s.send(EpubEditorMsg::InsertText(markup));
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Insert image",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    /// An image picked from disk joins the book (snapshot
+    /// first, like every structural change) and its `<img>`
+    /// lands where the dialog was opened.
+    fn run_insert_image_loaded(
+        &mut self,
+        name: String,
+        bytes: Vec<u8>,
+        alt: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        let (Some(container), Some((anchor, start, end))) =
+            (&self.container, self.insert_anchor.clone())
+        else {
+            return;
+        };
+        let bare = file_name(&name).to_string();
+        let mut plan = StructurePlan::new(
+            format!("Inserted {bare}"),
+            "Before insert image",
+        );
+        let image_path = if let Some(existing) = container
+            .files
+            .iter()
+            .find(|f| file_name(&f.path) == bare)
+            .map(|f| f.path.clone())
+        {
+            plan.byte_changes.push((existing.clone(), bytes));
+            existing
+        } else {
+            let dir = container
+                .files
+                .iter()
+                .find(|f| f.kind == FileKind::Image)
+                .map(|f| crate::epub_structure::parent_dir(&f.path))
+                .unwrap_or_else(|| {
+                    crate::epub_structure::parent_dir(&container.opf_path)
+                });
+            let path = format!("{dir}{bare}");
+            let media = crate::epub_container::guess_media_type(&bare);
+            plan.new_files.push((
+                EpubFile {
+                    path: path.clone(),
+                    kind: FileKind::Image,
+                    media_type: media.to_string(),
+                    spine_index: None,
+                    is_nav: false,
+                    is_cover_image: false,
+                    in_manifest: true,
+                },
+                bytes,
+            ));
+            path
+        };
+        let Some(text) = self.file_text(&anchor) else {
+            return;
+        };
+        let markup = self.img_markup(&anchor, &image_path, &alt);
+        let chars: Vec<char> = text.chars().collect();
+        let start = start.min(chars.len());
+        let end = end.clamp(start, chars.len());
+        let mut next: String = chars[..start].iter().collect();
+        next.push_str(&markup);
+        next.extend(&chars[end..]);
+        // The markup rides in as a text change on the anchor —
+        // unless the anchor is the OPF, which finish_structure
+        // is about to rebuild from this very change as its base.
+        plan.text_changes.push((anchor, next));
+        self.finish_structure(plan, sender);
+    }
+
+    fn present_insert_inline_contents_dialog(&self, sender: &ComponentSender<Self>) {
+        let order = self.spine_order_paths();
+        let Some(first) = order.first().cloned() else {
+            return;
+        };
+        let after: Rc<RefCell<String>> = Rc::new(RefCell::new(first));
+        let after_btn: Rc<RefCell<Option<gtk::Button>>> = Rc::new(RefCell::new(None));
+        let parts = Rc::new(std::cell::Cell::new(true));
+        let to_spine = Rc::new(std::cell::Cell::new(true));
+
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("A chapter inside the book that lists its chapters"),
+        );
+        let after_label = gtk::Label::new(Some("Insert after"));
+        after_label.add_css_class("kalam-ed-option-title");
+        after_label.set_halign(gtk::Align::Start);
+        shell.body().append(&after_label);
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        for path in &order {
+            let row = gtk::Button::new();
+            row.add_css_class("kalam-ed-pick-row");
+            if after.borrow().as_str() == path.as_str() {
+                row.add_css_class("selected");
+                *after_btn.borrow_mut() = Some(row.clone());
+            }
+            row.set_size_request(-1, 36);
+            let name = gtk::Label::new(Some(file_name(path)));
+            name.add_css_class("kalam-ed-pick-label");
+            name.set_halign(gtk::Align::Start);
+            row.set_child(Some(&name));
+            let after = after.clone();
+            let slot = after_btn.clone();
+            let path = path.clone();
+            row.connect_clicked(move |btn| {
+                if let Some(old) = slot.borrow().as_ref() {
+                    old.remove_css_class("selected");
+                }
+                btn.add_css_class("selected");
+                *slot.borrow_mut() = Some(btn.clone());
+                *after.borrow_mut() = path.clone();
+            });
+            list.append(&row);
+        }
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(180);
+        scroll.set_child(Some(&list));
+        shell.body().append(&scroll);
+
+        let (parts_row, parts_tick) = option_row("Parts and chapters", "");
+        parts_row.set_size_request(-1, 40);
+        let (chapters_row, chapters_tick) = option_row("Chapters only", "");
+        chapters_row.set_size_request(-1, 40);
+        let sync_parts: Rc<dyn Fn()> = {
+            let parts = parts.clone();
+            Rc::new(move || {
+                set_tick(&parts_tick, parts.get());
+                set_tick(&chapters_tick, !parts.get());
+            })
+        };
+        {
+            let parts = parts.clone();
+            let sync = sync_parts.clone();
+            parts_row.connect_clicked(move |_| {
+                parts.set(true);
+                sync();
+            });
+            let sync = sync_parts.clone();
+            chapters_row.connect_clicked(move |_| {
+                parts.set(false);
+                sync();
+            });
+        }
+        sync_parts();
+        shell.body().append(&parts_row);
+        shell.body().append(&chapters_row);
+
+        let (spine_row, spine_tick) = option_row("Add to the reading order", "");
+        spine_row.set_size_request(-1, 40);
+        set_tick(&spine_tick, true);
+        spine_row.connect_clicked(move |_| {
+            to_spine.set(!to_spine.get());
+            set_tick(&spine_tick, to_spine.get());
+        });
+        shell.body().append(&spine_row);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_ok = slot.clone();
+        let s = sender.input_sender().clone();
+        shell.footer().append(&primary_button("Insert", move || {
+            close_slot(&slot_ok);
+            let _ = s.send(EpubEditorMsg::RunInsertInlineContents {
+                after: after.borrow().clone(),
+                parts: parts.get(),
+                to_spine: to_spine.get(),
+            });
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Insert contents page",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn run_insert_inline_contents(
+        &mut self,
+        after: String,
+        parts: bool,
+        to_spine: bool,
+        sender: &ComponentSender<Self>,
+    ) {
+        if self.container.is_none() {
+            return;
+        }
+        if self.toc.is_empty() {
+            self.load_toc();
+        }
+        if self.toc.is_empty() {
+            self.show_pill(
+                "This book has no contents to list yet — use Edit contents first",
+                false,
+                sender,
+            );
+            return;
+        }
+        let dir = crate::epub_structure::parent_dir(&after);
+        let taken: HashSet<String> = self
+            .container
+            .as_ref()
+            .map(|c| c.files.iter().map(|f| f.path.clone()).collect())
+            .unwrap_or_default();
+        let mut path = format!("{dir}contents.xhtml");
+        let mut n = 2;
+        while taken.contains(path.as_str()) {
+            path = format!("{dir}contents{n}.xhtml");
+            n += 1;
+        }
+        let text = crate::epub_structure::inline_contents_page(&self.toc, &path, parts);
+        let mut plan = StructurePlan::new(
+            format!("Inserted {}", file_name(&path)),
+            "Before insert contents page",
+        );
+        plan.new_files.push((
+            EpubFile {
+                path: path.clone(),
+                kind: FileKind::Html,
+                media_type: "application/xhtml+xml".to_string(),
+                spine_index: None,
+                is_nav: false,
+                is_cover_image: false,
+                in_manifest: true,
+            },
+            text.into_bytes(),
+        ));
+        if to_spine {
+            let mut order = self.spine_order_paths();
+            let at = order
+                .iter()
+                .position(|p| p == &after)
+                .map(|i| i + 1)
+                .unwrap_or(order.len());
+            order.insert(at, path.clone());
+            plan.spine_order = Some(order);
+            plan.new_files[0].0.spine_index = Some(at);
+        }
+        self.finish_structure(plan, sender);
+    }
+
+    // ── E4: spell check + personal dictionary (decision 137) ──────
+
+    fn personal_words(&self) -> Vec<String> {
+        self.service
+            .catalog()
+            .get_pref("editor.personal_dictionary")
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+            .unwrap_or_default()
+    }
+
+    fn save_personal(&self, words: &[String]) {
+        let mut words: Vec<String> = words.to_vec();
+        words.sort();
+        words.dedup();
+        if let Ok(raw) = serde_json::to_string(&words) {
+            let _ = self
+                .service
+                .catalog()
+                .set_pref("editor.personal_dictionary", &raw);
+        }
+    }
+
+    /// F7: load the word list once, then walk the open file.
+    fn start_spell_check(&mut self, sender: &ComponentSender<Self>) {
+        let Some(tab) = self
+            .active_tab()
+            .filter(|t| t.kind == FileKind::Html && t.buffer.is_some())
+        else {
+            self.show_pill("Open a page to spell-check it", false, sender);
+            return;
+        };
+        let path = tab.path.clone();
+        if self.spell_dict.is_some() {
+            self.begin_spell(&path, sender);
+            return;
+        }
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Loading the dictionary",
+            move |_reporter| service.spell_wordlist(),
+            |_| {},
+            move |result| match result {
+                Ok(words) => {
+                    let _ = s.send(EpubEditorMsg::SpellReady(words));
+                }
+                Err(message) => {
+                    let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                }
+            },
+        );
+    }
+
+    /// Unknown words in a file's visible text, with source spans.
+    fn spell_hits(
+        &self,
+        text: &str,
+        dict: &HashSet<String>,
+        personal: &HashSet<String>,
+    ) -> Vec<SpellHit> {
+        let stripped = strip_map(text);
+        let src_chars: Vec<char> = text.chars().collect();
+        let plain: Vec<char> = stripped.text.chars().collect();
+        let mut hits = Vec::new();
+        for (start, end, word) in crate::epub_structure::spell_words(&stripped.text) {
+            if crate::epub_structure::word_known(&word, dict)
+                || personal.contains(&fold_word(&word))
+            {
+                continue;
+            }
+            let (src_start, src_end) = stripped.source_span(start, end);
+            // A word split by markup is not ours to rewrite.
+            if src_chars[src_start..src_end.min(src_chars.len())]
+                .iter()
+                .any(|c| *c == '<')
+            {
+                continue;
+            }
+            let mut s_from = start;
+            while s_from > 0 {
+                let c = plain[s_from - 1];
+                if matches!(c, '.' | '!' | '?' | '\n') || start - s_from > 160 {
+                    break;
+                }
+                s_from -= 1;
+            }
+            while s_from < start && plain[s_from] == ' ' {
+                s_from += 1;
+            }
+            let mut s_to = end;
+            while s_to < plain.len() {
+                let c = plain[s_to];
+                s_to += 1;
+                if matches!(c, '.' | '!' | '?' | '\n') || s_to - end > 160 {
+                    break;
+                }
+            }
+            let sentence: String = plain[s_from..s_to].iter().collect();
+            hits.push(SpellHit {
+                word,
+                src_start,
+                src_end,
+                sentence,
+                s_start: start - s_from,
+                s_end: end - s_from,
+            });
+        }
+        hits
+    }
+
+    fn begin_spell(&mut self, path: &str, sender: &ComponentSender<Self>) {
+        let Some(dict) = self.spell_dict.clone() else {
+            return;
+        };
+        let personal: HashSet<String> =
+            self.personal_words().iter().map(|w| fold_word(w)).collect();
+        let Some(text) = self.file_text(path) else {
+            return;
+        };
+        let hits = self.spell_hits(&text, &dict, &personal);
+        if hits.is_empty() {
+            self.show_pill(
+                &format!("No unknown words in {}", file_name(path)),
+                false,
+                sender,
+            );
+            return;
+        }
+        self.spell = Some(SpellSession {
+            file: path.to_string(),
+            hits,
+            at: 0,
+            ignored: HashSet::new(),
+            picked: None,
+        });
+        self.present_spell_dialog(sender);
+        self.spell_render(sender);
+        self.spell_reveal();
+    }
+
+    fn present_spell_dialog(&mut self, sender: &ComponentSender<Self>) {
+        let shell = dialog_shell(DialogSize::Form, None);
+        let count = gtk::Label::new(None);
+        count.add_css_class("kalam-ui-meta");
+        count.set_halign(gtk::Align::Start);
+        shell.body().append(&count);
+        let sentence = gtk::Label::new(None);
+        sentence.add_css_class("kalam-ed-spell-sentence");
+        sentence.set_halign(gtk::Align::Start);
+        sentence.set_xalign(0.0);
+        sentence.set_wrap(true);
+        sentence.set_margin_top(8);
+        shell.body().append(&sentence);
+        let suggestions = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        suggestions.set_margin_top(8);
+        shell.body().append(&suggestions);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let s = sender.input_sender().clone();
+        let add = boxed_ghost_button("Add to dictionary", move || {
+            let _ = s.send(EpubEditorMsg::SpellAddWord);
+        });
+        add.add_css_class("kalam-ed-accent-text");
+        shell.footer().append(&add);
+        let s = sender.input_sender().clone();
+        shell.footer().append(&boxed_ghost_button("Ignore", move || {
+            let _ = s.send(EpubEditorMsg::SpellIgnore);
+        }));
+        let s = sender.input_sender().clone();
+        shell.footer().append(&primary_button("Change", move || {
+            let _ = s.send(EpubEditorMsg::SpellChange);
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Spell check",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+        self.spell_ui = Some(SpellUi {
+            slot,
+            count,
+            sentence,
+            suggestions,
+        });
+    }
+
+    fn spell_render(&mut self, sender: &ComponentSender<Self>) {
+        let (Some(session), Some(ui), Some(dict)) = (
+            &mut self.spell,
+            &self.spell_ui,
+            self.spell_dict.clone(),
+        ) else {
+            return;
+        };
+        let Some(hit) = session.hits.get(session.at).cloned() else {
+            return;
+        };
+        let remaining = session
+            .hits
+            .iter()
+            .skip(session.at)
+            .filter(|h| !session.ignored.contains(&fold_word(&h.word)))
+            .count();
+        ui.count.set_label(&format!(
+            "{} · {} of {}",
+            file_name(&session.file),
+            session.at + 1,
+            session.at + remaining
+        ));
+        let accent = crate::theme::current(self.service.catalog()).accent;
+        let chars: Vec<char> = hit.sentence.chars().collect();
+        let esc = |s: &str| {
+            s.replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        };
+        let before: String = chars[..hit.s_start].iter().collect();
+        let word: String = chars[hit.s_start..hit.s_end].iter().collect();
+        let after: String = chars[hit.s_end..].iter().collect();
+        ui.sentence.set_markup(&format!(
+            "{}<span underline=\"error\" underline_color=\"{}\">{}</span>{}",
+            esc(&before),
+            accent,
+            esc(&word),
+            esc(&after)
+        ));
+        clear_box(&ui.suggestions);
+        let mut options = crate::epub_structure::suggestions(&hit.word, &dict);
+        // Match the book's capitalisation of the first letter.
+        if hit.word.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+            for option in &mut options {
+                let mut cs = option.chars();
+                if let Some(first) = cs.next() {
+                    *option = first.to_uppercase().collect::<String>() + cs.as_str();
+                }
+            }
+        }
+        if session
+            .picked
+            .as_ref()
+            .map(|p| !options.contains(p))
+            .unwrap_or(true)
+        {
+            session.picked = options.first().cloned();
+        }
+        if options.is_empty() {
+            let label = gtk::Label::new(Some("No suggestions"));
+            label.add_css_class("kalam-ui-meta");
+            label.set_halign(gtk::Align::Start);
+            ui.suggestions.append(&label);
+        }
+        for option in options {
+            let (row, tick) = option_row(&option, "");
+            row.set_size_request(-1, 36);
+            set_tick(&tick, session.picked.as_deref() == Some(option.as_str()));
+            let s = sender.input_sender().clone();
+            row.connect_clicked(move |_| {
+                let _ = s.send(EpubEditorMsg::SpellPick(option.clone()));
+            });
+            ui.suggestions.append(&row);
+        }
+    }
+
+    /// Show the hit in its buffer: selected, scrolled into view.
+    fn spell_reveal(&self) {
+        let Some(session) = &self.spell else {
+            return;
+        };
+        let Some(hit) = session.hits.get(session.at) else {
+            return;
+        };
+        let Some(buffer) = self
+            .tabs
+            .iter()
+            .find(|t| t.path == session.file)
+            .and_then(|t| t.buffer.clone())
+        else {
+            return;
+        };
+        let start = buffer.iter_at_offset(hit.src_start as i32);
+        let end = buffer.iter_at_offset(hit.src_end as i32);
+        buffer.select_range(&start, &end);
+        if let Some(view) = self
+            .tab_stack
+            .child_by_name(&session.file)
+            .and_then(|w| w.downcast::<gtk::ScrolledWindow>().ok())
+            .and_then(|s| s.child())
+            .and_then(|c| c.downcast::<sourceview5::View>().ok())
+        {
+            let mut at = start;
+            view.scroll_to_iter(&mut at, 0.25, false, 0.0, 0.0);
+        }
+    }
+
+    /// Step to the next live hit, or finish the session.
+    fn spell_advance(&mut self, sender: &ComponentSender<Self>) {
+        let done = match &mut self.spell {
+            None => return,
+            Some(session) => {
+                session.at += 1;
+                session.picked = None;
+                while session.at < session.hits.len()
+                    && session
+                        .ignored
+                        .contains(&fold_word(&session.hits[session.at].word))
+                {
+                    session.at += 1;
+                }
+                session.at >= session.hits.len()
+            }
+        };
+        if done {
+            let file = self
+                .spell
+                .as_ref()
+                .map(|s| file_name(&s.file).to_string())
+                .unwrap_or_default();
+            self.spell = None;
+            if let Some(ui) = self.spell_ui.take() {
+                close_slot(&ui.slot);
+            }
+            self.show_pill(
+                &format!("Spell check complete — {file} is clean"),
+                false,
+                sender,
+            );
+        } else {
+            self.spell_render(sender);
+            self.spell_reveal();
+        }
+    }
+
+    fn spell_change(&mut self, sender: &ComponentSender<Self>) {
+        let Some(session) = &self.spell else {
+            return;
+        };
+        let (file, hit, replacement) = (
+            session.file.clone(),
+            session.hits.get(session.at).cloned(),
+            session.picked.clone(),
+        );
+        let (Some(hit), Some(replacement)) = (hit, replacement) else {
+            return;
+        };
+        let Some(buffer) = self
+            .tabs
+            .iter()
+            .find(|t| t.path == file)
+            .and_then(|t| t.buffer.clone())
+        else {
+            return;
+        };
+        let delta =
+            replacement.chars().count() as i64 - (hit.src_end - hit.src_start) as i64;
+        buffer.begin_user_action();
+        let mut start = buffer.iter_at_offset(hit.src_start as i32);
+        let mut end = buffer.iter_at_offset(hit.src_end as i32);
+        buffer.delete(&mut start, &mut end);
+        let mut at = buffer.iter_at_offset(hit.src_start as i32);
+        buffer.insert(&mut at, &replacement);
+        buffer.end_user_action();
+        if let Some(session) = &mut self.spell {
+            for later in session.hits.iter_mut().skip(session.at + 1) {
+                later.src_start = (later.src_start as i64 + delta).max(0) as usize;
+                later.src_end = (later.src_end as i64 + delta).max(0) as usize;
+            }
+        }
+        self.spell_advance(sender);
+    }
+
+    fn present_personal_dict_dialog(&mut self, sender: &ComponentSender<Self>) {
+        let words: Rc<RefCell<Vec<String>>> =
+            Rc::new(RefCell::new(self.personal_words()));
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("Words you added in Spell check"),
+        );
+        let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let entry = gtk::Entry::new();
+        entry.add_css_class("kalam-ed-entry");
+        entry.set_placeholder_text(Some("Add a word"));
+        entry.set_hexpand(true);
+        add_row.append(&entry);
+        shell.body().append(&add_row);
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(240);
+        scroll.set_child(Some(&list));
+        shell.body().append(&scroll);
+
+        let rebuild: Rc<dyn Fn()> = {
+            let list = list.clone();
+            let words = words.clone();
+            let s = sender.input_sender().clone();
+            Rc::new(move || {
+                clear_box(&list);
+                let current = words.borrow().clone();
+                if current.is_empty() {
+                    let label = gtk::Label::new(Some("No words yet"));
+                    label.add_css_class("kalam-ui-meta");
+                    label.set_halign(gtk::Align::Start);
+                    list.append(&label);
+                    return;
+                }
+                for word in current {
+                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                    row.set_size_request(-1, 36);
+                    let label = gtk::Label::new(Some(&word));
+                    label.add_css_class("kalam-ed-pick-label");
+                    label.set_halign(gtk::Align::Start);
+                    label.set_hexpand(true);
+                    label.set_valign(gtk::Align::Center);
+                    row.append(&label);
+                    let remove = gtk::Button::new();
+                    remove.add_css_class("kalam-ed-glyph");
+                    remove.set_size_request(32, 32);
+                    remove.set_valign(gtk::Align::Center);
+                    let x = gtk::Label::new(Some("✕"));
+                    remove.set_child(Some(&x));
+                    let words = words.clone();
+                    let list = list.clone();
+                    let s = s.clone();
+                    let gone = word.clone();
+                    remove.connect_clicked(move |btn| {
+                        words.borrow_mut().retain(|w| w != &gone);
+                        if let Some(parent) = btn.parent() {
+                            list.remove(&parent);
+                        }
+                        let _ = s.send(EpubEditorMsg::PersonalRemove(gone.clone()));
+                    });
+                    row.append(&remove);
+                    list.append(&row);
+                }
+            })
+        };
+        rebuild();
+        let s = sender.input_sender().clone();
+        let words_add = words.clone();
+        let rebuild_add = rebuild.clone();
+        add_row.append(&boxed_ghost_button("Add", move || {
+            let word = entry.text().trim().to_string();
+            if word.is_empty() {
+                return;
+            }
+            entry.set_text("");
+            {
+                let mut list = words_add.borrow_mut();
+                if !list.contains(&word) {
+                    list.push(word.clone());
+                    list.sort();
+                }
+            }
+            rebuild_add();
+            let _ = s.send(EpubEditorMsg::PersonalAdd(word));
+        }));
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_close = slot.clone();
+        shell.footer().append(&primary_button("Done", move || {
+            close_slot(&slot_close);
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Personal dictionary",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
         }
     }
 
@@ -4320,7 +5749,36 @@ impl EpubEditorModel {
         menu.add_item("Edit contents…", move || {
             let _ = s.send(EpubEditorMsg::OpenContents);
         });
+        let s = sender.input_sender().clone();
+        menu.add_item_with_hint("Spell check…", "F7", move || {
+            let _ = s.send(EpubEditorMsg::OpenSpellCheck);
+        });
+        let s = sender.input_sender().clone();
+        menu.add_item("Personal dictionary…", move || {
+            let _ = s.send(EpubEditorMsg::OpenPersonalDict);
+        });
         menu.add_separator();
+        let insert =
+            crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
+        {
+            let s = sender.input_sender().clone();
+            insert.add_item("Character…", move || {
+                let _ = s.send(EpubEditorMsg::OpenInsertChar);
+            });
+            let s = sender.input_sender().clone();
+            insert.add_item("Link…", move || {
+                let _ = s.send(EpubEditorMsg::OpenInsertLink);
+            });
+            let s = sender.input_sender().clone();
+            insert.add_item("Image…", move || {
+                let _ = s.send(EpubEditorMsg::OpenInsertImage);
+            });
+            let s = sender.input_sender().clone();
+            insert.add_item("Contents page…", move || {
+                let _ = s.send(EpubEditorMsg::OpenInsertInlineContents);
+            });
+        }
+        menu.add_submenu("Insert", insert);
         let structure =
             crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
         {
@@ -5481,7 +6939,7 @@ impl EpubEditorModel {
         let shell = dialog_shell(DialogSize::Form, Some(file_name(path)));
         let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
         let mut ticks: Vec<(Option<String>, gtk::Label)> = Vec::new();
-        let mut add = |label: &str, value: Option<&str>, ticks: &mut Vec<(Option<String>, gtk::Label)>| {
+        let add = |label: &str, value: Option<&str>, ticks: &mut Vec<(Option<String>, gtk::Label)>| {
             let (row, tick) = option_row(label, "");
             row.set_size_request(-1, 40);
             ticks.push((value.map(str::to_string), tick.clone()));
@@ -5568,7 +7026,7 @@ impl EpubEditorModel {
         self.finish_structure(plan, sender);
     }
 
-    fn present_link_css_dialog(&self, path: &str, sender: &ComponentSender<Self>) {
+    fn present_link_css_dialog(&mut self, path: &str, sender: &ComponentSender<Self>) {
         let Some(container) = &self.container else {
             return;
         };
@@ -5866,7 +7324,7 @@ impl EpubEditorModel {
                 EpubFile {
                     path,
                     kind,
-                    media_type: media,
+                    media_type: media.to_string(),
                     spine_index: spined.then_some(order.len() - 1),
                     is_nav: false,
                     is_cover_image: false,
@@ -6540,6 +7998,8 @@ impl EpubEditorModel {
             item("Check book", "", None, PaletteAction::CheckBook),
             item("Find & replace", "", Some("Ctrl+F"), PaletteAction::FindReplace),
             item("Edit contents", "", None, PaletteAction::EditContents),
+            item("Spell check", "", Some("F7"), PaletteAction::SpellCheck),
+            item("Personal dictionary…", "", None, PaletteAction::PersonalDict),
             item("Split at cursor", "Structure", None, PaletteAction::SplitCursor),
             item("Split at every heading…", "Structure", None, PaletteAction::SplitDialog(1)),
             item("Split chapter by size…", "Structure", None, PaletteAction::SplitDialog(2)),
@@ -6549,6 +8009,10 @@ impl EpubEditorModel {
             item("Set semantics…", "Structure", None, PaletteAction::Semantics),
             item("Link stylesheets…", "Structure", None, PaletteAction::LinkCss),
             item("Add files…", "Structure", None, PaletteAction::AddFiles),
+            item("Insert character…", "Insert", None, PaletteAction::InsertChar),
+            item("Insert link…", "Insert", None, PaletteAction::InsertLink),
+            item("Insert image…", "Insert", None, PaletteAction::InsertImage),
+            item("Insert contents page…", "Insert", None, PaletteAction::InsertInlineContents),
             item("Smarten punctuation", "Clean up", None, PaletteAction::Tool(InstantTool::Smarten)),
             item("Reformat code", "Clean up", None, PaletteAction::Tool(InstantTool::Reformat)),
             item("Remove unused CSS", "Clean up", None, PaletteAction::Tool(InstantTool::RemoveUnusedCss)),
@@ -6649,6 +8113,8 @@ impl EpubEditorModel {
             }
             PaletteAction::FindReplace => self.toggle_find(sender),
             PaletteAction::EditContents => self.open_contents(sender),
+            PaletteAction::SpellCheck => self.start_spell_check(sender),
+            PaletteAction::PersonalDict => self.present_personal_dict_dialog(sender),
             PaletteAction::SplitCursor => self.run_split(0, 250, sender),
             PaletteAction::SplitDialog(preset) => {
                 self.present_split_dialog(preset, sender)
@@ -6661,6 +8127,12 @@ impl EpubEditorModel {
             }
             PaletteAction::LinkCss => sender.input(EpubEditorMsg::PalettePickLinkCss),
             PaletteAction::AddFiles => sender.input(EpubEditorMsg::TreeAddFiles),
+            PaletteAction::InsertChar => sender.input(EpubEditorMsg::OpenInsertChar),
+            PaletteAction::InsertLink => sender.input(EpubEditorMsg::OpenInsertLink),
+            PaletteAction::InsertImage => sender.input(EpubEditorMsg::OpenInsertImage),
+            PaletteAction::InsertInlineContents => {
+                sender.input(EpubEditorMsg::OpenInsertInlineContents)
+            }
             PaletteAction::Tool(kind) => self.present_scope_dialog(kind, sender),
             PaletteAction::View(mode) => sender.input(EpubEditorMsg::SetViewMode(mode)),
             PaletteAction::Tab(tab) => sender.input(EpubEditorMsg::SetRightTab(tab)),
@@ -6980,6 +8452,24 @@ fn panel_note(text: &str) -> gtk::Label {
     label.set_halign(gtk::Align::Start);
     label.set_margin_all(20);
     label
+}
+
+/// The folded form dictionaries are keyed by: curly apostrophe
+/// straightened, lowercased (mirrors `word_known`).
+fn fold_word(word: &str) -> String {
+    word.chars()
+        .map(|c| if c == '\u{2019}' { '\'' } else { c })
+        .collect::<String>()
+        .to_lowercase()
+}
+
+/// Escape a value for a double-quoted XML attribute.
+fn esc_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn file_name(path: &str) -> &str {

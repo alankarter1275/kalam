@@ -8820,6 +8820,70 @@ button.kalam-ed-order-row.drop-after {
 .kalam-ed-grip {
   color: @kalam_text_dim;
 }
+
+/* E4 Insert dialogs (decision 138): glyph grid, pick rows,
+   image thumbnails. */
+button.kalam-ed-glyph {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 0;
+  color: @kalam_text;
+}
+button.kalam-ed-glyph:hover {
+  background: @kalam_hover;
+}
+button.kalam-ed-glyph.selected {
+  background: @kalam_surface_2;
+  box-shadow: inset 0 0 0 2px @kalam_accent;
+}
+.kalam-ed-glyph-label {
+  font-size: 18px;
+}
+button.kalam-ed-pick-row {
+  background: transparent;
+  font-weight: 400;
+  border: none;
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 0 12px;
+  color: @kalam_text;
+  font-size: 13px;
+}
+button.kalam-ed-pick-row:hover {
+  background: @kalam_hover;
+}
+button.kalam-ed-pick-row.selected {
+  background: @kalam_surface_2;
+  box-shadow: inset 3px 0 @kalam_accent;
+}
+.kalam-ed-pick-label {
+  font-size: 13px;
+}
+button.kalam-ed-thumb {
+  background: @kalam_surface_2;
+  border: none;
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 4px;
+}
+button.kalam-ed-thumb:hover {
+  background: @kalam_hover;
+}
+button.kalam-ed-thumb.selected {
+  box-shadow: inset 0 0 0 2px @kalam_accent;
+}
+
+/* E4 Spell check (decision 137): the serif sentence and the
+   accent-text footer action. */
+.kalam-ed-spell-sentence {
+  font-family: "Literata", serif;
+  font-size: 15px;
+}
+button.kalam-ed-accent-text {
+  color: @kalam_accent;
+}
 .kalam-ed-css-element {
   font-family: "DM Mono", monospace;
   font-size: 13px;
